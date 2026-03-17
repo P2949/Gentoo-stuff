@@ -1,0 +1,2 @@
+media-libs/libjxl highway-noavx512.conf
+dev-cpp/highway highway-noavx512.conf

@@ -1,0 +1,2 @@
+sys-fs/lvm2 -static-libs -static udev lvm thin
+sys-fs/cryptsetup -static-libs

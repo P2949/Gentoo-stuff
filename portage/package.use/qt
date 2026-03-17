@@ -1,0 +1,14 @@
+kde-frameworks/kconfig qml
+x11-base/xwayland libei
+dev-qt/qtbase libproxy
+sys-power/switcheroo-control python_single_target_python3_14
+dev-qt/qt5compat qml
+net-libs/nodejs npm
+dev-qt/qtdeclarative custom-cflags
+sys-auth/polkit-qt qt6
+dev-python/lxml python_targets_python3_13 python_targets_python3_14
+dev-python/cython python_targets_python3_14 python_targets_python3_13
+media-libs/libva abi_x86_32
+dev-qt/qt5compat gui
+dev-qt/qtbase gui custom-cflags icu
+dev-qt/qt5compat icu

@@ -1,0 +1,7 @@
+dev-python/mako python_targets_python3_13
+media-libs/imgui glfw 
+gui-libs/libdecor gtk
+media-libs/glfw X
+dev-lang/lazarus qt6
+dev-lang/fpc source
+games-util/mangohud mangoapp X python_single_target_python3_14

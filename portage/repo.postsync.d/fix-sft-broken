@@ -1,0 +1,4 @@
+#!/bin/bash
+# Remove EAPI 7 ebuilds from sft that break eix cache generation
+[[ "$1" == "sft" ]] && rm -rf /var/db/repos/sft/media-libs/librtprocess/
+rm -rf /var/db/repos/sft/media-libs/librtprocess/

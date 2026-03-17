@@ -1,0 +1,7 @@
+net-misc/freerdp server
+www-servers/apache apache2_modules_auth_digest
+app-containers/snapd forced-devmode -systemd
+#sys-apps/systemd python_single_target_python3_14 -boot -ukify -sysv-utils -seccomp -resolvconf -gcrypt 
+sys-libs/libsystemd python_single_target_python3_14 -boot -ukify
+sys-apps/dbus -systemd 
+dev-python/jinja2 python_targets_python3_14

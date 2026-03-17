@@ -1,0 +1,7 @@
+dev-python/python-hwdata python_targets_python3_12
+sys-apps/tuxclocker hwdata
+dev-qt/qtcharts qml
+# required by kde-misc/corectrl-1.5.2::farmboy0
+# required by kde-misc/corectrl (argument)
+dev-qt/qttools qml
+sys-apps/lact gui

@@ -1,0 +1,9 @@
+media-libs/skia **
+gui-libs/wlroots **
+gui-wm/sway **
+gui-wm/niri **
+#gui-wm/hyprland **
+sys-apps/tuxclocker **
+sys-fs/zfs **
+sys-fs/zfs-kmod **
+gui-apps/grimshot **

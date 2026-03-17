@@ -1,0 +1,3 @@
+COMMON_FLAGS="-Wno-unused-variable -Wno-nan-infinity-disabled -ftree-vectorize -fno-omit-frame-pointer -fsemantic-interposition -Wno-deprecated -Qunused-arguments -march=native -O3 -pipe -D_DEFAULT_SOURCE -fno-semantic-interposition -fno-signed-zeros -fno-trapping-math -fno-strict-aliasing -fno-math-errno -fno-stack-protector ${LTO_FLAGS} ${LTO_UNI_FLAGS} ${LIB_FLAGS} ${UARG_FLAGS} ${GCCLIB_FLAGS}"
+CXXFLAGS="${COMMON_FLAGS} --include string"
+LDFLAGS="${COMMON_FLAGS} ${LD_CLEAN_FLAGS} ${LD_LTO}"

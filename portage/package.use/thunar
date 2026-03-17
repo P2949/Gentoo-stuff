@@ -1,0 +1,3 @@
+app-accessibility/at-spi2-core python_targets_python3_14
+gnome-base/gvfs udisks
+xfce-base/thunar exif introspection libnotify udisks

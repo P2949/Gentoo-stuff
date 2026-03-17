@@ -1,0 +1,4 @@
+media-libs/gexiv2 introspection
+media-gfx/gimp python_single_target_python3_14 lua_single_target_luajit xpm
+media-libs/gegl cairo lcms introspection
+media-libs/babl lcms introspection

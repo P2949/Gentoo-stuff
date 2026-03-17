@@ -1,0 +1,4 @@
+x11-libs/cairo O3
+x11-libs/pango O3 
+x11-libs/pixman O3
+x11-base/xorg-server O3nolto

@@ -1,0 +1,6 @@
+media-libs/vulkan-layers X
+dev-util/vulkan-tools cube
+dev-util/glslang abi_x86_32
+dev-util/vulkan-utility-libraries abi_x86_32
+media-libs/vulkan-layers abi_x86_32
+media-libs/vulkan-loader layers abi_x86_32

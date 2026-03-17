@@ -1,0 +1,9 @@
+#llvm-runtimes/offload nolibnounitlto
+llvm-runtimes/openmp nopolly
+llvm-runtimes/openmp-amdgcn clean+
+llvm-core/clang thinlto+
+llvm-runtimes/compiler-rt thinlto
+llvm-runtimes/libcxxabi thinlto
+llvm-runtimes/libcxx thinlto
+llvm-runtimes/compiler-rt-sanitizers thinlto
+llvm-core/llvm thinlto+ 

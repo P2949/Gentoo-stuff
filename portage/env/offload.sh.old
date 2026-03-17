@@ -1,0 +1,80 @@
+# /etc/portage/env/gpu-offload.conf (or in bashrc)
+
+MY_OFFLOAD_FLAGS="-fopenmp=libomp -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa --offload-arch=gfx1201 --rocm-device-lib-path=/usr/lib/amdgcn/bitcode --rocm-path=/usr -lomp -lomptarget"
+LD_OPENMP_FLAGS="-Xoffload-linker-amdgcn-amd-amdhsa -L/usr/lib64/amdgcn-amd-amdhsa -Xoffload-linker-amdgcn-amd-amdhsa -lompdevice"
+
+# Function to check if we should apply offload flags
+should_apply_offload() {
+# Skip if not in setup/configure/compile phases
+case "${EBUILD_PHASE}" in
+        setup|configure|compile) ;;
+        *) return 1 ;;
+    esac
+
+# Skip 32-bit CHOST architectures
+case "${CHOST}" in
+        i?86-*|*-i?86-*) return 1 ;;
+        arm-*|armv[1-7]*) return 1 ;;
+        *-mingw32|*-cygwin32) return 1 ;;
+    esac
+
+# Skip if ABI is explicitly 32-bit
+case "${ABI}" in
+        x86|x32|arm|o32|n32|x86_32)
+            einfo "OFFLOAD-BASHRC: Skipping offload for 32-bit ABI: ${ABI}"
+            return 1
+            ;;
+    esac
+
+# Check if we're in a multilib build for 32-bit
+if [[ -n "${MULTILIB_ABI_FLAG}" ]] && [[ "${MULTILIB_ABI_FLAG}" == "abi_x86_32" ]]; then
+        einfo "OFFLOAD-BASHRC: Skipping offload for multilib 32-bit build"
+        return 1
+    fi
+
+# Additional check: if multilib_is_native_abi exists and returns false, skip
+if declare -f multilib_is_native_abi >/dev/null 2>&1; then
+        if ! multilib_is_native_abi; then
+            einfo "OFFLOAD-BASHRC: Skipping offload for non-native ABI"
+            return 1
+        fi
+    fi
+
+# Only proceed for 64-bit architectures
+case "${CHOST}" in
+        x86_64-*|amd64-*|aarch64-*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Apply flags if checks pass
+if should_apply_offload; then
+    einfo "OFFLOAD-BASHRC: >>> Injecting Offload Flags for ${CATEGORY}/${PF} (ABI: ${ABI:-unset}, CHOST: ${CHOST}) <<<"
+	if [[ " ${INHERITED} " == *" multilib-build "* || " ${INHERITED} " == *" multilib-minimal "* ]]; then    
+    	export CFLAGS_amd64="${CFLAGS} ${MY_OFFLOAD_FLAGS}"
+    	export CXXFLAGS_amd64="${CXXFLAGS} ${MY_OFFLOAD_FLAGS}"
+    	export LDFLAGS_amd64="${LDFLAGS} ${LD_OPENMP_FLAGS} -lomp -lomptarget"
+    	export LIBS_amd64="${LIBS} -lomp -lomptarget"
+    
+    	einfo "OFFLOAD-BASHRC: Applied offload flags"
+    	einfo "  CFLAGS: ${CFLAGS}"
+	fi
+	if [[ "${ABI}" == "x86_64" || "${ABI}" == "amd64" ]]; then
+    	einfo "OFFLOAD-BASHRC: >>> Injecting Offload Flags for ${CATEGORY}/${PF} <<<"
+    	export CFLAGS="${CFLAGS} ${MY_OFFLOAD_FLAGS}"
+    	export CXXFLAGS="${CXXFLAGS} ${MY_OFFLOAD_FLAGS}"
+		export LDFLAGS="${LDFLAGS} ${LD_OPENMP_FLAGS}"
+		export LIBS="${LIBS} -lomp -lomptarget"
+		fi
+else
+    # Apply unified LTO for non-offload builds
+    if [[ "${EBUILD_PHASE}" == "configure" ]]; then
+        einfo "OFFLOAD-BASHRC: Applying unified LTO instead of offload"
+        export CFLAGS="${CFLAGS} -funified-lto"
+        export CXXFLAGS="${CXXFLAGS} -funified-lto"
+    fi
+fi

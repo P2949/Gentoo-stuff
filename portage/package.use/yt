@@ -1,0 +1,21 @@
+media-sound/qpwgraph alsa
+app-arch/xz-utils -pgo
+dev-python/pycryptodome python_targets_python3_14
+# required by net-misc/yt-dlp-2025.12.08::gentoo
+# required by net-misc/yt-dlp (argument)
+dev-python/yt-dlp-ejs python_targets_python3_14
+# required by dev-python/pycryptodome-3.23.0::gentoo[-python_targets_python3_12,-python_targets_python3_13,-python_targets_python3_11,python_targets_python3_14]
+# required by net-misc/yt-dlp-2025.12.08::gentoo
+# required by net-misc/yt-dlp (argument)
+dev-python/cffi python_targets_python3_14
+# required by dev-python/cffi-2.0.0::gentoo[-test]
+# required by dev-python/pycryptodome-3.23.0::gentoo[-python_targets_python3_12,-python_targets_python3_13,-python_targets_python3_11,python_targets_python3_14]
+# required by net-misc/yt-dlp-2025.12.08::gentoo
+# required by net-misc/yt-dlp (argument)
+dev-python/pycparser python_targets_python3_14
+# required by dev-python/pycparser-2.23::gentoo[-test]
+# required by dev-python/cffi-2.0.0::gentoo[-test]
+# required by dev-python/pycryptodome-3.23.0::gentoo[-python_targets_python3_12,-python_targets_python3_13,-python_targets_python3_11,python_targets_python3_14]
+# required by net-misc/yt-dlp-2025.12.08::gentoo
+# required by net-misc/yt-dlp (argument)
+dev-python/ply python_targets_python3_14

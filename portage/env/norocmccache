@@ -1,0 +1,2 @@
+FEATURES="-ccache -sandbox -usersandbox multilib-strict fixlafiles unmerge-orphans noman nodoc noinfo notitles parallel-install parallel-fetch clean-logs -network-sandbox"
+EXTRA_ECONF=""

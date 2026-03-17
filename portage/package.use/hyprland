@@ -1,0 +1,11 @@
+kde-frameworks/ki18n python_single_target_python3_14
+dev-python/lxml python_targets_python3_14
+dev-python/cython python_targets_python3_14
+dev-python/distro python_targets_python3_14
+dev-python/pymountboot python_targets_python3_14
+media-libs/mesa X 
+kde-frameworks/sonnet qml
+app-text/xmlto text
+media-libs/freetype harfbuzz
+gui-wm/hyprland X qtutils
+media-libs/libglvnd X

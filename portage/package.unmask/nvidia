@@ -1,0 +1,7 @@
+gui-libs/wlroots
+gui-wm/sway
+gui-wm/niri
+gui-wm/hyprland  
+sys-apps/tuxclocker
+gui-apps/grimshot
+sys-fs/zfs-kmod

@@ -1,0 +1,35 @@
+
+# --- rocr-runtime-hsa-signal-operator-lt ---
+# Fix: hsa_signal_t lacks operator< needed by libc++ 22 std::map internals
+post_src_prepare() {
+	if [[ "${CATEGORY}/${PN}" == "dev-libs/rocr-runtime" ]]; then
+        local hsa_h="${S}/runtime/hsa-runtime/inc/hsa.h"
+        if [[ ! -f "${hsa_h}" ]]; then
+            ewarn "rocr-runtime bashrc hook: ${hsa_h} not found, skipping fix"
+            return
+        fi
+        if grep -q 'operator<(hsa_signal_t' "${hsa_h}"; then
+            einfo "rocr-runtime bashrc hook: operator< already present, skipping"
+            return
+        fi
+        local line
+        line=$(grep -n '} hsa_signal_t;' "${hsa_h}" | head -1 | cut -d: -f1)
+        if [[ -z "${line}" ]]; then
+            eerror "rocr-runtime bashrc hook: could not find '} hsa_signal_t;' in ${hsa_h}"
+            return
+        fi
+        einfo "rocr-runtime bashrc hook: inserting operator< after line ${line} of hsa.h"
+        sed -i "${line}a \\
+\\
+#ifdef __cplusplus\\
+inline bool operator<(hsa_signal_t lhs, hsa_signal_t rhs) noexcept {\\
+	return lhs.handle < rhs.handle;\\
+}\\
+inline bool operator==(hsa_signal_t lhs, hsa_signal_t rhs) noexcept {\\
+	return lhs.handle == rhs.handle;\\
+}\\
+#endif" "${hsa_h}"
+        einfo "rocr-runtime bashrc hook: hsa.h patched successfully"
+    fi
+}
+# --- end rocr-runtime-hsa-signal-operator-lt ---

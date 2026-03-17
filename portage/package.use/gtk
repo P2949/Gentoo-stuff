@@ -1,0 +1,26 @@
+dev-python/pygments python_targets_python3_13
+dev-util/gtk-doc python_single_target_python3_13
+gui-libs/libadwaita vala introspection
+dev-libs/libdbusmenu gtk3
+media-libs/harfbuzz introspection
+app-text/asciidoc python_single_target_python3_14
+app-text/poppler cairo
+gui-libs/gtk X introspection 
+gnome-base/gsettings-desktop-schemas introspection
+app-crypt/gcr gtk
+media-libs/graphene introspection
+dev-python/pygobject python_targets_python3_14
+dev-python/pycairo python_targets_python3_14
+dev-lang/rust mrustc-bootstrap
+dev-libs/libportal gtk
+dev-libs/gobject-introspection python_single_target_python3_14
+x11-libs/gtksourceview introspection
+x11-libs/pango introspection
+app-accessibility/at-spi2-core introspection
+dev-libs/glib introspection
+sys-libs/pam_wrapper python_targets_python3_14
+app-text/evince introspection
+x11-libs/gdk-pixbuf introspection
+media-libs/gstreamer introspection
+media-libs/gst-plugins-base introspection
+x11-libs/gtk+ introspection

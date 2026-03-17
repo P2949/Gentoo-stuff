@@ -1,0 +1,9 @@
+sys-apps/lm-sensors abi_x86_32
+sys-apps/pciutils abi_x86_32
+dev-libs/libedit abi_x86_32
+sci-mathematics/z3 abi_x86_32
+app-emulation/wine-gecko abi_x86_32
+app-emulation/winetricks gui
+dev-util/mingw64-toolchain default-ucrt
+app-emulation/wine-vanilla -mingw X udev wow64 custom-cflags v4l -abi_x86_32 ffmpeg usb 
+app-emulation/wine-staging -mingw X udev wow64 custom-cflags v4l -abi_x86_32 ffmpeg usb 

@@ -1,0 +1,3 @@
+dev-libs/libsodium nopolly
+sys-libs/ncurses nouni+
+sys-libs/ncurses-compat nopenmp
