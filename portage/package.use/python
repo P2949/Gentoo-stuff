@@ -1,3 +1,4 @@
+dev-python/vcs-versioning python_targets_python3_13 python_targets_python3_14
 dev-python/setproctitle python_targets_python3_13
 dev-python/mypy -native-extensions
 dev-lua/lpeg lua_targets_luajit

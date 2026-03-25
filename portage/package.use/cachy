@@ -2,4 +2,4 @@ sys-fs/zfs minimal -dist-kernel-cap -python -python_targets_python3_14
 sys-fs/zfs-kmod -dist-kernel-cap
 virtual/linux-sources firmware
 dev-util/perf libpfm
-sys-kernel/cachyos-sources -llvm-lto-thin -bore kernel-builtin-zfs bbr3 tickrate_full preempt_full hz_ticks_1000 autofdo hugepage_always propeller mnative build kcfi llvm-lto-thin-dist o3 rt-bore
+sys-kernel/cachyos-sources -llvm-lto-thin -bore kernel-builtin-zfs bbr3 tickrate_full -preempt_full hz_ticks_1000 autofdo hugepage_always propeller mnative build kcfi llvm-lto-thin-dist o3 rt-bore
