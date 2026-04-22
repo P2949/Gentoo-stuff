@@ -1,1 +1,2 @@
+media-sound/apulse sdk
 media-video/pipewire pipewire-alsa extra sound-server ffmpeg dbus elogind

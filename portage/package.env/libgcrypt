@@ -1,1 +1,2 @@
-dev-libs/libgcrypt nouni
+dev-libs/leancrypto nopolly
+dev-libs/libgcrypt nopolly

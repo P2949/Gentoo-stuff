@@ -1,10 +1,7 @@
-dev-util/perf llvm_slot_21
 gui-wm/niri llvm_slot_21
-media-libs/mesa llvm_slot_21
 sys-kernel/scx llvm_slot_21
 sys-block/thin-provisioning-tools llvm_slot_21
 dev-libs/leancrypto abi_x86_32
-dev-util/mesa_clc llvm_slot_21
 dev-util/bpftool -llvm_slot_21
 dev-util/spirv-llvm-translator:21 llvm_slot_21
 =llvm-core/libclc-21* llvm_slot_21

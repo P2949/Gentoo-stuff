@@ -1,0 +1,4 @@
+dev-python/sqlalchemy python_single_target_python3_13 python_targets_python3_13
+dev-python/websockets python_single_target_python3_13 python_targets_python3_13
+gnome-base/librsvg python_single_target_python3_13 python_targets_python3_13 introspection
+games-board/pychess python_single_target_python3_13

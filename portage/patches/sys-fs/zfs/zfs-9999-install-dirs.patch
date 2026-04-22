@@ -1,0 +1,10 @@
+diff --git a/scripts/Makefile.am b/scripts/Makefile.am
+--- a/scripts/Makefile.am
++++ b/scripts/Makefile.am
+@@ -1,5 +1,6 @@
+ INSTALL_DATA_HOOKS += scripts-install-data-hook
+ scripts-install-data-hook: %D%/common.sh.in Makefile
++	-$(MKDIR_P) $(DESTDIR)$(bindir) $(DESTDIR)$(datadir)/$(PACKAGE)
+ 	-$(SED) -e '/^export BIN_DIR=/s|$$|$(bindir)|' \
+ 		-e '/^export SBIN_DIR=/s|$$|$(sbindir)|' \
+ 		-e '/^export LIBEXEC_DIR=/s|$$|$(zfsexecdir)|' \

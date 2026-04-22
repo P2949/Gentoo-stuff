@@ -1,3 +1,4 @@
+dev-ruby/prettyprint ruby_targets_ruby34
 dev-ruby/debug ruby_targets_ruby34
 dev-ruby/irb ruby_targets_ruby34
 dev-ruby/matrix ruby_targets_ruby34

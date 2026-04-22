@@ -1,3 +1,4 @@
+sys-apps/lact llvm_slot_21
 dev-util/patchutils python_single_target_python3_14
 sys-apps/hwloc abi_x86_32 rocm
 sci-libs/composable-kernel python_targets_python3_13t python_targets_python3_13

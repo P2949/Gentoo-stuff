@@ -1,0 +1,9 @@
+diff --git a/contrib/pyzfs/pyproject.toml b/contrib/pyzfs/pyproject.toml
+new file mode 100644
+index 000000000..111111111
+--- /dev/null
++++ b/contrib/pyzfs/pyproject.toml
+@@ -0,0 +1,3 @@
++[build-system]
++requires = ["setuptools>=61"]
++build-backend = "setuptools.build_meta"
