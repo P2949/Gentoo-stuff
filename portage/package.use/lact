@@ -4,4 +4,4 @@ dev-qt/qtcharts qml
 # required by kde-misc/corectrl-1.5.2::farmboy0
 # required by kde-misc/corectrl (argument)
 dev-qt/qttools qml
-sys-apps/lact gui
+sys-apps/lact gui -llvm_slot_21

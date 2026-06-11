@@ -1,2 +1,2 @@
 dev-java/openjdk:21 nolto
-dev-java/openjdk:25 norocmccache
+dev-java/openjdk:25 norocmccache nopolly

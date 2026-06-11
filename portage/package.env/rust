@@ -1,3 +1,4 @@
 dev-util/cargo-c nopolly
 dev-lang/mrustc nolto
+dev-util/rustup nolto
 dev-lang/rust rust

@@ -1,0 +1,2 @@
+dev-util/bpf-linker no-rust-lto.conf
+app-misc/stutter no-rust-lto.conf
