@@ -1,5 +1,7 @@
 # First fallback: default flags minus Polly.
 app-arch/xz-utils no-polly.conf
+# huf_decompress_amd64.S compiled with CFLAGS (meson): cc1as rejects -mllvm
+app-arch/zstd no-polly.conf
 app-misc/openrgb no-polly.conf
 dev-lang/python no-polly.conf
 # vendored ring/psm .S files: cc1as rejects -mllvm -polly
