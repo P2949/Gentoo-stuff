@@ -5,6 +5,8 @@ dev-util/Tensile libstdcxx-headers.conf
 dev-util/colm libstdcxx-headers.conf
 dev-util/ragel libstdcxx-headers.conf
 gui-wm/hyprland include-string.conf
+# upstream -Werror=function-effects false positive (see env file):
+media-libs/openal no-werror-function-effects.conf
 media-gfx/gimp gimp.conf
 sys-fs/xfsprogs mount-defines.conf
 # Global EXTRA_ECONF (--with-rocm) breaks their configure:
