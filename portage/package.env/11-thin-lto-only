@@ -1,4 +1,8 @@
 # Plain ThinLTO without the unified-LTO/vtable extras.
+# -fvisibility=hidden + forced vtable emission: undefined hidden
+# construction vtables from libc++ at link:
+app-text/hunspell thin-lto-only.conf
+media-gfx/imagemagick thin-lto-only.conf
 dev-util/rocm-smi thin-lto-only.conf
 gui-apps/xwayland-satellite thin-lto-only.conf
 gui-wm/niri thin-lto-only.conf
