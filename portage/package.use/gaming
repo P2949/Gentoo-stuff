@@ -1,0 +1,12 @@
+# Steam, wine, proton, lutris, mangohud.
+app-emulation/protontricks gui python_single_target_python3_14
+app-emulation/wine-staging -mingw X udev wow64 custom-cflags v4l -abi_x86_32 ffmpeg usb
+app-emulation/wine-vanilla -mingw X udev wow64 custom-cflags v4l -abi_x86_32 ffmpeg usb
+app-emulation/winetricks gui
+dev-util/mingw64-toolchain default-ucrt
+games-util/mangohud mangoapp X python_single_target_python3_14
+games-util/steam-launcher trayicon pulseaudio -steamruntime
+gui-libs/libdecor gtk abi_x86_32
+gui-wm/gamescope libei avif
+media-libs/glfw X
+media-libs/imgui glfw

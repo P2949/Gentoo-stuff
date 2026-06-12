@@ -1,0 +1,35 @@
+# /etc/portage/env — per-package fallback ladder
+#
+# The default flags in make.conf are the most aggressive tier. When a
+# package fails to build or misbehaves, demote it ONE step at a time via
+# /etc/portage/package.env. Changing to a more conservative tier is the
+# last resort — first check whether the failure has a non-flag cause.
+#
+# Fallback ladder (least → most conservative):
+#   (default)             make.conf: -Ofast + Polly + ThinLTO + unified-LTO
+#                         + libc++ link set
+#   no-polly.conf         default minus Polly/alignment        (1st fallback)
+#   thin-lto-only.conf    default minus unified-LTO extras (vtable opts)
+#   O3.conf               -O3 instead of -Ofast, no Polly, full LTO
+#   O3-no-vtables.conf    O3.conf minus the vtable/unified extras
+#   no-openmp.conf        -Ofast, no Polly/OpenMP/lib forcing, full LTO
+#   no-lto.conf           default flags but LTO off (incl. Rust LTO)
+#   no-link-libs.conf     default LTO but without the -l* lib forcing
+#   O2.conf               plain -O2 -march=native + libc++ link set
+#   plain.conf            plain -O2 -march=native, no ccache (true last resort)
+#
+# Toolchain / special-purpose:
+#   gcc.conf              build with GCC instead of clang (GCC-valid flags)
+#   glibc.conf            default minus the -Wno-* downgrade set
+#   rust-llvm21.conf      dev-lang/rust: pin clang/llvm 21 toolchain
+#   rust-no-lto.conf      conservative RUSTFLAGS/CFLAGS for broken cargo pkgs
+#   no-ccache.conf        disable ccache (+sandbox relaxation)
+#   no-extra-econf.conf   reset EXTRA_ECONF (--with-rocm) where it breaks
+#   libstdcxx-headers.conf clang with explicit gcc-15 libstdc++ header paths
+#   highway-noavx512.conf gcc + AVX512 disabled (dev-cpp/highway consumers)
+#   include-string.conf   O3 + CXXFLAGS --include string (hyprland)
+#   mount-defines.conf    extra -include/-D defines (xfsprogs)
+#   gimp.conf, nvidia.conf, zfs-kernel.conf: package-specific
+#
+# Files in env/<category>/<package> are auto-sourced bashrc hooks
+# (source patching etc.), independent of package.env.

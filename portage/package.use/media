@@ -1,0 +1,28 @@
+# Media stack: ffmpeg, mpv, pipewire, vulkan, mesa.
+media-fonts/cantarell font_types_otf
+media-gfx/gimp python_single_target_python3_14 lua_single_target_luajit xpm
+media-libs/babl lcms introspection
+media-libs/freetype harfbuzz abi_x86_32
+media-libs/gegl cairo lcms introspection
+media-libs/gexiv2 introspection
+media-libs/graphene introspection
+media-libs/gst-plugins-base introspection
+media-libs/gstreamer introspection
+media-libs/harfbuzz introspection icu abi_x86_32
+media-libs/libepoxy X abi_x86_32
+media-libs/libglvnd X abi_x86_32
+media-libs/libpng apng abi_x86_32
+media-libs/libva X abi_x86_32
+media-libs/libvpx postproc
+media-libs/mesa X abi_x86_32
+media-libs/mlt frei0r qt6 xml
+media-libs/opencv features2d contribdnn contrib
+media-libs/vulkan-layers X abi_x86_32
+media-libs/vulkan-loader X layers abi_x86_32
+media-sound/apulse sdk abi_x86_32
+media-sound/qpwgraph alsa
+media-sound/spotify pulseaudio
+media-video/ffmpeg opus x264
+media-video/mpv python_single_target_python3_14 X
+media-video/obs-studio v4l python_single_target_python3_14 lua_single_target_luajit lua
+media-video/pipewire pipewire-alsa extra sound-server ffmpeg dbus elogind abi_x86_32

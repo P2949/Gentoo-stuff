@@ -1,2 +1,0 @@
-=dev-lang/rust-1.94* llvm_slot_21
-dev-lang/rust abi_x86_32 big-endian rust-analyzer rust-src llvm_targets_BPF rust_sysroots_bpf rust_sysroots_wasm llvm_targets_WebAssembly nightly

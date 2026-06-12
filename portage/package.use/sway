@@ -1,2 +1,0 @@
-gui-libs/wlroots x11-backend xcb-errors vulkan lcms liftoff
-gui-wm/sway -tray -swaybar

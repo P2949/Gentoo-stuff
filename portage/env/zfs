@@ -1,4 +1,0 @@
-EXTRA_ECONF="--with-config=kernel "
-PKG_PRE_CONFIG="sed -i 's/License:[[:space:]]\+CDDL/License: GPL/' ${S}/META"
-src_prepare="sed -i 's/License:[[:space:]]\+CDDL/License: GPL/' ${S}/META"
-pre_src_prepare="sed -i 's/License:[[:space:]]\+CDDL/License: GPL/' ${S}/META"

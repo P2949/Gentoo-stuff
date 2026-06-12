@@ -1,0 +1,15 @@
+# Package-specific workarounds (see comments in each env file).
+dev-cpp/highway highway-noavx512.conf
+media-libs/libjxl highway-noavx512.conf
+dev-util/Tensile libstdcxx-headers.conf
+dev-util/colm libstdcxx-headers.conf
+dev-util/ragel libstdcxx-headers.conf
+gui-wm/hyprland include-string.conf
+media-gfx/gimp gimp.conf
+sys-fs/xfsprogs mount-defines.conf
+# Global EXTRA_ECONF (--with-rocm) breaks their configure:
+dev-db/sqlite no-extra-econf.conf
+media-video/ffmpeg no-extra-econf.conf
+# Java: ccache breaks the build; :25 also needs no Polly and clean econf.
+dev-java/openjdk no-ccache.conf
+dev-java/openjdk:25 no-polly.conf no-extra-econf.conf

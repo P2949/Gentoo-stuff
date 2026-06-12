@@ -1,4 +1,0 @@
-dev-libs/quazip qt6
-sys-libs/zlib minizip
-dev-java/java-config python_targets_python3_13
-dev-java/swt cairo 

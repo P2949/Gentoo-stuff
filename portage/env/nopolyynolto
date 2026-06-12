@@ -1,7 +1,0 @@
-COMMON_FLAGS="-unwindlib=libunwind -mtune=native -fno-plt -Wno-unused-variable -Wno-nan-infinity-disabled -ftree-vectorize -fno-omit-frame-pointer -fsemantic-interposition -Wno-deprecated -Qunused-arguments -march=native -Ofast -pipe -D_DEFAULT_SOURCE -fno-semantic-interposition -fno-signed-zeros -fno-trapping-math -fno-strict-aliasing -fno-math-errno -fno-stack-protector -fopenmp ${UARG_FLAGS} ${GCCLIB_FLAGS}"
-LDFLAGS="${COMMON_FLAGS} ${LDFLAGS} ${LD_CLEAN_FLAGS}"
-
-CFLAGS="${COMMON_FLAGS}"
-CXXFLAGS="${COMMON_FLAGS}"
-FCFLAGS="${COMMON_FLAGS}"
-FFLAGS="${COMMON_FLAGS}"

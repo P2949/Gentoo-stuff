@@ -1,7 +1,0 @@
-dev-util/pkgdev python_targets_python3_14
-dev-python/snakeoil python_targets_python3_14
-sys-apps/pkgcore python_targets_python3_14
-dev-libs/tree-sitter-bash python_targets_python3_14
-dev-python/chardet python_targets_python3_14
-dev-python/tree-sitter python_targets_python3_14
-dev-util/pkgcheck python_targets_python3_14

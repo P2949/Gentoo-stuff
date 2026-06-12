@@ -1,3 +1,0 @@
-app-admin/eclean-kernel python_targets_python3_14
-sys-apps/systemd-utils python_single_target_python3_13
-sys-kernel/installkernel efistub dracut 

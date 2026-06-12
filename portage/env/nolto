@@ -1,7 +1,0 @@
-COMMON_FLAGS="${CLEAN_FLAGS} ${LIB_FLAGS} ${UARG_FLAGS} ${GCCLIB_FLAGS}"
-CFLAGS="${COMMON_FLAGS}"
-CXXFLAGS="${COMMON_FLAGS}"
-FCFLAGS="${COMMON_FLAGS}"
-FFLAGS="${COMMON_FLAGS}"
-LDFLAGS="${COMMON_FLAGS} ${LD_CLEAN_FLAGS}"
-RUSTFLAGS="-C codegen-units=1 -C embed-bitcode=yes -C target-cpu=native -C opt-level=3 -Clinker=clang -Clink-arg=-fuse-ld=lld"

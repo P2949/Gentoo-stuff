@@ -1,6 +1,0 @@
-COMMON_FLAGS="-Wno-unused-variable -Wno-nan-infinity-disabled -ftree-vectorize -fno-omit-frame-pointer -fsemantic-interposition -Wno-deprecated -Qunused-arguments -march=native -O3 -pipe -D_DEFAULT_SOURCE -fno-semantic-interposition -fno-signed-zeros -fno-trapping-math -fno-strict-aliasing -fno-math-errno -fno-stack-protector ${LTO_FLAGS} ${UARG_FLAGS} -fsplit-lto-unit ${GCCLIB_FLAGS}"
-CFLAGS="${COMMON_FLAGS}"
-CXXFLAGS="${COMMON_FLAGS}"
-FCFLAGS="${COMMON_FLAGS}"
-FFLAGS="${COMMON_FLAGS}"
-LDFLAGS="${COMMON_FLAGS} -fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -Wl,--as-needed -Wl,--no-allow-shlib-undefined -Wl,--no-gc-sections -Wl,-O2 -Wl,--fat-lto-objects -Wl,--thinlto-jobs=11"

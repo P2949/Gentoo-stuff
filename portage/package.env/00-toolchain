@@ -1,0 +1,16 @@
+# Toolchain packages. Fallback ladder: see /etc/portage/env/README.
+sys-devel/gcc gcc.conf
+dev-lang/fpc gcc.conf
+sys-libs/glibc glibc.conf
+sys-apps/kmod no-link-libs.conf
+
+# LLVM stack: no Polly when building the compiler itself.
+llvm-core/llvm no-polly.conf
+llvm-core/clang no-polly.conf
+llvm-runtimes/openmp no-polly.conf
+llvm-runtimes/openmp-amdgcn-amd-amdhsa no-link-libs.conf
+
+# Rust stack.
+dev-lang/rust rust-llvm21.conf
+dev-lang/mrustc no-lto.conf
+dev-util/rustup no-lto.conf

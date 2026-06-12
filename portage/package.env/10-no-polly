@@ -1,0 +1,16 @@
+# First fallback: default flags minus Polly.
+app-arch/xz-utils no-polly.conf
+app-misc/openrgb no-polly.conf
+dev-lang/python no-polly.conf
+dev-lang/ruby no-polly.conf
+dev-libs/blake3 no-polly.conf
+dev-libs/icu no-polly.conf
+dev-libs/leancrypto no-polly.conf
+dev-libs/libgcrypt no-polly.conf
+dev-libs/libsodium no-polly.conf
+dev-libs/openssl no-polly.conf
+dev-util/cargo-c no-polly.conf
+dev-util/mesa_clc no-polly.conf
+gui-libs/gtk no-polly.conf
+media-libs/svt-av1 no-polly.conf
+sys-apps/busybox no-polly.conf

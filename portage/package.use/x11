@@ -1,4 +1,0 @@
-dev-cpp/gtkmm X
-x11-libs/gtk+ X
-x11-base/xorg-server -minimal
-x11-base/xcb-proto python_targets_python3_14

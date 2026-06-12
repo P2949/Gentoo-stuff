@@ -1,0 +1,5 @@
+# -fopenmp / forced-lib link set breaks these.
+app-emulation/wine-staging no-openmp.conf
+app-emulation/wine-vanilla no-openmp.conf
+dev-python/librt no-openmp.conf
+sys-libs/ncurses-compat no-openmp.conf

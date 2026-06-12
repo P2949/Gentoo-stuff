@@ -1,6 +1,0 @@
-llvm-core/clang:16 python_single_target_python3_12
-dev-util/spirv-llvm-translator:16 llvm_slot_16
-dev-libs/opencl-clang llvm_slot_16 llvm_slot_20
-dev-util/intel-graphics-compiler llvm_slot_16
-x11-drivers/xf86-video-intel tools uxa xvmc
-media-libs/libva-intel-driver 

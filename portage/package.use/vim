@@ -1,4 +1,0 @@
-app-editors/neovim lua_single_target_luajit
-app-editors/vim-core -minimal
-dev-lua/luv -lua_single_target_lua5-4 lua_single_target_luajit
-app-editors/vim -minimal 

@@ -1,0 +1,4 @@
+# Cargo packages whose builds break under custom RUSTFLAGS/LTO.
+app-misc/stutter rust-no-lto.conf
+dev-util/bpf-linker rust-no-lto.conf
+sys-apps/ripgrep rust-no-lto.conf

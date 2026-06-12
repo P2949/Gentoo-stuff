@@ -1,0 +1,6 @@
+# LTO off (C and Rust). Order on the line matters: later files win.
+sys-apps/amdgpu_top no-lto.conf
+sys-kernel/scx no-lto.conf
+sys-kernel/scx-loader no-lto.conf
+sys-apps/lact no-lto.conf no-polly.conf
+sys-fs/zfs no-lto.conf zfs-kernel.conf

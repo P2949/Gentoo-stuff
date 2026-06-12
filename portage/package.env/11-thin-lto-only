@@ -1,0 +1,7 @@
+# Plain ThinLTO without the unified-LTO/vtable extras.
+dev-util/rocm-smi thin-lto-only.conf
+gui-apps/xwayland-satellite thin-lto-only.conf
+gui-wm/niri thin-lto-only.conf
+media-sound/ncspot thin-lto-only.conf
+media-video/movit thin-lto-only.conf
+sys-libs/ncurses thin-lto-only.conf

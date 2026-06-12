@@ -1,0 +1,17 @@
+# -O3 instead of -Ofast (strict FP semantics needed).
+dev-lang/duktape O3.conf
+dev-libs/wayland O3.conf
+dev-util/vulkan-headers O3.conf
+gui-libs/wlroots O3.conf
+media-libs/rnnoise O3.conf
+media-libs/vulkan-layers O3.conf
+media-libs/vulkan-loader O3.conf
+sys-apps/systemd-utils O3.conf
+sys-auth/elogind O3.conf
+sys-auth/polkit O3.conf
+x11-libs/cairo O3.conf
+x11-libs/libdrm O3.conf
+x11-libs/pango O3.conf
+x11-libs/pixman O3.conf
+x11-base/xorg-server O3-no-vtables.conf
+media-libs/mesa O3-thin-lto-no-libs.conf

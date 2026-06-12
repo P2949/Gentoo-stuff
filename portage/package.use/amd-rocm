@@ -1,0 +1,21 @@
+# AMD GPU / ROCm stack (gfx1201).
+dev-libs/opencl-clang llvm_slot_16 llvm_slot_20
+dev-libs/rocm-comgr llvm_slot_20
+dev-libs/rocm-device-libs llvm_slot_20
+dev-libs/rocm-opencl-runtime numa
+dev-libs/rocr-runtime llvm_slot_20
+dev-libs/roct-thunk-interface llvm_slot_20
+dev-util/Tensile client llvm_slot_20
+dev-util/hip numa -video_cards_nvidia hip opencl llvm_slot_20
+dev-util/hipcc llvm_slot_20
+dev-util/hipify-clang llvm_slot_20
+dev-util/intel-graphics-compiler llvm_slot_16
+dev-util/rocm-smi python_targets_python3_13t
+dev-util/rocminfo python_targets_python3_13t
+sci-libs/composable-kernel python_targets_python3_13t
+sci-libs/hipBLAS rocsolver
+sci-libs/hipBLASLt llvm_slot_20
+sci-libs/miopen llvm_slot_20
+sci-libs/rocBLAS llvm_slot_20
+sci-ml/caffe2 python_single_target_python3_13
+sys-apps/lact gui

@@ -1,3 +1,0 @@
-media-video/ffmpeg opus x264
-media-video/obs-studio v4l python_single_target_python3_14 lua_single_target_luajit lua
-media-video/pipewire dbus

@@ -1,0 +1,43 @@
+# Base system and miscellaneous.
+app-alternatives/sh dash -bash
+app-arch/xz-utils abi_x86_32 -pgo
+app-containers/snapd forced-devmode -systemd
+app-shells/bash pgo
+dev-debug/gdb multitarget python_single_target_python3_14
+dev-java/swt cairo
+dev-lang/fpc source
+dev-lang/lazarus qt6
+dev-lang/python -pgo jit
+dev-lang/python:3.13 llvm_slot_18
+dev-lang/python:3.14 llvm_slot_19
+dev-lang/tk truetype xft
+dev-libs/libusb abi_x86_32 udev -static-libs
+dev-libs/libxml2 icu abi_x86_32
+dev-libs/quazip qt6
+dev-python/mypy -native-extensions
+dev-tcl/tk xft
+dev-util/perf libpfm python_single_target_python3_14t
+dev-util/vulkan-tools cube
+net-libs/libtirpc -static-libs
+net-libs/nodejs npm
+net-misc/freerdp server
+net-misc/rsync system-zlib verify-sig python_single_target_python3_13
+sys-apps/coolercontrold liquidctl python_single_target_python3_14
+sys-apps/dbus X abi_x86_32 -systemd
+sys-apps/hwloc abi_x86_32 rocm
+sys-apps/i2c-tools python
+sys-apps/iproute2 -minimal
+sys-apps/pciutils -udev abi_x86_32
+sys-apps/systemd-utils python_single_target_python3_13 abi_x86_32
+sys-auth/polkit-qt qt6
+sys-fs/cryptsetup -static-libs
+sys-fs/lvm2 -static-libs -static udev lvm thin
+sys-fs/zfs -dist-kernel-cap python -minimal -unwind
+sys-fs/zfs-kmod -dist-kernel-cap
+sys-kernel/cachyos-sources -llvm-lto-thin -bore kernel-builtin-zfs bbr3 tickrate_full preempt_full hz_ticks_1000 autofdo hugepage_always propeller mnative build kcfi llvm-lto-thin-dist o3 rt-bore
+sys-kernel/installkernel efistub dracut
+sys-libs/glibc multilib-bootstrap stack-realign hash-sysv-compat
+sys-libs/libsystemd python_single_target_python3_14 -boot -ukify
+sys-libs/zlib minizip abi_x86_32
+virtual/linux-sources firmware
+www-servers/apache apache2_modules_auth_digest

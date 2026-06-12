@@ -1,5 +1,0 @@
-# move sys-libs/compiler-rt-sanitizers llvm-runtimes/compiler-rt-sanitizers
-llvm-runtimes/compiler-rt-sanitizers profile orc
-dev-lang/python pgo
-app-shells/bash pgo
-sys-devel/binutils pgo

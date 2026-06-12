@@ -1,4 +1,0 @@
-net-misc/yt-dlp python_targets_python3_14
-media-libs/libva X 
-media-libs/vulkan-loader X
-media-video/mpv python_single_target_python3_14 X

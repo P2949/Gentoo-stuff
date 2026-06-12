@@ -1,0 +1,9 @@
+# Fix blt's K&R-era pointer type mismatches before compiling.
+pre_src_compile() {
+    sed -i \
+        's/Mark(cubePtr, color\.value, lut)/Mark(cubePtr, color.value, (unsigned int (*)[33][33])lut)/' \
+        "${S}/generic/bltImage.c"
+    sed -i \
+        's/MapColors(src, dest, lut);/MapColors(src, dest, (unsigned int (*)[33][33])lut);/' \
+        "${S}/generic/bltImage.c"
+}
