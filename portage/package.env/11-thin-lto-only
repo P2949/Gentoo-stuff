@@ -3,6 +3,6 @@ dev-util/rocm-smi thin-lto-only.conf
 gui-apps/xwayland-satellite thin-lto-only.conf
 gui-wm/niri thin-lto-only.conf
 # aws-lc-sys .S files: cc1as rejects -mllvm -polly
-media-sound/ncspot thin-lto-only.conf no-polly.conf
+media-sound/ncspot thin-lto-only.conf no-polly.conf needs-term.conf
 media-video/movit thin-lto-only.conf
 sys-libs/ncurses thin-lto-only.conf
