@@ -27,3 +27,24 @@ definition.  Same class of fix as lld-21.1.8-libcxx-incomplete-unique-ptr.
  CompileUnit::CompileUnit(LinkingGlobalData &GlobalData, unsigned ID,
                           StringRef ClangModuleName, DWARFFile &File,
                           OffsetToUnitTy UnitFromOffset,
+--- a/llvm/lib/Target/SPIRV/SPIRVSubtarget.h	2026-06-12 07:01:50.354766625 +0100
++++ b/llvm/lib/Target/SPIRV/SPIRVSubtarget.h	2026-06-12 07:01:50.371435783 +0100
+@@ -72,6 +72,7 @@
+   // of the specified triple.
+   SPIRVSubtarget(const Triple &TT, const std::string &CPU,
+                  const std::string &FS, const SPIRVTargetMachine &TM);
++  ~SPIRVSubtarget() override;
+   SPIRVSubtarget &initSubtargetDependencies(StringRef CPU, StringRef FS);
+ 
+   void initAvailableExtensions(
+--- a/llvm/lib/Target/SPIRV/SPIRVSubtarget.cpp	2026-06-12 07:01:50.354797881 +0100
++++ b/llvm/lib/Target/SPIRV/SPIRVSubtarget.cpp	2026-06-12 07:01:50.371591702 +0100
+@@ -49,6 +49,8 @@
+   return Target.empty() || Target >= VerToCompareTo;
+ }
+ 
++SPIRVSubtarget::~SPIRVSubtarget() = default;
++
+ SPIRVSubtarget::SPIRVSubtarget(const Triple &TT, const std::string &CPU,
+                                const std::string &FS,
+                                const SPIRVTargetMachine &TM)
