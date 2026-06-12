@@ -1,71 +1,30 @@
+# sys-fs/zfs is repurposed to build the kernel modules (EXTRA_ECONF
+# --with-config=kernel via env/zfs-kernel.conf overrides the ebuild's
+# --with-config=all). Two consequences need hooks:
+#
+# 1. The kernel build refuses CDDL modules against GPL-only symbols:
+#    relabel META and ensure a MODULE_LICENSE("GPL") exists.
 post_src_prepare() {
-# S is the source dir; set fallback
-    local S_DIR="${S:-.}"
-    # Predict the image directory Portage will use during src_install
-    # (use WORKDIR-based image location from common Portage layout)
-    local PKGNAME="$(basename "${S_DIR}")"   # not perfect, but safe fallback
-    # Try to derive the ED path from PORTAGE_TMPDIR if available, otherwise no-op
-    if [ -n "${PORTAGE_TMPDIR:-}" ]; then
-        # Guess the image dir used in your logs (adjust if your environment differs)
-        local ED_GUESS
-        ED_GUESS="$(echo "${PORTAGE_TMPDIR}" | sed 's|/tmp/portage|/var/tmp/portage|')/${CATEGORY:-sys-fs}/${PN}-${PV}/image"
-        mkdir -p "${ED_GUESS}" >/dev/null 2>&1 || true
-        touch "${ED_GUESS}/unwanted_files" >/dev/null 2>&1 || true
+    local meta="${S}/META"
+    if [[ -f ${meta} ]] && grep -qE '^License:[[:space:]]*CDDL' "${meta}"; then
+        sed -i -E 's/^(License:[[:space:]]*)CDDL/\1GPL/' "${meta}" || die
+        einfo "zfs hook: relabelled META license CDDL -> GPL"
     fi
-
-    # Also create a placeholder next to the source tree so make install that
-    # creates the image directory later will find it if it re-uses S_DIR path.
-    mkdir -p "${S_DIR}/image" 2>/dev/null || true
-    touch "${S_DIR}/image/unwanted_files" 2>/dev/null || true
-    # Source dir (works with Portage's $S or falls back to current dir)
-    local S_DIR="${S:-.}"
-    local META_FILE="${S_DIR}/META"
-
-    # 1) Change META license CDDL -> GPL (with backup)
-    if [ -f "${META_FILE}" ]; then
-        # backup once
-        if [ ! -f "${META_FILE}.bak" ]; then
-            cp -a "${META_FILE}" "${META_FILE}.bak" || true
-        fi
-
-        # only replace if it currently says CDDL
-        if grep -qE '^License:[[:space:]]*CDDL' "${META_FILE}"; then
-            sed -i -E 's/^(License:[[:space:]]*)CDDL/\1GPL/' "${META_FILE}" || true
-            echo "post_src_prepare: updated META license CDDL -> GPL"
-        else
-            echo "post_src_prepare: META license not CDDL (no change)"
-        fi
-    else
-        echo "post_src_prepare: META not found at ${META_FILE} (skipping license change)"
+    if [[ -d ${S}/module ]] && \
+       ! grep -Rq 'MODULE_LICENSE[[:space:]]*(' "${S}/module" 2>/dev/null; then
+        printf '\nMODULE_LICENSE("GPL");\n' >> "${S}/module/zfs/zil.c" || die
+        einfo "zfs hook: appended MODULE_LICENSE to module/zfs/zil.c"
     fi
+}
 
-    # 2) Ensure a MODULE_LICENSE("GPL") exists somewhere in the module tree.
-    #    If no MODULE_LICENSE(...) is found, append to module/zfs/zil.c if present,
-    #    otherwise append to the first .c under module/.
-    if [ -d "${S_DIR}/module" ]; then
-        if ! grep -R --exclude-dir=.git -q "MODULE_LICENSE[[:space:]]*\\(" "${S_DIR}/module" 2>/dev/null; then
-            local TARGET_C="${S_DIR}/module/zfs/zil.c"
-
-            if [ -f "${TARGET_C}" ]; then
-                printf '\n/* Build workaround: declare GPL to satisfy modpost */\nMODULE_LICENSE("GPL");\n' >> "${TARGET_C}" || true
-                echo "post_src_prepare: appended MODULE_LICENSE to ${TARGET_C}"
-            else
-                # fallback: find first C file under module/
-                TARGET_C="$(find "${S_DIR}/module" -type f -name '*.c' | head -n 1 || true)"
-                if [ -n "${TARGET_C}" ]; then
-                    printf '\n/* Build workaround: declare GPL to satisfy modpost */\nMODULE_LICENSE("GPL");\n' >> "${TARGET_C}" || true
-                    echo "post_src_prepare: appended MODULE_LICENSE to ${TARGET_C} (fallback)"
-                else
-                    echo "post_src_prepare: no .c files found under ${S_DIR}/module to append MODULE_LICENSE"
-                fi
-            fi
-        else
-            echo "post_src_prepare: MODULE_LICENSE(...) already present in module/ (no change)"
-        fi
-    else
-        echo "post_src_prepare: module/ directory not found under ${S_DIR} (skipping MODULE_LICENSE append)"
+# 2. With the kernel-only config the PAM bits are never built, but the
+#    ebuild still runs `rm -rv "${ED}/unwanted_files" || die` (the dir it
+#    points --with-pamconfigsdir at). Pre-create it so the rm succeeds.
+#    (The old post_src_prepare guess-the-image-dir hack broke once portage
+#    wiped ${D} at install start; pre_src_install runs after the wipe.)
+pre_src_install() {
+    if has pam ${USE}; then
+        mkdir -p "${ED}" || die
+        touch "${ED}/unwanted_files" || die
     fi
-
-    # done
-    return 0
 }
