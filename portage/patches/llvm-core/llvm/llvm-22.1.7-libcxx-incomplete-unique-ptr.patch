@@ -1,0 +1,29 @@
+libc++ requires std::unique_ptr<T>'s default deleter to see a complete T at
+destructor instantiation time, and -fforce-emit-vtables makes every TU that
+includes DWARFLinkerCompileUnit.h emit CompileUnit's (implicit, inline)
+destructor.  TUs that never include DependencyTracker.h then fail with:
+Move the destructor out of line into the TU that already has the complete
+definition.  Same class of fix as lld-21.1.8-libcxx-incomplete-unique-ptr.
+
+--- a/lib/DWARFLinker/Parallel/DWARFLinkerCompileUnit.h	2026-06-12 06:40:27.263511429 +0100
++++ b/lib/DWARFLinker/Parallel/DWARFLinkerCompileUnit.h	2026-06-12 06:40:27.280352786 +0100
+@@ -94,6 +94,8 @@
+               OffsetToUnitTy UnitFromOffset, dwarf::FormParams Format,
+               llvm::endianness Endianess);
+ 
++  ~CompileUnit();
++
+   /// Returns stage of overall processing.
+   Stage getStage() const { return Stage; }
+ 
+--- a/lib/DWARFLinker/Parallel/DWARFLinkerCompileUnit.cpp	2026-06-12 06:40:27.263562790 +0100
++++ b/lib/DWARFLinker/Parallel/DWARFLinkerCompileUnit.cpp	2026-06-12 06:40:27.280697830 +0100
+@@ -24,6 +24,8 @@
+ using namespace dwarf_linker;
+ using namespace dwarf_linker::parallel;
+ 
++CompileUnit::~CompileUnit() = default;
++
+ CompileUnit::CompileUnit(LinkingGlobalData &GlobalData, unsigned ID,
+                          StringRef ClangModuleName, DWARFFile &File,
+                          OffsetToUnitTy UnitFromOffset,
