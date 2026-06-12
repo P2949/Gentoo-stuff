@@ -1,23 +1,8 @@
 # Per-package python/lua/ruby target overrides.
 # (Targets matching the global PYTHON_TARGETS are intentionally omitted.)
 app-editors/neovim lua_single_target_luajit
-app-eselect/eselect-repository python_single_target_python3_14
-app-text/asciidoc python_single_target_python3_14
-dev-libs/gobject-introspection python_single_target_python3_14
-dev-libs/libratbag python_single_target_python3_14
 dev-lua/lpeg lua_targets_luajit
 dev-lua/luv -lua_single_target_lua5-4 lua_single_target_luajit
 dev-lua/mpack lua_targets_luajit
-dev-python/sqlalchemy python_single_target_python3_13
-dev-python/websockets python_single_target_python3_13
-dev-util/gdbus-codegen python_single_target_python3_14
-dev-util/glib-utils python_single_target_python3_14
-dev-util/gtk-doc python_single_target_python3_13
-dev-util/itstool python_single_target_python3_14
-dev-util/patchutils python_single_target_python3_14
-games-board/pychess python_single_target_python3_13
-games-util/lutris python_single_target_python3_13
-kde-frameworks/ki18n python_single_target_python3_14
-sys-power/switcheroo-control python_single_target_python3_14
 virtual/ruby-ssl ruby_targets_ruby34
 virtual/rubygems ruby_targets_ruby34

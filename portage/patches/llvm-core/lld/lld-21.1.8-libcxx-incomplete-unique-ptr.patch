@@ -1,0 +1,66 @@
+libc++ requires std::unique_ptr<T>'s default deleter to see a complete T at
+destructor instantiation time.  lld 21 has a few ELF classes with inline
+implicit destructors that own forward-declared types, which libstdc++ accepts
+in this build but libc++ rejects.  Move those destructors out-of-line into
+translation units that already include the complete definitions.
+
+--- a/ELF/Config.h
++++ b/ELF/Config.h
+@@ -180,6 +180,7 @@ struct VersionDefinition {
+ class LinkerDriver {
+ public:
+   LinkerDriver(Ctx &ctx);
++  ~LinkerDriver();
+   LinkerDriver(LinkerDriver &) = delete;
+   void linkerMain(ArrayRef<const char *> args);
+   void addFile(StringRef path, bool withLOption);
+@@ -731,6 +732,7 @@ struct Ctx : CommonLinkerContext {
+   uint32_t vernauxNum = 0;
+ 
+   Ctx();
++  ~Ctx();
+ 
+   llvm::raw_fd_ostream openAuxiliaryFile(llvm::StringRef, std::error_code &);
+ 
+--- a/ELF/Driver.cpp
++++ b/ELF/Driver.cpp
+@@ -96,6 +96,8 @@ static void setConfigs(Ctx &ctx, opt::InputArgList &args);
+ 
+ Ctx::Ctx() : driver(*this) {}
+ 
++Ctx::~Ctx() = default;
++
+ llvm::raw_fd_ostream Ctx::openAuxiliaryFile(llvm::StringRef filename,
+                                             std::error_code &ec) {
+   StringRef outputFile = arg.outputFile;
+@@ -647,6 +649,8 @@ constexpr const char *saveTempsValues[] = {
+ 
+ LinkerDriver::LinkerDriver(Ctx &ctx) : ctx(ctx) {}
+ 
++LinkerDriver::~LinkerDriver() = default;
++
+ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
+   ELFOptTable parser;
+ 
+--- a/ELF/InputFiles.h
++++ b/ELF/InputFiles.h
+@@ -320,6 +320,7 @@ template <class ELFT> class ObjFile : public ELFFileBase {
+ class BitcodeFile : public InputFile {
+ public:
+   BitcodeFile(Ctx &, MemoryBufferRef m, StringRef archiveName,
+               uint64_t offsetInArchive, bool lazy);
++  ~BitcodeFile();
+   static bool classof(const InputFile *f) { return f->kind() == BitcodeKind; }
+   void parse();
+   void parseLazy();
+--- a/ELF/InputFiles.cpp
++++ b/ELF/InputFiles.cpp
+@@ -1822,6 +1822,8 @@ BitcodeFile::BitcodeFile(Ctx &ctx, MemoryBufferRef mb, StringRef archiveName,
+   osabi = getOsAbi(t);
+ }
+ 
++BitcodeFile::~BitcodeFile() = default;
++
+ static uint8_t mapVisibility(GlobalValue::VisibilityTypes gvVisibility) {
+   switch (gvVisibility) {
+   switch (t.getArch()) {

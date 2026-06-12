@@ -23,13 +23,14 @@
 #   glibc.conf            default minus the -Wno-* downgrade set
 #   rust-llvm21.conf      dev-lang/rust: pin clang/llvm 21 toolchain
 #   rust-no-lto.conf      conservative RUSTFLAGS/CFLAGS for broken cargo pkgs
+#   no-ccache-only.conf   disable ccache only, without sandbox relaxation
 #   no-ccache.conf        disable ccache (+sandbox relaxation)
 #   no-extra-econf.conf   reset EXTRA_ECONF (--with-rocm) where it breaks
 #   libstdcxx-headers.conf clang with explicit gcc-15 libstdc++ header paths
 #   highway-noavx512.conf gcc + AVX512 disabled (dev-cpp/highway consumers)
 #   include-string.conf   O3 + CXXFLAGS --include string (hyprland)
 #   mount-defines.conf    extra -include/-D defines (xfsprogs)
-#   gimp.conf, nvidia.conf, zfs-kernel.conf: package-specific
+#   gimp.conf, zfs-kernel.conf: package-specific
 #
 # Files in env/<category>/<package> are auto-sourced bashrc hooks
 # (source patching etc.), independent of package.env.

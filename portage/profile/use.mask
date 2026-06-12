@@ -1,0 +1,7 @@
+# Unmask Python 3.15 / 3.15t targets (masked in profiles/base/use.mask
+# while 3.15 is in beta). Migration policy: newest compatible interpreter
+# per package: 3.15t > 3.15 > 3.14t > 3.14 > 3.13.
+-python_targets_python3_15
+-python_single_target_python3_15
+-python_targets_python3_15t
+-python_single_target_python3_15t

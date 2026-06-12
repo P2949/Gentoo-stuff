@@ -6,17 +6,15 @@ dev-lang/python-exec native-symlinks
 dev-lang/rust mrustc-bootstrap abi_x86_32 big-endian rust-analyzer rust-src llvm_targets_BPF rust_sysroots_bpf rust_sysroots_wasm llvm_targets_WebAssembly nightly
 dev-lang/rust-bin abi_x86_32
 dev-libs/leancrypto abi_x86_32
-dev-util/pahole python_single_target_python3_13
 dev-util/pkgconf native-symlinks
 dev-util/pkgconfig abi_x86_32
 dev-util/spirv-llvm-translator:16 llvm_slot_16
 dev-util/spirv-llvm-translator:20 llvm_slot_20
 dev-util/spirv-llvm-translator:21 llvm_slot_21
-llvm-core/clang python_single_target_python3_14 abi_x86_32
+llvm-core/clang abi_x86_32
 llvm-core/clang-common default-libcxx default-compiler-rt default-lld
 llvm-core/clang-linker-config default-lld
 llvm-core/clang-toolchain-symlinks -gcc-symlinks multilib-symlinks native-symlinks
-llvm-core/clang:16 python_single_target_python3_12
 llvm-core/llvm exegesis xml libedit libffi zstd ncurses xar z3 binutils-plugin abi_x86_32
 llvm-core/llvm-toolchain-symlinks multilib-symlinks native-symlinks
 llvm-runtimes/clang-rtlib-config default-compiler-rt
@@ -26,10 +24,11 @@ llvm-runtimes/clang-unwindlib-config llvm-libunwind default-compiler-rt
 llvm-runtimes/compiler-rt default-compiler-rt
 llvm-runtimes/compiler-rt-sanitizers default-compiler-rt abi_x86_32 profile orc
 llvm-runtimes/offload clang ompt
-llvm-runtimes/openmp gdb-plugin hwloc abi_x86_32 python_single_target_python3_14 ompt offload
-sci-mathematics/z3 python_single_target_python3_13 abi_x86_32
+llvm-runtimes/openmp gdb-plugin hwloc abi_x86_32 ompt offload
+sci-mathematics/z3 abi_x86_32
 sys-devel/binutils pgo
 sys-devel/binutils-config native-symlinks
+sys-devel/gcc -lto
 sys-devel/gcc-config native-symlinks
 sys-devel/gettext abi_x86_32
 sys-libs/libxcrypt abi_x86_32

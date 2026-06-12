@@ -1,0 +1,36 @@
+# Newest compatible Python per package (auto-generated):
+# preference 3.15t > 3.15 > 3.14t > 3.14 > 3.13.
+# Demotions below the newest IUSE happen when dep closure lags;
+# they carry a trailing comment.
+app-editors/vim python_single_target_python3_14
+app-emulation/protontricks python_single_target_python3_14
+app-eselect/eselect-repository python_single_target_python3_14
+app-misc/pax-utils python_single_target_python3_14
+app-text/asciidoc python_single_target_python3_14
+dev-debug/gdb python_single_target_python3_14
+dev-libs/gobject-introspection python_single_target_python3_14
+dev-libs/imath python_single_target_python3_14
+dev-libs/libratbag python_single_target_python3_14
+dev-util/gdbus-codegen python_single_target_python3_14
+dev-util/glib-utils python_single_target_python3_14
+dev-util/gtk-doc python_single_target_python3_14
+dev-util/itstool python_single_target_python3_14
+dev-util/pahole python_single_target_python3_14
+dev-util/perf python_single_target_python3_14t
+dev-vcs/git python_single_target_python3_14
+games-util/lutris python_single_target_python3_14
+games-util/mangohud python_single_target_python3_14
+kde-frameworks/ki18n python_single_target_python3_14
+llvm-core/clang python_single_target_python3_14
+llvm-runtimes/openmp python_single_target_python3_14
+media-libs/alsa-lib python_single_target_python3_14
+media-libs/mlt python_single_target_python3_15
+media-video/mpv python_single_target_python3_14
+media-video/obs-studio python_single_target_python3_14
+net-misc/rsync python_single_target_python3_14
+sci-mathematics/z3 python_single_target_python3_14
+sys-apps/coolercontrold python_single_target_python3_14
+sys-apps/systemd-utils python_single_target_python3_14
+sys-apps/usbutils python_single_target_python3_14
+sys-libs/libblockdev python_single_target_python3_14
+sys-power/switcheroo-control python_single_target_python3_14

@@ -1,0 +1,5 @@
+# Locally test Python 3.15/3.15t targets ahead of stable keywording.
+-python_targets_python3_15t
+-python_single_target_python3_15t
+-python_targets_python3_15
+-python_single_target_python3_15

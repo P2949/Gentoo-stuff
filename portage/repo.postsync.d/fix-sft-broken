@@ -1,4 +1,10 @@
 #!/bin/bash
 # Remove EAPI 7 ebuilds from sft that break eix cache generation
-[[ "$1" == "sft" ]] && rm -rf /var/db/repos/sft/media-libs/librtprocess/
-rm -rf /var/db/repos/sft/media-libs/librtprocess/
+set -euo pipefail
+
+repo="${1:-}"
+if [[ -n "${repo}" && "${repo}" != "sft" ]]; then
+	exit 0
+fi
+
+rm -rf -- /var/db/repos/sft/media-libs/librtprocess/

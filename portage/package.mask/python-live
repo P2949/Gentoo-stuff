@@ -1,0 +1,4 @@
+# Keep the 3.15 betas, not the live ebuilds (slot-wide ** in
+# package.accept_keywords/python would otherwise select 9999).
+~dev-lang/python-3.15.9999
+~dev-lang/python-0.3.15.9999

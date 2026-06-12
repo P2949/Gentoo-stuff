@@ -1,5 +1,5 @@
 # Toolchain packages. Fallback ladder: see /etc/portage/env/README.
-sys-devel/gcc gcc.conf
+sys-devel/gcc gcc.conf no-ccache-only.conf
 dev-lang/fpc gcc.conf
 sys-libs/glibc glibc.conf
 sys-apps/kmod no-link-libs.conf

@@ -1,0 +1,24 @@
+diff --git a/src/steamcompmgr.cpp b/src/steamcompmgr.cpp
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -103,6 +103,8 @@
+ #include "wlr/types/wlr_pointer_constraints_v1.h"
+ #include "wlr_end.hpp"
+ 
++xwayland_ctx_t::~xwayland_ctx_t() = default;
++
+ #if HAVE_AVIF
+ #include "avif/avif.h"
+ #endif
+diff --git a/src/xwayland_ctx.hpp b/src/xwayland_ctx.hpp
+--- a/src/xwayland_ctx.hpp
++++ b/src/xwayland_ctx.hpp
+@@ -61,6 +61,8 @@
+ 
+ struct xwayland_ctx_t final : public gamescope::IWaitable
+ {
++	~xwayland_ctx_t();
++
+ 	gamescope_xwayland_server_t *xwayland_server;
+ 	Display			*dpy;
+ 

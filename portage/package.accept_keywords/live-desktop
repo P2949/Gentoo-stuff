@@ -1,6 +1,7 @@
 # Live/unkeyworded desktop + kernel-adjacent packages in active use.
 gui-libs/wlroots **
 gui-wm/sway **
+app-text/scdoc **
 gui-wm/niri **
 #gui-wm/hyprland **
 gui-apps/grimshot **

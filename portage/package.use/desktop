@@ -22,7 +22,7 @@ dev-qt/qtmultimedia widgets
 dev-qt/qttools qml
 gnome-base/gsettings-desktop-schemas introspection
 gnome-base/gvfs udisks
-gnome-base/librsvg python_single_target_python3_13 introspection abi_x86_32
+gnome-base/librsvg introspection abi_x86_32
 gui-apps/fuzzel png svg
 gui-apps/waybar tray niri
 gui-libs/gtk X introspection
