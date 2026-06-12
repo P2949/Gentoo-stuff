@@ -1,9 +1,6 @@
-# sys-fs/zfs is repurposed to build the kernel modules (EXTRA_ECONF
-# --with-config=kernel via env/zfs-kernel.conf overrides the ebuild's
-# --with-config=all). Two consequences need hooks:
-#
-# 1. The kernel build refuses CDDL modules against GPL-only symbols:
-#    relabel META and ensure a MODULE_LICENSE("GPL") exists.
+# sys-fs/zfs builds userland + (USE=modules) kernel modules for the
+# running kernel. On the RT-patched cachyos kernel the module build can
+# hit GPL-only symbols, so relabel META and ensure MODULE_LICENSE("GPL").
 post_src_prepare() {
     local meta="${S}/META"
     if [[ -f ${meta} ]] && grep -qE '^License:[[:space:]]*CDDL' "${meta}"; then
@@ -14,17 +11,5 @@ post_src_prepare() {
        ! grep -Rq 'MODULE_LICENSE[[:space:]]*(' "${S}/module" 2>/dev/null; then
         printf '\nMODULE_LICENSE("GPL");\n' >> "${S}/module/zfs/zil.c" || die
         einfo "zfs hook: appended MODULE_LICENSE to module/zfs/zil.c"
-    fi
-}
-
-# 2. With the kernel-only config the PAM bits are never built, but the
-#    ebuild still runs `rm -rv "${ED}/unwanted_files" || die` (the dir it
-#    points --with-pamconfigsdir at). Pre-create it so the rm succeeds.
-#    (The old post_src_prepare guess-the-image-dir hack broke once portage
-#    wiped ${D} at install start; pre_src_install runs after the wipe.)
-pre_src_install() {
-    if has pam ${USE}; then
-        mkdir -p "${ED}" || die
-        touch "${ED}/unwanted_files" || die
     fi
 }

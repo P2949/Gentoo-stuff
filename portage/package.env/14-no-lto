@@ -3,4 +3,3 @@ sys-apps/amdgpu_top no-lto.conf
 sys-kernel/scx no-lto.conf
 sys-kernel/scx-loader no-lto.conf
 sys-apps/lact no-lto.conf no-polly.conf
-sys-fs/zfs no-lto.conf zfs-kernel.conf

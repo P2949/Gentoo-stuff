@@ -2,6 +2,9 @@
 sys-devel/gcc gcc.conf no-ccache-only.conf
 dev-lang/fpc gcc.conf
 sys-libs/glibc glibc.conf
+# linux-mod-r1 forces the kernel's gcc for the whole package, so flags
+# must be GCC-valid:
+sys-fs/zfs gcc.conf
 sys-apps/kmod no-link-libs.conf
 
 # LLVM stack: no Polly when building the compiler itself.
