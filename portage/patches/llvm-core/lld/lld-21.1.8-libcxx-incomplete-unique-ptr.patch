@@ -4,8 +4,8 @@ implicit destructors that own forward-declared types, which libstdc++ accepts
 in this build but libc++ rejects.  Move those destructors out-of-line into
 translation units that already include the complete definitions.
 
---- a/ELF/Config.h
-+++ b/ELF/Config.h
+--- a/lld/ELF/Config.h
++++ b/lld/ELF/Config.h
 @@ -180,6 +180,7 @@ struct VersionDefinition {
  class LinkerDriver {
  public:
@@ -22,8 +22,8 @@ translation units that already include the complete definitions.
  
    llvm::raw_fd_ostream openAuxiliaryFile(llvm::StringRef, std::error_code &);
  
---- a/ELF/Driver.cpp
-+++ b/ELF/Driver.cpp
+--- a/lld/ELF/Driver.cpp
++++ b/lld/ELF/Driver.cpp
 @@ -96,6 +96,8 @@ static void setConfigs(Ctx &ctx, opt::InputArgList &args);
  
  Ctx::Ctx() : driver(*this) {}
@@ -42,8 +42,8 @@ translation units that already include the complete definitions.
  void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
    ELFOptTable parser;
  
---- a/ELF/InputFiles.h
-+++ b/ELF/InputFiles.h
+--- a/lld/ELF/InputFiles.h
++++ b/lld/ELF/InputFiles.h
 @@ -320,6 +320,7 @@ template <class ELFT> class ObjFile : public ELFFileBase {
  class BitcodeFile : public InputFile {
  public:
@@ -53,8 +53,8 @@ translation units that already include the complete definitions.
    static bool classof(const InputFile *f) { return f->kind() == BitcodeKind; }
    void parse();
    void parseLazy();
---- a/ELF/InputFiles.cpp
-+++ b/ELF/InputFiles.cpp
+--- a/lld/ELF/InputFiles.cpp
++++ b/lld/ELF/InputFiles.cpp
 @@ -1822,6 +1822,8 @@ BitcodeFile::BitcodeFile(Ctx &ctx, MemoryBufferRef mb, StringRef archiveName,
    osabi = getOsAbi(t);
  }
