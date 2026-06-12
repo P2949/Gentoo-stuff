@@ -64,3 +64,45 @@ translation units that already include the complete definitions.
  static uint8_t mapVisibility(GlobalValue::VisibilityTypes gvVisibility) {
    switch (gvVisibility) {
    switch (t.getArch()) {
+--- a/lld/MachO/InputFiles.h	2026-06-12 08:02:53.067156769 +0100
++++ b/lld/MachO/InputFiles.h	2026-06-12 08:02:53.115548995 +0100
+@@ -313,6 +313,7 @@
+   explicit BitcodeFile(MemoryBufferRef mb, StringRef archiveName,
+                        uint64_t offsetInArchive, bool lazy = false,
+                        bool forceHidden = false, bool compatArch = true);
++  ~BitcodeFile();
+   static bool classof(const InputFile *f) { return f->kind() == BitcodeKind; }
+   void parse();
+ 
+--- a/lld/MachO/InputFiles.cpp	2026-06-12 08:02:53.067156769 +0100
++++ b/lld/MachO/InputFiles.cpp	2026-06-12 08:02:53.116121390 +0100
+@@ -2366,6 +2366,8 @@
+     parse();
+ }
+ 
++BitcodeFile::~BitcodeFile() = default;
++
+ void BitcodeFile::parse() {
+   // Convert LTO Symbols to LLD Symbols in order to perform resolution. The
+   // "winning" symbol will then be marked as Prevailing at LTO compilation
+--- a/lld/wasm/InputFiles.h	2026-06-12 08:02:53.075156585 +0100
++++ b/lld/wasm/InputFiles.h	2026-06-12 08:02:53.116420560 +0100
+@@ -164,6 +164,7 @@
+ public:
+   BitcodeFile(MemoryBufferRef m, StringRef archiveName,
+               uint64_t offsetInArchive, bool lazy);
++  ~BitcodeFile();
+   static bool classof(const InputFile *f) { return f->kind() == BitcodeKind; }
+ 
+   void parse(StringRef symName);
+--- a/lld/wasm/InputFiles.cpp	2026-06-12 08:02:53.075156585 +0100
++++ b/lld/wasm/InputFiles.cpp	2026-06-12 08:02:53.116717918 +0100
+@@ -870,6 +870,8 @@
+ 
+ bool BitcodeFile::doneLTO = false;
+ 
++BitcodeFile::~BitcodeFile() = default;
++
+ void BitcodeFile::parseLazy() {
+   for (auto [i, irSym] : llvm::enumerate(obj->symbols())) {
+     if (irSym.isUndefined())
