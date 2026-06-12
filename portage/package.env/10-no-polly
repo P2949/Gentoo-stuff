@@ -2,7 +2,8 @@
 app-arch/xz-utils no-polly.conf
 app-misc/openrgb no-polly.conf
 dev-lang/python no-polly.conf
-dev-util/maturin no-polly.conf  # vendored ring/psm .S files: cc1as rejects -mllvm -polly
+# vendored ring/psm .S files: cc1as rejects -mllvm -polly
+dev-util/maturin no-polly.conf
 dev-lang/luajit no-polly.conf
 dev-lang/ruby no-polly.conf
 dev-libs/blake3 no-polly.conf
