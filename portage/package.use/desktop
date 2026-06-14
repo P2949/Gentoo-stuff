@@ -1,4 +1,5 @@
 # Desktop/Wayland/GTK/Qt stack.
+x11-libs/libnotify introspection
 app-accessibility/at-spi2-core introspection abi_x86_32
 app-crypt/gcr gtk
 app-editors/vim -minimal
