@@ -7,6 +7,5 @@ dev-util/perf O2.conf
 media-libs/x264 O2.conf
 net-libs/webkit-gtk O2.conf
 sys-apps/coolercontrold O2.conf
-sys-apps/hwloc O2.conf
 # Last resort tier:
 app-i18n/ibus plain.conf

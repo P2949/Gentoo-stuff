@@ -42,3 +42,15 @@
 - [ ] Record packages promoted back to aggressive default.
 - [ ] Check `/var/cache/binpkgs`.
 - [ ] Clean stale binpkgs only after the system is known-good.
+
+## After Fallback Env Profile Changes
+
+- [ ] Verify no-forced-libs profiles do not use active `FORCED_LIBS`.
+- [ ] Verify libc++ fallback profiles include `${LIB_FLAGS}` in `CXXFLAGS`
+      when they use `${RUNTIME_LINK_FLAGS}` in `LDFLAGS`.
+- [ ] Check `grep -R '^FEATURES=' -n portage/env` and confirm every entry
+      preserves inherited global features.
+- [ ] Check `find portage -name '._cfg*' -print` returns no config-protect
+      residue files.
+- [ ] Check `grep -R '^sys-apps/hwloc' -n portage/package.env` returns one
+      ROCm-aware entry only.

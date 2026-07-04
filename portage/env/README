@@ -55,9 +55,15 @@ Fallback ladder, least to most conservative:
         O3.conf without the vtable/whole-program extras, keeping only plain
         unified LTO where needed.
 
+    O3-thin-lto-no-libs.conf
+        O3 + ThinLTO fallback without explicit FORCED_LIBS. C++ still uses
+        libc++ consistently through CXXFLAGS and RUNTIME_LINK_FLAGS.
+
     no-openmp.conf
-        Removes OpenMP from compile/link flags while keeping the rest of the
-        aggressive stack close to default.
+        Removes OpenMP and explicit FORCED_LIBS while keeping aggressive
+        O3/fast-math/LTO behavior. C++ still uses libc++ consistently
+        through CXXFLAGS and RUNTIME_LINK_FLAGS. Use when -fopenmp causes
+        configure, compile, or link failures.
 
     no-lto.conf
         Turns off LTO, including Rust LTO. Use for packages whose link step
@@ -80,14 +86,17 @@ Fallback ladder, least to most conservative:
         libLLVMTableGen.a.
 
     no-link-libs.conf
-        Keeps the aggressive compile/LTO tier but avoids forcing the extra
-        runtime libraries on the link line.
+        Keeps the aggressive compile/LTO tier but avoids explicit
+        FORCED_LIBS on the link line. C++ still uses libc++ consistently
+        through CXXFLAGS and RUNTIME_LINK_FLAGS.
 
     O2.conf
         Plain O2, native CPU, and libc++ selection. This is a broad fallback.
 
     plain.conf
-        Plain O2, native CPU, and ccache disabled. Treat as the last resort.
+        Plain O2, native CPU, and ccache disabled. Preserves inherited
+        global FEATURES such as buildpkg, binpkg-multi-instance, and
+        collision-protect. Treat as the last resort.
 
 C++ runtime escape hatches:
     clang-libstdcxx.conf
@@ -96,9 +105,10 @@ C++ runtime escape hatches:
         compatibility problems, such as Gamescope atomic shared_ptr issues.
 
     libstdcxx-headers.conf
-        Clang with libstdc++ runtime selection through the active GCC
-        install. Use only for packages that hard-require libstdc++
-        internals.
+        Clang profile with explicit libstdc++ include paths and runtime
+        selection through the active GCC install. Disables ccache only and
+        does not disable sandboxing unless a package-specific reason is
+        proven. Use only for packages that hard-require libstdc++ internals.
 
 ROCm econf policy:
     rocm-extra-econf.conf
@@ -113,9 +123,23 @@ ccache and sandbox policy:
         is not involved.
 
     unsafe-no-ccache-no-sandbox.conf
-        Disable ccache plus sandbox/usersandbox/network-sandbox. This is
-        intentionally invasive. Use only when sandboxing itself is known to
-        break the build, and document why in package.env.
+        Disable ccache plus sandbox/usersandbox/network-sandbox only. This
+        is intentionally invasive but still preserves inherited global
+        FEATURES such as buildpkg, binpkg-multi-instance, and
+        collision-protect. Use only when sandboxing itself is known to break
+        the build, and document why in package.env.
+
+FEATURES policy:
+    Fallback env files must not replace FEATURES from scratch unless the
+    file is explicitly intended to define a full alternate Portage behavior.
+
+    Prefer additive/removal style:
+        FEATURES="${FEATURES} -ccache"
+
+    This preserves global rollback and safety behavior:
+        buildpkg
+        binpkg-multi-instance
+        collision-protect or protect-owned
 
 Local-only hooks:
     zfs-cachyos-rt-local-license-hack.conf
