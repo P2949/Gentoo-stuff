@@ -1,0 +1,14 @@
+--- a/openmp/device/src/State.cpp
++++ b/openmp/device/src/State.cpp
+@@ -381,8 +381,9 @@ int omp_get_num_places(void) { return 0; }
+ 
+ int omp_get_place_num_procs(int) { return omp_get_num_procs(); }
+ 
+-void omp_get_place_proc_ids(int, int *) {
+-  // TODO
++void omp_get_place_proc_ids(int, int *Ids) {
++  if (Ids)
++    Ids[0] = 0;
+ }
+ 
+ int omp_get_place_num(void) { return 0; }

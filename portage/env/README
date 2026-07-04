@@ -1,36 +1,186 @@
-# /etc/portage/env — per-package fallback ladder
-#
-# The default flags in make.conf are the most aggressive tier. When a
-# package fails to build or misbehaves, demote it ONE step at a time via
-# /etc/portage/package.env. Changing to a more conservative tier is the
-# last resort — first check whether the failure has a non-flag cause.
-#
-# Fallback ladder (least → most conservative):
-#   (default)             make.conf: -Ofast + Polly + ThinLTO + unified-LTO
-#                         + libc++ link set
-#   no-polly.conf         default minus Polly/alignment        (1st fallback)
-#   thin-lto-only.conf    default minus unified-LTO extras (vtable opts)
-#   O3.conf               -O3 instead of -Ofast, no Polly, full LTO
-#   O3-no-vtables.conf    O3.conf minus the vtable/unified extras
-#   no-openmp.conf        -Ofast, no Polly/OpenMP/lib forcing, full LTO
-#   no-lto.conf           default flags but LTO off (incl. Rust LTO)
-#   no-link-libs.conf     default LTO but without the -l* lib forcing
-#   O2.conf               plain -O2 -march=native + libc++ link set
-#   plain.conf            plain -O2 -march=native, no ccache (true last resort)
-#
-# Toolchain / special-purpose:
-#   gcc.conf              build with GCC instead of clang (GCC-valid flags)
-#   glibc.conf            default minus the -Wno-* downgrade set
-#   rust-llvm21.conf      dev-lang/rust: pin clang/llvm 21 toolchain
-#   rust-no-lto.conf      conservative RUSTFLAGS/CFLAGS for broken cargo pkgs
-#   no-ccache-only.conf   disable ccache only, without sandbox relaxation
-#   no-ccache.conf        disable ccache (+sandbox relaxation)
-#   no-extra-econf.conf   reset EXTRA_ECONF (--with-rocm) where it breaks
-#   libstdcxx-headers.conf clang with explicit gcc-15 libstdc++ header paths
-#   highway-noavx512.conf gcc + AVX512 disabled (dev-cpp/highway consumers)
-#   include-string.conf   O3 + CXXFLAGS --include string (hyprland)
-#   mount-defines.conf    extra -include/-D defines (xfsprogs)
-#   gimp.conf, zfs-kernel.conf: package-specific
-#
-# Files in env/<category>/<package> are auto-sourced bashrc hooks
-# (source patching etc.), independent of package.env.
+# /etc/portage/env per-package fallback ladder
+
+Default policy:
+    Packages first build with the most aggressive global tier in make.conf:
+    clang/lld, libc++ by default, Polly, OpenMP, ThinLTO, unified LTO,
+    whole-program vtables, -O3, -ffast-math, and the forced runtime link
+    libraries in LDFLAGS only.
+
+    If a package fails, demote one risky axis at a time so the cause remains
+    diagnosable. Do not globally remove fast-math, Polly, LTO, OpenMP,
+    libc++, -Bsymbolic, or bleeding-edge language targets merely because
+    they are risky. They are the experiment.
+
+Demotion rule:
+    Prefer the narrowest fallback that explains the failure.
+    Do not demote to plain.conf unless less conservative tiers have failed
+    or the package is known to be hostile to the aggressive toolchain.
+
+Promotion rule:
+    After LLVM/Clang, libc++, Python, Ruby, ROCm, or major package updates,
+    retry a few demoted packages. Remove stale package.env demotions when the
+    current toolchain can build the package at a more aggressive tier again.
+
+Fallback ladder, least to most conservative:
+    default
+        make.conf aggressive tier: Polly + OpenMP + ThinLTO + unified LTO +
+        vtable optimization + libc++ runtime selection + link-only forced
+        runtime libraries.
+
+    no-polly.conf
+        Removes Polly and branch-target alignment first. Try this when an
+        assembler, compiler, or build system rejects -mllvm/-polly flags.
+
+    no-polly-no-whole-program-vtables.conf
+        Removes Polly and only whole-program vtables while keeping O3,
+        OpenMP, ThinLTO, unified LTO, libc++, and vtable strictness. Use
+        for LLVM/Clang self-build links where whole-program vtables expose
+        a hidden or unexported LLVM destructor. Apply to llvm-core/llvm as
+        the libLLVM.so provider before retrying llvm-core/clang.
+
+    no-unified-lto.conf
+        Keeps Polly, O3, OpenMP, strict vtable pointers, libc++, and plain
+        ThinLTO while removing only unified-LTO extras. Use for mixed C/Rust
+        or other links where lld reports incompatible unified-LTO bitcode.
+
+    thin-lto-only.conf
+        Keeps Polly and ThinLTO but removes unified-LTO and vtable extras.
+        Try this for hidden construction vtable or whole-program-vtable link
+        failures.
+
+    O3.conf
+        Uses an O3 tier without Polly/OpenMP/-fno-plt while keeping full LTO.
+
+    O3-no-vtables.conf
+        O3.conf without the vtable/whole-program extras, keeping only plain
+        unified LTO where needed.
+
+    no-openmp.conf
+        Removes OpenMP from compile/link flags while keeping the rest of the
+        aggressive stack close to default.
+
+    no-lto.conf
+        Turns off LTO, including Rust LTO. Use for packages whose link step
+        fails specifically because of LTO.
+
+    no-lto-no-link-libs.conf
+        Turns off host LTO/unified-LTO decoration while also avoiding the
+        forced -l* runtime library set. Use for device/runtime links that
+        must emit LLVM bitcode themselves, such as the AMDGCN OpenMP device
+        runtime.
+
+    no-polly-no-lto.conf
+        LLVM/Clang self-build fallback. Drops Polly and all compile/link LTO
+        while keeping O3, fast-math, OpenMP, libc++, strict vtable pointers,
+        and the non-LTO aggressive linker tier. Use when clang/libclang's
+        ThinLTO link keeps references to hidden LLVM inline/destructor
+        symbols that libLLVM.so does not export. Apply to llvm-core/llvm
+        too before retrying llvm-core/clang, because clang's early tools
+        link against LLVM static archives such as libLLVMSupport.a and
+        libLLVMTableGen.a.
+
+    no-link-libs.conf
+        Keeps the aggressive compile/LTO tier but avoids forcing the extra
+        runtime libraries on the link line.
+
+    O2.conf
+        Plain O2, native CPU, and libc++ selection. This is a broad fallback.
+
+    plain.conf
+        Plain O2, native CPU, and ccache disabled. Treat as the last resort.
+
+C++ runtime escape hatches:
+    clang-libstdcxx.conf
+        Build with clang/lld while selecting libstdc++ for C++ compilation
+        and linking. Prefer this when libc++ exposes C++ library or ABI
+        compatibility problems, such as Gamescope atomic shared_ptr issues.
+
+    libstdcxx-headers.conf
+        Clang with libstdc++ runtime selection through the active GCC
+        install. Use only for packages that hard-require libstdc++
+        internals.
+
+ROCm econf policy:
+    rocm-extra-econf.conf
+        Opt-in --with-rocm=/usr/lib64 for autotools packages that actually
+        consume it. Do not set this globally; unrelated configure scripts may
+        reject unknown options. Apply through package.env only for selected
+        packages such as sys-apps/hwloc.
+
+ccache and sandbox policy:
+    no-ccache-only.conf
+        Disable ccache only. Use this when ccache breaks a build but sandbox
+        is not involved.
+
+    unsafe-no-ccache-no-sandbox.conf
+        Disable ccache plus sandbox/usersandbox/network-sandbox. This is
+        intentionally invasive. Use only when sandboxing itself is known to
+        break the build, and document why in package.env.
+
+Local-only hooks:
+    zfs-cachyos-rt-local-license-hack.conf
+        Points sys-fs/zfs at the local-only bashrc hook below.
+
+    sys-fs/zfs-cachyos-rt-local-license-hack
+        LOCAL-ONLY CachyOS RT/preempt ZFS license metadata hack. This is not
+        a clean upstream ZFS fix and must not be treated as redistributable
+        packaging guidance.
+
+Other package-specific profiles:
+    gcc.conf
+        Build with GCC-valid flags instead of clang flags.
+
+    glibc.conf
+        Default-ish flags without the global warning downgrade set.
+
+    rust-llvm21.conf
+        dev-lang/rust pin to clang/LLVM 21 tooling.
+
+    rust-no-lto.conf
+        Conservative RUSTFLAGS/CFLAGS for broken cargo packages.
+
+    highway-noavx512.conf
+        O3/native with AVX512 disabled for dev-cpp/highway consumers.
+
+    include-string.conf
+        O3 plus CXXFLAGS --include string for packages missing an include.
+
+    mount-defines.conf
+        Extra include/define handling for xfsprogs mount API fallout.
+
+    gimp.conf
+        Package-specific GIMP fallback.
+
+Diagnostic quick map:
+    If assembler rejects -mllvm:
+        try no-polly.conf first.
+
+    If C++ libc++ symbols, headers, or ABI assumptions fail:
+        try clang-libstdcxx.conf or libstdcxx-headers.conf.
+
+    If LTO link fails:
+        if the package is LLVM/Clang itself, try
+        no-polly-no-whole-program-vtables.conf first on llvm-core/llvm and
+        llvm-core/clang. If the same hidden LLVM destructor remains in
+        libclang's ThinLTO link, apply no-polly-no-lto.conf to both
+        llvm-core/llvm and llvm-core/clang before broadening further.
+        try thin-lto-only.conf, then no-lto.conf.
+
+    If OpenMP runtime/linking causes configure or link failures:
+        try no-openmp.conf.
+
+    If configure rejects global econf arguments:
+        remove the global econf use and apply rocm-extra-econf.conf only to
+        packages that need it.
+
+    If ccache breaks build but sandbox does not:
+        use no-ccache-only.conf.
+
+    If sandbox itself breaks build:
+        use unsafe-no-ccache-no-sandbox.conf and document why.
+
+Hook files:
+    Files in env/<category>/<package-or-local-hook-name> are bashrc-style
+    hooks with functions such as post_src_prepare. They are separate from
+    package.env variable profiles. If a package.env entry needs one of these
+    hooks, point PORTAGE_BASHRC at the hook from a small .conf file.

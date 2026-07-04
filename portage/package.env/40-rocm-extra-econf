@@ -1,0 +1,2 @@
+# Apply only where configure actually needs --with-rocm.
+sys-apps/hwloc O2.conf rocm-extra-econf.conf

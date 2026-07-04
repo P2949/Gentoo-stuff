@@ -6,7 +6,11 @@ media-gfx/imagemagick thin-lto-only.conf
 dev-util/rocm-smi thin-lto-only.conf
 gui-apps/xwayland-satellite thin-lto-only.conf
 gui-wm/niri thin-lto-only.conf
+media-libs/libmediainfo thin-lto-only.conf
 # aws-lc-sys .S files: cc1as rejects -mllvm -polly
 media-sound/ncspot thin-lto-only.conf no-polly.conf needs-term.conf
 media-video/movit thin-lto-only.conf
 sys-libs/ncurses thin-lto-only.conf
+
+# git-2.55.0 WITH_RUST: lld rejects mixed unified/non-unified bitcode.
+dev-vcs/git no-unified-lto.conf

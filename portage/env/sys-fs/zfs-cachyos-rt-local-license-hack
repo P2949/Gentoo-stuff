@@ -1,0 +1,24 @@
+# LOCAL-ONLY HACK.
+#
+# This hook makes ZFS build against the local CachyOS RT/preempt kernel by
+# altering module license metadata seen during the build.
+#
+# This is not a clean upstream ZFS fix.
+# This is not a license conversion.
+# This should not be treated as redistributable packaging guidance.
+#
+# Keep this only for the local machine where the CachyOS RT/preempt kernel
+# otherwise prevents the module from building.
+
+post_src_prepare() {
+    local meta="${S}/META"
+    if [[ -f ${meta} ]] && grep -qE '^License:[[:space:]]*CDDL' "${meta}"; then
+        sed -i -E 's/^(License:[[:space:]]*)CDDL/\1GPL/' "${meta}" || die
+        einfo "zfs local-only hook: relabelled META license CDDL -> GPL"
+    fi
+    if [[ -d ${S}/module ]] && \
+       ! grep -Rq 'MODULE_LICENSE[[:space:]]*(' "${S}/module" 2>/dev/null; then
+        printf '\nMODULE_LICENSE("GPL");\n' >> "${S}/module/zfs/zil.c" || die
+        einfo "zfs local-only hook: appended MODULE_LICENSE to module/zfs/zil.c"
+    fi
+}

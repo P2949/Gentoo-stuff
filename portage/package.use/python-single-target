@@ -2,6 +2,7 @@
 # preference 3.15t > 3.15 > 3.14t > 3.14 > 3.13.
 # Demotions below the newest IUSE happen when dep closure lags;
 # they carry a trailing comment.
+app-admin/ps_mem python_single_target_python3_14
 net-wireless/blueman python_single_target_python3_14
 app-editors/vim python_single_target_python3_14
 app-emulation/protontricks python_single_target_python3_14

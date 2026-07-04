@@ -1,0 +1,25 @@
+libc++ 22 tries to make std::less<T> transparent by converting it to
+std::less<>. LLVM's RDF RegisterRef intentionally deletes operator< and
+routes ordering through a stateful std::less<RegisterRef> specialization
+bound to PhysicalRegisterInfo, so that conversion breaks Hexagon's RDF maps.
+
+Keep this one comparator non-transparent so libc++ uses the stateful
+comparator already stored in the map/set.
+
+--- a/llvm/include/llvm/CodeGen/RDFRegisters.h
++++ b/llvm/include/llvm/CodeGen/RDFRegisters.h
+@@ -367,6 +367,14 @@ private:
+   const llvm::rdf::PhysicalRegisterInfo *PRI;
+ };
+ 
++#if defined(_LIBCPP_VERSION)
++template <>
++struct __make_transparent<llvm::rdf::RegisterRef,
++                          less<llvm::rdf::RegisterRef>> {
++  using type = less<llvm::rdf::RegisterRef>;
++};
++#endif
++
+ } // namespace std
+ 
+ namespace llvm::rdf {

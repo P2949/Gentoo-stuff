@@ -3,15 +3,20 @@ sys-devel/gcc gcc.conf no-ccache-only.conf
 dev-lang/fpc gcc.conf
 sys-libs/glibc glibc.conf
 # linux-mod-r1 forces the kernel's gcc for the whole package, so flags
-# must be GCC-valid:
-sys-fs/zfs gcc.conf
+# must be GCC-valid.
+# LOCAL-ONLY HACK: makes ZFS build against CachyOS RT/preempt kernel by
+# altering module license metadata. Do not treat this as a proper ZFS fix.
+sys-fs/zfs gcc.conf zfs-cachyos-rt-local-license-hack.conf
 sys-apps/kmod no-link-libs.conf
 
-# LLVM stack: no Polly when building the compiler itself.
-llvm-core/llvm no-polly.conf
-llvm-core/clang no-polly.conf
+# LLVM stack: no Polly when building the compiler itself. clang-22.1.8's
+# libclang ThinLTO link exposes hidden LLVM VFS destructors, and clang
+# no-LTO links against LLVM static archives, so the no-LTO fallback must
+# apply to the LLVM/Clang self-build pair.
+llvm-core/llvm no-polly-no-lto.conf
+llvm-core/clang no-polly-no-lto.conf
 llvm-runtimes/openmp no-polly.conf
-llvm-runtimes/openmp-amdgcn-amd-amdhsa no-link-libs.conf
+llvm-runtimes/openmp-amdgcn-amd-amdhsa no-lto-no-link-libs.conf
 
 # Rust stack.
 dev-lang/rust rust-llvm21.conf
