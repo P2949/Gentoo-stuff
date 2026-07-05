@@ -11,6 +11,53 @@ Default policy:
     libc++, -Bsymbolic, or bleeding-edge language targets merely because
     they are risky. They are the experiment.
 
+Global performance expansion policy:
+    This repository applies new performance experiments globally first.
+
+    This repository is global-first by design.
+    Profiles are not promoted after proving safe.
+    Profiles are global until a package proves unsafe.
+
+    BOLT readiness metadata, sample-PGO mapping metadata, section splitting,
+    linker GC/ICF, hidden visibility, optimization remarks, Rust panic=abort,
+    and Rust layout linker flags are default pressure axes.
+
+    Packages that fail are demoted narrowly. Do not remove these axes globally
+    merely because they are risky. They are now part of the experiment.
+
+New global axes:
+    BOLT/profile-layout readiness
+        -gline-tables-only
+        -Wl,--emit-relocs
+        -Wl,--build-id
+
+    Sample-PGO mapping readiness
+        -fdebug-info-for-profiling
+        -funique-internal-linkage-names
+        -fpseudo-probe-for-profiling
+
+    Code-size / i-cache pressure
+        -ffunction-sections
+        -fdata-sections
+        -Wl,--gc-sections
+        -Wl,--icf=safe
+
+    Visibility/internalization pressure
+        -fvisibility=hidden
+        -fvisibility-inlines-hidden for C++
+
+    Optimization remarks
+        -fsave-optimization-record=yaml
+        -fdiagnostics-show-hotness
+
+    Rust expansion
+        -C panic=abort
+        -C debuginfo=1
+        -Clink-arg=-Wl,--emit-relocs
+        -Clink-arg=-Wl,--build-id
+        -Clink-arg=-Wl,--gc-sections
+        -Clink-arg=-Wl,--icf=safe
+
 Demotion rule:
     Prefer the narrowest fallback that explains the failure.
     Do not demote to plain.conf unless less conservative tiers have failed
@@ -26,6 +73,39 @@ Fallback ladder, least to most conservative:
         make.conf aggressive tier: Polly + OpenMP + ThinLTO + unified LTO +
         vtable optimization + libc++ runtime selection + link-only forced
         runtime libraries.
+
+    New global-performance demotions, least to most broad:
+        no-opt-remarks.conf
+            Removes only optimization record output. Try first when packages
+            produce excessive .opt.yaml noise, install unexpected YAML files,
+            or fail because build systems scan generated files.
+
+        no-profile-mapping.conf
+            Removes sample-PGO mapping metadata while keeping BOLT readiness,
+            section splitting, visibility, LTO, Polly, and aggressive defaults.
+
+        no-bolt-ready.conf
+            Removes BOLT readiness compile/link metadata while keeping the
+            rest of the new global performance expansion.
+
+        no-hidden-visibility.conf
+            Removes hidden visibility. Use for shared libraries, plugin hosts,
+            language runtimes, Wine, Qt/GTK stack libraries, and packages with
+            public ABI/export assumptions.
+
+        no-gc-icf.conf
+            Removes linker section GC and identical code folding.
+
+        no-section-splitting.conf
+            Removes function/data section splitting.
+
+        no-pgo-use.conf
+            Prevents automatic use of an available package PGO profile.
+
+        no-global-perf-extras.conf
+            Removes every new global performance-expansion axis while keeping
+            the older aggressive baseline. Use only after narrower demotions
+            fail.
 
     no-polly.conf
         Removes Polly and branch-target alignment first. Try this when an
@@ -208,3 +288,8 @@ Hook files:
     hooks with functions such as post_src_prepare. They are separate from
     package.env variable profiles. If a package.env entry needs one of these
     hooks, point PORTAGE_BASHRC at the hook from a small .conf file.
+
+    /etc/portage/bashrc
+        Global bashrc hook for conditional PGO use-if-available and explicit
+        PGO instrumentation sweeps. The package.env PGO profiles are markers;
+        the profile-exists check and flag appends happen here.

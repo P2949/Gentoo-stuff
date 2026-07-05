@@ -1,0 +1,11 @@
+# Global PGO use-if-available.
+#
+# This applies to every package. It only activates if:
+#
+#   /var/tmp/pgo-profiles/${CATEGORY}/${PN}/merged.profdata
+#
+# exists.
+#
+# Packages with stale or harmful profiles are demoted with no-pgo-use.conf.
+
+*/* pgo-use-if-available.conf

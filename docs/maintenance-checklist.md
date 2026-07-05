@@ -54,3 +54,41 @@
       residue files.
 - [ ] Check `grep -R '^sys-apps/hwloc' -n portage/package.env` returns one
       ROCm-aware entry only.
+
+## After Global Performance Expansion Changes
+
+- [ ] Confirm new performance flags are global in `make.conf`.
+- [ ] Confirm every new global axis has a demotion env file.
+- [ ] Confirm no demotion env file overwrites `FEATURES` from scratch.
+- [ ] Run `bash -n` on every `portage/env/*.conf`.
+- [ ] Run `emerge --info` and verify CFLAGS/CXXFLAGS/LDFLAGS/RUSTFLAGS contain the expected global expansion flags.
+- [ ] Run pretend merges for the first-wave test set:
+      - `app-arch/zstd`
+      - `app-arch/xz-utils`
+      - `sys-apps/coreutils`
+      - `dev-libs/libffi`
+      - `dev-libs/openssl`
+      - `gui-wm/gamescope`
+- [ ] Build the small first-wave test set:
+      - `app-arch/zstd`
+      - `app-arch/xz-utils`
+      - `sys-apps/coreutils`
+- [ ] If a package fails, create the narrowest package.env demotion.
+- [ ] Record the exact failure reason in the package.env comment.
+- [ ] Do not remove global flags from make.conf unless the entire system cannot bootstrap.
+
+## After PGO Profile Changes
+
+- [ ] Confirm `pgo-use-if-available.conf` is applied globally.
+- [ ] Confirm packages without profiles do not fail.
+- [ ] Confirm packages with `/var/tmp/pgo-profiles/<category>/<pn>/merged.profdata` use `-fprofile-use`.
+- [ ] Check stale profile warnings.
+- [ ] Demote stale profiles with `no-pgo-use.conf`, not by disabling global PGO use.
+
+## After BOLT Sweeps
+
+- [ ] Confirm binaries were built with `--emit-relocs`.
+- [ ] Confirm binaries were built with `--build-id`.
+- [ ] Confirm BOLT outputs go to `/opt/bolt-test`, not directly over `/usr`.
+- [ ] Compare BOLT binary against package-managed binary.
+- [ ] Keep original binpkg rollback available.
