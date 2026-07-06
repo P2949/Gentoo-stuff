@@ -1,5 +1,7 @@
 # Media stack: ffmpeg, mpv, pipewire, vulkan, mesa.
-media-fonts/cantarell font_types_otf
+app-arch/brotli python
+dev-python/fonttools woff
+media-fonts/cantarell -binary font_types_otf
 media-gfx/gimp lua_single_target_luajit xpm
 media-libs/babl lcms introspection
 media-libs/freetype harfbuzz abi_x86_32

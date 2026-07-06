@@ -1,6 +1,7 @@
 # Toolchain packages. Fallback ladder: see /etc/portage/env/README.
 sys-devel/gcc gcc.conf no-ccache-only.conf
 dev-lang/fpc gcc.conf
+dev-build/make gcc.conf make-no-discarded-qualifiers-werror.conf
 sys-libs/glibc glibc.conf
 # linux-mod-r1 forces the kernel's gcc for the whole package, so flags
 # must be GCC-valid.

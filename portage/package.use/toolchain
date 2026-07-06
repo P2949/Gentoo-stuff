@@ -19,12 +19,15 @@ llvm-core/llvm exegesis xml libedit libffi zstd ncurses xar z3 binutils-plugin a
 llvm-core/llvm-toolchain-symlinks multilib-symlinks native-symlinks
 llvm-runtimes/clang-rtlib-config default-compiler-rt
 llvm-runtimes/clang-runtime offload openmp default-libcxx default-compiler-rt default-lld sanitize
+llvm-runtimes/clang-runtime:20 -offload
+llvm-runtimes/clang-runtime:21 -offload
+llvm-runtimes/clang-runtime:22 -offload
 llvm-runtimes/clang-stdlib-config default-libcxx
 llvm-runtimes/clang-unwindlib-config llvm-libunwind default-compiler-rt
 llvm-runtimes/compiler-rt default-compiler-rt
 llvm-runtimes/compiler-rt-sanitizers default-compiler-rt abi_x86_32 profile orc
 llvm-runtimes/offload clang ompt
-llvm-runtimes/openmp gdb-plugin hwloc abi_x86_32 ompt offload
+llvm-runtimes/openmp gdb-plugin hwloc abi_x86_32 ompt offload level-zero
 sci-mathematics/z3 abi_x86_32
 sys-devel/binutils pgo
 sys-devel/binutils-config native-symlinks

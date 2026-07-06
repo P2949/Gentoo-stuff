@@ -1,5 +1,10 @@
 # Conservative -O2 (+libc++ link set).
 dev-lang/sassc O2.conf
+app-text/yodl plain.conf
+app-arch/brotli plain.conf
+dev-build/automake plain.conf
+media-libs/glew plain.conf
+dev-libs/xxhash plain.conf
 dev-libs/libsass O2.conf
 dev-qt/qtbase O2.conf
 dev-qt/qtdeclarative O2.conf

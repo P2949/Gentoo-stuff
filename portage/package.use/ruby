@@ -1,5 +1,6 @@
 # Keep ruby 3.4 targets enabled alongside global ruby40.
 dev-ruby/abbrev ruby_targets_ruby34
+dev-ruby/asciidoctor ruby_targets_ruby34
 dev-ruby/base64 ruby_targets_ruby34
 dev-ruby/bigdecimal ruby_targets_ruby34
 dev-ruby/bundler ruby_targets_ruby34

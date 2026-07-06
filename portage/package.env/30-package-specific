@@ -8,6 +8,7 @@ gui-wm/hyprland include-string.conf
 media-gfx/gimp gimp.conf
 dev-tcltk/tix tix-gnu89.conf
 sys-fs/xfsprogs mount-defines.conf
-# Java: ccache and sandboxing break the build; :25 also needs no Polly.
-dev-java/openjdk unsafe-no-ccache-no-sandbox.conf
+dev-util/source-highlight no-hidden-visibility.conf
+# Java: ccache and sandboxing break the build; OpenJDK rejects Polly flags.
+dev-java/openjdk unsafe-no-ccache-no-sandbox.conf no-polly.conf
 dev-java/openjdk:25 no-polly.conf

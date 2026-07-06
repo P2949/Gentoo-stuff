@@ -20,6 +20,7 @@ dev-util/perf libpfm
 dev-util/vulkan-tools cube
 net-libs/libtirpc -static-libs
 net-libs/nodejs npm
+net-misc/chrony html
 net-misc/freerdp server
 net-misc/rsync system-zlib verify-sig
 sys-apps/coolercontrold liquidctl
@@ -27,6 +28,7 @@ sys-apps/dbus X abi_x86_32 -systemd
 sys-apps/hwloc abi_x86_32 rocm
 sys-apps/i2c-tools python
 sys-apps/iproute2 -minimal
+sys-apps/gawk -readline
 sys-apps/pciutils -udev abi_x86_32
 sys-apps/systemd-utils abi_x86_32
 sys-auth/polkit-qt qt6

@@ -5,7 +5,7 @@ app-emulation/wine-vanilla -mingw X udev wow64 custom-cflags v4l -abi_x86_32 ffm
 app-emulation/winetricks gui
 dev-util/mingw64-toolchain default-ucrt
 games-util/mangohud mangoapp X
-games-util/steam-launcher trayicon pulseaudio -steamruntime
+games-util/steam-launcher trayicon pulseaudio steamruntime
 gui-libs/libdecor gtk abi_x86_32
 gui-wm/gamescope libei avif
 media-libs/glfw X
