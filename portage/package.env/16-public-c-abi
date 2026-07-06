@@ -1,0 +1,5 @@
+# Public C ABI libraries/tools: global -fvisibility=hidden hides exported API.
+# libbsd: hidden reallocarray@LIBBSD_0.7 caused Xwayland runtime lookup failure.
+# gpgme: hidden gpgme_* API caused gpgme-tool/gpgme-json link failures.
+dev-libs/libbsd no-hidden-no-forced-libs.conf
+app-crypt/gpgme no-hidden-no-forced-libs.conf
