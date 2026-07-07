@@ -1,4 +1,0 @@
-# gpg fails at runtime with:
-#   undefined symbol: rl_completion_matches
-# readline is a public C ABI library; do not build it with global hidden visibility.
-sys-libs/readline O2.conf
