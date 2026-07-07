@@ -37,7 +37,7 @@ kde-frameworks/prison qml
 kde-frameworks/sonnet qml
 net-libs/libsoup introspection
 net-libs/webkit-gtk introspection
-x11-base/xorg-server xvfb -minimal
+x11-base/xorg-server xvfb -minimal -xorg
 x11-base/xwayland libei
 x11-drivers/xf86-video-intel tools uxa xvmc
 x11-libs/cairo X abi_x86_32

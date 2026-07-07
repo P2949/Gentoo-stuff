@@ -129,3 +129,52 @@
 =dev-libs/json-c-9999
 =net-libs/libssh2-9999
 =dev-libs/oniguruma-9999
+
+# Phase 1: more non-core live ebuilds that already caused build/fetch/install failures.
+=sys-process/numactl-9999
+=sys-apps/texinfo-9999
+=net-print/cups-9999
+=media-libs/libnsgif-9999
+=app-shells/bash-completion-9999
+=app-shells/direnv-9999
+=dev-util/rustup-9999
+=media-gfx/imagemagick-9999
+=sys-apps/earlyoom-9999
+=media-sound/sndio-9999
+=sci-libs/fftw-9999
+=media-libs/libsndfile-9999
+
+# Phase 1: keep Vulkan/SPIR-V userspace tools on releases while LLVM/offload migrates.
+=dev-util/spirv-tools-9999*
+=dev-util/glslang-9999*
+=dev-util/vulkan-tools-9999*
+=media-libs/vulkan-layers-9999*
+=media-libs/libepoxy-9999*
+=media-libs/libaom-9999*
+=x11-libs/libxcvt-9999*
+
+# Phase 1: keep the Vulkan SDK helper stack internally consistent on release versions.
+=dev-util/vulkan-headers-9999
+=dev-util/spirv-headers-9999
+=dev-util/vulkan-utility-libraries-9999
+=dev-util/vulkan-tools-9999
+=media-libs/vulkan-layers-9999
+=dev-util/spirv-tools-9999
+=dev-util/glslang-9999
+
+# Phase 1: no live legacy Xorg DDX drivers.
+=x11-drivers/xf86-video-amdgpu-9999
+=x11-drivers/xf86-video-intel-9999
+=x11-drivers/xf86-video-ati-9999
+=x11-drivers/xf86-video-fbdev-9999
+=x11-drivers/xf86-video-vesa-9999
+=x11-drivers/xf86-input-libinput-9999
+=net-libs/libssh2-9999*
+=x11-base/xorg-drivers-9999*
+
+=x11-base/xorg-server-9999*
+
+# Phase 1: non-core live packages that failed; use releases during migration.
+=dev-util/pahole-9999*
+=media-libs/babl-9999*
+=media-libs/gegl-9999*

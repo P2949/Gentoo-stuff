@@ -14,3 +14,23 @@ net-libs/webkit-gtk O2.conf
 sys-apps/coolercontrold O2.conf
 # Last resort tier:
 app-i18n/ibus plain.conf
+
+# Phase 1: packages that break under global hidden/LTO/OpenMP/WPD flags.
+media-libs/woff2 O2.conf
+media-libs/alsa-lib O2.conf
+dev-scheme/guile O2.conf
+sys-libs/libblockdev O2.conf
+media-libs/zxing-cpp O2.conf
+net-misc/lldpd O2.conf
+
+dev-util/spirv-llvm-translator O2.conf
+dev-util/spirv-tools O2.conf
+dev-util/glslang O2.conf
+
+# Phase 1: Python extension packages leak optimization records into site-packages.
+dev-python/charset-normalizer O2.conf
+dev-python/cffi O2.conf
+
+# Phase 1: release packages that are not worth fighting with global LTO/WPD/OpenMP flags.
+x11-base/xorg-server O2.conf
+dev-libs/libxmlb O2.conf
