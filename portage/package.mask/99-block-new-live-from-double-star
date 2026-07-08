@@ -228,3 +228,6 @@
 =dev-util/pahole-9999*
 =media-libs/babl-9999*
 =media-libs/gegl-9999*
+
+# Phase 1: keep Vulkan loader aligned with the release Vulkan SDK stack.
+=media-libs/vulkan-loader-9999*
