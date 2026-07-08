@@ -34,3 +34,13 @@ dev-python/cffi O2.conf
 # Phase 1: release packages that are not worth fighting with global LTO/WPD/OpenMP flags.
 x11-base/xorg-server O2.conf
 dev-libs/libxmlb O2.conf
+
+# Phase 1: known global-flag casualties.
+x11-base/xorg-server O2.conf
+dev-python/charset-normalizer O2.conf
+dev-python/cffi O2.conf
+
+x11-base/xorg-server O2.conf
+dev-libs/libxmlb O2.conf
+dev-python/charset-normalizer O2.conf
+dev-python/cffi O2.conf
