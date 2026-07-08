@@ -1,1 +1,2 @@
 x11-base/xwayland xwayland-libbsd-overlay-cdefs-fix.conf
+x11-base/xorg-server xwayland-libbsd-overlay-cdefs-fix.conf

@@ -28,8 +28,8 @@ dev-util/spirv-tools O2.conf
 dev-util/glslang O2.conf
 
 # Phase 1: Python extension packages leak optimization records into site-packages.
-dev-python/charset-normalizer O2.conf
-dev-python/cffi O2.conf
+dev-python/charset-normalizer no-opt-remarks.conf
+dev-python/cffi no-opt-remarks.conf
 
 # Phase 1: release packages that are not worth fighting with global LTO/WPD/OpenMP flags.
 x11-base/xorg-server O2.conf
@@ -37,10 +37,14 @@ dev-libs/libxmlb O2.conf
 
 # Phase 1: known global-flag casualties.
 x11-base/xorg-server O2.conf
-dev-python/charset-normalizer O2.conf
-dev-python/cffi O2.conf
+
 
 x11-base/xorg-server O2.conf
 dev-libs/libxmlb O2.conf
-dev-python/charset-normalizer O2.conf
-dev-python/cffi O2.conf
+
+# FFmpeg is a public C ABI library stack; global hidden/LTO/OpenMP/WPD flags break symbol export/linking.
+media-video/ffmpeg O2.conf
+media-libs/x264 O2.conf
+media-libs/SVT-AV1 O2.conf
+media-libs/libaom O2.conf
+media-libs/dav1d O2.conf
