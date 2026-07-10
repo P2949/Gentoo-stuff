@@ -8,7 +8,7 @@
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
-- **Last plan review:** 2026-07-10; the complete plan and all binding prose gates were re-read after the demonstrated Phase 0 recovery boot and Phase 1.1 validation.
+- **Last plan review:** 2026-07-10; the complete 1,820-line plan and all binding prose gates were re-read after completing the Clang IR, Clang sample, GCC, Rust, and Go Phase 1 validation lanes.
 - **Safety gate:** passed on 2026-07-10. Protected binpkg restoration, rollback fixtures, exact `/efi` recovery assets, and an actual `BootCurrent=0004` recovery boot are verified.
 - **Known tool gap:** LLVM 22 provides Clang, LLD, `llvm-profdata`, and `llvm-profgen`, but no installed `llvm-bolt` or `perf2bolt`; Phase 1 cannot pass until this is remedied.
 
@@ -624,39 +624,74 @@ Run it, merge its profiles with `llvm-profdata`, rebuild with:
 
 Verify that:
 
-- raw profiles are written by multiple processes;
-- the merged profile is readable;
-- the final link succeeds with the system ThinLTO setup;
-- profile mismatch diagnostics are visible and not blindly suppressed.
+- [x] raw profiles are written by multiple processes;
+- [x] the merged profile is readable;
+- [x] the final link succeeds with the system ThinLTO setup;
+- [x] profile mismatch diagnostics are visible and not blindly suppressed.
+
+### Phase 1.2 evidence
+
+- The active Clang/LLD/`llvm-profdata` 22.1.8 toolchain built a multi-translation-unit executable and DSO in both generation and use modes while retaining the live ThinLTO/unified-LTO axes. Six concurrent processes produced 12 nonempty `%m-%p.profraw` files across two instrumented module signatures.
+- The merged LLVM IR profile contains 18 functions and has SHA-256 `092e0fbe18323e052de45a1d9bbe5abb75284155220ddeda1009f83a9f06bea0`. The profile-use DSO and executable have SHA-256 `242bb932df23d83b0ec2296cba14dd44950bb2bb0e2faeace1fe1e36c45df4ee` and `3735c1f3f73912cd68316747638c22a25e7d78ec827fa86a1fe25159cb19fda2`; the embedded LLVM LTO section and four cache entries prove the final link used the intended path.
+- A deliberate control-flow mismatch failed with exit 1 and the visible backend-plugin hash-mismatch diagnostic. Repeated runs retained stable command, summary, merged-profile, and final-output identities. The fixture passes `bash -n`, ShellCheck 0.11.0, its evidence checksum manifest, and functional tests.
+- Authoritative evidence is under `/var/lib/gentoo-optimization/reports/phase-1-clang-ir-pgo`; the independently produced superseded run is retained beside it. The capability record is `/var/lib/gentoo-optimization/state/capabilities/clang-ir-pgo.json` (SHA-256 `a809b6353a5ec3558a65ea27a55f406666c5ece921e7e5167a101f8677ad3a8a`).
 
 ## 10.3 Validate sample PGO
 
-- [ ] Build a sample-mapping-ready test binary.
-- [ ] collect `perf.data` with branch stacks;
-- [ ] convert it with `llvm-profgen`;
-- [ ] rebuild with `-fprofile-sample-use` and `-fsample-profile-use-profi`;
-- [ ] verify the profile is not accepted through `-fprofile-use`.
+- [x] Build a sample-mapping-ready test binary.
+- [x] collect `perf.data` with branch stacks;
+- [x] convert it with `llvm-profgen`;
+- [x] rebuild with `-fprofile-sample-use` and `-fsample-profile-use-profi`;
+- [x] verify the profile is not accepted through `-fprofile-use`.
+
+### Phase 1.3 evidence
+
+- A two-translation-unit PIE built with ThinLTO, build ID, emitted relocations, line tables, unique internal names, and pseudo-probe/sample-profile mapping flags. `perf 7.1` recorded `cycles:u` with `-j any,u`; its metadata explicitly reports `BRANCH_STACK` and `USER|ANY`.
+- `llvm-profgen` produced a readable five-function extbinary sample profile with SHA-256 `89a46216b0c6e49fe3f1532776a1d81090a73224f47bd8cf175f76abc11eeb20`. The exact profile-use rebuild accepted both required sample-use flags and produced the same `dad2bb283c577f34` workload checksum as the training binary. Passing that profile to the IR-instrumentation consumer failed with the expected bad-magic diagnostic.
+- The conversion emitted 37 retained diagnostics: `0.32% (59/18414)` of samples crossed function boundaries and `1.19% (219/18414)` had reversed or long ranges across an unconditional jump. This capability result is accepted because exact-binary conversion, profile parsing, profile use, and functional equality passed; these diagnostics remain inputs to the conservative Phase 10 profile-quality threshold rather than being hidden.
+- Authoritative evidence is under `/var/lib/gentoo-optimization/reports/phase-1-clang-sample`; the two prior harness attempts are retained under distinct report directories. The capability record is `/var/lib/gentoo-optimization/state/capabilities/clang-sample-pgo.json` (SHA-256 `1f3b92fd2d932cd2b600a4fa66733eeb88be4b4aa12565dd28ae4402958c5975`).
 
 ## 10.4 Validate GCC PGO separately
 
-- [ ] Build a GCC test program with GCC generation flags.
-- [ ] train it and rebuild with GCC use flags.
-- [ ] verify the profile directory and correction/mismatch behavior.
-- [ ] confirm no LLVM profile file is involved.
+- [x] Build a GCC test program with GCC generation flags.
+- [x] train it and rebuild with GCC use flags.
+- [x] verify the profile directory and correction/mismatch behavior.
+- [x] confirm no LLVM profile file is involved.
+
+### Phase 1.4 evidence
+
+- The exact active `sys-devel/gcc-17.0.9999` compiler built a four-translation-unit PIE/DSO fixture with an absolute GCC-specific profile pool. Six training executions produced four `.gcda` files, each reporting `OBJECT_SUMMARY runs=6`; four IPA profile dumps prove that the use build read edge counts and made profile feedback available.
+- Generation, normal profile-use, and corrected-profile workloads are functionally identical. The original profile pool remained byte-identical across use builds, and the final reviewed use executable/DSO have SHA-256 `5d6024bc6d7e4684fc5441b7ae70127c3151dba7ee41051a1927b68793943ed7` and `8eb0630ca44a71d112cc23d726609e610e3683419dbff29ed04d11422640c661`.
+- A deliberately inconsistent `.gcda` failed without correction and succeeded only with GCC's visible `correcting inconsistent profile data` path. A changed control-flow hash and an empty absolute profile pool each failed with exit 1. `LLVM_PROFILE_FILE` was unset and no `.profraw`, `.profdata`, or `.prof` file participated.
+- The authoritative report is `/var/lib/gentoo-optimization/reports/phase-1-gcc-pgo`; the agent-original and pre-ShellCheck root-review runs remain in separate superseded directories. The reviewed runner passes ShellCheck 0.11.0 and its exact source manifest. Live capability state is `/var/lib/gentoo-optimization/state/capabilities/gcc-pgo.json` (SHA-256 `98385f629ed427d045d1bc636da907ab5839c7949dc24ee96c344b3d6ddcfe9e`).
 
 ## 10.5 Validate Rust PGO
 
-- [ ] Build a small Cargo project with absolute `-Cprofile-generate` path.
-- [ ] use `--target` so build scripts are not instrumented accidentally;
-- [ ] train, merge with compatible `llvm-profdata`, and rebuild using `-Cprofile-use`;
-- [ ] enable missing-function warnings for validation.
+- [x] Build a small Cargo project with absolute `-Cprofile-generate` path.
+- [x] use `--target` so build scripts are not instrumented accidentally;
+- [x] train, merge with compatible `llvm-profdata`, and rebuild using `-Cprofile-use`;
+- [x] enable missing-function warnings for validation.
+
+### Phase 1.5 evidence and binding validator decision
+
+- Active `rustc 1.99.0-nightly` commit `3659db0d3e2cd634c766fcda79ed118eca31a9fd` reports bundled LLVM 22.1.8, which was explicitly paired with `/usr/lib/llvm/22/bin/llvm-profdata`. Cargo received the explicit `x86_64-unknown-linux-gnu` target; recorded invocations prove target crates received the absolute instrumentation/use flags while the host build script received neither.
+- Six concurrent processes produced six distinct `%m-%p.profraw` files. The compatible merger produced a readable 14-function profile with SHA-256 `b310ea88a5db5b8d0e7655c470c0d01f530d8cebfe3517ae9d57b9e8713b3dc3`; the profile-use build was diagnostic-clean and functionally matched the generation build.
+- `-Cllvm-args=-pgo-warn-missing-function` was verified with a feature-changed build that emitted 14 visible missing-function warnings. Critically, this rustc returned success for both that mismatch and a malformed indexed-profile file even with `-Dwarnings`; the exact compatible `llvm-profdata show` rejected the malformed input with exit 1. Therefore Phase 2 must validate Rust indexed profiles externally and fail closed before invoking rustc—compiler exit status alone is not acceptable proof.
+- The complete authoritative report is `/var/lib/gentoo-optimization/reports/phase-1-rust-pgo`; failed attempts 1–4 and superseded passes 5–6 are retained separately. Live capability state is `/var/lib/gentoo-optimization/state/capabilities/rust-pgo.json` (SHA-256 `069a12c2a89383552c5d2c7bb9f65e345824b658d065d70bf9f443e2e6a8d2ad`).
 
 ## 10.6 Validate Go PGO
 
-- [ ] Build a small Go command.
-- [ ] generate a CPU pprof workload profile.
-- [ ] rebuild with an explicit absolute `-pgo=<profile>` path.
-- [ ] verify the build log proves PGO was enabled.
+- [x] Build a small Go command.
+- [x] generate a CPU pprof workload profile.
+- [x] rebuild with an explicit absolute `-pgo=<profile>` path.
+- [x] verify the build log proves PGO was enabled.
+
+### Phase 1.6 evidence and binding validator decision
+
+- Active `go1.27-devel_e37f65a2e6` built a dependency-free baseline command and collected a 53-sample CPU pprof profile. The profile's mapping matches baseline GNU build ID `1d50ccfd0a3af949c79e4974722bfda4380309b3`, and the decoded data contains target workload symbols, nonzero function start lines, and reconstructed inline frames.
+- The use build consumed the explicit absolute `-pgo=/tmp/phase-1-go-pgo-20260710T-g4/cpu.pprof` input. Its trace contains the workload package's processed `-pgoprofile` compiler argument and a profile-driven hot-node budget decision; `go version -m` retains the exact absolute PGO build setting. Baseline and use outputs match, and the use binary has SHA-256 `9ef871f3ed66f0fc1943549b32425c7ee7642aaf70e3f9516c4bda83d5bc9eff`.
+- Malformed pprof data failed with exit 1. Critically, a structurally valid profile from the unrelated fixture command was accepted by the compiler with exit 0 even though it contained no target symbols. Phase 2 must therefore validate target symbols, function metadata, and available mapping/build identity evidence before enabling `-pgo`; Go compiler success alone is not profile-relevance proof.
+- The complete authoritative report is `/var/lib/gentoo-optimization/reports/phase-1-go-pgo`; the low-sample failed attempt and superseded passes are retained separately. Live capability state is `/var/lib/gentoo-optimization/state/capabilities/go-pgo.json` (SHA-256 `438e627519df42dfb3fff408635d2b39e49f09a088a0bf3e04d6e73061be5bbf`). Cross-lane root review, ShellCheck, language tests, formatting, and checksum verification are retained in `phase-1-pgo-fixture-root-review.log`.
 
 ## 10.7 Validate BOLT on executable, PIE, and DSO fixtures
 
