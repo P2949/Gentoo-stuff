@@ -6,9 +6,11 @@
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
+- **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
-- **Last plan review:** 2026-07-10; the complete 1,745-line source plan was read before execution began.
+- **Last plan review:** 2026-07-10; the complete plan and all binding prose gates were re-read after initialization.
 - **Safety gate:** no optimization rebuild may start until the Phase 0 rollback path is captured and restoration-tested.
+- **Known tool gap:** LLVM 22 provides Clang, LLD, `llvm-profdata`, and `llvm-profgen`, but no installed `llvm-bolt` or `perf2bolt`; Phase 1 cannot pass until this is remedied.
 
 ## Document purpose
 
@@ -537,22 +539,38 @@ The classifier must examine installed contents rather than relying only on packa
 
 ## 9.2 Capture the live configuration
 
-- [ ] Archive live `/etc/portage` separately from the repository copy.
-- [ ] Record `emerge --info`.
-- [ ] Record `eselect profile show`.
-- [ ] Record `clang --version`, `ld.lld --version`, `llvm-profdata --version`, `llvm-profgen --version`, `llvm-bolt --version`, `perf --version`, `gcc --version`, `rustc -vV`, `cargo -V`, and `go version` where installed.
-- [ ] Record active kernel release and kernel configuration.
-- [ ] Record filesystem free space for `/var/tmp`, `/var/cache`, `/var/lib`, and the binpkg location.
-- [ ] Record current `@world`, custom sets, and installed CPVs.
+- [x] Archive live `/etc/portage` separately from the repository copy.
+- [x] Record `emerge --info`.
+- [x] Record `eselect profile show`.
+- [x] Record `clang --version`, `ld.lld --version`, `llvm-profdata --version`, `llvm-profgen --version`, `llvm-bolt --version`, `perf --version`, `gcc --version`, `rustc -vV`, `cargo -V`, and `go version` where installed. (`llvm-bolt`/`perf2bolt` absence is explicitly recorded.)
+- [x] Record active kernel release and kernel configuration.
+- [x] Record filesystem free space for `/var/tmp`, `/var/cache`, `/var/lib`, and the binpkg location.
+- [x] Record current `@world`, custom sets, and installed CPVs.
 
 ## 9.3 Create known-good recovery artifacts
 
 - [ ] Ensure a bootable rescue environment exists.
 - [ ] Preserve at least one known-good kernel and initramfs entry.
-- [ ] Run a full binary-package backup or `quickpkg` snapshot for installed packages.
-- [ ] Copy critical bootstrap binpkgs to a directory that normal binpkg cleanup will not remove.
-- [ ] Include at least Portage, Python, libc, libgcc/compiler-rt, libunwind, libc++, shell, coreutils, tar, xz, zstd, rsync, OpenRC, PAM, util-linux, grep, sed, awk, findutils, Clang/LLVM, GCC/binutils, and filesystem tools.
-- [ ] Verify restoration of one non-critical package from the snapshot before proceeding.
+- [x] Run a full binary-package backup or `quickpkg` snapshot for installed packages.
+- [x] Copy critical bootstrap binpkgs to a directory that normal binpkg cleanup will not remove.
+- [x] Include at least Portage, Python, libc, libgcc/compiler-rt, libunwind, libc++, shell, coreutils, tar, xz, zstd, rsync, OpenRC, PAM, util-linux, grep, sed, awk, findutils, Clang/LLVM, GCC/binutils, and filesystem tools.
+- [x] Verify restoration of one non-critical package from the snapshot before proceeding.
+
+### Phase 0 evidence and decisions
+
+- Live evidence is rooted at `/var/lib/gentoo-optimization`; caches and recovery artifacts are under `/var/cache/gentoo-optimization`. All persistent/cache directories are root-owned mode `0755`; no profile pool is world-writable.
+- `/etc/portage` is a live symlink to this repository's `portage/` tree. The starting archive is `/var/lib/gentoo-optimization/reports/phase-0-live-etc-portage.tar.zst` with SHA-256 `1f4c812aa2c26e700f4181d3bea550266ec0aa6d4433b41feb318b6d108e4b1f`.
+- The ESP is mounted at `/efi`, not `/boot`. Its starting raw image is `/var/cache/gentoo-optimization/binpkgs/esp-starting-20260710.img.zst` (verified by `zstd -t`, SHA-256 `83b3f46cc843427e9058cbcb07418c5e93ec943a3f176af60eebe75e81a33447`).
+- NVRAM entry `Boot0200` already referenced `7.1.2-cachyos2` `-old` paths, but those files were absent. Exact hash-matching copies now occupy those managed paths; however, installkernel may rotate them and they are not an independent recovery generation. The checkbox remains open until uniquely named, non-managed recovery artifacts and a custom entry have actually booted.
+- The active kernel is `7.1.2-cachyos2`; its recorded config SHA-256 is `cc8c2e2c90cc47720e027c0bf5b7fc8d438a183efa30f15e6bf77c5083ebe6a6` and enables `CONFIG_AUTOFDO_CLANG`, `CONFIG_PROPELLER_CLANG`, and perf events.
+- At capture, `/var/tmp`, `/var/cache`, `/var/lib`, and `PKGDIR=/var/cache/binpkgs` share the root XFS filesystem with 213,653,905,408 bytes available. Existing binpkgs consume 13 GiB and distfiles 40 GiB; later preflight must account for snapshot/profile/BOLT growth.
+- The protected full snapshot is `/var/cache/gentoo-optimization/binpkgs/snapshot-20260710` (root-owned mode `0700`, 7.4 GiB). Its `Packages` index contains exactly 1,181 unique CPVs; set comparison against live `/var/db/pkg` reports zero missing and zero extra CPVs, and `emaint -c binhost` passes. A second archive-level verifier checked all 1,181 indexed outer GPKG manifests, hashes, sizes, and embedded `image.tar.zst` streams with zero missing, extra, unindexed, or failed records. Its machine-readable evidence is `phase-0-binpkg-payload-verification.json` (SHA-256 `3a64e7ded1deb7c00f05bd75f1bc9c8471159f0774b7d663966cf377d74f09d7`). Configuration files were deliberately excluded from quickpkg and are covered separately by configuration archives.
+- The durable critical recovery copy is `/var/lib/gentoo-optimization/recovery/binpkgs/critical-20260710` (root-owned mode `0700`), created with XFS copy-on-write reflinks and exposed through the root-owned `critical-current` link. It is outside normal Portage/cache cleanup scope, has the same clean 1,181-record index, and currently retains the complete snapshot rather than a narrow subset. Verification explicitly found all 58 installed CPVs spanning the required bootstrap/toolchain/filesystem package families; no required CPV was absent. Evidence is in `phase-0-critical-binpkg-verification.log` and `phase-0-persistent-critical-binpkgs.log`.
+- `app-admin/ps_mem-3.14-r1` was actually reinstalled from the protected snapshot with `--usepkgonly --getbinpkg=n --nodeps`; Portage reported one binary reinstall and zero downloads. `equery check` passed all 16 files both before and after, and the restored command's smoke test passed. Evidence is in `phase-0-binpkg-restore-pretend.log` and `phase-0-binpkg-restore-test.log`.
+- Root-only, checksum-tested starting archives of `/etc`, `/lib/modules/7.1.2-cachyos2`, and `/efi/EFI/Gentoo` are under `/var/lib/gentoo-optimization/recovery/boot`; see `phase-0-config-modules-efi-archives.log`.
+- A uniquely named, non-managed recovery generation now exists at `/efi/EFI/Gentoo/recovery/pgo-known-good-20260710`. Custom entry `Boot0004` (`Gentoo PGO Known Good 20260710`) references its preserved kernel and initramfs; custom BootOrder-neutral entry `Boot0005` (`Gentoo PGO Rescue Shell 20260710`) references the same verified assets and adds `rd.break=pre-mount`. The original `BootOrder` remained `01FF,0004,0200,0000,0007,0006,0001,0002,0003` after creating the rescue entry. Manifests are under `/var/lib/gentoo-optimization/recovery`; preview and execution evidence is in the timestamped `reports/recovery/rollback-*.log` files. Both recovery checkboxes remain deliberately open until the preserved normal entry has actually booted and the post-boot evidence hook has validated `BootCurrent=0004`, kernel release, and root filesystem.
+- Primary evidence logs: `phase-0-state-layout.log`, `phase-0-portage-archive.log`, `phase-0-system-toolchain-info.log`, `phase-0-absolute-toolchain-versions.log`, `phase-0-active-kernel-config.log`, `phase-0-filesystem-capacity.log`, `phase-0-efi-boot-entries.log`, `phase-0-esp-image-backup.log`, and `phase-0-known-good-kernel-preservation.log` in `/var/lib/gentoo-optimization/reports`, plus starting world/set/CPV records in `/var/lib/gentoo-optimization/inventory`.
+- Full snapshot construction and coverage evidence is in `phase-0-full-quickpkg-snapshot.log` and `phase-0-full-snapshot-coverage.log`.
 
 ## 9.4 Establish a rollback command file
 

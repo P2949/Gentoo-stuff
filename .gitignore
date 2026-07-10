@@ -1,2 +1,5 @@
 # Gentoo config-protect residue files.
 ._cfg*
+*plan.md*
+/.vscode/
+/.mypy_cache/
