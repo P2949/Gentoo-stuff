@@ -80,7 +80,11 @@ EOF
 cat >"${TOOLS}/rc-status" <<'EOF'
 #!/usr/bin/env bash
 if [[ ${1-} == --crashed ]]; then
-    [[ -z ${FIXTURE_CRASHED_SERVICE:-} ]] || printf '%s\n' "${FIXTURE_CRASHED_SERVICE}"
+    if [[ -n ${FIXTURE_CRASHED_SERVICE:-} ]]; then
+        printf '%s\n' "${FIXTURE_CRASHED_SERVICE}"
+        exit 0
+    fi
+    exit 1
 else
     printf 'Runlevel: default\n networking [ started ]\n local [ started ]\n'
 fi

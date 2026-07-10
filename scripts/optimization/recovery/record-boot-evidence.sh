@@ -660,21 +660,22 @@ capture_mounts() {
 }
 
 capture_openrc() {
-    local rc_status crashed_output
+    local rc_status crashed_output crashed_rc=0
     if ! rc_status=$(tool_path rc-status); then
         missing_tool rc_status_all rc-status required
         missing_tool rc_status_crashed rc-status required
         return
     fi
     record_command rc_status_all required "${rc_status}" --all || true
-    record_command rc_status_crashed required "${rc_status}" --crashed || true
+    # OpenRC uses exit status 1 with no output to mean that the crashed set is
+    # empty.  Preserve the raw status, but do not turn that documented clean
+    # result into a probe failure.
+    record_command rc_status_crashed optional "${rc_status}" --crashed || crashed_rc=$?
     crashed_output=${WORK_DIR}/rc_status_crashed.out
-    # OpenRC's --crashed mode emits one plain service name per line and emits
-    # no output when the set is empty.  Do not look for the decorated
-    # "[ crashed ]" form used by other rc-status modes; that would turn real
-    # live crashes into a false pass.
     if [[ -s ${crashed_output} ]] && grep -Eq '[^[:space:]]' "${crashed_output}"; then
         add_failure validation openrc_crashed_services 'rc-status --crashed reported at least one crashed service'
+    elif ((crashed_rc != 0 && crashed_rc != 1)); then
+        add_failure probe rc_status_crashed_failed "exit status ${crashed_rc}"
     fi
 }
 

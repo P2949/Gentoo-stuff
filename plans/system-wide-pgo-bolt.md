@@ -2,14 +2,14 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 recovery and evidence foundation in progress.
+- **Project state:** active; Phase 0 is complete and Phase 1 capability validation is in progress.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
-- **Last plan review:** 2026-07-10; the complete plan and all binding prose gates were re-read after initialization.
-- **Safety gate:** no optimization rebuild may start until the Phase 0 rollback path is captured and restoration-tested.
+- **Last plan review:** 2026-07-10; the complete plan and all binding prose gates were re-read after the demonstrated Phase 0 recovery boot and Phase 1.1 validation.
+- **Safety gate:** passed on 2026-07-10. Protected binpkg restoration, rollback fixtures, exact `/efi` recovery assets, and an actual `BootCurrent=0004` recovery boot are verified.
 - **Known tool gap:** LLVM 22 provides Clang, LLD, `llvm-profdata`, and `llvm-profgen`, but no installed `llvm-bolt` or `perf2bolt`; Phase 1 cannot pass until this is remedied.
 
 ## Document purpose
@@ -549,8 +549,8 @@ The classifier must examine installed contents rather than relying only on packa
 
 ## 9.3 Create known-good recovery artifacts
 
-- [ ] Ensure a bootable rescue environment exists.
-- [ ] Preserve at least one known-good kernel and initramfs entry.
+- [x] Ensure a bootable rescue environment exists.
+- [x] Preserve at least one known-good kernel and initramfs entry.
 - [x] Run a full binary-package backup or `quickpkg` snapshot for installed packages.
 - [x] Copy critical bootstrap binpkgs to a directory that normal binpkg cleanup will not remove.
 - [x] Include at least Portage, Python, libc, libgcc/compiler-rt, libunwind, libc++, shell, coreutils, tar, xz, zstd, rsync, OpenRC, PAM, util-linux, grep, sed, awk, findutils, Clang/LLVM, GCC/binutils, and filesystem tools.
@@ -561,14 +561,17 @@ The classifier must examine installed contents rather than relying only on packa
 - Live evidence is rooted at `/var/lib/gentoo-optimization`; caches and recovery artifacts are under `/var/cache/gentoo-optimization`. All persistent/cache directories are root-owned mode `0755`; no profile pool is world-writable.
 - `/etc/portage` is a live symlink to this repository's `portage/` tree. The starting archive is `/var/lib/gentoo-optimization/reports/phase-0-live-etc-portage.tar.zst` with SHA-256 `1f4c812aa2c26e700f4181d3bea550266ec0aa6d4433b41feb318b6d108e4b1f`.
 - The ESP is mounted at `/efi`, not `/boot`. Its starting raw image is `/var/cache/gentoo-optimization/binpkgs/esp-starting-20260710.img.zst` (verified by `zstd -t`, SHA-256 `83b3f46cc843427e9058cbcb07418c5e93ec943a3f176af60eebe75e81a33447`).
-- NVRAM entry `Boot0200` already referenced `7.1.2-cachyos2` `-old` paths, but those files were absent. Exact hash-matching copies now occupy those managed paths; however, installkernel may rotate them and they are not an independent recovery generation. The checkbox remains open until uniquely named, non-managed recovery artifacts and a custom entry have actually booted.
+- NVRAM entry `Boot0200` originally referenced `7.1.2-cachyos2` `-old` paths that were absent. Exact hash-matching copies now occupy those managed paths, but they remain rotatable and are not the authoritative independent recovery generation; the uniquely named `Boot0004`/`Boot0005` generation below supersedes them.
 - The active kernel is `7.1.2-cachyos2`; its recorded config SHA-256 is `cc8c2e2c90cc47720e027c0bf5b7fc8d438a183efa30f15e6bf77c5083ebe6a6` and enables `CONFIG_AUTOFDO_CLANG`, `CONFIG_PROPELLER_CLANG`, and perf events.
 - At capture, `/var/tmp`, `/var/cache`, `/var/lib`, and `PKGDIR=/var/cache/binpkgs` share the root XFS filesystem with 213,653,905,408 bytes available. Existing binpkgs consume 13 GiB and distfiles 40 GiB; later preflight must account for snapshot/profile/BOLT growth.
 - The protected full snapshot is `/var/cache/gentoo-optimization/binpkgs/snapshot-20260710` (root-owned mode `0700`, 7.4 GiB). Its `Packages` index contains exactly 1,181 unique CPVs; set comparison against live `/var/db/pkg` reports zero missing and zero extra CPVs, and `emaint -c binhost` passes. A second archive-level verifier checked all 1,181 indexed outer GPKG manifests, hashes, sizes, and embedded `image.tar.zst` streams with zero missing, extra, unindexed, or failed records. Its machine-readable evidence is `phase-0-binpkg-payload-verification.json` (SHA-256 `3a64e7ded1deb7c00f05bd75f1bc9c8471159f0774b7d663966cf377d74f09d7`). Configuration files were deliberately excluded from quickpkg and are covered separately by configuration archives.
 - The durable critical recovery copy is `/var/lib/gentoo-optimization/recovery/binpkgs/critical-20260710` (root-owned mode `0700`), created with XFS copy-on-write reflinks and exposed through the root-owned `critical-current` link. It is outside normal Portage/cache cleanup scope, has the same clean 1,181-record index, and currently retains the complete snapshot rather than a narrow subset. Verification explicitly found all 58 installed CPVs spanning the required bootstrap/toolchain/filesystem package families; no required CPV was absent. Evidence is in `phase-0-critical-binpkg-verification.log` and `phase-0-persistent-critical-binpkgs.log`.
 - `app-admin/ps_mem-3.14-r1` was actually reinstalled from the protected snapshot with `--usepkgonly --getbinpkg=n --nodeps`; Portage reported one binary reinstall and zero downloads. `equery check` passed all 16 files both before and after, and the restored command's smoke test passed. Evidence is in `phase-0-binpkg-restore-pretend.log` and `phase-0-binpkg-restore-test.log`.
 - Root-only, checksum-tested starting archives of `/etc`, `/lib/modules/7.1.2-cachyos2`, and `/efi/EFI/Gentoo` are under `/var/lib/gentoo-optimization/recovery/boot`; see `phase-0-config-modules-efi-archives.log`.
-- A uniquely named, non-managed recovery generation now exists at `/efi/EFI/Gentoo/recovery/pgo-known-good-20260710`. Custom entry `Boot0004` (`Gentoo PGO Known Good 20260710`) references its preserved kernel and initramfs; custom BootOrder-neutral entry `Boot0005` (`Gentoo PGO Rescue Shell 20260710`) references the same verified assets and adds `rd.break=pre-mount`. The original `BootOrder` remained `01FF,0004,0200,0000,0007,0006,0001,0002,0003` after creating the rescue entry. Manifests are under `/var/lib/gentoo-optimization/recovery`; preview and execution evidence is in the timestamped `reports/recovery/rollback-*.log` files. Both recovery checkboxes remain deliberately open until the preserved normal entry has actually booted and the post-boot evidence hook has validated `BootCurrent=0004`, kernel release, and root filesystem.
+- A uniquely named, non-managed recovery generation exists at `/efi/EFI/Gentoo/recovery/pgo-known-good-20260710`. Custom entry `Boot0004` (`Gentoo PGO Known Good 20260710`) references its preserved kernel and initramfs; custom BootOrder-neutral entry `Boot0005` (`Gentoo PGO Rescue Shell 20260710`) references the same assets and adds `rd.break=pre-mount`. The rescue entry was created with `--create-only`, so it did not enter `BootOrder`. Both entries use the now-boot-proven kernel/initramfs pair, and `lsinitrd` validates the rescue userspace.
+- `BootNext=0004` was armed and the machine actually rebooted from starting boot ID `6be5e262-683f-449b-83ff-d421e47fcca7` into boot ID `986afeaa-bfac-4815-80a4-9459bf4e080f`. Host-level evidence proves `BootCurrent=0004`, kernel `7.1.2-cachyos2`, root `/dev/nvme0n1p5`, writable XFS root, writable `/efi` on `/dev/nvme0n1p1`, matching kernel/initramfs hashes, clean OpenRC services, and successful Portage/Python/shell/C/C++/network probes. The authoritative pass record is `/var/lib/gentoo-optimization/reports/recovery/boot-evidence/20260710202218-phase0-known-good-recheck-20260710T201800Z-986afeaa-bfac-4815-80a4-9459bf4e080f.log` with zero probe, validation, and total failures.
+- The first automatic post-boot capture is deliberately retained as failed evidence rather than hidden. Every boot identity and asset check passed, but the hook initially treated OpenRC's documented empty-set `rc-status --crashed` exit status 1 as a probe error. The completed marker was archived as `boot-validation-phase0-attempt1.completed`; the hook now accepts only the empty-output status-1 case, still rejects any reported service name, and has regression tests for both outcomes. The installed corrected hook SHA-256 is `14d0d97c650c6375b56b6fe83744f363266551506fba1289f16e2575801ef73b`.
+- `thermald` was removed from the default runlevel after a foreground diagnostic proved that it exits with `Non mobile platform` on this desktop i5-10600K. This is a technically justified service-policy correction, not a hidden boot failure; evidence is `phase-0-thermald-service-remediation.log`.
 - Primary evidence logs: `phase-0-state-layout.log`, `phase-0-portage-archive.log`, `phase-0-system-toolchain-info.log`, `phase-0-absolute-toolchain-versions.log`, `phase-0-active-kernel-config.log`, `phase-0-filesystem-capacity.log`, `phase-0-efi-boot-entries.log`, `phase-0-esp-image-backup.log`, and `phase-0-known-good-kernel-preservation.log` in `/var/lib/gentoo-optimization/reports`, plus starting world/set/CPV records in `/var/lib/gentoo-optimization/inventory`.
 - Full snapshot construction and coverage evidence is in `phase-0-full-quickpkg-snapshot.log` and `phase-0-full-snapshot-coverage.log`.
 
@@ -584,17 +587,26 @@ Create and test a documented recovery sequence that can:
 
 Do not proceed until the rollback path has been tested.
 
+- [x] The documented rollback sequence is implemented and restoration-tested. The fixture suite covers optimization disable/quarantine, exact offline binpkg restore, critical restore, protected `@preserved-rebuild`, distinct initramfs generation with overwrite guards, EFI preservation/rescue creation, and BootNext. The live preflight validated all 1,181 protected records plus the exact `/efi` identities (`rollback-20260710T154705Z-257985.log`); `app-admin/ps_mem-3.14-r1` was actually restored offline from the snapshot; and the independent Boot0004 path was actually booted. Bash syntax, ShellCheck 0.11.0 with zero diagnostics, and the full fixture suite pass with hash-bound evidence in `phase-0-shellcheck.log`, `phase-0-rollback-fixture-tests-after-shellcheck.log`, and `phase-0-boot-evidence-hook-validation-after-reboot.log`.
+
 ---
 
 # 10. Phase 1 — Validate hardware and tool capabilities
 
 ## 10.1 Validate perf branch-stack support
 
-- [ ] Confirm the i5-10600K exposes usable Intel LBR support.
-- [ ] Run a small `perf record -e cycles:u -j any,u` test.
-- [ ] Confirm `perf report` contains branch-stack data.
-- [ ] Confirm kernel permissions permit the required system-wide and user-space profiling.
-- [ ] Record any temporary `perf_event_paranoid` changes and restore policy after profiling.
+- [x] Confirm the i5-10600K exposes usable Intel LBR support.
+- [x] Run a small `perf record -e cycles:u -j any,u` test.
+- [x] Confirm `perf report` contains branch-stack data.
+- [x] Confirm kernel permissions permit the required system-wide and user-space profiling.
+- [x] Record any temporary `perf_event_paranoid` changes and restore policy after profiling.
+
+### Phase 1.1 evidence
+
+- The i5-10600K is Intel family 6 model 165; the CPU PMU reports `pmu_name=skylake` and `branches=32`, and boot diagnostics report `Skylake events, 32-deep LBR`. The active kernel has `CONFIG_PERF_EVENTS=y`.
+- Exact user capture with `perf record -e cycles:u -j any,u` produced 11,443 samples; all 11,443 carried decodable branch stacks, with 366,145 entries and a maximum depth of 32. `perf report` decoded the fixture's `main`/`mix0`–`mix3` branch pairs with zero lost samples.
+- An unprivileged system-wide user-space capture produced 51,673 samples with 1,643,410 decoded branch entries and maximum depth 32, proving the permissions needed for the later `-a -e cycles:u -j any,u` sessions.
+- `perf_event_paranoid=-1` and `kptr_restrict=0` were unchanged before, during, and after validation; no temporary sysctl change occurred. The nonfatal perf metadata/libbpf and absent `/proc/schedstat` warnings did not affect branch capture or decoding. Evidence and checksums are under `/var/lib/gentoo-optimization/reports/phase-1-perf-lbr`; `validation-summary.log` reports `result=PASS`.
 
 ## 10.2 Validate Clang IR-PGO
 
