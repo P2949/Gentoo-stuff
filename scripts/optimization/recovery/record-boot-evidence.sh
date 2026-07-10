@@ -669,7 +669,11 @@ capture_openrc() {
     record_command rc_status_all required "${rc_status}" --all || true
     record_command rc_status_crashed required "${rc_status}" --crashed || true
     crashed_output=${WORK_DIR}/rc_status_crashed.out
-    if [[ -r ${crashed_output} ]] && grep -Eq '\[[[:space:]]*crashed[[:space:]]*\]' "${crashed_output}"; then
+    # OpenRC's --crashed mode emits one plain service name per line and emits
+    # no output when the set is empty.  Do not look for the decorated
+    # "[ crashed ]" form used by other rc-status modes; that would turn real
+    # live crashes into a false pass.
+    if [[ -s ${crashed_output} ]] && grep -Eq '[^[:space:]]' "${crashed_output}"; then
         add_failure validation openrc_crashed_services 'rc-status --crashed reported at least one crashed service'
     fi
 }

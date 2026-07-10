@@ -80,7 +80,7 @@ EOF
 cat >"${TOOLS}/rc-status" <<'EOF'
 #!/usr/bin/env bash
 if [[ ${1-} == --crashed ]]; then
-    printf 'Runlevel: default\n no crashed services\n'
+    [[ -z ${FIXTURE_CRASHED_SERVICE:-} ]] || printf '%s\n' "${FIXTURE_CRASHED_SERVICE}"
 else
     printf 'Runlevel: default\n networking [ started ]\n local [ started ]\n'
 fi
@@ -223,6 +223,18 @@ assert_contains 'exit_status=23' "${probe_evidence}"
 assert_contains 'fixture network probe failure' "${probe_evidence}"
 assert_contains 'probe:network_link_failed:exit status 23' "${probe_evidence}"
 assert_contains 'probe_failure_count=4' "${probe_evidence}"
+
+# OpenRC prints plain service names (not "[ crashed ]") in --crashed mode.
+# A nonempty service list must therefore fail validation.
+CRASHED_MARKER=${MARKERS}/crashed-service.pending
+write_marker "${CRASHED_MARKER}" 0004 7.2.0-fixture /dev/mapper/gentoo-root "${kernel_sha}"
+FIXTURE_CRASHED_SERVICE=thermald "${HOOK}" "${common[@]}" --marker recovery/crashed-service.pending
+assert_contains 'status=completed' "${CRASHED_MARKER}"
+assert_contains 'result_status=failed' "${CRASHED_MARKER}"
+crashed_evidence=$(sed -n 's/^evidence_path=//p' "${CRASHED_MARKER}")
+[[ -f ${crashed_evidence} ]] || fail 'crashed-service evidence was not retained'
+assert_contains 'thermald' "${crashed_evidence}"
+assert_contains 'validation:openrc_crashed_services:' "${crashed_evidence}"
 
 # An unsafe marker is ignored and cannot cause evidence writes.
 UNSAFE_MARKER=${MARKERS}/unsafe.pending
