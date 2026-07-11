@@ -1,8 +1,19 @@
+# shellcheck shell=bash
 ############################################################################
 # /etc/portage/bashrc
 #
 # Bash-only hooks for global-first performance experiments.
 ############################################################################
+
+# Fail closed if any stale package.env assignment attempts to activate the
+# legacy compiler-agnostic PGO paths.  Phase 2 replaces this file with an exact
+# backend/ABI/fingerprint dispatcher; until then no profile mode is permitted.
+if [[ "${PGO_INSTRUMENT:-0}" == "1" || "${PGO_USE_IF_AVAILABLE:-0}" == "1" ]]; then
+    printf '%s\n' \
+        'ERROR: legacy global PGO mode is disabled pending the exact backend-specific implementation' \
+        >&2
+    return 1
+fi
 
 _gentoo_stuff_pgo_profile_base() {
     local category="${CATEGORY:-unknown}"
@@ -25,6 +36,8 @@ _gentoo_stuff_append_flags_once() {
     else
         printf -v "${var_name}" '%s' "${flags}"
     fi
+    # The expanded value is the name populated by printf -v above.
+    # shellcheck disable=SC2163
     export "${var_name}"
 }
 

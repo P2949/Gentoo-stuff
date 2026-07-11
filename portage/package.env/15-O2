@@ -48,6 +48,3 @@ media-libs/x264 O2.conf
 media-libs/SVT-AV1 O2.conf
 media-libs/libaom O2.conf
 media-libs/dav1d O2.conf
-
-media-libs/implot O2.conf
-games-util/gamemode O2.conf

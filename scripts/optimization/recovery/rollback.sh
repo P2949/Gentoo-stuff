@@ -10,11 +10,11 @@ IFS=$'\n\t'
 umask 077
 
 readonly PROGRAM=${0##*/}
-readonly VERSION=1
-readonly DEFAULT_BOOTNUM=0200
-readonly DEFAULT_KERNEL_VERSION=7.1.2-cachyos2
-readonly DEFAULT_KERNEL_SHA256=415428b4ffac67a801b62d316d80864ba58d5c539888e2adc2b9e66004159e3e
-readonly DEFAULT_INITRAMFS_SHA256=3c24514e71ff80bb7a7c5abb4da9f5ff1de0e02a75adbe4892e3ec97e6a7afcf
+readonly VERSION=2
+readonly LEGACY_BOOTNUM=0200
+readonly LEGACY_KERNEL_VERSION=7.1.2-cachyos2
+readonly LEGACY_KERNEL_SHA256=415428b4ffac67a801b62d316d80864ba58d5c539888e2adc2b9e66004159e3e
+readonly LEGACY_INITRAMFS_SHA256=3c24514e71ff80bb7a7c5abb4da9f5ff1de0e02a75adbe4892e3ec97e6a7afcf
 
 DRY_RUN=0
 FIXTURE_MODE=0
@@ -22,6 +22,7 @@ EXECUTE_PRESERVE_BOOT=0
 REGENERATE_INITRAMFS=0
 OVERWRITE_INITRAMFS=0
 OVERWRITE_KNOWN_GOOD=0
+LEGACY_MANAGED_DEFAULT=0
 PORTAGE_ROOT=${RECOVERY_PORTAGE_ROOT:-/}
 STATE_ROOT=${RECOVERY_STATE_ROOT:-}
 CACHE_ROOT=${RECOVERY_CACHE_ROOT:-}
@@ -29,12 +30,13 @@ PKGDIR=${RECOVERY_PKGDIR:-}
 ESP_ROOT=${RECOVERY_ESP_ROOT:-}
 TOOL_ROOT=${RECOVERY_TOOL_ROOT:-}
 LOG_DIR=${RECOVERY_LOG_DIR:-}
-KNOWN_GOOD_BOOTNUM=${RECOVERY_KNOWN_GOOD_BOOTNUM:-${DEFAULT_BOOTNUM}}
-KNOWN_GOOD_KERNEL_VERSION=${RECOVERY_KNOWN_GOOD_KERNEL_VERSION:-${DEFAULT_KERNEL_VERSION}}
+RECOVERY_MANIFEST=${RECOVERY_AUTHORITATIVE_MANIFEST:-}
+KNOWN_GOOD_BOOTNUM=${RECOVERY_KNOWN_GOOD_BOOTNUM:-}
+KNOWN_GOOD_KERNEL_VERSION=${RECOVERY_KNOWN_GOOD_KERNEL_VERSION:-}
 KNOWN_GOOD_KERNEL_IMAGE=${RECOVERY_KNOWN_GOOD_KERNEL_IMAGE:-}
 KNOWN_GOOD_INITRAMFS=${RECOVERY_KNOWN_GOOD_INITRAMFS:-}
-KNOWN_GOOD_KERNEL_SHA256=${RECOVERY_KNOWN_GOOD_KERNEL_SHA256:-${DEFAULT_KERNEL_SHA256}}
-KNOWN_GOOD_INITRAMFS_SHA256=${RECOVERY_KNOWN_GOOD_INITRAMFS_SHA256:-${DEFAULT_INITRAMFS_SHA256}}
+KNOWN_GOOD_KERNEL_SHA256=${RECOVERY_KNOWN_GOOD_KERNEL_SHA256:-}
+KNOWN_GOOD_INITRAMFS_SHA256=${RECOVERY_KNOWN_GOOD_INITRAMFS_SHA256:-}
 INITRAMFS_OUTPUT=${RECOVERY_INITRAMFS_OUTPUT:-}
 CRITICAL_FILE=${RECOVERY_CRITICAL_FILE:-}
 PRESERVE_KERNEL_VERSION=${RECOVERY_PRESERVE_KERNEL_VERSION:-}
@@ -54,8 +56,11 @@ PACKAGES_INDEX=
 ATOM_CPV=
 VALIDATED_ARCHIVE=
 CHECK_FAILURES=0
+RECOVERY_IDENTITY_SOURCE=
+RECOVERY_MANIFEST_SHA256=
 declare -a EXTRA_ASSIGNMENTS=()
 declare -a MICROCODE_IMAGES=()
+declare -a RECOVERY_GCC_ATOMS=(sys-devel/gcc dev-lang/fpc dev-build/make sys-fs/zfs)
 
 usage() {
     cat <<EOF
@@ -74,7 +79,9 @@ Commands:
   bootnext              Verify the known-good EFI entry and arm it with BootNext.
   preserve-boot         Preserve the current kernel assets under a unique,
                         non-managed recovery tag and create a custom EFI entry
-                        at BootOrder index 1. Preview-only unless --execute.
+                        at BootOrder index 1. A loader-compatible authoritative
+                        manifest candidate is emitted for post-boot promotion.
+                        Preview-only unless --execute.
   rescue-entry          Create a BootOrder-neutral EFI rescue entry referencing
                         the existing known-good kernel/initramfs and adding a
                         pre-mount dracut break. Preview-only unless --execute.
@@ -100,7 +107,11 @@ Global options (must precede COMMAND):
   --assignment RELPATH           Additional package.env file to disable.
   --critical-file FILE           Exact atoms to restore instead of every CPV in
                                  the protected Packages index.
-  --known-good-bootnum HEX       EFI boot number (default ${DEFAULT_BOOTNUM}).
+  --recovery-manifest FILE       Root-owned authoritative recovery manifest;
+                                 default STATE_ROOT/recovery/authoritative-known-good.manifest.
+  --legacy-managed-default       Explicitly select the superseded managed
+                                 Boot${LEGACY_BOOTNUM} *-old assets instead of the manifest.
+  --known-good-bootnum HEX       Explicitly override the selected EFI boot number.
   --known-good-kernel VERSION    Preserved kernel version.
   --known-good-kernel-image FILE Preserved EFI kernel path.
   --known-good-initramfs FILE    Preserved initramfs path.
@@ -120,7 +131,9 @@ Global options (must precede COMMAND):
                                  deliberately separate and never the default.
   -h, --help                     Show this help.
 
-The live defaults are specific to the Phase 0 preserved Boot0200 entry on /efi.
+Boot identity defaults are loaded from the root-owned authoritative manifest.
+The managed Boot${LEGACY_BOOTNUM} paths are available only through the explicit
+--legacy-managed-default fallback. All EFI assets are below /efi, not /boot.
 Restore operations use emerge --usepkgonly with remote binhosts, source fetch,
 and source fallback disabled.  All actions emit a timestamp-named log.
 EOF
@@ -180,6 +193,10 @@ while (($#)); do
             OVERWRITE_KNOWN_GOOD=1
             shift
             ;;
+        --legacy-managed-default)
+            LEGACY_MANAGED_DEFAULT=1
+            shift
+            ;;
         --root)
             need_option_value "$@"
             PORTAGE_ROOT=$2
@@ -223,6 +240,11 @@ while (($#)); do
         --critical-file)
             need_option_value "$@"
             CRITICAL_FILE=$2
+            shift 2
+            ;;
+        --recovery-manifest)
+            need_option_value "$@"
+            RECOVERY_MANIFEST=$2
             shift 2
             ;;
         --known-good-bootnum)
@@ -349,6 +371,124 @@ root_path() {
     fi
 }
 
+path_is_within() {
+    local child parent
+    child=$(readlink -m -- "$1") || return 1
+    parent=$(readlink -m -- "$2") || return 1
+    [[ ${child} == "${parent}" || ${child} == "${parent}/"* ]]
+}
+
+command_needs_known_good_identity() {
+    case ${COMMAND} in
+        check|initramfs|bootnext|rescue-entry|all)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+assert_authoritative_manifest_security() {
+    local manifest=$1
+    local recovery_dir mode owner numeric path
+    recovery_dir=${STATE_ROOT}/recovery
+    [[ -d ${recovery_dir} ]] || die "authoritative recovery state directory is absent: ${recovery_dir}"
+    [[ ! -L ${recovery_dir} ]] || die "authoritative recovery state directory may not be a symlink: ${recovery_dir}"
+    [[ -f ${manifest} && -r ${manifest} ]] || die "authoritative recovery manifest is absent or unreadable: ${manifest}"
+    [[ ! -L ${manifest} ]] || die "authoritative recovery manifest may not be a symlink: ${manifest}"
+    path_is_within "${manifest}" "${recovery_dir}" || die "authoritative recovery manifest must remain below ${recovery_dir}"
+    for path in "${recovery_dir}" "${manifest}"; do
+        mode=$(stat -Lc '%a' -- "${path}") || die "cannot stat protected recovery identity path: ${path}"
+        owner=$(stat -Lc '%u' -- "${path}") || die "cannot read owner of protected recovery identity path: ${path}"
+        [[ ${mode} =~ ^[0-7]{3,4}$ ]] || die "invalid protected recovery identity mode ${mode}: ${path}"
+        numeric=$((8#${mode}))
+        (( (numeric & 8#022) == 0 )) || die "recovery identity path is group/world writable: ${path} (mode ${mode})"
+        if [[ ${PORTAGE_ROOT} == / ]] && ((owner != 0)); then
+            die "live recovery identity path is not root-owned: ${path}"
+        fi
+    done
+}
+
+load_authoritative_manifest() {
+    local manifest=$1
+    local line key value line_number=0 required
+    local -A values=()
+    local -A seen=()
+    assert_authoritative_manifest_security "${manifest}"
+    RECOVERY_MANIFEST_SHA256=$(sha256sum -- "${manifest}") || die "cannot hash authoritative recovery manifest"
+    RECOVERY_MANIFEST_SHA256=${RECOVERY_MANIFEST_SHA256%% *}
+    while IFS= read -r line || [[ -n ${line} ]]; do
+        line_number=$((line_number + 1))
+        [[ ${line} != *$'\r'* ]] || die "carriage return in authoritative manifest line ${line_number}"
+        [[ -n ${line} && ${line} != \#* ]] || continue
+        [[ ${line} == *=* ]] || die "malformed authoritative manifest line ${line_number}"
+        key=${line%%=*}
+        value=${line#*=}
+        case ${key} in
+            version|generation_type|bootnum|kernel_version|kernel_image|kernel_sha256|initramfs|initramfs_sha256)
+                ;;
+            *)
+                die "unknown authoritative manifest key '${key}' on line ${line_number}"
+                ;;
+        esac
+        [[ -z ${seen[${key}]:-} ]] || die "duplicate authoritative manifest key: ${key}"
+        [[ -n ${value} ]] || die "empty authoritative manifest value for ${key}"
+        seen["${key}"]=1
+        values["${key}"]=${value}
+    done <"${manifest}"
+    for required in version generation_type bootnum kernel_version kernel_image kernel_sha256 initramfs initramfs_sha256; do
+        [[ -n ${values[${required}]:-} ]] || die "authoritative recovery manifest lacks ${required}"
+    done
+    [[ ${values[version]} == 1 ]] || die "unsupported authoritative recovery manifest version: ${values[version]}"
+    [[ ${values[generation_type]} == independent ]] || die "authoritative recovery manifest is not an independent generation"
+    [[ ${values[bootnum]} =~ ^[0-9A-Fa-f]{4}$ ]] || die "invalid bootnum in authoritative recovery manifest"
+    [[ ${values[kernel_version]} =~ ^[A-Za-z0-9+_.-]+$ ]] || die "invalid kernel_version in authoritative recovery manifest"
+    [[ ${values[kernel_image]} == /* && ${values[initramfs]} == /* ]] || die "authoritative EFI asset paths must be absolute"
+    path_is_within "${values[kernel_image]}" "${ESP_ROOT}/EFI/Gentoo/recovery" || die "authoritative kernel is not below the independent /efi recovery tree"
+    path_is_within "${values[initramfs]}" "${ESP_ROOT}/EFI/Gentoo/recovery" || die "authoritative initramfs is not below the independent /efi recovery tree"
+    [[ ${values[kernel_sha256]} =~ ^[0-9a-fA-F]{64}$ ]] || die "invalid kernel SHA-256 in authoritative recovery manifest"
+    [[ ${values[initramfs_sha256]} =~ ^[0-9a-fA-F]{64}$ ]] || die "invalid initramfs SHA-256 in authoritative recovery manifest"
+
+    KNOWN_GOOD_BOOTNUM=${values[bootnum]}
+    KNOWN_GOOD_KERNEL_VERSION=${values[kernel_version]}
+    KNOWN_GOOD_KERNEL_IMAGE=${values[kernel_image]}
+    KNOWN_GOOD_KERNEL_SHA256=${values[kernel_sha256]}
+    KNOWN_GOOD_INITRAMFS=${values[initramfs]}
+    KNOWN_GOOD_INITRAMFS_SHA256=${values[initramfs_sha256]}
+}
+
+configure_known_good_identity() {
+    local override_bootnum=${KNOWN_GOOD_BOOTNUM}
+    local override_kernel_version=${KNOWN_GOOD_KERNEL_VERSION}
+    local override_kernel_image=${KNOWN_GOOD_KERNEL_IMAGE}
+    local override_initramfs=${KNOWN_GOOD_INITRAMFS}
+    local override_kernel_sha256=${KNOWN_GOOD_KERNEL_SHA256}
+    local override_initramfs_sha256=${KNOWN_GOOD_INITRAMFS_SHA256}
+    if ((LEGACY_MANAGED_DEFAULT)); then
+        KNOWN_GOOD_BOOTNUM=${LEGACY_BOOTNUM}
+        KNOWN_GOOD_KERNEL_VERSION=${LEGACY_KERNEL_VERSION}
+        KNOWN_GOOD_KERNEL_IMAGE=${ESP_ROOT}/EFI/Gentoo/vmlinuz-${LEGACY_KERNEL_VERSION}-old.efi
+        KNOWN_GOOD_INITRAMFS=${ESP_ROOT}/EFI/Gentoo/initramfs-${LEGACY_KERNEL_VERSION}.img.old
+        KNOWN_GOOD_KERNEL_SHA256=${LEGACY_KERNEL_SHA256}
+        KNOWN_GOOD_INITRAMFS_SHA256=${LEGACY_INITRAMFS_SHA256}
+        RECOVERY_IDENTITY_SOURCE=explicit-legacy-managed-Boot${LEGACY_BOOTNUM}
+    else
+        if [[ -z ${RECOVERY_MANIFEST} ]]; then
+            RECOVERY_MANIFEST=${STATE_ROOT}/recovery/authoritative-known-good.manifest
+        fi
+        RECOVERY_MANIFEST=$(normalize_absolute "${RECOVERY_MANIFEST}" "authoritative recovery manifest")
+        load_authoritative_manifest "${RECOVERY_MANIFEST}"
+        RECOVERY_IDENTITY_SOURCE=manifest:${RECOVERY_MANIFEST}
+    fi
+    [[ -z ${override_bootnum} ]] || KNOWN_GOOD_BOOTNUM=${override_bootnum}
+    [[ -z ${override_kernel_version} ]] || KNOWN_GOOD_KERNEL_VERSION=${override_kernel_version}
+    [[ -z ${override_kernel_image} ]] || KNOWN_GOOD_KERNEL_IMAGE=${override_kernel_image}
+    [[ -z ${override_initramfs} ]] || KNOWN_GOOD_INITRAMFS=${override_initramfs}
+    [[ -z ${override_kernel_sha256} ]] || KNOWN_GOOD_KERNEL_SHA256=${override_kernel_sha256}
+    [[ -z ${override_initramfs_sha256} ]] || KNOWN_GOOD_INITRAMFS_SHA256=${override_initramfs_sha256}
+}
+
 PORTAGE_ROOT=$(normalize_absolute "${PORTAGE_ROOT}" "Portage root")
 if [[ -z ${STATE_ROOT} ]]; then
     STATE_ROOT=$(root_path /var/lib/gentoo-optimization)
@@ -373,14 +513,13 @@ if [[ -z ${LOG_DIR} ]]; then
     LOG_DIR=${STATE_ROOT}/reports/recovery
 fi
 LOG_DIR=$(normalize_absolute "${LOG_DIR}" "log directory")
-if [[ -z ${KNOWN_GOOD_KERNEL_IMAGE} ]]; then
-    KNOWN_GOOD_KERNEL_IMAGE=${ESP_ROOT}/EFI/Gentoo/vmlinuz-${KNOWN_GOOD_KERNEL_VERSION}-old.efi
+if command_needs_known_good_identity; then
+    configure_known_good_identity
+    KNOWN_GOOD_KERNEL_IMAGE=$(normalize_absolute "${KNOWN_GOOD_KERNEL_IMAGE}" "known-good kernel image")
+    KNOWN_GOOD_INITRAMFS=$(normalize_absolute "${KNOWN_GOOD_INITRAMFS}" "known-good initramfs")
+elif ((LEGACY_MANAGED_DEFAULT)); then
+    die "recovery identity options are valid only for check, initramfs, bootnext, rescue-entry, or all"
 fi
-if [[ -z ${KNOWN_GOOD_INITRAMFS} ]]; then
-    KNOWN_GOOD_INITRAMFS=${ESP_ROOT}/EFI/Gentoo/initramfs-${KNOWN_GOOD_KERNEL_VERSION}.img.old
-fi
-KNOWN_GOOD_KERNEL_IMAGE=$(normalize_absolute "${KNOWN_GOOD_KERNEL_IMAGE}" "known-good kernel image")
-KNOWN_GOOD_INITRAMFS=$(normalize_absolute "${KNOWN_GOOD_INITRAMFS}" "known-good initramfs")
 if [[ -n ${INITRAMFS_OUTPUT} ]]; then
     INITRAMFS_OUTPUT=$(normalize_absolute "${INITRAMFS_OUTPUT}" "initramfs output")
 fi
@@ -419,14 +558,17 @@ if ((${#MICROCODE_IMAGES[@]})); then
         MICROCODE_IMAGES[index]=$(normalize_absolute "${MICROCODE_IMAGES[index]}" "microcode image")
     done
 fi
-KNOWN_GOOD_BOOTNUM=${KNOWN_GOOD_BOOTNUM#Boot}
-KNOWN_GOOD_BOOTNUM=${KNOWN_GOOD_BOOTNUM^^}
-[[ ${KNOWN_GOOD_BOOTNUM} =~ ^[0-9A-F]{4}$ ]] || die "known-good boot number must be four hexadecimal digits"
-for digest in "${KNOWN_GOOD_KERNEL_SHA256}" "${KNOWN_GOOD_INITRAMFS_SHA256}"; do
-    [[ ${digest} == none || ${digest} =~ ^[0-9a-fA-F]{64}$ ]] || die "expected SHA-256 must be 64 hexadecimal digits or 'none'"
-done
-KNOWN_GOOD_KERNEL_SHA256=${KNOWN_GOOD_KERNEL_SHA256,,}
-KNOWN_GOOD_INITRAMFS_SHA256=${KNOWN_GOOD_INITRAMFS_SHA256,,}
+if command_needs_known_good_identity; then
+    KNOWN_GOOD_BOOTNUM=${KNOWN_GOOD_BOOTNUM#Boot}
+    KNOWN_GOOD_BOOTNUM=${KNOWN_GOOD_BOOTNUM^^}
+    [[ ${KNOWN_GOOD_BOOTNUM} =~ ^[0-9A-F]{4}$ ]] || die "known-good boot number must be four hexadecimal digits"
+    [[ ${KNOWN_GOOD_KERNEL_VERSION} =~ ^[A-Za-z0-9+_.-]+$ ]] || die "invalid known-good kernel version"
+    for digest in "${KNOWN_GOOD_KERNEL_SHA256}" "${KNOWN_GOOD_INITRAMFS_SHA256}"; do
+        [[ ${digest} == none || ${digest} =~ ^[0-9a-fA-F]{64}$ ]] || die "expected SHA-256 must be 64 hexadecimal digits or 'none'"
+    done
+    KNOWN_GOOD_KERNEL_SHA256=${KNOWN_GOOD_KERNEL_SHA256,,}
+    KNOWN_GOOD_INITRAMFS_SHA256=${KNOWN_GOOD_INITRAMFS_SHA256,,}
+fi
 
 is_mutating_command() {
     case ${COMMAND} in
@@ -441,13 +583,6 @@ is_mutating_command() {
             return 1
             ;;
     esac
-}
-
-path_is_within() {
-    local child parent
-    child=$(readlink -m -- "$1") || return 1
-    parent=$(readlink -m -- "$2") || return 1
-    [[ ${child} == "${parent}" || ${child} == "${parent}/"* ]]
 }
 
 require_mutation_authority() {
@@ -483,6 +618,9 @@ init_log() {
     log INFO "${PROGRAM} v${VERSION}: command=${COMMAND} dry_run=${DRY_RUN}"
     log INFO "log=${LOG_FILE}"
     log INFO "portage_root=${PORTAGE_ROOT} state_root=${STATE_ROOT} cache_root=${CACHE_ROOT} pkgdir=${PKGDIR} esp=${ESP_ROOT}"
+    if command_needs_known_good_identity; then
+        log INFO "recovery_identity_source=${RECOVERY_IDENTITY_SOURCE} manifest_sha256=${RECOVERY_MANIFEST_SHA256:-none} bootnum=${KNOWN_GOOD_BOOTNUM} kernel=${KNOWN_GOOD_KERNEL_IMAGE} initramfs=${KNOWN_GOOD_INITRAMFS}"
+    fi
 }
 
 release_lock() {
@@ -667,6 +805,7 @@ optimization_env_content() {
     cat <<'EOF'
 # Managed by scripts/optimization/recovery/rollback.sh.  Do not edit.
 RECOVERY_OPTIMIZATION_DISABLED="1"
+RECOVERY_COMPILER_LANE=""
 PGO_INSTRUMENT="0"
 PGO_DISABLE_USE="1"
 PGO_USE_IF_AVAILABLE="0"
@@ -679,23 +818,30 @@ AUTOFDO_ENABLE="0"
 PROPELLER_ENABLE="0"
 POLLY_FLAGS=""
 AGGRO_OPT_FLAGS=""
+OPT_FLAGS=""
+CLEAN_FLAGS=""
 BOLT_READY_FLAGS=""
+BOLT_READY_LD_FLAGS=""
 PROFILE_MAPPING_FLAGS=""
 SECTION_FLAGS=""
+SECTION_LD_FLAGS=""
 VISIBILITY_FLAGS=""
+CXX_VISIBILITY_FLAGS=""
 OPT_REMARK_FLAGS=""
 VTABLE_OPT_FLAGS=""
+GLOBAL_PERF_FLAGS=""
 LTO_FLAGS=""
 LTO_UNI_FLAGS=""
 UARG_FLAGS=""
 RUNTIME_LINK_FLAGS=""
 LD_OPT_FLAGS=""
+LD_CLEAN_FLAGS=""
 FORCED_LIBS=""
-COMMON_FLAGS="-O2 -pipe"
-CFLAGS="-O2 -pipe"
-CXXFLAGS="-O2 -pipe"
-FCFLAGS="-O2 -pipe"
-FFLAGS="-O2 -pipe"
+COMMON_FLAGS=""
+CFLAGS=""
+CXXFLAGS=""
+FCFLAGS=""
+FFLAGS=""
 LDFLAGS=""
 RUSTFLAGS=""
 RUSTFLAGS_BOOTSTRAP=""
@@ -703,17 +849,108 @@ GOFLAGS=""
 EOF
 }
 
-optimization_assignment_content() {
+recovery_clang_libcxx_env_content() {
     cat <<'EOF'
 # Managed by scripts/optimization/recovery/rollback.sh.  Do not edit.
-*/* recovery/optimization-off.conf
+# Conservative Clang recovery baseline. Keep the installed libc++ ABI and
+# compiler-rt/libunwind/lld runtime policy while dropping all project PGO,
+# BOLT, LTO, Polly, OpenMP, visibility, section-splitting, and remark flags.
+RECOVERY_COMPILER_LANE="clang-libcxx"
+COMMON_FLAGS="-O2 -pipe"
+CFLAGS="${COMMON_FLAGS}"
+CXXFLAGS="${COMMON_FLAGS} -stdlib=libc++"
+FCFLAGS="${COMMON_FLAGS}"
+FFLAGS="${COMMON_FLAGS}"
+LDFLAGS="-fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++"
+CC="clang"
+CXX="clang++"
+CPP="clang-cpp"
+LD="ld.lld"
+AR="llvm-ar"
+NM="llvm-nm"
+RANLIB="llvm-ranlib"
+LIB_FLAGS="-stdlib=libc++"
+RUNTIME_LINK_FLAGS="-fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++"
+GCCLIB_FLAGS=""
 EOF
+}
+
+recovery_gcc_env_content() {
+    cat <<'EOF'
+# Managed by scripts/optimization/recovery/rollback.sh.  Do not edit.
+# Conservative GCC recovery baseline. Use GCC/libstdc++-compatible tools and
+# flags only; no Clang runtime, PGO, BOLT, LTO, or project optimization axes.
+RECOVERY_COMPILER_LANE="gcc-libstdcxx"
+COMMON_FLAGS="-O2 -pipe"
+CFLAGS="${COMMON_FLAGS}"
+CXXFLAGS="${COMMON_FLAGS}"
+FCFLAGS="${COMMON_FLAGS}"
+FFLAGS="${COMMON_FLAGS}"
+LDFLAGS=""
+CC="gcc"
+CXX="g++"
+CPP="gcc -E"
+LD="ld.bfd"
+AR="gcc-ar"
+NM="gcc-nm"
+RANLIB="gcc-ranlib"
+LIB_FLAGS=""
+RUNTIME_LINK_FLAGS=""
+GCCLIB_FLAGS=""
+EOF
+}
+
+optimization_assignment_content() {
+    local atom
+    cat <<'EOF'
+# Managed by scripts/optimization/recovery/rollback.sh.  Do not edit.
+*/* recovery/optimization-off.conf recovery/clang-libcxx.conf
+# Every package assigned to gcc.conf by the live policy is repeated below so
+# it cannot inherit the global Clang recovery lane after the final 99-* file.
+EOF
+    for atom in "${RECOVERY_GCC_ATOMS[@]}"; do
+        printf '%s recovery/gcc.conf\n' "${atom}"
+    done
+}
+
+collect_recovery_gcc_atoms() {
+    local package_env_dir=$1
+    local path atom
+    local -A seen=()
+    local -a discovered=()
+    for atom in "${RECOVERY_GCC_ATOMS[@]}"; do
+        seen["${atom}"]=1
+    done
+    while IFS= read -r -d '' path; do
+        [[ ${path##*/} != 99-recovery-optimization-off ]] || continue
+        while IFS= read -r atom; do
+            [[ -n ${atom} ]] || continue
+            [[ ${atom} != *[[:space:]]* && ${atom} == */* ]] || die "unsafe GCC package.env selector discovered: ${atom}"
+            seen["${atom}"]=1
+        done < <(
+            awk '
+                /^[[:space:]]*#/ || NF < 2 { next }
+                {
+                    for (i=2; i<=NF; i++) {
+                        if ($i == "gcc.conf" || $i ~ /\/gcc[.]conf$/) {
+                            print $1
+                            break
+                        }
+                    }
+                }
+            ' "${path}"
+        )
+    done < <(find "${package_env_dir}" -type f -print0)
+    mapfile -t discovered < <(printf '%s\n' "${!seen[@]}" | LC_ALL=C sort)
+    RECOVERY_GCC_ATOMS=("${discovered[@]}")
+    ((${#RECOVERY_GCC_ATOMS[@]} > 0)) || die "recovery GCC assignment set is empty"
 }
 
 atomic_install_content() {
     local path=$1
     local mode=$2
     local producer=$3
+    local permit_managed_upgrade=${4:-0}
     local directory temp
     directory=${path%/*}
     if ((DRY_RUN)); then
@@ -735,8 +972,16 @@ atomic_install_content() {
             rm -f -- "${temp}"
             return 0
         fi
+        if ((permit_managed_upgrade)) && head -n 1 -- "${path}" | grep -Fxq '# Managed by scripts/optimization/recovery/rollback.sh.  Do not edit.'; then
+            mv -T -- "${temp}" "${path}" || {
+                rm -f -- "${temp}"
+                die "cannot atomically upgrade managed file: ${path}"
+            }
+            log INFO "atomically upgraded prior managed recovery file: ${path}"
+            return 0
+        fi
         rm -f -- "${temp}"
-        die "refusing to overwrite non-matching managed file: ${path}"
+        die "refusing to overwrite non-matching unmanaged file: ${path}"
     fi
     mv -T -- "${temp}" "${path}" || {
         rm -f -- "${temp}"
@@ -798,8 +1043,11 @@ kill_switch_is_active() {
     config_root=$(root_path /etc/portage)
     [[ -f ${STATE_ROOT}/recovery/optimization.disabled ]] || return 1
     [[ -f ${config_root}/env/recovery/optimization-off.conf ]] || return 1
+    [[ -f ${config_root}/env/recovery/clang-libcxx.conf ]] || return 1
+    [[ -f ${config_root}/env/recovery/gcc.conf ]] || return 1
     [[ -f ${config_root}/package.env/99-recovery-optimization-off ]] || return 1
-    grep -Fxq '*/* recovery/optimization-off.conf' "${config_root}/package.env/99-recovery-optimization-off"
+    grep -Fxq '*/* recovery/optimization-off.conf recovery/clang-libcxx.conf' "${config_root}/package.env/99-recovery-optimization-off" &&
+        grep -Fxq 'sys-devel/gcc recovery/gcc.conf' "${config_root}/package.env/99-recovery-optimization-off"
 }
 
 disable_optimization() {
@@ -813,8 +1061,11 @@ disable_optimization() {
     manifest=${STATE_ROOT}/recovery/disabled-${txn}.manifest
     marker=${STATE_ROOT}/recovery/optimization.disabled
 
-    atomic_install_content "${config_root}/env/recovery/optimization-off.conf" 0644 optimization_env_content
-    atomic_install_content "${package_env_dir}/99-recovery-optimization-off" 0644 optimization_assignment_content
+    collect_recovery_gcc_atoms "${package_env_dir}"
+    atomic_install_content "${config_root}/env/recovery/optimization-off.conf" 0644 optimization_env_content 1
+    atomic_install_content "${config_root}/env/recovery/clang-libcxx.conf" 0644 recovery_clang_libcxx_env_content 1
+    atomic_install_content "${config_root}/env/recovery/gcc.conf" 0644 recovery_gcc_env_content 1
+    atomic_install_content "${package_env_dir}/99-recovery-optimization-off" 0644 optimization_assignment_content 1
 
     if ((DRY_RUN)); then
         log INFO "would atomically create kill-switch marker ${marker}"
@@ -930,11 +1181,6 @@ run_preserved_rebuild() {
         'PGO_USE_IF_AVAILABLE=0' \
         'BOLT_CAPTURE=0' \
         'BOLT_DEPLOY=0' \
-        'CFLAGS=-O2 -pipe' \
-        'CXXFLAGS=-O2 -pipe' \
-        'FCFLAGS=-O2 -pipe' \
-        'FFLAGS=-O2 -pipe' \
-        'LDFLAGS=' \
         'RUSTFLAGS=' \
         'GOFLAGS=' \
         "${emerge}" \
@@ -1252,16 +1498,25 @@ verify_new_recovery_entry() {
 write_boot_preservation_manifest() {
     local recovery_dir=$1
     local boot_entry=$2
-    local manifest temp source target digest
+    local manifest temp source target digest bootnum kernel_digest initramfs_digest
     local -a names=(vmlinuz initramfs config System.map)
     local -a sources=("$3" "$4" "$5" "$6")
     local -a targets=("$7" "$8" "$9" "${10}")
+    bootnum=${boot_entry:4:4}
+    [[ ${bootnum} =~ ^[0-9A-Fa-f]{4}$ ]] || die "cannot derive boot number for preservation manifest"
+    bootnum=${bootnum^^}
+    kernel_digest=$(sha256sum -- "${targets[0]}")
+    kernel_digest=${kernel_digest%% *}
+    initramfs_digest=$(sha256sum -- "${targets[1]}")
+    initramfs_digest=${initramfs_digest%% *}
     manifest=${STATE_ROOT}/recovery/boot-${RECOVERY_TAG}.manifest
     mkdir -p -- "${manifest%/*}" || die "cannot create boot recovery state directory"
     temp=$(mktemp "${manifest%/*}/.boot-${RECOVERY_TAG}.XXXXXX") || die "cannot stage boot preservation manifest"
     {
         printf 'version=%s\n' "${VERSION}"
         printf 'created_at=%s\n' "$(timestamp)"
+        printf 'generation_type=independent\n'
+        printf 'bootnum=%s\n' "${bootnum}"
         printf 'kernel_version=%s\n' "${PRESERVE_KERNEL_VERSION}"
         printf 'recovery_tag=%s\n' "${RECOVERY_TAG}"
         printf 'destination=%s\n' "${recovery_dir}"
@@ -1276,11 +1531,50 @@ write_boot_preservation_manifest() {
             printf '%s_target=%s\n' "${names[index]}" "${target}"
             printf '%s_sha256=%s\n' "${names[index]}" "${digest}"
         done
+        printf 'kernel_image=%s\n' "${targets[0]}"
+        printf 'kernel_sha256=%s\n' "${kernel_digest}"
+        printf 'initramfs=%s\n' "${targets[1]}"
+        printf 'initramfs_sha256=%s\n' "${initramfs_digest}"
     } >"${temp}"
     chmod 0600 "${temp}"
     [[ ! -e ${manifest} ]] || die "boot preservation manifest already exists: ${manifest}"
     mv -T -- "${temp}" "${manifest}" || die "cannot publish boot preservation manifest"
     log INFO "boot preservation manifest=${manifest}"
+    write_authoritative_candidate_manifest \
+        "${bootnum}" "${PRESERVE_KERNEL_VERSION}" \
+        "${targets[0]}" "${kernel_digest}" \
+        "${targets[1]}" "${initramfs_digest}"
+}
+
+write_authoritative_candidate_manifest() {
+    local bootnum=$1
+    local kernel_version=$2
+    local kernel_image=$3
+    local kernel_sha256=$4
+    local initramfs=$5
+    local initramfs_sha256=$6
+    local candidate_dir candidate temp authoritative
+    candidate_dir=${STATE_ROOT}/recovery/authoritative-candidates
+    candidate=${candidate_dir}/${RECOVERY_TAG}.manifest
+    authoritative=${STATE_ROOT}/recovery/authoritative-known-good.manifest
+    mkdir -p -- "${candidate_dir}" || die "cannot create authoritative manifest candidate directory"
+    chmod 0700 "${candidate_dir}" || die "cannot protect authoritative manifest candidate directory"
+    temp=$(mktemp "${candidate_dir}/.${RECOVERY_TAG}.XXXXXX") || die "cannot stage authoritative manifest candidate"
+    {
+        printf 'version=1\n'
+        printf 'generation_type=independent\n'
+        printf 'bootnum=%s\n' "${bootnum}"
+        printf 'kernel_version=%s\n' "${kernel_version}"
+        printf 'kernel_image=%s\n' "${kernel_image}"
+        printf 'kernel_sha256=%s\n' "${kernel_sha256}"
+        printf 'initramfs=%s\n' "${initramfs}"
+        printf 'initramfs_sha256=%s\n' "${initramfs_sha256}"
+    } >"${temp}"
+    chmod 0600 "${temp}"
+    [[ ! -e ${candidate} ]] || die "authoritative manifest candidate already exists: ${candidate}"
+    mv -T -- "${temp}" "${candidate}" || die "cannot publish authoritative manifest candidate"
+    log INFO "loader-compatible authoritative manifest candidate=${candidate}"
+    log INFO "after a successful boot through Boot${bootnum}, promote with: install -o root -g root -m 0600 ${candidate} ${authoritative}"
 }
 
 preserve_boot_assets() {

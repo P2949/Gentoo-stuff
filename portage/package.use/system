@@ -1,4 +1,7 @@
 # Base system and miscellaneous.
+gui-wm/hyprland X dbus-session filecaps -guiutils -hyprpm -systemd uwsm
+gui-libs/xdg-desktop-portal-hyprland elogind -systemd
+dev-cpp/muParser -openmp
 app-alternatives/sh dash -bash
 app-arch/xz-utils abi_x86_32 -pgo
 app-containers/snapd forced-devmode -systemd

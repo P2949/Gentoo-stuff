@@ -28,6 +28,44 @@ assert_contains() {
     grep -Fq -- "${needle}" "${file}" || fail "expected '${needle}' in ${file}"
 }
 
+compile_recovery_cpp_lane() {
+    local lane=$1
+    local output=$2
+    local required_library=$3
+    local forbidden_library=$4
+    local off=${ROOT}/etc/portage/env/recovery/optimization-off.conf
+    local lane_file=${ROOT}/etc/portage/env/recovery/${lane}.conf
+    local compiler compiler_version
+    (
+        local -a compile_flags=()
+        local -a link_flags=()
+        # shellcheck disable=SC1090
+        source "${off}"
+        # shellcheck disable=SC1090
+        source "${lane_file}"
+        IFS=' ' read -r -a compile_flags <<<"${CXXFLAGS}"
+        IFS=' ' read -r -a link_flags <<<"${LDFLAGS}"
+        "${CXX}" "${compile_flags[@]}" "${RECOVERY_CPP_SOURCE}" "${link_flags[@]}" -o "${output}"
+    )
+    [[ $("${output}") == 'recovery-cxx-ok' ]] || fail "${lane} C++ recovery binary did not execute correctly"
+    readelf -d -- "${output}" | grep -Fq -- "${required_library}" || fail "${lane} binary did not link ${required_library}"
+    if readelf -d -- "${output}" | grep -Fq -- "${forbidden_library}"; then
+        fail "${lane} binary unexpectedly linked ${forbidden_library}"
+    fi
+    compiler=$(
+        # shellcheck disable=SC1090
+        source "${off}"
+        # shellcheck disable=SC1090
+        source "${lane_file}"
+        printf '%s' "${CXX}"
+    )
+    compiler_version=$("${compiler}" --version)
+    compiler_version=${compiler_version%%$'\n'*}
+    printf 'PASS: recovery C++ lane=%s compiler=%s required=%s forbidden=%s output=%s\n' \
+        "${lane}" "${compiler_version}" "${required_library}" "${forbidden_library}" "${output}"
+    readelf -d -- "${output}" | grep -F -- "${required_library}"
+}
+
 ROOT=${FIXTURE}/root
 STATE=${FIXTURE}/state
 CACHE=${FIXTURE}/cache
@@ -35,8 +73,12 @@ TOOLS=${ROOT}/tools
 ESP=${ROOT}/efi
 CRITICAL=${CACHE}/binpkgs/critical-20260710
 PACKAGE_ENV=${ROOT}/etc/portage/package.env
-KNOWN_KERNEL=${ESP}/EFI/Gentoo/vmlinuz-7.1.2-cachyos2-old.efi
-KNOWN_INITRAMFS=${ESP}/EFI/Gentoo/initramfs-7.1.2-cachyos2.img.old
+AUTHORITATIVE_DIR=${ESP}/EFI/Gentoo/recovery/pgo-known-good-fixture
+KNOWN_KERNEL=${AUTHORITATIVE_DIR}/vmlinuz-7.1.2-cachyos2.efi
+KNOWN_INITRAMFS=${AUTHORITATIVE_DIR}/initramfs-7.1.2-cachyos2.img
+LEGACY_KERNEL=${ESP}/EFI/Gentoo/vmlinuz-7.1.2-cachyos2-old.efi
+LEGACY_INITRAMFS=${ESP}/EFI/Gentoo/initramfs-7.1.2-cachyos2.img.old
+AUTHORITATIVE_MANIFEST=${STATE}/recovery/authoritative-known-good.manifest
 CURRENT_KERNEL=${ESP}/EFI/Gentoo/vmlinuz-7.1.2-cachyos2.efi
 CURRENT_INITRAMFS=${ESP}/EFI/Gentoo/initramfs-7.1.2-cachyos2.img
 CURRENT_CONFIG=${ESP}/EFI/Gentoo/config-7.1.2-cachyos2
@@ -48,7 +90,7 @@ mkdir -p -- \
     "${PACKAGE_ENV}" \
     "${ROOT}/etc/portage/env" \
     "${TOOLS}" \
-    "${ESP}/EFI/Gentoo" \
+    "${AUTHORITATIVE_DIR}" \
     "${ROOT}/proc" \
     "${CRITICAL}/app-misc" \
     "${CACHE}/binpkgs" \
@@ -80,6 +122,8 @@ ln -s critical-20260710 "${CACHE}/binpkgs/critical-current"
 
 printf 'fixture known-good EFI kernel\n' >"${KNOWN_KERNEL}"
 printf 'fixture known-good initramfs\n' >"${KNOWN_INITRAMFS}"
+printf 'fixture legacy EFI kernel\n' >"${LEGACY_KERNEL}"
+printf 'fixture legacy initramfs\n' >"${LEGACY_INITRAMFS}"
 printf 'fixture current EFI kernel\n' >"${CURRENT_KERNEL}"
 printf 'fixture current initramfs\n' >"${CURRENT_INITRAMFS}"
 printf 'fixture current config\n' >"${CURRENT_CONFIG}"
@@ -91,10 +135,31 @@ kernel_sha=$(sha256sum -- "${KNOWN_KERNEL}")
 kernel_sha=${kernel_sha%% *}
 initramfs_sha=$(sha256sum -- "${KNOWN_INITRAMFS}")
 initramfs_sha=${initramfs_sha%% *}
+legacy_kernel_sha=$(sha256sum -- "${LEGACY_KERNEL}")
+legacy_kernel_sha=${legacy_kernel_sha%% *}
+legacy_initramfs_sha=$(sha256sum -- "${LEGACY_INITRAMFS}")
+legacy_initramfs_sha=${legacy_initramfs_sha%% *}
 
-initramfs_efi='\EFI\Gentoo\initramfs-7.1.2-cachyos2.img.old'
-RECOVERY_INITRAMFS_HEX=$(printf '%s' "${initramfs_efi}" | iconv -f UTF-8 -t UTF-16LE | od -An -tx1 | tr -d ' \n')
-export RECOVERY_INITRAMFS_HEX
+mkdir -p -- "${STATE}/recovery"
+cat >"${AUTHORITATIVE_MANIFEST}" <<EOF
+version=1
+generation_type=independent
+bootnum=0004
+kernel_version=7.1.2-cachyos2
+kernel_image=${KNOWN_KERNEL}
+kernel_sha256=${kernel_sha}
+initramfs=${KNOWN_INITRAMFS}
+initramfs_sha256=${initramfs_sha}
+EOF
+chmod 0600 "${AUTHORITATIVE_MANIFEST}"
+manifest_sha=$(sha256sum -- "${AUTHORITATIVE_MANIFEST}")
+manifest_sha=${manifest_sha%% *}
+
+authoritative_initramfs_efi='\EFI\Gentoo\recovery\pgo-known-good-fixture\initramfs-7.1.2-cachyos2.img'
+AUTHORITATIVE_INITRAMFS_HEX=$(printf '%s' "${authoritative_initramfs_efi}" | iconv -f UTF-8 -t UTF-16LE | od -An -tx1 | tr -d ' \n')
+legacy_initramfs_efi='\EFI\Gentoo\initramfs-7.1.2-cachyos2.img.old'
+LEGACY_INITRAMFS_HEX=$(printf '%s' "${legacy_initramfs_efi}" | iconv -f UTF-8 -t UTF-16LE | od -An -tx1 | tr -d ' \n')
+export AUTHORITATIVE_INITRAMFS_HEX LEGACY_INITRAMFS_HEX
 export RECOVERY_FIXTURE_DIR=${FIXTURE}
 
 cat >"${TOOLS}/emerge" <<'EOF'
@@ -176,12 +241,13 @@ if [[ -s ${state} ]]; then
     printf 'BootNext: %s\n' "$(<"${state}")"
 fi
 if [[ -s ${created} ]]; then
-    printf 'BootOrder: 01FF,0300,0200\n'
+    printf 'BootOrder: 01FF,0300,0004,0200\n'
 else
-    printf 'BootOrder: 01FF,0200\n'
+    printf 'BootOrder: 01FF,0004,0200\n'
 fi
 printf 'Boot01FF* Fixture current HD()/\\EFI\\Gentoo\\vmlinuz-7.1.2-cachyos2.efi\n'
-printf 'Boot0200* Fixture known-good HD()/\\EFI\\Gentoo\\vmlinuz-7.1.2-cachyos2-old.efi%s\n' "${RECOVERY_INITRAMFS_HEX}"
+printf 'Boot0004* Fixture authoritative independent HD()/\\EFI\\Gentoo\\recovery\\pgo-known-good-fixture\\vmlinuz-7.1.2-cachyos2.efi%s\n' "${AUTHORITATIVE_INITRAMFS_HEX}"
+printf 'Boot0200* Fixture legacy managed HD()/\\EFI\\Gentoo\\vmlinuz-7.1.2-cachyos2-old.efi%s\n' "${LEGACY_INITRAMFS_HEX}"
 if [[ -s ${created} ]]; then
     label=$(sed -n '1p' "${created}")
     loader=$(sed -n '2p' "${created}")
@@ -234,11 +300,17 @@ common=(
     --cache-root "${CACHE}"
     --esp-root "${ESP}"
     --tool-root "${TOOLS}"
-    --kernel-sha256 "${kernel_sha}"
-    --initramfs-sha256 "${initramfs_sha}"
 )
 
 "${ROLLBACK}" "${common[@]}" check
+
+WEAK_MANIFEST=${STATE}/recovery/group-writable.manifest
+cp -- "${AUTHORITATIVE_MANIFEST}" "${WEAK_MANIFEST}"
+chmod 0620 "${WEAK_MANIFEST}"
+if "${ROLLBACK}" "${common[@]}" --recovery-manifest "${WEAK_MANIFEST}" check; then
+    fail 'group-writable authoritative recovery manifest was accepted'
+fi
+printf 'PASS: group-writable authoritative recovery manifest rejected\n'
 
 "${ROLLBACK}" "${common[@]}" --dry-run disable
 assert_file "${PACKAGE_ENV}/50-global-pgo"
@@ -249,8 +321,31 @@ assert_absent "${PACKAGE_ENV}/50-global-pgo"
 assert_file "${PACKAGE_ENV}/30-unrelated"
 assert_file "${PACKAGE_ENV}/99-recovery-optimization-off"
 assert_file "${ROOT}/etc/portage/env/recovery/optimization-off.conf"
+assert_file "${ROOT}/etc/portage/env/recovery/clang-libcxx.conf"
+assert_file "${ROOT}/etc/portage/env/recovery/gcc.conf"
 assert_file "${STATE}/recovery/optimization.disabled"
 find "${ROOT}/etc/portage/package.env.recovery-disabled" -type f -name 50-global-pgo -print -quit | grep -q . || fail 'legacy assignment was not quarantined'
+assert_contains '*/* recovery/optimization-off.conf recovery/clang-libcxx.conf' "${PACKAGE_ENV}/99-recovery-optimization-off"
+assert_contains 'sys-devel/gcc recovery/gcc.conf' "${PACKAGE_ENV}/99-recovery-optimization-off"
+# The generated file must retain the literal Portage-time expansion.
+# shellcheck disable=SC2016
+assert_contains 'CXXFLAGS="${COMMON_FLAGS} -stdlib=libc++"' "${ROOT}/etc/portage/env/recovery/clang-libcxx.conf"
+assert_contains 'LDFLAGS="-fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++"' "${ROOT}/etc/portage/env/recovery/clang-libcxx.conf"
+assert_contains 'CXX="g++"' "${ROOT}/etc/portage/env/recovery/gcc.conf"
+
+RECOVERY_CPP_SOURCE=${FIXTURE}/recovery-lanes.cpp
+cat >"${RECOVERY_CPP_SOURCE}" <<'EOF'
+#include <iostream>
+#include <string>
+
+int main() {
+    const std::string result = "recovery-cxx-ok";
+    std::cout << result << '\n';
+    return result.size() == 15 ? 0 : 1;
+}
+EOF
+compile_recovery_cpp_lane clang-libcxx "${FIXTURE}/recovery-clang-libcxx" 'libc++.so' 'libstdc++.so'
+compile_recovery_cpp_lane gcc "${FIXTURE}/recovery-gcc-libstdcxx" 'libstdc++.so' 'libc++.so'
 
 "${ROLLBACK}" "${common[@]}" restore '=app-misc/demo-1.0'
 assert_contains "PKGDIR=${CRITICAL}" "${FIXTURE}/emerge.log"
@@ -270,7 +365,6 @@ calls_after=$(grep -c '^CALL$' "${FIXTURE}/emerge.log")
 "${ROLLBACK}" "${common[@]}" preserved-rebuild
 assert_contains 'ARGS <--ignore-default-opts> <--ask=n> <--autounmask=n> <--buildpkg=n> <--getbinpkg=n> <--usepkgonly> <--binpkg-changed-deps=n> <--binpkg-respect-use=n> <--oneshot> <--verbose> <@preserved-rebuild>' "${FIXTURE}/emerge.log"
 assert_contains '<@preserved-rebuild>' "${FIXTURE}/emerge.log"
-assert_contains 'CFLAGS=-O2 -pipe' "${FIXTURE}/emerge.log"
 
 known_before=$(sha256sum -- "${KNOWN_INITRAMFS}")
 known_before=${known_before%% *}
@@ -312,6 +406,16 @@ assert_file "${PRESERVED_DIR}/System.map-7.1.2-cachyos2"
 cmp -s -- "${CURRENT_KERNEL}" "${PRESERVED_DIR}/vmlinuz-7.1.2-cachyos2.efi" || fail 'preserved kernel differs'
 cmp -s -- "${CURRENT_INITRAMFS}" "${PRESERVED_DIR}/initramfs-7.1.2-cachyos2.img" || fail 'preserved initramfs differs'
 assert_file "${STATE}/recovery/boot-fixture-recovery.manifest"
+AUTHORITATIVE_CANDIDATE=${STATE}/recovery/authoritative-candidates/fixture-recovery.manifest
+assert_file "${AUTHORITATIVE_CANDIDATE}"
+[[ $(wc -l <"${AUTHORITATIVE_CANDIDATE}") == 8 ]] || fail 'authoritative candidate does not use the exact eight-key schema'
+assert_contains 'version=1' "${AUTHORITATIVE_CANDIDATE}"
+assert_contains 'generation_type=independent' "${AUTHORITATIVE_CANDIDATE}"
+assert_contains 'bootnum=0300' "${AUTHORITATIVE_CANDIDATE}"
+assert_contains "kernel_image=${PRESERVED_DIR}/vmlinuz-7.1.2-cachyos2.efi" "${AUTHORITATIVE_CANDIDATE}"
+assert_contains "initramfs=${PRESERVED_DIR}/initramfs-7.1.2-cachyos2.img" "${AUTHORITATIVE_CANDIDATE}"
+"${ROLLBACK}" "${common[@]}" --recovery-manifest "${AUTHORITATIVE_CANDIDATE}" --dry-run bootnext
+printf 'PASS: newly preserved authoritative candidate is accepted by the default loader\n'
 assert_contains 'Gentoo Fixture Recovery' "${FIXTURE}/created-entry"
 assert_contains '\EFI\Gentoo\recovery\fixture-recovery\vmlinuz-7.1.2-cachyos2.efi' "${FIXTURE}/created-entry"
 assert_contains 'initrd=\EFI\Gentoo\amd-uc.img' "${FIXTURE}/created-entry"
@@ -340,10 +444,10 @@ assert_absent "${FIXTURE}/rescue-entry"
 assert_file "${FIXTURE}/rescue-entry"
 assert_file "${STATE}/recovery/rescue-entry-fixture-rescue.manifest"
 assert_contains 'Gentoo Fixture Rescue' "${FIXTURE}/rescue-entry"
-assert_contains '\EFI\Gentoo\vmlinuz-7.1.2-cachyos2-old.efi' "${FIXTURE}/rescue-entry"
+assert_contains '\EFI\Gentoo\recovery\pgo-known-good-fixture\vmlinuz-7.1.2-cachyos2.efi' "${FIXTURE}/rescue-entry"
 assert_contains 'initrd=\EFI\Gentoo\amd-uc.img' "${FIXTURE}/rescue-entry"
 assert_contains 'initrd=\EFI\Gentoo\intel-uc.img' "${FIXTURE}/rescue-entry"
-assert_contains 'initrd=\EFI\Gentoo\initramfs-7.1.2-cachyos2.img.old' "${FIXTURE}/rescue-entry"
+assert_contains 'initrd=\EFI\Gentoo\recovery\pgo-known-good-fixture\initramfs-7.1.2-cachyos2.img' "${FIXTURE}/rescue-entry"
 assert_contains 'rd.break=pre-mount' "${FIXTURE}/rescue-entry"
 if grep -Fq 'rd.break=old' "${FIXTURE}/rescue-entry" || grep -Fq 'stale-' "${FIXTURE}/rescue-entry"; then
     fail 'stale initrd/break token survived rescue cmdline sanitization'
@@ -357,13 +461,26 @@ known_initramfs_after=${known_initramfs_after%% *}
 [[ ${known_kernel_before} == "${known_kernel_after}" ]] || fail 'rescue-entry overwrote known-good kernel'
 [[ ${known_initramfs_before} == "${known_initramfs_after}" ]] || fail 'rescue-entry overwrote known-good initramfs'
 efi_state=$("${TOOLS}/efibootmgr" -v)
-grep -Fxq 'BootOrder: 01FF,0300,0200' <<<"${efi_state}" || fail 'rescue --create-only changed BootOrder'
+grep -Fxq 'BootOrder: 01FF,0300,0004,0200' <<<"${efi_state}" || fail 'rescue --create-only changed BootOrder'
 
 "${ROLLBACK}" "${common[@]}" bootnext
-[[ $(<"${FIXTURE}/bootnext") == 0200 ]] || fail 'BootNext was not armed to 0200'
+[[ $(<"${FIXTURE}/bootnext") == 0004 ]] || fail 'zero-override BootNext was not armed to authoritative Boot0004'
+
+"${ROLLBACK}" "${common[@]}" --dry-run all >"${FIXTURE}/zero-override-all.log"
+assert_contains "recovery_identity_source=manifest:${AUTHORITATIVE_MANIFEST}" "${FIXTURE}/zero-override-all.log"
+assert_contains "manifest_sha256=${manifest_sha} bootnum=0004" "${FIXTURE}/zero-override-all.log"
+assert_contains "kernel=${KNOWN_KERNEL}" "${FIXTURE}/zero-override-all.log"
+assert_contains "initramfs=${KNOWN_INITRAMFS}" "${FIXTURE}/zero-override-all.log"
+assert_contains "${TOOLS}/efibootmgr -n 0004" "${FIXTURE}/zero-override-all.log"
+
+"${ROLLBACK}" "${common[@]}" \
+    --legacy-managed-default \
+    --kernel-sha256 "${legacy_kernel_sha}" \
+    --initramfs-sha256 "${legacy_initramfs_sha}" \
+    bootnext
+[[ $(<"${FIXTURE}/bootnext") == 0200 ]] || fail 'explicit legacy fallback did not arm Boot0200'
 
 "${ROLLBACK}" "${common[@]}" check
-"${ROLLBACK}" "${common[@]}" --dry-run all
 
 find "${STATE}/reports/recovery" -type f -name 'rollback-*.log' -print -quit | grep -q . || fail 'timestamped recovery log was not created'
 

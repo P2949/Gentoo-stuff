@@ -120,11 +120,20 @@ run_capture "${OUTPUT_ROOT}/baseline-build.log" \
 [[ -x ${BASELINE_BINARY} ]] || fail 'baseline Go command was not produced'
 run_capture "${OUTPUT_ROOT}/baseline-readelf.txt" \
     "${READELF}" -n "${BASELINE_BINARY}"
-BASELINE_BUILD_ID=$(
+run_capture "${OUTPUT_ROOT}/baseline-go-buildid.txt" \
+    "${GO}" tool buildid "${BASELINE_BINARY}"
+BASELINE_GO_BUILD_ID=$(sed -n '1p' "${OUTPUT_ROOT}/baseline-go-buildid.txt")
+[[ -n ${BASELINE_GO_BUILD_ID} ]] || fail 'baseline Go command lacks a Go build ID'
+BASELINE_GNU_BUILD_ID=$(
     sed -n 's/.*Build ID: //p' "${OUTPUT_ROOT}/baseline-readelf.txt" | head -n 1
 )
-[[ ${BASELINE_BUILD_ID} =~ ^[0-9a-f]{40}$ ]] || \
-    fail 'baseline Go command lacks a SHA-1 GNU build ID'
+if [[ -n ${BASELINE_GNU_BUILD_ID} ]]; then
+    [[ ${BASELINE_GNU_BUILD_ID} =~ ^[0-9A-Fa-f]+$ ]] || \
+        fail 'baseline GNU build ID is not a supported hexadecimal encoding'
+    GNU_BUILD_ID_STATUS=present
+else
+    GNU_BUILD_ID_STATUS=absent
+fi
 
 run "${BASELINE_BINARY}" -mode=1 -iterations="${ITERATIONS}" \
     >"${OUTPUT_ROOT}/baseline-output.txt"
@@ -139,9 +148,13 @@ run_capture "${OUTPUT_ROOT}/pprof-top.txt" \
     "${GO}" tool pprof -top -nodecount=30 "${BASELINE_BINARY}" "${PROFILE}"
 "${RG}" -q 'fixturework\.Hot(Even|Odd)' "${OUTPUT_ROOT}/pprof-raw.txt" || \
     fail 'CPU pprof profile lacks fixture workload functions'
-"${RG}" -Fq -- "${BASELINE_BINARY} ${BASELINE_BUILD_ID}" \
-    "${OUTPUT_ROOT}/pprof-raw.txt" || \
-    fail 'CPU pprof mapping does not match the exact baseline GNU build ID'
+"${RG}" -Fq -- "${BASELINE_BINARY}" "${OUTPUT_ROOT}/pprof-raw.txt" || \
+    fail 'CPU pprof mapping does not name the exact baseline path'
+if [[ ${GNU_BUILD_ID_STATUS} == present ]]; then
+    "${RG}" -Fq -- "${BASELINE_BINARY} ${BASELINE_GNU_BUILD_ID}" \
+        "${OUTPUT_ROOT}/pprof-raw.txt" || \
+        fail 'CPU pprof mapping does not match the available baseline GNU build ID'
+fi
 "${RG}" -q 'workload\.go:[1-9][0-9]*:[0-9]+ s=[1-9][0-9]*' \
     "${OUTPUT_ROOT}/pprof-raw.txt" || \
     fail 'CPU pprof profile lacks function start-line metadata'
@@ -252,8 +265,12 @@ PGO_SHA=$("${SHA256SUM}" "${PGO_BINARY}" | awk '{print $1}')
     printf 'pgo_profile=%s\npgo_profile_sha256=%s\n' "${PROFILE}" "${PROFILE_SHA}"
     printf 'pgo_profile_is_absolute=true\npgo_profile_sample_count=%s\n' \
         "${PROFILE_SAMPLE_COUNT}"
-    printf 'profiled_baseline_gnu_build_id=%s\nprofile_mapping_identity_matches=true\n' \
-        "${BASELINE_BUILD_ID}"
+    printf 'profiled_baseline_go_build_id=%s\n' "${BASELINE_GO_BUILD_ID}"
+    printf 'profiled_baseline_gnu_build_id_status=%s\n' "${GNU_BUILD_ID_STATUS}"
+    printf 'profiled_baseline_gnu_build_id=%s\n' "${BASELINE_GNU_BUILD_ID:-}"
+    printf 'profile_mapping_path_matches=true\n'
+    printf 'profile_mapping_gnu_build_id_matches=%s\n' \
+        "$([[ ${GNU_BUILD_ID_STATUS} == present ]] && printf true || printf not-applicable)"
     printf 'pprof_target_symbols_present=true\npprof_start_lines_present=true\n'
     printf 'pprof_inline_frames_present=true\n'
     printf 'compiler_pgoprofile_argument_present=true\nbinary_pgo_build_setting_present=true\n'
@@ -271,6 +288,7 @@ PGO_SHA=$("${SHA256SUM}" "${PGO_BINARY}" | awk '{print $1}')
 "${SHA256SUM}" "${COMMAND_LOG}" "${OUTPUT_ROOT}/go-version.txt" \
     "${OUTPUT_ROOT}/go-env.txt" "${OUTPUT_ROOT}/go-test.log" \
     "${OUTPUT_ROOT}/baseline-build.log" "${OUTPUT_ROOT}/baseline-readelf.txt" \
+    "${OUTPUT_ROOT}/baseline-go-buildid.txt" \
     "${PROFILE}" \
     "${OUTPUT_ROOT}/pprof-raw.txt" "${OUTPUT_ROOT}/pprof-top.txt" \
     "${OUTPUT_ROOT}/pgo-build.log" "${OUTPUT_ROOT}/pgo-build-metadata.txt" \

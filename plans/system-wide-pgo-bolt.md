@@ -2,14 +2,14 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 is complete and Phase 1 capability validation is in progress.
+- **Project state:** active; Phase 0 is complete after closing both recovery review findings, Phase 1 capability validation is in progress, and the unsafe legacy global PGO consumer is neutralized.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
-- **Last plan review:** 2026-07-10; the complete 1,820-line plan and all binding prose gates were re-read after completing the Clang IR, Clang sample, GCC, Rust, and Go Phase 1 validation lanes.
-- **Safety gate:** passed on 2026-07-10. Protected binpkg restoration, rollback fixtures, exact `/efi` recovery assets, and an actual `BootCurrent=0004` recovery boot are verified.
+- **Last plan review:** 2026-07-11; the complete plan and all binding prose gates were re-read after the manifest-backed Boot0004 and ABI-safe recovery remediation was implemented, evidenced, recorded in state, and documented here.
+- **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **Known tool gap:** LLVM 22 provides Clang, LLD, `llvm-profdata`, and `llvm-profgen`, but no installed `llvm-bolt` or `perf2bolt`; Phase 1 cannot pass until this is remedied.
 
 ## Document purpose
@@ -569,6 +569,8 @@ The classifier must examine installed contents rather than relying only on packa
 - `app-admin/ps_mem-3.14-r1` was actually reinstalled from the protected snapshot with `--usepkgonly --getbinpkg=n --nodeps`; Portage reported one binary reinstall and zero downloads. `equery check` passed all 16 files both before and after, and the restored command's smoke test passed. Evidence is in `phase-0-binpkg-restore-pretend.log` and `phase-0-binpkg-restore-test.log`.
 - Root-only, checksum-tested starting archives of `/etc`, `/lib/modules/7.1.2-cachyos2`, and `/efi/EFI/Gentoo` are under `/var/lib/gentoo-optimization/recovery/boot`; see `phase-0-config-modules-efi-archives.log`.
 - A uniquely named, non-managed recovery generation exists at `/efi/EFI/Gentoo/recovery/pgo-known-good-20260710`. Custom entry `Boot0004` (`Gentoo PGO Known Good 20260710`) references its preserved kernel and initramfs; custom BootOrder-neutral entry `Boot0005` (`Gentoo PGO Rescue Shell 20260710`) references the same assets and adds `rd.break=pre-mount`. The rescue entry was created with `--create-only`, so it did not enter `BootOrder`. Both entries use the now-boot-proven kernel/initramfs pair, and `lsinitrd` validates the rescue userspace.
+- The authoritative recovery identity is now the root-owned mode `0600` manifest `/var/lib/gentoo-optimization/recovery/authoritative-known-good.manifest` (SHA-256 `dbeb5fd9c4b15479c32909eae0c6866c25d9747b439897eb0d16eda28ec7f4e0`). Its strict schema identifies independent `Boot0004`, the two exact `/efi/EFI/Gentoo/recovery/pgo-known-good-20260710` paths, and their hashes. Unknown, duplicate, missing, unsafe, symlinked, non-independent, malformed, or non-recovery-tree identities fail closed. The managed `Boot0200` generation is available only through the explicit `--legacy-managed-default` fallback or a complete explicit identity override.
+- `preserve-boot` writes a separate loader-compatible schema-v1 authoritative candidate rather than silently replacing the proven identity. The candidate is promoted only after a successful boot; its exact loader/EFI/hash round trip is fixture-tested.
 - `BootNext=0004` was armed and the machine actually rebooted from starting boot ID `6be5e262-683f-449b-83ff-d421e47fcca7` into boot ID `986afeaa-bfac-4815-80a4-9459bf4e080f`. Host-level evidence proves `BootCurrent=0004`, kernel `7.1.2-cachyos2`, root `/dev/nvme0n1p5`, writable XFS root, writable `/efi` on `/dev/nvme0n1p1`, matching kernel/initramfs hashes, clean OpenRC services, and successful Portage/Python/shell/C/C++/network probes. The authoritative pass record is `/var/lib/gentoo-optimization/reports/recovery/boot-evidence/20260710202218-phase0-known-good-recheck-20260710T201800Z-986afeaa-bfac-4815-80a4-9459bf4e080f.log` with zero probe, validation, and total failures.
 - The first automatic post-boot capture is deliberately retained as failed evidence rather than hidden. Every boot identity and asset check passed, but the hook initially treated OpenRC's documented empty-set `rc-status --crashed` exit status 1 as a probe error. The completed marker was archived as `boot-validation-phase0-attempt1.completed`; the hook now accepts only the empty-output status-1 case, still rejects any reported service name, and has regression tests for both outcomes. The installed corrected hook SHA-256 is `14d0d97c650c6375b56b6fe83744f363266551506fba1289f16e2575801ef73b`.
 - `thermald` was removed from the default runlevel after a foreground diagnostic proved that it exits with `Non mobile platform` on this desktop i5-10600K. This is a technically justified service-policy correction, not a hidden boot failure; evidence is `phase-0-thermald-service-remediation.log`.
@@ -587,7 +589,8 @@ Create and test a documented recovery sequence that can:
 
 Do not proceed until the rollback path has been tested.
 
-- [x] The documented rollback sequence is implemented and restoration-tested. The fixture suite covers optimization disable/quarantine, exact offline binpkg restore, critical restore, protected `@preserved-rebuild`, distinct initramfs generation with overwrite guards, EFI preservation/rescue creation, and BootNext. The live preflight validated all 1,181 protected records plus the exact `/efi` identities (`rollback-20260710T154705Z-257985.log`); `app-admin/ps_mem-3.14-r1` was actually restored offline from the snapshot; and the independent Boot0004 path was actually booted. Bash syntax, ShellCheck 0.11.0 with zero diagnostics, and the full fixture suite pass with hash-bound evidence in `phase-0-shellcheck.log`, `phase-0-rollback-fixture-tests-after-shellcheck.log`, and `phase-0-boot-evidence-hook-validation-after-reboot.log`.
+- [x] The documented rollback sequence is implemented and restoration-tested. Its zero-override identity comes from the authoritative manifest and selects independent `Boot0004`; a live read-only preflight validated all 1,181 protected records and the exact assets (`rollback-20260711T012123Z-1181179.log`, SHA-256 `abae78aff70f516bba839233cdeee73e40d9e5d79a98801b9cf5b9a952503b50`). A live zero-override `--dry-run all` ended with `efibootmgr -n 0004` and contained zero `Boot0200`, managed `*-old`, or `/boot/` references (`rollback-20260711T012430Z-1191925.log`, SHA-256 `00688b83a6302fdca32a258651f4b7e26f4d0d3f7382643be1dd0cc027370bcc`). `app-admin/ps_mem-3.14-r1` was actually restored offline from the snapshot, and the independent Boot0004 path was actually booted.
+- [x] The recovery kill switch preserves the installed C++ ABI through separate conservative lanes. Its Clang lane retains libc++, LLD, compiler-rt, and libunwind while clearing project PGO/BOLT/LTO/Polly/OpenMP/visibility axes; its GCC lane retains GCC/binutils and libstdc++. The fixture actually compiles, links, and runs both C++ programs, verifies `libc++.so.1` with no `libstdc++` for Clang and `libstdc++.so.6` with no `libc++` for GCC, repeats every live `gcc.conf` selector after the global Clang assignment, and also proves explicit-only legacy Boot0200 plus authoritative-candidate round trips. Bash syntax, a freshly hash-verified ShellCheck 0.11.0 with zero diagnostics, boot-evidence fixtures, and 10/10 Python tests pass. The compact evidence record is `phase-0-recovery-review-remediation-summary.log` (SHA-256 `a5a1e292ed05c614e279e91b215c75d681106a9d75a0772b83f48dfa48933d0c`); live Phase 0 state is `/var/lib/gentoo-optimization/state/project/phase-0.json` (SHA-256 `1042dbac14d0fb160503f7932816083b3b160222711b4a2db0bae526689be8dc`).
 
 ---
 
@@ -647,9 +650,9 @@ Verify that:
 ### Phase 1.3 evidence
 
 - A two-translation-unit PIE built with ThinLTO, build ID, emitted relocations, line tables, unique internal names, and pseudo-probe/sample-profile mapping flags. `perf 7.1` recorded `cycles:u` with `-j any,u`; its metadata explicitly reports `BRANCH_STACK` and `USER|ANY`.
-- `llvm-profgen` produced a readable five-function extbinary sample profile with SHA-256 `89a46216b0c6e49fe3f1532776a1d81090a73224f47bd8cf175f76abc11eeb20`. The exact profile-use rebuild accepted both required sample-use flags and produced the same `dad2bb283c577f34` workload checksum as the training binary. Passing that profile to the IR-instrumentation consumer failed with the expected bad-magic diagnostic.
-- The conversion emitted 37 retained diagnostics: `0.32% (59/18414)` of samples crossed function boundaries and `1.19% (219/18414)` had reversed or long ranges across an unconditional jump. This capability result is accepted because exact-binary conversion, profile parsing, profile use, and functional equality passed; these diagnostics remain inputs to the conservative Phase 10 profile-quality threshold rather than being hidden.
-- Authoritative evidence is under `/var/lib/gentoo-optimization/reports/phase-1-clang-sample`; the two prior harness attempts are retained under distinct report directories. The capability record is `/var/lib/gentoo-optimization/state/capabilities/clang-sample-pgo.json` (SHA-256 `1f3b92fd2d932cd2b600a4fa66733eeb88be4b4aa12565dd28ae4402958c5975`).
+- `llvm-profgen` produced a readable five-function extbinary sample profile with SHA-256 `0a4c5b06ad86b12eb0512215f3ca0391d6195c10510b148984d894e073bda955`. The exact profile-use rebuild accepted both required sample-use flags and produced the same `dad2bb283c577f34` workload checksum as the training binary. Passing that profile to the IR-instrumentation consumer failed with the expected bad-magic diagnostic.
+- The final hardened rerun emitted 38 retained diagnostics: `0.33% (59/17887)` of samples crossed function boundaries and `1.13% (203/17887)` had reversed or long ranges across an unconditional jump. This capability result is accepted because exact-binary conversion, profile parsing, profile use, and functional equality passed; these diagnostics remain inputs to the conservative Phase 10 profile-quality threshold rather than being hidden.
+- Authoritative evidence is under `/var/lib/gentoo-optimization/reports/phase-1-clang-sample`; all earlier harness and pre-safety-review runs are retained under distinct report directories. The runner now refuses output outside `/tmp` and `/var/tmp/gentoo-optimization` and records its own SHA-256. The capability record is `/var/lib/gentoo-optimization/state/capabilities/clang-sample-pgo.json` (SHA-256 `e9014ea7d4e9ab8bc1b2c2f2b05421ead1f52483aaea34966f76b0698abc7f6c`).
 
 ## 10.4 Validate GCC PGO separately
 
@@ -688,10 +691,10 @@ Verify that:
 
 ### Phase 1.6 evidence and binding validator decision
 
-- Active `go1.27-devel_e37f65a2e6` built a dependency-free baseline command and collected a 53-sample CPU pprof profile. The profile's mapping matches baseline GNU build ID `1d50ccfd0a3af949c79e4974722bfda4380309b3`, and the decoded data contains target workload symbols, nonzero function start lines, and reconstructed inline frames.
-- The use build consumed the explicit absolute `-pgo=/tmp/phase-1-go-pgo-20260710T-g4/cpu.pprof` input. Its trace contains the workload package's processed `-pgoprofile` compiler argument and a profile-driven hot-node budget decision; `go version -m` retains the exact absolute PGO build setting. Baseline and use outputs match, and the use binary has SHA-256 `9ef871f3ed66f0fc1943549b32425c7ee7642aaf70e3f9516c4bda83d5bc9eff`.
+- Active `go1.27-devel_e37f65a2e6` built a dependency-free baseline command and collected a 56-sample CPU pprof profile. The profile's mapping matches the exact baseline path and available GNU build ID `1d50ccfd0a3af949c79e4974722bfda4380309b3`, and the decoded data contains target workload symbols, nonzero function start lines, and reconstructed inline frames. The language-native `go tool buildid` identity is recorded separately.
+- The use build consumed the explicit absolute `-pgo=/tmp/phase-1-go-pgo-20260711T-buildid-reviewed/cpu.pprof` input. Its trace contains the workload package's processed `-pgoprofile` compiler argument and a profile-driven hot-node budget decision; `go version -m` retains the exact absolute PGO build setting. Baseline and use outputs match, and the use binary has SHA-256 `ad6672ec98c937d27eb4821f6f1e71c5f260b96383a576e0eba302649e5b5cb9`.
 - Malformed pprof data failed with exit 1. Critically, a structurally valid profile from the unrelated fixture command was accepted by the compiler with exit 0 even though it contained no target symbols. Phase 2 must therefore validate target symbols, function metadata, and available mapping/build identity evidence before enabling `-pgo`; Go compiler success alone is not profile-relevance proof.
-- The complete authoritative report is `/var/lib/gentoo-optimization/reports/phase-1-go-pgo`; the low-sample failed attempt and superseded passes are retained separately. Live capability state is `/var/lib/gentoo-optimization/state/capabilities/go-pgo.json` (SHA-256 `438e627519df42dfb3fff408635d2b39e49f09a088a0bf3e04d6e73061be5bbf`). Cross-lane root review, ShellCheck, language tests, formatting, and checksum verification are retained in `phase-1-pgo-fixture-root-review.log`.
+- Go PGO eligibility now requires the Go build ID but accepts any supported nonempty hexadecimal GNU build-ID encoding when a GNU note exists; it does not require a GNU note at all. BOLT exact-input eligibility remains a separate stricter decision. The complete authoritative report is `/var/lib/gentoo-optimization/reports/phase-1-go-pgo`; the pre-review report, low-sample failure, and superseded passes are retained separately. Live capability state is `/var/lib/gentoo-optimization/state/capabilities/go-pgo.json` (SHA-256 `78dad9e807e22b89e393155bc7b7077681c0a18d615328c526cd0ae626c980e1`).
 
 ## 10.7 Validate BOLT on executable, PIE, and DSO fixtures
 
@@ -713,9 +716,15 @@ Do not implement the live deployment hook until all fixture classes pass.
 
 ## 11.1 Remove the unsafe global consumer
 
-- [ ] Delete or disable `portage/package.env/50-global-pgo` in its current form.
+- [x] Delete or disable `portage/package.env/50-global-pgo` in its current form.
 - [ ] Remove `pgo-use-if-available.conf` and `pgo-instrument.conf` or replace them with backend-specific mode files.
-- [ ] Ensure absence of a profile file can never silently change an unrelated package’s compiler flags.
+- [x] Ensure absence of a profile file can never silently change an unrelated package’s compiler flags.
+
+### Immediate legacy-consumer neutralization evidence
+
+- The live `/etc/portage` resolves to this repository. `50-global-pgo` is now assignment-free, and `/var/tmp/pgo-profiles` did not exist, so no raw/profile payload required quarantine. The old env marker files remain only for explicit removal/replacement during the rest of Phase 2.
+- Until the exact dispatcher replaces it, `portage/bashrc` leaves all flags unchanged with no marker and fails closed with exit 1 if either stale `PGO_USE_IF_AVAILABLE=1` or `PGO_INSTRUMENT=1` is supplied. Bash syntax and ShellCheck 0.11.0 pass.
+- Evidence is `/var/lib/gentoo-optimization/reports/phase-0-legacy-pgo-neutralization.log` (SHA-256 `44f0a2196f355524d82769a01649fe0ce0312f986c72672a3fe12e1a85bf48a8`); state is `/var/lib/gentoo-optimization/state/project/legacy-pgo-neutralization.json` (SHA-256 `ffa4e656cdd47cbc910cb56ec59269d098f38e6815ad1bcb2130c4bd0b8eccda`). No package build may proceed through the legacy lane.
 
 ## 11.2 Rewrite `portage/bashrc`
 

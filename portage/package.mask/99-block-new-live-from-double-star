@@ -224,6 +224,7 @@
 =dev-lang/rust-9999*
 =dev-db/sqlite-9999*
 =net-libs/libqmi-9999*
+=games-util/mangohud-9999*
 =dev-util/pahole-9999*
 =media-libs/babl-9999*
 =media-libs/gegl-9999*

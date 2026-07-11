@@ -1,8 +1,0 @@
-diff --git a/meson_options.txt b/meson_options.txt
---- a/meson_options.txt
-+++ b/meson_options.txt
-@@ -15,4 +15,4 @@ option('dynamic_string_tokens', type: 'boolean', value: true, description: 'Use dynamic string tokens in LD_PRELOAD')
- option('with_fex', type : 'boolean', value : false)
- option('with_server', type : 'boolean', value : true)
--option('with_mangohud_next', type : 'boolean', value : true, description: 'Build the mangohud-next client/server')
-+option('with_mangohud_next', type : 'boolean', value : false, description: 'Build the mangohud-next client/server')

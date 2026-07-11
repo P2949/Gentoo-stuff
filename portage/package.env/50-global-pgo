@@ -1,11 +1,11 @@
-# Global PGO use-if-available.
+# Legacy global PGO consumer -- deliberately disabled.
 #
-# This applies to every package. It only activates if:
+# The CATEGORY/PN-only profile identity and compiler-agnostic flags are unsafe.
+# Keep this file assignment-free until the backend-specific, fingerprinted
+# Phase 2 implementation replaces it.  Do not restore the old wildcard below.
+# It used to activate whenever this path existed:
 #
 #   /var/tmp/pgo-profiles/${CATEGORY}/${PN}/merged.profdata
 #
-# exists.
-#
-# Packages with stale or harmful profiles are demoted with no-pgo-use.conf.
-
-*/* pgo-use-if-available.conf
+# Historical assignment (disabled):
+# */* pgo-use-if-available.conf
