@@ -44,7 +44,8 @@ Options:
                         gcc, rust, go, bolt, or all. An explicit filter narrows
                         --mode capabilities as well.
   --output-dir DIR      Keep logs/evidence in a new absolute directory below
-                        /tmp or /var/tmp/gentoo-optimization.
+                        /tmp or /var/tmp/gentoo-optimization. Its canonical
+                        path may contain only letters, digits, /, ., _, and -.
   --keep-temp           Keep the automatically allocated temporary directory.
   --list                List suites and capability names without running them.
   -h, --help            Show this help.
@@ -224,6 +225,8 @@ create_run_root() {
             /tmp/*|/var/tmp/gentoo-optimization/*) ;;
             *) fail_usage '--output-dir must remain below /tmp or /var/tmp/gentoo-optimization' ;;
         esac
+        [[ ${canonical} =~ ^/[A-Za-z0-9_./-]+$ ]] || \
+            fail_usage '--output-dir canonical path contains characters unsafe for capability workloads'
         [[ ! -e ${canonical} ]] || fail_usage "--output-dir already exists: ${canonical}"
         mkdir -p -- "${canonical}"
         RUN_ROOT=${canonical}
@@ -578,8 +581,10 @@ preflight_bolt() {
         PREFLIGHT_REASON="combined BOLT fixture runner is absent: ${runner}"
         return 1
     }
-    require_commands clang perf perf2bolt llvm-bolt merge-fdata readelf objcopy \
-        nm lddtree file getfattr setfattr getcap sha256sum || return 1
+    require_commands awk bash chmod clang cmp cp dirname file find getcap \
+        getfattr grep head lddtree llvm-bolt merge-fdata mkdir nm objcopy perf \
+        perf2bolt readelf readlink sed setfattr sha256sum sort stat strip tail \
+        timeout tr xargs || return 1
     resolve_executable perf
     perf_path=${RESOLVED_TOOL}
     preflight_perf_branch_stack "${perf_path}" bolt || return 1

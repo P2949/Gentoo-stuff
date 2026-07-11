@@ -27,7 +27,17 @@ gui-wm/hyprland no-hidden-no-forced-libs.conf
 # Shared C library consumed by Hyprland.
 dev-libs/udis86 no-hidden-no-forced-libs.conf
 
+# Shared public C++ D-Bus API used by XDPH and Hyprland utilities.
+dev-cpp/sdbus-c++ no-hidden-no-forced-libs.conf
+
+# Executables: mainly remove the forced mixed C++ runtime link set.
+gui-libs/xdg-desktop-portal-hyprland no-hidden-no-forced-libs.conf
+sys-auth/hyprpolkitagent no-hidden-no-forced-libs.conf
+
 # gpg fails at runtime with:
 #   undefined symbol: rl_completion_matches
 # readline is a public C ABI library; do not build it with global hidden visibility.
 sys-libs/readline O2.conf
+# RE2 exposes a public C++ API. Global hidden visibility removes its
+# constructors, destructors and match functions from libre2.so.
+dev-libs/re2 no-hidden-no-forced-libs.conf

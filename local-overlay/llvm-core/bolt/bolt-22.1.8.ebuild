@@ -3,7 +3,7 @@
 
 EAPI=8
 
-inherit cmake llvm.org toolchain-funcs
+inherit cmake llvm.org
 
 DESCRIPTION="Binary Optimization and Layout Tool from LLVM"
 HOMEPAGE="https://github.com/llvm/llvm-project/tree/main/bolt"
@@ -14,16 +14,17 @@ KEYWORDS="amd64"
 
 RDEPEND="
 	~llvm-core/llvm-${PV}:${LLVM_MAJOR}=
-	~llvm-runtimes/libcxx-${PV}
+	~llvm-runtimes/libcxx-${PV}[libcxxabi]
 	~llvm-runtimes/libcxxabi-${PV}
 	~llvm-runtimes/libunwind-${PV}
 	app-arch/zstd:=
-	sys-libs/zlib:=
+	virtual/zlib:=
 "
 DEPEND="${RDEPEND}"
 BDEPEND="
 	~llvm-core/clang-${PV}:${LLVM_MAJOR}
 	~llvm-core/lld-${PV}:${LLVM_MAJOR}
+	~llvm-runtimes/compiler-rt-${PV}:${LLVM_MAJOR}
 	app-misc/pax-utils
 "
 
@@ -39,9 +40,10 @@ src_configure() {
 	local llvm_root="${BROOT}/usr/lib/llvm/${LLVM_MAJOR}"
 	local -x CC="${llvm_root}/bin/clang"
 	local -x CXX="${llvm_root}/bin/clang++"
-	local -x CFLAGS="-O2 -pipe"
-	local -x CXXFLAGS="-O2 -pipe -stdlib=libc++"
-	local -x LDFLAGS="-fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++ -Wl,--as-needed"
+	local hardening="-fstack-protector-strong -fstack-clash-protection -fcf-protection=full -D_FORTIFY_SOURCE=3"
+	local -x CFLAGS="--no-default-config -O2 -pipe ${hardening}"
+	local -x CXXFLAGS="--no-default-config -O2 -pipe ${hardening} -stdlib=libc++"
+	local -x LDFLAGS="--no-default-config -fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++ -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--build-id=sha1"
 
 	local mycmakeargs=(
 		-DCMAKE_INSTALL_PREFIX="${EPREFIX}/usr/lib/llvm/${LLVM_MAJOR}"
@@ -98,10 +100,6 @@ src_install() {
 	exeinto "/usr/lib/llvm/${LLVM_MAJOR}/bin"
 	doexe "${build_bin}/llvm-bolt" "${build_bin}/merge-fdata"
 	dosym llvm-bolt "/usr/lib/llvm/${LLVM_MAJOR}/bin/perf2bolt"
-
-	for tool in llvm-bolt perf2bolt merge-fdata; do
-		dosym "../lib/llvm/${LLVM_MAJOR}/bin/${tool}" "/usr/bin/${tool}"
-	done
 
 	local installed_bin="${ED}/usr/lib/llvm/${LLVM_MAJOR}/bin"
 	local rpaths needed

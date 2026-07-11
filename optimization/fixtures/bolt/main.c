@@ -28,6 +28,10 @@ static uint64_t parse_iterations(const char *text) {
 }
 
 int main(int argc, char **argv) {
+    if (argc > 3) {
+        fprintf(stderr, "usage: %s [positive-iterations] [positive-unsigned-mode]\n", argv[0]);
+        return 2;
+    }
     const uint64_t iterations = argc > 1 ? parse_iterations(argv[1]) : UINT64_C(1000000);
     const uint64_t parsed_mode = argc > 2 ? parse_iterations(argv[2]) : UINT64_C(1);
     if (parsed_mode > UINT_MAX) {

@@ -49,20 +49,41 @@ run_split_capture() {
     "$@" >"${stdout_file}" 2>"${stderr_file}"
 }
 
-section_text_sha256() {
+run_expect_status() {
+    local expected_status=$1
+    local output=$2
+    shift 2
+    local status
+    if run_capture "${output}" "$@"; then
+        status=0
+    else
+        status=$?
+    fi
+    [[ ${status} -eq ${expected_status} ]] || \
+        fail "expected exit ${expected_status}, received ${status}: $*"
+}
+
+section_sha256() {
     local input=$1
-    local destination=$2
+    local section=$2
+    local destination=$3
     # Supplying /dev/null as the explicit objcopy output keeps the input
     # byte-for-byte immutable while extracting the raw section.
-    run "${OBJCOPY}" --dump-section ".text=${destination}" "${input}" /dev/null
-    [[ -s ${destination} ]] || fail "empty .text section extracted from ${input}"
+    run "${OBJCOPY}" --dump-section "${section}=${destination}" "${input}" /dev/null
+    [[ -s ${destination} ]] || fail "empty ${section} section extracted from ${input}"
     "${SHA256SUM}" "${destination}" | awk '{print $1}'
+}
+
+section_text_sha256() {
+    section_sha256 "$1" .text "$2"
 }
 
 gnu_build_id() {
     local input=$1
     local build_id
-    build_id=$("${READELF}" -n -- "${input}" | sed -n 's/.*Build ID: //p' | head -n 1)
+    build_id=$("${READELF}" -n -- "${input}" |
+        sed -n 's/.*Build ID: //p' |
+        sed -n '1p')
     [[ ${build_id} =~ ^[0-9A-Fa-f]+$ ]] || fail "missing hexadecimal GNU build ID: ${input}"
     printf '%s\n' "${build_id,,}"
 }
@@ -74,7 +95,9 @@ record_elf() {
     run_capture "${prefix}-header.txt" "${READELF}" -hW -- "${input}"
     run_capture "${prefix}-sections.txt" "${READELF}" -SW -- "${input}"
     run_capture "${prefix}-notes.txt" "${READELF}" -nW -- "${input}"
+    run_capture "${prefix}-program-headers.txt" "${READELF}" -lW -- "${input}"
     run_capture "${prefix}-dynamic.txt" "${READELF}" -dW -- "${input}"
+    run_capture "${prefix}-symbol-versions.txt" "${READELF}" --version-info -W -- "${input}"
     run_capture "${prefix}-symbols.txt" "${NM}" -an -- "${input}"
     run_capture "${prefix}-dynamic-symbols.txt" "${NM}" -D --defined-only -- "${input}"
     run_capture "${prefix}-lddtree.txt" "${LDDTREE}" -- "${input}"
@@ -87,6 +110,39 @@ normalized_needed() {
     local input=$1
     "${READELF}" -dW -- "${input}" |
         sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' |
+        LC_ALL=C sort
+}
+
+normalized_dynamic_policy() {
+    local input=$1
+    "${READELF}" -dW -- "${input}" |
+        grep -E '[(](SONAME|RPATH|RUNPATH|FLAGS|FLAGS_1)[)]' |
+        sed 's/^[[:space:]]*//' |
+        LC_ALL=C sort || true
+}
+
+normalized_interpreter() {
+    local input=$1
+    "${READELF}" -lW -- "${input}" |
+        sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p'
+}
+
+normalized_gnu_stack() {
+    local input=$1
+    "${READELF}" -lW -- "${input}" |
+        awk '$1 == "GNU_STACK" { print $(NF - 1) }'
+}
+
+normalized_gnu_relro() {
+    local input=$1
+    "${READELF}" -lW -- "${input}" |
+        awk '$1 == "GNU_RELRO" { print $1, $(NF - 1) }'
+}
+
+normalized_lddtree() {
+    local input=$1
+    "${LDDTREE}" -- "${input}" 2>/dev/null |
+        sed '1d;s/^[[:space:]]*//' |
         LC_ALL=C sort
 }
 
@@ -109,21 +165,49 @@ assert_input_shape() {
     local input=$2
     local header=$3
     local sections=$4
-    grep -Fq 'Class:                             ELF64' "${header}" || fail "${class}: input is not ELF64"
-    grep -Fq 'Machine:                           Advanced Micro Devices X86-64' "${header}" || fail "${class}: input is not x86-64"
+    local label=${5:-${class}}
+    local interpreter soname gnu_stack gnu_relro
+    grep -Fq 'Class:                             ELF64' "${header}" || fail "${label}: input is not ELF64"
+    grep -Fq 'Machine:                           Advanced Micro Devices X86-64' "${header}" || fail "${label}: input is not x86-64"
+    interpreter=$(normalized_interpreter "${input}")
+    soname=$("${READELF}" -dW -- "${input}" |
+        sed -n 's/.*(SONAME).*\[\(.*\)\]/\1/p')
     case ${class} in
         executable)
-            grep -Eq 'Type:[[:space:]]+EXEC ' "${header}" || fail 'fixed executable is not ET_EXEC'
+            grep -Eq 'Type:[[:space:]]+EXEC ' "${header}" || fail "${label}: fixed executable is not ET_EXEC"
+            [[ -n ${interpreter} ]] || fail "${label}: ET_EXEC fixture lacks PT_INTERP"
+            ! "${READELF}" -dW -- "${input}" | grep -E '[(]FLAGS_1[)].*Flags:.*PIE' >/dev/null || \
+                fail "${label}: fixed executable unexpectedly carries DF_1_PIE"
             ;;
-        pie|dso)
-            grep -Eq 'Type:[[:space:]]+DYN ' "${header}" || fail "${class}: input is not ET_DYN"
+        pie)
+            grep -Eq 'Type:[[:space:]]+DYN ' "${header}" || fail "${label}: PIE is not ET_DYN"
+            [[ -n ${interpreter} ]] || fail "${label}: PIE lacks PT_INTERP"
+            "${READELF}" -dW -- "${input}" | grep -E '[(]FLAGS_1[)].*Flags:.*PIE' >/dev/null || \
+                fail "${label}: ET_DYN executable lacks DF_1_PIE"
+            ;;
+        dso)
+            grep -Eq 'Type:[[:space:]]+DYN ' "${header}" || fail "${label}: DSO is not ET_DYN"
+            [[ -z ${interpreter} ]] || fail "${label}: DSO unexpectedly carries PT_INTERP"
+            [[ ${soname} == libboltfixture.so ]] || \
+                fail "${label}: DSO SONAME is not libboltfixture.so: ${soname:-absent}"
+            ! "${READELF}" -dW -- "${input}" | grep -E '[(]FLAGS_1[)].*Flags:.*PIE' >/dev/null || \
+                fail "${label}: DSO unexpectedly carries DF_1_PIE"
             ;;
         *)
             fail "unknown fixture class: ${class}"
             ;;
     esac
-    grep -Eq '[.]rel(a)?[.]text' "${sections}" || fail "${class}: emitted text relocations are absent"
-    grep -Eq '[.]symtab' "${sections}" || fail "${class}: full symbol table is absent"
+    grep -Eq '[.]rel(a)?[.]text' "${sections}" || fail "${label}: emitted text relocations are absent"
+    grep -Eq '[.]symtab' "${sections}" || fail "${label}: full symbol table is absent"
+    gnu_stack=$(normalized_gnu_stack "${input}")
+    [[ ${gnu_stack} == RW ]] || fail "${label}: GNU_STACK policy is not exactly RW: ${gnu_stack:-absent}"
+    gnu_relro=$(normalized_gnu_relro "${input}")
+    [[ ${gnu_relro} == 'GNU_RELRO R' ]] || \
+        fail "${label}: GNU_RELRO policy is not exactly read-only: ${gnu_relro:-absent}"
+    "${READELF}" -nW -- "${input}" | grep -E 'x86 feature:.*IBT' >/dev/null || \
+        fail "${label}: GNU property does not declare IBT"
+    "${READELF}" -nW -- "${input}" | grep -E 'x86 feature:.*SHSTK' >/dev/null || \
+        fail "${label}: GNU property does not declare SHSTK"
     gnu_build_id "${input}" >/dev/null
 }
 
@@ -133,6 +217,83 @@ apply_reference_metadata() {
     run cp --attributes-only --preserve=mode,ownership,timestamps,xattr -- "${reference}" "${output}"
 }
 
+percentage_at_most() {
+    local value=$1
+    local limit=$2
+    awk -v value="${value}" -v limit="${limit}" 'BEGIN { exit !(value + 0 <= limit + 0) }'
+}
+
+validate_profile_quality() {
+    local class=$1
+    local log=$2
+    local mode=$3
+    local sample_line samples brstack ignored_line mismatch_line mismatch_count mismatch_percent
+    local out_of_range_line out_of_range_count out_of_range_percent profiled_functions
+    local diagnostics_file unexpected_file skylake_warning skylake_workaround_count
+
+    sample_line=$(grep -E 'PERF2BOLT: read [0-9]+ samples and [0-9]+ brstack entries' "${log}" | tail -n 1) || \
+        fail "${class}/${mode}: perf2bolt did not report branch-stack sample counts"
+    IFS=' ' read -r samples brstack < <(
+        sed -E 's/.*read ([0-9]+) samples and ([0-9]+) brstack entries.*/\1 \2/' <<<"${sample_line}"
+    )
+    ((samples >= 100)) || fail "${class}/${mode}: only ${samples} perf samples were converted"
+    ((brstack >= 1000)) || fail "${class}/${mode}: only ${brstack} branch-stack entries were converted"
+
+    ignored_line=$(grep -E 'PERF2BOLT: ignored samples:' "${log}" | tail -n 1) || \
+        fail "${class}/${mode}: perf2bolt did not report ignored samples"
+    grep -Eq 'ignored samples: 0 \(0([.]0+)?%\)' <<<"${ignored_line}" || \
+        fail "${class}/${mode}: perf2bolt ignored samples: ${ignored_line}"
+
+    mismatch_line=$(grep -E 'PERF2BOLT: traces mismatching disassembled function contents: [0-9]+ \([0-9.]+%\)' "${log}" | tail -n 1) || \
+        fail "${class}/${mode}: perf2bolt did not report the mismatching-trace metric"
+    IFS=' ' read -r mismatch_count mismatch_percent < <(
+        sed -E 's/.*contents: ([0-9]+) \(([0-9.]+)%\).*/\1 \2/' <<<"${mismatch_line}"
+    )
+    [[ ${mismatch_count} =~ ^[0-9]+$ && ${mismatch_percent} =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+        fail "${class}/${mode}: malformed mismatching-trace metric: ${mismatch_line}"
+    percentage_at_most "${mismatch_percent}" 5.0 || \
+        fail "${class}/${mode}: mismatching trace ratio ${mismatch_percent}% exceeds 5%"
+    out_of_range_line=$(grep -E 'PERF2BOLT: out of range traces involving unknown regions: [0-9]+ \([0-9.]+%\)' "${log}" | tail -n 1) || \
+        fail "${class}/${mode}: perf2bolt did not report the out-of-range-trace metric"
+    IFS=' ' read -r out_of_range_count out_of_range_percent < <(
+        sed -E 's/.*regions: ([0-9]+) \(([0-9.]+)%\).*/\1 \2/' <<<"${out_of_range_line}"
+    )
+    [[ ${out_of_range_count} =~ ^[0-9]+$ && ${out_of_range_percent} =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+        fail "${class}/${mode}: malformed out-of-range-trace metric: ${out_of_range_line}"
+    percentage_at_most "${out_of_range_percent}" 10.0 || \
+        fail "${class}/${mode}: out-of-range trace ratio ${out_of_range_percent}% exceeds 10%"
+
+    profiled_functions=$(sed -nE 's/.*BOLT-INFO: ([0-9]+) out of [0-9]+ functions.*non-empty execution profile.*/\1/p' "${log}" | tail -n 1)
+    [[ ${profiled_functions} =~ ^[1-9][0-9]*$ ]] || fail "${class}/${mode}: no positively profiled functions were reported"
+    diagnostics_file=${log%.log}-critical-diagnostics.txt
+    unexpected_file=${log%.log}-unexpected-diagnostics.txt
+    skylake_warning='PERF2BOLT-WARNING: using Intel Skylake bug workaround'
+    grep -E 'BOLT-ERROR|LLVM ERROR|PLEASE submit a bug report|BOLT-WARNING' "${log}" \
+        >"${diagnostics_file}" || true
+    grep -Fvx -- "${skylake_warning}" "${diagnostics_file}" >"${unexpected_file}" || true
+    [[ ! -s ${unexpected_file} ]] || \
+        fail "${class}/${mode}: unexplained critical/error/warning diagnostic in ${log}"
+    skylake_workaround_count=$(grep -Fxc -- "${skylake_warning}" "${diagnostics_file}" || true)
+    ((skylake_workaround_count <= 1)) || \
+        fail "${class}/${mode}: duplicate Skylake workaround diagnostics"
+    if ((skylake_workaround_count == 1)); then
+        printf '%s\n' "${skylake_warning}" >"${log%.log}-allowed-warning.txt"
+    else
+        : >"${log%.log}-allowed-warning.txt"
+    fi
+
+    {
+        printf 'samples=%s\nbrstack_entries=%s\nprofiled_functions=%s\n' \
+            "${samples}" "${brstack}" "${profiled_functions}"
+        printf 'ignored_samples=0\nmismatching_traces=%s\nmismatching_trace_percent=%s\n' \
+            "${mismatch_count}" "${mismatch_percent}"
+        printf 'out_of_range_traces=%s\nout_of_range_trace_percent=%s\n' \
+            "${out_of_range_count}" "${out_of_range_percent}"
+        printf 'skylake_lbr_workaround=%s\n' \
+            "$([[ ${skylake_workaround_count} -eq 1 ]] && printf true || printf false)"
+    } >"${log%.log}-quality.txt"
+}
+
 validate_output() {
     local class=$1
     local input=$2
@@ -140,6 +301,7 @@ validate_output() {
     local record_root=$4
     local runtime_command=$5
     local expected_output=$6
+    local input_gnu_property_sha output_gnu_property_sha
 
     [[ -s ${output} ]] || fail "${class}: BOLT output is absent or empty"
     record_elf "${output}" "${record_root}/output"
@@ -151,6 +313,28 @@ validate_output() {
     normalized_needed "${input}" >"${record_root}/input-needed.txt"
     normalized_needed "${output}" >"${record_root}/output-needed.txt"
     cmp -s -- "${record_root}/input-needed.txt" "${record_root}/output-needed.txt" || fail "${class}: DT_NEEDED changed"
+    normalized_dynamic_policy "${input}" >"${record_root}/input-dynamic-policy.txt"
+    normalized_dynamic_policy "${output}" >"${record_root}/output-dynamic-policy.txt"
+    cmp -s -- "${record_root}/input-dynamic-policy.txt" "${record_root}/output-dynamic-policy.txt" || fail "${class}: SONAME/RPATH/RUNPATH/FLAGS policy changed"
+    normalized_interpreter "${input}" >"${record_root}/input-interpreter.txt"
+    normalized_interpreter "${output}" >"${record_root}/output-interpreter.txt"
+    cmp -s -- "${record_root}/input-interpreter.txt" "${record_root}/output-interpreter.txt" || fail "${class}: PT_INTERP changed"
+    normalized_gnu_stack "${input}" >"${record_root}/input-gnu-stack.txt"
+    normalized_gnu_stack "${output}" >"${record_root}/output-gnu-stack.txt"
+    cmp -s -- "${record_root}/input-gnu-stack.txt" "${record_root}/output-gnu-stack.txt" || fail "${class}: GNU_STACK policy changed"
+    normalized_gnu_relro "${input}" >"${record_root}/input-gnu-relro.txt"
+    normalized_gnu_relro "${output}" >"${record_root}/output-gnu-relro.txt"
+    cmp -s -- "${record_root}/input-gnu-relro.txt" "${record_root}/output-gnu-relro.txt" || fail "${class}: GNU_RELRO policy changed"
+    input_gnu_property_sha=$(section_sha256 "${input}" .note.gnu.property "${record_root}/input.note.gnu.property")
+    output_gnu_property_sha=$(section_sha256 "${output}" .note.gnu.property "${record_root}/output.note.gnu.property")
+    [[ ${input_gnu_property_sha} == "${output_gnu_property_sha}" ]] || \
+        fail "${class}: GNU property/CET note changed"
+    normalized_lddtree "${input}" >"${record_root}/input-lddtree-normalized.txt"
+    normalized_lddtree "${output}" >"${record_root}/output-lddtree-normalized.txt"
+    cmp -s -- "${record_root}/input-lddtree-normalized.txt" "${record_root}/output-lddtree-normalized.txt" || fail "${class}: resolved dependency tree changed"
+    "${READELF}" --version-info -W -- "${input}" >"${record_root}/input-symbol-versions.txt"
+    "${READELF}" --version-info -W -- "${output}" >"${record_root}/output-symbol-versions.txt"
+    cmp -s -- "${record_root}/input-symbol-versions.txt" "${record_root}/output-symbol-versions.txt" || fail "${class}: symbol-version metadata changed"
 
     if [[ ${class} == dso ]]; then
         normalized_dynamic_symbols "${input}" >"${record_root}/input-exported-abi.txt"
@@ -177,7 +361,8 @@ profile_and_bolt() {
     local runtime_command=$5
     local expected_output=$6
     local class_root=${OUTPUT_ROOT}/${class}
-    local input_build_id input_sha input_sha_after_profile input_text_sha output_text_sha
+    local input_build_id input_sha input_sha_after_profile input_sha_after_bolt input_text_sha
+    local output_build_id output_text_sha stripped_text_sha stripped_runtime_command required_symbol
     mkdir -p -- "${class_root}"
 
     run "${SETFATTR}" -n user.gentoo_optimization_fixture -v "bolt-${class}" -- "${input}"
@@ -198,11 +383,16 @@ profile_and_bolt() {
 
     run_capture "${class_root}/perf2bolt-mode1.log" "${PERF2BOLT}" -p "${class_root}/mode1.perf.data" -o "${class_root}/mode1.fdata" "${input}"
     run_capture "${class_root}/perf2bolt-mode2.log" "${PERF2BOLT}" -p "${class_root}/mode2.perf.data" -o "${class_root}/mode2.fdata" "${input}"
+    validate_profile_quality "${class}" "${class_root}/perf2bolt-mode1.log" mode1
+    validate_profile_quality "${class}" "${class_root}/perf2bolt-mode2.log" mode2
     [[ -s ${class_root}/mode1.fdata && -s ${class_root}/mode2.fdata ]] || fail "${class}: perf2bolt produced empty fdata"
     run_split_capture "${class_root}/merged.fdata" "${class_root}/merge-fdata.log" \
         "${MERGE_FDATA}" "${class_root}/mode1.fdata" "${class_root}/mode2.fdata"
     [[ -s ${class_root}/merged.fdata ]] || fail "${class}: merged fdata is empty"
-    grep -Eq 'bolt_fixture_run|hot_even|hot_odd' "${class_root}/merged.fdata" || fail "${class}: merged fdata lacks fixture functions"
+    for required_symbol in bolt_fixture_run hot_even hot_odd; do
+        grep -Fq -- "${required_symbol}" "${class_root}/merged.fdata" || \
+            fail "${class}: merged fdata lacks required function ${required_symbol}"
+    done
     input_sha_after_profile=$("${SHA256SUM}" "${input}" | awk '{print $1}')
     [[ ${input_sha} == "${input_sha_after_profile}" ]] || fail "${class}: exact input changed during profiling/conversion"
 
@@ -211,16 +401,34 @@ profile_and_bolt() {
         -o "${class_root}/output.bolt" \
         -data="${class_root}/merged.fdata" \
         -reorder-blocks=ext-tsp \
-        -reorder-functions=hfsort+ \
+        -reorder-functions=cdsort \
         -split-functions \
         -split-all-cold \
         -split-eh \
+        -icf=1 \
+        -use-gnu-stack \
         -update-debug-sections \
         -dyno-stats
+    if grep -Eq 'BOLT-ERROR|LLVM ERROR|PLEASE submit a bug report|BOLT-WARNING' "${class_root}/llvm-bolt.log"; then
+        fail "${class}: unexplained critical/error/warning diagnostic in llvm-bolt output"
+    fi
     apply_reference_metadata "${input}" "${class_root}/output.bolt"
     output_text_sha=$(section_text_sha256 "${class_root}/output.bolt" "${class_root}/output.text")
     [[ ${input_text_sha} != "${output_text_sha}" ]] || fail "${class}: BOLT did not change the .text image"
+    output_build_id=$(gnu_build_id "${class_root}/output.bolt")
+    [[ ${input_build_id} != "${output_build_id}" ]] || fail "${class}: BOLT output retained the input GNU build ID"
+    input_sha_after_bolt=$("${SHA256SUM}" "${input}" | awk '{print $1}')
+    [[ ${input_sha} == "${input_sha_after_bolt}" ]] || fail "${class}: exact input changed during BOLT optimization"
     validate_output "${class}" "${input}" "${class_root}/output.bolt" "${class_root}" "${runtime_command}" "${expected_output}"
+
+    run cp --preserve=all -- "${class_root}/output.bolt" "${class_root}/output.stripped"
+    run "${STRIP}" --strip-unneeded -- "${class_root}/output.stripped"
+    stripped_text_sha=$(section_text_sha256 "${class_root}/output.stripped" "${class_root}/stripped.text")
+    [[ ${stripped_text_sha} == "${output_text_sha}" ]] || fail "${class}: normal strip changed the BOLT .text image"
+    stripped_runtime_command=${runtime_command//output.bolt/output.stripped}
+    mkdir -p -- "${class_root}/stripped"
+    validate_output "${class}" "${input}" "${class_root}/output.stripped" "${class_root}/stripped" "${stripped_runtime_command}" "${expected_output}"
+    [[ $(gnu_build_id "${class_root}/output.stripped") == "${output_build_id}" ]] || fail "${class}: normal strip changed the BOLT output build ID"
 
     {
         printf 'class=%s\n' "${class}"
@@ -230,9 +438,11 @@ profile_and_bolt() {
         printf 'input_build_id=%s\n' "${input_build_id}"
         printf 'input_text_sha256=%s\n' "${input_text_sha}"
         printf 'output=%s\n' "${class_root}/output.bolt"
-        printf 'output_build_id=%s\n' "$(gnu_build_id "${class_root}/output.bolt")"
+        printf 'output_build_id=%s\n' "${output_build_id}"
         printf 'output_text_sha256=%s\n' "${output_text_sha}"
-        printf 'bolt_note=true\nfunctionality=true\ndynamic_dependencies_preserved=true\n'
+        printf 'post_strip_text_sha256=%s\n' "${stripped_text_sha}"
+        printf 'bolt_note=true\npost_strip_bolt_note=true\nfunctionality=true\npost_strip_functionality=true\n'
+        printf 'runtime_identity_and_dynamic_dependencies_preserved=true\n'
         printf 'ownership_mode_xattrs_preserved=true\n'
         printf 'exported_abi_preserved=%s\n' "$([[ ${class} == dso ]] && printf true || printf not-applicable)"
     } >"${class_root}/summary.txt"
@@ -264,6 +474,7 @@ LLVM_BOLT=$(require_tool llvm-bolt)
 MERGE_FDATA=$(require_tool merge-fdata)
 READELF=$(require_tool readelf)
 OBJCOPY=$(require_tool objcopy)
+STRIP=$(require_tool strip)
 NM=$(require_tool nm)
 LDDTREE=$(require_tool lddtree)
 FILE_TOOL=$(require_tool file)
@@ -271,6 +482,7 @@ GETFATTR=$(require_tool getfattr)
 SETFATTR=$(require_tool setfattr)
 GETCAP=$(require_tool getcap)
 SHA256SUM=$(require_tool sha256sum)
+TIMEOUT=$(require_tool timeout)
 
 "${SHA256SUM}" \
     "${SCRIPT_DIR}/run.sh" \
@@ -293,6 +505,7 @@ common_flags=(
     -g
     -fno-omit-frame-pointer
     -fno-optimize-sibling-calls
+    -fcf-protection=full
     -ffunction-sections
     -fdata-sections
     -Wall
@@ -325,6 +538,32 @@ run "${CLANG}" "${common_flags[@]}" -fPIE -pie \
     "${SCRIPT_DIR}/main.c" \
     -L"${OUTPUT_ROOT}/build" -lboltfixture '-Wl,-rpath,$ORIGIN' \
     -o "${OUTPUT_ROOT}/build/fixture-dso-driver"
+
+record_elf "${OUTPUT_ROOT}/build/fixture-dso-driver" "${OUTPUT_ROOT}/dso-driver-input"
+assert_input_shape pie \
+    "${OUTPUT_ROOT}/build/fixture-dso-driver" \
+    "${OUTPUT_ROOT}/dso-driver-input-header.txt" \
+    "${OUTPUT_ROOT}/dso-driver-input-sections.txt" \
+    dso-driver
+normalized_needed "${OUTPUT_ROOT}/build/fixture-dso-driver" |
+    grep -Fx -- libboltfixture.so >/dev/null || fail 'DSO driver does not depend on libboltfixture.so'
+# Keep $ORIGIN literal while checking the decoded dynamic tag.
+# shellcheck disable=SC2016
+"${READELF}" -dW -- "${OUTPUT_ROOT}/build/fixture-dso-driver" |
+    grep -F 'Library runpath: [$ORIGIN]' >/dev/null || fail 'DSO driver does not carry the exact $ORIGIN RUNPATH'
+
+run_expect_status 2 "${OUTPUT_ROOT}/negative-signed-iterations.log" \
+    "${TIMEOUT}" 2 "${OUTPUT_ROOT}/build/fixture-exec" -1 1
+grep -Fq 'decimal digits only' "${OUTPUT_ROOT}/negative-signed-iterations.log" || \
+    fail 'signed-negative iteration rejection lacked its exact diagnostic'
+run_expect_status 2 "${OUTPUT_ROOT}/negative-mode-overflow.log" \
+    "${TIMEOUT}" 2 "${OUTPUT_ROOT}/build/fixture-exec" 1 4294967296
+grep -Fq 'mode is outside the unsigned range' "${OUTPUT_ROOT}/negative-mode-overflow.log" || \
+    fail 'unsigned-mode overflow rejection lacked its exact diagnostic'
+run_expect_status 2 "${OUTPUT_ROOT}/negative-extra-argument.log" \
+    "${TIMEOUT}" 2 "${OUTPUT_ROOT}/build/fixture-exec" 1 1 unexpected
+grep -Fq 'usage:' "${OUTPUT_ROOT}/negative-extra-argument.log" || \
+    fail 'extra-argument rejection lacked its usage diagnostic'
 
 run_capture "${OUTPUT_ROOT}/executable-expected.txt" \
     "${OUTPUT_ROOT}/build/fixture-exec" "${VERIFY_ITERATIONS}" 1

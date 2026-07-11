@@ -8,7 +8,7 @@
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
-- **Last plan review:** 2026-07-11; the complete plan and all binding prose gates were re-read after the manifest-backed Boot0004 and ABI-safe recovery remediation was implemented, evidenced, recorded in state, and documented here.
+- **Last plan review:** 2026-07-11; the complete plan and all binding prose gates were re-read after the manifest-backed Boot0004 and ABI-safe recovery remediation, the Phase 1 perf/LBR evidence-ownership remediation, the repeatable validation-driver hardening, and the review-branch hygiene remediation were evidenced, recorded in state, and documented here.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **Known tool gap:** LLVM 22 provides Clang, LLD, `llvm-profdata`, and `llvm-profgen`, but no installed `llvm-bolt` or `perf2bolt`; Phase 1 cannot pass until this is remedied.
 
@@ -610,6 +610,7 @@ Do not proceed until the rollback path has been tested.
 - Exact user capture with `perf record -e cycles:u -j any,u` produced 11,443 samples; all 11,443 carried decodable branch stacks, with 366,145 entries and a maximum depth of 32. `perf report` decoded the fixture's `main`/`mix0`–`mix3` branch pairs with zero lost samples.
 - An unprivileged system-wide user-space capture produced 51,673 samples with 1,643,410 decoded branch entries and maximum depth 32, proving the permissions needed for the later `-a -e cycles:u -j any,u` sessions.
 - `perf_event_paranoid=-1` and `kptr_restrict=0` were unchanged before, during, and after validation; no temporary sysctl change occurred. The nonfatal perf metadata/libbpf and absent `/proc/schedstat` warnings did not affect branch capture or decoding. Evidence and checksums are under `/var/lib/gentoo-optimization/reports/phase-1-perf-lbr`; `validation-summary.log` reports `result=PASS`.
+- The complete perf/LBR evidence tree is now `root:root`; every directory is mode `0755`, no non-root entry remains, and a before/after content-manifest hash proves that ownership remediation did not change any evidence payload. The audit is `/var/lib/gentoo-optimization/reports/phase-1-perf-lbr-ownership-remediation.log` (SHA-256 `fa31e74d9f9b4c8d68b9850b487c15deec8cc5322151b626055fd6b98358fc58`); the updated capability state is `/var/lib/gentoo-optimization/state/capabilities/perf-lbr.json` (SHA-256 `aab12248c34b91cf8578c0edb11d5e37c8c8c192e804caccec1cdb36b8e076df`).
 
 ## 10.2 Validate Clang IR-PGO
 
@@ -709,6 +710,29 @@ For each fixture:
 - compare ownership, mode, xattrs, and dynamic dependencies.
 
 Do not implement the live deployment hook until all fixture classes pass.
+
+## 10.8 Keep capability validation repeatable
+
+- [x] Add a single top-level driver for shell syntax, ShellCheck, Python compilation/tests, recovery fixtures, and supported PGO/BOLT capability fixtures.
+- [x] Make unavailable capability dependencies produce an explicit `SKIP: <reason>` rather than disappearing.
+- [x] Test dependency preflight hermetically so an unavailable capability runner cannot execute accidentally.
+
+### Phase 1.8 evidence
+
+- `tests/run-optimization-tests.sh` provides `quick` and `capabilities` modes plus explicit per-capability selection. It confines output to a new canonical absolute directory below `/tmp` or `/var/tmp/gentoo-optimization`, rejects unsafe path characters before creating anything, and preflights every external command used by the selected fixture.
+- The non-recursive driver self-test proves canonical unsafe paths are rejected without creation and proves a dependency-incomplete BOLT lane emits exactly one reason-bearing skip, never invokes its stub runner, reports every missing dependency, and exits successfully with zero failure rows.
+- The exact post-BOLT-fixture-hardening quick run reports 38 passes, zero failures, six explicit capability skips, and 44 unique result rows. It includes Bash syntax, Manifest-verified ShellCheck 0.11.0, Python source compilation, Python unit tests, the driver self-test, and both recovery fixtures. Root-owned evidence is `/var/lib/gentoo-optimization/reports/phase-1-test-driver-post-bolt-fixture` (tree-manifest SHA-256 `b9a99cc9cc11c0caa0ce6590ceb07c95def85f7d90138746078b210b71ca319d`); ShellCheck provenance is `/var/lib/gentoo-optimization/reports/phase-1-shellcheck-0.11.0-provenance.log` (SHA-256 `a2e4885cd37d7ce70d45dfdbade644521d5bfa8f952c3c4333086c23f2909730`); capability state is `/var/lib/gentoo-optimization/state/capabilities/optimization-test-driver.json` (SHA-256 `2abc5fb04a7b3ea0d27adaa45293d5c4e2f7508a096c587410c1fe4710b98a78`).
+
+## 10.9 Keep the optimization branch reviewable
+
+- [x] Remove broad plan-ignore rules and prove both plan paths remain visible to Git.
+- [x] Preserve unrelated MangoHud/O2 remediation on a separate branch rather than carrying it in the optimization history.
+
+### Phase 1.9 evidence
+
+- `.gitignore` contains only targeted transient-file rules; `/plan.md`, `*plan*`, and `./plans/` are absent, and `git check-ignore` reports neither `plan.md` nor `plans/system-wide-pgo-bolt.md` as ignored.
+- Unrelated MangoHud/O2 work is preserved at commit `1ec0f6563354956408c2468a05945c4a5be08c74` on `fix/mangohud-and-o2-remediation`; the active optimization `HEAD` contains zero MangoHud paths. Later user-owned Portage edits in the shared worktree remain untouched and are not part of this evidence claim.
+- The root-owned audit is `/var/lib/gentoo-optimization/reports/phase-1-review-branch-hygiene.log` (SHA-256 `87ff7c7c749a866c8354b6c21648e45273d4013064d70be2168364ebd98d30cc`); state is `/var/lib/gentoo-optimization/state/project/review-branch-hygiene.json` (SHA-256 `880c4efeb5172ac335a37af691f031b0aa5cd6f5f5ae3c0a3953be5a3345eba5`).
 
 ---
 

@@ -1,4 +1,5 @@
 # Conservative -O2 (+libc++ link set).
+media-libs/libde265 O2.conf
 dev-lang/sassc O2.conf
 app-text/yodl plain.conf
 app-arch/brotli plain.conf
