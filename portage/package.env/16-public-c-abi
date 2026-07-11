@@ -4,6 +4,29 @@
 dev-libs/libbsd no-hidden-no-forced-libs.conf
 app-crypt/gpgme no-hidden-no-forced-libs.conf
 
+# Hyprland ecosystem public C++ ABIs.
+#
+# The global hidden-visibility tier hides unannotated public symbols in
+# Aquamarine and hyprutils. The forced mixed libc++/libstdc++ link set is
+# also unnecessary for this consistently libc++-built stack.
+
+dev-cpp/muParser no-hidden-no-forced-libs.conf
+
+gui-libs/hyprutils no-hidden-no-forced-libs.conf
+dev-libs/hyprlang no-hidden-no-forced-libs.conf
+gui-libs/hyprwire no-hidden-no-forced-libs.conf
+gui-libs/aquamarine no-hidden-no-forced-libs.conf
+dev-libs/hyprgraphics no-hidden-no-forced-libs.conf
+gui-libs/hyprcursor no-hidden-no-forced-libs.conf
+gui-libs/hyprtoolkit no-hidden-no-forced-libs.conf
+gui-libs/hyprland-qt-support no-hidden-no-forced-libs.conf
+
+# Hyprland itself exposes internals to its plugin system even with -hyprpm.
+gui-wm/hyprland no-hidden-no-forced-libs.conf
+
+# Shared C library consumed by Hyprland.
+dev-libs/udis86 no-hidden-no-forced-libs.conf
+
 # gpg fails at runtime with:
 #   undefined symbol: rl_completion_matches
 # readline is a public C ABI library; do not build it with global hidden visibility.
