@@ -20,6 +20,7 @@ dev-libs/hyprgraphics no-hidden-no-forced-libs.conf
 gui-libs/hyprcursor no-hidden-no-forced-libs.conf
 gui-libs/hyprtoolkit no-hidden-no-forced-libs.conf
 gui-libs/hyprland-qt-support no-hidden-no-forced-libs.conf
+gui-libs/hyprwire no-hidden-no-forced-libs.conf
 
 # Hyprland itself exposes internals to its plugin system even with -hyprpm.
 gui-wm/hyprland no-hidden-no-forced-libs.conf
