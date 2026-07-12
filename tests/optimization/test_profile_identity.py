@@ -648,6 +648,10 @@ class SampleConversionTest(unittest.TestCase):
             partial.write_text("STALE\n", encoding="ascii")
             binary_hash_before = hashlib.sha256(fixture.binary.read_bytes()).hexdigest()
             binary_stat_before = fixture.binary.stat()
+            binary_xattrs_before = {
+                name: os.getxattr(fixture.binary, name)
+                for name in os.listxattr(fixture.binary)
+            }
             status, stdout, stderr = fixture.invoke(
                 "sample-convert",
                 *fixture.conversion_arguments(
@@ -666,6 +670,14 @@ class SampleConversionTest(unittest.TestCase):
             self.assertEqual(binary_stat_after.st_mode, binary_stat_before.st_mode)
             self.assertEqual(binary_stat_after.st_size, binary_stat_before.st_size)
             self.assertEqual(binary_stat_after.st_mtime_ns, binary_stat_before.st_mtime_ns)
+            self.assertEqual(binary_stat_after.st_ctime_ns, binary_stat_before.st_ctime_ns)
+            self.assertEqual(
+                {
+                    name: os.getxattr(fixture.binary, name)
+                    for name in os.listxattr(fixture.binary)
+                },
+                binary_xattrs_before,
+            )
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             source = metadata["source"]
             self.assertEqual(source["kind"], "llvm-profgen")

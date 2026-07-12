@@ -66,6 +66,7 @@ scripts/optimization/pgo/profile-identity.py sample-convert \
     --perf-data /absolute/path/to/perf.data \
     --profile-out /absolute/profile/tree/sample.prof \
     --metadata-out /absolute/profile/tree/sample-metadata.json \
+    --manifest-out /absolute/profile/tree/sample.manifest \
     --cpv dev-util/example-1.2.3-r1 --fingerprint "${fingerprint}" \
     --abi amd64 --clang-major 22
 ```
@@ -90,7 +91,8 @@ scripts/optimization/pgo/profile-identity.py sample-record \
     --cpv dev-util/example-1.2.3-r1 --fingerprint "${fingerprint}" \
     --abi amd64 --clang-major 22 --build-id "${build_id}" \
     --text-sha256 "${text_sha256}" \
-    --metadata-out /absolute/profile/tree/sample-metadata.json
+    --metadata-out /absolute/profile/tree/sample-metadata.json \
+    --manifest-out /absolute/profile/tree/sample.manifest
 ```
 
 Recording and later `sample-validate` both run the sample-aware command
@@ -100,6 +102,12 @@ build ID, and `.text` SHA-256. An IR instrumentation profile, a profile named
 `merged.profdata`, a missing profile, an LLVM-major mismatch, or changed
 metadata is rejected. The dispatcher consumes this family only with
 `-fprofile-sample-use`; this tool never emits compiler flags.
+
+The separately published manifest contains exactly the eight keys understood
+by the strict Portage dispatcher: schema, backend, fingerprint, ABI, compiler
+family, absolute profile path, profile SHA-256 and `validation_status=passed`.
+It is derived from the validated JSON metadata rather than from duplicate
+caller-provided values.
 
 The obsolete `scripts/pgo/make-sample-prof.sh` entry point is retained only as
 an unconditional error explaining the migration. It cannot create a weak

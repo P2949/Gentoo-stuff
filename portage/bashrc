@@ -14,7 +14,7 @@ gentoo_opt_error() {
 
 gentoo_opt_safe_absolute_path() {
     local path=${1-}
-    [[ ${path} == /* && ${path} != / && ${path} != *//* && ${path} != *'/../'* &&
+    [[ ${path} == /* && ${path} != / && ${path} != *:* && ${path} != *//* && ${path} != *'/../'* &&
         ${path} != */.. && ${path} != *'/./'* && ${path} != */. &&
         ${path} != *[$'\n\r\t ']* ]]
 }
@@ -32,6 +32,29 @@ gentoo_opt_append_flag_once() {
     fi
     # shellcheck disable=SC2163  # The indirect variable name is intentional.
     export "${variable?}"
+}
+
+gentoo_opt_append_colon_path_once() {
+    local variable=$1 path=$2 value
+    gentoo_opt_safe_absolute_path "${path}" || {
+        gentoo_opt_error "${variable} entry must be a safe absolute path"
+        return 1
+    }
+    value=${!variable-}
+    case ":${value}:" in
+        *":${path}:"*) return 0 ;;
+    esac
+    if [[ -n ${value} ]]; then
+        printf -v "${variable}" '%s:%s' "${value}" "${path}"
+    else
+        printf -v "${variable}" '%s' "${path}"
+    fi
+    # shellcheck disable=SC2163  # The indirect variable name is intentional.
+    export "${variable?}"
+}
+
+gentoo_opt_allow_sandbox_write() {
+    gentoo_opt_append_colon_path_once SANDBOX_WRITE "$1"
 }
 
 gentoo_opt_disable_ccache() {
@@ -366,6 +389,7 @@ gentoo_opt_prepare_profile_path() {
         [[ -d ${GENTOO_OPT_PROFILE_PATH} && -w ${GENTOO_OPT_PROFILE_PATH} ]] || {
             gentoo_opt_error "generation profile directory must already exist and be writable: ${GENTOO_OPT_PROFILE_PATH}"; return 1;
         }
+        gentoo_opt_allow_sandbox_write "${GENTOO_OPT_PROFILE_PATH}" || return 1
         return 0
     fi
     [[ -n ${GENTOO_OPT_PROFILE_MANIFEST-} ]] || {
@@ -422,7 +446,7 @@ gentoo_opt_apply_primary_mode() {
     gentoo_opt_disable_ccache
     case ${mode} in
         clang-ir-generate)
-            flag="-fprofile-generate=${GENTOO_OPT_PROFILE_PATH}"
+            flag="-fprofile-instr-generate=${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
             gentoo_opt_append_flag_once CFLAGS "${flag}"
             gentoo_opt_append_flag_once CXXFLAGS "${flag}"
             gentoo_opt_append_flag_once LDFLAGS "${flag}"
@@ -530,6 +554,7 @@ gentoo_opt_log_selection() {
         gentoo_opt_safe_absolute_path "${GENTOO_OPT_LOG_FILE}" || {
             gentoo_opt_error 'GENTOO_OPT_LOG_FILE must be a safe absolute path'; return 1;
         }
+        gentoo_opt_allow_sandbox_write "${GENTOO_OPT_LOG_FILE}" || return 1
         printf '%s\n' "${message}" >> "${GENTOO_OPT_LOG_FILE}" || {
             gentoo_opt_error "cannot append optimization log: ${GENTOO_OPT_LOG_FILE}"; return 1;
         }

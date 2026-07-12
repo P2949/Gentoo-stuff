@@ -878,8 +878,16 @@ def extract_binary_identity(
         original_stat.st_nlink,
         original_stat.st_size,
         original_stat.st_mtime_ns,
+        original_stat.st_ctime_ns,
     )
     original_sha256 = sha256_file(binary)
+    try:
+        original_xattrs = {
+            name: os.getxattr(binary, name, follow_symlinks=False)
+            for name in os.listxattr(binary, follow_symlinks=False)
+        }
+    except OSError as exc:
+        fail(f"cannot snapshot profiled binary xattrs before extraction: {exc}")
     notes_stdout, _notes_stderr = run_tool(
         readelf, ["-n", os.fspath(binary)], "binary build-ID inspection"
     )
@@ -929,8 +937,20 @@ def extract_binary_identity(
         final_stat.st_nlink,
         final_stat.st_size,
         final_stat.st_mtime_ns,
+        final_stat.st_ctime_ns,
     )
-    if final_identity != original_identity or sha256_file(binary) != original_sha256:
+    try:
+        final_xattrs = {
+            name: os.getxattr(binary, name, follow_symlinks=False)
+            for name in os.listxattr(binary, follow_symlinks=False)
+        }
+    except OSError as exc:
+        fail(f"cannot snapshot profiled binary xattrs after extraction: {exc}")
+    if (
+        final_identity != original_identity
+        or final_xattrs != original_xattrs
+        or sha256_file(binary) != original_sha256
+    ):
         fail("profiled binary changed during read-only identity extraction")
     return build_id, text_sha256
 
@@ -1102,8 +1122,6 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
 
 
 def sample_record_command(arguments: argparse.Namespace) -> int:
-    ensure_new_regular_destination(arguments.metadata_out, "sample metadata output")
-    ensure_new_regular_destination(arguments.manifest_out, "dispatcher manifest output")
     destinations = {
         os.path.normpath(arguments.profile),
         os.path.normpath(arguments.metadata_out),
@@ -1111,6 +1129,8 @@ def sample_record_command(arguments: argparse.Namespace) -> int:
     }
     if len(destinations) != 3:
         fail("sample profile, metadata and dispatcher manifest paths must be distinct")
+    ensure_new_regular_destination(arguments.metadata_out, "sample metadata output")
+    ensure_new_regular_destination(arguments.manifest_out, "dispatcher manifest output")
     metadata = sample_identity(arguments)
     try:
         atomic_write(
