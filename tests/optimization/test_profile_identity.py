@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import io
 import json
@@ -55,6 +56,61 @@ class Fixture:
             "printf '%s\\n' 'unsupported or non-sample profile' >&2\n"
             "exit 65\n",
         )
+        self.profgen = self.write_executable(
+            "llvm-profgen",
+            "#!/bin/sh\n"
+            "if [ \"$1\" = --version ]; then\n"
+            "  printf '%s\\n' 'LLVM version 22.1.8'\n"
+            "  exit 0\n"
+            "fi\n"
+            "output= perfdata=\n"
+            "for argument do\n"
+            "  case $argument in\n"
+            "    --output=*) output=${argument#--output=} ;;\n"
+            "    --perfdata=*) perfdata=${argument#--perfdata=} ;;\n"
+            "  esac\n"
+            "done\n"
+            "case $(cat \"$perfdata\") in\n"
+            "  FAIL_AFTER_OUTPUT) printf '%s\\n' SAMPLE >\"$output\"; exit 23 ;;\n"
+            "  TIMEOUT) trap '' TERM; (trap '' TERM; sleep 30) & wait ;;\n"
+            "  NO_OUTPUT) exit 0 ;;\n"
+            "esac\n"
+            "printf '%s\\n' SAMPLE >\"$output\"\n"
+            "printf '%s\\n' 'conversion complete'\n",
+        )
+        self.readelf = self.write_executable(
+            "llvm-readelf",
+            "#!/bin/sh\n"
+            "if [ \"$1\" = --version ]; then\n"
+            "  printf '%s\\n' 'LLVM version 22.1.8'\n"
+            "  exit 0\n"
+            "fi\n"
+            "if [ \"$1\" = -n ]; then\n"
+            f"  printf '%s\\n' '    Build ID: {'c' * 40}'\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 66\n",
+        )
+        self.objcopy = self.write_executable(
+            "llvm-objcopy",
+            "#!/bin/sh\n"
+            "if [ \"$1\" = --version ]; then\n"
+            "  printf '%s\\n' 'LLVM version 22.1.8'\n"
+            "  exit 0\n"
+            "fi\n"
+            "if [ \"$1\" = --dump-section ]; then\n"
+            "  output=${2#.text=}\n"
+            "  printf '%s\\n' TEXT >\"$output\"\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 67\n",
+        )
+        self.binary = self.root / "profiled-binary"
+        self.binary.write_bytes(b"ELF fixture binary\n")
+        self.debug_binary = self.root / "profiled-binary.debug"
+        self.debug_binary.write_bytes(b"DWARF fixture data\n")
+        self.perf_data = self.root / "perf.data"
+        self.perf_data.write_text("SUCCESS\n", encoding="ascii")
 
     def write_executable(self, name: str, content: str) -> Path:
         path = self.root / name
@@ -140,6 +196,27 @@ class Fixture:
             "--text-sha256",
             "d" * 64,
         ]
+
+    def conversion_arguments(
+        self, profile: Path, metadata: Path, *, include_debug: bool = False
+    ) -> list[str]:
+        arguments = [
+            "--llvm-profgen", os.fspath(self.profgen),
+            "--llvm-profdata", os.fspath(self.profdata),
+            "--readelf", os.fspath(self.readelf),
+            "--objcopy", os.fspath(self.objcopy),
+            "--binary", os.fspath(self.binary),
+            "--perf-data", os.fspath(self.perf_data),
+            "--profile-out", os.fspath(profile),
+            "--metadata-out", os.fspath(metadata),
+            "--cpv", "dev-util/example-1.2.3-r1",
+            "--fingerprint", "b" * 64,
+            "--abi", "amd64",
+            "--clang-major", "22",
+        ]
+        if include_debug:
+            arguments.extend(["--debug-binary", os.fspath(self.debug_binary)])
+        return arguments
 
 
 class FingerprintTest(unittest.TestCase):
@@ -528,6 +605,115 @@ class SampleProfileTest(unittest.TestCase):
                     )
                     self.assertEqual(status, 1)
                     self.assertIn("ERROR:", diagnostic)
+
+
+class SampleConversionTest(unittest.TestCase):
+    def test_transactional_conversion_records_exact_inputs_and_validates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            output = fixture.root / "profiles" / "sample.prof"
+            metadata_path = fixture.root / "profiles" / "sample-metadata.json"
+            output.parent.mkdir()
+            partial = output.with_name("sample.prof.partial")
+            partial.write_text("STALE\n", encoding="ascii")
+            status, stdout, stderr = fixture.invoke(
+                "sample-convert",
+                *fixture.conversion_arguments(
+                    output, metadata_path, include_debug=True
+                ),
+            )
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(output.read_text(encoding="ascii"), "SAMPLE\n")
+            self.assertFalse(partial.exists())
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            source = metadata["source"]
+            self.assertEqual(source["kind"], "llvm-profgen")
+            self.assertEqual(source["binary_path"], os.fspath(fixture.binary))
+            self.assertEqual(
+                source["binary_sha256"],
+                hashlib.sha256(fixture.binary.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(
+                source["perf_data_sha256"],
+                hashlib.sha256(fixture.perf_data.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(
+                source["debug_binary_sha256"],
+                hashlib.sha256(fixture.debug_binary.read_bytes()).hexdigest(),
+            )
+            self.assertIn(
+                f"--debug-binary={fixture.debug_binary}", source["command_arguments"]
+            )
+            self.assertEqual(metadata["input_identity"]["build_id"], "c" * 40)
+            expected_text_sha = hashlib.sha256(b"TEXT\n").hexdigest()
+            self.assertEqual(
+                metadata["input_identity"]["text_sha256"], expected_text_sha
+            )
+            self.assertEqual(metadata["profile_sha256"], stdout.strip())
+
+            validation_arguments = fixture.sample_arguments(output)
+            text_index = validation_arguments.index("--text-sha256") + 1
+            validation_arguments[text_index] = expected_text_sha
+            status, validate_stdout, validate_stderr = fixture.invoke(
+                "sample-validate",
+                *validation_arguments,
+                "--metadata",
+                os.fspath(metadata_path),
+            )
+            self.assertEqual(status, 0, validate_stderr)
+            self.assertEqual(validate_stdout, stdout)
+
+    def test_failure_timeout_and_missing_output_leave_no_transaction_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            for mode in ("FAIL_AFTER_OUTPUT", "TIMEOUT", "NO_OUTPUT"):
+                with self.subTest(mode=mode):
+                    fixture.perf_data.write_text(mode + "\n", encoding="ascii")
+                    case_root = fixture.root / mode.lower()
+                    output = case_root / "sample.prof"
+                    metadata_path = case_root / "sample-metadata.json"
+                    arguments = fixture.conversion_arguments(output, metadata_path)
+                    if mode == "TIMEOUT":
+                        arguments.extend(
+                            [
+                                "--timeout-seconds", "0.15",
+                                "--kill-after-seconds", "0.1",
+                            ]
+                        )
+                    status, _stdout, stderr = fixture.invoke(
+                        "sample-convert", *arguments
+                    )
+                    self.assertEqual(status, 1)
+                    self.assertIn("ERROR:", stderr)
+                    if mode == "TIMEOUT":
+                        self.assertIn("timed out", stderr)
+                    self.assertFalse(output.exists())
+                    self.assertFalse(metadata_path.exists())
+                    self.assertFalse(output.with_name("sample.prof.partial").exists())
+
+    def test_ambiguous_destination_and_preexisting_final_are_never_reused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            ambiguous = fixture.root / "merged.profdata"
+            metadata_path = fixture.root / "metadata.json"
+            status, _stdout, stderr = fixture.invoke(
+                "sample-convert",
+                *fixture.conversion_arguments(ambiguous, metadata_path),
+            )
+            self.assertEqual(status, 1)
+            self.assertIn("sample.prof", stderr)
+            self.assertFalse(ambiguous.exists())
+
+            final = fixture.root / "sample.prof"
+            final.write_text("PREEXISTING\n", encoding="ascii")
+            status, _stdout, stderr = fixture.invoke(
+                "sample-convert",
+                *fixture.conversion_arguments(final, metadata_path),
+            )
+            self.assertEqual(status, 1)
+            self.assertIn("already exists", stderr)
+            self.assertEqual(final.read_text(encoding="ascii"), "PREEXISTING\n")
+            self.assertFalse(metadata_path.exists())
 
 
 if __name__ == "__main__":
