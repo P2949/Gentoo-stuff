@@ -13,3 +13,5 @@ dev-util/source-highlight no-hidden-visibility.conf
 # Java: ccache and sandboxing break the build; OpenJDK rejects Polly flags.
 dev-java/openjdk unsafe-no-ccache-no-sandbox.conf no-polly.conf
 dev-java/openjdk:25 no-polly.conf
+gui-libs/hyprutils O2.conf
+

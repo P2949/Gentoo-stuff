@@ -42,3 +42,6 @@ sys-libs/readline O2.conf
 # RE2 exposes a public C++ API. Global hidden visibility removes its
 # constructors, destructors and match functions from libre2.so.
 dev-libs/re2 no-hidden-no-forced-libs.conf
+
+# Public C API consumed by hyprtoolkit.
+dev-libs/iniparser no-hidden-no-forced-libs.conf
