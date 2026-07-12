@@ -1,0 +1,315 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
+BASHRC=${ROOT}/portage/bashrc
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/gentoo-opt-dispatcher.XXXXXX")
+trap 'rm -rf -- "${TMP}"' EXIT HUP INT TERM
+
+PASS=0
+FAIL=0
+
+run_case() {
+    local name=$1
+    shift
+    if ( "$@" ); then
+        printf 'PASS: %s\n' "${name}"
+        PASS=$((PASS + 1))
+    else
+        printf 'FAIL: %s\n' "${name}" >&2
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+count_token() {
+    local value=$1 token=$2 count=0 word
+    for word in ${value}; do
+        [[ ${word} == "${token}" ]] && count=$((count + 1))
+    done
+    printf '%s\n' "${count}"
+}
+
+mkdir -p "${TMP}/bin" "${TMP}/profiles/raw-clang" "${TMP}/profiles/raw-gcc" \
+    "${TMP}/profiles/raw-rust"
+
+for compiler in clang gcc rustc go; do
+    compiler_path=${TMP}/bin/${compiler}
+    case ${compiler} in
+        clang) body='printf "%s\n" "clang version 22.1.8"' ;;
+        gcc) body='printf "%s\n" "gcc (Gentoo fake) 15.1.0"' ;;
+        rustc) body='printf "%s\n" "rustc 1.90.0"' ;;
+        go) body='if [[ ${1-} == tool ]]; then [[ ${2-} == pprof && ${3-} == -top && -s ${4-} ]]; else printf "%s\n" "go version go1.27 linux/amd64"; fi' ;;
+    esac
+    apply_patch <<PATCH
+*** Begin Patch
+*** Add File: ${compiler_path}
+#!/usr/bin/env bash
+set -euo pipefail
+${body}
+*** End Patch
+PATCH
+    chmod +x "${compiler_path}"
+done
+
+apply_patch <<PATCH
+*** Begin Patch
+*** Add File: ${TMP}/bin/llvm-profdata
+#!/usr/bin/env bash
+set -euo pipefail
+[[ \${1-} == show ]]
+if [[ \${2-} == --sample ]]; then
+    grep -qx SAMPLE "\${3}"
+else
+    grep -qx IR "\${2}"
+fi
+*** Add File: ${TMP}/bin/gcov-tool
+#!/usr/bin/env bash
+set -euo pipefail
+[[ \${1-} == overlap && -d \${2-} && \${2-} == \${3-} ]]
+*** End Patch
+PATCH
+chmod +x "${TMP}/bin/llvm-profdata" "${TMP}/bin/gcov-tool"
+
+FINGERPRINT=$(printf 'a%.0s' {1..64})
+
+write_manifest_file() {
+    local output=$1 backend=$2 family=$3 profile=$4 abi=${5:-amd64}
+    local digest
+    digest=$(sha256sum -- "${profile}")
+    digest=${digest%% *}
+    apply_patch <<PATCH
+*** Begin Patch
+*** Add File: ${output}
+schema=gentoo-optimization-profile-v1
+backend=${backend}
+fingerprint=${FINGERPRINT}
+abi=${abi}
+compiler_family=${family}
+profile_path=${profile}
+profile_sha256=${digest}
+validation_status=passed
+*** End Patch
+PATCH
+}
+
+case_off_is_noop() (
+    CFLAGS='c-before'; CXXFLAGS='cxx-before'; LDFLAGS='ld-before'
+    FCFLAGS='fc-before'; FFLAGS='ff-before'; FEATURES='ccache sandbox'
+    source "${BASHRC}"
+    [[ ${CFLAGS} == c-before && ${CXXFLAGS} == cxx-before &&
+        ${LDFLAGS} == ld-before && ${FCFLAGS} == fc-before &&
+        ${FFLAGS} == ff-before && ${FEATURES} == 'ccache sandbox' ]]
+)
+
+case_legacy_rejected() (
+    PGO_INSTRUMENT=1 source "${BASHRC}" >/dev/null 2>&1 && return 1
+    PGO_USE_IF_AVAILABLE=1 source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_unknown_mode_rejected() (
+    GENTOO_OPT_MODE=guess-profile source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_compiler_lane_rejected() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=gcc ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_abi_separation() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=x86
+    export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_missing_profile_rejected() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-use GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/absent.profdata"
+    export GENTOO_OPT_PROFILE_MANIFEST="${TMP}/profiles/absent.manifest"
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+printf '%s\n' IR > "${TMP}/profiles/ir.profdata"
+printf '%s\n' SAMPLE > "${TMP}/profiles/sample.prof"
+write_manifest_file "${TMP}/profiles/ir.manifest" clang-ir clang "${TMP}/profiles/ir.profdata"
+write_manifest_file "${TMP}/profiles/sample.manifest" clang-sample clang "${TMP}/profiles/sample.prof"
+
+case_ir_use_and_exact_once() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang LLVM_PROFDATA=llvm-profdata ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-use GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/ir.profdata"
+    export GENTOO_OPT_PROFILE_MANIFEST="${TMP}/profiles/ir.manifest"
+    CFLAGS='-O2'; CXXFLAGS='-O2'; LDFLAGS='-Wl,--as-needed'
+    FCFLAGS='fortran-c'; FFLAGS='fortran-f'; FEATURES='ccache sandbox'
+    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1
+    local_flag="-fprofile-use=${GENTOO_OPT_PROFILE_PATH}"
+    [[ $(count_token "${CFLAGS}" "${local_flag}") == 1 ]]
+    [[ $(count_token "${CXXFLAGS}" "${local_flag}") == 1 ]]
+    [[ $(count_token "${LDFLAGS}" "${local_flag}") == 1 ]]
+    [[ $(count_token "${FEATURES}" -ccache) == 1 && ${CCACHE_DISABLE} == 1 ]]
+    [[ ${FCFLAGS} == fortran-c && ${FFLAGS} == fortran-f ]]
+)
+
+case_sample_use_and_format_separation() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang LLVM_PROFDATA=llvm-profdata ABI=amd64
+    export GENTOO_OPT_MODE=clang-sample-use GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/sample.prof"
+    export GENTOO_OPT_PROFILE_MANIFEST="${TMP}/profiles/sample.manifest"
+    CFLAGS='-O2'; CXXFLAGS='-O2'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
+    source "${BASHRC}" >/dev/null 2>&1
+    [[ ${CFLAGS} == *"-fprofile-sample-use=${GENTOO_OPT_PROFILE_PATH}"* ]]
+    [[ ${CFLAGS} != *'-fprofile-use='* && ${LDFLAGS} == ld ]]
+    [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+
+    # A correctly hashed sample payload cannot pass through the IR validator.
+    sed 's/backend=clang-sample/backend=clang-ir/' \
+        "${TMP}/profiles/sample.manifest" > "${TMP}/profiles/sample-as-ir.manifest"
+    export GENTOO_OPT_MODE=clang-ir-use
+    export GENTOO_OPT_PROFILE_MANIFEST="${TMP}/profiles/sample-as-ir.manifest"
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_manifest_mismatch_rejected() (
+    sed 's/abi=amd64/abi=x86/' "${TMP}/profiles/ir.manifest" > "${TMP}/profiles/ir-x86.manifest"
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang LLVM_PROFDATA=llvm-profdata ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-use GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/ir.profdata"
+    export GENTOO_OPT_PROFILE_MANIFEST="${TMP}/profiles/ir-x86.manifest"
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_clang_generate_exact_once() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'; FEATURES='ccache'
+    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1
+    local_flag="-fprofile-generate=${GENTOO_OPT_PROFILE_PATH}"
+    [[ $(count_token "${CFLAGS}" "${local_flag}") == 1 ]]
+    [[ $(count_token "${CXXFLAGS}" "${local_flag}") == 1 ]]
+    [[ $(count_token "${LDFLAGS}" "${local_flag}") == 1 ]]
+    [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+)
+
+printf 'gcda\n' > "${TMP}/profiles/raw-gcc/unit.gcda"
+
+case_gcc_use_isolated_correction() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=gcc GCOV_TOOL=gcov-tool ABI=amd64
+    GENTOO_OPT_MODE=off source "${BASHRC}"
+    digest=$(gentoo_opt_hash_profile_directory "${TMP}/profiles/raw-gcc")
+    apply_patch <<PATCH
+*** Begin Patch
+*** Add File: ${TMP}/profiles/gcc.manifest
+schema=gentoo-optimization-profile-v1
+backend=gcc
+fingerprint=${FINGERPRINT}
+abi=amd64
+compiler_family=gcc
+profile_path=${TMP}/profiles/raw-gcc
+profile_sha256=${digest}
+validation_status=passed
+*** End Patch
+PATCH
+    export GENTOO_OPT_MODE=gcc-use GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-gcc"
+    export GENTOO_OPT_PROFILE_MANIFEST="${TMP}/profiles/gcc.manifest"
+    CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
+    source "${BASHRC}" >/dev/null 2>&1
+    [[ ${CFLAGS} == *-fprofile-correction* && ${CXXFLAGS} == *-fprofile-correction* ]]
+    [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+)
+
+case_rust_target_isolation() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" RUSTC=rustc ABI=amd64
+    export GENTOO_OPT_MODE=rust-generate GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-rust"
+    export GENTOO_OPT_RUST_TARGET=x86_64-unknown-linux-gnu
+    RUSTFLAGS='-Copt-level=3'; FCFLAGS='fc'; FFLAGS='ff'
+    source "${BASHRC}" >/dev/null 2>&1
+    [[ ${RUSTFLAGS} == *"-Cprofile-generate=${GENTOO_OPT_PROFILE_PATH}"* ]]
+    [[ ${CARGO_BUILD_TARGET} == x86_64-unknown-linux-gnu ]]
+    [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+)
+
+printf '%s\n' GO > "${TMP}/profiles/cpu.pprof"
+write_manifest_file "${TMP}/profiles/go.manifest" go go "${TMP}/profiles/cpu.pprof"
+
+case_go_use_only_goflags() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" GO=go ABI=amd64
+    export GENTOO_OPT_MODE=go-use GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/cpu.pprof"
+    export GENTOO_OPT_PROFILE_MANIFEST="${TMP}/profiles/go.manifest"
+    GOFLAGS='-trimpath'; CFLAGS='c'; CXXFLAGS='cxx'; FCFLAGS='fc'; FFLAGS='ff'
+    source "${BASHRC}" >/dev/null 2>&1
+    [[ ${GOFLAGS} == *"-pgo=${GENTOO_OPT_PROFILE_PATH}"* ]]
+    [[ ${CFLAGS} == c && ${CXXFLAGS} == cxx && ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+)
+
+case_bolt_layer_and_gcc_guard() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_BOLT_STAGE=capture
+    export GENTOO_OPT_ABI=amd64 GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
+    source "${BASHRC}" >/dev/null 2>&1
+    [[ ${CFLAGS} == *-g1* && ${LDFLAGS} == *-Wl,--emit-relocs* ]]
+    [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+
+    export CC=gcc GENTOO_OPT_MODE=gcc-generate
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-gcc"
+    unset GENTOO_OPT_BOLT_GCC_READY
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_fingerprint_file_strict() (
+    printf 'fingerprint=%s\n' "${FINGERPRINT}" > "${TMP}/fingerprint.env"
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_ABI=amd64
+    unset GENTOO_OPT_FINGERPRINT
+    export GENTOO_OPT_FINGERPRINT_FILE="${TMP}/fingerprint.env"
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    source "${BASHRC}" >/dev/null 2>&1
+    [[ ${GENTOO_OPT_ACTIVE_FINGERPRINT} == "${FINGERPRINT}" ]]
+)
+
+run_case 'off/unset leaves all flags unchanged' case_off_is_noop
+run_case 'legacy marker paths fail closed' case_legacy_rejected
+run_case 'unknown modes fail closed' case_unknown_mode_rejected
+run_case 'Clang mode rejects a GCC compiler' case_compiler_lane_rejected
+run_case 'requested ABI cannot cross the Portage ABI' case_abi_separation
+run_case 'missing use profile fails closed' case_missing_profile_rejected
+run_case 'Clang IR use validates and appends exactly once' case_ir_use_and_exact_once
+run_case 'IR and sample profiles remain format/flag separated' case_sample_use_and_format_separation
+run_case 'profile manifest ABI mismatch fails closed' case_manifest_mismatch_rejected
+run_case 'Clang generation appends exactly once' case_clang_generate_exact_once
+run_case 'GCC correction remains isolated from Fortran' case_gcc_use_isolated_correction
+run_case 'Rust instrumentation requires target isolation' case_rust_target_isolation
+run_case 'Go PGO changes GOFLAGS only' case_go_use_only_goflags
+run_case 'BOLT readiness layers and guards the GCC lane' case_bolt_layer_and_gcc_guard
+run_case 'strict fingerprint.env loading works' case_fingerprint_file_strict
+
+printf 'SUMMARY: pass=%d fail=%d total=%d\n' "${PASS}" "${FAIL}" "$((PASS + FAIL))"
+((FAIL == 0))
