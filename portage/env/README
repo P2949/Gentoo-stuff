@@ -99,9 +99,6 @@ Fallback ladder, least to most conservative:
         no-section-splitting.conf
             Removes function/data section splitting.
 
-        no-pgo-use.conf
-            Prevents automatic use of an available package PGO profile.
-
         no-global-perf-extras.conf
             Removes every new global performance-expansion axis while keeping
             the older aggressive baseline. Use only after narrower demotions

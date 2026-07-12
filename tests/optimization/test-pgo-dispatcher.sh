@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1090
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -40,34 +41,20 @@ for compiler in clang gcc rustc go; do
         rustc) body='printf "%s\n" "rustc 1.90.0"' ;;
         go) body='if [[ ${1-} == tool ]]; then [[ ${2-} == pprof && ${3-} == -top && -s ${4-} ]]; else printf "%s\n" "go version go1.27 linux/amd64"; fi' ;;
     esac
-    apply_patch <<PATCH
-*** Begin Patch
-*** Add File: ${compiler_path}
-#!/usr/bin/env bash
-set -euo pipefail
-${body}
-*** End Patch
-PATCH
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n%s\n' "${body}" > "${compiler_path}"
     chmod +x "${compiler_path}"
 done
 
-apply_patch <<PATCH
-*** Begin Patch
-*** Add File: ${TMP}/bin/llvm-profdata
-#!/usr/bin/env bash
-set -euo pipefail
-[[ \${1-} == show ]]
-if [[ \${2-} == --sample ]]; then
-    grep -qx SAMPLE "\${3}"
-else
-    grep -qx IR "\${2}"
-fi
-*** Add File: ${TMP}/bin/gcov-tool
-#!/usr/bin/env bash
-set -euo pipefail
-[[ \${1-} == overlap && -d \${2-} && \${2-} == \${3-} ]]
-*** End Patch
-PATCH
+printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+    '[[ ${1-} == show ]]' \
+    'if [[ ${2-} == --sample ]]; then' \
+    '    grep -qx SAMPLE "${3}"' \
+    'else' \
+    '    grep -qx IR "${2}"' \
+    'fi' > "${TMP}/bin/llvm-profdata"
+printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+    '[[ ${1-} == overlap && -d ${2-} && ${2-} == ${3-} ]]' \
+    > "${TMP}/bin/gcov-tool"
 chmod +x "${TMP}/bin/llvm-profdata" "${TMP}/bin/gcov-tool"
 
 FINGERPRINT=$(printf 'a%.0s' {1..64})
@@ -77,19 +64,15 @@ write_manifest_file() {
     local digest
     digest=$(sha256sum -- "${profile}")
     digest=${digest%% *}
-    apply_patch <<PATCH
-*** Begin Patch
-*** Add File: ${output}
-schema=gentoo-optimization-profile-v1
-backend=${backend}
-fingerprint=${FINGERPRINT}
-abi=${abi}
-compiler_family=${family}
-profile_path=${profile}
-profile_sha256=${digest}
-validation_status=passed
-*** End Patch
-PATCH
+    printf '%s\n' \
+        'schema=gentoo-optimization-profile-v1' \
+        "backend=${backend}" \
+        "fingerprint=${FINGERPRINT}" \
+        "abi=${abi}" \
+        "compiler_family=${family}" \
+        "profile_path=${profile}" \
+        "profile_sha256=${digest}" \
+        'validation_status=passed' > "${output}"
 }
 
 case_off_is_noop() (
@@ -216,19 +199,15 @@ case_gcc_use_isolated_correction() (
     export PATH="${TMP}/bin:/usr/bin:/bin" CC=gcc GCOV_TOOL=gcov-tool ABI=amd64
     GENTOO_OPT_MODE=off source "${BASHRC}"
     digest=$(gentoo_opt_hash_profile_directory "${TMP}/profiles/raw-gcc")
-    apply_patch <<PATCH
-*** Begin Patch
-*** Add File: ${TMP}/profiles/gcc.manifest
-schema=gentoo-optimization-profile-v1
-backend=gcc
-fingerprint=${FINGERPRINT}
-abi=amd64
-compiler_family=gcc
-profile_path=${TMP}/profiles/raw-gcc
-profile_sha256=${digest}
-validation_status=passed
-*** End Patch
-PATCH
+    printf '%s\n' \
+        'schema=gentoo-optimization-profile-v1' \
+        'backend=gcc' \
+        "fingerprint=${FINGERPRINT}" \
+        'abi=amd64' \
+        'compiler_family=gcc' \
+        "profile_path=${TMP}/profiles/raw-gcc" \
+        "profile_sha256=${digest}" \
+        'validation_status=passed' > "${TMP}/profiles/gcc.manifest"
     export GENTOO_OPT_MODE=gcc-use GENTOO_OPT_ABI=amd64
     export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-gcc"

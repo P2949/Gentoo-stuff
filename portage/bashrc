@@ -30,7 +30,8 @@ gentoo_opt_append_flag_once() {
     else
         printf -v "${variable}" '%s' "${flag}"
     fi
-    export "${variable}"
+    # shellcheck disable=SC2163  # The indirect variable name is intentional.
+    export "${variable?}"
 }
 
 gentoo_opt_disable_ccache() {
@@ -76,7 +77,7 @@ gentoo_opt_detect_abi() {
 }
 
 gentoo_opt_load_fingerprint() {
-    local loaded='' line='' extra='' computed=''
+    local loaded='' line='' computed='' line_count
     if [[ -n ${GENTOO_OPT_FINGERPRINT_FILE-} ]]; then
         gentoo_opt_safe_absolute_path "${GENTOO_OPT_FINGERPRINT_FILE}" || {
             gentoo_opt_error 'GENTOO_OPT_FINGERPRINT_FILE must be a safe absolute path'
@@ -90,8 +91,8 @@ gentoo_opt_load_fingerprint() {
             gentoo_opt_error "cannot read fingerprint file: ${GENTOO_OPT_FINGERPRINT_FILE}"
             return 1
         }
-        IFS= read -r extra < <(sed -n '2p' "${GENTOO_OPT_FINGERPRINT_FILE}") || :
-        [[ -z ${extra} && ${line} =~ ^fingerprint=([0-9a-f]{64})$ ]] || {
+        line_count=$(wc -l < "${GENTOO_OPT_FINGERPRINT_FILE}") || return 1
+        [[ ${line_count} == 1 && ${line} =~ ^fingerprint=([0-9a-f]{64})$ ]] || {
             gentoo_opt_error 'fingerprint file must contain exactly fingerprint=<64 lowercase hex>'
             return 1
         }
@@ -307,7 +308,7 @@ gentoo_opt_read_profile_manifest() {
 }
 
 gentoo_opt_validate_profile_format() {
-    local backend=$1 profile=$2 tool output_directory
+    local backend=$1 profile=$2 tool
     if [[ -n ${GENTOO_OPT_PROFILE_VALIDATOR-} ]]; then
         gentoo_opt_safe_absolute_path "${GENTOO_OPT_PROFILE_VALIDATOR}" || {
             gentoo_opt_error 'GENTOO_OPT_PROFILE_VALIDATOR must be an absolute path'; return 1;
