@@ -19,9 +19,12 @@ note, and GNU-stack and GNU-RELRO policies must remain intact. The only
 allowlisted diagnostic is LLVM's exact duplicated-32-entry Intel Skylake LBR
 workaround message; its presence or absence is retained in the profile-quality
 evidence and every other BOLT warning remains fatal.
-The BOLT command uses `-use-gnu-stack`; a normal `strip --strip-unneeded` copy
-of every output must retain its note, `.text` identity, structure, metadata,
-and functionality, matching the final pre-strip Portage deployment order. The
+The BOLT command deliberately leaves `-use-gnu-stack` disabled. LLVM 22
+documents that option as reusing the `PT_GNU_STACK` program header for a new
+segment, which removes the input's explicit non-executable-stack policy. A
+normal `strip --strip-unneeded` copy of every output must instead retain
+`PT_GNU_STACK`, the BOLT note, `.text` identity, structure, metadata, and
+functionality, matching the final pre-strip Portage deployment order. The
 runner never changes an installed file and accepts output only below `/tmp` or
 `/var/tmp/gentoo-optimization`.
 

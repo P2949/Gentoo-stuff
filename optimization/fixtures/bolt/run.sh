@@ -428,7 +428,6 @@ profile_and_bolt() {
         -split-all-cold \
         -split-eh \
         -icf=safe \
-        -use-gnu-stack \
         -update-debug-sections \
         -dyno-stats
     if grep -Eq 'BOLT-ERROR|LLVM ERROR|PLEASE submit a bug report|BOLT-WARNING' "${class_root}/llvm-bolt.log"; then
