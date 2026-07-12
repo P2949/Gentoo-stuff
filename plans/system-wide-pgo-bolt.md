@@ -2,13 +2,14 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 is complete after closing both recovery review findings, Phase 1 capability validation is in progress, and the unsafe legacy global PGO consumer is neutralized.
+- **Project state:** active; Phase 0 is complete after closing both recovery review findings, Phase 1 capability validation is in progress, and the unsafe legacy global PGO implementation has been deleted behind a fail-closed stale-marker guard.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
+- **Current non-frozen live policy count:** 1,216 installed CPVs resolve through Portage; this is a package-policy preflight count, not the Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
-- **Last plan review:** 2026-07-12; the complete plan and all binding prose gates were re-read after the dormant unsafe PGO implementation was removed and its fail-closed-only replacement was evidenced, recorded in state, and documented here.
+- **Last plan review:** 2026-07-12; the complete plan and all binding prose gates were re-read after the authoritative 43-pass quick suite, exact package-policy validation, Hyprland prerequisite audit, packaged-BOLT lint/interrupted-build evidence, and BOLT transaction signal-boundary matrix were recorded.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **Known tool gap:** LLVM 22 provides Clang, LLD, `llvm-profdata`, and `llvm-profgen`, but no installed `llvm-bolt` or `perf2bolt`; Phase 1 cannot pass until this is remedied.
 
@@ -699,6 +700,12 @@ Verify that:
 
 ## 10.7 Validate BOLT on executable, PIE, and DSO fixtures
 
+- [ ] Install the package-managed `llvm-core/bolt-22.1.8` tools and verify their exact runtime identities and dependency closure.
+- [ ] Pass the fixed-address `ET_EXEC` fixture and preserve its required ELF, metadata, and functional properties.
+- [ ] Pass the PIE fixture and preserve its required ELF, metadata, and functional properties.
+- [ ] Pass the shared-object fixture and preserve its required ABI, ELF, metadata, and consumer behavior.
+- [ ] Record exact profiles, inputs, outputs, hashes, structured timeout rows, and machine-readable zero-pending capability state.
+
 For each fixture:
 
 - link with symbols, build ID, and `--emit-relocs`;
@@ -711,28 +718,56 @@ For each fixture:
 
 Do not implement the live deployment hook until all fixture classes pass.
 
+### Phase 1.7 packaging progress (not capability completion)
+
+- `pkgcheck 0.10.40` reports no findings for `pkgcheck scan --repo codex-local llvm-core/bolt` at tested code commit `a97a5dbcffdfd74b03ae151a0e77dee67aa0d6a2`. The exact ebuild, Manifest, and metadata hashes are retained in `/var/lib/gentoo-optimization/reports/phase-1-bolt-pkgcheck-20260712.log` (SHA-256 `c1ccc0995643ab8fe7e0b8541602f65e56f4db1ba412b6f98ae2e5a4e7b6563e`). This proves repository lint only; it is not evidence that the tools install or that any fixture class passes.
+- The first explicit static-closure stage build was externally interrupted with exit 143 at Ninja step 876 of 1,825. Its root-owned log remains `/var/lib/gentoo-optimization/reports/phase-1-bolt-portage-stage-build-explicit-closure-20260712.log` (SHA-256 `35845dc05e0f45d40ddc5c893c32db148d59abe31b7209a6ccd1fbc67fd561ed`) with its status record beside it; no package was installed and no partial output is accepted. A clean retry is running through a one-shot `cronie` launcher outside the interactive tool process tree, with a separate log and status record. The current machine-readable capability state is `/var/lib/gentoo-optimization/state/capabilities/bolt.json` (SHA-256 `1a62f9a480ad1a9022db2d32a3f3c0d456f4c05bd9a44e2d2606d067ae68aeb0`), explicitly reporting four pending gates, zero unknowns, and zero unresolved failures. Phase 1.7 remains open until the retry, package-managed install, and all ET_EXEC/PIE/DSO checks succeed.
+
 ## 10.8 Keep capability validation repeatable
 
 - [x] Add a single top-level driver for shell syntax, ShellCheck, Python compilation/tests, recovery fixtures, and supported PGO/BOLT capability fixtures.
 - [x] Make unavailable capability dependencies produce an explicit `SKIP: <reason>` rather than disappearing.
 - [x] Test dependency preflight hermetically so an unavailable capability runner cannot execute accidentally.
+- [x] Directly test successful and failed BOLT artifact transactions, timeout exits 124/137, missing/stale outputs, stdout publication, and exact structured status rows.
+- [x] Clean an active partial and terminate its complete workload process group on outer `EXIT`/`HUP`/`INT`/`TERM`, while preserving published finals and unrelated partials.
+- [x] Derive the timed-stage contract from a declared registry and reject unknown, missing, duplicate, or reordered evidence.
 
 ### Phase 1.8 evidence
 
 - `tests/run-optimization-tests.sh` provides `quick` and `capabilities` modes plus explicit per-capability selection. It confines output to a new canonical absolute directory below `/tmp` or `/var/tmp/gentoo-optimization`, rejects unsafe path characters before creating anything, and preflights every external command used by the selected fixture.
 - The non-recursive driver self-test proves canonical unsafe paths are rejected without creation and proves a dependency-incomplete BOLT lane emits exactly one reason-bearing skip, never invokes its stub runner, reports every missing dependency, and exits successfully with zero failure rows.
 - The exact post-BOLT-fixture-hardening quick run reports 38 passes, zero failures, six explicit capability skips, and 44 unique result rows. It includes Bash syntax, Manifest-verified ShellCheck 0.11.0, Python source compilation, Python unit tests, the driver self-test, and both recovery fixtures. Root-owned evidence is `/var/lib/gentoo-optimization/reports/phase-1-test-driver-post-bolt-fixture` (tree-manifest SHA-256 `b9a99cc9cc11c0caa0ce6590ceb07c95def85f7d90138746078b210b71ca319d`); ShellCheck provenance is `/var/lib/gentoo-optimization/reports/phase-1-shellcheck-0.11.0-provenance.log` (SHA-256 `a2e4885cd37d7ce70d45dfdbade644521d5bfa8f952c3c4333086c23f2909730`); capability state is `/var/lib/gentoo-optimization/state/capabilities/optimization-test-driver.json` (SHA-256 `2abc5fb04a7b3ea0d27adaa45293d5c4e2f7508a096c587410c1fe4710b98a78`).
+- The BOLT transaction implementation is tested at exact code commit `7e23736c3779adb3c553c98841dc49fd9b8c145e`. Three independent direct-fixture repetitions cover atomic generated/stdout success, ordinary failure, synthetic deadline 124 and forced-kill 137, zero-exit missing output, stale final/partial cleanup, exact rows, all four running-stage outer signals, post-rename and post-status signal boundaries, and exact registry order/membership/uniqueness; zero workload process survived. Bash syntax, ShellCheck 0.11.0, and the CLI self-test pass. Root-owned evidence is `/var/lib/gentoo-optimization/reports/phase-1-bolt-transaction-tests-20260712.log` (SHA-256 `aab59df8e5c7d28d1d91fd36cb6b1076f04b3233671b6d869db1bd9fbc876b4a`); state is `/var/lib/gentoo-optimization/state/capabilities/bolt-transaction.json` (SHA-256 `6b3467ba61fb30f4499903b341483bd49e14e19fec753e8ef3a37aaea098d35e`).
+- The superseding authoritative quick run at exact code commit `7845ab44737e03057d56fffa4dae3903a65332f3` reports 43 passes, zero failures, six explicit capability skips, and 49 unique result rows. It additionally proves the subprocess-heavy unit tests run without `PYTHONPYCACHEPREFIX`, the live Portage semantic package-policy gate passes, the Clang/libc++ and GCC/libstdc++ recovery probes compile and execute, and the BOLT transaction fixture passes inside the top-level driver. Root-owned evidence is `/var/lib/gentoo-optimization/reports/phase-1-review-final-quick-20260712` (evidence-manifest SHA-256 `fba97be4c59614910d9b2ef539b9ad23f4abf415829387f6f3418c33c7c82948`, summary SHA-256 `0984498be098e8006b142de8e78b96da23e4a72363d952c51125ac0f7d58adcf`, results SHA-256 `445b5ff069d624f8635f775b12184dde98d583cad6fa56aa5ca52fd8ec2e1715`). The current capability state is `/var/lib/gentoo-optimization/state/capabilities/optimization-test-driver.json` (SHA-256 `f51319cc8e8e0cf3c8f9c0547ace06bfe43693111cad7828f85da653b6b1f3e4`); the earlier 38-pass aggregate and state are retained only as historical evidence.
 
 ## 10.9 Keep the optimization branch reviewable
 
 - [x] Remove broad plan-ignore rules and prove both plan paths remain visible to Git.
 - [x] Preserve unrelated MangoHud/O2 remediation on a separate branch rather than carrying it in the optimization history.
+- [x] Audit the Hyprland-related policy against the live VDB, repositories, installed ELFs, retained binpackages, and runtime before deciding whether it is prerequisite or unrelated work.
+- [x] Collapse redundant Hyprland/hyprutils environment stacks and remove inactive `include-string.conf` and stale `qtutils` policy without changing the proven installed ABI lane.
 
 ### Phase 1.9 evidence
 
 - `.gitignore` contains only targeted transient-file rules; `/plan.md`, `*plan*`, and `./plans/` are absent, and `git check-ignore` reports neither `plan.md` nor `plans/system-wide-pgo-bolt.md` as ignored.
 - Unrelated MangoHud/O2 work is preserved at commit `1ec0f6563354956408c2468a05945c4a5be08c74` on `fix/mangohud-and-o2-remediation`; the active optimization `HEAD` contains zero MangoHud paths. Later user-owned Portage edits in the shared worktree remain untouched and are not part of this evidence claim.
 - The root-owned audit is `/var/lib/gentoo-optimization/reports/phase-1-review-branch-hygiene.log` (SHA-256 `87ff7c7c749a866c8354b6c21648e45273d4013064d70be2168364ebd98d30cc`); state is `/var/lib/gentoo-optimization/state/project/review-branch-hygiene.json` (SHA-256 `880c4efeb5172ac335a37af691f031b0aa5cd6f5f5ae3c0a3953be5a3345eba5`).
+- The Hyprland policy is a live buildability and ABI prerequisite, not an unrelated optimization experiment: 14 installed packages originate in hyproverlay, and the selected Hyprland requires glaze 7, which is unavailable in Gentoo but installed from that overlay. Across 21 audited installed packages, all 41 VDB-recorded ELFs exist and are `lddtree`-clean; 33 directly use libc++, none directly use libstdc++, and Hyprland, XDPH, and hyprpolkitagent were running. Retained binpackages prove severe hidden-visibility export loss: hyprutils 6 to 303/383 exports, hyprwire 4 to 269, iniparser 0 to 28, sdbus-c++ 2 to 420, and re2 0 to 497.
+- The confusing stacks are resolved: hyprutils now has only the conservative `O2.conf` terminal tier and Hyprland only `O3-thin-lto-no-libs.conf`. Mandatory overlay, public-ABI, libde265, and XDPH policies remain; hyprutils promotion, muParser `-openmp`, and narrower executable-only XDPH/hyprpolkit lanes require controlled rebuild proof before the Phase 3 freeze. Root-owned evidence is `/var/lib/gentoo-optimization/reports/phase-1-hyprland-prerequisite-audit-20260712` (`REPORT.md` SHA-256 `98f8ff892590f5ebb225e7f6e0a3c433afd1055f25e97c0bfac08220f5c662d2`, manifest SHA-256 `0f96e6e0eda8f626b43fe26489e25ffd5c46eb1ff8540ea0bc62df0ba04f28b1`); state is `/var/lib/gentoo-optimization/state/project/hyprland-prerequisite-scope.json` (SHA-256 `a1045b378fe33c38b03866b9c7ba7afd459f537bf72a1112a02a467b1ba4b36c`). This is prerequisite-scope evidence, not a Phase 2 fingerprint or PGO/BOLT coverage claim.
+
+## 10.10 Validate exact package environment policy before fingerprints
+
+- [x] Reject exact duplicate atom/environment pairs recursively across the package policy tree.
+- [x] Reject missing or escaping environment paths, invalid or dead atoms, unreviewed effective overlaps, and forbidden recovery/generated/PGO/BOLT assignments.
+- [x] Require exact ordered rationales for intentional multi-environment stacks and exact reviewed compiler profiles with complete, non-conflicting tool tuples.
+- [x] Run the semantic validator against the live Gentoo Portage universe and make unavailable semantic validation an explicit reason-bearing skip elsewhere.
+- [x] Preserve the three policy changes that alter live resolved flags as an explicit source-rebuild queue rather than claiming them complete from configuration inspection.
+
+### Phase 1.10 evidence
+
+- At exact code commit `7845ab44737e03057d56fffa4dae3903a65332f3`, the strict live validator covers 13 policy files, 137 active lines, 135 exact atoms, 146 atom/environment pairs, 10 reviewed ordered multi-environment stacks, five reviewed compiler profiles, and all 1,216 installed CPVs. Portage semantic validation, 27 unit tests, plain mypy, direct compiler/tool/ABI probes, and 121 unaffected effective-variable hashes pass with zero duplicates, missing environments, unsafe paths, invalid/dead atoms, unreviewed overlaps/stacks, compiler conflicts, or forbidden stage markers.
+- The three deliberate effective-policy corrections are tracked as pending source rebuilds: `media-libs/svt-av1-4.1.0`, `dev-util/colm-0.14.7-r4`, and `dev-util/ragel-7.0.4-r3`. Therefore the package-policy state honestly reports `pending_total=3`, `unknown_total=0`, and `failed_total=0`; these rebuilds must complete before the Phase 1 boundary and before inventory freeze.
+- Root-owned evidence is `/var/lib/gentoo-optimization/reports/phase-1-package-env-policy-independent-validation-20260712.log` (SHA-256 `1be6ef8efd460b41703691c51db728a31c74e70bbb84a70d9359d7b7ab52ecad`). The reviewed policy SHA-256 is `92ee537829e44e9c2c0fe450baea98996dbff927f1ec6f989b6cf832fd10d611`, the current checker SHA-256 is `f1286aedc7c0b5e37a13d76ed2aa340f0459bc0ab896aafb2a52ff7ff42dbab0`, and state is `/var/lib/gentoo-optimization/state/project/package-env-policy.json` (SHA-256 `fd9493e7ab2065e7968372f7fbb394fb4bccc864d9e2a431f0e88f1ce5e0ee1`).
 
 ---
 
