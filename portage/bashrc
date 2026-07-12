@@ -1,20 +1,592 @@
 # shellcheck shell=bash
 ############################################################################
-# /etc/portage/bashrc
-#
-# Bash-only hooks for global-first performance experiments.
+# /etc/portage/bashrc -- strict system-wide optimization mode dispatcher
 ############################################################################
 
-# Fail closed if any stale package.env assignment attempts to activate the
-# legacy compiler-agnostic PGO paths.  Phase 2 replaces this file with an exact
-# backend/ABI/fingerprint dispatcher; until then no profile mode is permitted.
-if [[ "${PGO_INSTRUMENT:-0}" == "1" || "${PGO_USE_IF_AVAILABLE:-0}" == "1" ]]; then
-    printf '%s\n' \
-        'ERROR: legacy global PGO mode is disabled pending the exact backend-specific implementation' \
-        >&2
-    return 1
-fi
+# This file is sourced by Portage.  Active modes deliberately require an
+# externally generated exact package fingerprint and explicit ABI/profile
+# identity.  It never guesses a profile from CATEGORY/PN.
 
-# Deliberately no fallback implementation lives below this guard.  Phase 2
-# installs the reviewed backend/ABI/fingerprint dispatcher as a replacement;
-# until then this file must be incapable of adding optimization flags.
+gentoo_opt_error() {
+    printf 'gentoo-optimization: ERROR: %s\n' "$*" >&2
+    return 1
+}
+
+gentoo_opt_safe_absolute_path() {
+    local path=${1-}
+    [[ ${path} == /* && ${path} != *//* && ${path} != *'/../'* &&
+        ${path} != */.. && ${path} != *'/./'* && ${path} != */. &&
+        ${path} != *[$'\n\r\t ']* ]]
+}
+
+gentoo_opt_append_flag_once() {
+    local variable=$1 flag=$2 value
+    value=${!variable-}
+    case " ${value} " in
+        *" ${flag} "*) return 0 ;;
+    esac
+    if [[ -n ${value} ]]; then
+        printf -v "${variable}" '%s %s' "${value}" "${flag}"
+    else
+        printf -v "${variable}" '%s' "${flag}"
+    fi
+    export "${variable}"
+}
+
+gentoo_opt_disable_ccache() {
+    gentoo_opt_append_flag_once FEATURES -ccache
+    CCACHE_DISABLE=1
+    export CCACHE_DISABLE
+}
+
+gentoo_opt_normalize_abi() {
+    case ${1-} in
+        amd64|64|x86_64) printf '%s\n' amd64 ;;
+        x86|32|i386|i486|i586|i686) printf '%s\n' x86 ;;
+        *) return 1 ;;
+    esac
+}
+
+gentoo_opt_detect_abi() {
+    local detected requested
+    if [[ -n ${ABI-} ]]; then
+        detected=$(gentoo_opt_normalize_abi "${ABI}") || {
+            gentoo_opt_error "unsupported Portage ABI: ${ABI}"
+            return 1
+        }
+    else
+        case ${CHOST-} in
+            x86_64-*) detected=amd64 ;;
+            i?86-*) detected=x86 ;;
+            *)
+                gentoo_opt_error 'ABI is unset and CHOST cannot identify an x86 ABI'
+                return 1
+                ;;
+        esac
+    fi
+    requested=$(gentoo_opt_normalize_abi "${GENTOO_OPT_ABI-}") || {
+        gentoo_opt_error 'active mode requires GENTOO_OPT_ABI=amd64 or x86'
+        return 1
+    }
+    if [[ ${detected} != "${requested}" ]]; then
+        gentoo_opt_error "ABI mismatch: Portage=${detected}, requested=${requested}"
+        return 1
+    fi
+    GENTOO_OPT_ACTIVE_ABI=${detected}
+}
+
+gentoo_opt_load_fingerprint() {
+    local loaded='' line='' extra='' computed=''
+    if [[ -n ${GENTOO_OPT_FINGERPRINT_FILE-} ]]; then
+        gentoo_opt_safe_absolute_path "${GENTOO_OPT_FINGERPRINT_FILE}" || {
+            gentoo_opt_error 'GENTOO_OPT_FINGERPRINT_FILE must be a safe absolute path'
+            return 1
+        }
+        [[ -f ${GENTOO_OPT_FINGERPRINT_FILE} && ! -L ${GENTOO_OPT_FINGERPRINT_FILE} ]] || {
+            gentoo_opt_error "fingerprint file is not a regular non-symlink file: ${GENTOO_OPT_FINGERPRINT_FILE}"
+            return 1
+        }
+        IFS= read -r line < "${GENTOO_OPT_FINGERPRINT_FILE}" || {
+            gentoo_opt_error "cannot read fingerprint file: ${GENTOO_OPT_FINGERPRINT_FILE}"
+            return 1
+        }
+        IFS= read -r extra < <(sed -n '2p' "${GENTOO_OPT_FINGERPRINT_FILE}") || :
+        [[ -z ${extra} && ${line} =~ ^fingerprint=([0-9a-f]{64})$ ]] || {
+            gentoo_opt_error 'fingerprint file must contain exactly fingerprint=<64 lowercase hex>'
+            return 1
+        }
+        loaded=${BASH_REMATCH[1]}
+    fi
+
+    if [[ -n ${GENTOO_OPT_IDENTITY_INPUT-} ]]; then
+        gentoo_opt_safe_absolute_path "${GENTOO_OPT_IDENTITY_INPUT}" || {
+            gentoo_opt_error 'GENTOO_OPT_IDENTITY_INPUT must be a safe absolute path'
+            return 1
+        }
+        gentoo_opt_safe_absolute_path "${GENTOO_OPT_PROFILE_KEY_TOOL-}" || {
+            gentoo_opt_error 'computing a fingerprint requires an absolute GENTOO_OPT_PROFILE_KEY_TOOL'
+            return 1
+        }
+        [[ -x ${GENTOO_OPT_PROFILE_KEY_TOOL} ]] || {
+            gentoo_opt_error "fingerprint tool is not executable: ${GENTOO_OPT_PROFILE_KEY_TOOL}"
+            return 1
+        }
+        computed=$("${GENTOO_OPT_PROFILE_KEY_TOOL}" fingerprint \
+            --input "${GENTOO_OPT_IDENTITY_INPUT}") || {
+            gentoo_opt_error 'fingerprint computation failed'
+            return 1
+        }
+        [[ ${computed} =~ ^[0-9a-f]{64}$ ]] || {
+            gentoo_opt_error 'fingerprint tool did not emit exactly 64 lowercase hex characters'
+            return 1
+        }
+        if [[ -n ${loaded} && ${loaded} != "${computed}" ]]; then
+            gentoo_opt_error 'loaded and computed fingerprints differ'
+            return 1
+        fi
+        loaded=${computed}
+    fi
+
+    if [[ -n ${GENTOO_OPT_FINGERPRINT-} ]]; then
+        [[ ${GENTOO_OPT_FINGERPRINT} =~ ^[0-9a-f]{64}$ ]] || {
+            gentoo_opt_error 'GENTOO_OPT_FINGERPRINT must be 64 lowercase hex characters'
+            return 1
+        }
+        if [[ -n ${loaded} && ${loaded} != "${GENTOO_OPT_FINGERPRINT}" ]]; then
+            gentoo_opt_error 'explicit and loaded/computed fingerprints differ'
+            return 1
+        fi
+        loaded=${GENTOO_OPT_FINGERPRINT}
+    fi
+    [[ -n ${loaded} ]] || {
+        gentoo_opt_error 'active mode requires an exact package fingerprint'
+        return 1
+    }
+    GENTOO_OPT_ACTIVE_FINGERPRINT=${loaded}
+}
+
+gentoo_opt_resolve_tool() {
+    local variable=$1 fallback=$2 value path
+    value=${!variable:-${fallback}}
+    [[ ${value} != *[$'\n\r\t ']* && ${value} != *[\;\&\|\<\>\`]* ]] || {
+        gentoo_opt_error "${variable} must name one command without shell syntax"
+        return 1
+    }
+    path=$(command -v -- "${value}") || {
+        gentoo_opt_error "cannot resolve ${variable} command: ${value}"
+        return 1
+    }
+    path=$(realpath -e -- "${path}") || {
+        gentoo_opt_error "cannot canonicalize ${variable} command: ${path}"
+        return 1
+    }
+    GENTOO_OPT_RESOLVED_TOOL=${path}
+}
+
+gentoo_opt_detect_compiler_family() {
+    local requested=${1} variable fallback version
+    case ${requested} in
+        clang|gcc) variable=CC; fallback=cc ;;
+        rust) variable=RUSTC; fallback=rustc ;;
+        go) variable=GO; fallback=go ;;
+        *) gentoo_opt_error "unsupported compiler family request: ${requested}"; return 1 ;;
+    esac
+    gentoo_opt_resolve_tool "${variable}" "${fallback}" || return 1
+    version=$("${GENTOO_OPT_RESOLVED_TOOL}" --version 2>&1) || {
+        gentoo_opt_error "cannot query compiler identity: ${GENTOO_OPT_RESOLVED_TOOL}"
+        return 1
+    }
+    case ${requested} in
+        clang) [[ ${version} == *clang* && ${version} != *rustc* ]] ;;
+        gcc) [[ ${version} != *clang* && ${version} == *gcc* ]] ;;
+        rust) [[ ${version} == rustc* ]] ;;
+        go) [[ ${version} == 'go version '* ]] ;;
+    esac || {
+        gentoo_opt_error "compiler-family mismatch: requested=${requested}, tool=${GENTOO_OPT_RESOLVED_TOOL}"
+        return 1
+    }
+    if [[ -n ${GENTOO_OPT_COMPILER_FAMILY-} &&
+        ${GENTOO_OPT_COMPILER_FAMILY} != "${requested}" ]]; then
+        gentoo_opt_error "declared compiler family ${GENTOO_OPT_COMPILER_FAMILY} does not match ${requested} mode"
+        return 1
+    fi
+    GENTOO_OPT_ACTIVE_COMPILER_FAMILY=${requested}
+    GENTOO_OPT_ACTIVE_COMPILER=${GENTOO_OPT_RESOLVED_TOOL}
+}
+
+gentoo_opt_profile_backend_for_mode() {
+    case ${1} in
+        clang-ir-generate|clang-ir-use) printf '%s\n' clang-ir ;;
+        clang-sample-use) printf '%s\n' clang-sample ;;
+        gcc-generate|gcc-use) printf '%s\n' gcc ;;
+        rust-generate|rust-use) printf '%s\n' rust ;;
+        go-use) printf '%s\n' go ;;
+        *) return 1 ;;
+    esac
+}
+
+gentoo_opt_profile_family_for_mode() {
+    case ${1} in
+        clang-*) printf '%s\n' clang ;;
+        gcc-*) printf '%s\n' gcc ;;
+        rust-*) printf '%s\n' rust ;;
+        go-*) printf '%s\n' go ;;
+        *) return 1 ;;
+    esac
+}
+
+gentoo_opt_profile_is_use_mode() {
+    [[ ${1} == clang-ir-use || ${1} == clang-sample-use || ${1} == gcc-use ||
+        ${1} == rust-use || ${1} == go-use ]]
+}
+
+gentoo_opt_profile_is_generate_mode() {
+    [[ ${1} == clang-ir-generate || ${1} == gcc-generate || ${1} == rust-generate ]]
+}
+
+gentoo_opt_hash_profile_directory() {
+    local directory=$1 digest
+    digest=$(
+        set -o pipefail
+        cd -- "${directory}" || exit 1
+        find . -type f -name '*.gcda' -print0 |
+            LC_ALL=C sort -z |
+            while IFS= read -r -d '' file; do
+                printf '%s\0' "${file}"
+                sha256sum -- "${file}" | awk '{print $1}'
+            done |
+            sha256sum | awk '{print $1}'
+    ) || return 1
+    printf '%s\n' "${digest}"
+}
+
+gentoo_opt_read_profile_manifest() {
+    local path=$1 line key value
+    local schema='' backend='' fingerprint='' abi='' compiler_family=''
+    local profile_path='' profile_sha256='' validation_status=''
+    declare -A seen=()
+    gentoo_opt_safe_absolute_path "${path}" || {
+        gentoo_opt_error 'GENTOO_OPT_PROFILE_MANIFEST must be a safe absolute path'
+        return 1
+    }
+    [[ -f ${path} && ! -L ${path} ]] || {
+        gentoo_opt_error "profile manifest is not a regular non-symlink file: ${path}"
+        return 1
+    }
+    while IFS= read -r line || [[ -n ${line} ]]; do
+        [[ ${line} =~ ^([a-z_]+)=(.*)$ ]] || {
+            gentoo_opt_error "malformed profile manifest line: ${line}"
+            return 1
+        }
+        key=${BASH_REMATCH[1]}; value=${BASH_REMATCH[2]}
+        [[ -z ${seen[${key}]+x} ]] || {
+            gentoo_opt_error "duplicate profile manifest key: ${key}"
+            return 1
+        }
+        seen[${key}]=1
+        case ${key} in
+            schema) schema=${value} ;;
+            backend) backend=${value} ;;
+            fingerprint) fingerprint=${value} ;;
+            abi) abi=${value} ;;
+            compiler_family) compiler_family=${value} ;;
+            profile_path) profile_path=${value} ;;
+            profile_sha256) profile_sha256=${value} ;;
+            validation_status) validation_status=${value} ;;
+            *) gentoo_opt_error "unknown profile manifest key: ${key}"; return 1 ;;
+        esac
+    done < "${path}"
+    [[ ${schema} == gentoo-optimization-profile-v1 ]] || {
+        gentoo_opt_error 'unsupported profile manifest schema'; return 1;
+    }
+    [[ ${backend} == "${GENTOO_OPT_ACTIVE_BACKEND}" ]] || {
+        gentoo_opt_error "profile backend mismatch: manifest=${backend}, requested=${GENTOO_OPT_ACTIVE_BACKEND}"; return 1;
+    }
+    [[ ${fingerprint} == "${GENTOO_OPT_ACTIVE_FINGERPRINT}" ]] || {
+        gentoo_opt_error 'profile fingerprint mismatch'; return 1;
+    }
+    [[ ${abi} == "${GENTOO_OPT_ACTIVE_ABI}" ]] || {
+        gentoo_opt_error "profile ABI mismatch: manifest=${abi}, requested=${GENTOO_OPT_ACTIVE_ABI}"; return 1;
+    }
+    [[ ${compiler_family} == "${GENTOO_OPT_ACTIVE_COMPILER_FAMILY}" ]] || {
+        gentoo_opt_error 'profile compiler-family mismatch'; return 1;
+    }
+    [[ ${validation_status} == passed ]] || {
+        gentoo_opt_error 'profile manifest does not carry validation_status=passed'; return 1;
+    }
+    gentoo_opt_safe_absolute_path "${profile_path}" || {
+        gentoo_opt_error 'manifest profile_path is not a safe absolute path'; return 1;
+    }
+    [[ ${profile_path} == "${GENTOO_OPT_PROFILE_PATH}" ]] || {
+        gentoo_opt_error 'manifest and requested profile paths differ'; return 1;
+    }
+    [[ ${profile_sha256} =~ ^[0-9a-f]{64}$ ]] || {
+        gentoo_opt_error 'profile manifest has an invalid SHA-256'; return 1;
+    }
+    GENTOO_OPT_MANIFEST_PROFILE_SHA256=${profile_sha256}
+}
+
+gentoo_opt_validate_profile_format() {
+    local backend=$1 profile=$2 tool output_directory
+    if [[ -n ${GENTOO_OPT_PROFILE_VALIDATOR-} ]]; then
+        gentoo_opt_safe_absolute_path "${GENTOO_OPT_PROFILE_VALIDATOR}" || {
+            gentoo_opt_error 'GENTOO_OPT_PROFILE_VALIDATOR must be an absolute path'; return 1;
+        }
+        [[ -x ${GENTOO_OPT_PROFILE_VALIDATOR} ]] || {
+            gentoo_opt_error "profile validator is not executable: ${GENTOO_OPT_PROFILE_VALIDATOR}"; return 1;
+        }
+        "${GENTOO_OPT_PROFILE_VALIDATOR}" --backend "${backend}" \
+            --profile "${profile}" --fingerprint "${GENTOO_OPT_ACTIVE_FINGERPRINT}" \
+            --abi "${GENTOO_OPT_ACTIVE_ABI}" \
+            --compiler-family "${GENTOO_OPT_ACTIVE_COMPILER_FAMILY}" || {
+            gentoo_opt_error "${backend} profile format validation failed"; return 1;
+        }
+        return 0
+    fi
+    case ${backend} in
+        clang-ir|rust)
+            gentoo_opt_resolve_tool LLVM_PROFDATA llvm-profdata || return 1
+            "${GENTOO_OPT_RESOLVED_TOOL}" show "${profile}" >/dev/null || {
+                gentoo_opt_error "${backend} indexed-profile validation failed"; return 1;
+            }
+            ;;
+        clang-sample)
+            gentoo_opt_resolve_tool LLVM_PROFDATA llvm-profdata || return 1
+            "${GENTOO_OPT_RESOLVED_TOOL}" show --sample "${profile}" >/dev/null || {
+                gentoo_opt_error 'Clang sample-profile validation failed'; return 1;
+            }
+            ;;
+        gcc)
+            gentoo_opt_resolve_tool GCOV_TOOL gcov-tool || return 1
+            "${GENTOO_OPT_RESOLVED_TOOL}" overlap "${profile}" "${profile}" >/dev/null || {
+                gentoo_opt_error 'GCC gcov-profile validation failed'; return 1;
+            }
+            ;;
+        go)
+            tool=${GENTOO_OPT_ACTIVE_COMPILER}
+            "${tool}" tool pprof -top "${profile}" >/dev/null || {
+                gentoo_opt_error 'Go pprof validation failed'; return 1;
+            }
+            ;;
+        *) gentoo_opt_error "no validator for profile backend: ${backend}"; return 1 ;;
+    esac
+}
+
+gentoo_opt_prepare_profile_path() {
+    local mode=$1 actual_hash='' gcda_count
+    gentoo_opt_safe_absolute_path "${GENTOO_OPT_PROFILE_PATH-}" || {
+        gentoo_opt_error 'active PGO mode requires a safe absolute GENTOO_OPT_PROFILE_PATH'; return 1;
+    }
+    if gentoo_opt_profile_is_generate_mode "${mode}"; then
+        [[ -d ${GENTOO_OPT_PROFILE_PATH} && -w ${GENTOO_OPT_PROFILE_PATH} ]] || {
+            gentoo_opt_error "generation profile directory must already exist and be writable: ${GENTOO_OPT_PROFILE_PATH}"; return 1;
+        }
+        return 0
+    fi
+    [[ -n ${GENTOO_OPT_PROFILE_MANIFEST-} ]] || {
+        gentoo_opt_error 'profile-use mode requires GENTOO_OPT_PROFILE_MANIFEST'; return 1;
+    }
+    if [[ ${GENTOO_OPT_ACTIVE_BACKEND} == gcc ]]; then
+        [[ -d ${GENTOO_OPT_PROFILE_PATH} ]] || {
+            gentoo_opt_error "GCC profile directory is absent: ${GENTOO_OPT_PROFILE_PATH}"; return 1;
+        }
+        gcda_count=$(find "${GENTOO_OPT_PROFILE_PATH}" -type f -name '*.gcda' -size +0c -print -quit)
+        [[ -n ${gcda_count} ]] || {
+            gentoo_opt_error 'GCC profile directory contains no nonempty .gcda file'; return 1;
+        }
+    else
+        [[ -f ${GENTOO_OPT_PROFILE_PATH} && -s ${GENTOO_OPT_PROFILE_PATH} &&
+            ! -L ${GENTOO_OPT_PROFILE_PATH} ]] || {
+            gentoo_opt_error "profile file is absent, empty, or a symlink: ${GENTOO_OPT_PROFILE_PATH}"; return 1;
+        }
+    fi
+    gentoo_opt_read_profile_manifest "${GENTOO_OPT_PROFILE_MANIFEST}" || return 1
+    if [[ ${GENTOO_OPT_ACTIVE_BACKEND} == gcc ]]; then
+        actual_hash=$(gentoo_opt_hash_profile_directory "${GENTOO_OPT_PROFILE_PATH}") || {
+            gentoo_opt_error 'cannot hash GCC profile directory'; return 1;
+        }
+    else
+        actual_hash=$(sha256sum -- "${GENTOO_OPT_PROFILE_PATH}") || return 1
+        actual_hash=${actual_hash%% *}
+    fi
+    [[ ${actual_hash} == "${GENTOO_OPT_MANIFEST_PROFILE_SHA256}" ]] || {
+        gentoo_opt_error 'profile payload SHA-256 mismatch'; return 1;
+    }
+    gentoo_opt_validate_profile_format "${GENTOO_OPT_ACTIVE_BACKEND}" \
+        "${GENTOO_OPT_PROFILE_PATH}" || return 1
+}
+
+gentoo_opt_require_rust_target_isolation() {
+    [[ -n ${GENTOO_OPT_RUST_TARGET-} &&
+        ${GENTOO_OPT_RUST_TARGET} =~ ^[A-Za-z0-9_.-]+$ ]] || {
+        gentoo_opt_error 'Rust PGO requires an explicit GENTOO_OPT_RUST_TARGET'; return 1;
+    }
+    if [[ -n ${CARGO_BUILD_TARGET-} &&
+        ${CARGO_BUILD_TARGET} != "${GENTOO_OPT_RUST_TARGET}" ]]; then
+        gentoo_opt_error 'CARGO_BUILD_TARGET and GENTOO_OPT_RUST_TARGET differ'; return 1
+    fi
+    CARGO_BUILD_TARGET=${GENTOO_OPT_RUST_TARGET}
+    export CARGO_BUILD_TARGET
+}
+
+gentoo_opt_apply_primary_mode() {
+    local mode=$1 flag
+    GENTOO_OPT_ACTIVE_BACKEND=$(gentoo_opt_profile_backend_for_mode "${mode}") || return 1
+    gentoo_opt_detect_compiler_family "$(gentoo_opt_profile_family_for_mode "${mode}")" || return 1
+    gentoo_opt_prepare_profile_path "${mode}" || return 1
+    gentoo_opt_disable_ccache
+    case ${mode} in
+        clang-ir-generate)
+            flag="-fprofile-generate=${GENTOO_OPT_PROFILE_PATH}"
+            gentoo_opt_append_flag_once CFLAGS "${flag}"
+            gentoo_opt_append_flag_once CXXFLAGS "${flag}"
+            gentoo_opt_append_flag_once LDFLAGS "${flag}"
+            ;;
+        clang-ir-use)
+            flag="-fprofile-use=${GENTOO_OPT_PROFILE_PATH}"
+            gentoo_opt_append_flag_once CFLAGS "${flag}"
+            gentoo_opt_append_flag_once CXXFLAGS "${flag}"
+            gentoo_opt_append_flag_once LDFLAGS "${flag}"
+            ;;
+        clang-sample-use)
+            flag="-fprofile-sample-use=${GENTOO_OPT_PROFILE_PATH}"
+            gentoo_opt_append_flag_once CFLAGS "${flag}"
+            gentoo_opt_append_flag_once CXXFLAGS "${flag}"
+            gentoo_opt_append_flag_once CFLAGS -fsample-profile-use-profi
+            gentoo_opt_append_flag_once CXXFLAGS -fsample-profile-use-profi
+            ;;
+        gcc-generate)
+            flag="-fprofile-generate=${GENTOO_OPT_PROFILE_PATH}"
+            gentoo_opt_append_flag_once CFLAGS "${flag}"
+            gentoo_opt_append_flag_once CXXFLAGS "${flag}"
+            gentoo_opt_append_flag_once LDFLAGS "${flag}"
+            ;;
+        gcc-use)
+            flag="-fprofile-use=${GENTOO_OPT_PROFILE_PATH}"
+            gentoo_opt_append_flag_once CFLAGS "${flag}"
+            gentoo_opt_append_flag_once CXXFLAGS "${flag}"
+            gentoo_opt_append_flag_once LDFLAGS "${flag}"
+            gentoo_opt_append_flag_once CFLAGS -fprofile-correction
+            gentoo_opt_append_flag_once CXXFLAGS -fprofile-correction
+            gentoo_opt_append_flag_once LDFLAGS -fprofile-correction
+            ;;
+        rust-generate)
+            gentoo_opt_require_rust_target_isolation || return 1
+            gentoo_opt_append_flag_once RUSTFLAGS "-Cprofile-generate=${GENTOO_OPT_PROFILE_PATH}"
+            ;;
+        rust-use)
+            gentoo_opt_require_rust_target_isolation || return 1
+            gentoo_opt_append_flag_once RUSTFLAGS "-Cprofile-use=${GENTOO_OPT_PROFILE_PATH}"
+            ;;
+        go-use)
+            gentoo_opt_append_flag_once GOFLAGS "-pgo=${GENTOO_OPT_PROFILE_PATH}"
+            ;;
+    esac
+}
+
+gentoo_opt_apply_readiness_flags() {
+    local family=${GENTOO_OPT_ACTIVE_COMPILER_FAMILY-}
+    if [[ ${GENTOO_OPT_PROFILE_MAP_READY:-0} == 1 ]]; then
+        [[ ${family} == clang ]] || {
+            gentoo_opt_error 'profile-map readiness is supported only in the Clang lane'; return 1;
+        }
+        gentoo_opt_append_flag_once CFLAGS -gline-tables-only
+        gentoo_opt_append_flag_once CXXFLAGS -gline-tables-only
+        gentoo_opt_append_flag_once CFLAGS -fdebug-info-for-profiling
+        gentoo_opt_append_flag_once CXXFLAGS -fdebug-info-for-profiling
+        gentoo_opt_append_flag_once CFLAGS -mllvm=-enable-fs-discriminator=true
+        gentoo_opt_append_flag_once CXXFLAGS -mllvm=-enable-fs-discriminator=true
+    fi
+    if [[ ${GENTOO_OPT_ACTIVE_BOLT_STAGE} == capture ||
+        ${GENTOO_OPT_ACTIVE_BOLT_STAGE} == deploy ]]; then
+        [[ ${family} == clang || ${family} == gcc ]] || {
+            gentoo_opt_error 'BOLT readiness requires an explicit Clang or GCC compiler lane'; return 1;
+        }
+        gentoo_opt_append_flag_once CFLAGS -g1
+        gentoo_opt_append_flag_once CXXFLAGS -g1
+        gentoo_opt_append_flag_once LDFLAGS -Wl,--emit-relocs
+        gentoo_opt_append_flag_once LDFLAGS -Wl,--build-id=sha1
+        if [[ ${family} == gcc ]]; then
+            [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 ]] || {
+                gentoo_opt_error 'GCC BOLT builds require bolt-gcc-ready.conf'; return 1;
+            }
+            gentoo_opt_append_flag_once CFLAGS -fno-reorder-blocks-and-partition
+            gentoo_opt_append_flag_once CXXFLAGS -fno-reorder-blocks-and-partition
+        fi
+    elif [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 ]]; then
+        [[ ${family} == gcc ]] || {
+            gentoo_opt_error 'bolt-gcc readiness cannot be applied outside the GCC lane'; return 1;
+        }
+        gentoo_opt_append_flag_once CFLAGS -fno-reorder-blocks-and-partition
+        gentoo_opt_append_flag_once CXXFLAGS -fno-reorder-blocks-and-partition
+    fi
+}
+
+gentoo_opt_log_selection() {
+    local profile=${GENTOO_OPT_PROFILE_PATH:--}
+    local message="mode=${GENTOO_OPT_MODE} bolt_stage=${GENTOO_OPT_ACTIVE_BOLT_STAGE} backend=${GENTOO_OPT_ACTIVE_BACKEND:-none} abi=${GENTOO_OPT_ACTIVE_ABI} compiler=${GENTOO_OPT_ACTIVE_COMPILER_FAMILY:-none} fingerprint=${GENTOO_OPT_ACTIVE_FINGERPRINT} profile=${profile}"
+    printf 'gentoo-optimization: %s\n' "${message}" >&2
+    if [[ -n ${GENTOO_OPT_LOG_FILE-} ]]; then
+        gentoo_opt_safe_absolute_path "${GENTOO_OPT_LOG_FILE}" || {
+            gentoo_opt_error 'GENTOO_OPT_LOG_FILE must be a safe absolute path'; return 1;
+        }
+        printf '%s\n' "${message}" >> "${GENTOO_OPT_LOG_FILE}" || {
+            gentoo_opt_error "cannot append optimization log: ${GENTOO_OPT_LOG_FILE}"; return 1;
+        }
+    fi
+}
+
+gentoo_opt_dispatch() {
+    local mode=${GENTOO_OPT_MODE:-off} bolt_stage=${GENTOO_OPT_BOLT_STAGE:-off}
+    if [[ ${PGO_INSTRUMENT:-0} == 1 || ${PGO_USE_IF_AVAILABLE:-0} == 1 ]]; then
+        gentoo_opt_error 'legacy PGO marker requested; use a named GENTOO_OPT_MODE'
+        return 1
+    fi
+    case ${mode} in
+        off|'') mode=off ;;
+        clang-ir-generate|clang-ir-use|clang-sample-use|gcc-generate|gcc-use|\
+rust-generate|rust-use|go-use) ;;
+        bolt-capture)
+            [[ ${bolt_stage} == off || ${bolt_stage} == capture ]] || {
+                gentoo_opt_error 'bolt-capture mode conflicts with GENTOO_OPT_BOLT_STAGE'; return 1;
+            }
+            bolt_stage=capture; mode=off
+            ;;
+        bolt-deploy)
+            [[ ${bolt_stage} == off || ${bolt_stage} == deploy ]] || {
+                gentoo_opt_error 'bolt-deploy mode conflicts with GENTOO_OPT_BOLT_STAGE'; return 1;
+            }
+            bolt_stage=deploy; mode=off
+            ;;
+        *) gentoo_opt_error "unknown GENTOO_OPT_MODE: ${mode}"; return 1 ;;
+    esac
+    case ${bolt_stage} in off|capture|deploy) ;; *) gentoo_opt_error "unknown GENTOO_OPT_BOLT_STAGE: ${bolt_stage}"; return 1 ;; esac
+    GENTOO_OPT_MODE=${mode}
+    GENTOO_OPT_ACTIVE_BOLT_STAGE=${bolt_stage}
+    if [[ ${mode} == off && ${bolt_stage} == off &&
+        ${GENTOO_OPT_PROFILE_MAP_READY:-0} != 1 &&
+        ${GENTOO_OPT_BOLT_GCC_READY:-0} != 1 ]]; then
+        return 0
+    fi
+    gentoo_opt_detect_abi || return 1
+    gentoo_opt_load_fingerprint || return 1
+    if [[ ${mode} != off ]]; then
+        gentoo_opt_apply_primary_mode "${mode}" || return 1
+    else
+        [[ ${GENTOO_OPT_COMPILER_FAMILY-} == clang ||
+            ${GENTOO_OPT_COMPILER_FAMILY-} == gcc ]] || {
+            gentoo_opt_error 'readiness-only mode requires GENTOO_OPT_COMPILER_FAMILY=clang or gcc'; return 1;
+        }
+        gentoo_opt_detect_compiler_family "${GENTOO_OPT_COMPILER_FAMILY}" || return 1
+        GENTOO_OPT_ACTIVE_BACKEND=none
+    fi
+    gentoo_opt_apply_readiness_flags || return 1
+    gentoo_opt_log_selection || return 1
+}
+
+# The BOLT hook implementation supplies one or both named functions.  Keeping
+# this dispatch separate makes the pre-strip phase boundary explicit and lets
+# the hook implementation be tested without sourcing arbitrary package code.
+gentoo_opt_post_src_install() {
+    case ${GENTOO_OPT_ACTIVE_BOLT_STAGE:-off} in
+        off) return 0 ;;
+        capture)
+            declare -F gentoo_opt_bolt_capture >/dev/null || {
+                gentoo_opt_error 'BOLT capture requested but gentoo_opt_bolt_capture is unavailable'; return 1;
+            }
+            gentoo_opt_bolt_capture
+            ;;
+        deploy)
+            declare -F gentoo_opt_bolt_deploy >/dev/null || {
+                gentoo_opt_error 'BOLT deploy requested but gentoo_opt_bolt_deploy is unavailable'; return 1;
+            }
+            gentoo_opt_bolt_deploy
+            ;;
+    esac
+}
+
+post_src_install() {
+    gentoo_opt_post_src_install
+}
+
+gentoo_opt_dispatch || return 1

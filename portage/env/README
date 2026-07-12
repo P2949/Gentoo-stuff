@@ -287,6 +287,7 @@ Hook files:
     hooks, point PORTAGE_BASHRC at the hook from a small .conf file.
 
     /etc/portage/bashrc
-        Global bashrc hook for conditional PGO use-if-available and explicit
-        PGO instrumentation sweeps. The package.env PGO profiles are markers;
-        the profile-exists check and flag appends happen here.
+        Strict named optimization dispatcher.  Files below env/optimization
+        provide assignment-only stage markers; active modes require an exact
+        package fingerprint, ABI, compiler lane, and explicit absolute profile
+        identity.  There is no conditional use-if-available fallback.

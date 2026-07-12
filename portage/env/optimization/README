@@ -1,0 +1,8 @@
+These assignment-only files select one strict optimization lane.  They do not
+contain package fingerprints, ABI identities, generation IDs, or profile paths.
+Those machine-specific values belong in generated Portage policy outside Git.
+
+PGO mode files may be layered with bolt-capture-ready.conf or bolt-deploy.conf.
+GCC BOLT lanes must additionally include bolt-gcc-ready.conf.  Active modes fail
+unless the global bashrc receives an exact fingerprint, ABI, compiler lane, and
+all profile identity inputs required by that mode.

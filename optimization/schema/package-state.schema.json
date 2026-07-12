@@ -26,8 +26,8 @@
   "properties": {
     "schema_version": {"const": 1},
     "record_type": {"const": "package"},
-    "cpv": {"type": "string", "pattern": "^[^/[:space:]]+/[^/[:space:]]+$"},
-    "cp": {"type": "string", "pattern": "^[^/[:space:]]+/[^/[:space:]]+$"},
+    "cpv": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$"},
+    "cp": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$"},
     "repository": {"type": "string", "minLength": 1},
     "slot": {"type": "string", "minLength": 1},
     "subslot": {"type": "string", "minLength": 1},

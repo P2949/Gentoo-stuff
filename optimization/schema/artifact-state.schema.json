@@ -35,7 +35,7 @@
   "properties": {
     "schema_version": {"const": 1},
     "record_type": {"const": "artifact"},
-    "owner_cpv": {"type": "string", "pattern": "^[^/[:space:]]+/[^/[:space:]]+$"},
+    "owner_cpv": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$"},
     "package_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "installed_path": {"type": "string", "pattern": "^/"},
     "canonical_path": {"type": "string", "pattern": "^/"},
