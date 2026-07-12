@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
+from typing import cast
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -11,7 +12,8 @@ POLICY_ROOT = REPOSITORY_ROOT / "optimization"
 
 class OptimizationPolicyTests(unittest.TestCase):
     def load(self, name: str) -> dict[str, object]:
-        return json.loads((POLICY_ROOT / name).read_text(encoding="utf-8"))
+        value = json.loads((POLICY_ROOT / name).read_text(encoding="utf-8"))
+        return cast(dict[str, object], value)
 
     def test_policy_has_no_unproven_active_generation(self) -> None:
         policy = self.load("policy.yaml")
