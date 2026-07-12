@@ -2,16 +2,16 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 is complete after closing both recovery review findings, Phase 1 capability validation is in progress, and the unsafe legacy global PGO implementation has been deleted behind a fail-closed stale-marker guard.
+- **Project state:** active; Phase 0 and all seven Phase 1 hardware/tool capability lanes are complete. Phase 1 remains open only for the three explicitly queued package-policy remediation rebuilds and its clean boundary commit; the unsafe legacy global PGO implementation has been deleted behind a fail-closed stale-marker guard.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
-- **Current non-frozen live policy count:** 1,216 installed CPVs resolve through Portage; this is a package-policy preflight count, not the Phase 3 inventory.
+- **Current non-frozen live package count:** 1,217 installed CPVs after the package-managed BOLT installation; this is live progress evidence, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
-- **Last plan review:** 2026-07-12; the complete plan and all binding prose gates were re-read after the authoritative 43-pass quick suite, exact package-policy validation, Hyprland prerequisite audit, packaged-BOLT lint/interrupted-build evidence, and BOLT transaction signal-boundary matrix were recorded.
+- **Last plan review:** 2026-07-12; the complete plan and all binding prose gates were re-read after package-managed BOLT 22.1.8 and the authoritative ET_EXEC/PIE/DSO capability evidence were recorded, with the remaining package-policy rebuild queue still explicit.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
-- **Known tool gap:** LLVM 22 provides Clang, LLD, `llvm-profdata`, and `llvm-profgen`, but no installed `llvm-bolt` or `perf2bolt`; Phase 1 cannot pass until this is remedied.
+- **BOLT capability gate:** passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. This authorizes Phase 2 capture/deployment-hook implementation and does not claim that any installed-system candidate has yet been BOLT-optimized.
 
 ## Document purpose
 
@@ -700,11 +700,11 @@ Verify that:
 
 ## 10.7 Validate BOLT on executable, PIE, and DSO fixtures
 
-- [ ] Install the package-managed `llvm-core/bolt-22.1.8` tools and verify their exact runtime identities and dependency closure.
-- [ ] Pass the fixed-address `ET_EXEC` fixture and preserve its required ELF, metadata, and functional properties.
-- [ ] Pass the PIE fixture and preserve its required ELF, metadata, and functional properties.
-- [ ] Pass the shared-object fixture and preserve its required ABI, ELF, metadata, and consumer behavior.
-- [ ] Record exact profiles, inputs, outputs, hashes, structured timeout rows, and machine-readable zero-pending capability state.
+- [x] Install the package-managed `llvm-core/bolt-22.1.8` tools and verify their exact runtime identities and dependency closure.
+- [x] Pass the fixed-address `ET_EXEC` fixture and preserve its required ELF, metadata, and functional properties.
+- [x] Pass the PIE fixture and preserve its required ELF, metadata, and functional properties.
+- [x] Pass the shared-object fixture and preserve its required ABI, ELF, metadata, and consumer behavior.
+- [x] Record exact profiles, inputs, outputs, hashes, structured timeout rows, and machine-readable zero-pending capability state.
 
 For each fixture:
 
@@ -721,7 +721,11 @@ Do not implement the live deployment hook until all fixture classes pass.
 ### Phase 1.7 packaging progress (not capability completion)
 
 - `pkgcheck 0.10.40` reports no findings for `pkgcheck scan --repo codex-local llvm-core/bolt` at tested code commit `a97a5dbcffdfd74b03ae151a0e77dee67aa0d6a2`. The exact ebuild, Manifest, and metadata hashes are retained in `/var/lib/gentoo-optimization/reports/phase-1-bolt-pkgcheck-20260712.log` (SHA-256 `c1ccc0995643ab8fe7e0b8541602f65e56f4db1ba412b6f98ae2e5a4e7b6563e`). This proves repository lint only; it is not evidence that the tools install or that any fixture class passes.
-- The first explicit static-closure stage build was externally interrupted with exit 143 at Ninja step 876 of 1,825. Its root-owned log remains `/var/lib/gentoo-optimization/reports/phase-1-bolt-portage-stage-build-explicit-closure-20260712.log` (SHA-256 `35845dc05e0f45d40ddc5c893c32db148d59abe31b7209a6ccd1fbc67fd561ed`) with its status record beside it; no package was installed and no partial output is accepted. A clean retry is running through a one-shot `cronie` launcher outside the interactive tool process tree, with a separate log and status record. The current machine-readable capability state is `/var/lib/gentoo-optimization/state/capabilities/bolt.json` (SHA-256 `1a62f9a480ad1a9022db2d32a3f3c0d456f4c05bd9a44e2d2606d067ae68aeb0`), explicitly reporting four pending gates, zero unknowns, and zero unresolved failures. Phase 1.7 remains open until the retry, package-managed install, and all ET_EXEC/PIE/DSO checks succeed.
+- The first explicit static-closure stage build was externally interrupted with exit 143 at Ninja step 876 of 1,825. Its root-owned log remains `/var/lib/gentoo-optimization/reports/phase-1-bolt-portage-stage-build-explicit-closure-20260712.log` (SHA-256 `35845dc05e0f45d40ddc5c893c32db148d59abe31b7209a6ccd1fbc67fd561ed`) with its status record beside it; no package was installed and no partial output is accepted. The superseded four-pending state is retained as `/var/lib/gentoo-optimization/reports/superseded-phase-1-bolt-running-state-20260712.json` (SHA-256 `1a62f9a480ad1a9022db2d32a3f3c0d456f4c05bd9a44e2d2606d067ae68aeb0`). The successful clean retry and current zero-pending capability state are recorded below.
+- The cron-isolated clean retry completed all 1,825 Ninja steps plus install/package with exit 0. The build log SHA-256 is `b6f2b749e7c8122ce665047ff9b18258ecfec8533d436dadd38eee9c7c96d5c2` and status SHA-256 is `7ce78c5ccefbe5755a83c4b95da0b02437f9af5d7eff2a0637d0d44ef413a296`. Staged inspection proves both tools are ELF64 x86-64 PIE with IBT/SHSTK, NX stack, RELRO/NOW, resolved libc++ dependencies, and no RPATH/RUNPATH, `libLLVM`, or `libstdc++`; `perf2bolt` is the intended relative argv[0]-dispatch symlink. Evidence is `/var/lib/gentoo-optimization/reports/phase-1-bolt-retry-readonly-inspection-20260712.log` (SHA-256 `b8b58c1c580ee2f479130579caf4f54346f4b74abd6607912b6667e2a80d1a05`).
+- The GPKG has SHA-256 `6ad2c8ee905cec697c0c99a306b870445b1432d4f8793fcca0d11ca0c77196f2`; Portage's GPKG implementation verified its Manifest and all nine extracted payload entries. The exact binary-only pretend selected one new package and zero downloads, and the exact binary-only install completed one of one. A root-only reflink is preserved under `/var/lib/gentoo-optimization/recovery/binpkgs/phase-1-bolt-20260712`. Live VDB ownership and file checks pass. Installed `llvm-bolt` has build ID `5d69c312203f61c9ae92fd7978f0cc2b5d78e6fc` and SHA-256 `6a5fc31e4c840586129125a4f6c0205089d9797d2d2f09f7e13d2fb1019dbcad`; `merge-fdata` has build ID `01479a9a4d5ab7ee1f8afca002d2cc78a634e178` and SHA-256 `9729d47832dd417902057642bcfb589eaee1454807065911aca35310031f1214`. Install and live-verification log SHA-256 values are `cc8f89ca36ab92e7b437292c07d3291093f443a7ce99de79b916d842b47e7ab8` and `c3233aed6d3c2aaf6b6c099fe611ec7d95fc6d19d1cf9b7321676f837370d13c`.
+- Three fail-closed fixture attempts are retained rather than hidden. The first proved that placing LLVM tools before `/usr/bin` incorrectly shadows GNU `readelf`; the second rejected deprecated numeric `-icf=1`; the third proved LLVM 22's `-use-gnu-stack` workaround consumes the explicit `PT_GNU_STACK` header. The binding policy at tested code commit `bfebd22151f16a6e519cd39e5f55ff6529761b2c` is `-icf=safe` with `-use-gnu-stack` disabled. A direct control proved normal `strip --strip-unneeded` preserves `PT_GNU_STACK`, `.note.bolt_info`, `.text`, metadata, and functionality without that workaround.
+- The authoritative driver reports 44 passes, zero failures, five explicit non-selected capability skips, and 49 unique rows. ET_EXEC, PIE, and DSO each use two profiles; all 27 timed stages completed with no timeout. Across six conversions, sample counts are 1,135–1,239, branch-stack entries are 36,314–39,634, ignored samples are zero, mismatch ratios are 1.2–1.3%, and out-of-range ratios are 0.5%. Every output and its stripped copy has a BOLT note and passes identity, GNU-stack/RELRO/CET, dependency, ownership/mode/xattr, functionality, and applicable DSO-export checks. Root-owned evidence is `/var/lib/gentoo-optimization/reports/phase-1-bolt-authoritative-20260712` (manifest SHA-256 `13960d54c7fac63e8446f166f1a7b169ca5e73dc3e7355399d1415f86d0cd9f3`, results SHA-256 `361542af36ce5c4fd6870317660141fde0d50af6ce7446d51ad5b1f4c9778d84`, validation-summary SHA-256 `dc275b7ee9f005cd03deaecbaccf3578c3c4c08761c34d71f1d5ed26d80ca3b4`). Capability state is `/var/lib/gentoo-optimization/state/capabilities/bolt.json` (SHA-256 `ec3af0b43c087deb84d6ad4475c88f4ff9ca5412e02feaaab87126b1843021f4`) with `pending_total=0`, `unknown_total=0`, and `failed_total=0` for this fixture gate only.
 
 ## 10.8 Keep capability validation repeatable
 
