@@ -72,6 +72,7 @@ quick suites:
   shellcheck (same shell source set; skipped when unavailable)
   python-source-compilation (temporary pycache only)
   python-unit-tests
+  package-env-duplicate-policy
   driver-cli-self-test
   recovery-boot-evidence-fixture (fake root)
   recovery-rollback-fixture (fake root, including Clang/libc++ and GCC/libstdc++)
@@ -376,35 +377,48 @@ else
         "${SHELLCHECK:-shellcheck} is not an executable in PATH; set SHELLCHECK=/absolute/path"
 fi
 
+PYTHON_BIN=
 if ! resolve_executable python3; then
     skip_case python-source-compilation 'python3 is unavailable'
     skip_case python-unit-tests 'python3 is unavailable'
-elif ((${#PYTHON_SOURCES[@]} == 0)); then
-    skip_case python-source-compilation 'no Python sources were discovered in the repository test scope'
-    skip_case python-unit-tests 'no Python test sources were discovered'
 else
     PYTHON_BIN=${RESOLVED_TOOL}
-    run_case python-source-compilation env \
-        PYTHONDONTWRITEBYTECODE=1 \
-        PYTHONPYCACHEPREFIX="${RUN_ROOT}/python-cache/compile" \
-        "${PYTHON_BIN}" -m py_compile "${PYTHON_SOURCES[@]}"
-    if ! resolve_executable zstd; then
-        skip_case python-gpkg-zstd-subtests \
-            'zstd is unavailable; GPKG stream unittest cases declare their own skip'
+    if ((${#PYTHON_SOURCES[@]} == 0)); then
+        skip_case python-source-compilation \
+            'no Python sources were discovered in the repository test scope'
+    else
+        run_case python-source-compilation env \
+            PYTHONDONTWRITEBYTECODE=1 \
+            PYTHONPYCACHEPREFIX="${RUN_ROOT}/python-cache/compile" \
+            "${PYTHON_BIN}" -m py_compile "${PYTHON_SOURCES[@]}"
     fi
     if ((${#PYTHON_TEST_DIRECTORIES[@]} == 0)); then
         skip_case python-unit-tests 'no test_*.py source was discovered below tests/'
     else
+        if ! resolve_executable zstd; then
+            skip_case python-gpkg-zstd-subtests \
+                'zstd is unavailable; GPKG stream unittest cases declare their own skip'
+        fi
         for test_directory in "${PYTHON_TEST_DIRECTORIES[@]}"; do
             relative_directory=${test_directory#"${REPOSITORY_ROOT}/"}
             run_case "python-unit-tests:${relative_directory}" \
-                run_in_repository env \
+                run_in_repository env -u PYTHONPYCACHEPREFIX \
                 PYTHONDONTWRITEBYTECODE=1 \
-                PYTHONPYCACHEPREFIX="${RUN_ROOT}/python-cache/unittest" \
                 "${PYTHON_BIN}" -m unittest discover \
                 -s "${test_directory}" -p 'test_*.py' -v
         done
     fi
+fi
+
+PACKAGE_ENV_DUPLICATE_CHECKER=${REPOSITORY_ROOT}/scripts/optimization/check-package-env-duplicates.py
+if [[ -z ${PYTHON_BIN} ]]; then
+    skip_case package-env-duplicate-policy 'python3 is unavailable'
+elif [[ ! -f ${PACKAGE_ENV_DUPLICATE_CHECKER} ]]; then
+    skip_case package-env-duplicate-policy \
+        "checker is absent: ${PACKAGE_ENV_DUPLICATE_CHECKER}"
+else
+    run_case package-env-duplicate-policy \
+        run_in_repository "${PYTHON_BIN}" "${PACKAGE_ENV_DUPLICATE_CHECKER}"
 fi
 
 DRIVER_SELF_TEST=${REPOSITORY_ROOT}/tests/optimization/test-run-optimization-tests.sh
@@ -425,10 +439,100 @@ else
 fi
 
 ROLLBACK_FIXTURE=${REPOSITORY_ROOT}/optimization/fixtures/recovery/test-rollback.sh
+preflight_recovery_abi_lanes() {
+    local clangxx_path gxx_path probe_source clang_output gcc_output
+    local clang_compile_log clang_run_log gcc_compile_log gcc_run_log
+    local status
+
+    resolve_executable clang++ || {
+        PREFLIGHT_REASON='Clang/libc++ ABI probe compiler is unavailable: clang++'
+        return 1
+    }
+    clangxx_path=${RESOLVED_TOOL}
+    resolve_executable g++ || {
+        PREFLIGHT_REASON='GCC/libstdc++ ABI probe compiler is unavailable: g++'
+        return 1
+    }
+    gxx_path=${RESOLVED_TOOL}
+
+    probe_source=${RUN_ROOT}/preflight/recovery-cxx-abi-probe.cpp
+    clang_output=${RUN_ROOT}/preflight/recovery-clang-libcxx-probe
+    gcc_output=${RUN_ROOT}/preflight/recovery-gcc-libstdcxx-probe
+    clang_compile_log=${RUN_ROOT}/preflight/recovery-clang-libcxx-compile.log
+    clang_run_log=${RUN_ROOT}/preflight/recovery-clang-libcxx-run.log
+    gcc_compile_log=${RUN_ROOT}/preflight/recovery-gcc-libstdcxx-compile.log
+    gcc_run_log=${RUN_ROOT}/preflight/recovery-gcc-libstdcxx-run.log
+    printf '%s\n' \
+        '#include <iostream>' \
+        'int main() { std::cout << "gentoo-recovery-cxx-abi-probe\n"; return 0; }' \
+        >"${probe_source}"
+    rm -f -- "${clang_output}" "${gcc_output}"
+
+    if "${clangxx_path}" -O2 -pipe -stdlib=libc++ \
+        "${probe_source}" -o "${clang_output}" >"${clang_compile_log}" 2>&1; then
+        :
+    else
+        status=$?
+        rm -f -- "${clang_output}"
+        PREFLIGHT_REASON="Clang/libc++ ABI probe compilation failed (exit ${status}; log=${clang_compile_log})"
+        return 1
+    fi
+    if [[ ! -x ${clang_output} ]]; then
+        PREFLIGHT_REASON="Clang/libc++ ABI probe produced no executable (log=${clang_compile_log})"
+        return 1
+    fi
+    if "${clang_output}" >"${clang_run_log}" 2>&1; then
+        :
+    else
+        status=$?
+        PREFLIGHT_REASON="Clang/libc++ ABI probe execution failed (exit ${status}; log=${clang_run_log})"
+        return 1
+    fi
+    if [[ $(<"${clang_run_log}") != gentoo-recovery-cxx-abi-probe ]]; then
+        PREFLIGHT_REASON="Clang/libc++ ABI probe returned unexpected output (log=${clang_run_log})"
+        return 1
+    fi
+
+    if "${gxx_path}" -O2 -pipe \
+        "${probe_source}" -o "${gcc_output}" >"${gcc_compile_log}" 2>&1; then
+        :
+    else
+        status=$?
+        rm -f -- "${gcc_output}"
+        PREFLIGHT_REASON="GCC/libstdc++ ABI probe compilation failed (exit ${status}; log=${gcc_compile_log})"
+        return 1
+    fi
+    if [[ ! -x ${gcc_output} ]]; then
+        PREFLIGHT_REASON="GCC/libstdc++ ABI probe produced no executable (log=${gcc_compile_log})"
+        return 1
+    fi
+    if "${gcc_output}" >"${gcc_run_log}" 2>&1; then
+        :
+    else
+        status=$?
+        PREFLIGHT_REASON="GCC/libstdc++ ABI probe execution failed (exit ${status}; log=${gcc_run_log})"
+        return 1
+    fi
+    if [[ $(<"${gcc_run_log}") != gentoo-recovery-cxx-abi-probe ]]; then
+        PREFLIGHT_REASON="GCC/libstdc++ ABI probe returned unexpected output (log=${gcc_run_log})"
+        return 1
+    fi
+
+    {
+        printf 'lane\tcompiler\tcompile_status\trun_status\toutput\n'
+        printf 'clang-libcxx\t%s\t0\t0\t%s\n' "${clangxx_path}" "${clang_output}"
+        printf 'gcc-libstdcxx\t%s\t0\t0\t%s\n' "${gxx_path}" "${gcc_output}"
+    } >"${RUN_ROOT}/preflight/recovery-cxx-abi-probes.tsv"
+    return 0
+}
+
 if [[ ! -f ${ROLLBACK_FIXTURE} ]]; then
     skip_case recovery-rollback-fixture "fixture is absent: ${ROLLBACK_FIXTURE}"
 elif ! require_commands bash clang++ g++ readelf iconv od md5sum sha256sum \
-    stat realpath flock; then
+    stat realpath flock rm; then
+    skip_case recovery-rollback-fixture \
+        "${PREFLIGHT_REASON}; the C++ ABI lane fixture was not run"
+elif ! preflight_recovery_abi_lanes; then
     skip_case recovery-rollback-fixture \
         "${PREFLIGHT_REASON}; the C++ ABI lane fixture was not run"
 else
@@ -583,8 +687,8 @@ preflight_bolt() {
     }
     require_commands awk bash chmod clang cmp cp dirname file find getcap \
         getfattr grep head lddtree llvm-bolt merge-fdata mkdir nm objcopy perf \
-        perf2bolt readelf readlink sed setfattr sha256sum sort stat strip tail \
-        timeout tr xargs || return 1
+        perf2bolt readelf readlink rm sed setfattr sha256sum sort stat strip tail \
+        timeout tr mv xargs || return 1
     resolve_executable perf
     perf_path=${RESOLVED_TOOL}
     preflight_perf_branch_stack "${perf_path}" bolt || return 1

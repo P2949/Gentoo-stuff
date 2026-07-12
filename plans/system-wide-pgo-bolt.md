@@ -8,7 +8,7 @@
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
-- **Last plan review:** 2026-07-11; the complete plan and all binding prose gates were re-read after the manifest-backed Boot0004 and ABI-safe recovery remediation, the Phase 1 perf/LBR evidence-ownership remediation, the repeatable validation-driver hardening, and the review-branch hygiene remediation were evidenced, recorded in state, and documented here.
+- **Last plan review:** 2026-07-12; the complete plan and all binding prose gates were re-read after the dormant unsafe PGO implementation was removed and its fail-closed-only replacement was evidenced, recorded in state, and documented here.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **Known tool gap:** LLVM 22 provides Clang, LLD, `llvm-profdata`, and `llvm-profgen`, but no installed `llvm-bolt` or `perf2bolt`; Phase 1 cannot pass until this is remedied.
 
@@ -748,7 +748,7 @@ Do not implement the live deployment hook until all fixture classes pass.
 
 - The live `/etc/portage` resolves to this repository. `50-global-pgo` is now assignment-free, and `/var/tmp/pgo-profiles` did not exist, so no raw/profile payload required quarantine. The old env marker files remain only for explicit removal/replacement during the rest of Phase 2.
 - Until the exact dispatcher replaces it, `portage/bashrc` leaves all flags unchanged with no marker and fails closed with exit 1 if either stale `PGO_USE_IF_AVAILABLE=1` or `PGO_INSTRUMENT=1` is supplied. Bash syntax and ShellCheck 0.11.0 pass.
-- Evidence is `/var/lib/gentoo-optimization/reports/phase-0-legacy-pgo-neutralization.log` (SHA-256 `44f0a2196f355524d82769a01649fe0ce0312f986c72672a3fe12e1a85bf48a8`); state is `/var/lib/gentoo-optimization/state/project/legacy-pgo-neutralization.json` (SHA-256 `ffa4e656cdd47cbc910cb56ec59269d098f38e6815ad1bcb2130c4bd0b8eccda`). No package build may proceed through the legacy lane.
+- The dormant implementation itself is now deleted: no weak `CATEGORY/PN` path, profile flag, Fortran injection, Clang-incompatible correction flag, silent missing-profile fallback, or legacy helper function remains available for accidental reconnection. A no-marker source test proves all five compiler/linker flag variables remain byte-identical, while both stale markers still fail with status 1. Current evidence is `/var/lib/gentoo-optimization/reports/phase-1-dead-legacy-pgo-removal.log` (SHA-256 `6acdd8d373f3bd9bd54e6afda5e4a75c5bd5ab8a41995fa8260f98338378f101`); current state is `/var/lib/gentoo-optimization/state/project/legacy-pgo-neutralization.json` (SHA-256 `aeba82f79f4e6ec7028d9db60a30a4999203d4cfb434f552a1adac928f2e897d`). The initial neutralization log remains preserved. No package build may proceed through the legacy lane.
 
 ## 11.2 Rewrite `portage/bashrc`
 

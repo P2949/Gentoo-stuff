@@ -25,6 +25,15 @@ and functionality, matching the final pre-strip Portage deployment order. The
 runner never changes an installed file and accepts output only below `/tmp` or
 `/var/tmp/gentoo-optimization`.
 
+Every `perf record`, `perf report`, `perf buildid-list`, `perf2bolt`,
+`merge-fdata`, and `llvm-bolt` stage has a bounded deadline. The runner sends
+`TERM` at the deadline and escalates to `KILL` after a second bounded grace
+period. Artifact-producing commands write only to fresh `.partial` paths;
+successful output is atomically published, while failures and timeouts remove
+the unpublished artifact. `timeout-policy.txt`, `timeout-status.tsv`, and
+`commands.log` retain the configured limits, exit status, timeout result, and
+publication state for every stage.
+
 Run it after the package-managed LLVM 22 BOLT tools are installed:
 
 ```sh
@@ -33,3 +42,11 @@ Run it after the package-managed LLVM 22 BOLT tools are installed:
 
 `BOLT_FIXTURE_TRAIN_ITERATIONS` may be raised when a host needs more samples;
 the default is intended to provide a substantial but bounded capability run.
+The following duration overrides accept integer seconds from 1 through 86400:
+
+- `BOLT_FIXTURE_PERF_RECORD_TIMEOUT_SECONDS` (default `900`);
+- `BOLT_FIXTURE_PERF_ANALYSIS_TIMEOUT_SECONDS` (default `300`);
+- `BOLT_FIXTURE_PERF2BOLT_TIMEOUT_SECONDS` (default `900`);
+- `BOLT_FIXTURE_MERGE_FDATA_TIMEOUT_SECONDS` (default `300`);
+- `BOLT_FIXTURE_LLVM_BOLT_TIMEOUT_SECONDS` (default `900`);
+- `BOLT_FIXTURE_TIMEOUT_KILL_AFTER_SECONDS` (default `30`).

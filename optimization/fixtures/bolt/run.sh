@@ -37,18 +37,6 @@ run_capture() {
     "$@" >"${output}" 2>&1
 }
 
-run_split_capture() {
-    local stdout_file=$1
-    local stderr_file=$2
-    shift 2
-    {
-        printf 'RUN'
-        printf ' %q' "$@"
-        printf '\n'
-    } >>"${COMMAND_LOG}"
-    "$@" >"${stdout_file}" 2>"${stderr_file}"
-}
-
 run_expect_status() {
     local expected_status=$1
     local output=$2
@@ -61,6 +49,113 @@ run_expect_status() {
     fi
     [[ ${status} -eq ${expected_status} ]] || \
         fail "expected exit ${expected_status}, received ${status}: $*"
+}
+
+record_timeout_status() {
+    local stage=$1 limit=$2 status=$3 result=$4 timed_out=$5 artifact=$6
+    local published=$7 partial_removed=$8
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "${stage}" "${limit}" "${TIMEOUT_KILL_AFTER_SECONDS}" "${status}" \
+        "${result}" "${timed_out}" "${artifact}" "${published}" \
+        "${partial_removed}" >>"${TIMEOUT_STATUS_FILE}"
+}
+
+log_timed_command() {
+    local stage=$1 limit=$2
+    shift 2
+    {
+        printf 'TIMED_RUN stage=%q timeout_seconds=%q kill_after_seconds=%q' \
+            "${stage}" "${limit}" "${TIMEOUT_KILL_AFTER_SECONDS}"
+        printf ' %q' "${TIMEOUT}" --verbose --signal=TERM \
+            --kill-after="${TIMEOUT_KILL_AFTER_SECONDS}s" "${limit}s" "$@"
+        printf '\n'
+    } >>"${COMMAND_LOG}"
+}
+
+timed_failure() {
+    local stage=$1 limit=$2 status=$3 artifact=$4 partial=$5
+    local result timed_out=false partial_removed=false
+    case ${status} in
+        124)
+            result=deadline-exceeded
+            timed_out=true
+            ;;
+        137)
+            result=forced-kill-or-sigkill
+            timed_out=true
+            ;;
+        *)
+            result=command-failed
+            ;;
+    esac
+    rm -f -- "${artifact}" "${partial}"
+    if [[ ! -e ${artifact} && ! -e ${partial} ]]; then
+        partial_removed=true
+    fi
+    record_timeout_status "${stage}" "${limit}" "${status}" "${result}" \
+        "${timed_out}" "${artifact}" false "${partial_removed}"
+    if [[ ${timed_out} == true ]]; then
+        fail "${stage}: timed operation exceeded ${limit}s (exit ${status}); unpublished partial output was removed"
+    fi
+    fail "${stage}: timed operation failed with exit ${status}; unpublished partial output was removed"
+}
+
+# Run a command that writes its artifact to an explicit, caller-supplied
+# partial path.  The final path is never visible until a successful atomic
+# publication, and every failed/timed-out partial is removed before exit.
+run_timed_generated_artifact() {
+    local stage=$1 limit=$2 log=$3 artifact=$4 partial=$5
+    shift 5
+    local status
+    [[ ${partial} == "${artifact}.partial" ]] || \
+        fail "${stage}: internal error: partial path is not tied to its final artifact"
+    rm -f -- "${artifact}" "${partial}"
+    log_timed_command "${stage}" "${limit}" "$@"
+    set +e
+    "${TIMEOUT}" --verbose --signal=TERM \
+        --kill-after="${TIMEOUT_KILL_AFTER_SECONDS}s" "${limit}s" \
+        "$@" >"${log}" 2>&1
+    status=$?
+    set -e
+    ((status == 0)) || \
+        timed_failure "${stage}" "${limit}" "${status}" "${artifact}" "${partial}"
+    if [[ ! -s ${partial} ]]; then
+        rm -f -- "${artifact}" "${partial}"
+        record_timeout_status "${stage}" "${limit}" 0 missing-artifact false \
+            "${artifact}" false true
+        fail "${stage}: command exited successfully without a nonempty partial artifact"
+    fi
+    mv -- "${partial}" "${artifact}"
+    record_timeout_status "${stage}" "${limit}" 0 completed false \
+        "${artifact}" true true
+}
+
+# Variant for tools such as perf report and merge-fdata whose artifact is
+# emitted on stdout.  Stderr remains a separate diagnostic log.
+run_timed_stdout_artifact() {
+    local stage=$1 limit=$2 artifact=$3 stderr_log=$4
+    shift 4
+    local partial=${artifact}.partial
+    local status
+    rm -f -- "${artifact}" "${partial}"
+    log_timed_command "${stage}" "${limit}" "$@"
+    set +e
+    "${TIMEOUT}" --verbose --signal=TERM \
+        --kill-after="${TIMEOUT_KILL_AFTER_SECONDS}s" "${limit}s" \
+        "$@" >"${partial}" 2>"${stderr_log}"
+    status=$?
+    set -e
+    ((status == 0)) || \
+        timed_failure "${stage}" "${limit}" "${status}" "${artifact}" "${partial}"
+    if [[ ! -s ${partial} ]]; then
+        rm -f -- "${artifact}" "${partial}"
+        record_timeout_status "${stage}" "${limit}" 0 missing-artifact false \
+            "${artifact}" false true
+        fail "${stage}: command exited successfully without a nonempty stdout artifact"
+    fi
+    mv -- "${partial}" "${artifact}"
+    record_timeout_status "${stage}" "${limit}" 0 completed false \
+        "${artifact}" true true
 }
 
 section_sha256() {
@@ -372,21 +467,49 @@ profile_and_bolt() {
     input_sha=$("${SHA256SUM}" "${input}" | awk '{print $1}')
     input_text_sha=$(section_text_sha256 "${input}" "${class_root}/input.text")
 
-    run_capture "${class_root}/perf-mode1.log" "${PERF}" record -q -e cycles:u -j any,u -o "${class_root}/mode1.perf.data" -- bash -c "${mode1_command}"
-    run_capture "${class_root}/perf-mode2.log" "${PERF}" record -q -e cycles:u -j any,u -o "${class_root}/mode2.perf.data" -- bash -c "${mode2_command}"
+    run_timed_generated_artifact "${class}:perf-record-mode1" \
+        "${PERF_RECORD_TIMEOUT_SECONDS}" "${class_root}/perf-mode1.log" \
+        "${class_root}/mode1.perf.data" "${class_root}/mode1.perf.data.partial" \
+        "${PERF}" record -q -e cycles:u -j any,u \
+        -o "${class_root}/mode1.perf.data.partial" -- bash -c "${mode1_command}"
+    run_timed_generated_artifact "${class}:perf-record-mode2" \
+        "${PERF_RECORD_TIMEOUT_SECONDS}" "${class_root}/perf-mode2.log" \
+        "${class_root}/mode2.perf.data" "${class_root}/mode2.perf.data.partial" \
+        "${PERF}" record -q -e cycles:u -j any,u \
+        -o "${class_root}/mode2.perf.data.partial" -- bash -c "${mode2_command}"
     [[ -s ${class_root}/mode1.perf.data && -s ${class_root}/mode2.perf.data ]] || fail "${class}: perf data is empty"
-    run_capture "${class_root}/perf-report.txt" "${PERF}" report --stdio --no-children --sort dso,symbol -i "${class_root}/mode1.perf.data"
-    run_capture "${class_root}/perf-buildids-mode1.txt" "${PERF}" buildid-list -i "${class_root}/mode1.perf.data"
-    run_capture "${class_root}/perf-buildids-mode2.txt" "${PERF}" buildid-list -i "${class_root}/mode2.perf.data"
+    run_timed_stdout_artifact "${class}:perf-report" \
+        "${PERF_ANALYSIS_TIMEOUT_SECONDS}" "${class_root}/perf-report.txt" \
+        "${class_root}/perf-report.stderr.log" \
+        "${PERF}" report --stdio --no-children --sort dso,symbol \
+        -i "${class_root}/mode1.perf.data"
+    run_timed_stdout_artifact "${class}:perf-buildid-list-mode1" \
+        "${PERF_ANALYSIS_TIMEOUT_SECONDS}" "${class_root}/perf-buildids-mode1.txt" \
+        "${class_root}/perf-buildids-mode1.stderr.log" \
+        "${PERF}" buildid-list -i "${class_root}/mode1.perf.data"
+    run_timed_stdout_artifact "${class}:perf-buildid-list-mode2" \
+        "${PERF_ANALYSIS_TIMEOUT_SECONDS}" "${class_root}/perf-buildids-mode2.txt" \
+        "${class_root}/perf-buildids-mode2.stderr.log" \
+        "${PERF}" buildid-list -i "${class_root}/mode2.perf.data"
     grep -Fiq -- "${input_build_id}" "${class_root}/perf-buildids-mode1.txt" || fail "${class}: mode1 perf data lacks the exact input build ID"
     grep -Fiq -- "${input_build_id}" "${class_root}/perf-buildids-mode2.txt" || fail "${class}: mode2 perf data lacks the exact input build ID"
 
-    run_capture "${class_root}/perf2bolt-mode1.log" "${PERF2BOLT}" -p "${class_root}/mode1.perf.data" -o "${class_root}/mode1.fdata" "${input}"
-    run_capture "${class_root}/perf2bolt-mode2.log" "${PERF2BOLT}" -p "${class_root}/mode2.perf.data" -o "${class_root}/mode2.fdata" "${input}"
+    run_timed_generated_artifact "${class}:perf2bolt-mode1" \
+        "${PERF2BOLT_TIMEOUT_SECONDS}" "${class_root}/perf2bolt-mode1.log" \
+        "${class_root}/mode1.fdata" "${class_root}/mode1.fdata.partial" \
+        "${PERF2BOLT}" -p "${class_root}/mode1.perf.data" \
+        -o "${class_root}/mode1.fdata.partial" "${input}"
+    run_timed_generated_artifact "${class}:perf2bolt-mode2" \
+        "${PERF2BOLT_TIMEOUT_SECONDS}" "${class_root}/perf2bolt-mode2.log" \
+        "${class_root}/mode2.fdata" "${class_root}/mode2.fdata.partial" \
+        "${PERF2BOLT}" -p "${class_root}/mode2.perf.data" \
+        -o "${class_root}/mode2.fdata.partial" "${input}"
     validate_profile_quality "${class}" "${class_root}/perf2bolt-mode1.log" mode1
     validate_profile_quality "${class}" "${class_root}/perf2bolt-mode2.log" mode2
     [[ -s ${class_root}/mode1.fdata && -s ${class_root}/mode2.fdata ]] || fail "${class}: perf2bolt produced empty fdata"
-    run_split_capture "${class_root}/merged.fdata" "${class_root}/merge-fdata.log" \
+    run_timed_stdout_artifact "${class}:merge-fdata" \
+        "${MERGE_FDATA_TIMEOUT_SECONDS}" "${class_root}/merged.fdata" \
+        "${class_root}/merge-fdata.log" \
         "${MERGE_FDATA}" "${class_root}/mode1.fdata" "${class_root}/mode2.fdata"
     [[ -s ${class_root}/merged.fdata ]] || fail "${class}: merged fdata is empty"
     for required_symbol in bolt_fixture_run hot_even hot_odd; do
@@ -396,9 +519,11 @@ profile_and_bolt() {
     input_sha_after_profile=$("${SHA256SUM}" "${input}" | awk '{print $1}')
     [[ ${input_sha} == "${input_sha_after_profile}" ]] || fail "${class}: exact input changed during profiling/conversion"
 
-    run_capture "${class_root}/llvm-bolt.log" \
+    run_timed_generated_artifact "${class}:llvm-bolt" \
+        "${LLVM_BOLT_TIMEOUT_SECONDS}" "${class_root}/llvm-bolt.log" \
+        "${class_root}/output.bolt" "${class_root}/output.bolt.partial" \
         "${LLVM_BOLT}" "${input}" \
-        -o "${class_root}/output.bolt" \
+        -o "${class_root}/output.bolt.partial" \
         -data="${class_root}/merged.fdata" \
         -reorder-blocks=ext-tsp \
         -reorder-functions=cdsort \
@@ -465,6 +590,9 @@ esac
 mkdir -p -- "${OUTPUT_ROOT}/build" "${OUTPUT_ROOT}/dso-runtime"
 COMMAND_LOG=${OUTPUT_ROOT}/commands.log
 : >"${COMMAND_LOG}"
+TIMEOUT_STATUS_FILE=${OUTPUT_ROOT}/timeout-status.tsv
+printf 'stage\ttimeout_seconds\tkill_after_seconds\texit_status\tresult\ttimed_out\tartifact\tpublished\tpartial_removed\n' \
+    >"${TIMEOUT_STATUS_FILE}"
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 CLANG=$(require_tool clang)
@@ -483,6 +611,37 @@ SETFATTR=$(require_tool setfattr)
 GETCAP=$(require_tool getcap)
 SHA256SUM=$(require_tool sha256sum)
 TIMEOUT=$(require_tool timeout)
+
+PERF_RECORD_TIMEOUT_SECONDS=${BOLT_FIXTURE_PERF_RECORD_TIMEOUT_SECONDS:-900}
+PERF_ANALYSIS_TIMEOUT_SECONDS=${BOLT_FIXTURE_PERF_ANALYSIS_TIMEOUT_SECONDS:-300}
+PERF2BOLT_TIMEOUT_SECONDS=${BOLT_FIXTURE_PERF2BOLT_TIMEOUT_SECONDS:-900}
+MERGE_FDATA_TIMEOUT_SECONDS=${BOLT_FIXTURE_MERGE_FDATA_TIMEOUT_SECONDS:-300}
+LLVM_BOLT_TIMEOUT_SECONDS=${BOLT_FIXTURE_LLVM_BOLT_TIMEOUT_SECONDS:-900}
+TIMEOUT_KILL_AFTER_SECONDS=${BOLT_FIXTURE_TIMEOUT_KILL_AFTER_SECONDS:-30}
+readonly PERF_RECORD_TIMEOUT_SECONDS PERF_ANALYSIS_TIMEOUT_SECONDS
+readonly PERF2BOLT_TIMEOUT_SECONDS MERGE_FDATA_TIMEOUT_SECONDS
+readonly LLVM_BOLT_TIMEOUT_SECONDS TIMEOUT_KILL_AFTER_SECONDS
+for timeout_name in PERF_RECORD_TIMEOUT_SECONDS PERF_ANALYSIS_TIMEOUT_SECONDS \
+    PERF2BOLT_TIMEOUT_SECONDS MERGE_FDATA_TIMEOUT_SECONDS \
+    LLVM_BOLT_TIMEOUT_SECONDS TIMEOUT_KILL_AFTER_SECONDS; do
+    timeout_value=${!timeout_name}
+    [[ ${timeout_value} =~ ^[1-9][0-9]*$ && ${#timeout_value} -le 5 ]] || \
+        fail "${timeout_name} must be an integer from 1 through 86400 seconds"
+    ((timeout_value <= 86400)) || \
+        fail "${timeout_name} must be an integer from 1 through 86400 seconds"
+done
+{
+    printf 'timeout_max_seconds=86400\n'
+    printf 'termination_signal=TERM\n'
+    printf 'perf_record_timeout_seconds=%s\n' "${PERF_RECORD_TIMEOUT_SECONDS}"
+    printf 'perf_analysis_timeout_seconds=%s\n' "${PERF_ANALYSIS_TIMEOUT_SECONDS}"
+    printf 'perf2bolt_timeout_seconds=%s\n' "${PERF2BOLT_TIMEOUT_SECONDS}"
+    printf 'merge_fdata_timeout_seconds=%s\n' "${MERGE_FDATA_TIMEOUT_SECONDS}"
+    printf 'llvm_bolt_timeout_seconds=%s\n' "${LLVM_BOLT_TIMEOUT_SECONDS}"
+    printf 'kill_after_seconds=%s\n' "${TIMEOUT_KILL_AFTER_SECONDS}"
+    printf 'publication=atomic-rename-after-success\n'
+    printf 'failed_partial_policy=remove-and-never-publish\n'
+} >"${OUTPUT_ROOT}/timeout-policy.txt"
 
 "${SHA256SUM}" \
     "${SCRIPT_DIR}/run.sh" \
@@ -593,6 +752,20 @@ profile_and_bolt dso \
     "cp -- ${OUTPUT_ROOT}/build/fixture-dso-driver ${OUTPUT_ROOT}/dso-runtime/fixture-dso-driver && cp -- ${OUTPUT_ROOT}/dso/output.bolt ${OUTPUT_ROOT}/dso-runtime/libboltfixture.so && ${OUTPUT_ROOT}/dso-runtime/fixture-dso-driver ${VERIFY_ITERATIONS} 1" \
     "${OUTPUT_ROOT}/dso-expected.txt"
 
+TIMED_STAGE_COUNT=$(awk -F '\t' 'NR > 1 { count += 1 } END { print count + 0 }' \
+    "${TIMEOUT_STATUS_FILE}")
+[[ ${TIMED_STAGE_COUNT} -eq 27 ]] || \
+    fail "timeout evidence covers ${TIMED_STAGE_COUNT} stages instead of 27"
+awk -F '\t' '
+    NR == 1 { next }
+    $4 != "0" || $5 != "completed" || $6 != "false" ||
+        $8 != "true" || $9 != "true" { exit 1 }
+' "${TIMEOUT_STATUS_FILE}" || \
+    fail 'at least one timed stage lacks a clean successful publication record'
+if find "${OUTPUT_ROOT}" -type f -name '*.partial' -print -quit | grep -q .; then
+    fail 'an unpublished partial artifact remains after successful validation'
+fi
+
 {
     printf 'result=PASS\n'
     printf 'fixture_classes=executable,pie,dso\n'
@@ -603,6 +776,15 @@ profile_and_bolt dso \
     printf 'tool_perf2bolt=%s\n' "${PERF2BOLT}"
     printf 'tool_perf2bolt_realpath=%s\n' "$(readlink -f -- "${PERF2BOLT}")"
     printf 'tool_merge_fdata=%s\n' "${MERGE_FDATA}"
+    printf 'timeout_status=%s\n' "${TIMEOUT_STATUS_FILE}"
+    printf 'perf_record_timeout_seconds=%s\n' "${PERF_RECORD_TIMEOUT_SECONDS}"
+    printf 'perf_analysis_timeout_seconds=%s\n' "${PERF_ANALYSIS_TIMEOUT_SECONDS}"
+    printf 'perf2bolt_timeout_seconds=%s\n' "${PERF2BOLT_TIMEOUT_SECONDS}"
+    printf 'merge_fdata_timeout_seconds=%s\n' "${MERGE_FDATA_TIMEOUT_SECONDS}"
+    printf 'llvm_bolt_timeout_seconds=%s\n' "${LLVM_BOLT_TIMEOUT_SECONDS}"
+    printf 'timeout_kill_after_seconds=%s\n' "${TIMEOUT_KILL_AFTER_SECONDS}"
+    printf 'timed_stage_count=%s\n' "${TIMED_STAGE_COUNT}"
+    printf 'partial_artifact_publication=atomic-after-success\n'
     printf 'all_bolt_notes=true\nall_functionality=true\nall_metadata=true\nall_dynamic_dependencies=true\n'
 } >"${OUTPUT_ROOT}/validation-summary.txt"
 
