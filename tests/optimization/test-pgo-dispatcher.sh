@@ -138,6 +138,7 @@ case_ir_use_and_exact_once() (
     export GENTOO_OPT_PROFILE_MANIFEST="${TMP}/profiles/ir.manifest"
     CFLAGS='-O2'; CXXFLAGS='-O2'; LDFLAGS='-Wl,--as-needed'
     FCFLAGS='fortran-c'; FFLAGS='fortran-f'; FEATURES='ccache sandbox'
+    SANDBOX_WRITE='/existing/write'
     source "${BASHRC}" >/dev/null 2>&1
     source "${BASHRC}" >/dev/null 2>&1
     local_flag="-fprofile-use=${GENTOO_OPT_PROFILE_PATH}"
@@ -146,6 +147,7 @@ case_ir_use_and_exact_once() (
     [[ $(count_token "${LDFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${FEATURES}" -ccache) == 1 && ${CCACHE_DISABLE} == 1 ]]
     [[ ${FCFLAGS} == fortran-c && ${FFLAGS} == fortran-f ]]
+    [[ ${SANDBOX_WRITE} == /existing/write ]]
 )
 
 case_sample_use_and_format_separation() (
@@ -186,13 +188,15 @@ case_clang_generate_exact_once() (
     export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
     CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'; FEATURES='ccache'
+    SANDBOX_WRITE='/existing/write'
     source "${BASHRC}" >/dev/null 2>&1
     source "${BASHRC}" >/dev/null 2>&1
-    local_flag="-fprofile-generate=${GENTOO_OPT_PROFILE_PATH}"
+    local_flag="-fprofile-instr-generate=${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
     [[ $(count_token "${CFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${CXXFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${LDFLAGS}" "${local_flag}") == 1 ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+    [[ ${SANDBOX_WRITE} == "/existing/write:${GENTOO_OPT_PROFILE_PATH}" ]]
 )
 
 printf 'gcda\n' > "${TMP}/profiles/raw-gcc/unit.gcda"
@@ -253,6 +257,7 @@ case_rust_and_go_bolt_layering() (
     export PATH="${TMP}/bin:/usr/bin:/bin" RUSTC=rustc ABI=amd64
     export GENTOO_OPT_MODE=rust-generate GENTOO_OPT_BOLT_STAGE=capture
     export GENTOO_OPT_ABI=amd64 GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/bolt-cache"
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-rust"
     export GENTOO_OPT_RUST_TARGET=x86_64-unknown-linux-gnu
     RUSTFLAGS='-Copt-level=3'; CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'
@@ -275,6 +280,7 @@ case_bolt_layer_and_gcc_guard() (
     export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
     export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_BOLT_STAGE=capture
     export GENTOO_OPT_ABI=amd64 GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/bolt-cache"
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
     CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
     source "${BASHRC}" >/dev/null 2>&1
@@ -284,6 +290,18 @@ case_bolt_layer_and_gcc_guard() (
     export CC=gcc GENTOO_OPT_MODE=gcc-generate
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-gcc"
     unset GENTOO_OPT_BOLT_GCC_READY
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_bolt_cache_scope_is_required() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_BOLT_STAGE=capture
+    export GENTOO_OPT_ABI=amd64 GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    unset GENTOO_OPT_BOLT_CACHE_ROOT
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/invalid:cache"
     source "${BASHRC}" >/dev/null 2>&1 && return 1
     return 0
 )
@@ -353,6 +371,7 @@ run_case 'Rust instrumentation requires target isolation' case_rust_target_isola
 run_case 'Go PGO changes GOFLAGS only' case_go_use_only_goflags
 run_case 'Rust and Go BOLT stages remain language-lane specific' case_rust_and_go_bolt_layering
 run_case 'BOLT readiness layers and guards the GCC lane' case_bolt_layer_and_gcc_guard
+run_case 'BOLT stages require an exact sandbox cache scope' case_bolt_cache_scope_is_required
 run_case 'strict fingerprint.env loading works' case_fingerprint_file_strict
 run_case 'root is rejected as an identity file path' case_root_path_is_not_safe_identity
 run_case 'post_src_install invokes the exact BOLT wrapper interface' case_bolt_post_install_wrapper

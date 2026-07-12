@@ -595,6 +595,12 @@ rust-generate|rust-use|go-use) ;;
     fi
     gentoo_opt_detect_abi || return 1
     gentoo_opt_load_fingerprint || return 1
+    if [[ ${bolt_stage} == capture || ${bolt_stage} == deploy ]]; then
+        gentoo_opt_safe_absolute_path "${GENTOO_OPT_BOLT_CACHE_ROOT-}" || {
+            gentoo_opt_error 'BOLT stage requires a safe absolute GENTOO_OPT_BOLT_CACHE_ROOT'; return 1;
+        }
+        gentoo_opt_allow_sandbox_write "${GENTOO_OPT_BOLT_CACHE_ROOT}" || return 1
+    fi
     if [[ ${mode} != off ]]; then
         gentoo_opt_apply_primary_mode "${mode}" || return 1
     else
