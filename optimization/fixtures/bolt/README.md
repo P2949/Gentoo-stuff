@@ -34,6 +34,36 @@ the unpublished artifact. `timeout-policy.txt`, `timeout-status.tsv`, and
 `commands.log` retain the configured limits, exit status, timeout result, and
 publication state for every stage.
 
+The transaction layer also tracks the one active timeout process group. An
+outer `EXIT`, `HUP`, `INT`, or `TERM` removes only that transaction's partial
+path, records an `interrupted` row, and terminates the complete timeout/workload
+process group. Already published finals and unrelated partial paths are left
+unchanged. If interruption lands in the narrow boundary after atomic rename
+but before normal bookkeeping, the transaction recognizes the nonempty final
+and absent partial and records exactly one successful publication row instead
+of falsely classifying it as interrupted. The expected timed stages come from
+the declared class/stage registry; final validation rejects unknown, missing,
+duplicate, or reordered status rows instead of relying on a hard-coded row
+count.
+
+For every terminal path, the status append precedes clearing the active stage
+and acts as its bookkeeping commit marker. If a signal arrives between those
+operations, cleanup recognizes the stage's one existing row and clears state
+without appending a duplicate. This applies equally to successful publication,
+ordinary or timed failure, and missing-artifact rejection. Signal handlers
+ignore further `HUP`, `INT`, and `TERM` delivery while cleanup is in progress,
+preventing trap reentry from splitting the transaction.
+
+`tests/optimization/test-bolt-transaction.sh` exercises the transaction layer
+without perf or BOLT. It directly covers atomic success, ordinary failure,
+synthetic exits 124 and 137, missing artifacts, stale outputs, stdout artifacts,
+exact status rows, all four outer interruption paths, and all four signals at
+the post-rename/pre-bookkeeping publication boundary. It also injects a signal
+after status append for success, ordinary failure, and missing-artifact paths
+and requires exactly one terminal row. Its interruption
+cases include a signal-resistant child and descendant and prove the workload
+process group has no live member after cleanup.
+
 Run it after the package-managed LLVM 22 BOLT tools are installed:
 
 ```sh

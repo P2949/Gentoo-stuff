@@ -73,6 +73,7 @@ quick suites:
   python-source-compilation (temporary pycache only)
   python-unit-tests
   package-env-duplicate-policy
+  bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
   driver-cli-self-test
   recovery-boot-evidence-fixture (fake root)
   recovery-rollback-fixture (fake root, including Clang/libc++ and GCC/libstdc++)
@@ -419,6 +420,17 @@ elif [[ ! -f ${PACKAGE_ENV_DUPLICATE_CHECKER} ]]; then
 else
     run_case package-env-duplicate-policy \
         run_in_repository "${PYTHON_BIN}" "${PACKAGE_ENV_DUPLICATE_CHECKER}"
+fi
+
+BOLT_TRANSACTION_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-transaction.sh
+if [[ ! -f ${BOLT_TRANSACTION_FIXTURE} ]]; then
+    skip_case bolt-transaction-fixture \
+        "fixture is absent: ${BOLT_TRANSACTION_FIXTURE}"
+elif ! require_commands awk bash chmod cmp cp grep mkdir mktemp mv ps rm sleep \
+    timeout tr; then
+    skip_case bolt-transaction-fixture "${PREFLIGHT_REASON}"
+else
+    run_case bolt-transaction-fixture bash -- "${BOLT_TRANSACTION_FIXTURE}"
 fi
 
 DRIVER_SELF_TEST=${REPOSITORY_ROOT}/tests/optimization/test-run-optimization-tests.sh

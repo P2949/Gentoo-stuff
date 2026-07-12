@@ -8,6 +8,10 @@ fail() {
     exit 1
 }
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+# shellcheck source=optimization/fixtures/bolt/transaction.sh
+source "${SCRIPT_DIR}/transaction.sh"
+
 require_tool() {
     local name=$1
     local resolved
@@ -49,113 +53,6 @@ run_expect_status() {
     fi
     [[ ${status} -eq ${expected_status} ]] || \
         fail "expected exit ${expected_status}, received ${status}: $*"
-}
-
-record_timeout_status() {
-    local stage=$1 limit=$2 status=$3 result=$4 timed_out=$5 artifact=$6
-    local published=$7 partial_removed=$8
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-        "${stage}" "${limit}" "${TIMEOUT_KILL_AFTER_SECONDS}" "${status}" \
-        "${result}" "${timed_out}" "${artifact}" "${published}" \
-        "${partial_removed}" >>"${TIMEOUT_STATUS_FILE}"
-}
-
-log_timed_command() {
-    local stage=$1 limit=$2
-    shift 2
-    {
-        printf 'TIMED_RUN stage=%q timeout_seconds=%q kill_after_seconds=%q' \
-            "${stage}" "${limit}" "${TIMEOUT_KILL_AFTER_SECONDS}"
-        printf ' %q' "${TIMEOUT}" --verbose --signal=TERM \
-            --kill-after="${TIMEOUT_KILL_AFTER_SECONDS}s" "${limit}s" "$@"
-        printf '\n'
-    } >>"${COMMAND_LOG}"
-}
-
-timed_failure() {
-    local stage=$1 limit=$2 status=$3 artifact=$4 partial=$5
-    local result timed_out=false partial_removed=false
-    case ${status} in
-        124)
-            result=deadline-exceeded
-            timed_out=true
-            ;;
-        137)
-            result=forced-kill-or-sigkill
-            timed_out=true
-            ;;
-        *)
-            result=command-failed
-            ;;
-    esac
-    rm -f -- "${artifact}" "${partial}"
-    if [[ ! -e ${artifact} && ! -e ${partial} ]]; then
-        partial_removed=true
-    fi
-    record_timeout_status "${stage}" "${limit}" "${status}" "${result}" \
-        "${timed_out}" "${artifact}" false "${partial_removed}"
-    if [[ ${timed_out} == true ]]; then
-        fail "${stage}: timed operation exceeded ${limit}s (exit ${status}); unpublished partial output was removed"
-    fi
-    fail "${stage}: timed operation failed with exit ${status}; unpublished partial output was removed"
-}
-
-# Run a command that writes its artifact to an explicit, caller-supplied
-# partial path.  The final path is never visible until a successful atomic
-# publication, and every failed/timed-out partial is removed before exit.
-run_timed_generated_artifact() {
-    local stage=$1 limit=$2 log=$3 artifact=$4 partial=$5
-    shift 5
-    local status
-    [[ ${partial} == "${artifact}.partial" ]] || \
-        fail "${stage}: internal error: partial path is not tied to its final artifact"
-    rm -f -- "${artifact}" "${partial}"
-    log_timed_command "${stage}" "${limit}" "$@"
-    set +e
-    "${TIMEOUT}" --verbose --signal=TERM \
-        --kill-after="${TIMEOUT_KILL_AFTER_SECONDS}s" "${limit}s" \
-        "$@" >"${log}" 2>&1
-    status=$?
-    set -e
-    ((status == 0)) || \
-        timed_failure "${stage}" "${limit}" "${status}" "${artifact}" "${partial}"
-    if [[ ! -s ${partial} ]]; then
-        rm -f -- "${artifact}" "${partial}"
-        record_timeout_status "${stage}" "${limit}" 0 missing-artifact false \
-            "${artifact}" false true
-        fail "${stage}: command exited successfully without a nonempty partial artifact"
-    fi
-    mv -- "${partial}" "${artifact}"
-    record_timeout_status "${stage}" "${limit}" 0 completed false \
-        "${artifact}" true true
-}
-
-# Variant for tools such as perf report and merge-fdata whose artifact is
-# emitted on stdout.  Stderr remains a separate diagnostic log.
-run_timed_stdout_artifact() {
-    local stage=$1 limit=$2 artifact=$3 stderr_log=$4
-    shift 4
-    local partial=${artifact}.partial
-    local status
-    rm -f -- "${artifact}" "${partial}"
-    log_timed_command "${stage}" "${limit}" "$@"
-    set +e
-    "${TIMEOUT}" --verbose --signal=TERM \
-        --kill-after="${TIMEOUT_KILL_AFTER_SECONDS}s" "${limit}s" \
-        "$@" >"${partial}" 2>"${stderr_log}"
-    status=$?
-    set -e
-    ((status == 0)) || \
-        timed_failure "${stage}" "${limit}" "${status}" "${artifact}" "${partial}"
-    if [[ ! -s ${partial} ]]; then
-        rm -f -- "${artifact}" "${partial}"
-        record_timeout_status "${stage}" "${limit}" 0 missing-artifact false \
-            "${artifact}" false true
-        fail "${stage}: command exited successfully without a nonempty stdout artifact"
-    fi
-    mv -- "${partial}" "${artifact}"
-    record_timeout_status "${stage}" "${limit}" 0 completed false \
-        "${artifact}" true true
 }
 
 section_sha256() {
@@ -594,7 +491,6 @@ TIMEOUT_STATUS_FILE=${OUTPUT_ROOT}/timeout-status.tsv
 printf 'stage\ttimeout_seconds\tkill_after_seconds\texit_status\tresult\ttimed_out\tartifact\tpublished\tpartial_removed\n' \
     >"${TIMEOUT_STATUS_FILE}"
 
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 CLANG=$(require_tool clang)
 PERF=$(require_tool perf)
 PERF2BOLT=$(require_tool perf2bolt)
@@ -630,6 +526,10 @@ for timeout_name in PERF_RECORD_TIMEOUT_SECONDS PERF_ANALYSIS_TIMEOUT_SECONDS \
     ((timeout_value <= 86400)) || \
         fail "${timeout_name} must be an integer from 1 through 86400 seconds"
 done
+bolt_transaction_install_traps
+
+EXPECTED_TIMED_STAGES_FILE=${OUTPUT_ROOT}/expected-timed-stages.txt
+bolt_transaction_write_stage_registry "${EXPECTED_TIMED_STAGES_FILE}"
 {
     printf 'timeout_max_seconds=86400\n'
     printf 'termination_signal=TERM\n'
@@ -645,6 +545,7 @@ done
 
 "${SHA256SUM}" \
     "${SCRIPT_DIR}/run.sh" \
+    "${SCRIPT_DIR}/transaction.sh" \
     "${SCRIPT_DIR}/fixture.h" \
     "${SCRIPT_DIR}/fixture.c" \
     "${SCRIPT_DIR}/main.c" >"${OUTPUT_ROOT}/source-files.sha256"
@@ -752,10 +653,10 @@ profile_and_bolt dso \
     "cp -- ${OUTPUT_ROOT}/build/fixture-dso-driver ${OUTPUT_ROOT}/dso-runtime/fixture-dso-driver && cp -- ${OUTPUT_ROOT}/dso/output.bolt ${OUTPUT_ROOT}/dso-runtime/libboltfixture.so && ${OUTPUT_ROOT}/dso-runtime/fixture-dso-driver ${VERIFY_ITERATIONS} 1" \
     "${OUTPUT_ROOT}/dso-expected.txt"
 
-TIMED_STAGE_COUNT=$(awk -F '\t' 'NR > 1 { count += 1 } END { print count + 0 }' \
-    "${TIMEOUT_STATUS_FILE}")
-[[ ${TIMED_STAGE_COUNT} -eq 27 ]] || \
-    fail "timeout evidence covers ${TIMED_STAGE_COUNT} stages instead of 27"
+ACTUAL_TIMED_STAGES_FILE=${OUTPUT_ROOT}/actual-timed-stages.txt
+bolt_transaction_validate_stage_evidence "${TIMEOUT_STATUS_FILE}" \
+    "${EXPECTED_TIMED_STAGES_FILE}" "${ACTUAL_TIMED_STAGES_FILE}"
+TIMED_STAGE_COUNT=${BOLT_TRANSACTION_TIMED_STAGE_COUNT}
 awk -F '\t' '
     NR == 1 { next }
     $4 != "0" || $5 != "completed" || $6 != "false" ||
