@@ -66,8 +66,23 @@ def run_checked(argv: list[str]) -> str:
     return completed.stdout
 
 
+def reject_symlink_components(path_text: str, label: str) -> Path:
+    path = Path(os.path.abspath(path_text))
+    current = Path(path.anchor)
+    for part in path.parts[1:]:
+        current /= part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode):
+            fail(f"{label} contains a symlink component: {current}")
+    return path
+
+
 def validate_root(path_text: str, label: str) -> Path:
-    path = Path(path_text).resolve(strict=True)
+    unresolved = reject_symlink_components(path_text, label)
+    path = unresolved.resolve(strict=True)
     if not path.is_dir():
         fail(f"{label} is not a directory: {path}")
     if path == Path("/") or path == Path("/usr"):
@@ -76,13 +91,14 @@ def validate_root(path_text: str, label: str) -> Path:
 
 
 def validate_cache_root(path_text: str, ed: Path) -> Path:
-    raw = Path(path_text)
+    raw = reject_symlink_components(path_text, "cache root")
     raw.mkdir(mode=0o700, parents=True, exist_ok=True)
+    reject_symlink_components(str(raw), "cache root")
     path = raw.resolve(strict=True)
     if path in (Path("/"), Path("/usr")):
         fail(f"refusing unsafe cache root: {path}")
-    if path == ed or ed in path.parents:
-        fail("cache root must not be inside ED")
+    if path == ed or ed in path.parents or path in ed.parents:
+        fail("cache root and ED must be disjoint")
     return path
 
 
@@ -435,7 +451,7 @@ def command_capture(arguments: argparse.Namespace) -> None:
                     object_name = f"objects/{artifact_id}.elf"
                     destination = stage / object_name
                     os.replace(scratch, destination)
-                    os.chmod(destination, stat.S_IMODE(info.st_mode))
+                    os.chmod(destination, 0o600)
                 else:
                     scratch.unlink()
                 artifacts.append(
@@ -523,11 +539,16 @@ def find_artifact(manifest: dict[str, Any], artifact_id: str) -> dict[str, Any]:
 
 
 def command_register(arguments: argparse.Namespace) -> None:
-    output_source = Path(arguments.output).resolve(strict=True)
-    if not output_source.is_file() or output_source.is_symlink():
+    output_unresolved = reject_symlink_components(arguments.output, "prepared output")
+    output_status = output_unresolved.lstat()
+    if not stat.S_ISREG(output_status.st_mode):
+        fail(f"prepared output is not a regular file: {output_unresolved}")
+    output_source = output_unresolved.resolve(strict=True)
+    if not output_source.is_file():
         fail(f"prepared output is not a regular file: {output_source}")
-    cache_raw = Path(arguments.cache_root)
+    cache_raw = reject_symlink_components(arguments.cache_root, "cache root")
     cache_raw.mkdir(mode=0o700, parents=True, exist_ok=True)
+    reject_symlink_components(str(cache_raw), "cache root")
     cache = cache_raw.resolve(strict=True)
     if cache in (Path("/"), Path("/usr")):
         fail(f"refusing unsafe cache root: {cache}")
@@ -575,6 +596,7 @@ def command_register(arguments: argparse.Namespace) -> None:
             shutil.copyfileobj(input_stream, output_stream, 1024 * 1024)
             output_stream.flush()
             os.fsync(output_stream.fileno())
+        os.chmod(partial, 0o600)
         entry = {
             "artifact_id": arguments.artifact_id,
             "output_object": f"objects/{arguments.artifact_id}.bolt",
@@ -771,6 +793,7 @@ def command_deploy(arguments: argparse.Namespace) -> None:
         # All identities, outputs, topology, and metadata are valid before ED mutation.
         staged_groups: list[list[tuple[Path, Path]]] = []
         token = f"{os.getpid()}"
+        replacement_started = False
         try:
             for item in prepared:
                 staged_groups.append(
@@ -786,40 +809,50 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                 else:
                     partial = diagnostic.with_name(f".{diagnostic.name}.partial.{os.getpid()}")
                     shutil.copyfile(item["current"], partial)
+                    os.chmod(partial, 0o600)
                     os.replace(partial, diagnostic)
+            replacement_started = True
             for stages in staged_groups:
                 for partial, destination in stages:
                     os.replace(partial, destination)
+
+            # Post-rename verification remains inside the rollback boundary.
+            verify_symlinks(ed, capture.get("symlinks"))
+            final_scratch = scratch_root / "final-verification"
+            for index, item in enumerate(prepared):
+                paths = item["paths"]
+                stats = [path.lstat() for path in paths]
+                if len({(entry.st_dev, entry.st_ino) for entry in stats}) != 1:
+                    fail(
+                        "deployed hardlink topology mismatch: "
+                        f"{item['artifact']['artifact_id']}"
+                    )
+                verify_metadata_matches(paths[0], item["artifact"]["metadata"])
+                final_class = classify_elf(
+                    paths[0], readelf, objcopy, final_scratch / f"{index}"
+                )
+                if not final_class["has_bolt_info"]:
+                    fail(f"deployed file lacks .note.bolt_info: {paths[0]}")
+                expected = outputs_by_id[item["artifact"]["artifact_id"]]
+                if sha256_file(paths[0]) != expected["output_sha256"]:
+                    fail(f"deployed file hash mismatch: {paths[0]}")
         except BaseException:
             for stages in staged_groups:
                 for partial, _ in stages:
                     partial.unlink(missing_ok=True)
-            # Restore every group from the exact pre-deploy copies when any rename ran.
-            for item in prepared:
-                restore = stage_hardlink_group(
-                    item["current"], item["paths"], item["artifact"]["metadata"], f"restore-{token}"
-                )
-                for partial, destination in restore:
-                    os.replace(partial, destination)
+            # Restore every group from exact preimages after any rename, including
+            # post-rename verification or signal failures.
+            if replacement_started:
+                for item in prepared:
+                    restore = stage_hardlink_group(
+                        item["current"],
+                        item["paths"],
+                        item["artifact"]["metadata"],
+                        f"restore-{token}",
+                    )
+                    for partial, destination in restore:
+                        os.replace(partial, destination)
             raise
-
-    # Verify final identity, BOLT note, metadata, hardlinks, and symlink topology.
-    verify_symlinks(ed, capture.get("symlinks"))
-    with tempfile.TemporaryDirectory(prefix="bolt-deploy-verify-", dir=cache) as temporary:
-        for index, item in enumerate(prepared):
-            paths = item["paths"]
-            stats = [path.lstat() for path in paths]
-            if len({(entry.st_dev, entry.st_ino) for entry in stats}) != 1:
-                fail(f"deployed hardlink topology mismatch: {item['artifact']['artifact_id']}")
-            verify_metadata_matches(paths[0], item["artifact"]["metadata"])
-            final_class = classify_elf(
-                paths[0], readelf, objcopy, Path(temporary) / f"{index}"
-            )
-            if not final_class["has_bolt_info"]:
-                fail(f"deployed file lacks .note.bolt_info: {paths[0]}")
-            expected = outputs_by_id[item["artifact"]["artifact_id"]]
-            if sha256_file(paths[0]) != expected["output_sha256"]:
-                fail(f"deployed file hash mismatch: {paths[0]}")
     print(output_manifest_path(cache, fingerprint))
 
 
