@@ -484,6 +484,14 @@ def reject_unused(arguments: argparse.Namespace, allowed: set[str], family: str)
 def profile_path_command(arguments: argparse.Namespace) -> int:
     root = arguments.root
     reject_symlink_traversal(root, "--root", include_leaf=True)
+    try:
+        root_stat = root.lstat()
+    except FileNotFoundError:
+        root_stat = None
+    except OSError as exc:
+        fail(f"cannot inspect --root {root}: {exc}")
+    if root_stat is not None and not stat.S_ISDIR(root_stat.st_mode):
+        fail(f"--root exists and is not a directory: {root}")
     family = arguments.family
     path: Path
     if family == "clang-ir":
@@ -521,7 +529,6 @@ def profile_path_command(arguments: argparse.Namespace) -> int:
     elif family == "go":
         allowed = {"language_version", "cpv", "fingerprint", "binary"}
         reject_unused(arguments, allowed, family)
-        major = require_positive_major(arguments.compiler_major, "compiler_major")
         path = (
             root
             / family
@@ -534,6 +541,7 @@ def profile_path_command(arguments: argparse.Namespace) -> int:
     elif family == "clang-sample":
         allowed = {"compiler_major", "cpv", "fingerprint", "build_id"}
         reject_unused(arguments, allowed, family)
+        major = require_positive_major(arguments.compiler_major, "compiler_major")
         path = (
             root
             / family
