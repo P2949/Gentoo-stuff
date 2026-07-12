@@ -762,6 +762,279 @@ def sample_identity(
     }
 
 
+def validate_tool_identity(
+    value: object, clang_major: int, label: str
+) -> dict[str, object]:
+    if not isinstance(value, dict):
+        fail(f"{label} identity must be a JSON object")
+    require_exact_fields(value, LLVM_TOOL_IDENTITY_FIELDS, f"{label} identity")
+    realpath_text = require_string(value["realpath"], f"{label}.realpath")
+    realpath = Path(realpath_text)
+    if not realpath.is_absolute() or os.fspath(realpath.resolve(strict=True)) != realpath_text:
+        fail(f"{label}.realpath is not an exact canonical absolute path")
+    observed = inspect_llvm_tool(realpath, clang_major, label)
+    if value != observed:
+        fail(f"{label} identity no longer matches its recorded tool")
+    return observed
+
+
+def validate_recorded_source_file(
+    path_value: object, sha_value: object, label: str
+) -> tuple[str, str]:
+    path_text = require_string(path_value, f"{label}_path")
+    path = canonical_regular_input(Path(path_text), label)
+    if os.fspath(path) != path_text:
+        fail(f"{label}_path is not canonical")
+    expected_sha = require_hex64(sha_value, f"{label}_sha256")
+    if sha256_file(path) != expected_sha:
+        fail(f"{label} content no longer matches its recorded SHA-256")
+    return path_text, expected_sha
+
+
+def validate_sample_source(
+    value: object, clang_major: int, profile: Path | None = None
+) -> dict[str, object]:
+    if not isinstance(value, dict):
+        fail("sample profile source must be a JSON object")
+    kind = require_string(value.get("kind"), "sample source kind")
+    if kind == "external":
+        require_exact_fields(value, SAMPLE_SOURCE_EXTERNAL_FIELDS, "sample source")
+        return {"kind": "external"}
+    if kind != "llvm-profgen":
+        fail(f"unsupported sample profile source kind: {kind!r}")
+    require_exact_fields(value, SAMPLE_SOURCE_PROFGEN_FIELDS, "sample source")
+    binary_path, binary_sha256 = validate_recorded_source_file(
+        value["binary_path"], value["binary_sha256"], "binary"
+    )
+    perf_path, perf_sha256 = validate_recorded_source_file(
+        value["perf_data_path"], value["perf_data_sha256"], "perf_data"
+    )
+    debug_path_value = value["debug_binary_path"]
+    debug_sha_value = value["debug_binary_sha256"]
+    debug_path: str | None
+    debug_sha256: str | None
+    if debug_path_value is None and debug_sha_value is None:
+        debug_path = None
+        debug_sha256 = None
+    elif debug_path_value is not None and debug_sha_value is not None:
+        debug_path, debug_sha256 = validate_recorded_source_file(
+            debug_path_value, debug_sha_value, "debug_binary"
+        )
+    else:
+        fail("debug binary path and SHA-256 must either both be null or both be set")
+
+    producer = validate_tool_identity(value["producer"], clang_major, "llvm-profgen")
+    readelf = validate_tool_identity(value["readelf"], clang_major, "llvm-readelf")
+    objcopy = validate_tool_identity(value["objcopy"], clang_major, "llvm-objcopy")
+    command_arguments = require_string_list(
+        value["command_arguments"], "sample source command_arguments", sort_values=False
+    )
+    expected_arguments = [f"--binary={binary_path}"]
+    if debug_path is not None:
+        expected_arguments.append(f"--debug-binary={debug_path}")
+    expected_arguments.extend(
+        [
+            f"--perfdata={perf_path}",
+            "--format=extbinary",
+            "--show-detailed-warning",
+        ]
+    )
+    if profile is not None:
+        expected_arguments.append(f"--output={profile}.partial")
+        if command_arguments != expected_arguments:
+            fail("recorded llvm-profgen command does not match the exact profile inputs")
+    command_output_sha256 = require_hex64(
+        value["command_output_sha256"], "command_output_sha256"
+    )
+    return {
+        "binary_path": binary_path,
+        "binary_sha256": binary_sha256,
+        "command_arguments": command_arguments,
+        "command_output_sha256": command_output_sha256,
+        "debug_binary_path": debug_path,
+        "debug_binary_sha256": debug_sha256,
+        "kind": "llvm-profgen",
+        "objcopy": objcopy,
+        "perf_data_path": perf_path,
+        "perf_data_sha256": perf_sha256,
+        "producer": producer,
+        "readelf": readelf,
+    }
+
+
+def extract_binary_identity(
+    binary: Path, readelf: Path, objcopy: Path
+) -> tuple[str, str]:
+    notes_stdout, _notes_stderr = run_tool(
+        readelf, ["-n", os.fspath(binary)], "binary build-ID inspection"
+    )
+    build_ids = {
+        match.group(1).lower()
+        for match in re.finditer(r"(?im)^\s*Build ID:\s*([0-9a-f]+)\s*$", notes_stdout)
+    }
+    if len(build_ids) != 1:
+        fail("profiled binary must contain exactly one unambiguous GNU build ID")
+    build_id = require_build_id(build_ids.pop())
+    with tempfile.TemporaryDirectory(prefix="gentoo-sample-text-") as directory:
+        text_path = Path(directory) / "text.section"
+        run_tool(
+            objcopy,
+            ["--dump-section", f".text={text_path}", os.fspath(binary)],
+            "binary .text extraction",
+        )
+        try:
+            text_stat = text_path.lstat()
+        except OSError as exc:
+            fail(f"objcopy did not create the requested .text payload: {exc}")
+        if not stat.S_ISREG(text_stat.st_mode) or text_stat.st_size == 0:
+            fail("profiled binary has no nonempty regular .text payload")
+        text_sha256 = sha256_file(text_path)
+    return build_id, text_sha256
+
+
+def ensure_new_regular_destination(path: Path, label: str) -> None:
+    validate_output_destination(path)
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        fail(f"cannot inspect {label} {path}: {exc}")
+    fail(f"{label} already exists: {path}")
+
+
+def sample_convert_command(arguments: argparse.Namespace) -> int:
+    profile = arguments.profile_out
+    metadata_out = arguments.metadata_out
+    if profile.name != "sample.prof":
+        fail("--profile-out must end in the exact filename sample.prof")
+    ensure_new_regular_destination(profile, "sample profile output")
+    ensure_new_regular_destination(metadata_out, "sample metadata output")
+    if os.path.normpath(profile) == os.path.normpath(metadata_out):
+        fail("--profile-out and --metadata-out must be distinct")
+    partial = profile.with_name("sample.prof.partial")
+    validate_output_destination(partial)
+    try:
+        partial_stat = partial.lstat()
+    except FileNotFoundError:
+        partial_stat = None
+    if partial_stat is not None:
+        if not stat.S_ISREG(partial_stat.st_mode):
+            fail(f"stale transaction path is not a regular file: {partial}")
+        partial.unlink()
+
+    timeout_seconds = arguments.timeout_seconds
+    kill_after_seconds = arguments.kill_after_seconds
+    if not 0 < timeout_seconds <= 86400:
+        fail("--timeout-seconds must be greater than zero and at most 86400")
+    if not 0 < kill_after_seconds <= 60:
+        fail("--kill-after-seconds must be greater than zero and at most 60")
+
+    binary = canonical_regular_input(arguments.binary, "profiled binary")
+    perf_data = canonical_regular_input(arguments.perf_data, "perf data")
+    debug_binary = (
+        canonical_regular_input(arguments.debug_binary, "debug binary")
+        if arguments.debug_binary is not None
+        else None
+    )
+    clang_major = require_positive_major(arguments.clang_major, "clang_major")
+    producer = inspect_llvm_tool(arguments.llvm_profgen, clang_major, "llvm-profgen")
+    validator = inspect_llvm_profdata(arguments.llvm_profdata, clang_major)
+    readelf_identity = inspect_llvm_tool(arguments.readelf, clang_major, "llvm-readelf")
+    objcopy_identity = inspect_llvm_tool(arguments.objcopy, clang_major, "llvm-objcopy")
+    build_id, text_sha256 = extract_binary_identity(
+        binary,
+        Path(str(readelf_identity["realpath"])),
+        Path(str(objcopy_identity["realpath"])),
+    )
+
+    profile.parent.mkdir(parents=True, exist_ok=True)
+    validate_output_destination(partial)
+    command_arguments = [f"--binary={binary}"]
+    if debug_binary is not None:
+        command_arguments.append(f"--debug-binary={debug_binary}")
+    command_arguments.extend(
+        [
+            f"--perfdata={perf_data}",
+            "--format=extbinary",
+            "--show-detailed-warning",
+            f"--output={partial}",
+        ]
+    )
+
+    published = False
+    metadata_published = False
+    completed = False
+    old_handlers: dict[int, Any] = {}
+
+    def interrupted(signum: int, _frame: object) -> NoReturn:
+        fail(f"sample conversion interrupted by signal {signum}")
+
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            old_handlers[signum] = signal.signal(signum, interrupted)
+        converter_stdout, converter_stderr = run_bounded_tool(
+            Path(str(producer["realpath"])),
+            command_arguments,
+            "llvm-profgen conversion",
+            timeout_seconds,
+            kill_after_seconds,
+        )
+        validate_sample_file(
+            partial,
+            Path(str(validator["realpath"])),
+            allow_transaction_partial=True,
+        )
+        source: dict[str, object] = {
+            "binary_path": os.fspath(binary),
+            "binary_sha256": sha256_file(binary),
+            "command_arguments": command_arguments,
+            "command_output_sha256": hashlib.sha256(
+                (converter_stdout + "\0" + converter_stderr).encode("utf-8")
+            ).hexdigest(),
+            "debug_binary_path": (
+                os.fspath(debug_binary) if debug_binary is not None else None
+            ),
+            "debug_binary_sha256": (
+                sha256_file(debug_binary) if debug_binary is not None else None
+            ),
+            "kind": "llvm-profgen",
+            "objcopy": objcopy_identity,
+            "perf_data_path": os.fspath(perf_data),
+            "perf_data_sha256": sha256_file(perf_data),
+            "producer": producer,
+            "readelf": readelf_identity,
+        }
+        os.replace(partial, profile)
+        directory_descriptor = os.open(profile.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+        published = True
+        arguments.profile = profile
+        arguments.build_id = build_id
+        arguments.text_sha256 = text_sha256
+        metadata = sample_identity(arguments, source)
+        atomic_write(
+            metadata_out,
+            (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+        )
+        metadata_published = True
+        completed = True
+        print(metadata["profile_sha256"])
+        return 0
+    finally:
+        partial.unlink(missing_ok=True)
+        if not completed:
+            if metadata_published:
+                metadata_out.unlink(missing_ok=True)
+            if published:
+                profile.unlink(missing_ok=True)
+        for signum, old_handler in old_handlers.items():
+            signal.signal(signum, old_handler)
+
+
 def sample_record_command(arguments: argparse.Namespace) -> int:
     validate_output_destination(arguments.metadata_out)
     if os.path.normpath(arguments.metadata_out) == os.path.normpath(arguments.profile):
@@ -778,7 +1051,9 @@ def sample_record_command(arguments: argparse.Namespace) -> int:
 def sample_validate_command(arguments: argparse.Namespace) -> int:
     recorded = load_json_object(arguments.metadata, "sample profile metadata")
     require_exact_fields(recorded, SAMPLE_METADATA_FIELDS, "sample profile metadata")
-    source = validate_sample_source(recorded["source"], arguments.clang_major)
+    source = validate_sample_source(
+        recorded["source"], arguments.clang_major, arguments.profile
+    )
     expected = sample_identity(arguments, source)
     if recorded != expected:
         differing = sorted(
@@ -798,6 +1073,13 @@ def add_sample_identity_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--clang-major", type=int, required=True)
     parser.add_argument("--build-id", required=True)
     parser.add_argument("--text-sha256", required=True)
+
+
+def add_sample_package_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--cpv", required=True)
+    parser.add_argument("--fingerprint", required=True)
+    parser.add_argument("--abi", required=True)
+    parser.add_argument("--clang-major", type=int, required=True)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -846,6 +1128,28 @@ def create_parser() -> argparse.ArgumentParser:
     add_sample_identity_arguments(sample_validate_parser)
     sample_validate_parser.add_argument("--metadata", type=Path, required=True)
     sample_validate_parser.set_defaults(func=sample_validate_command)
+
+    sample_convert_parser = subparsers.add_parser(
+        "sample-convert",
+        help="transactionally convert exact perf/binary input into sample.prof",
+    )
+    add_sample_package_arguments(sample_convert_parser)
+    sample_convert_parser.add_argument("--llvm-profgen", type=Path, required=True)
+    sample_convert_parser.add_argument("--llvm-profdata", type=Path, required=True)
+    sample_convert_parser.add_argument("--readelf", type=Path, required=True)
+    sample_convert_parser.add_argument("--objcopy", type=Path, required=True)
+    sample_convert_parser.add_argument("--binary", type=Path, required=True)
+    sample_convert_parser.add_argument("--debug-binary", type=Path)
+    sample_convert_parser.add_argument("--perf-data", type=Path, required=True)
+    sample_convert_parser.add_argument("--profile-out", type=Path, required=True)
+    sample_convert_parser.add_argument("--metadata-out", type=Path, required=True)
+    sample_convert_parser.add_argument(
+        "--timeout-seconds", type=float, default=600.0
+    )
+    sample_convert_parser.add_argument(
+        "--kill-after-seconds", type=float, default=5.0
+    )
+    sample_convert_parser.set_defaults(func=sample_convert_command)
     return parser
 
 

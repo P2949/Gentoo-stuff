@@ -646,12 +646,14 @@ gentoo_opt_post_src_install() {
 # Portage profile/package bashrc files can already have supplied this hook.
 # Preserve and run it first instead of silently clobbering it when the user
 # bashrc is sourced later in __source_all_bashrcs().
-if declare -F post_src_install >/dev/null; then
+if [[ ${GENTOO_OPT_POST_HOOK_INSTALLED:-0} != 1 ]] && \
+    declare -F post_src_install >/dev/null; then
     gentoo_opt_previous_post_src_install_definition=$(declare -f post_src_install)
     gentoo_opt_previous_post_src_install_definition=${gentoo_opt_previous_post_src_install_definition/#post_src_install/gentoo_opt_previous_post_src_install}
     eval "${gentoo_opt_previous_post_src_install_definition}"
     unset gentoo_opt_previous_post_src_install_definition
 fi
+GENTOO_OPT_POST_HOOK_INSTALLED=1
 
 post_src_install() {
     if declare -F gentoo_opt_previous_post_src_install >/dev/null; then

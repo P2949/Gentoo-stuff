@@ -331,6 +331,9 @@ case_existing_post_install_hook_is_chained() (
         printf '%s\n' 'previous hook ran' >> "${TMP}/previous-hook.log"
     }
     source "${BASHRC}" >/dev/null 2>&1
+    # An accidental second source must not capture our wrapper as its own
+    # predecessor and recurse.
+    source "${BASHRC}" >/dev/null 2>&1
     post_src_install
     [[ $(<"${TMP}/previous-hook.log") == 'previous hook ran' ]]
 )
