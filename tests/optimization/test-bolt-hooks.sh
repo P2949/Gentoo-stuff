@@ -124,6 +124,16 @@ print(json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"][0]["artifact_i
 PY
 )
 
+# Registration rejects a symlink even when its target is a valid BOLT output.
+ln -s -- "${WORK}/${FIRST_ID}.bolt" "${WORK}/prepared-output-symlink"
+if "${REGISTER}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+        --artifact-id "${FIRST_ID}" --output "${WORK}/prepared-output-symlink" \
+        >"${WORK}/symlink-output.out" 2>"${WORK}/symlink-output.err"; then
+    fail 'output registration accepted a symlink'
+fi
+grep -Fq 'symlink component' "${WORK}/symlink-output.err" || \
+    fail 'output symlink rejection lacked an exact reason'
+
 # A current-input GNU build-ID mismatch must fail before deployment.
 python3 - "${MANIFEST}" <<'PY'
 import json
@@ -161,6 +171,45 @@ fi
 grep -Fq '.text hash mismatch' "${WORK}/text-mismatch.err" || \
     fail '.text mismatch rejection lacked an exact reason'
 cp -- "${WORK}/manifest.good" "${MANIFEST}"
+
+# Force a post-rename verifier failure through a deterministic readelf proxy.
+# The deployer must roll every group back to exact bytes and topology.
+REAL_READELF=$(command -v readelf)
+READELF_COUNT=${WORK}/readelf-count
+READELF_PROXY=${WORK}/readelf-post-rename-failure
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'count=0' \
+    '[[ ! -s ${READELF_COUNT} ]] || count=$(<"${READELF_COUNT}")' \
+    '((count += 1))' \
+    'printf "%s\\n" "${count}" >"${READELF_COUNT}"' \
+    'if (( count >= 26 )) && [[ ${1-} == -SW ]]; then' \
+    '    "${REAL_READELF}" "$@" | sed "/[.]note[.]bolt_info/d"' \
+    'else' \
+    '    exec "${REAL_READELF}" "$@"' \
+    'fi' \
+    >"${READELF_PROXY}"
+chmod 0755 -- "${READELF_PROXY}"
+sha256sum -- "${ED}/usr/bin/fixed" "${ED}/usr/bin/pie" \
+    "${ED}/usr/lib64/libfixture.so.1" >"${WORK}/pre-rollback-hashes"
+if READELF_COUNT=${READELF_COUNT} REAL_READELF=${REAL_READELF} \
+        "${DEPLOY}" --ed "${ED}" --cache-root "${CACHE}" \
+        --fingerprint "${FINGERPRINT}" --readelf "${READELF_PROXY}" \
+        >"${WORK}/post-rename-failure.out" 2>"${WORK}/post-rename-failure.err"; then
+    fail 'forced post-rename verifier failure unexpectedly succeeded'
+fi
+grep -Fq 'deployed file lacks .note.bolt_info' "${WORK}/post-rename-failure.err" || \
+    fail 'post-rename failure did not reach final verification'
+sha256sum -- "${ED}/usr/bin/fixed" "${ED}/usr/bin/pie" \
+    "${ED}/usr/lib64/libfixture.so.1" >"${WORK}/post-rollback-hashes"
+cmp -s -- "${WORK}/pre-rollback-hashes" "${WORK}/post-rollback-hashes" || \
+    fail 'post-rename failure did not restore exact input bytes'
+[[ $(stat -c '%d:%i' "${ED}/usr/bin/fixed") == $(stat -c '%d:%i' "${ED}/usr/bin/fixed-hardlink") ]] || \
+    fail 'post-rename rollback did not restore hardlink topology'
+if readelf -SW "${ED}/usr/bin/fixed" | grep -Fq '.note.bolt_info'; then
+    fail 'post-rename rollback left the replacement in ED'
+fi
 
 "${DEPLOY}" --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
     >"${WORK}/deploy.out"
@@ -202,6 +251,18 @@ assert manifest["elf_total"] == 0
 assert manifest["eligible_total"] == 0
 assert manifest["artifacts"] == []
 PY
+
+# Root arguments containing symlink components are refused instead of being
+# silently resolved to a different tree.
+ln -s -- "${NO_ELF_ED}" "${WORK}/no-elf-ed-symlink"
+SYMLINK_ROOT_FINGERPRINT=$(printf 'symlink-root' | sha256sum | awk '{print $1}')
+if "${CAPTURE}" --ed "${WORK}/no-elf-ed-symlink" --cache-root "${WORK}/symlink-root-cache" \
+        --fingerprint "${SYMLINK_ROOT_FINGERPRINT}" \
+        >"${WORK}/symlink-root.out" 2>"${WORK}/symlink-root.err"; then
+    fail 'capture accepted an ED root containing a symlink component'
+fi
+grep -Fq 'symlink component' "${WORK}/symlink-root.err" || \
+    fail 'symlink-root rejection lacked an exact reason'
 
 # A mixed ELF64/ELF32 package records both and excludes the 32-bit input with
 # a reason. If the host compiler lacks multilib, emit a reason-bearing skip.
