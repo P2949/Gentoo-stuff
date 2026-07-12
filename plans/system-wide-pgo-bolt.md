@@ -773,12 +773,15 @@ Do not implement the live deployment hook until all fixture classes pass.
 - [x] Require exact ordered rationales for intentional multi-environment stacks and exact reviewed compiler profiles with complete, non-conflicting tool tuples.
 - [x] Run the semantic validator against the live Gentoo Portage universe and make unavailable semantic validation an explicit reason-bearing skip elsewhere.
 - [x] Preserve the three policy changes that alter live resolved flags as an explicit source-rebuild queue rather than claiming them complete from configuration inspection.
+- [x] Fail closed when tracked compiler, flag, or stage-marker variables appear in unsupported shell constructs instead of silently ignoring them.
+- [x] Complete and verify every queued source rebuild caused by changed effective policy, preserve its successful binpkg, and close reverse dependencies with zero unresolved failures.
 
 ### Phase 1.10 evidence
 
-- At exact code commit `7845ab44737e03057d56fffa4dae3903a65332f3`, the strict live validator covers 13 policy files, 137 active lines, 135 exact atoms, 146 atom/environment pairs, 10 reviewed ordered multi-environment stacks, five reviewed compiler profiles, and all 1,216 installed CPVs. Portage semantic validation, 27 unit tests, plain mypy, direct compiler/tool/ABI probes, and 121 unaffected effective-variable hashes pass with zero duplicates, missing environments, unsafe paths, invalid/dead atoms, unreviewed overlaps/stacks, compiler conflicts, or forbidden stage markers.
-- The three deliberate effective-policy corrections are tracked as pending source rebuilds: `media-libs/svt-av1-4.1.0`, `dev-util/colm-0.14.7-r4`, and `dev-util/ragel-7.0.4-r3`. Therefore the package-policy state honestly reports `pending_total=3`, `unknown_total=0`, and `failed_total=0`; these rebuilds must complete before the Phase 1 boundary and before inventory freeze.
-- Root-owned evidence is `/var/lib/gentoo-optimization/reports/phase-1-package-env-policy-independent-validation-20260712.log` (SHA-256 `1be6ef8efd460b41703691c51db728a31c74e70bbb84a70d9359d7b7ab52ecad`). The reviewed policy SHA-256 is `92ee537829e44e9c2c0fe450baea98996dbff927f1ec6f989b6cf832fd10d611`, the current checker SHA-256 is `f1286aedc7c0b5e37a13d76ed2aa340f0459bc0ab896aafb2a52ff7ff42dbab0`, and state is `/var/lib/gentoo-optimization/state/project/package-env-policy.json` (SHA-256 `fd9493e7ab2065e7968372f7fbb394fb4bccc864d9e2a431f0e88f1ce5e0ee1`).
+- The superseding strict live validator covers 13 policy files, 138 active lines, 136 exact atoms, 147 atom/environment pairs, 10 reviewed ordered multi-environment stacks, five reviewed compiler profiles, and all 1,217 installed CPVs. It now rejects `export`, `+=`, multiple/chained/conditional assignments, command substitution, and `source`/dot-source whenever they can mutate tracked tools, `*FLAGS`, or stage markers. Portage semantic validation, 30 unit tests, plain mypy, and the boundary suite pass with zero duplicate, path, atom, overlap, stack, compiler, generated-stage, or unsupported-shell ambiguity.
+- The exact source-only transaction rebuilt `dev-util/colm-0.14.7-r4`, `media-libs/svt-av1-4.1.0`, and `dev-util/ragel-7.0.4-r3` with three source emerges, three completed merges, and zero binary-use markers. Colm and Ragel use Clang with the active GCC 17 libstdc++ lane and no stale GCC-major pin. SVT-AV1 uses `O2.conf` on x86 and amd64, and its ebuild-native generation, training encode, and `-fprofile-use` stages ran for both ABIs. Every owned-file check, runtime/version probe, SONAME/dependency/relocation check, and protected GPKG validation passes. Both SVT DSOs currently lack GNU build IDs; that is explicitly carried into Phase 2 as an exact-input/BOLT eligibility blocker, not misreported as BOLT-ready.
+- The first post-rebuild `revdep-rebuild -ipv` exposed a pre-existing unversioned `libnewt.so` edge. A first source retry failed safely because global hidden visibility removed `newt_*`; a public-ABI retry restored 168 exports but was rejected because LLD was misdetected and the SONAME remained absent. The final versioned user patch recognizes LLD's GNU-linker compatibility. Installed `libnewt` now has build ID `b028f92f45fd04764cd120c5f4dc3b364fba3fa1`, SONAME `libnewt.so.0.52`, 168 exported functions, and `whiptail` names that versioned SONAME. `equery check`, runtime help, and the final full reverse-dependency scan pass. Failed attempts and the rejected binpkg remain preserved; successful state is `/var/lib/gentoo-optimization/state/project/newt-soname-remediation.json` (SHA-256 `d9901a72609a3311b0774cb2561f52fe78a759805d5730b9e6cae69a3a22eb3e`).
+- Root-owned queue evidence is `/var/lib/gentoo-optimization/reports/phase-1-package-policy-remediation-final-corrected-20260712.log` (SHA-256 `ddea59eaeeadf19756ea2b5c5304479680db6bea7334c62e9c740330ae52a61a`); all four successful remediation GPKGs have verified manifests and payload streams. The reviewed JSON policy SHA-256 remains `92ee537829e44e9c2c0fe450baea98996dbff927f1ec6f989b6cf832fd10d611`, the hardened checker SHA-256 is `2e327641d74c83f2b63a26bdb8b175ff9eb0281df48ef9d6787e8b474780f5db`, and current package-policy state is `/var/lib/gentoo-optimization/state/project/package-env-policy.json` (SHA-256 `9b27aabe36787bae16b43d9b00b44a5793f51c5d1c308bb252b0e2212bb6c86e`) with `pending_total=0`, `unknown_total=0`, and `failed_total=0`.
 
 ---
 
@@ -1455,6 +1458,10 @@ Start from a reviewed default such as:
 -icf=safe
 -dyno-stats
 ```
+
+The literal `ext-tsp`/`cdsort` pair above is the Phase 1 validated default.
+Changing either spelling requires the complete ET_EXEC, PIE, and DSO gate to
+run again; `hfsort+` is not assumed equivalent from documentation alone.
 
 Do not assume one option set works for every binary. Maintain package/artifact overrides for unsupported EH, jump-table, assembly, DSO, privileged, Go, or Rust cases.
 
