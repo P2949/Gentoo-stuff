@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root="${1:-/var/tmp/pgo-profiles}"
-
-if [[ ! -d "${root}" ]]; then
-    echo "no profile root: ${root}" >&2
-    exit 0
-fi
-
-find "${root}" -path '*/merged.profdata' -type f | sort
+printf '%s\n' \
+    'ERROR: the legacy filename-based profile listing helper is permanently disabled.' \
+    'Profile coverage must be read from exact validated package state, never inferred from a filename.' \
+    >&2
+exit 1

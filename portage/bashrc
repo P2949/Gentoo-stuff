@@ -12,6 +12,15 @@ gentoo_opt_error() {
     return 1
 }
 
+gentoo_opt_abort() {
+    local message=$1
+    gentoo_opt_error "${message}" || :
+    if declare -F die >/dev/null; then
+        die "gentoo-optimization: ${message}"
+    fi
+    return 1
+}
+
 gentoo_opt_safe_absolute_path() {
     local path=${1-}
     [[ ${path} == /* && ${path} != / && ${path} != *:* && ${path} != *//* && ${path} != *'/../'* &&
@@ -688,9 +697,15 @@ GENTOO_OPT_POST_HOOK_INSTALLED=1
 
 post_src_install() {
     if declare -F gentoo_opt_previous_post_src_install >/dev/null; then
-        gentoo_opt_previous_post_src_install "$@" || return 1
+        if ! gentoo_opt_previous_post_src_install "$@"; then
+            gentoo_opt_abort 'the pre-existing post_src_install hook failed' || return 1
+        fi
     fi
-    gentoo_opt_post_src_install "$@"
+    if ! gentoo_opt_post_src_install "$@"; then
+        gentoo_opt_abort 'the BOLT post_src_install transaction failed' || return 1
+    fi
 }
 
-gentoo_opt_dispatch || return 1
+if ! gentoo_opt_dispatch; then
+    gentoo_opt_abort 'optimization mode dispatch failed' || return 1
+fi

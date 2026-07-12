@@ -79,16 +79,17 @@
 
 ## After PGO Profile Changes
 
-- [ ] Confirm `pgo-use-if-available.conf` is applied globally.
-- [ ] Confirm packages without profiles do not fail.
-- [ ] Confirm packages with `/var/tmp/pgo-profiles/<category>/<pn>/merged.profdata` use `-fprofile-use`.
-- [ ] Check stale profile warnings.
-- [ ] Demote stale profiles with `no-pgo-use.conf`, not by disabling global PGO use.
+- [ ] Confirm only generated exact package assignments select an explicit backend mode.
+- [ ] Confirm an active use mode fails closed without its exact validated manifest and payload.
+- [ ] Confirm Clang IR, Clang sample, GCC, Rust, and Go profiles remain in separate identity paths.
+- [ ] Confirm build logs show the intended backend/profile path and no compiler-family leakage.
+- [ ] Invalidate and retrain stale fingerprints; never suppress or silently fall back from a mismatch.
 
 ## After BOLT Sweeps
 
 - [ ] Confirm binaries were built with `--emit-relocs`.
 - [ ] Confirm binaries were built with `--build-id`.
-- [ ] Confirm BOLT outputs go to `/opt/bolt-test`, not directly over `/usr`.
-- [ ] Compare BOLT binary against package-managed binary.
+- [ ] Confirm the exact unstripped input was captured from `${ED}` before Portage stripping.
+- [ ] Confirm every registered output matches the captured full hash, build ID, and `.text` hash.
+- [ ] Confirm deployment replaces files only inside `${ED}` and retains `.note.bolt_info` after Portage processing.
 - [ ] Keep original binpkg rollback available.

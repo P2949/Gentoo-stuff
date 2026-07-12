@@ -3,9 +3,5 @@
 # The CATEGORY/PN-only profile identity and compiler-agnostic flags are unsafe.
 # Keep this file assignment-free until the backend-specific, fingerprinted
 # Phase 2 implementation replaces it.  Do not restore the old wildcard below.
-# It used to activate whenever this path existed:
-#
-#   /var/tmp/pgo-profiles/${CATEGORY}/${PN}/merged.profdata
-#
-# Historical assignment (disabled):
-# */* pgo-use-if-available.conf
+# The historical path and wildcard assignment are intentionally absent so a
+# later edit cannot copy an unsafe consumer back into live policy.

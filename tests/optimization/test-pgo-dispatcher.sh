@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The fixture intentionally writes literal ${...} expressions into fake tools
 # and isolates every environment mutation inside a case subshell.
-# shellcheck disable=SC1090,SC2016,SC2030,SC2031
+# shellcheck disable=SC1090,SC2016,SC2030,SC2031,SC2329
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -356,6 +356,45 @@ case_existing_post_install_hook_is_chained() (
     [[ $(<"${TMP}/previous-hook.log") == 'previous hook ran' ]]
 )
 
+case_portage_phase_cannot_swallow_bolt_failure() (
+    mkdir -p "${TMP}/fatal-ed" "${TMP}/fatal-cache"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 41' > "${TMP}/bin/failing-capture-wrapper"
+    chmod +x "${TMP}/bin/failing-capture-wrapper"
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export GENTOO_OPT_MODE=bolt-capture GENTOO_OPT_COMPILER_FAMILY=clang
+    export GENTOO_OPT_ABI=amd64 GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/fatal-cache"
+    export GENTOO_OPT_BOLT_CAPTURE_TOOL="${TMP}/bin/failing-capture-wrapper"
+    export ED="${TMP}/fatal-ed"
+    source "${BASHRC}" >/dev/null 2>&1
+    set +e
+    (
+        die() { exit 97; }
+        __emulated_portage_phase() {
+            declare -F "$1" >/dev/null && "$1"
+            # Real Portage's trailing false if can otherwise turn a failed hook
+            # into a successful function return.
+            if ((0)); then :; fi
+        }
+        __emulated_portage_phase post_src_install
+    ) >/dev/null 2>&1
+    status=$?
+    set -e
+    [[ ${status} -eq 97 ]]
+)
+
+case_portage_source_dispatch_failure_is_fatal() (
+    set +e
+    (
+        die() { exit 96; }
+        GENTOO_OPT_MODE=unknown-mode source "${BASHRC}"
+        exit 0
+    ) >/dev/null 2>&1
+    status=$?
+    set -e
+    [[ ${status} -eq 96 ]]
+)
+
 run_case 'off/unset leaves all flags unchanged' case_off_is_noop
 run_case 'legacy marker paths fail closed' case_legacy_rejected
 run_case 'unknown modes fail closed' case_unknown_mode_rejected
@@ -376,6 +415,8 @@ run_case 'strict fingerprint.env loading works' case_fingerprint_file_strict
 run_case 'root is rejected as an identity file path' case_root_path_is_not_safe_identity
 run_case 'post_src_install invokes the exact BOLT wrapper interface' case_bolt_post_install_wrapper
 run_case 'post_src_install chains an existing Portage hook' case_existing_post_install_hook_is_chained
+run_case 'Portage cannot swallow a BOLT transaction failure' case_portage_phase_cannot_swallow_bolt_failure
+run_case 'Portage cannot swallow dispatcher failure while sourcing' case_portage_source_dispatch_failure_is_fatal
 
 printf 'SUMMARY: pass=%d fail=%d total=%d\n' "${PASS}" "${FAIL}" "$((PASS + FAIL))"
 ((FAIL == 0))

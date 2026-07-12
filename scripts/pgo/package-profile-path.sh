@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-    echo "usage: $0 <category> <package>" >&2
-    exit 2
-fi
-
-category="$1"
-package="$2"
-
-echo "/var/tmp/pgo-profiles/${category}/${package}"
+printf '%s\n' \
+    'ERROR: the legacy package-name-only profile path helper is permanently disabled.' \
+    'Use scripts/optimization/pgo/profile-identity.py profile-path with an exact family, compiler, ABI, CPV, and fingerprint.' \
+    >&2
+exit 1
