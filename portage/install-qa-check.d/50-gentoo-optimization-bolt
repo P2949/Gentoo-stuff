@@ -1,0 +1,24 @@
+# shellcheck shell=bash
+# Installed as a sysadmin Portage install-QA override.  Portage sources this
+# after package post_src_install and before binpkg-dostrip.  Never run a
+# transaction unless the strict dispatcher selected an active BOLT stage for
+# this exact package fingerprint.
+
+case ${GENTOO_OPT_ACTIVE_BOLT_STAGE:-off} in
+    off) ;;
+    capture|deploy)
+        if ! declare -F gentoo_opt_post_src_install >/dev/null; then
+            die 'gentoo-optimization: strict BOLT transaction function is unavailable'
+        fi
+        if ! gentoo_opt_post_src_install; then
+            gentoo_opt_post_install_abort \
+                'the pre-strip BOLT install-QA transaction failed' || \
+                die 'gentoo-optimization: failed to abort the BOLT transaction'
+        fi
+        ;;
+    *)
+        gentoo_opt_post_install_abort \
+            "unknown active BOLT stage at pre-strip boundary: ${GENTOO_OPT_ACTIVE_BOLT_STAGE}" || \
+            die 'gentoo-optimization: failed to abort an invalid BOLT stage'
+        ;;
+esac

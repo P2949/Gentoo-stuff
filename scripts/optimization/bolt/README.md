@@ -5,6 +5,14 @@ These tools are the fail-closed `${ED}` transaction lane used by the Portage
 The package identity is the exact 64-hex fingerprint produced by the Phase 2
 identity tool.
 
+Production invocations run as root, accept only the reviewed cache root
+`/var/cache/gentoo-optimization/bolt`, require that root and its lock files to
+be root-owned and non-writable by group/world, and reject every symlink path
+component. Capture/deployment also require `--ed` to equal active Portage
+`${ED}`/`${D}` below `${PORTAGE_BUILDDIR}`. `--test-mode` is an explicit
+standalone exception for hermetic fixtures; it still requires caller-owned,
+non-group/world-writable roots and all other safety/identity checks.
+
 Capture copies each eligible unstripped ELF once per hardlink group without
 changing `${ED}` and publishes `inputs/<fingerprint>/manifest.json` atomically:
 
@@ -14,8 +22,9 @@ capture-input.sh --ed "${ED}" --cache-root "${GENTOO_OPT_BOLT_CACHE_ROOT}" \
 ```
 
 Eligibility requires ELF64, x86-64, `ET_EXEC` or `ET_DYN`, executable code, a
-full symbol table, `.rel.text`/`.rela.text`, a GNU build ID, and a nonempty
-`.text`. The manifest also records every automatic readiness failure, hardlink group,
+full symbol table, relocation sections targeting executable sections (including
+`.rel[a].text.<function>`), a GNU build ID, and a nonempty `.text`. The manifest
+also records every automatic readiness failure, hardlink group,
 symlink, mode, ownership intent, xattr/capability value, file hash, build ID,
 and `.text` hash.
 
@@ -54,3 +63,12 @@ deploy-output.sh --ed "${ED}" --cache-root "${GENTOO_OPT_BOLT_CACHE_ROOT}" \
 Capture refuses to overwrite an existing identity. Output registration also
 refuses duplicate artifact IDs. A new package fingerprint is required for a
 different build.
+
+All capture, registration, and deployment work for one fingerprint is guarded
+by the same private `flock` lock. The default bounded wait is 30 seconds and can
+be reduced with `--lock-timeout-seconds`. Each `readelf` and `objcopy` command
+runs with `LC_ALL=C`, `LANG=C`, a separate process group, and a 30-second
+deadline. Timeout cleanup sends TERM, waits five seconds, then kills the whole
+group; unpublished outputs are removed. The tool and grace deadlines are
+configurable with `--tool-timeout-seconds` and
+`--tool-kill-after-seconds`.

@@ -20,7 +20,7 @@ fail() {
     exit 1
 }
 
-for command in python3 readelf objcopy cc; do
+for command in python3 readelf objcopy cc flock; do
     command -v "${command}" >/dev/null 2>&1 || fail "missing required command: ${command}"
 done
 
@@ -69,10 +69,14 @@ fi
 
 BEFORE_TREE=${WORK}/before-tree
 find "${ED}" -xdev -printf '%P\t%y\t%m\t%U\t%G\t%s\t%i\t%l\n' | sort >"${BEFORE_TREE}"
-"${CAPTURE}" --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+"${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
     >"${WORK}/capture.out"
 MANIFEST=${CACHE}/inputs/${FINGERPRINT}/manifest.json
 [[ -s ${MANIFEST} ]] || fail 'capture manifest was not published'
+LOCK_FILE=${CACHE}/locks/${FINGERPRINT}.lock
+[[ -f ${LOCK_FILE} && ! -L ${LOCK_FILE} ]] || fail 'fingerprint lock is absent or a symlink'
+[[ $(stat -c '%u' "${LOCK_FILE}") == $(id -u) ]] || fail 'fingerprint lock has the wrong owner'
+[[ $(stat -c '%a' "${LOCK_FILE}") == 600 ]] || fail 'fingerprint lock is not mode 0600'
 find "${ED}" -xdev -printf '%P\t%y\t%m\t%U\t%G\t%s\t%i\t%l\n' | sort >"${WORK}/after-tree"
 cmp -s -- "${BEFORE_TREE}" "${WORK}/after-tree" || fail 'capture mutated ED metadata or topology'
 
@@ -125,7 +129,7 @@ while IFS=$'\t' read -r artifact_id object_file; do
     objcopy --add-section ".note.bolt_info=${WORK}/bolt-note" \
         --set-section-flags .note.bolt_info=alloc,readonly \
         "${prepared}"
-    "${REGISTER}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+    "${REGISTER}" --test-mode --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
         --artifact-id "${artifact_id}" \
         --input "${CACHE}/inputs/${FINGERPRINT}/${object_file}" --output "${prepared}" \
         >"${WORK}/register-${artifact_id}.out"
@@ -137,6 +141,65 @@ for item in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]:
         print(item["artifact_id"], item["cache_object"], sep="\t")
 PY
 )
+
+# Concurrent registration for the same fingerprint is serialized. The
+# test-only hold occurs after flock acquisition, making the overlap and the
+# lost-update regression deterministic.
+CONCURRENT_CACHE=${WORK}/concurrent-cache
+mkdir -p -- "${CONCURRENT_CACHE}/inputs"
+cp -a -- "${CACHE}/inputs/${FINGERPRINT}" "${CONCURRENT_CACHE}/inputs/"
+CONCURRENT_PIDS=()
+while IFS=$'\t' read -r artifact_id object_file; do
+    "${REGISTER}" --test-mode --test-lock-hold-seconds 0.2 \
+        --lock-timeout-seconds 5 --cache-root "${CONCURRENT_CACHE}" \
+        --fingerprint "${FINGERPRINT}" --artifact-id "${artifact_id}" \
+        --input "${CONCURRENT_CACHE}/inputs/${FINGERPRINT}/${object_file}" \
+        --output "${WORK}/${artifact_id}.bolt" \
+        >"${WORK}/concurrent-register-${artifact_id}.out" \
+        2>"${WORK}/concurrent-register-${artifact_id}.err" &
+    CONCURRENT_PIDS+=("$!")
+done < <(python3 - "${MANIFEST}" <<'PY'
+import json
+import sys
+for item in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]:
+    if item["eligible"]:
+        print(item["artifact_id"], item["cache_object"], sep="\t")
+PY
+)
+for child in "${CONCURRENT_PIDS[@]}"; do
+    wait "${child}" || fail "concurrent output registration failed: pid=${child}"
+done
+python3 - "${CONCURRENT_CACHE}/outputs/${FINGERPRINT}/manifest.json" <<'PY'
+import json
+import sys
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+assert len(manifest["outputs"]) == 3
+assert len({item["artifact_id"] for item in manifest["outputs"]}) == 3
+PY
+
+# A held per-fingerprint lock bounds and rejects a conflicting deployment.
+LOCK_READY=${WORK}/lock-ready
+(
+    exec 9>"${LOCK_FILE}"
+    flock -x 9
+    : >"${LOCK_READY}"
+    sleep 30
+) &
+LOCK_HOLDER=$!
+for _ in {1..100}; do
+    [[ -e ${LOCK_READY} ]] && break
+    sleep 0.01
+done
+[[ -e ${LOCK_READY} ]] || fail 'lock-holder fixture did not acquire the fingerprint lock'
+if "${DEPLOY}" --test-mode --lock-timeout-seconds 0.2 --ed "${ED}" \
+        --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+        >"${WORK}/lock-timeout.out" 2>"${WORK}/lock-timeout.err"; then
+    fail 'deployment ignored a held per-fingerprint lock'
+fi
+grep -Fq 'timed out after 0.2s waiting for fingerprint lock' "${WORK}/lock-timeout.err" || \
+    fail 'fingerprint lock timeout lacked a bounded reason'
+kill "${LOCK_HOLDER}" 2>/dev/null || true
+wait "${LOCK_HOLDER}" 2>/dev/null || true
 
 cp -- "${MANIFEST}" "${WORK}/manifest.good"
 FIRST_ID=$(python3 - "${MANIFEST}" <<'PY'
@@ -160,7 +223,42 @@ print(next(item["cache_object"] for item in manifest["artifacts"] if item["artif
 PY
 )
 
+# Arbitrary standalone roots are never accepted without the explicit hermetic
+# flag; production registration is pinned to the reviewed root-owned cache.
 if "${REGISTER}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+        --artifact-id "${FIRST_ID}" \
+        --input "${CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
+        --output "${WORK}/${FIRST_ID}.bolt" \
+        >"${WORK}/production-scope.out" 2>"${WORK}/production-scope.err"; then
+    fail 'arbitrary cache root was accepted without --test-mode'
+fi
+grep -Eq 'production BOLT cache operations must run as root|production cache root must be exactly' \
+    "${WORK}/production-scope.err" || fail 'production cache rejection lacked an exact reason'
+PORTAGE_SCOPE_FINGERPRINT=$(printf 'portage-scope' | sha256sum | awk '{print $1}')
+if env -u ED -u D -u PORTAGE_BUILDDIR \
+        "${CAPTURE}" --ed "${NO_ELF_ED:-${ED}}" --cache-root "${CACHE}" \
+        --fingerprint "${PORTAGE_SCOPE_FINGERPRINT}" \
+        >"${WORK}/portage-scope.out" 2>"${WORK}/portage-scope.err"; then
+    fail 'standalone ED was accepted without --test-mode/active Portage state'
+fi
+grep -Eq 'production BOLT hooks must run as root|production BOLT hook requires active Portage ED' \
+    "${WORK}/portage-scope.err" || fail 'active Portage ED rejection lacked an exact reason'
+
+LOCK_SYMLINK_CACHE=${WORK}/lock-symlink-cache
+mkdir -p -- "${LOCK_SYMLINK_CACHE}/inputs" "${LOCK_SYMLINK_CACHE}/locks"
+cp -a -- "${CACHE}/inputs/${FINGERPRINT}" "${LOCK_SYMLINK_CACHE}/inputs/"
+ln -s -- "${WORK}/outside-lock" "${LOCK_SYMLINK_CACHE}/locks/${FINGERPRINT}.lock"
+if "${REGISTER}" --test-mode --cache-root "${LOCK_SYMLINK_CACHE}" \
+        --fingerprint "${FINGERPRINT}" --artifact-id "${FIRST_ID}" \
+        --input "${LOCK_SYMLINK_CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
+        --output "${WORK}/${FIRST_ID}.bolt" \
+        >"${WORK}/lock-symlink.out" 2>"${WORK}/lock-symlink.err"; then
+    fail 'symlink fingerprint lock was accepted'
+fi
+grep -Fq 'cannot open non-symlink fingerprint lock' "${WORK}/lock-symlink.err" || \
+    fail 'symlink fingerprint lock rejection lacked an exact reason'
+
+if "${REGISTER}" --test-mode --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
         --artifact-id "${FIRST_ID}" \
         --input "${CACHE}/inputs/${FINGERPRINT}/${OTHER_OBJECT}" \
         --output "${WORK}/${FIRST_ID}.bolt" \
@@ -172,7 +270,7 @@ grep -Fq 'exact BOLT input full-file hash differs' "${WORK}/wrong-input.err" || 
 
 # Registration rejects a symlink even when its target is a valid BOLT output.
 ln -s -- "${WORK}/${FIRST_ID}.bolt" "${WORK}/prepared-output-symlink"
-if "${REGISTER}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+if "${REGISTER}" --test-mode --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
         --artifact-id "${FIRST_ID}" \
         --input "${CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
         --output "${WORK}/prepared-output-symlink" \
@@ -193,7 +291,7 @@ with open(path, "w", encoding="utf-8") as stream:
     json.dump(data, stream, indent=2, sort_keys=True)
     stream.write("\n")
 PY
-if "${DEPLOY}" --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
         >"${WORK}/build-id-mismatch.out" 2>"${WORK}/build-id-mismatch.err"; then
     fail 'deployment accepted a GNU build-ID mismatch'
 fi
@@ -212,7 +310,7 @@ with open(path, "w", encoding="utf-8") as stream:
     json.dump(data, stream, indent=2, sort_keys=True)
     stream.write("\n")
 PY
-if "${DEPLOY}" --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
         >"${WORK}/text-mismatch.out" 2>"${WORK}/text-mismatch.err"; then
     fail 'deployment accepted a .text hash mismatch'
 fi
@@ -240,7 +338,7 @@ chmod 0755 -- "${READELF_PROXY}"
 sha256sum -- "${ED}/usr/bin/fixed" "${ED}/usr/bin/pie" \
     "${ED}/usr/lib64/libfixture.so.1" >"${WORK}/pre-rollback-hashes"
 if FAIL_PATH=${ED}/usr/bin/fixed REAL_READELF=${REAL_READELF} \
-        "${DEPLOY}" --ed "${ED}" --cache-root "${CACHE}" \
+        "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" \
         --fingerprint "${FINGERPRINT}" --readelf "${READELF_PROXY}" \
         >"${WORK}/post-rename-failure.out" 2>"${WORK}/post-rename-failure.err"; then
     fail 'forced post-rename verifier failure unexpectedly succeeded'
@@ -257,7 +355,7 @@ if readelf -SW "${ED}/usr/bin/fixed" | grep -Fq '.note.bolt_info'; then
     fail 'post-rename rollback left the replacement in ED'
 fi
 
-"${DEPLOY}" --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+"${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
     >"${WORK}/deploy.out"
 
 readelf -SW "${ED}/usr/bin/fixed" | grep -Fq '.note.bolt_info' || fail 'fixed executable lacks BOLT note'
@@ -289,7 +387,7 @@ NO_ELF_CACHE=${WORK}/no-elf-cache
 NO_ELF_FINGERPRINT=$(printf 'no-elf' | sha256sum | awk '{print $1}')
 mkdir -p -- "${NO_ELF_ED}/usr/share/fixture" "${NO_ELF_CACHE}"
 printf 'data only\n' >"${NO_ELF_ED}/usr/share/fixture/data.txt"
-"${CAPTURE}" --ed "${NO_ELF_ED}" --cache-root "${NO_ELF_CACHE}" \
+"${CAPTURE}" --test-mode --ed "${NO_ELF_ED}" --cache-root "${NO_ELF_CACHE}" \
     --fingerprint "${NO_ELF_FINGERPRINT}" >/dev/null
 python3 - "${NO_ELF_CACHE}/inputs/${NO_ELF_FINGERPRINT}/manifest.json" <<'PY'
 import json
@@ -300,17 +398,121 @@ assert manifest["eligible_total"] == 0
 assert manifest["artifacts"] == []
 PY
 
+# Even hermetic cache roots must be owned by the caller and not writable by
+# group or world.
+INSECURE_CACHE=${WORK}/insecure-cache
+INSECURE_FINGERPRINT=$(printf 'insecure-cache' | sha256sum | awk '{print $1}')
+mkdir -p -- "${INSECURE_CACHE}"
+chmod 0770 -- "${INSECURE_CACHE}"
+if "${CAPTURE}" --test-mode --ed "${NO_ELF_ED}" --cache-root "${INSECURE_CACHE}" \
+        --fingerprint "${INSECURE_FINGERPRINT}" \
+        >"${WORK}/insecure-cache.out" 2>"${WORK}/insecure-cache.err"; then
+    fail 'group-writable cache root was accepted'
+fi
+grep -Fq 'cache root is group/world-writable' "${WORK}/insecure-cache.err" || \
+    fail 'insecure cache rejection lacked an exact reason'
+
 # Root arguments containing symlink components are refused instead of being
 # silently resolved to a different tree.
 ln -s -- "${NO_ELF_ED}" "${WORK}/no-elf-ed-symlink"
 SYMLINK_ROOT_FINGERPRINT=$(printf 'symlink-root' | sha256sum | awk '{print $1}')
-if "${CAPTURE}" --ed "${WORK}/no-elf-ed-symlink" --cache-root "${WORK}/symlink-root-cache" \
+if "${CAPTURE}" --test-mode --ed "${WORK}/no-elf-ed-symlink" --cache-root "${WORK}/symlink-root-cache" \
         --fingerprint "${SYMLINK_ROOT_FINGERPRINT}" \
         >"${WORK}/symlink-root.out" 2>"${WORK}/symlink-root.err"; then
     fail 'capture accepted an ED root containing a symlink component'
 fi
 grep -Fq 'symlink component' "${WORK}/symlink-root.err" || \
     fail 'symlink-root rejection lacked an exact reason'
+
+# Function-section links can produce .rela.text.<function>. Accept relocation
+# sections that target executable sections through sh_info, not just the
+# literal .rela.text spelling.
+FUNCTION_ED=${WORK}/function-sections-ed
+FUNCTION_CACHE=${WORK}/function-sections-cache
+FUNCTION_FINGERPRINT=$(printf 'function-sections' | sha256sum | awk '{print $1}')
+mkdir -p -- "${FUNCTION_ED}/usr/bin" "${FUNCTION_CACHE}"
+cc -O0 -g -ffunction-sections -fno-pie -no-pie \
+    '-Wl,--build-id=sha1,--emit-relocs,--unique=.text.*' \
+    "${SOURCE}/main.c" -o "${FUNCTION_ED}/usr/bin/function-sections"
+readelf -SW "${FUNCTION_ED}/usr/bin/function-sections" | \
+    grep -Fq '.rela.text.main' || fail 'toolchain did not emit the function relocation fixture'
+"${CAPTURE}" --test-mode --ed "${FUNCTION_ED}" --cache-root "${FUNCTION_CACHE}" \
+    --fingerprint "${FUNCTION_FINGERPRINT}" >/dev/null
+python3 - "${FUNCTION_CACHE}/inputs/${FUNCTION_FINGERPRINT}/manifest.json" <<'PY'
+import json
+import sys
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+assert manifest["eligible_total"] == 1
+artifact = manifest["artifacts"][0]
+assert artifact["eligible"] is True
+assert ".rela.text.main" in artifact["executable_relocation_sections"]
+assert "no-text-relocations" not in artifact["readiness_failures"]
+PY
+
+# Every external ELF tool has a bounded process-group deadline. These fake
+# tools and descendants ignore TERM so the KILL path, locale pinning, and
+# partial cleanup are all exercised directly.
+HUNG_TOOL=${WORK}/hung-elf-tool
+# The single-quoted lines intentionally become a separate fake tool.
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'trap "" TERM' \
+    'printf "%s %s\\n" "${LC_ALL-}" "${LANG-}" >"${HUNG_LOCALE_FILE}"' \
+    'bash -c '\''trap "" TERM; while :; do sleep 1; done'\'' &' \
+    'child=$!' \
+    'printf "%s %s\\n" "$$" "${child}" >"${HUNG_PID_FILE}"' \
+    'wait "${child}"' \
+    >"${HUNG_TOOL}"
+chmod 0755 -- "${HUNG_TOOL}"
+
+assert_hung_group_gone() {
+    local pid_file=$1 pid
+    [[ -s ${pid_file} ]] || fail "hung tool did not record its process group: ${pid_file}"
+    for pid in $(<"${pid_file}"); do
+        for _ in {1..100}; do
+            [[ ! -e /proc/${pid} ]] && break
+            sleep 0.01
+        done
+        [[ ! -e /proc/${pid} ]] || fail "hung tool process survived TERM/KILL: ${pid}"
+    done
+}
+
+HUNG_ED=${WORK}/hung-ed
+mkdir -p -- "${HUNG_ED}/usr/bin"
+cp -- "${CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" "${HUNG_ED}/usr/bin/hung"
+for tool_kind in readelf objcopy; do
+    HUNG_CACHE=${WORK}/hung-${tool_kind}-cache
+    HUNG_FINGERPRINT=$(printf 'hung-%s' "${tool_kind}" | sha256sum | awk '{print $1}')
+    HUNG_PID_FILE=${WORK}/hung-${tool_kind}.pids
+    HUNG_LOCALE_FILE=${WORK}/hung-${tool_kind}.locale
+    mkdir -p -- "${HUNG_CACHE}"
+    tool_arguments=(--readelf readelf --objcopy objcopy)
+    if [[ ${tool_kind} == readelf ]]; then
+        tool_arguments=(--readelf "${HUNG_TOOL}" --objcopy objcopy)
+    else
+        tool_arguments=(--readelf readelf --objcopy "${HUNG_TOOL}")
+    fi
+    if HUNG_PID_FILE=${HUNG_PID_FILE} HUNG_LOCALE_FILE=${HUNG_LOCALE_FILE} \
+            "${CAPTURE}" --test-mode --tool-timeout-seconds 0.2 \
+            --tool-kill-after-seconds 0.2 --ed "${HUNG_ED}" \
+            --cache-root "${HUNG_CACHE}" --fingerprint "${HUNG_FINGERPRINT}" \
+            "${tool_arguments[@]}" \
+            >"${WORK}/hung-${tool_kind}.out" 2>"${WORK}/hung-${tool_kind}.err"; then
+        fail "hung ${tool_kind} command unexpectedly succeeded"
+    fi
+    grep -Fq 'tool timed out after 0.2s' "${WORK}/hung-${tool_kind}.err" || \
+        fail "hung ${tool_kind} rejection lacked a bounded timeout reason"
+    [[ $(<"${HUNG_LOCALE_FILE}") == 'C C' ]] || \
+        fail "${tool_kind} did not run with LC_ALL/LANG=C"
+    assert_hung_group_gone "${HUNG_PID_FILE}"
+    [[ ! -e ${HUNG_CACHE}/inputs/${HUNG_FINGERPRINT} ]] || \
+        fail "hung ${tool_kind} published a final capture"
+    if find "${HUNG_CACHE}" -name ".${HUNG_FINGERPRINT}.partial.*" -print -quit | grep -q .; then
+        fail "hung ${tool_kind} left a reusable partial artifact"
+    fi
+done
 
 # A mixed ELF64/ELF32 package records both and excludes the 32-bit input with
 # a reason. If the host compiler lacks multilib, emit a reason-bearing skip.
@@ -333,7 +535,7 @@ printf '%s\n' 'void _start(void) { __asm__ volatile("mov $1, %eax; xor %ebx, %eb
     >"${SOURCE}/elf32.c"
 if cc -m32 -nostdlib -fno-pie -no-pie -Wl,-e,_start,--build-id=sha1,--emit-relocs \
         "${SOURCE}/elf32.c" -o "${MIXED_ED}/usr/bin/elf32" 2>"${WORK}/elf32-build.err"; then
-    "${CAPTURE}" --ed "${MIXED_ED}" --cache-root "${MIXED_CACHE}" \
+    "${CAPTURE}" --test-mode --ed "${MIXED_ED}" --cache-root "${MIXED_CACHE}" \
         --fingerprint "${MIXED_FINGERPRINT}" >/dev/null
     python3 - "${MIXED_CACHE}/inputs/${MIXED_FINGERPRINT}/manifest.json" <<'PY'
 import json

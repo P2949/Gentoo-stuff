@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create exact PGO package identities and validate Clang sample profiles.
 
-The output deliberately contains no timestamps.  A fingerprint is the SHA-256
+Fingerprint output deliberately contains no timestamps.  A fingerprint is the SHA-256
 of a canonical JSON document containing the complete, validated build identity.
 Compiler identity is observed by this program rather than trusted from the
 input manifest.
@@ -19,11 +19,12 @@ import stat
 import subprocess
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 from typing import Any, NoReturn
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 BUFFER_SIZE = 1024 * 1024
 MAX_INPUT_SIZE = 4 * 1024 * 1024
 MAX_TOOL_OUTPUT = 1024 * 1024
@@ -67,6 +68,8 @@ FINGERPRINT_FIELDS = {
     "extra_ecmake",
     "kernel_module",
     "kernel_release",
+    "rust_target_triple",
+    "rustc_llvm_version",
 }
 COMPILER_FIELDS = {"path", "family", "major", "profile_format"}
 SAMPLE_METADATA_FIELDS = {
@@ -82,8 +85,8 @@ SAMPLE_METADATA_FIELDS = {
     "validator",
     "validation",
     "source",
+    "reproducibility",
 }
-SAMPLE_SOURCE_EXTERNAL_FIELDS = {"kind"}
 SAMPLE_SOURCE_PROFGEN_FIELDS = {
     "kind",
     "binary_path",
@@ -97,6 +100,9 @@ SAMPLE_SOURCE_PROFGEN_FIELDS = {
     "objcopy",
     "command_arguments",
     "command_output_sha256",
+    "binary_observation",
+    "debug_binary_observation",
+    "perf_data_observation",
 }
 LLVM_TOOL_IDENTITY_FIELDS = {
     "realpath",
@@ -104,6 +110,26 @@ LLVM_TOOL_IDENTITY_FIELDS = {
     "version_stderr",
     "version_stdout",
 }
+FILE_OBSERVATION_FIELDS = {
+    "device",
+    "inode",
+    "mode",
+    "uid",
+    "gid",
+    "link_count",
+    "size",
+    "mtime_ns",
+    "ctime_ns",
+    "sha256",
+}
+REPRODUCIBILITY_FIELDS = {
+    "optimization_generation_id",
+    "workload_revision",
+    "source_identity_sha256",
+    "production_host",
+    "production_date",
+}
+DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
 
 class IdentityError(Exception):
@@ -392,6 +418,49 @@ def canonical_regular_input(path: Path, label: str, *, nonempty: bool = True) ->
     return canonical
 
 
+def observe_regular_file(path: Path, label: str) -> dict[str, object]:
+    """Capture content and inode metadata used for exact before/after proof."""
+    try:
+        path_stat = path.stat()
+    except OSError as exc:
+        fail(f"cannot stat {label} {path}: {exc}")
+    if not stat.S_ISREG(path_stat.st_mode):
+        fail(f"{label} is not a regular file: {path}")
+    return {
+        "ctime_ns": path_stat.st_ctime_ns,
+        "device": path_stat.st_dev,
+        "gid": path_stat.st_gid,
+        "inode": path_stat.st_ino,
+        "link_count": path_stat.st_nlink,
+        "mode": path_stat.st_mode,
+        "mtime_ns": path_stat.st_mtime_ns,
+        "sha256": sha256_file(path),
+        "size": path_stat.st_size,
+        "uid": path_stat.st_uid,
+    }
+
+
+def require_unchanged_file(
+    path: Path, before: dict[str, object], label: str
+) -> dict[str, object]:
+    after = observe_regular_file(path, label)
+    if after != before:
+        fail(f"{label} changed during sample conversion")
+    return after
+
+
+def validate_file_observation(
+    value: object, path: Path, label: str
+) -> dict[str, object]:
+    if not isinstance(value, dict):
+        fail(f"{label} observation must be a JSON object")
+    require_exact_fields(value, FILE_OBSERVATION_FIELDS, f"{label} observation")
+    observed = observe_regular_file(path, label)
+    if value != observed:
+        fail(f"{label} no longer matches its exact recorded observation")
+    return observed
+
+
 def inspect_executable(path_value: object, label: str) -> tuple[Path, Path, str]:
     requested_text = require_string(path_value, f"{label}.path")
     requested = Path(requested_text)
@@ -449,7 +518,7 @@ def inspect_compiler(value: object) -> dict[str, object]:
         fail(
             f"compiler.major is {major}, but the active compiler reports {observed_major}"
         )
-    return {
+    identity: dict[str, object] = {
         "family": family,
         "major": major,
         "profile_format": profile_format,
@@ -459,6 +528,45 @@ def inspect_compiler(value: object) -> dict[str, object]:
         "version_stderr": stderr,
         "version_stdout": stdout,
     }
+    if family == "rustc":
+        host_match = re.search(r"(?im)^host:\s*(\S+)\s*$", stdout + "\n" + stderr)
+        llvm_match = re.search(
+            r"(?im)^LLVM version:\s*([0-9]+(?:\.[0-9]+)+)\s*$",
+            stdout + "\n" + stderr,
+        )
+        if host_match is None or llvm_match is None:
+            fail("rustc verbose version output lacks exact host or bundled LLVM version")
+        identity["rustc_host_triple"] = require_component(
+            host_match.group(1), "compiler.rustc_host_triple"
+        )
+        identity["rustc_llvm_version"] = require_component(
+            llvm_match.group(1), "compiler.rustc_llvm_version"
+        )
+    return identity
+
+
+def validate_rust_identity_axes(
+    input_data: dict[str, Any], compiler: dict[str, object]
+) -> tuple[str | None, str | None]:
+    target_value = input_data["rust_target_triple"]
+    llvm_value = input_data["rustc_llvm_version"]
+    if compiler["family"] != "rustc":
+        if target_value is not None or llvm_value is not None:
+            fail("rust_target_triple and rustc_llvm_version must be null outside rustc")
+        return None, None
+
+    target = require_component(target_value, "rust_target_triple")
+    llvm_version = require_component(llvm_value, "rustc_llvm_version")
+    if compiler.get("rustc_llvm_version") != llvm_version:
+        fail("rustc_llvm_version does not match the observed bundled LLVM version")
+    target_stdout, _target_stderr = run_tool(
+        Path(require_string(compiler["realpath"], "compiler.realpath")),
+        ["--print", "target-list"],
+        "rustc target-list command",
+    )
+    if target not in target_stdout.splitlines():
+        fail(f"rust_target_triple is not supported by the exact rustc: {target}")
+    return target, llvm_version
 
 
 def validate_package_env_files(value: object) -> list[str]:
@@ -500,11 +608,16 @@ def build_fingerprint_identity(input_data: dict[str, Any]) -> dict[str, object]:
             fail("kernel_release must be null for a non-kernel-module package")
         kernel_release = None
 
+    compiler = inspect_compiler(input_data["compiler"])
+    rust_target_triple, rustc_llvm_version = validate_rust_identity_axes(
+        input_data, compiler
+    )
+
     return {
         "abi": abi,
         "category": category,
         "chost": chost,
-        "compiler": inspect_compiler(input_data["compiler"]),
+        "compiler": compiler,
         "eapi": eapi,
         "ebuild_sha256": ebuild_sha256,
         "extra_ecmake": require_string(
@@ -539,6 +652,8 @@ def build_fingerprint_identity(input_data: dict[str, Any]) -> dict[str, object]:
         "package_env_files": validate_package_env_files(input_data["package_env_files"]),
         "pf": pf,
         "repository": repository,
+        "rust_target_triple": rust_target_triple,
+        "rustc_llvm_version": rustc_llvm_version,
         "schema_version": SCHEMA_VERSION,
         "slot": slot,
         "subslot": subslot,
@@ -734,8 +849,33 @@ def validate_sample_file(
     }
 
 
+def build_reproducibility(arguments: argparse.Namespace) -> dict[str, object]:
+    production_date = require_string(arguments.production_date, "production_date")
+    if not DATE_RE.fullmatch(production_date):
+        fail("production_date must use exact YYYY-MM-DD format")
+    try:
+        date.fromisoformat(production_date)
+    except ValueError:
+        fail("production_date is not a valid calendar date")
+    return {
+        "optimization_generation_id": require_component(
+            arguments.optimization_generation_id, "optimization_generation_id"
+        ),
+        "production_date": production_date,
+        "production_host": require_component(
+            arguments.production_host, "production_host"
+        ),
+        "source_identity_sha256": require_hex64(
+            arguments.source_identity_sha256, "source_identity_sha256"
+        ),
+        "workload_revision": require_component(
+            arguments.workload_revision, "workload_revision"
+        ),
+    }
+
+
 def sample_identity(
-    arguments: argparse.Namespace, source: dict[str, object] | None = None
+    arguments: argparse.Namespace, source: dict[str, object]
 ) -> dict[str, object]:
     cpv = require_cpv(arguments.cpv)
     fingerprint = require_hex64(arguments.fingerprint, "fingerprint")
@@ -755,8 +895,9 @@ def sample_identity(
         "profile_path": os.fspath(profile.resolve(strict=True)),
         "profile_sha256": sha256_file(profile),
         "profile_size": profile.stat().st_size,
+        "reproducibility": build_reproducibility(arguments),
         "schema_version": SCHEMA_VERSION,
-        "source": source if source is not None else {"kind": "external"},
+        "source": source,
         "validation": validation,
         "validator": validator,
     }
@@ -797,17 +938,20 @@ def validate_sample_source(
     if not isinstance(value, dict):
         fail("sample profile source must be a JSON object")
     kind = require_string(value.get("kind"), "sample source kind")
-    if kind == "external":
-        require_exact_fields(value, SAMPLE_SOURCE_EXTERNAL_FIELDS, "sample source")
-        return {"kind": "external"}
     if kind != "llvm-profgen":
         fail(f"unsupported sample profile source kind: {kind!r}")
     require_exact_fields(value, SAMPLE_SOURCE_PROFGEN_FIELDS, "sample source")
     binary_path, binary_sha256 = validate_recorded_source_file(
         value["binary_path"], value["binary_sha256"], "binary"
     )
+    binary_observation = validate_file_observation(
+        value["binary_observation"], Path(binary_path), "binary"
+    )
     perf_path, perf_sha256 = validate_recorded_source_file(
         value["perf_data_path"], value["perf_data_sha256"], "perf_data"
+    )
+    perf_data_observation = validate_file_observation(
+        value["perf_data_observation"], Path(perf_path), "perf data"
     )
     debug_path_value = value["debug_binary_path"]
     debug_sha_value = value["debug_binary_sha256"]
@@ -816,9 +960,15 @@ def validate_sample_source(
     if debug_path_value is None and debug_sha_value is None:
         debug_path = None
         debug_sha256 = None
+        if value["debug_binary_observation"] is not None:
+            fail("debug binary observation must be null when no debug binary is set")
+        debug_binary_observation = None
     elif debug_path_value is not None and debug_sha_value is not None:
         debug_path, debug_sha256 = validate_recorded_source_file(
             debug_path_value, debug_sha_value, "debug_binary"
+        )
+        debug_binary_observation = validate_file_observation(
+            value["debug_binary_observation"], Path(debug_path), "debug binary"
         )
     else:
         fail("debug binary path and SHA-256 must either both be null or both be set")
@@ -849,14 +999,17 @@ def validate_sample_source(
     return {
         "binary_path": binary_path,
         "binary_sha256": binary_sha256,
+        "binary_observation": binary_observation,
         "command_arguments": command_arguments,
         "command_output_sha256": command_output_sha256,
         "debug_binary_path": debug_path,
         "debug_binary_sha256": debug_sha256,
+        "debug_binary_observation": debug_binary_observation,
         "kind": "llvm-profgen",
         "objcopy": objcopy,
         "perf_data_path": perf_path,
         "perf_data_sha256": perf_sha256,
+        "perf_data_observation": perf_data_observation,
         "producer": producer,
         "readelf": readelf,
     }

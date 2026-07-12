@@ -1,0 +1,42 @@
+EAPI=8
+
+DESCRIPTION="Disposable Phase 2 Portage hook integration fixture"
+HOMEPAGE="https://invalid.example/"
+LICENSE="CC0-1.0"
+SLOT="0"
+KEYWORDS="amd64"
+
+S="${WORKDIR}/${P}"
+
+GENTOO_OPT_MODE=bolt-capture
+GENTOO_OPT_COMPILER_FAMILY=clang
+GENTOO_OPT_ABI=amd64
+GENTOO_OPT_BOLT_CACHE_ROOT="@CACHE_ROOT@"
+GENTOO_OPT_BOLT_CAPTURE_TOOL="@CAPTURE_PROXY@"
+GENTOO_OPT_FINGERPRINT="@SUCCESS_FINGERPRINT@"
+
+src_unpack() {
+    mkdir -p -- "${S}" || die
+    printf '%s\n' \
+        '#include <stdio.h>' \
+        'static int helper(int value) { return value + 7; }' \
+        'int main(void) { printf("%d\\n", helper(35)); return 0; }' \
+        > "${S}/fixture.c" || die
+}
+
+src_compile() {
+    "${CC}" ${CFLAGS} "${S}/fixture.c" ${LDFLAGS} \
+        -o "${S}/phase2-portage-fixture" || die
+}
+
+src_install() {
+    dobin "${S}/phase2-portage-fixture"
+}
+
+post_src_install() {
+    readelf -SW "${ED}/usr/bin/phase2-portage-fixture" | \
+        grep -q '[.]symtab' || die "pre-strip symtab is absent"
+    readelf -SW "${ED}/usr/bin/phase2-portage-fixture" | \
+        grep -Eq '[.]rela?[.]text' || die "pre-strip text relocations are absent"
+    printf '%s\n' previous-hook-passed > "${T}/previous-hook.log" || die
+}

@@ -30,6 +30,7 @@ TOOL_TIMEOUT_SECONDS = 30
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 BUILD_ID_RE = re.compile(r"^[0-9a-f]{8,128}$")
 SAFE_GO_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_./+@~-]+$")
+SAFE_GO_SYMBOL_RE = re.compile(r"^[^\s\x00=]+$")
 
 BACKEND_FAMILY = {
     "clang-ir": "clang",
@@ -37,6 +38,98 @@ BACKEND_FAMILY = {
     "gcc": "gcc",
     "rust": "rust",
     "go": "go",
+}
+VALIDATION_METADATA_FIELDS = {
+    "schema_version",
+    "manifest",
+    "profile",
+    "compiler",
+    "profile_tool",
+    "backend_proof",
+}
+MANIFEST_IDENTITY_FIELDS = {"path", "sha256"}
+PROFILE_IDENTITY_FIELDS = {
+    "backend",
+    "path",
+    "sha256",
+    "fingerprint",
+    "abi",
+    "compiler_family",
+}
+COMPILER_IDENTITY_FIELDS = {
+    "path",
+    "sha256",
+    "family",
+    "major",
+    "rust_llvm_major",
+    "version_arguments",
+    "version_stdout_sha256",
+    "version_stderr_sha256",
+    "verbose_version_stdout_sha256",
+    "verbose_version_stderr_sha256",
+}
+PROFILE_TOOL_IDENTITY_FIELDS = {
+    "path",
+    "sha256",
+    "major",
+    "version_arguments",
+    "version_stdout_sha256",
+    "version_stderr_sha256",
+    "version_stdout",
+    "version_stderr",
+}
+BACKEND_PROOF_FIELDS = {
+    "clang-ir": {
+        "kind",
+        "function_count",
+        "maximum_function_count",
+        "validation_arguments",
+        "validation_output_sha256",
+    },
+    "rust": {
+        "kind",
+        "function_count",
+        "maximum_function_count",
+        "validation_arguments",
+        "validation_output_sha256",
+    },
+    "clang-sample": {
+        "kind",
+        "function_count",
+        "maximum_sample_total",
+        "sample_metadata_path",
+        "sample_metadata_sha256",
+        "source_kind",
+        "input_build_id",
+        "input_text_sha256",
+        "recorded_validation_output_sha256",
+        "detailed_validation_arguments",
+        "detailed_validation_output_sha256",
+    },
+    "gcc": {
+        "kind",
+        "gcda_file_count",
+        "hot_file_count",
+        "gcda_files",
+        "validation_arguments",
+        "validation_output_sha256",
+    },
+    "go": {
+        "kind",
+        "profiled_binary_path",
+        "profiled_binary_sha256",
+        "go_build_id",
+        "gnu_build_id",
+        "readelf_path",
+        "readelf_sha256",
+        "target_package",
+        "target_symbols",
+        "raw_validation_arguments",
+        "raw_validation_output_sha256",
+        "nonzero_sample_count",
+        "mapping_identity",
+        "target_function_metadata",
+    },
 }
 
 SAMPLE_METADATA_FIELDS = {
@@ -190,8 +283,18 @@ def load_json(path: Path, label: str) -> dict[str, Any]:
     return require_object(value, label)
 
 
-def run_tool(path: Path, arguments: list[str], label: str) -> tuple[str, str]:
+def run_tool(
+    path: Path,
+    arguments: list[str],
+    label: str,
+    *,
+    allowed_exit_statuses: frozenset[int] = frozenset({0}),
+) -> tuple[str, str]:
     try:
+        environment = os.environ.copy()
+        environment.update(
+            {"LC_ALL": "C", "LANG": "C", "LANGUAGE": "C", "TZ": "UTC"}
+        )
         completed = subprocess.run(
             [os.fspath(path), *arguments],
             stdin=subprocess.DEVNULL,
@@ -200,6 +303,7 @@ def run_tool(path: Path, arguments: list[str], label: str) -> tuple[str, str]:
             text=False,
             timeout=TOOL_TIMEOUT_SECONDS,
             check=False,
+            env=environment,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         fail(f"{label} failed to execute: {error}")
@@ -210,7 +314,7 @@ def run_tool(path: Path, arguments: list[str], label: str) -> tuple[str, str]:
         stderr = completed.stderr.decode("utf-8", errors="strict")
     except UnicodeError as error:
         fail(f"{label} returned non-UTF-8 output: {error}")
-    if completed.returncode != 0:
+    if completed.returncode not in allowed_exit_statuses:
         detail = stderr.strip() or stdout.strip() or "no diagnostic"
         fail(f"{label} exited {completed.returncode}: {detail}")
     return stdout, stderr
@@ -246,6 +350,8 @@ def observe_compiler(
     if observed_major != expected_major:
         fail(f"compiler major {observed_major} does not match {expected_major}")
     observed_rust_llvm: int | None = None
+    verbose_stdout = ""
+    verbose_stderr = ""
     if family == "rust":
         verbose_stdout, verbose_stderr = run_tool(path, ["-vV"], "rustc verbose version command")
         llvm_match = re.search(
@@ -263,8 +369,18 @@ def observe_compiler(
     return {
         "path": os.fspath(path),
         "sha256": expected_sha256,
+        "family": family,
         "major": observed_major,
         "rust_llvm_major": observed_rust_llvm,
+        "version_arguments": arguments,
+        "version_stdout_sha256": hashlib.sha256(stdout.encode("utf-8")).hexdigest(),
+        "version_stderr_sha256": hashlib.sha256(stderr.encode("utf-8")).hexdigest(),
+        "verbose_version_stdout_sha256": hashlib.sha256(
+            verbose_stdout.encode("utf-8")
+        ).hexdigest(),
+        "verbose_version_stderr_sha256": hashlib.sha256(
+            verbose_stderr.encode("utf-8")
+        ).hexdigest(),
     }
 
 
@@ -297,12 +413,16 @@ def observe_profile_tool(
         "path": os.fspath(path),
         "sha256": expected_sha256,
         "major": observed_major,
+        "version_arguments": arguments,
+        "version_stdout_sha256": hashlib.sha256(stdout.encode("utf-8")).hexdigest(),
+        "version_stderr_sha256": hashlib.sha256(stderr.encode("utf-8")).hexdigest(),
+        # Retained only for comparison with profile-identity.py sample metadata.
         "version_stdout": stdout,
         "version_stderr": stderr,
     }
 
 
-def validate_indexed_profile(profile: Path, tool: Path, backend: str) -> None:
+def validate_indexed_profile(profile: Path, tool: Path, backend: str) -> dict[str, object]:
     if profile.name == "sample.prof" or profile.suffix != ".profdata":
         fail(f"{backend} indexed profile must use an unambiguous .profdata name")
     stdout, _stderr = run_tool(
@@ -316,6 +436,20 @@ def validate_indexed_profile(profile: Path, tool: Path, backend: str) -> None:
         fail(f"{backend} profile contains no readable functions")
     if maximum is None or int(maximum.group(1)) < 1:
         fail(f"{backend} profile contains no nonzero function count")
+    return {
+        "kind": "llvm-indexed",
+        "function_count": int(functions.group(1)),
+        "maximum_function_count": int(maximum.group(1)),
+        "validation_arguments": [
+            "show",
+            "--all-functions",
+            "--counts",
+            os.fspath(profile),
+        ],
+        "validation_output_sha256": hashlib.sha256(
+            (stdout + "\0" + _stderr).encode("utf-8")
+        ).hexdigest(),
+    }
 
 
 def validate_recorded_file(path_value: object, sha_value: object, label: str) -> None:
@@ -331,12 +465,22 @@ def validate_recorded_tool_identity(value: object, label: str) -> None:
     path = regular_input(Path(require_string(identity["realpath"], f"{label}.realpath")), label, executable=True)
     if sha256_file(path) != require_hex64(identity["sha256"], f"{label}.sha256"):
         fail(f"recorded {label} binary SHA-256 no longer matches")
-    require_string(identity["version_stdout"], f"{label}.version_stdout")
+    version_stdout = require_string(
+        identity["version_stdout"], f"{label}.version_stdout"
+    )
     if not isinstance(identity["version_stderr"], str):
         fail(f"{label}.version_stderr must be a string")
+    observed_stdout, observed_stderr = run_tool(
+        path, ["--version"], f"recorded {label} version command"
+    )
+    if (
+        version_stdout != observed_stdout
+        or identity["version_stderr"] != observed_stderr
+    ):
+        fail(f"recorded {label} complete version output no longer matches")
 
 
-def validate_sample_source(value: object) -> None:
+def validate_sample_source(value: object, profile: Path) -> None:
     source = require_object(value, "sample source")
     kind = require_string(source.get("kind"), "sample source kind")
     if kind == "external":
@@ -362,6 +506,19 @@ def validate_sample_source(value: object) -> None:
         isinstance(item, str) and item for item in arguments
     ):
         fail("sample source command_arguments must be a nonempty string array")
+    expected_arguments = [f"--binary={source['binary_path']}"]
+    if source["debug_binary_path"] is not None:
+        expected_arguments.append(f"--debug-binary={source['debug_binary_path']}")
+    expected_arguments.extend(
+        [
+            f"--perfdata={source['perf_data_path']}",
+            "--format=extbinary",
+            "--show-detailed-warning",
+            f"--output={profile}.partial",
+        ]
+    )
+    if arguments != expected_arguments:
+        fail("sample source command does not match its exact binary/perf/profile inputs")
     require_hex64(source["command_output_sha256"], "command_output_sha256")
 
 
@@ -428,7 +585,7 @@ def validate_sample_metadata(
     ).hexdigest()
     if validation["output_sha256"] != output_hash:
         fail("sample metadata validation output mismatch")
-    validate_sample_source(metadata["source"])
+    validate_sample_source(metadata["source"], profile)
 
 
 def validate_sample_profile(
@@ -440,7 +597,7 @@ def validate_sample_profile(
     abi: str,
     compiler_major: int,
     tool_identity: dict[str, object],
-) -> None:
+) -> dict[str, object]:
     if profile.name != "sample.prof":
         fail("Clang sample profile must be named exactly sample.prof")
     recorded_stdout, recorded_stderr = run_tool(
@@ -471,6 +628,34 @@ def validate_sample_profile(
         recorded_stdout,
         recorded_stderr,
     )
+    metadata = load_json(metadata_path, "sample metadata")
+    source = require_object(metadata["source"], "sample source")
+    if source.get("kind") != "llvm-profgen":
+        fail("authoritative sample manifests require source.kind=llvm-profgen")
+    input_identity = require_object(metadata["input_identity"], "sample input identity")
+    return {
+        "kind": "llvm-sample",
+        "function_count": functions,
+        "maximum_sample_total": max(positive_totals),
+        "sample_metadata_path": os.fspath(metadata_path),
+        "sample_metadata_sha256": sha256_file(metadata_path),
+        "source_kind": "llvm-profgen",
+        "input_build_id": input_identity["build_id"],
+        "input_text_sha256": input_identity["text_sha256"],
+        "recorded_validation_output_sha256": hashlib.sha256(
+            (recorded_stdout + "\0" + recorded_stderr).encode("utf-8")
+        ).hexdigest(),
+        "detailed_validation_arguments": [
+            "show",
+            "--sample",
+            "--all-functions",
+            "--counts",
+            os.fspath(profile),
+        ],
+        "detailed_validation_output_sha256": hashlib.sha256(
+            (stdout + "\0" + _stderr).encode("utf-8")
+        ).hexdigest(),
+    }
 
 
 def gcc_directory_hash(profile: Path) -> tuple[str, list[Path]]:
@@ -498,12 +683,16 @@ def gcc_directory_hash(profile: Path) -> tuple[str, list[Path]]:
     return digest.hexdigest(), files
 
 
-def validate_gcc_profile(profile: Path, tool: Path) -> str:
+def validate_gcc_profile(profile: Path, tool: Path) -> tuple[str, dict[str, object]]:
     profile_hash, files = gcc_directory_hash(profile)
     stdout, _stderr = run_tool(
         tool,
         ["overlap", "-f", os.fspath(profile), os.fspath(profile)],
         "GCC gcov profile validation",
+        # gcov-tool reports a processable self-overlap with status 1 on the
+        # active GCC 17 snapshot.  The complete/hot-file statistics below are
+        # still mandatory, so an ordinary error cannot pass through silently.
+        allowed_exit_statuses=frozenset({0, 1}),
     )
     gcda_match = re.search(r"(?m)^\s*gcda files:\s*([0-9]+)\s+", stdout)
     hot_match = re.search(r"(?m)^\s*hot files:\s*([0-9]+)\s+", stdout)
@@ -511,12 +700,35 @@ def validate_gcc_profile(profile: Path, tool: Path) -> str:
         fail("gcov-tool did not read the complete .gcda set")
     if hot_match is None or int(hot_match.group(1)) < 1:
         fail("GCC profile contains no nonzero hot-file data")
-    return profile_hash
+    file_records = [
+        {
+            "path": path.relative_to(profile).as_posix(),
+            "sha256": sha256_file(path),
+        }
+        for path in sorted(files, key=lambda item: item.relative_to(profile).as_posix())
+    ]
+    return profile_hash, {
+        "kind": "gcc-gcov",
+        "gcda_file_count": len(files),
+        "hot_file_count": int(hot_match.group(1)),
+        "gcda_files": file_records,
+        "validation_arguments": [
+            "overlap",
+            "-f",
+            os.fspath(profile),
+            os.fspath(profile),
+        ],
+        "validation_output_sha256": hashlib.sha256(
+            (stdout + "\0" + _stderr).encode("utf-8")
+        ).hexdigest(),
+    }
 
 
 def read_gnu_build_id(readelf: Path, binary: Path) -> str | None:
     stdout, _stderr = run_tool(readelf, ["-n", os.fspath(binary)], "GNU build-ID inspection")
-    matches = re.findall(r"(?im)^\s*Build ID:\s*([0-9a-f]+)\s*$", stdout)
+    matches: list[str] = re.findall(
+        r"(?im)^\s*Build ID:\s*([0-9a-f]+)\s*$", stdout
+    )
     if len(matches) > 1:
         fail("profiled Go binary contains multiple GNU build IDs")
     if not matches:
@@ -531,9 +743,10 @@ def parse_go_raw_profile(
     raw: str,
     binary: Path,
     gnu_build_id: str | None,
+    go_build_id: str,
     target_package: str,
     target_symbols: list[str],
-) -> None:
+) -> dict[str, object]:
     if not all(marker in raw for marker in ("PeriodType:", "Samples:\n", "Locations\n", "Mappings\n")):
         fail("Go pprof output is structurally incomplete")
     sampled_locations: set[int] = set()
@@ -557,25 +770,31 @@ def parse_go_raw_profile(
         r"^\s*([0-9]+):\s+0x[0-9a-f]+\s+M=([0-9]+)\s+(\S+)\s+\S+:[0-9]+:[0-9]+\s+s=([0-9]+)\s*$",
         re.MULTILINE,
     )
-    locations: dict[str, tuple[int, int, int]] = {}
+    locations: dict[str, list[tuple[int, int, int]]] = {}
     for match in location_pattern.finditer(raw):
         location_id = int(match.group(1))
         mapping_id = int(match.group(2))
         symbol = match.group(3)
         start_line = int(match.group(4))
-        locations.setdefault(symbol, (location_id, mapping_id, start_line))
+        locations.setdefault(symbol, []).append((location_id, mapping_id, start_line))
     if not locations:
         fail("Go profile contains no readable function metadata")
     prefix = target_package + "."
     if not any(symbol.startswith(prefix) for symbol in locations):
         fail("Go profile contains no function from the declared target package")
+    selected_locations: dict[str, tuple[int, int, int]] = {}
     for symbol in target_symbols:
-        record = locations.get(symbol)
-        if record is None:
+        records = locations.get(symbol)
+        if records is None:
             fail(f"Go profile does not contain target symbol: {symbol}")
-        location_id, _mapping_id, start_line = record
-        if start_line < 1 or location_id not in sampled_locations:
+        matching = [
+            record
+            for record in records
+            if record[2] > 0 and record[0] in sampled_locations
+        ]
+        if not matching:
             fail(f"Go target symbol lacks positive function metadata or samples: {symbol}")
+        selected_locations[symbol] = matching[0]
 
     mapping_pattern = re.compile(
         r"^([0-9]+):\s+0x[0-9a-f]+/0x[0-9a-f]+/0x[0-9a-f]+\s+(\S+)\s+(\S*)\s+\[FN\]\s*$",
@@ -585,7 +804,9 @@ def parse_go_raw_profile(
         int(match.group(1)): (match.group(2), match.group(3))
         for match in mapping_pattern.finditer(raw)
     }
-    target_mapping_ids = {locations[symbol][1] for symbol in target_symbols}
+    target_mapping_ids = {
+        selected_locations[symbol][1] for symbol in target_symbols
+    }
     if len(target_mapping_ids) != 1:
         fail("Go target symbols do not share one exact executable mapping")
     mapping = mappings.get(next(iter(target_mapping_ids)))
@@ -595,8 +816,30 @@ def parse_go_raw_profile(
     if gnu_build_id is not None:
         if mapping_build_id != gnu_build_id:
             fail("Go profile mapping GNU build ID does not match the profiled binary")
+    elif mapping_build_id:
+        if mapping_build_id != go_build_id:
+            fail("Go profile mapping build ID does not match the native Go build ID")
     elif mapping_path != os.fspath(binary):
         fail("Go profile without a GNU build ID does not map the exact profiled binary path")
+    if gnu_build_id is not None:
+        mapping_identity = {"type": "gnu-build-id", "value": gnu_build_id}
+    elif mapping_build_id:
+        mapping_identity = {"type": "go-build-id", "value": go_build_id}
+    else:
+        mapping_identity = {"type": "exact-path", "value": os.fspath(binary)}
+    return {
+        "nonzero_sample_count": nonzero_samples,
+        "mapping_identity": mapping_identity,
+        "target_function_metadata": [
+            {
+                "symbol": symbol,
+                "location_id": selected_locations[symbol][0],
+                "mapping_id": selected_locations[symbol][1],
+                "start_line": selected_locations[symbol][2],
+            }
+            for symbol in target_symbols
+        ],
+    }
 
 
 def validate_go_profile(
@@ -609,7 +852,7 @@ def validate_go_profile(
     readelf_sha256: str,
     target_package: str,
     target_symbols: list[str],
-) -> None:
+) -> dict[str, object]:
     if profile.suffix not in {".pprof", ".pgo"}:
         fail("Go profile must use an unambiguous .pprof or .pgo suffix")
     binary = regular_input(binary, "profiled Go binary", executable=True)
@@ -632,7 +875,36 @@ def validate_go_profile(
         ["tool", "pprof", "-raw", os.fspath(binary), os.fspath(profile)],
         "Go pprof structural validation",
     )
-    parse_go_raw_profile(raw, binary, gnu_build_id, target_package, target_symbols)
+    structural_proof = parse_go_raw_profile(
+        raw,
+        binary,
+        gnu_build_id,
+        observed_go_build_id,
+        target_package,
+        target_symbols,
+    )
+    return {
+        "kind": "go-pprof",
+        "profiled_binary_path": os.fspath(binary),
+        "profiled_binary_sha256": binary_sha256,
+        "go_build_id": observed_go_build_id,
+        "gnu_build_id": gnu_build_id,
+        "readelf_path": os.fspath(readelf),
+        "readelf_sha256": readelf_sha256,
+        "target_package": target_package,
+        "target_symbols": target_symbols,
+        "raw_validation_arguments": [
+            "tool",
+            "pprof",
+            "-raw",
+            os.fspath(binary),
+            os.fspath(profile),
+        ],
+        "raw_validation_output_sha256": hashlib.sha256(
+            (raw + "\0" + _stderr).encode("utf-8")
+        ).hexdigest(),
+        **structural_proof,
+    }
 
 
 def manifest_bytes(
@@ -656,40 +928,107 @@ def manifest_bytes(
     return "".join(f"{key}={value}\n" for key, value in fields).encode("ascii")
 
 
-def atomic_publish(path: Path, payload: bytes) -> None:
-    path = safe_absolute_path(path, "manifest output", must_exist=False)
-    parent = directory_input(path.parent, "manifest output parent")
+def require_new_output(path: Path, label: str) -> Path:
+    path = safe_absolute_path(path, label, must_exist=False)
+    directory_input(path.parent, f"{label} parent")
     try:
         path.lstat()
     except FileNotFoundError:
-        pass
+        return path
     except OSError as error:
-        fail(f"cannot inspect manifest output {path}: {error}")
-    else:
-        fail(f"manifest output already exists: {path}")
+        fail(f"cannot inspect {label} {path}: {error}")
+    fail(f"{label} already exists: {path}")
+
+
+def stage_output(path: Path, payload: bytes, mode: int) -> str:
+    descriptor: int | None = None
     temporary_name: str | None = None
     try:
         descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{path.name}.partial.", dir=parent
+            prefix=f".{path.name}.partial.", dir=path.parent
         )
-        os.fchmod(descriptor, 0o644)
+        os.fchmod(descriptor, mode)
         with os.fdopen(descriptor, "wb", closefd=True) as output:
             output.write(payload)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(temporary_name, path)
-        temporary_name = None
-        directory_descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory_descriptor)
-        finally:
-            os.close(directory_descriptor)
-    except OSError as error:
-        fail(f"cannot publish manifest {path}: {error}")
-    finally:
+    except BaseException as error:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
         if temporary_name is not None:
             try:
                 os.unlink(temporary_name)
+            except FileNotFoundError:
+                pass
+        if isinstance(error, OSError):
+            fail(f"cannot stage output for {path}: {error}")
+        raise
+    if temporary_name is None:
+        fail(f"internal error: no staged output for {path}")
+    return temporary_name
+
+
+def atomic_publish_pair(
+    manifest_path: Path,
+    manifest_payload: bytes,
+    metadata_path: Path,
+    metadata_payload: bytes,
+) -> None:
+    manifest_path = require_new_output(manifest_path, "manifest output")
+    metadata_path = require_new_output(metadata_path, "validation metadata output")
+    if manifest_path == metadata_path:
+        fail("manifest and validation metadata outputs must be distinct")
+    if manifest_path.parent != metadata_path.parent:
+        fail("manifest and validation metadata sidecar must share one directory")
+    expected_metadata_path = Path(os.fspath(manifest_path) + ".metadata.json")
+    if metadata_path != expected_metadata_path:
+        fail(
+            "validation metadata sidecar must be named "
+            f"{expected_metadata_path.name}"
+        )
+    manifest_temporary: str | None = None
+    metadata_temporary: str | None = None
+    metadata_published = False
+    transaction_complete = False
+    try:
+        manifest_temporary = stage_output(manifest_path, manifest_payload, 0o644)
+        metadata_temporary = stage_output(metadata_path, metadata_payload, 0o600)
+        # Metadata is renamed first.  The manifest is the authoritative commit
+        # marker, so interruption can never expose an unbound passed manifest.
+        os.replace(metadata_temporary, metadata_path)
+        metadata_temporary = None
+        metadata_published = True
+        os.replace(manifest_temporary, manifest_path)
+        manifest_temporary = None
+        for parent in {manifest_path.parent, metadata_path.parent}:
+            directory_descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
+        transaction_complete = True
+    except OSError as error:
+        fail(f"cannot publish manifest transaction: {error}")
+    finally:
+        for temporary_name in (manifest_temporary, metadata_temporary):
+            if temporary_name is not None:
+                try:
+                    os.unlink(temporary_name)
+                except FileNotFoundError:
+                    pass
+        if metadata_published and not transaction_complete:
+            # A signal can arrive after os.replace(manifest) and before the
+            # in-memory commit flag changes.  Remove both in that boundary so
+            # an unbound passed manifest can never survive.
+            try:
+                manifest_path.unlink()
+            except FileNotFoundError:
+                pass
+            try:
+                metadata_path.unlink()
             except FileNotFoundError:
                 pass
 
@@ -743,7 +1082,7 @@ def validate_arguments(arguments: argparse.Namespace) -> None:
         prefix = target_package + "."
         for symbol in arguments.go_target_symbol:
             if (
-                not SAFE_GO_COMPONENT_RE.fullmatch(symbol)
+                not SAFE_GO_SYMBOL_RE.fullmatch(symbol)
                 or not symbol.startswith(prefix)
             ):
                 fail(f"Go target symbol is outside the target package: {symbol}")
@@ -752,7 +1091,9 @@ def validate_arguments(arguments: argparse.Namespace) -> None:
         fail("Go-specific arguments are valid only for the Go backend")
 
 
-def command_validate(arguments: argparse.Namespace) -> int:
+def perform_validation(
+    arguments: argparse.Namespace, manifest_path: Path
+) -> tuple[bytes, dict[str, object]]:
     validate_arguments(arguments)
     profile: Path
     if arguments.backend == "gcc":
@@ -786,13 +1127,17 @@ def command_validate(arguments: argparse.Namespace) -> int:
             fail("Go compiler and pprof tool must be the same exact Go executable")
 
     if arguments.backend == "gcc":
-        profile_sha256 = validate_gcc_profile(profile, Path(str(profile_tool["path"])))
+        profile_sha256, backend_proof = validate_gcc_profile(
+            profile, Path(str(profile_tool["path"]))
+        )
     else:
         profile_sha256 = sha256_file(profile)
         if arguments.backend in {"clang-ir", "rust"}:
-            validate_indexed_profile(profile, Path(str(profile_tool["path"])), arguments.backend)
+            backend_proof = validate_indexed_profile(
+                profile, Path(str(profile_tool["path"])), arguments.backend
+            )
         elif arguments.backend == "clang-sample":
-            validate_sample_profile(
+            backend_proof = validate_sample_profile(
                 profile,
                 Path(str(profile_tool["path"])),
                 arguments.sample_metadata,
@@ -803,7 +1148,7 @@ def command_validate(arguments: argparse.Namespace) -> int:
                 profile_tool,
             )
         else:
-            validate_go_profile(
+            backend_proof = validate_go_profile(
                 profile,
                 Path(str(profile_tool["path"])),
                 arguments.go_binary,
@@ -814,22 +1159,235 @@ def command_validate(arguments: argparse.Namespace) -> int:
                 arguments.go_target_package,
                 arguments.go_target_symbol,
             )
-    atomic_publish(
-        arguments.manifest_out,
-        manifest_bytes(
-            arguments.backend,
-            arguments.fingerprint,
-            arguments.abi,
-            arguments.compiler_family,
-            profile,
-            profile_sha256,
-        ),
+    # Re-observe every identity after native validation.  Nothing may change
+    # between proof and publication.
+    if sha256_file(Path(str(compiler["path"]))) != arguments.compiler_sha256:
+        fail("compiler changed during profile validation")
+    if sha256_file(Path(str(profile_tool["path"]))) != arguments.profile_tool_sha256:
+        fail("profile tool changed during profile validation")
+    if arguments.backend == "gcc":
+        final_profile_hash, _files = gcc_directory_hash(profile)
+    else:
+        final_profile_hash = sha256_file(profile)
+    if final_profile_hash != profile_sha256:
+        fail("profile payload changed during validation")
+    if arguments.backend == "clang-sample":
+        if sha256_file(arguments.sample_metadata) != backend_proof["sample_metadata_sha256"]:
+            fail("sample metadata changed during validation")
+        current_sample_metadata = load_json(arguments.sample_metadata, "sample metadata")
+        validate_sample_source(current_sample_metadata["source"], profile)
+    elif arguments.backend == "go":
+        if sha256_file(arguments.go_binary) != arguments.go_binary_sha256:
+            fail("profiled Go binary changed during validation")
+        if sha256_file(arguments.readelf) != arguments.readelf_sha256:
+            fail("readelf changed during validation")
+
+    payload = manifest_bytes(
+        arguments.backend,
+        arguments.fingerprint,
+        arguments.abi,
+        arguments.compiler_family,
+        profile,
+        profile_sha256,
+    )
+    metadata: dict[str, object] = {
+        "schema_version": 1,
+        "manifest": {
+            "path": os.fspath(manifest_path),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        },
+        "profile": {
+            "backend": arguments.backend,
+            "path": os.fspath(profile),
+            "sha256": profile_sha256,
+            "fingerprint": arguments.fingerprint,
+            "abi": arguments.abi,
+            "compiler_family": arguments.compiler_family,
+        },
+        "compiler": compiler,
+        "profile_tool": profile_tool,
+        "backend_proof": backend_proof,
+    }
+    return payload, metadata
+
+
+def metadata_bytes(metadata: dict[str, object]) -> bytes:
+    return (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def command_produce(arguments: argparse.Namespace) -> int:
+    manifest_path = safe_absolute_path(
+        arguments.manifest_out, "manifest output", must_exist=False
+    )
+    manifest_payload, metadata = perform_validation(arguments, manifest_path)
+    atomic_publish_pair(
+        manifest_path,
+        manifest_payload,
+        arguments.metadata_out,
+        metadata_bytes(metadata),
     )
     return 0
 
 
-def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+def require_metadata_list(value: object, label: str) -> list[str]:
+    if not isinstance(value, list) or not value or not all(
+        isinstance(item, str) and item for item in value
+    ):
+        fail(f"{label} must be a nonempty string array")
+    if len(set(value)) != len(value):
+        fail(f"{label} contains duplicate values")
+    return value
+
+
+def arguments_from_metadata(
+    metadata: dict[str, Any], manifest_path: Path
+) -> argparse.Namespace:
+    require_exact_fields(metadata, VALIDATION_METADATA_FIELDS, "validation metadata")
+    if metadata["schema_version"] != 1:
+        fail("validation metadata schema_version must be 1")
+    manifest = require_object(metadata["manifest"], "manifest identity")
+    require_exact_fields(manifest, MANIFEST_IDENTITY_FIELDS, "manifest identity")
+    if manifest["path"] != os.fspath(manifest_path):
+        fail("validation metadata references a different manifest path")
+    require_hex64(manifest["sha256"], "manifest SHA-256")
+
+    profile = require_object(metadata["profile"], "profile identity")
+    require_exact_fields(profile, PROFILE_IDENTITY_FIELDS, "profile identity")
+    backend = require_string(profile["backend"], "profile backend")
+    if backend not in BACKEND_FAMILY:
+        fail(f"validation metadata has an unknown backend: {backend}")
+    fingerprint = require_hex64(profile["fingerprint"], "profile fingerprint")
+    profile_sha256 = require_hex64(profile["sha256"], "profile SHA-256")
+    abi = require_string(profile["abi"], "profile ABI")
+    compiler_family = require_string(profile["compiler_family"], "compiler family")
+    profile_path = Path(require_string(profile["path"], "profile path"))
+
+    compiler = require_object(metadata["compiler"], "compiler identity")
+    require_exact_fields(compiler, COMPILER_IDENTITY_FIELDS, "compiler identity")
+    compiler_path = Path(require_string(compiler["path"], "compiler path"))
+    compiler_sha256 = require_hex64(compiler["sha256"], "compiler SHA-256")
+    compiler_major = require_positive_integer(compiler["major"], "compiler major")
+    if compiler["family"] != compiler_family:
+        fail("compiler identity family differs from profile identity")
+    rust_llvm_major_value = compiler["rust_llvm_major"]
+    rust_llvm_major: int | None
+    if rust_llvm_major_value is None:
+        rust_llvm_major = None
+    else:
+        rust_llvm_major = require_positive_integer(
+            rust_llvm_major_value, "rust LLVM major"
+        )
+    for key in (
+        "version_stdout_sha256",
+        "version_stderr_sha256",
+        "verbose_version_stdout_sha256",
+        "verbose_version_stderr_sha256",
+    ):
+        require_hex64(compiler[key], f"compiler {key}")
+    require_metadata_list(compiler["version_arguments"], "compiler version arguments")
+
+    profile_tool = require_object(metadata["profile_tool"], "profile-tool identity")
+    require_exact_fields(
+        profile_tool, PROFILE_TOOL_IDENTITY_FIELDS, "profile-tool identity"
+    )
+    profile_tool_path = Path(
+        require_string(profile_tool["path"], "profile-tool path")
+    )
+    profile_tool_sha256 = require_hex64(
+        profile_tool["sha256"], "profile-tool SHA-256"
+    )
+    profile_tool_major = require_positive_integer(
+        profile_tool["major"], "profile-tool major"
+    )
+    for key in ("version_stdout_sha256", "version_stderr_sha256"):
+        require_hex64(profile_tool[key], f"profile-tool {key}")
+    require_metadata_list(
+        profile_tool["version_arguments"], "profile-tool version arguments"
+    )
+    if not isinstance(profile_tool["version_stdout"], str) or not isinstance(
+        profile_tool["version_stderr"], str
+    ):
+        fail("profile-tool version outputs must be strings")
+
+    proof = require_object(metadata["backend_proof"], "backend proof")
+    require_exact_fields(proof, BACKEND_PROOF_FIELDS[backend], "backend proof")
+    namespace = argparse.Namespace(
+        backend=backend,
+        profile=profile_path,
+        fingerprint=fingerprint,
+        abi=abi,
+        compiler_family=compiler_family,
+        compiler=compiler_path,
+        compiler_sha256=compiler_sha256,
+        compiler_major=compiler_major,
+        profile_tool=profile_tool_path,
+        profile_tool_sha256=profile_tool_sha256,
+        profile_tool_major=profile_tool_major,
+        rust_llvm_major=rust_llvm_major,
+        sample_metadata=None,
+        go_binary=None,
+        go_binary_sha256=None,
+        go_build_id=None,
+        go_target_package=None,
+        go_target_symbol=[],
+        readelf=None,
+        readelf_sha256=None,
+    )
+    if backend == "clang-sample":
+        namespace.sample_metadata = Path(
+            require_string(proof["sample_metadata_path"], "sample metadata path")
+        )
+        require_hex64(proof["sample_metadata_sha256"], "sample metadata SHA-256")
+    elif backend == "go":
+        namespace.go_binary = Path(
+            require_string(proof["profiled_binary_path"], "profiled Go binary path")
+        )
+        namespace.go_binary_sha256 = require_hex64(
+            proof["profiled_binary_sha256"], "profiled Go binary SHA-256"
+        )
+        namespace.go_build_id = require_string(proof["go_build_id"], "Go build ID")
+        namespace.go_target_package = require_string(
+            proof["target_package"], "Go target package"
+        )
+        namespace.go_target_symbol = require_metadata_list(
+            proof["target_symbols"], "Go target symbols"
+        )
+        namespace.readelf = Path(
+            require_string(proof["readelf_path"], "readelf path")
+        )
+        namespace.readelf_sha256 = require_hex64(
+            proof["readelf_sha256"], "readelf SHA-256"
+        )
+    # The profile hash is checked both against the literal manifest and the
+    # newly observed metadata below.
+    if profile_sha256 != profile["sha256"]:
+        fail("internal profile SHA-256 mismatch")
+    return namespace
+
+
+def command_verify(arguments: argparse.Namespace) -> int:
+    manifest_path = regular_input(arguments.manifest, "dispatcher manifest")
+    expected_metadata_path = Path(os.fspath(manifest_path) + ".metadata.json")
+    if arguments.metadata != expected_metadata_path:
+        fail(
+            "validation metadata path does not match the deterministic "
+            "<manifest>.metadata.json sidecar"
+        )
+    metadata = load_json(arguments.metadata, "validation metadata")
+    namespace = arguments_from_metadata(metadata, manifest_path)
+    manifest_payload = manifest_path.read_bytes()
+    manifest_identity = require_object(metadata["manifest"], "manifest identity")
+    if hashlib.sha256(manifest_payload).hexdigest() != manifest_identity["sha256"]:
+        fail("dispatcher manifest SHA-256 does not match validation metadata")
+    expected_payload, observed_metadata = perform_validation(namespace, manifest_path)
+    if manifest_payload != expected_payload:
+        fail("dispatcher manifest content is not the exact canonical eight-line form")
+    if metadata != observed_metadata:
+        fail("validation metadata no longer matches current complete identities and proof")
+    return 0
+
+
+def add_produce_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--backend", choices=tuple(BACKEND_FAMILY), required=True)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--fingerprint", required=True)
@@ -842,6 +1400,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile-tool-sha256", required=True)
     parser.add_argument("--profile-tool-major", type=int, required=True)
     parser.add_argument("--manifest-out", type=Path, required=True)
+    parser.add_argument("--metadata-out", type=Path, required=True)
     parser.add_argument("--rust-llvm-major", type=int)
     parser.add_argument("--sample-metadata", type=Path)
     parser.add_argument("--go-binary", type=Path)
@@ -851,6 +1410,22 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--go-target-symbol", action="append", default=[])
     parser.add_argument("--readelf", type=Path)
     parser.add_argument("--readelf-sha256")
+
+
+def create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    produce = subparsers.add_parser(
+        "produce", help="prove a profile and atomically publish manifest plus metadata"
+    )
+    add_produce_arguments(produce)
+    produce.set_defaults(function=command_produce)
+    verify = subparsers.add_parser(
+        "verify", help="revalidate a manifest, sidecar, payload, and complete tool tuple"
+    )
+    verify.add_argument("--manifest", type=Path, required=True)
+    verify.add_argument("--metadata", type=Path, required=True)
+    verify.set_defaults(function=command_verify)
     return parser
 
 
@@ -866,7 +1441,7 @@ def main(argv: list[str] | None = None) -> int:
         previous_handlers[item] = signal.getsignal(item)
         signal.signal(item, interrupted)
     try:
-        return command_validate(arguments)
+        return int(arguments.function(arguments))
     except ProfileValidationError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

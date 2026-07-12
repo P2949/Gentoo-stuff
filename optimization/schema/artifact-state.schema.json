@@ -2,66 +2,89 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://gentoo-optimization.invalid/schema/artifact-state.schema.json",
   "title": "Gentoo optimization artifact state",
+  "description": "One canonical installed artifact linked to an exact package component identity.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
     "record_type",
     "owner_cpv",
-    "package_fingerprint",
+    "owner_cp",
+    "owner_component_id",
+    "owner_component_fingerprint",
+    "kind",
+    "format",
     "installed_path",
     "canonical_path",
-    "elf_class",
-    "elf_type",
-    "machine",
+    "content_sha256",
+    "size",
     "abi",
-    "build_id",
-    "text_sha256",
-    "has_symbols",
-    "has_text_relocations",
+    "elf",
     "setuid",
     "setgid",
     "file_capabilities",
     "hardlink_paths",
     "symlink_paths",
-    "bolt_eligibility",
-    "terminal_reason",
-    "bolt_profile_samples",
-    "bolt_profile_stale_percent",
-    "bolt_output_path",
-    "installed_has_bolt_note",
-    "status"
+    "bolt",
+    "final_status"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "record_type": {"const": "artifact"},
-    "owner_cpv": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$"},
-    "package_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "owner_cpv": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*(?:-r[0-9]+)?$"
+    },
+    "owner_cp": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$"
+    },
+    "owner_component_id": {"type": "string", "pattern": "^[A-Za-z0-9+_.@-]+$"},
+    "owner_component_fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "kind": {
+      "enum": [
+        "elf",
+        "static-archive",
+        "relocatable-object",
+        "kernel-module",
+        "ebpf",
+        "gpu-object",
+        "firmware",
+        "bytecode",
+        "script",
+        "data"
+      ]
+    },
+    "format": {"type": "string", "minLength": 1},
     "installed_path": {"type": "string", "pattern": "^/"},
     "canonical_path": {"type": "string", "pattern": "^/"},
-    "elf_class": {"enum": [32, 64]},
-    "elf_type": {"enum": ["EXEC", "DYN", "REL", "CORE", "OTHER"]},
-    "machine": {"type": "string", "minLength": 1},
-    "abi": {"enum": ["amd64", "x86", "other"]},
-    "build_id": {
+    "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "size": {"type": "integer", "minimum": 0},
+    "abi": {
       "oneOf": [
         {"type": "null"},
-        {"type": "string", "pattern": "^[0-9A-Fa-f]+$"}
+        {"enum": ["amd64", "x86", "other"]}
       ]
     },
-    "text_sha256": {
+    "elf": {
       "oneOf": [
         {"type": "null"},
-        {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        {"$ref": "#/$defs/elf"}
       ]
     },
-    "has_symbols": {"type": "boolean"},
-    "has_text_relocations": {"type": "boolean"},
     "setuid": {"type": "boolean"},
     "setgid": {"type": "boolean"},
-    "file_capabilities": {"type": "array", "items": {"type": "string"}},
+    "file_capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
     "hardlink_paths": {
       "type": "array",
+      "minItems": 1,
       "uniqueItems": true,
       "items": {"type": "string", "pattern": "^/"}
     },
@@ -70,37 +93,118 @@
       "uniqueItems": true,
       "items": {"type": "string", "pattern": "^/"}
     },
-    "bolt_eligibility": {"enum": ["eligible", "not-applicable", "terminal-exclusion"]},
+    "bolt": {"$ref": "#/$defs/bolt"},
+    "final_status": {"$ref": "#/$defs/artifact_final_status"}
+  },
+  "$defs": {
     "terminal_reason": {
-      "oneOf": [
-        {"type": "null"},
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["reason_code", "evidence", "reviewed"],
-          "properties": {
-            "reason_code": {"type": "string", "minLength": 1},
-            "evidence": {
-              "type": "array",
-              "minItems": 1,
-              "items": {"type": "string", "minLength": 1}
-            },
-            "reviewed": {"const": true}
-          }
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason_code", "evidence", "reviewed"],
+      "properties": {
+        "reason_code": {"type": "string", "minLength": 1},
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "reviewed": {"const": true}
+      }
+    },
+    "elf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "type",
+        "machine",
+        "build_id",
+        "text_sha256",
+        "has_symbols",
+        "has_text_relocations",
+        "has_executable_sections",
+        "interpreter",
+        "needed"
+      ],
+      "properties": {
+        "class": {"enum": [32, 64]},
+        "type": {"enum": ["EXEC", "DYN", "REL", "CORE", "OTHER"]},
+        "machine": {"type": "string", "minLength": 1},
+        "build_id": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "pattern": "^[0-9a-f]+$"}
+          ]
+        },
+        "text_sha256": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          ]
+        },
+        "has_symbols": {"type": "boolean"},
+        "has_text_relocations": {"type": "boolean"},
+        "has_executable_sections": {"type": "boolean"},
+        "interpreter": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "pattern": "^/"}
+          ]
+        },
+        "needed": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
         }
-      ]
+      }
     },
-    "bolt_profile_samples": {"type": "integer", "minimum": 0},
-    "bolt_profile_stale_percent": {"type": "number", "minimum": 0, "maximum": 100},
-    "bolt_output_path": {
-      "oneOf": [
-        {"type": "null"},
-        {"type": "string", "pattern": "^/"}
-      ]
+    "bolt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eligibility",
+        "terminal_reason",
+        "profile_samples",
+        "profile_stale_percent",
+        "output_path",
+        "installed_has_bolt_note",
+        "status"
+      ],
+      "properties": {
+        "eligibility": {"enum": ["eligible", "not-applicable", "terminal-exclusion"]},
+        "terminal_reason": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/terminal_reason"}]
+        },
+        "profile_samples": {"type": "integer", "minimum": 0},
+        "profile_stale_percent": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "number", "minimum": 0, "maximum": 100}
+          ]
+        },
+        "output_path": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "pattern": "^/"}
+          ]
+        },
+        "installed_has_bolt_note": {"type": "boolean"},
+        "status": {
+          "enum": [
+            "pending",
+            "captured",
+            "profiled",
+            "optimized",
+            "not-applicable",
+            "terminal-exclusion",
+            "failed"
+          ]
+        }
+      }
     },
-    "installed_has_bolt_note": {"type": "boolean"},
-    "status": {
-      "enum": ["pending", "captured", "profiled", "optimized", "not-applicable", "terminal-exclusion", "failed"]
+    "artifact_final_status": {
+      "enum": ["pending", "optimized", "not-applicable", "terminal-exclusion", "failed"]
     }
   }
 }

@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import errno
+import fcntl
 import hashlib
 import json
 import os
@@ -16,6 +18,8 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -26,12 +30,18 @@ FINGERPRINT_RE = re.compile(r"[0-9a-f]{64}")
 BUILD_ID_RE = re.compile(r"Build ID:\s*([0-9A-Fa-f]+)")
 HEADER_RE = re.compile(r"^\s*(Class|Data|Type|Machine):\s*(.*?)\s*$")
 SECTION_RE = re.compile(
-    r"^\s*\[\s*\d+\]\s+(\S+)\s+(\S+)\s+"
+    r"^\s*\[\s*(\d+)\]\s+(\S+)\s+(\S+)\s+"
     r"[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+"
-    r"\S+\s+(\S*)\s+"
+    r"\S+\s+(\S*)\s+(\d+)\s+(\d+)\s+\d+\s*$"
 )
 ELF_MAGIC = b"\x7fELF"
 SYSTEM_ROOT = Path("/usr")
+PRODUCTION_CACHE_ROOT = Path("/var/cache/gentoo-optimization/bolt")
+DEFAULT_LOCK_TIMEOUT_SECONDS = 30.0
+DEFAULT_TOOL_TIMEOUT_SECONDS = 30.0
+DEFAULT_TOOL_KILL_AFTER_SECONDS = 5.0
+TOOL_TIMEOUT_SECONDS = DEFAULT_TOOL_TIMEOUT_SECONDS
+TOOL_KILL_AFTER_SECONDS = DEFAULT_TOOL_KILL_AFTER_SECONDS
 
 
 class BoltArtifactError(RuntimeError):
@@ -50,21 +60,81 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def run_checked(argv: list[str]) -> str:
+def positive_seconds(value: str) -> float:
     try:
-        completed = subprocess.run(
+        result = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a positive number of seconds") from error
+    if result <= 0 or result > 300:
+        raise argparse.ArgumentTypeError("must be greater than zero and at most 300 seconds")
+    return result
+
+
+def nonnegative_seconds(value: str) -> float:
+    try:
+        result = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a nonnegative number of seconds") from error
+    if result < 0 or result > 30:
+        raise argparse.ArgumentTypeError("must be between zero and 30 seconds")
+    return result
+
+
+def terminate_process_group(process: subprocess.Popen[str], kill_after: float) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.communicate(timeout=kill_after)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        process.communicate(timeout=kill_after)
+    except subprocess.TimeoutExpired:
+        fail(f"tool process group did not die after SIGKILL: pid={process.pid}")
+
+
+def run_bounded(argv: list[str]) -> tuple[int, str, str]:
+    environment = os.environ.copy()
+    environment["LC_ALL"] = "C"
+    environment["LANG"] = "C"
+    try:
+        process = subprocess.Popen(
             argv,
-            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=environment,
+            start_new_session=True,
         )
     except OSError as error:
         fail(f"cannot execute {argv[0]}: {error}")
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        fail(f"command failed ({completed.returncode}): {' '.join(argv)}: {detail}")
-    return completed.stdout
+    try:
+        stdout, stderr = process.communicate(timeout=TOOL_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        terminate_process_group(process, TOOL_KILL_AFTER_SECONDS)
+        fail(
+            f"tool timed out after {TOOL_TIMEOUT_SECONDS:g}s "
+            f"(TERM then KILL after {TOOL_KILL_AFTER_SECONDS:g}s): {' '.join(argv)}"
+        )
+    except BaseException:
+        terminate_process_group(process, TOOL_KILL_AFTER_SECONDS)
+        raise
+    return process.returncode, stdout, stderr
+
+
+def run_checked(argv: list[str]) -> str:
+    status, stdout, stderr = run_bounded(argv)
+    if status != 0:
+        detail = stderr.strip() or stdout.strip()
+        fail(f"command failed ({status}): {' '.join(argv)}: {detail}")
+    return stdout
 
 
 def reject_symlink_components(path_text: str, label: str) -> Path:
@@ -81,6 +151,16 @@ def reject_symlink_components(path_text: str, label: str) -> Path:
     return path
 
 
+def validate_private_directory(path: Path, expected_uid: int, label: str) -> None:
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode):
+        fail(f"{label} is not a directory: {path}")
+    if info.st_uid != expected_uid:
+        fail(f"{label} has wrong owner uid {info.st_uid}; expected {expected_uid}: {path}")
+    if stat.S_IMODE(info.st_mode) & 0o022:
+        fail(f"{label} is group/world-writable: {path}")
+
+
 def validate_root(path_text: str, label: str) -> Path:
     unresolved = reject_symlink_components(path_text, label)
     path = unresolved.resolve(strict=True)
@@ -91,16 +171,107 @@ def validate_root(path_text: str, label: str) -> Path:
     return path
 
 
-def validate_cache_root(path_text: str, ed: Path) -> Path:
+def validate_portage_ed(path_text: str, test_mode: bool) -> Path:
+    ed = validate_root(path_text, "ED")
+    if test_mode:
+        return ed
+    if os.geteuid() != 0:
+        fail("production BOLT hooks must run as root")
+    environment_ed = os.environ.get("ED")
+    environment_d = os.environ.get("D")
+    if not environment_ed:
+        fail("production BOLT hook requires active Portage ED")
+    active_ed = validate_root(environment_ed, "active Portage ED")
+    if active_ed != ed:
+        fail(f"--ed does not match active Portage ED: argument={ed}, active={active_ed}")
+    if environment_d:
+        active_d = validate_root(environment_d, "active Portage D")
+        if active_d != ed:
+            fail(f"active Portage D does not match ED: D={active_d}, ED={ed}")
+    builddir_text = os.environ.get("PORTAGE_BUILDDIR")
+    if not builddir_text:
+        fail("production BOLT hook requires PORTAGE_BUILDDIR")
+    builddir = validate_root(builddir_text, "PORTAGE_BUILDDIR")
+    if builddir not in ed.parents:
+        fail(f"active Portage ED is not below PORTAGE_BUILDDIR: ED={ed}, builddir={builddir}")
+    return ed
+
+
+def validate_cache_root(path_text: str, ed: Path | None, test_mode: bool) -> Path:
     raw = reject_symlink_components(path_text, "cache root")
+    if not test_mode:
+        if os.geteuid() != 0:
+            fail("production BOLT cache operations must run as root")
+        if raw != PRODUCTION_CACHE_ROOT:
+            fail(
+                "production cache root must be exactly "
+                f"{PRODUCTION_CACHE_ROOT}; use --test-mode only for hermetic fixtures"
+            )
     raw.mkdir(mode=0o700, parents=True, exist_ok=True)
     reject_symlink_components(str(raw), "cache root")
     path = raw.resolve(strict=True)
     if path == Path("/") or path == SYSTEM_ROOT or SYSTEM_ROOT in path.parents:
         fail(f"refusing unsafe cache root: {path}")
-    if path == ed or ed in path.parents or path in ed.parents:
+    if ed is not None and (path == ed or ed in path.parents or path in ed.parents):
         fail("cache root and ED must be disjoint")
+    validate_private_directory(path, os.geteuid() if test_mode else 0, "cache root")
     return path
+
+
+@contextlib.contextmanager
+def fingerprint_lock(
+    cache: Path,
+    fingerprint: str,
+    timeout_seconds: float,
+    test_mode: bool,
+    test_hold_seconds: float,
+) -> Iterator[None]:
+    locks = cache / "locks"
+    locks.mkdir(mode=0o700, exist_ok=True)
+    reject_symlink_components(str(locks), "BOLT lock root")
+    expected_uid = os.geteuid() if test_mode else 0
+    validate_private_directory(locks, expected_uid, "BOLT lock root")
+    lock_path = locks / f"{fingerprint}.lock"
+    flags = os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW
+    try:
+        descriptor = os.open(lock_path, flags, 0o600)
+    except OSError as error:
+        fail(f"cannot open non-symlink fingerprint lock {lock_path}: {error}")
+    acquired = False
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            fail(f"fingerprint lock is not regular: {lock_path}")
+        if info.st_uid != expected_uid:
+            fail(
+                f"fingerprint lock has wrong owner uid {info.st_uid}; "
+                f"expected {expected_uid}: {lock_path}"
+            )
+        if stat.S_IMODE(info.st_mode) & 0o077:
+            fail(f"fingerprint lock is not mode 0600/private: {lock_path}")
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    fail(
+                        f"timed out after {timeout_seconds:g}s waiting for "
+                        f"fingerprint lock: {lock_path}"
+                    )
+                time.sleep(min(0.05, remaining))
+        if test_hold_seconds:
+            if not test_mode:
+                fail("--test-lock-hold-seconds requires --test-mode")
+            time.sleep(test_hold_seconds)
+        yield
+    finally:
+        if acquired:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
 
 
 def validate_fingerprint(value: str) -> str:
@@ -205,17 +376,21 @@ def dump_text(objcopy: str, path: Path, directory: Path) -> tuple[str | None, in
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     output = directory / "text.section"
     rewritten = directory / "objcopy.output"
-    completed = subprocess.run(
-        [objcopy, "--dump-section", f".text={output}", str(path), str(rewritten)],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    output.unlink(missing_ok=True)
     rewritten.unlink(missing_ok=True)
-    if completed.returncode != 0 or not output.is_file():
-        return None, 0
-    return sha256_file(output), output.stat().st_size
+    try:
+        status, _, _ = run_bounded(
+            [objcopy, "--dump-section", f".text={output}", str(path), str(rewritten)]
+        )
+        if status != 0 or not output.is_file():
+            output.unlink(missing_ok=True)
+            return None, 0
+        return sha256_file(output), output.stat().st_size
+    except BaseException:
+        output.unlink(missing_ok=True)
+        raise
+    finally:
+        rewritten.unlink(missing_ok=True)
 
 
 def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[str, Any]:
@@ -233,12 +408,19 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         fail(f"readelf omitted required ELF headers for {path}: {sorted(missing_headers)}")
 
     section_output = run_checked([readelf, "-SW", str(path)])
-    sections: list[dict[str, str]] = []
+    sections: list[dict[str, Any]] = []
     for line in section_output.splitlines():
         match = SECTION_RE.match(line)
         if match:
             sections.append(
-                {"name": match.group(1), "type": match.group(2), "flags": match.group(3)}
+                {
+                    "index": int(match.group(1)),
+                    "name": match.group(2),
+                    "type": match.group(3),
+                    "flags": match.group(4),
+                    "link": int(match.group(5)),
+                    "info": int(match.group(6)),
+                }
             )
     section_names = {section["name"] for section in sections}
     executable_sections = sorted(
@@ -249,8 +431,18 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         for section in sections
         if section["type"] in ("REL", "RELA", "RELR")
     )
+    executable_indexes = {
+        section["index"] for section in sections if "X" in section["flags"]
+    }
     text_relocations = sorted(
-        name for name in relocation_sections if name in (".rel.text", ".rela.text")
+        section["name"]
+        for section in sections
+        if section["type"] in ("REL", "RELA")
+        and (
+            section["info"] in executable_indexes
+            or re.fullmatch(r"[.]rela?[.]text(?:[.].+)?", section["name"])
+            is not None
+        )
     )
     symtab = any(section["type"] == "SYMTAB" for section in sections)
     symbol_count = 0
@@ -304,6 +496,7 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         "defined_function_symbols": defined_function_symbols,
         "relocation_sections": relocation_sections,
         "text_relocation_sections": text_relocations,
+        "executable_relocation_sections": text_relocations,
         "build_id": build_id,
         "text_sha256": text_sha256,
         "text_size": text_size,
@@ -421,8 +614,8 @@ def load_json(path: Path, schema: str) -> dict[str, Any]:
 
 
 def command_capture(arguments: argparse.Namespace) -> None:
-    ed = validate_root(arguments.ed, "ED")
-    cache = validate_cache_root(arguments.cache_root, ed)
+    ed = validate_portage_ed(arguments.ed, arguments.test_mode)
+    cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
     fingerprint = validate_fingerprint(arguments.fingerprint)
     readelf = shutil.which(arguments.readelf)
     objcopy = shutil.which(arguments.objcopy)
@@ -567,12 +760,7 @@ def command_register(arguments: argparse.Namespace) -> None:
     output_source = output_unresolved.resolve(strict=True)
     if not output_source.is_file():
         fail(f"prepared output is not a regular file: {output_source}")
-    cache_raw = reject_symlink_components(arguments.cache_root, "cache root")
-    cache_raw.mkdir(mode=0o700, parents=True, exist_ok=True)
-    reject_symlink_components(str(cache_raw), "cache root")
-    cache = cache_raw.resolve(strict=True)
-    if cache == Path("/") or cache == SYSTEM_ROOT or SYSTEM_ROOT in cache.parents:
-        fail(f"refusing unsafe cache root: {cache}")
+    cache = validate_cache_root(arguments.cache_root, None, arguments.test_mode)
     fingerprint = validate_fingerprint(arguments.fingerprint)
     readelf = shutil.which(arguments.readelf)
     objcopy = shutil.which(arguments.objcopy)
@@ -738,8 +926,8 @@ def verify_symlinks(ed: Path, expected: Any) -> None:
 
 
 def command_deploy(arguments: argparse.Namespace) -> None:
-    ed = validate_root(arguments.ed, "ED")
-    cache = validate_cache_root(arguments.cache_root, ed)
+    ed = validate_portage_ed(arguments.ed, arguments.test_mode)
+    cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
     fingerprint = validate_fingerprint(arguments.fingerprint)
     readelf = shutil.which(arguments.readelf)
     objcopy = shutil.which(arguments.objcopy)
@@ -905,17 +1093,41 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    def add_common_options(command: argparse.ArgumentParser) -> None:
+        command.add_argument("--cache-root", required=True)
+        command.add_argument("--fingerprint", required=True)
+        command.add_argument(
+            "--lock-timeout-seconds",
+            type=positive_seconds,
+            default=DEFAULT_LOCK_TIMEOUT_SECONDS,
+        )
+        command.add_argument(
+            "--tool-timeout-seconds",
+            type=positive_seconds,
+            default=DEFAULT_TOOL_TIMEOUT_SECONDS,
+        )
+        command.add_argument(
+            "--tool-kill-after-seconds",
+            type=positive_seconds,
+            default=DEFAULT_TOOL_KILL_AFTER_SECONDS,
+        )
+        command.add_argument("--test-mode", action="store_true")
+        command.add_argument(
+            "--test-lock-hold-seconds",
+            type=nonnegative_seconds,
+            default=0.0,
+            help=argparse.SUPPRESS,
+        )
+
     capture = subparsers.add_parser("capture", help="capture eligible unstripped ED inputs")
+    add_common_options(capture)
     capture.add_argument("--ed", required=True)
-    capture.add_argument("--cache-root", required=True)
-    capture.add_argument("--fingerprint", required=True)
     capture.add_argument("--readelf", default="readelf")
     capture.add_argument("--objcopy", default="objcopy")
     capture.set_defaults(function=command_capture)
 
     register = subparsers.add_parser("register-output", help="register one prepared BOLT output")
-    register.add_argument("--cache-root", required=True)
-    register.add_argument("--fingerprint", required=True)
+    add_common_options(register)
     register.add_argument("--artifact-id", required=True)
     register.add_argument("--input", required=True)
     register.add_argument("--output", required=True)
@@ -924,9 +1136,8 @@ def build_parser() -> argparse.ArgumentParser:
     register.set_defaults(function=command_register)
 
     deploy = subparsers.add_parser("deploy", help="deploy exact prepared outputs into ED")
+    add_common_options(deploy)
     deploy.add_argument("--ed", required=True)
-    deploy.add_argument("--cache-root", required=True)
-    deploy.add_argument("--fingerprint", required=True)
     deploy.add_argument("--readelf", default="readelf")
     deploy.add_argument("--objcopy", default="objcopy")
     deploy.set_defaults(function=command_deploy)
@@ -934,8 +1145,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    global TOOL_KILL_AFTER_SECONDS, TOOL_TIMEOUT_SECONDS
     parser = build_parser()
     arguments = parser.parse_args()
+    TOOL_TIMEOUT_SECONDS = arguments.tool_timeout_seconds
+    TOOL_KILL_AFTER_SECONDS = arguments.tool_kill_after_seconds
     handled_signals = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
     previous_handlers: dict[signal.Signals, Any] = {}
 
@@ -948,7 +1162,21 @@ def main() -> int:
         previous_handlers[item] = signal.getsignal(item)
         signal.signal(item, interrupted)
     try:
-        arguments.function(arguments)
+        fingerprint = validate_fingerprint(arguments.fingerprint)
+        ed = (
+            validate_portage_ed(arguments.ed, arguments.test_mode)
+            if hasattr(arguments, "ed")
+            else None
+        )
+        cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
+        with fingerprint_lock(
+            cache,
+            fingerprint,
+            arguments.lock_timeout_seconds,
+            arguments.test_mode,
+            arguments.test_lock_hold_seconds,
+        ):
+            arguments.function(arguments)
     except BoltArtifactError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

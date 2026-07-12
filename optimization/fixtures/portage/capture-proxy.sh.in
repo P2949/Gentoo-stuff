@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ -e @FAIL_SWITCH@ ]]; then
+    exit 42
+fi
+exec @CAPTURE_TOOL@ "$@"

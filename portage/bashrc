@@ -196,15 +196,67 @@ gentoo_opt_resolve_tool() {
     GENTOO_OPT_RESOLVED_TOOL=${path}
 }
 
+# Portage implements FEATURES=ccache by prepending a masquerade directory to
+# PATH.  Resolving one of those symlinks with realpath yields /usr/bin/ccache,
+# which is the wrapper rather than the compiler whose identity must enter the
+# package fingerprint.  Active lanes disable caching and deliberately resolve
+# past all recognized compiler-cache/distribution wrappers.  An explicit path
+# to a wrapper is rejected instead of guessed through.
+gentoo_opt_is_compiler_wrapper() {
+    local path=$1 canonical basename
+    canonical=$(realpath -e -- "${path}") || return 1
+    basename=${canonical##*/}
+    case ${basename} in
+        ccache|sccache|distcc|icecc) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+gentoo_opt_resolve_compiler_tool() {
+    local variable=$1 fallback=$2 value directory candidate canonical
+    value=${!variable:-${fallback}}
+    [[ ${value} != *[$'\n\r\t ']* && ${value} != *[\;\&\|\<\>\`]* ]] || {
+        gentoo_opt_error "${variable} must name one compiler command without shell syntax"
+        return 1
+    }
+    if [[ ${value} == */* ]]; then
+        [[ -x ${value} ]] || {
+            gentoo_opt_error "cannot execute ${variable} compiler: ${value}"
+            return 1
+        }
+        if gentoo_opt_is_compiler_wrapper "${value}"; then
+            gentoo_opt_error "explicit ${variable} resolves to a compiler wrapper: ${value}"
+            return 1
+        fi
+        canonical=$(realpath -e -- "${value}") || return 1
+        GENTOO_OPT_RESOLVED_TOOL=${canonical}
+        return 0
+    fi
+
+    while IFS= read -r -d '' directory; do
+        gentoo_opt_safe_absolute_path "${directory}" || continue
+        candidate=${directory}/${value}
+        [[ -f ${candidate} && -x ${candidate} ]] || continue
+        if gentoo_opt_is_compiler_wrapper "${candidate}"; then
+            continue
+        fi
+        canonical=$(realpath -e -- "${candidate}") || continue
+        GENTOO_OPT_RESOLVED_TOOL=${canonical}
+        return 0
+    done < <(printf '%s' "${PATH-}" | tr ':' '\0')
+    gentoo_opt_error "cannot resolve unwrapped ${variable} compiler: ${value}"
+    return 1
+}
+
 gentoo_opt_detect_compiler_family() {
-    local requested=${1} variable fallback version
+    local requested=${1} variable fallback version cc_path
     case ${requested} in
         clang|gcc) variable=CC; fallback=cc ;;
         rust) variable=RUSTC; fallback=rustc ;;
         go) variable=GO; fallback=go ;;
         *) gentoo_opt_error "unsupported compiler family request: ${requested}"; return 1 ;;
     esac
-    gentoo_opt_resolve_tool "${variable}" "${fallback}" || return 1
+    gentoo_opt_resolve_compiler_tool "${variable}" "${fallback}" || return 1
     if [[ ${requested} == go ]]; then
         version=$("${GENTOO_OPT_RESOLVED_TOOL}" version 2>&1)
     else
@@ -229,6 +281,24 @@ gentoo_opt_detect_compiler_family() {
     fi
     GENTOO_OPT_ACTIVE_COMPILER_FAMILY=${requested}
     GENTOO_OPT_ACTIVE_COMPILER=${GENTOO_OPT_RESOLVED_TOOL}
+
+    if [[ ${requested} == clang || ${requested} == gcc ]]; then
+        cc_path=${GENTOO_OPT_ACTIVE_COMPILER}
+        gentoo_opt_resolve_compiler_tool CXX c++ || return 1
+        version=$("${GENTOO_OPT_RESOLVED_TOOL}" --version 2>&1) || {
+            gentoo_opt_error "cannot query C++ compiler identity: ${GENTOO_OPT_RESOLVED_TOOL}"
+            return 1
+        }
+        case ${requested} in
+            clang) [[ ${version} == *clang* && ${version} != *rustc* ]] ;;
+            gcc) [[ ${version} != *clang* && ( ${version} == *gcc* || ${version} == *'g++'* ) ]] ;;
+        esac || {
+            gentoo_opt_error "C/C++ compiler-family mismatch: requested=${requested}, CC=${cc_path}, CXX=${GENTOO_OPT_RESOLVED_TOOL}"
+            return 1
+        }
+        GENTOO_OPT_ACTIVE_CXX=${GENTOO_OPT_RESOLVED_TOOL}
+        export GENTOO_OPT_ACTIVE_CXX
+    fi
 }
 
 gentoo_opt_profile_backend_for_mode() {
@@ -344,49 +414,40 @@ gentoo_opt_read_profile_manifest() {
 }
 
 gentoo_opt_validate_profile_format() {
-    local backend=$1 profile=$2 tool
-    if [[ -n ${GENTOO_OPT_PROFILE_VALIDATOR-} ]]; then
-        gentoo_opt_safe_absolute_path "${GENTOO_OPT_PROFILE_VALIDATOR}" || {
-            gentoo_opt_error 'GENTOO_OPT_PROFILE_VALIDATOR must be an absolute path'; return 1;
+    local source_path repository_root expected_validator validator metadata
+    source_path=$(realpath -e -- "${BASH_SOURCE[0]}") || {
+        gentoo_opt_error 'cannot resolve the strict dispatcher source path'; return 1;
+    }
+    repository_root=$(realpath -e -- "$(dirname -- "${source_path}")/..") || {
+        gentoo_opt_error 'cannot resolve the strict dispatcher repository root'; return 1;
+    }
+    expected_validator=${repository_root}/scripts/optimization/pgo/validate-profile.py
+    validator=${GENTOO_OPT_PROFILE_VALIDATOR:-${expected_validator}}
+    if [[ ${validator} != "${expected_validator}" ]]; then
+        [[ ${GENTOO_OPT_DISPATCHER_TEST_MODE:-0} == 1 && -z ${EBUILD_PHASE-} ]] || {
+            gentoo_opt_error 'production profile use cannot override the authoritative validator'; return 1;
         }
-        [[ -x ${GENTOO_OPT_PROFILE_VALIDATOR} ]] || {
-            gentoo_opt_error "profile validator is not executable: ${GENTOO_OPT_PROFILE_VALIDATOR}"; return 1;
-        }
-        "${GENTOO_OPT_PROFILE_VALIDATOR}" --backend "${backend}" \
-            --profile "${profile}" --fingerprint "${GENTOO_OPT_ACTIVE_FINGERPRINT}" \
-            --abi "${GENTOO_OPT_ACTIVE_ABI}" \
-            --compiler-family "${GENTOO_OPT_ACTIVE_COMPILER_FAMILY}" || {
-            gentoo_opt_error "${backend} profile format validation failed"; return 1;
-        }
-        return 0
     fi
-    case ${backend} in
-        clang-ir|rust)
-            gentoo_opt_resolve_tool LLVM_PROFDATA llvm-profdata || return 1
-            "${GENTOO_OPT_RESOLVED_TOOL}" show "${profile}" >/dev/null || {
-                gentoo_opt_error "${backend} indexed-profile validation failed"; return 1;
-            }
-            ;;
-        clang-sample)
-            gentoo_opt_resolve_tool LLVM_PROFDATA llvm-profdata || return 1
-            "${GENTOO_OPT_RESOLVED_TOOL}" show --sample "${profile}" >/dev/null || {
-                gentoo_opt_error 'Clang sample-profile validation failed'; return 1;
-            }
-            ;;
-        gcc)
-            gentoo_opt_resolve_tool GCOV_TOOL gcov-tool || return 1
-            "${GENTOO_OPT_RESOLVED_TOOL}" overlap "${profile}" "${profile}" >/dev/null || {
-                gentoo_opt_error 'GCC gcov-profile validation failed'; return 1;
-            }
-            ;;
-        go)
-            tool=${GENTOO_OPT_ACTIVE_COMPILER}
-            "${tool}" tool pprof -top "${profile}" >/dev/null || {
-                gentoo_opt_error 'Go pprof validation failed'; return 1;
-            }
-            ;;
-        *) gentoo_opt_error "no validator for profile backend: ${backend}"; return 1 ;;
-    esac
+    gentoo_opt_safe_absolute_path "${validator}" || {
+        gentoo_opt_error 'profile validator must be a safe absolute path'; return 1;
+    }
+    [[ -f ${validator} && -x ${validator} && ! -L ${validator} ]] || {
+        gentoo_opt_error "profile validator is unavailable, non-regular, or symlinked: ${validator}"; return 1;
+    }
+    gentoo_opt_safe_absolute_path "${GENTOO_OPT_PROFILE_METADATA-}" || {
+        gentoo_opt_error 'profile use requires a safe absolute GENTOO_OPT_PROFILE_METADATA'; return 1;
+    }
+    metadata=${GENTOO_OPT_PROFILE_METADATA}
+    [[ ${metadata} == "${GENTOO_OPT_PROFILE_MANIFEST}.metadata.json" ]] || {
+        gentoo_opt_error 'profile metadata must be the deterministic <manifest>.metadata.json sidecar'; return 1;
+    }
+    [[ -f ${metadata} && -s ${metadata} && ! -L ${metadata} ]] || {
+        gentoo_opt_error "profile metadata is absent, empty, or symlinked: ${metadata}"; return 1;
+    }
+    "${validator}" verify --manifest "${GENTOO_OPT_PROFILE_MANIFEST}" \
+        --metadata "${metadata}" || {
+        gentoo_opt_error 'authoritative profile manifest/sidecar verification failed'; return 1;
+    }
 }
 
 gentoo_opt_prepare_profile_path() {
@@ -447,12 +508,23 @@ gentoo_opt_require_rust_target_isolation() {
     export CARGO_BUILD_TARGET
 }
 
+gentoo_opt_require_go_single_main() {
+    [[ ${GENTOO_OPT_GO_MAIN_COUNT-} == 1 ]] || {
+        gentoo_opt_error 'generic Go PGO requires a proven single-main package'
+        return 1
+    }
+    [[ ${GENTOO_OPT_GO_BINARY-} =~ ^[A-Za-z0-9_.+-]+$ ]] || {
+        gentoo_opt_error 'generic Go PGO requires one exact GENTOO_OPT_GO_BINARY name'
+        return 1
+    }
+}
+
 gentoo_opt_apply_primary_mode() {
     local mode=$1 flag
     GENTOO_OPT_ACTIVE_BACKEND=$(gentoo_opt_profile_backend_for_mode "${mode}") || return 1
+    gentoo_opt_disable_ccache
     gentoo_opt_detect_compiler_family "$(gentoo_opt_profile_family_for_mode "${mode}")" || return 1
     gentoo_opt_prepare_profile_path "${mode}" || return 1
-    gentoo_opt_disable_ccache
     case ${mode} in
         clang-ir-generate)
             flag="-fprofile-instr-generate=${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
@@ -497,6 +569,7 @@ gentoo_opt_apply_primary_mode() {
             gentoo_opt_append_flag_once RUSTFLAGS "-Cprofile-use=${GENTOO_OPT_PROFILE_PATH}"
             ;;
         go-use)
+            gentoo_opt_require_go_single_main || return 1
             gentoo_opt_append_flag_once GOFLAGS "-pgo=${GENTOO_OPT_PROFILE_PATH}"
             ;;
     esac
@@ -557,7 +630,7 @@ gentoo_opt_apply_readiness_flags() {
 
 gentoo_opt_log_selection() {
     local profile=${GENTOO_OPT_PROFILE_PATH:--}
-    local message="mode=${GENTOO_OPT_MODE} bolt_stage=${GENTOO_OPT_ACTIVE_BOLT_STAGE} backend=${GENTOO_OPT_ACTIVE_BACKEND:-none} abi=${GENTOO_OPT_ACTIVE_ABI} compiler=${GENTOO_OPT_ACTIVE_COMPILER_FAMILY:-none} fingerprint=${GENTOO_OPT_ACTIVE_FINGERPRINT} profile=${profile}"
+    local message="mode=${GENTOO_OPT_MODE} active_mode=${GENTOO_OPT_ACTIVE_MODE} bolt_stage=${GENTOO_OPT_ACTIVE_BOLT_STAGE} backend=${GENTOO_OPT_ACTIVE_BACKEND:-none} abi=${GENTOO_OPT_ACTIVE_ABI} compiler=${GENTOO_OPT_ACTIVE_COMPILER_FAMILY:-none} cc=${GENTOO_OPT_ACTIVE_COMPILER:-none} cxx=${GENTOO_OPT_ACTIVE_CXX:-none} fingerprint=${GENTOO_OPT_ACTIVE_FINGERPRINT} profile=${profile}"
     printf 'gentoo-optimization: %s\n' "${message}" >&2
     if [[ -n ${GENTOO_OPT_LOG_FILE-} ]]; then
         gentoo_opt_safe_absolute_path "${GENTOO_OPT_LOG_FILE}" || {
@@ -595,7 +668,10 @@ rust-generate|rust-use|go-use) ;;
         *) gentoo_opt_error "unknown GENTOO_OPT_MODE: ${mode}"; return 1 ;;
     esac
     case ${bolt_stage} in off|capture|deploy) ;; *) gentoo_opt_error "unknown GENTOO_OPT_BOLT_STAGE: ${bolt_stage}"; return 1 ;; esac
-    GENTOO_OPT_MODE=${mode}
+    # Preserve the requested selector (especially bolt-capture/bolt-deploy)
+    # across Portage's saved environment and misc-functions subprocess.  The
+    # normalized primary lane has its own variable.
+    GENTOO_OPT_ACTIVE_MODE=${mode}
     GENTOO_OPT_ACTIVE_BOLT_STAGE=${bolt_stage}
     if [[ ${mode} == off && ${bolt_stage} == off &&
         ${GENTOO_OPT_PROFILE_MAP_READY:-0} != 1 &&
@@ -619,6 +695,7 @@ rust-generate|rust-use|go-use) ;;
             ${GENTOO_OPT_COMPILER_FAMILY-} == go ]] || {
             gentoo_opt_error 'readiness-only mode requires an explicit supported compiler family'; return 1;
         }
+        gentoo_opt_disable_ccache
         gentoo_opt_detect_compiler_family "${GENTOO_OPT_COMPILER_FAMILY}" || return 1
         GENTOO_OPT_ACTIVE_BACKEND=none
     fi
@@ -705,33 +782,83 @@ gentoo_opt_post_src_install() {
     esac
 }
 
-# Portage profile/package bashrc files can already have supplied this hook.
-# Preserve and run it first instead of silently clobbering it when the user
-# bashrc is sourced later in __source_all_bashrcs().
-if [[ ${GENTOO_OPT_POST_HOOK_INSTALLED:-0} != 1 ]] && \
-    declare -F post_src_install >/dev/null; then
-    gentoo_opt_previous_post_src_install_definition=$(declare -f post_src_install)
-    gentoo_opt_previous_post_src_install_definition=${gentoo_opt_previous_post_src_install_definition/#post_src_install/gentoo_opt_previous_post_src_install}
-    eval "${gentoo_opt_previous_post_src_install_definition}"
-    unset gentoo_opt_previous_post_src_install_definition
-fi
-GENTOO_OPT_POST_HOOK_INSTALLED=1
-
-post_src_install() {
-    if declare -F gentoo_opt_previous_post_src_install >/dev/null; then
-        if ! gentoo_opt_previous_post_src_install "$@"; then
-            gentoo_opt_abort 'the pre-existing post_src_install hook failed' || return 1
-        fi
+gentoo_opt_invalidate_installed_marker() {
+    local builddir=${PORTAGE_BUILDDIR-} portage_tmp=${PORTAGE_TMPDIR-} marker
+    gentoo_opt_safe_absolute_path "${builddir}" || {
+        gentoo_opt_error 'cannot invalidate .installed: unsafe or missing PORTAGE_BUILDDIR'
+        return 1
+    }
+    gentoo_opt_safe_absolute_path "${portage_tmp}" || {
+        gentoo_opt_error 'cannot invalidate .installed: unsafe or missing PORTAGE_TMPDIR'
+        return 1
+    }
+    [[ ${builddir} == "${portage_tmp%/}/portage/"* ]] || {
+        gentoo_opt_error 'cannot invalidate .installed outside PORTAGE_TMPDIR/portage'
+        return 1
+    }
+    marker=${builddir}/.installed
+    if [[ -L ${marker} || ( -e ${marker} && ! -f ${marker} ) ]]; then
+        gentoo_opt_error 'cannot invalidate a non-regular or symlinked .installed marker'
+        return 1
     fi
-    if ! gentoo_opt_post_src_install "$@"; then
-        gentoo_opt_abort 'the BOLT post_src_install transaction failed' || return 1
+    if [[ -e ${marker} ]]; then
+        rm -f -- "${marker}" || {
+            gentoo_opt_error 'failed to remove the Portage .installed marker'
+            return 1
+        }
     fi
+    [[ ! -e ${marker} && ! -L ${marker} ]]
 }
 
-if [[ ${EBUILD_PHASE:-} == depend ]]; then
-    if ! gentoo_opt_depend_phase_preflight; then
-        gentoo_opt_abort 'optimization mode preflight failed during dependency evaluation' || return 1
+gentoo_opt_post_install_abort() {
+    local message=$1
+    if ! gentoo_opt_invalidate_installed_marker; then
+        gentoo_opt_abort "${message}; .installed invalidation also failed" || return 1
     fi
-elif ! gentoo_opt_dispatch; then
-    gentoo_opt_abort 'optimization mode dispatch failed' || return 1
+    gentoo_opt_abort "${message}" || return 1
+}
+
+# Production capture/deployment is invoked by the repository-wide
+# metadata/install-qa-check.d hook.  Portage runs that stable interface after
+# the package's post_src_install and before estrip.  A direct post_src_install
+# wrapper is retained only for the unset-EBUILD_PHASE hermetic emulator.
+if [[ -z ${EBUILD_PHASE-} ]]; then
+    gentoo_opt_current_post_src_install_definition=''
+    if declare -F post_src_install >/dev/null; then
+        gentoo_opt_current_post_src_install_definition=$(declare -f post_src_install)
+    fi
+    if [[ ${gentoo_opt_current_post_src_install_definition} != \
+        *gentoo-optimization-dispatcher-post-hook* ]]; then
+        unset -f gentoo_opt_previous_post_src_install 2>/dev/null || :
+        if [[ -n ${gentoo_opt_current_post_src_install_definition} ]]; then
+            gentoo_opt_previous_post_src_install_definition=${gentoo_opt_current_post_src_install_definition/#post_src_install/gentoo_opt_previous_post_src_install}
+            eval "${gentoo_opt_previous_post_src_install_definition}"
+            unset gentoo_opt_previous_post_src_install_definition
+        fi
+        post_src_install() {
+            : gentoo-optimization-dispatcher-post-hook
+            if declare -F gentoo_opt_previous_post_src_install >/dev/null; then
+                if ! gentoo_opt_previous_post_src_install "$@"; then
+                    gentoo_opt_post_install_abort 'the pre-existing post_src_install hook failed' || return 1
+                fi
+            fi
+            if ! gentoo_opt_post_src_install "$@"; then
+                gentoo_opt_post_install_abort 'the BOLT post_src_install transaction failed' || return 1
+            fi
+        }
+    fi
+    unset gentoo_opt_current_post_src_install_definition
 fi
+
+case ${EBUILD_PHASE-} in
+    ''|setup|unpack|prepare|configure|compile|test|install)
+        if ! gentoo_opt_dispatch; then
+            gentoo_opt_abort 'optimization mode dispatch failed' || return 1
+        fi
+        ;;
+    *)
+        if ! gentoo_opt_depend_phase_preflight; then
+            gentoo_opt_abort 'optimization mode preflight failed during a non-build phase' || return 1
+        fi
+        ;;
+esac
