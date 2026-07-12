@@ -865,6 +865,21 @@ def validate_sample_source(
 def extract_binary_identity(
     binary: Path, readelf: Path, objcopy: Path
 ) -> tuple[str, str]:
+    try:
+        original_stat = binary.stat()
+    except OSError as exc:
+        fail(f"cannot stat profiled binary before identity extraction: {exc}")
+    original_identity = (
+        original_stat.st_dev,
+        original_stat.st_ino,
+        original_stat.st_mode,
+        original_stat.st_uid,
+        original_stat.st_gid,
+        original_stat.st_nlink,
+        original_stat.st_size,
+        original_stat.st_mtime_ns,
+    )
+    original_sha256 = sha256_file(binary)
     notes_stdout, _notes_stderr = run_tool(
         readelf, ["-n", os.fspath(binary)], "binary build-ID inspection"
     )
@@ -877,9 +892,15 @@ def extract_binary_identity(
     build_id = require_build_id(build_ids.pop())
     with tempfile.TemporaryDirectory(prefix="gentoo-sample-text-") as directory:
         text_path = Path(directory) / "text.section"
+        rewritten_path = Path(directory) / "rewritten-elf"
         run_tool(
             objcopy,
-            ["--dump-section", f".text={text_path}", os.fspath(binary)],
+            [
+                "--dump-section",
+                f".text={text_path}",
+                os.fspath(binary),
+                os.fspath(rewritten_path),
+            ],
             "binary .text extraction",
         )
         try:
@@ -888,7 +909,29 @@ def extract_binary_identity(
             fail(f"objcopy did not create the requested .text payload: {exc}")
         if not stat.S_ISREG(text_stat.st_mode) or text_stat.st_size == 0:
             fail("profiled binary has no nonempty regular .text payload")
+        try:
+            rewritten_stat = rewritten_path.lstat()
+        except OSError as exc:
+            fail(f"objcopy did not create its separate scratch ELF output: {exc}")
+        if not stat.S_ISREG(rewritten_stat.st_mode) or rewritten_stat.st_size == 0:
+            fail("objcopy scratch ELF output is not a nonempty regular file")
         text_sha256 = sha256_file(text_path)
+    try:
+        final_stat = binary.stat()
+    except OSError as exc:
+        fail(f"cannot stat profiled binary after identity extraction: {exc}")
+    final_identity = (
+        final_stat.st_dev,
+        final_stat.st_ino,
+        final_stat.st_mode,
+        final_stat.st_uid,
+        final_stat.st_gid,
+        final_stat.st_nlink,
+        final_stat.st_size,
+        final_stat.st_mtime_ns,
+    )
+    if final_identity != original_identity or sha256_file(binary) != original_sha256:
+        fail("profiled binary changed during read-only identity extraction")
     return build_id, text_sha256
 
 
@@ -903,15 +946,42 @@ def ensure_new_regular_destination(path: Path, label: str) -> None:
     fail(f"{label} already exists: {path}")
 
 
+def dispatcher_manifest_bytes(metadata: dict[str, object]) -> bytes:
+    package = metadata["package"]
+    compiler = metadata["compiler"]
+    if not isinstance(package, dict) or not isinstance(compiler, dict):
+        fail("internal sample metadata cannot produce a dispatcher manifest")
+    profile_path = require_string(metadata["profile_path"], "profile_path")
+    if re.search(r"[\s=]", profile_path):
+        fail("profile_path cannot be represented safely in the dispatcher manifest")
+    fields = (
+        ("schema", "gentoo-optimization-profile-v1"),
+        ("backend", "clang-sample"),
+        ("fingerprint", require_hex64(package.get("fingerprint"), "fingerprint")),
+        ("abi", require_abi(package.get("abi"))),
+        ("compiler_family", "clang"),
+        ("profile_path", profile_path),
+        (
+            "profile_sha256",
+            require_hex64(metadata["profile_sha256"], "profile_sha256"),
+        ),
+        ("validation_status", "passed"),
+    )
+    return "".join(f"{key}={value}\n" for key, value in fields).encode("ascii")
+
+
 def sample_convert_command(arguments: argparse.Namespace) -> int:
     profile = arguments.profile_out
     metadata_out = arguments.metadata_out
+    manifest_out = arguments.manifest_out
     if profile.name != "sample.prof":
         fail("--profile-out must end in the exact filename sample.prof")
     ensure_new_regular_destination(profile, "sample profile output")
     ensure_new_regular_destination(metadata_out, "sample metadata output")
-    if os.path.normpath(profile) == os.path.normpath(metadata_out):
-        fail("--profile-out and --metadata-out must be distinct")
+    ensure_new_regular_destination(manifest_out, "dispatcher manifest output")
+    destinations = {os.path.normpath(path) for path in (profile, metadata_out, manifest_out)}
+    if len(destinations) != 3:
+        fail("--profile-out, --metadata-out and --manifest-out must be distinct")
     partial = profile.with_name("sample.prof.partial")
     validate_output_destination(partial)
     try:
@@ -1017,6 +1087,7 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
             metadata_out,
             (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
         )
+        atomic_write(manifest_out, dispatcher_manifest_bytes(metadata))
         completed = True
         print(metadata["profile_sha256"])
         return 0
@@ -1024,20 +1095,33 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
         partial.unlink(missing_ok=True)
         if not completed:
             metadata_out.unlink(missing_ok=True)
+            manifest_out.unlink(missing_ok=True)
             profile.unlink(missing_ok=True)
         for signum, old_handler in old_handlers.items():
             signal.signal(signum, old_handler)
 
 
 def sample_record_command(arguments: argparse.Namespace) -> int:
-    validate_output_destination(arguments.metadata_out)
-    if os.path.normpath(arguments.metadata_out) == os.path.normpath(arguments.profile):
-        fail("--metadata-out must not replace the sample profile")
+    ensure_new_regular_destination(arguments.metadata_out, "sample metadata output")
+    ensure_new_regular_destination(arguments.manifest_out, "dispatcher manifest output")
+    destinations = {
+        os.path.normpath(arguments.profile),
+        os.path.normpath(arguments.metadata_out),
+        os.path.normpath(arguments.manifest_out),
+    }
+    if len(destinations) != 3:
+        fail("sample profile, metadata and dispatcher manifest paths must be distinct")
     metadata = sample_identity(arguments)
-    atomic_write(
-        arguments.metadata_out,
-        (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
-    )
+    try:
+        atomic_write(
+            arguments.metadata_out,
+            (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+        )
+        atomic_write(arguments.manifest_out, dispatcher_manifest_bytes(metadata))
+    except BaseException:
+        arguments.metadata_out.unlink(missing_ok=True)
+        arguments.manifest_out.unlink(missing_ok=True)
+        raise
     print(metadata["profile_sha256"])
     return 0
 
@@ -1114,6 +1198,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     add_sample_identity_arguments(sample_record_parser)
     sample_record_parser.add_argument("--metadata-out", type=Path, required=True)
+    sample_record_parser.add_argument("--manifest-out", type=Path, required=True)
     sample_record_parser.set_defaults(func=sample_record_command)
 
     sample_validate_parser = subparsers.add_parser(
@@ -1137,6 +1222,7 @@ def create_parser() -> argparse.ArgumentParser:
     sample_convert_parser.add_argument("--perf-data", type=Path, required=True)
     sample_convert_parser.add_argument("--profile-out", type=Path, required=True)
     sample_convert_parser.add_argument("--metadata-out", type=Path, required=True)
+    sample_convert_parser.add_argument("--manifest-out", type=Path, required=True)
     sample_convert_parser.add_argument(
         "--timeout-seconds", type=float, default=600.0
     )
