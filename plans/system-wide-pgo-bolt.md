@@ -1441,7 +1441,7 @@ Start from a reviewed default such as:
 -split-functions
 -split-all-cold
 -split-eh
--icf=1
+-icf=safe
 -use-gnu-stack
 -dyno-stats
 ```

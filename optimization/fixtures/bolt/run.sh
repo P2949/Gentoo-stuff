@@ -427,7 +427,7 @@ profile_and_bolt() {
         -split-functions \
         -split-all-cold \
         -split-eh \
-        -icf=1 \
+        -icf=safe \
         -use-gnu-stack \
         -update-debug-sections \
         -dyno-stats
