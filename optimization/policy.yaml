@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "policy_revision": "phase2-v1",
+  "active_generation": null,
+  "supported_abis": [
+    "amd64",
+    "x86"
+  ],
+  "pgo_modes": [
+    "clang-ir-generate",
+    "clang-ir-use",
+    "clang-sample-use",
+    "gcc-generate",
+    "gcc-use",
+    "rust-generate",
+    "rust-use",
+    "go-use",
+    "ebuild-native"
+  ],
+  "bolt": {
+    "eligible_elf_classes": [64],
+    "eligible_elf_types": [
+      "EXEC",
+      "DYN"
+    ],
+    "eligible_machines": [
+      "Advanced Micro Devices X86-64"
+    ],
+    "default_options": [
+      "-reorder-blocks=ext-tsp",
+      "-reorder-functions=cdsort",
+      "-split-functions",
+      "-split-all-cold",
+      "-split-eh",
+      "-icf=safe",
+      "-update-debug-sections",
+      "-dyno-stats"
+    ]
+  },
+  "profile_roots": {
+    "clang_ir": "/var/cache/gentoo-optimization/pgo/clang-ir",
+    "clang_sample": "/var/cache/gentoo-optimization/pgo/clang-sample",
+    "gcc": "/var/cache/gentoo-optimization/pgo/gcc",
+    "rust": "/var/cache/gentoo-optimization/pgo/rust",
+    "go": "/var/cache/gentoo-optimization/pgo/go",
+    "ebuild_native": "/var/cache/gentoo-optimization/pgo/ebuild-native"
+  },
+  "state_root": "/var/lib/gentoo-optimization",
+  "cache_root": "/var/cache/gentoo-optimization"
+}
