@@ -54,8 +54,34 @@ axes. A caller must never substitute one family path for another.
 
 ## Clang sample profiles
 
-After `llvm-profgen` writes the final `sample.prof`, record it with the exact
-package, compiler, ABI and input-ELF identity:
+Produce a profile from exact binary and perf inputs with `sample-convert`:
+
+```sh
+scripts/optimization/pgo/profile-identity.py sample-convert \
+    --llvm-profgen /usr/lib/llvm/22/bin/llvm-profgen \
+    --llvm-profdata /usr/lib/llvm/22/bin/llvm-profdata \
+    --readelf /usr/lib/llvm/22/bin/llvm-readelf \
+    --objcopy /usr/lib/llvm/22/bin/llvm-objcopy \
+    --binary /absolute/path/to/unstripped-input \
+    --perf-data /absolute/path/to/perf.data \
+    --profile-out /absolute/profile/tree/sample.prof \
+    --metadata-out /absolute/profile/tree/sample-metadata.json \
+    --cpv dev-util/example-1.2.3-r1 --fingerprint "${fingerprint}" \
+    --abi amd64 --clang-major 22
+```
+
+`--debug-binary` supplies a separate exact DWARF input when required. The
+producer invokes LLVM tools of the requested major, derives the GNU build ID
+and `.text` SHA-256 from the binary, and records hashes of the binary, optional
+debug binary, perf data, tools, command, profile and validation output.
+`llvm-profgen` can write only `sample.prof.partial`; a successful sample-aware
+validation precedes the atomic rename to `sample.prof`. Ordinary failure,
+timeout, missing output and interruption remove the partial and any unpublished
+transaction outputs. Existing final profiles are immutable and are never
+reused or overwritten.
+
+If a trusted external process has already written the final `sample.prof`,
+record it with the exact package, compiler, ABI and input-ELF identity:
 
 ```sh
 scripts/optimization/pgo/profile-identity.py sample-record \
@@ -74,3 +100,7 @@ build ID, and `.text` SHA-256. An IR instrumentation profile, a profile named
 `merged.profdata`, a missing profile, an LLVM-major mismatch, or changed
 metadata is rejected. The dispatcher consumes this family only with
 `-fprofile-sample-use`; this tool never emits compiler flags.
+
+The obsolete `scripts/pgo/make-sample-prof.sh` entry point is retained only as
+an unconditional error explaining the migration. It cannot create a weak
+`CATEGORY/PN/merged.profdata` sample profile.

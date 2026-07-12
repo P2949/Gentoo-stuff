@@ -864,6 +864,8 @@ The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the 
 
 ## 11.5 Implement BOLT input capture hook
 
+- [x] Implement and validate non-mutating, hardlink-aware exact ELF capture from `${ED}`.
+
 During `post_src_install`, when `GENTOO_OPT_MODE=bolt-capture` or an equivalent marker is active:
 
 1. enumerate regular ELF files under `${ED}`;
@@ -874,7 +876,11 @@ During `post_src_install`, when `GENTOO_OPT_MODE=bolt-capture` or an equivalent 
 6. write an artifact manifest;
 7. never modify `${ED}` in capture mode.
 
+The capture transaction enumerates every regular inode group and symlink below the supplied staging root, refuses external hardlinks and unsafe/symlinked roots, and copies each eligible inode once with no-atime reads. ELF64 x86-64 `ET_EXEC`/`ET_DYN` readiness requires executable code, a nonempty `.text`, a defined function symbol, full symbols, `.rel[a].text`, and a GNU build ID. The manifest records the full file hash, build ID, `.text` hash, class/type/machine, hardlink/symlink topology, mode/UID/GID, xattrs, and file capability. Automatic failures are deliberately named `readiness_failures`; they remain remediable pending classifications and never become terminal exclusions without separate reviewed evidence. Captured objects are private mode `0600`, and before/after tree evidence proves capture does not mutate `${ED}`.
+
 ## 11.6 Implement BOLT deployment hook
+
+- [x] Implement and validate exact-input, rollback-safe BOLT deployment inside `${ED}`.
 
 During final `post_src_install` with BOLT deployment enabled:
 
@@ -889,7 +895,13 @@ During final `post_src_install` with BOLT deployment enabled:
 
 The hook must not modify installed `/usr` files directly.
 
+Output registration now requires both the prepared BOLT output and its exact captured input, and rejects a full-file, build-ID, or `.text` mismatch before publishing anything. Deployment requires exact output coverage for all eligible artifacts, validates every input and output before mutation, preserves diagnostic preimages, stages same-inode groups, atomically replaces only staging-tree entries, and keeps final BOLT-note/hash/metadata/topology verification inside the rollback boundary. A forced post-rename verifier failure restores all three fixture inputs byte-for-byte and restores the two-name hardlink group before returning failure. The root fixture proves setuid, a real file capability, user xattrs, ownership intent, hardlinks, symlinks, and runtime behavior survive; the non-root fixture emits an explicit capability skip and passes every other invariant. The tool refuses `/`, `/usr` and descendants, overlapping roots, symlink components, prepared-output symlinks, and installed `/usr` modification.
+
+Authoritative root-owned evidence for §11.5–11.6 is `/var/lib/gentoo-optimization/reports/phase-2-bolt-hooks-20260712` (manifest SHA-256 `1d01fe4e7770ec2ad787c00aa05248281fced4d5946b7b7adb48cf9f59ed7cad`). Component state is `/var/lib/gentoo-optimization/state/project/phase-2-bolt-hooks.json` (SHA-256 `57469e99bef2df7a96c7170fe55171b7e8257c27ab5468555b452dbaeb92ecf2`) with component-local `pending_total=0`, `unknown_total=0`, and `failed_total=0`. The tested artifact tool SHA-256 is `f43d1a5fe95dae797071a19a25243e5e19eb3e455d7cf9efe67117bd54a2ad9b`; the fixture SHA-256 is `af6b37802b79e0814d2a6d6625b4ba15d637953e73ac735ce32980dfeec36225`. This is a framework-hook claim only: no installed artifact has been captured or deployed by this gate, and no installed-system BOLT coverage is claimed.
+
 ## 11.7 Add automated tests
+
+- [ ] Complete the combined Phase 2 automation gate; BOLT classification, mismatch, topology, privileged metadata, no-ELF, and mixed-ABI cases now pass, while the final sample-producer/identity integration remains in progress.
 
 Create fixture tests for:
 

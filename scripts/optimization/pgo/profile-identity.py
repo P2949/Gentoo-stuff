@@ -962,8 +962,6 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
         ]
     )
 
-    published = False
-    metadata_published = False
     completed = False
     old_handlers: dict[int, Any] = {}
 
@@ -1011,7 +1009,6 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
             os.fsync(directory_descriptor)
         finally:
             os.close(directory_descriptor)
-        published = True
         arguments.profile = profile
         arguments.build_id = build_id
         arguments.text_sha256 = text_sha256
@@ -1020,17 +1017,14 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
             metadata_out,
             (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
         )
-        metadata_published = True
         completed = True
         print(metadata["profile_sha256"])
         return 0
     finally:
         partial.unlink(missing_ok=True)
         if not completed:
-            if metadata_published:
-                metadata_out.unlink(missing_ok=True)
-            if published:
-                profile.unlink(missing_ok=True)
+            metadata_out.unlink(missing_ok=True)
+            profile.unlink(missing_ok=True)
         for signum, old_handler in old_handlers.items():
             signal.signal(signum, old_handler)
 

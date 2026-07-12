@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
+
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-    echo "usage: $0 <category> <package> <binary> <perf.data>" >&2
-    exit 2
-fi
+cat >&2 <<'EOF'
+ERROR: this legacy sample-profile producer is permanently disabled.
 
-category="$1"
-package="$2"
-binary="$3"
-perf_data="$4"
+It used the weak CATEGORY/PN identity and wrote LLVM sample data to the
+ambiguous instrumentation-profile name merged.profdata. Use the exact,
+transactional interface instead:
 
-profile_dir="/var/tmp/pgo-profiles/${category}/${package}"
-mkdir -p "${profile_dir}"
+  scripts/optimization/pgo/profile-identity.py sample-convert --help
 
-llvm-profgen \
-    --binary="${binary}" \
-    --perfdata="${perf_data}" \
-    --output="${profile_dir}/merged.profdata"
-
-echo "wrote ${profile_dir}/merged.profdata"
+The replacement requires an exact CPV/fingerprint/ABI/compiler identity,
+validates the binary build ID and .text hash, and publishes only sample.prof.
+EOF
+exit 1
