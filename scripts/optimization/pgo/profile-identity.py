@@ -96,6 +96,7 @@ SAMPLE_SOURCE_PROFGEN_FIELDS = {
     "readelf",
     "objcopy",
     "command_arguments",
+    "command_output_sha256",
 }
 LLVM_TOOL_IDENTITY_FIELDS = {
     "realpath",
@@ -706,10 +707,15 @@ def inspect_llvm_profdata(path_value: Path, clang_major: int) -> dict[str, objec
     return inspect_llvm_tool(path_value, clang_major, "llvm-profdata")
 
 
-def validate_sample_file(profile: Path, llvm_profdata: Path) -> dict[str, object]:
+def validate_sample_file(
+    profile: Path, llvm_profdata: Path, *, allow_transaction_partial: bool = False
+) -> dict[str, object]:
     if not profile.is_absolute():
         fail("sample profile path must be absolute")
-    if profile.name != "sample.prof":
+    allowed_names = {"sample.prof"}
+    if allow_transaction_partial:
+        allowed_names.add("sample.prof.partial")
+    if profile.name not in allowed_names:
         fail("Clang sample profile must be named sample.prof")
     try:
         profile_stat = profile.lstat()
@@ -728,7 +734,9 @@ def validate_sample_file(profile: Path, llvm_profdata: Path) -> dict[str, object
     }
 
 
-def sample_identity(arguments: argparse.Namespace) -> dict[str, object]:
+def sample_identity(
+    arguments: argparse.Namespace, source: dict[str, object] | None = None
+) -> dict[str, object]:
     cpv = require_cpv(arguments.cpv)
     fingerprint = require_hex64(arguments.fingerprint, "fingerprint")
     abi = require_abi(arguments.abi)
@@ -748,6 +756,7 @@ def sample_identity(arguments: argparse.Namespace) -> dict[str, object]:
         "profile_sha256": sha256_file(profile),
         "profile_size": profile.stat().st_size,
         "schema_version": SCHEMA_VERSION,
+        "source": source if source is not None else {"kind": "external"},
         "validation": validation,
         "validator": validator,
     }
@@ -769,7 +778,8 @@ def sample_record_command(arguments: argparse.Namespace) -> int:
 def sample_validate_command(arguments: argparse.Namespace) -> int:
     recorded = load_json_object(arguments.metadata, "sample profile metadata")
     require_exact_fields(recorded, SAMPLE_METADATA_FIELDS, "sample profile metadata")
-    expected = sample_identity(arguments)
+    source = validate_sample_source(recorded["source"], arguments.clang_major)
+    expected = sample_identity(arguments, source)
     if recorded != expected:
         differing = sorted(
             key for key in SAMPLE_METADATA_FIELDS if recorded.get(key) != expected.get(key)

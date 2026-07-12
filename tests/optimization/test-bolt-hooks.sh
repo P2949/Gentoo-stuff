@@ -90,6 +90,7 @@ assert [item["elf_class"] for item in manifest["artifacts"]] == ["ELF64"] * 3
 assert {item["elf_type"] for item in manifest["artifacts"]} == {"EXEC", "DYN"}
 assert all(item["machine"] == "Advanced Micro Devices X86-64" for item in manifest["artifacts"])
 assert all(item["has_symtab"] and item["symbol_count"] for item in manifest["artifacts"])
+assert all(item["defined_function_symbols"] > 0 for item in manifest["artifacts"])
 assert all(item["text_relocation_sections"] for item in manifest["artifacts"])
 assert all(item["build_id"] and item["text_sha256"] for item in manifest["artifacts"])
 assert all(item["readiness_failures"] == [] for item in manifest["artifacts"])

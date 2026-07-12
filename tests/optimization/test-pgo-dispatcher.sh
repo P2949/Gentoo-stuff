@@ -326,6 +326,15 @@ case_bolt_post_install_wrapper() (
     [[ ${arguments[*]} == "--ed ${ED} --cache-root ${GENTOO_OPT_BOLT_CACHE_ROOT} --fingerprint ${FINGERPRINT}" ]]
 )
 
+case_existing_post_install_hook_is_chained() (
+    post_src_install() {
+        printf '%s\n' 'previous hook ran' >> "${TMP}/previous-hook.log"
+    }
+    source "${BASHRC}" >/dev/null 2>&1
+    post_src_install
+    [[ $(<"${TMP}/previous-hook.log") == 'previous hook ran' ]]
+)
+
 run_case 'off/unset leaves all flags unchanged' case_off_is_noop
 run_case 'legacy marker paths fail closed' case_legacy_rejected
 run_case 'unknown modes fail closed' case_unknown_mode_rejected
@@ -344,6 +353,7 @@ run_case 'BOLT readiness layers and guards the GCC lane' case_bolt_layer_and_gcc
 run_case 'strict fingerprint.env loading works' case_fingerprint_file_strict
 run_case 'root is rejected as an identity file path' case_root_path_is_not_safe_identity
 run_case 'post_src_install invokes the exact BOLT wrapper interface' case_bolt_post_install_wrapper
+run_case 'post_src_install chains an existing Portage hook' case_existing_post_install_hook_is_chained
 
 printf 'SUMMARY: pass=%d fail=%d total=%d\n' "${PASS}" "${FAIL}" "$((PASS + FAIL))"
 ((FAIL == 0))

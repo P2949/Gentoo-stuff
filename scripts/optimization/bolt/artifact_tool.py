@@ -254,11 +254,16 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
     )
     symtab = any(section["type"] == "SYMTAB" for section in sections)
     symbol_count = 0
+    defined_function_symbols = 0
     if symtab:
         symbols = run_checked([readelf, "-sW", str(path)])
-        symbol_count = sum(
-            1 for line in symbols.splitlines() if re.match(r"^\s*\d+:\s", line)
-        )
+        for line in symbols.splitlines():
+            fields = line.split(maxsplit=7)
+            if len(fields) < 7 or not fields[0].rstrip(":").isdigit():
+                continue
+            symbol_count += 1
+            if fields[3] == "FUNC" and fields[6] != "UND":
+                defined_function_symbols += 1
 
     notes = run_checked([readelf, "-nW", str(path)])
     build_ids = [value.lower() for value in BUILD_ID_RE.findall(notes)]
@@ -280,6 +285,8 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         reasons.append("no-text-section")
     if not symtab or symbol_count == 0:
         reasons.append("no-full-symbol-table")
+    elif defined_function_symbols == 0:
+        reasons.append("no-defined-function-symbol")
     if not text_relocations:
         reasons.append("no-text-relocations")
     if build_id is None:
@@ -294,6 +301,7 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         "section_names": sorted(section_names),
         "has_symtab": symtab,
         "symbol_count": symbol_count,
+        "defined_function_symbols": defined_function_symbols,
         "relocation_sections": relocation_sections,
         "text_relocation_sections": text_relocations,
         "build_id": build_id,
