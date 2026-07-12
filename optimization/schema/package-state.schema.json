@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gentoo-optimization.invalid/schema/package-state.schema.json",
+  "title": "Gentoo optimization package state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_type",
+    "cpv",
+    "cp",
+    "repository",
+    "slot",
+    "subslot",
+    "abis",
+    "ebuild_sha256",
+    "use_flags",
+    "build_backend",
+    "compiler",
+    "fingerprint",
+    "pgo",
+    "bolt",
+    "final_status",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "record_type": {"const": "package"},
+    "cpv": {"type": "string", "pattern": "^[^/[:space:]]+/[^/[:space:]]+$"},
+    "cp": {"type": "string", "pattern": "^[^/[:space:]]+/[^/[:space:]]+$"},
+    "repository": {"type": "string", "minLength": 1},
+    "slot": {"type": "string", "minLength": 1},
+    "subslot": {"type": "string", "minLength": 1},
+    "abis": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["amd64", "x86"]}
+    },
+    "ebuild_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "use_flags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "build_backend": {
+      "enum": [
+        "clang-ir",
+        "gcc-gcov",
+        "rust-llvm-ir",
+        "go-pprof",
+        "ebuild-native",
+        "clang-sample",
+        "kernel-autofdo",
+        "not-applicable"
+      ]
+    },
+    "compiler": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["family", "path", "realpath", "version", "profile_format"],
+          "properties": {
+            "family": {"enum": ["clang", "gcc", "rust", "go", "native"]},
+            "path": {"type": "string", "pattern": "^/"},
+            "realpath": {"type": "string", "pattern": "^/"},
+            "version": {"type": "string", "minLength": 1},
+            "profile_format": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "pgo": {"$ref": "#/$defs/pgo"},
+    "bolt": {"$ref": "#/$defs/bolt"},
+    "final_status": {
+      "enum": ["pending", "optimized", "not-applicable", "terminal-exclusion", "failed"]
+    },
+    "notes": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "terminal_reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason_code", "evidence", "reviewed"],
+      "properties": {
+        "reason_code": {"type": "string", "minLength": 1},
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "reviewed": {"const": true}
+      }
+    },
+    "pgo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eligibility",
+        "mode",
+        "generation_id",
+        "profile_path",
+        "profile_valid",
+        "build_verified",
+        "terminal_reason",
+        "status"
+      ],
+      "properties": {
+        "eligibility": {"enum": ["eligible", "not-applicable", "terminal-exclusion"]},
+        "mode": {
+          "enum": [
+            "clang-ir",
+            "clang-sample",
+            "gcc-gcov",
+            "rust-llvm-ir",
+            "go-pprof",
+            "ebuild-native",
+            "kernel-autofdo",
+            "not-applicable"
+          ]
+        },
+        "generation_id": {"type": ["string", "null"]},
+        "profile_path": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "pattern": "^/"}
+          ]
+        },
+        "profile_valid": {"type": "boolean"},
+        "build_verified": {"type": "boolean"},
+        "terminal_reason": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/terminal_reason"}]
+        },
+        "status": {
+          "enum": ["pending", "training", "profiled", "optimized", "not-applicable", "terminal-exclusion", "failed"]
+        }
+      }
+    },
+    "bolt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_count",
+        "optimized_count",
+        "excluded_count",
+        "terminal_reason",
+        "status"
+      ],
+      "properties": {
+        "candidate_count": {"type": "integer", "minimum": 0},
+        "optimized_count": {"type": "integer", "minimum": 0},
+        "excluded_count": {"type": "integer", "minimum": 0},
+        "terminal_reason": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/terminal_reason"}]
+        },
+        "status": {
+          "enum": ["pending", "captured", "profiled", "optimized", "not-applicable", "terminal-exclusion", "failed"]
+        }
+      }
+    }
+  }
+}
