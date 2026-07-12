@@ -6,7 +6,14 @@ CAPTURE=${ROOT}/scripts/optimization/bolt/capture-input.sh
 REGISTER=${ROOT}/scripts/optimization/bolt/register-output.sh
 DEPLOY=${ROOT}/scripts/optimization/bolt/deploy-output.sh
 WORK=$(mktemp -d -t gentoo-bolt-hooks.XXXXXX)
-trap 'rm -rf -- "${WORK}"' EXIT HUP INT TERM
+cleanup() {
+    if [[ ${BOLT_HOOK_TEST_KEEP_WORK:-0} == 1 ]]; then
+        printf 'INFO: preserved BOLT hook fixture work tree: %s\n' "${WORK}" >&2
+    else
+        rm -rf -- "${WORK}"
+    fi
+}
+trap cleanup EXIT HUP INT TERM
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2

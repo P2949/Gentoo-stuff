@@ -120,6 +120,19 @@ def require_component(value: object, label: str) -> str:
     return text
 
 
+def require_abi(value: object, label: str = "abi") -> str:
+    abi = require_string(value, label)
+    if abi not in {"amd64", "x86"}:
+        fail(f"{label} must be exactly 'amd64' or 'x86'")
+    return abi
+
+
+def require_positive_major(value: object, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        fail(f"{label} must be a positive integer")
+    return value
+
+
 def require_hex64(value: object, label: str) -> str:
     text = require_string(value, label).lower()
     if not HEX64_RE.fullmatch(text):
@@ -189,10 +202,34 @@ def canonical_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+def reject_symlink_traversal(path: Path, label: str, *, include_leaf: bool) -> None:
+    if not path.is_absolute() or path == Path("/") or ".." in path.parts:
+        fail(f"{label} must be a non-root absolute path without '..' components")
+    limit = len(path.parts) if include_leaf else len(path.parts) - 1
+    current = Path(path.anchor)
+    for part in path.parts[1:limit]:
+        current /= part
+        try:
+            current_stat = current.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            fail(f"cannot inspect {label} component {current}: {exc}")
+        if stat.S_ISLNK(current_stat.st_mode):
+            fail(f"{label} traverses a symlink component: {current}")
+        if current != path and not stat.S_ISDIR(current_stat.st_mode):
+            fail(f"{label} traverses a non-directory component: {current}")
+
+
 def atomic_write(path: Path, data: bytes, mode: int = 0o644) -> None:
+    reject_symlink_traversal(path, "output path", include_leaf=True)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists() and not path.is_file():
+        try:
+            output_stat = path.lstat()
+        except FileNotFoundError:
+            output_stat = None
+        if output_stat is not None and not stat.S_ISREG(output_stat.st_mode):
             fail(f"output path exists and is not a regular file: {path}")
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{path.name}.", suffix=".partial", dir=path.parent
@@ -292,9 +329,7 @@ def inspect_compiler(value: object) -> dict[str, object]:
     family = require_string(value["family"], "compiler.family")
     if family not in PROFILE_FORMAT_PREFIX:
         fail(f"compiler.family is unsupported: {family!r}")
-    major = value["major"]
-    if not isinstance(major, int) or isinstance(major, bool) or major < 1:
-        fail("compiler.major must be a positive integer")
+    major = require_positive_major(value["major"], "compiler.major")
     profile_format = require_component(value["profile_format"], "compiler.profile_format")
     if not profile_format.startswith(PROFILE_FORMAT_PREFIX[family]):
         fail(
@@ -345,7 +380,7 @@ def build_fingerprint_identity(input_data: dict[str, Any]) -> dict[str, object]:
     ebuild_sha256 = require_hex64(input_data["ebuild_sha256"], "ebuild_sha256")
     eapi = require_component(input_data["eapi"], "eapi")
     chost = require_component(input_data["chost"], "chost")
-    abi = require_component(input_data["abi"], "abi")
+    abi = require_abi(input_data["abi"])
 
     kernel_module = input_data["kernel_module"]
     if not isinstance(kernel_module, bool):
@@ -448,42 +483,45 @@ def reject_unused(arguments: argparse.Namespace, allowed: set[str], family: str)
 
 def profile_path_command(arguments: argparse.Namespace) -> int:
     root = arguments.root
-    if not root.is_absolute():
-        fail("--root must be absolute")
+    reject_symlink_traversal(root, "--root", include_leaf=True)
     family = arguments.family
     path: Path
     if family == "clang-ir":
         allowed = {"compiler_major", "generation", "abi"}
         reject_unused(arguments, allowed, family)
-        path = root / family / str(arguments.compiler_major) / require_component(
+        major = require_positive_major(arguments.compiler_major, "compiler_major")
+        path = root / family / str(major) / require_component(
             required(arguments, "generation", family), "generation"
-        ) / require_component(required(arguments, "abi", family), "abi") / "merged.profdata"
+        ) / require_abi(required(arguments, "abi", family)) / "merged.profdata"
     elif family == "rust":
         allowed = {"language_version", "compiler_major", "generation", "abi"}
         reject_unused(arguments, allowed, family)
+        major = require_positive_major(arguments.compiler_major, "compiler_major")
         path = (
             root
             / family
             / require_component(required(arguments, "language_version", family), "language_version")
-            / str(arguments.compiler_major)
+            / str(major)
             / require_component(required(arguments, "generation", family), "generation")
-            / require_component(required(arguments, "abi", family), "abi")
+            / require_abi(required(arguments, "abi", family))
             / "merged.profdata"
         )
     elif family == "gcc":
         allowed = {"compiler_major", "cpv", "fingerprint", "abi"}
         reject_unused(arguments, allowed, family)
+        major = require_positive_major(arguments.compiler_major, "compiler_major")
         path = (
             root
             / family
-            / str(arguments.compiler_major)
+            / str(major)
             / require_cpv(required(arguments, "cpv", family))
             / require_hex64(required(arguments, "fingerprint", family), "fingerprint")
-            / require_component(required(arguments, "abi", family), "abi")
+            / require_abi(required(arguments, "abi", family))
         )
     elif family == "go":
         allowed = {"language_version", "cpv", "fingerprint", "binary"}
         reject_unused(arguments, allowed, family)
+        major = require_positive_major(arguments.compiler_major, "compiler_major")
         path = (
             root
             / family
@@ -499,7 +537,7 @@ def profile_path_command(arguments: argparse.Namespace) -> int:
         path = (
             root
             / family
-            / str(arguments.compiler_major)
+            / str(major)
             / require_cpv(required(arguments, "cpv", family))
             / require_hex64(required(arguments, "fingerprint", family), "fingerprint")
             / require_build_id(required(arguments, "build_id", family))
@@ -521,7 +559,9 @@ def profile_path_command(arguments: argparse.Namespace) -> int:
 
 
 def inspect_llvm_profdata(path_value: object, clang_major: int) -> dict[str, object]:
-    requested, realpath, binary_sha256 = inspect_executable(path_value, "llvm_profdata")
+    requested, realpath, binary_sha256 = inspect_executable(
+        os.fspath(path_value), "llvm_profdata"
+    )
     stdout, stderr = run_tool(realpath, ["--version"], "llvm-profdata version command")
     match = re.search(r"(?im)LLVM version\s+([0-9]+)(?:\.|\s)", stdout + "\n" + stderr)
     if match is None:
@@ -565,10 +605,8 @@ def validate_sample_file(profile: Path, llvm_profdata: Path) -> dict[str, object
 def sample_identity(arguments: argparse.Namespace) -> dict[str, object]:
     cpv = require_cpv(arguments.cpv)
     fingerprint = require_hex64(arguments.fingerprint, "fingerprint")
-    abi = require_component(arguments.abi, "abi")
-    clang_major = arguments.clang_major
-    if not isinstance(clang_major, int) or clang_major < 1:
-        fail("clang_major must be a positive integer")
+    abi = require_abi(arguments.abi)
+    clang_major = require_positive_major(arguments.clang_major, "clang_major")
     build_id = require_build_id(arguments.build_id)
     text_sha256 = require_hex64(arguments.text_sha256, "text_sha256")
     profile = arguments.profile
