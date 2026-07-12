@@ -28,6 +28,11 @@ functionality, matching the final pre-strip Portage deployment order. The
 runner never changes an installed file and accepts output only below `/tmp` or
 `/var/tmp/gentoo-optimization`.
 
+The exact validated layout policy is `-reorder-blocks=ext-tsp` with
+`-reorder-functions=cdsort`. Production policy is bound to these literal
+spellings; `hfsort+` is not treated as an interchangeable alias unless it is
+put through the same complete ET_EXEC, PIE, and DSO validation gate.
+
 Every `perf record`, `perf report`, `perf buildid-list`, `perf2bolt`,
 `merge-fdata`, and `llvm-bolt` stage has a bounded deadline. The runner sends
 `TERM` at the deadline and escalates to `KILL` after a second bounded grace

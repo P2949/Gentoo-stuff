@@ -1,0 +1,14 @@
+--- a/configure.ac
++++ b/configure.ac
+@@ -24,8 +24,9 @@ AC_CHECK_SIZEOF([void *])
+ AC_MSG_CHECKING([for GNU ld])
+ LD=$($CC -print-prog-name=ld 2>&5)
+ 
+-if test $($LD -v 2>&1 | $ac_cv_path_GREP -c "GNU ld") = 0 -a \
+-   $($LD -v 2>&1 | $ac_cv_path_GREP -c "GNU gold") = 0; then
++if test $($LD -v 2>&1 | $ac_cv_path_GREP -c "GNU ld") = 0 -a \
++   $($LD -v 2>&1 | $ac_cv_path_GREP -c "GNU gold") = 0 -a \
++   $($LD -v 2>&1 | $ac_cv_path_GREP -c "LLD") = 0; then
+   # Not
+   GNU_LD=""
+   AC_MSG_RESULT([no])

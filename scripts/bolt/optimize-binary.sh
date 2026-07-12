@@ -35,7 +35,7 @@ llvm-bolt "${binary}" \
     -o "${output}" \
     -data="${fdata}" \
     -reorder-blocks=ext-tsp \
-    -reorder-functions=hfsort+ \
+    -reorder-functions=cdsort \
     -split-functions \
     -split-all-cold \
     -dyno-stats

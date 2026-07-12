@@ -122,9 +122,9 @@ class PackageEnvPolicyTest(unittest.TestCase):
         )
         self.assertFalse(result.errors, "\n".join(result.errors))
         self.assertEqual(result.policy_file_count, 13)
-        self.assertEqual(result.assignment_line_count, 137)
-        self.assertEqual(result.atom_count, 135)
-        self.assertEqual(result.pair_count, 146)
+        self.assertEqual(result.assignment_line_count, 138)
+        self.assertEqual(result.atom_count, 136)
+        self.assertEqual(result.pair_count, 147)
 
     def test_repository_has_exact_expected_cleanup_and_stacks(self) -> None:
         exact = CHECKER.exact_environment_map(
@@ -133,6 +133,9 @@ class PackageEnvPolicyTest(unittest.TestCase):
         self.assertNotIn("media-libs/SVT-AV1", exact)
         self.assertEqual(exact["media-libs/svt-av1"], ("O2.conf",))
         self.assertNotIn("dev-java/openjdk:25", exact)
+        self.assertEqual(
+            exact["dev-libs/newt"], ("no-hidden-no-forced-libs.conf",)
+        )
         self.assertEqual(exact["gui-libs/hyprutils"], ("O2.conf",))
         self.assertEqual(
             exact["gui-wm/hyprland"], ("O3-thin-lto-no-libs.conf",)
@@ -183,6 +186,46 @@ class PackageEnvPolicyTest(unittest.TestCase):
                 ["-O3", "-pipe", "-march=native"],
             )
             self.assertEqual(assignments["CC"], "clang")
+
+    def test_environment_parser_rejects_opaque_tracked_shell_constructs(self) -> None:
+        cases = {
+            "export-assignment": "export CC=clang\n",
+            "append-assignment": 'CFLAGS+=" -fprofile-use"\n',
+            "multiple-assignments": "CC=clang CXX=clang++\n",
+            "chained-assignments": "CC=clang; CXX=clang++\n",
+            "conditional-chain": "true && CC=clang\n",
+            "conditional-command": "if true; then CXX=clang++; fi\n",
+            "conditional-expansion": 'CC="${CC:-clang}"\n',
+            "command-substitution": 'LD="$(command -v ld.lld)"\n',
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "opaque.conf"
+            for label, content in cases.items():
+                with self.subTest(label=label):
+                    path.write_text(content, encoding="utf-8")
+                    with self.assertRaisesRegex(
+                        CHECKER.PolicyError, "unsupported shell"
+                    ):
+                        CHECKER.environment_variable_assignments(path)
+
+    def test_environment_parser_rejects_source_and_opaque_stage_markers(self) -> None:
+        cases = {
+            "source": "source /etc/portage/env/generated-flags.conf\n",
+            "dot-source": ". /etc/portage/env/generated-flags.conf\n",
+            "export-marker": "export PGO_INSTRUMENT=1\n",
+            "conditional-marker": ': "${PGO_INSTRUMENT:=1}"\n',
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "opaque.conf"
+            for label, content in cases.items():
+                with self.subTest(label=label):
+                    path.write_text(content, encoding="utf-8")
+                    with self.assertRaisesRegex(
+                        CHECKER.PolicyError, "unsupported shell"
+                    ):
+                        CHECKER.environment_variable_assignments(
+                            path, tracked_variables={"PGO_INSTRUMENT"}
+                        )
 
     def test_parser_ignores_comments_and_accepts_distinct_environments(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -546,6 +589,14 @@ class PackageEnvPolicyTest(unittest.TestCase):
             fixture.write_environment("normal.conf", 'PGO_INSTRUMENT="1"\n')
             result = fixture.validate()
             self.assertTrue(any("sets forbidden stage markers" in e for e in result.errors))
+
+    def test_opaque_forbidden_marker_assignment_fails_validation_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture = Fixture(Path(temporary_directory))
+            fixture.write_assignment("dev-libs/example normal.conf\n")
+            fixture.write_environment("normal.conf", "export PGO_INSTRUMENT=1\n")
+            with self.assertRaisesRegex(CHECKER.PolicyError, "unsupported shell"):
+                fixture.validate()
 
     def test_active_generated_policy_file_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

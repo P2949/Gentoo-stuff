@@ -4,6 +4,10 @@
 dev-libs/libbsd no-hidden-no-forced-libs.conf
 app-crypt/gpgme no-hidden-no-forced-libs.conf
 
+# newt builds its public C shared object before linking whiptail against it;
+# hidden defaults remove the newt_* API and leave an unversioned NEEDED edge.
+dev-libs/newt no-hidden-no-forced-libs.conf
+
 # Hyprland ecosystem public C++ ABIs.
 #
 # The global hidden-visibility tier hides unannotated public symbols in

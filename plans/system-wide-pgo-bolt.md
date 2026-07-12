@@ -1441,7 +1441,7 @@ Start from a reviewed default such as:
 
 ```text
 -reorder-blocks=ext-tsp
--reorder-functions=hfsort+
+-reorder-functions=cdsort
 -split-functions
 -split-all-cold
 -split-eh

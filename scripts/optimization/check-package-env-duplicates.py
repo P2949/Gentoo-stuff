@@ -21,12 +21,17 @@ DEFAULT_ENV_ROOT = REPOSITORY_ROOT / "portage" / "env"
 DEFAULT_POLICY_FILE = REPOSITORY_ROOT / "portage" / "package-env-policy.json"
 VCS_DIRECTORY_NAMES = frozenset({"CVS", "RCS", "SCCS", ".bzr", ".git", ".hg", ".svn"})
 TOOL_KEYS = ("CC", "CXX", "CPP", "LD", "AR", "NM", "RANLIB")
+SHELL_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+FLAG_VARIABLE_RE = re.compile(r"^[A-Z][A-Z0-9_]*FLAGS$")
+SIMPLE_PARAMETER_EXPANSION_RE = re.compile(
+    r"\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})"
+)
 FALLBACK_ATOM_RE = re.compile(
     r"^(?:[<>=~]{0,2})?[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+"
     r"(?:-[0-9][A-Za-z0-9+_.-]*)?(?::[A-Za-z0-9+_./-]+)?"
     r"(?:\[[^\]]+\])?(?:::[A-Za-z0-9+_.-]+)?$"
 )
-VARIABLE_ASSIGNMENT_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
+VARIABLE_ASSIGNMENT_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 
 
 @dataclass(frozen=True)
@@ -460,36 +465,116 @@ def validate_multi_environment_allowlist(
     return errors
 
 
-def environment_variable_assignments(path: Path) -> dict[str, str]:
-    """Read literal assignment values needed for marker and tool identity checks."""
+def is_tracked_environment_variable(
+    variable: str, additional_tracked_variables: frozenset[str]
+) -> bool:
+    """Return whether a variable affects a compiler, flags, or stage policy."""
+
+    return (
+        variable in TOOL_KEYS
+        or variable in additional_tracked_variables
+        or FLAG_VARIABLE_RE.fullmatch(variable) is not None
+    )
+
+
+def unsupported_tracked_expansion(value: str) -> bool:
+    """Reject dynamic shell evaluation that the literal parser cannot resolve."""
+
+    without_simple_parameters = SIMPLE_PARAMETER_EXPANSION_RE.sub("", value)
+    return any(
+        construct in without_simple_parameters
+        for construct in ("$", "`", "<(", ">(")
+    )
+
+
+def shell_words(raw_line: str) -> list[str]:
+    """Tokenize shell operators so chained assignments cannot look literal."""
+
+    lexer = shlex.shlex(
+        raw_line,
+        posix=True,
+        punctuation_chars=";&|<>()",
+    )
+    lexer.whitespace_split = True
+    lexer.commenters = "#"
+    return list(lexer)
+
+
+def environment_variable_assignments(
+    path: Path, *, tracked_variables: Iterable[str] = ()
+) -> dict[str, str]:
+    """Read literal assignments and reject opaque tracked-variable shell code.
+
+    Portage environment files are sourced as shell, but this validator only has
+    a deliberately small, auditable grammar: one ordinary assignment per
+    logical line.  Compiler, flag, and stage-marker variables must never be
+    changed through shell constructs that this parser cannot model exactly.
+    """
 
     try:
         physical_lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as error:
         raise PolicyError(f"cannot read environment {path}: {error}") from error
-    lines: list[str] = []
+    lines: list[tuple[int, str]] = []
     pending = ""
-    for physical_line in physical_lines:
+    pending_line_number = 0
+    for line_number, physical_line in enumerate(physical_lines, start=1):
         stripped = physical_line.rstrip()
         if stripped.endswith("\\") and not stripped.endswith("\\\\"):
+            if not pending:
+                pending_line_number = line_number
             pending += stripped[:-1] + " "
             continue
-        lines.append(pending + physical_line)
+        lines.append((pending_line_number or line_number, pending + physical_line))
         pending = ""
+        pending_line_number = 0
     if pending:
         raise PolicyError(f"{path}: unterminated backslash continuation")
 
+    additional_tracked_variables = frozenset(tracked_variables)
     assignments: dict[str, str] = {}
-    for raw_line in lines:
-        match = VARIABLE_ASSIGNMENT_RE.match(raw_line)
-        if not match or raw_line.lstrip().startswith("#"):
-            continue
-        key, raw_value = match.groups()
+    for line_number, raw_line in lines:
         try:
-            values = shlex.split(raw_value, comments=True, posix=True)
+            words = shell_words(raw_line)
         except ValueError as error:
-            raise PolicyError(f"{path}: cannot parse {key}: {error}") from error
-        assignments[key] = " ".join(values)
+            raise PolicyError(f"{path}:{line_number}: {error}") from error
+        if not words:
+            continue
+
+        match = VARIABLE_ASSIGNMENT_RE.fullmatch(words[0]) if len(words) == 1 else None
+        if match:
+            key, value = match.groups()
+            if is_tracked_environment_variable(
+                key, additional_tracked_variables
+            ) and unsupported_tracked_expansion(value):
+                raise PolicyError(
+                    f"{path}:{line_number}: unsupported shell expansion for "
+                    f"tracked variable {key}"
+                )
+            assignments[key] = value
+            continue
+
+        if words[0] in {"source", "."}:
+            raise PolicyError(
+                f"{path}:{line_number}: unsupported shell source construct can "
+                "change tracked environment variables indirectly"
+            )
+
+        active_text = " ".join(words)
+        mentioned = sorted(
+            {
+                variable
+                for variable in SHELL_IDENTIFIER_RE.findall(active_text)
+                if is_tracked_environment_variable(
+                    variable, additional_tracked_variables
+                )
+            }
+        )
+        if mentioned:
+            raise PolicyError(
+                f"{path}:{line_number}: unsupported shell construct mentions "
+                f"tracked environment variable(s): {', '.join(mentioned)}"
+            )
     return assignments
 
 
@@ -556,7 +641,8 @@ def validate_forbidden_markers(
                     and resolved_candidate.is_file()
                 ):
                     environment_cache[environment] = environment_variable_assignments(
-                        resolved_candidate
+                        resolved_candidate,
+                        tracked_variables=marker_variables,
                     )
                 else:
                     environment_cache[environment] = {}

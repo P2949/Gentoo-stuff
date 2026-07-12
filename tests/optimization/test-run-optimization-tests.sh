@@ -20,6 +20,12 @@ bash -- "${DRIVER}" --help >"${FIXTURE}/help.txt"
 grep -Fq -- '--mode quick' "${FIXTURE}/help.txt" || fail 'help omits quick mode'
 grep -Fq -- '--mode capabilities' "${FIXTURE}/help.txt" || fail 'help omits capability mode'
 grep -Fq -- '--capability NAME' "${FIXTURE}/help.txt" || fail 'help omits capability filter'
+grep -Fq 'TEST_CASE_TIMEOUT_SECONDS=1800' "${FIXTURE}/help.txt" || \
+    fail 'help omits the global per-case timeout'
+grep -Fq 'TEST_CASE_KILL_AFTER_SECONDS=10' "${FIXTURE}/help.txt" || \
+    fail 'help omits the per-case forced-kill grace period'
+grep -Fq 'TEST_CASE_TIMEOUT_SECONDS_CLANG_IR' "${FIXTURE}/help.txt" || \
+    fail 'help omits normalized per-capability deadline overrides'
 
 bash -- "${DRIVER}" --list >"${FIXTURE}/list.txt"
 grep -Fq 'recovery-rollback-fixture' "${FIXTURE}/list.txt" || fail 'suite list omits rollback fixture'
@@ -28,6 +34,8 @@ grep -Fq 'package-env-duplicate-policy' "${FIXTURE}/list.txt" || \
     fail 'suite list omits package.env duplicate-policy validation'
 grep -Fq 'package-env-portage-semantic' "${FIXTURE}/list.txt" || \
     fail 'suite list omits explicit live Portage semantic status'
+grep -Fq 'bolt-command-policy' "${FIXTURE}/list.txt" || \
+    fail 'suite list omits the exact BOLT command-policy gate'
 grep -Fq 'bolt-transaction-fixture' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the hermetic BOLT transaction fixture'
 for capability in clang-ir clang-sample gcc rust go bolt; do
@@ -46,6 +54,21 @@ if bash -- "${DRIVER}" --capability unknown >"${FIXTURE}/bad-capability.log" 2>&
 fi
 grep -Fq 'unknown capability: unknown' "${FIXTURE}/bad-capability.log" || \
     fail 'unknown capability lacks a visible diagnostic'
+
+if TEST_CASE_TIMEOUT_SECONDS=0 bash -- "${DRIVER}" --mode quick \
+    >"${FIXTURE}/bad-timeout.log" 2>&1; then
+    fail 'zero per-case timeout unexpectedly succeeded'
+fi
+grep -Fq 'TEST_CASE_TIMEOUT_SECONDS must be a positive integer number of seconds' \
+    "${FIXTURE}/bad-timeout.log" || fail 'invalid global timeout lacks a visible diagnostic'
+
+if TEST_CASE_KILL_AFTER_SECONDS_BOLT=invalid bash -- "${DRIVER}" --mode quick \
+    >"${FIXTURE}/bad-capability-kill-after.log" 2>&1; then
+    fail 'invalid capability kill-after override unexpectedly succeeded'
+fi
+grep -Fq 'TEST_CASE_KILL_AFTER_SECONDS_BOLT must be a positive integer number of seconds' \
+    "${FIXTURE}/bad-capability-kill-after.log" || \
+    fail 'invalid capability kill-after override lacks a visible diagnostic'
 
 if bash -- "${DRIVER}" --output-dir relative/path \
     >"${FIXTURE}/bad-output.log" 2>&1; then
@@ -82,7 +105,8 @@ printf '%s\n' \
     "printf '%s\\n' invoked >'${HERMETIC_RUNNER_MARKER}'" \
     'exit 97' >"${HERMETIC_BOLT_RUNNER}"
 chmod 0755 -- "${HERMETIC_DRIVER}" "${HERMETIC_BOLT_RUNNER}"
-for required_driver_tool in bash dirname find mkdir realpath sort tee; do
+for required_driver_tool in bash dirname env find mkdir realpath setsid sleep sort \
+    tee timeout; do
     required_driver_path=$(command -v -- "${required_driver_tool}") || \
         fail "self-test prerequisite is unavailable: ${required_driver_tool}"
     ln -s -- "${required_driver_path}" \
@@ -91,8 +115,10 @@ done
 
 PATH=${HERMETIC_BIN} bash -- "${HERMETIC_DRIVER}" \
     --mode quick --capability bolt --output-dir "${HERMETIC_OUTPUT}" \
-    >"${FIXTURE}/hermetic-preflight.log" 2>&1 || \
+    >"${FIXTURE}/hermetic-preflight.log" 2>&1 || {
+    sed -n '1,240p' "${FIXTURE}/hermetic-preflight.log" >&2
     fail 'hermetic capability-preflight driver invocation failed'
+}
 [[ ! -e ${HERMETIC_RUNNER_MARKER} ]] || \
     fail 'BOLT runner executed despite a failed dependency preflight'
 
@@ -111,7 +137,7 @@ done <"${HERMETIC_OUTPUT}/results.tsv"
 MISSING_COMMANDS=${BOLT_SKIP_DETAIL#missing required command(s): }
 for expected_missing_command in awk chmod clang cmp cp file getcap getfattr \
     grep head lddtree llvm-bolt merge-fdata nm objcopy perf perf2bolt readelf \
-    readlink rm sed setfattr sha256sum stat strip tail timeout tr mv xargs; do
+    readlink rm sed setfattr sha256sum stat strip tail tr mv xargs; do
     case ,${MISSING_COMMANDS}, in
         *,${expected_missing_command},*) ;;
         *) fail "BOLT dependency preflight did not report missing ${expected_missing_command}" ;;
@@ -121,6 +147,114 @@ grep -Fxq 'fail=0' "${HERMETIC_OUTPUT}/summary.txt" || \
     fail 'hermetic preflight SKIP was incorrectly counted as a failure'
 grep -Fxq 'exit_status=0' "${HERMETIC_OUTPUT}/summary.txt" || \
     fail 'hermetic preflight SKIP produced a nonzero driver status'
+
+# Exercise the real per-case deadline around a capability whose runner and
+# preflight are entirely fake.  Both the runner and its child ignore TERM, so
+# the configured forced-kill boundary must remove the complete process group.
+TIMEOUT_ROOT=${FIXTURE}/timeout-repository
+TIMEOUT_BIN_ROOT=${FIXTURE}/timeout-bin
+TIMEOUT_DRIVER=${TIMEOUT_ROOT}/tests/run-optimization-tests.sh
+TIMEOUT_RUNNER=${TIMEOUT_ROOT}/optimization/fixtures/pgo/go/run.sh
+TIMEOUT_FAKE_GO=${TIMEOUT_BIN_ROOT}/go
+TIMEOUT_OUTPUT=${FIXTURE}/timeout-output
+TIMEOUT_PARENT_PID_FILE=${FIXTURE}/timeout-parent.pid
+TIMEOUT_CHILD_PID_FILE=${FIXTURE}/timeout-child.pid
+mkdir -p -- "${TIMEOUT_ROOT}/bench" \
+    "${TIMEOUT_ROOT}/optimization/fixtures/pgo/go" \
+    "${TIMEOUT_ROOT}/scripts" "${TIMEOUT_ROOT}/tests" "${TIMEOUT_BIN_ROOT}"
+cp -- "${DRIVER}" "${TIMEOUT_DRIVER}"
+# These single-quoted expressions are intentionally emitted into the fake
+# runner and expand only when that generated helper runs.
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -u' \
+    '(trap "" TERM; while :; do sleep 1; done) &' \
+    'child=$!' \
+    "printf '%s\\n' \"\${child}\" >'${TIMEOUT_CHILD_PID_FILE}'" \
+    "printf '%s\\n' \"\${BASHPID}\" >'${TIMEOUT_PARENT_PID_FILE}'" \
+    'trap "" TERM' \
+    'while :; do sleep 1; done' \
+    >"${TIMEOUT_RUNNER}"
+# The positional parameters intentionally expand in the generated fake Go tool.
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'case ${1:-}:${2:-} in' \
+    '    env:GOOS) printf "linux\\n" ;;' \
+    '    env:GOARCH) printf "amd64\\n" ;;' \
+    '    help:build) printf "usage: go build [-pgo file]\\n" ;;' \
+    '    *) exit 91 ;;' \
+    'esac' \
+    >"${TIMEOUT_FAKE_GO}"
+chmod 0755 -- "${TIMEOUT_DRIVER}" "${TIMEOUT_RUNNER}" "${TIMEOUT_FAKE_GO}"
+for required_timeout_tool in bash dirname env find mkdir readelf realpath rg setsid \
+    sha256sum sleep sort tail tee timeout; do
+    [[ ${required_timeout_tool} == go ]] && continue
+    required_timeout_path=$(command -v -- "${required_timeout_tool}") || \
+        fail "self-test prerequisite is unavailable: ${required_timeout_tool}"
+    ln -s -- "${required_timeout_path}" \
+        "${TIMEOUT_BIN_ROOT}/${required_timeout_tool}"
+done
+
+set +e
+PATH=${TIMEOUT_BIN_ROOT} \
+TEST_CASE_TIMEOUT_SECONDS=30 \
+TEST_CASE_KILL_AFTER_SECONDS=30 \
+TEST_CASE_TIMEOUT_SECONDS_GO=1 \
+TEST_CASE_KILL_AFTER_SECONDS_GO=1 \
+    bash -- "${TIMEOUT_DRIVER}" --mode quick --capability go \
+    --output-dir "${TIMEOUT_OUTPUT}" \
+    >"${FIXTURE}/timeout-driver.log" 2>&1
+TIMEOUT_DRIVER_STATUS=$?
+set -e
+[[ ${TIMEOUT_DRIVER_STATUS} -eq 1 ]] || \
+    fail "timed-out capability produced driver status ${TIMEOUT_DRIVER_STATUS}, expected 1"
+
+[[ $(<"${TIMEOUT_OUTPUT}/results.tsv") == $'status\ttest\tdetail'* ]] || \
+    fail 'results.tsv no longer begins with the compatible three-column header'
+TIMEOUT_RESULT_ROWS=0
+TIMEOUT_RESULT_DETAIL=
+while IFS=$'\t' read -r result_status result_name result_detail extra_field; do
+    if [[ ${result_name} == capability:go:* ]]; then
+        ((TIMEOUT_RESULT_ROWS += 1))
+        [[ ${result_status} == FAIL ]] || \
+            fail "timed-out capability status changed from compatible FAIL: ${result_status}"
+        [[ -z ${extra_field} ]] || fail 'timed-out result added an incompatible fourth TSV field'
+        TIMEOUT_RESULT_DETAIL=${result_detail}
+    fi
+done <"${TIMEOUT_OUTPUT}/results.tsv"
+[[ ${TIMEOUT_RESULT_ROWS} -eq 1 ]] || \
+    fail "expected one timed-out capability result, found ${TIMEOUT_RESULT_ROWS}"
+case ${TIMEOUT_RESULT_DETAIL} in
+    *'exit_status=124 '*|*'exit_status=137 '*) ;;
+    *) fail "timed-out capability lacks exit 124/137: ${TIMEOUT_RESULT_DETAIL}" ;;
+esac
+[[ ${TIMEOUT_RESULT_DETAIL} == *'timeout_seconds=1 '* ]] || \
+    fail "Go timeout override was not recorded: ${TIMEOUT_RESULT_DETAIL}"
+[[ ${TIMEOUT_RESULT_DETAIL} == *'kill_after_seconds=1 '* ]] || \
+    fail "Go forced-kill override was not recorded: ${TIMEOUT_RESULT_DETAIL}"
+[[ ${TIMEOUT_RESULT_DETAIL} == *'deadline=exceeded '* ]] || \
+    fail "timed-out capability is not marked deadline=exceeded: ${TIMEOUT_RESULT_DETAIL}"
+grep -Fxq 'fail=1' "${TIMEOUT_OUTPUT}/summary.txt" || \
+    fail 'timed-out capability was not counted as one failure'
+grep -Fxq 'exit_status=1' "${TIMEOUT_OUTPUT}/summary.txt" || \
+    fail 'timed-out capability did not produce a failing driver summary'
+
+assert_process_gone() {
+    local label=$1 pid=$2 attempt
+    for ((attempt = 0; attempt < 50; attempt += 1)); do
+        kill -0 "${pid}" 2>/dev/null || return 0
+        sleep 0.1
+    done
+    kill -KILL "${pid}" 2>/dev/null || true
+    fail "${label} survived the per-case process-group deadline: pid ${pid}"
+}
+
+[[ -s ${TIMEOUT_PARENT_PID_FILE} ]] || fail 'timed-out runner did not record its PID'
+[[ -s ${TIMEOUT_CHILD_PID_FILE} ]] || fail 'timed-out runner did not record its child PID'
+assert_process_gone 'capability runner' "$(<"${TIMEOUT_PARENT_PID_FILE}")"
+assert_process_gone 'capability child' "$(<"${TIMEOUT_CHILD_PID_FILE}")"
 
 # Prove that the one-shot py_compile suite gets an isolated cache while
 # subprocess-heavy unittest discovery clears even an inherited cache prefix.
@@ -144,7 +278,8 @@ printf '%s\n' \
     '        self.assertNotIn("PYTHONPYCACHEPREFIX", os.environ)' \
     "        Path('${PYTHON_ENV_MARKER}').write_text('dontwrite=1\\npycacheprefix=unset\\n', encoding='utf-8')" \
     >"${PYTHON_TEST_DIR}/test_environment.py"
-for required_python_tool in bash dirname env find mkdir realpath sort tee; do
+for required_python_tool in bash dirname env find mkdir realpath setsid sleep \
+    sort tail tee timeout; do
     required_python_path=$(command -v -- "${required_python_tool}") || \
         fail "self-test prerequisite is unavailable: ${required_python_tool}"
     ln -s -- "${required_python_path}" \
@@ -213,7 +348,7 @@ chmod 0755 -- "${RECOVERY_DRIVER}" "${RECOVERY_FIXTURE}" "${FAKE_COMPILER}"
 ln -s -- "${FAKE_COMPILER}" "${RECOVERY_BIN}/clang++"
 ln -s -- "${FAKE_COMPILER}" "${RECOVERY_BIN}/g++"
 for required_recovery_tool in bash chmod dirname env find flock iconv md5sum \
-    mkdir od readelf realpath rm sha256sum sort stat tee; do
+    mkdir od readelf realpath rm setsid sha256sum sleep sort stat tail tee timeout; do
     required_recovery_path=$(command -v -- "${required_recovery_tool}") || \
         fail "self-test prerequisite is unavailable: ${required_recovery_tool}"
     ln -s -- "${required_recovery_path}" \

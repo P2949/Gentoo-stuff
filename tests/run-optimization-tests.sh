@@ -23,6 +23,20 @@ RESULTS_FILE=
 PREFLIGHT_REASON=
 RESOLVED_TOOL=
 TEMP_ROOT_CREATED=0
+TIMEOUT_BIN=
+SETSID_BIN=
+SLEEP_BIN=
+ENV_BIN=
+ACTIVE_CASE_PGID=
+ACTIVE_CASE_NAME=
+ACTIVE_CASE_KILL_AFTER_SECONDS=
+RESOLVED_CASE_TIMEOUT_SECONDS=
+RESOLVED_CASE_KILL_AFTER_SECONDS=
+PROCESS_GROUP_WAS_ACTIVE=0
+PROCESS_GROUP_SURVIVED=0
+
+TEST_CASE_TIMEOUT_SECONDS=${TEST_CASE_TIMEOUT_SECONDS:-1800}
+TEST_CASE_KILL_AFTER_SECONDS=${TEST_CASE_KILL_AFTER_SECONDS:-10}
 
 declare -A SELECTED_CAPABILITIES=()
 readonly -a ALL_CAPABILITIES=(clang-ir clang-sample gcc rust go bolt)
@@ -54,6 +68,12 @@ Environment:
   OPTIMIZATION_TEST_MODE=quick|capabilities
   OPTIMIZATION_TEST_CAPABILITIES=comma,separated,names
   SHELLCHECK=/path/to/shellcheck
+  TEST_CASE_TIMEOUT_SECONDS=1800
+  TEST_CASE_KILL_AFTER_SECONDS=10
+
+Per-capability deadlines override the global values by appending the normalized
+capability name, for example TEST_CASE_TIMEOUT_SECONDS_CLANG_IR or
+TEST_CASE_KILL_AFTER_SECONDS_BOLT. Values are positive integer seconds.
 
 Fixture-specific tool and iteration overrides (for example CLANGXX,
 LLVM_PROFDATA, CLANG_SAMPLE_ITERATIONS, RUST_PGO_ITERATIONS,
@@ -74,6 +94,7 @@ quick suites:
   python-unit-tests
   package-env-duplicate-policy (portable checks plus required live Portage semantics on Gentoo)
   package-env-portage-semantic (explicit SKIP when the live Portage universe is unavailable)
+  bolt-command-policy (exact static layout policy in both BOLT command producers)
   bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
   driver-cli-self-test
   recovery-boot-evidence-fixture (fake root)
@@ -181,6 +202,29 @@ if ((LIST_ONLY)); then
     exit 0
 fi
 
+validate_positive_seconds() {
+    local variable_name=$1 value=$2
+    [[ ${value} =~ ^[1-9][0-9]*$ ]] || \
+        fail_usage "${variable_name} must be a positive integer number of seconds"
+}
+
+validate_positive_seconds TEST_CASE_TIMEOUT_SECONDS "${TEST_CASE_TIMEOUT_SECONDS}"
+validate_positive_seconds TEST_CASE_KILL_AFTER_SECONDS "${TEST_CASE_KILL_AFTER_SECONDS}"
+for capability in "${ALL_CAPABILITIES[@]}"; do
+    capability_suffix=${capability^^}
+    capability_suffix=${capability_suffix//-/_}
+    timeout_override_name=TEST_CASE_TIMEOUT_SECONDS_${capability_suffix}
+    kill_after_override_name=TEST_CASE_KILL_AFTER_SECONDS_${capability_suffix}
+    if [[ -v ${timeout_override_name} ]]; then
+        validate_positive_seconds "${timeout_override_name}" \
+            "${!timeout_override_name}"
+    fi
+    if [[ -v ${kill_after_override_name} ]]; then
+        validate_positive_seconds "${kill_after_override_name}" \
+            "${!kill_after_override_name}"
+    fi
+done
+
 if [[ ${MODE} == capabilities && ${EXPLICIT_CAPABILITIES} -eq 0 ]]; then
     for capability in "${ALL_CAPABILITIES[@]}"; do
         SELECTED_CAPABILITIES["${capability}"]=1
@@ -199,6 +243,27 @@ resolve_executable() {
     fi
     RESOLVED_TOOL=${resolved}
 }
+
+resolve_executable timeout || fail_usage 'GNU timeout is required for per-case deadlines'
+TIMEOUT_BIN=${RESOLVED_TOOL}
+timeout_help=$("${TIMEOUT_BIN}" --help 2>&1) || \
+    fail_usage 'timeout --help failed while checking per-case deadline support'
+[[ ${timeout_help} == *'--kill-after'* && ${timeout_help} == *'--foreground'* ]] || \
+    fail_usage 'timeout lacks the required --kill-after/--foreground support'
+resolve_executable setsid || fail_usage 'setsid is required for per-case process isolation'
+SETSID_BIN=${RESOLVED_TOOL}
+setsid_help=$("${SETSID_BIN}" --help 2>&1) || \
+    fail_usage 'setsid --help failed while checking process-isolation support'
+[[ ${setsid_help} == *'--wait'* ]] || \
+    fail_usage 'setsid lacks the required --wait support'
+resolve_executable sleep || fail_usage 'sleep is required for process-group cleanup'
+SLEEP_BIN=${RESOLVED_TOOL}
+resolve_executable env || fail_usage 'GNU env is required for child signal normalization'
+ENV_BIN=${RESOLVED_TOOL}
+env_help=$("${ENV_BIN}" --help 2>&1) || \
+    fail_usage 'env --help failed while checking child signal-normalization support'
+[[ ${env_help} == *'--default-signal'* ]] || \
+    fail_usage 'env lacks the required --default-signal support'
 
 require_commands() {
     local -a missing=()
@@ -249,6 +314,18 @@ create_run_root() {
 # shellcheck disable=SC2329
 cleanup() {
     local status=$?
+    local active_case_pid=
+    if [[ -n ${ACTIVE_CASE_PGID} ]]; then
+        active_case_pid=${ACTIVE_CASE_PGID}
+        printf 'WARNING: terminating active test case on driver exit: %s (process group %s)\n' \
+            "${ACTIVE_CASE_NAME}" "${ACTIVE_CASE_PGID}" >&2
+        cleanup_process_group "${ACTIVE_CASE_PGID}" \
+            "${ACTIVE_CASE_KILL_AFTER_SECONDS}"
+        wait "${active_case_pid}" 2>/dev/null || true
+        ACTIVE_CASE_PGID=
+        ACTIVE_CASE_NAME=
+        ACTIVE_CASE_KILL_AFTER_SECONDS=
+    fi
     if ((TEMP_ROOT_CREATED)) && ((KEEP_TEMP == 0)) && ((FAIL_COUNT == 0)); then
         case ${RUN_ROOT} in
             /tmp/gentoo-optimization-tests.*)
@@ -272,11 +349,6 @@ cleanup() {
     return "${status}"
 }
 
-create_run_root
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM HUP
-
 safe_detail() {
     local detail=$1
     detail=${detail//$'\t'/ }
@@ -297,31 +369,96 @@ skip_case() {
     printf 'SKIP: %s — %s\n' "${name}" "${reason}"
 }
 
-run_case() {
-    local name=$1
-    shift
+process_group_exists() {
+    local pgid=$1
+    kill -0 -- "-${pgid}" 2>/dev/null
+}
+
+cleanup_process_group() {
+    local pgid=$1 grace_seconds=$2
+    local attempt max_attempts
+    PROCESS_GROUP_WAS_ACTIVE=0
+    PROCESS_GROUP_SURVIVED=0
+    if ! process_group_exists "${pgid}"; then
+        return 0
+    fi
+
+    PROCESS_GROUP_WAS_ACTIVE=1
+    kill -TERM -- "-${pgid}" 2>/dev/null || true
+    max_attempts=$((grace_seconds * 10))
+    for ((attempt = 0; attempt < max_attempts; attempt += 1)); do
+        process_group_exists "${pgid}" || return 0
+        "${SLEEP_BIN}" 0.1
+    done
+
+    kill -KILL -- "-${pgid}" 2>/dev/null || true
+    for ((attempt = 0; attempt < 20; attempt += 1)); do
+        process_group_exists "${pgid}" || return 0
+        "${SLEEP_BIN}" 0.1
+    done
+    PROCESS_GROUP_SURVIVED=1
+    return 0
+}
+
+run_case_with_deadline() {
+    local name=$1 timeout_seconds=$2 kill_after_seconds=$3
+    shift 3
     local slug=${name//[^[:alnum:]_.-]/_}
     local log=${LOG_ROOT}/${slug}.log
-    local status
+    local status case_pgid started_at elapsed_seconds
+    local deadline_state=within-limit process_group_cleanup=clean
 
     printf 'RUN:  %s\n' "${name}"
     {
         printf 'COMMAND'
         printf ' %q' "$@"
         printf '\n'
+        printf 'DEADLINE timeout_seconds=%s kill_after_seconds=%s\n' \
+            "${timeout_seconds}" "${kill_after_seconds}"
     } >"${log}"
+    started_at=${SECONDS}
     set +e
-    "$@" >>"${log}" 2>&1
+    "${SETSID_BIN}" --wait \
+        "${TIMEOUT_BIN}" --foreground --signal=TERM \
+        --kill-after="${kill_after_seconds}s" "${timeout_seconds}s" \
+        "${ENV_BIN}" --default-signal=HUP --default-signal=INT \
+        --default-signal=QUIT --default-signal=TERM -- \
+        "$@" >>"${log}" 2>&1 &
+    case_pgid=$!
+    ACTIVE_CASE_PGID=${case_pgid}
+    ACTIVE_CASE_NAME=${name}
+    ACTIVE_CASE_KILL_AFTER_SECONDS=${kill_after_seconds}
+    wait "${case_pgid}"
     status=$?
+    cleanup_process_group "${case_pgid}" "${kill_after_seconds}"
+    if ((PROCESS_GROUP_WAS_ACTIVE)); then
+        process_group_cleanup=terminated-residual
+        if ((status == 0)); then
+            status=125
+        fi
+    fi
+    if ((PROCESS_GROUP_SURVIVED)); then
+        process_group_cleanup=failed
+        status=125
+    fi
+    ACTIVE_CASE_PGID=
+    ACTIVE_CASE_NAME=
+    ACTIVE_CASE_KILL_AFTER_SECONDS=
     set -e
+    elapsed_seconds=$((SECONDS - started_at))
+    if ((status == 124 || status == 137)); then
+        deadline_state=exceeded
+    fi
     if ((status == 0)); then
         ((PASS_COUNT += 1))
-        record_result PASS "${name}" "exit_status=0 log=${log}"
+        record_result PASS "${name}" \
+            "exit_status=0 log=${log} timeout_seconds=${timeout_seconds} kill_after_seconds=${kill_after_seconds} elapsed_seconds=${elapsed_seconds} deadline=${deadline_state} process_group_cleanup=${process_group_cleanup}"
         printf 'PASS: %s\n' "${name}"
     else
         ((FAIL_COUNT += 1))
         KEEP_TEMP=1
-        record_result FAIL "${name}" "exit_status=${status} log=${log}"
+        record_result FAIL "${name}" \
+            "exit_status=${status} log=${log} timeout_seconds=${timeout_seconds} kill_after_seconds=${kill_after_seconds} elapsed_seconds=${elapsed_seconds} deadline=${deadline_state} process_group_cleanup=${process_group_cleanup}"
         printf 'FAIL: %s (exit %d; log: %s)\n' "${name}" "${status}" "${log}" >&2
         printf '%s\n' '----- failure log tail -----' >&2
         tail -n 240 -- "${log}" >&2 || true
@@ -329,14 +466,27 @@ run_case() {
     fi
 }
 
-# run_case receives this function name as its command.
-# shellcheck disable=SC2329
-run_in_repository() {
-    (
-        cd -- "${REPOSITORY_ROOT}"
-        "$@"
-    )
+run_case() {
+    local name=$1
+    shift
+    run_case_with_deadline "${name}" "${TEST_CASE_TIMEOUT_SECONDS}" \
+        "${TEST_CASE_KILL_AFTER_SECONDS}" "$@"
 }
+
+run_case_in_repository() {
+    local name=$1
+    shift
+    # The positional parameters intentionally expand in the child Bash.
+    # shellcheck disable=SC2016
+    run_case "${name}" bash -c \
+        'cd -- "$1"; shift; exec "$@"' run-in-repository \
+        "${REPOSITORY_ROOT}" "$@"
+}
+
+create_run_root
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 declare -a SHELL_SOURCES=()
 declare -a PYTHON_SOURCES=()
@@ -403,8 +553,8 @@ else
         fi
         for test_directory in "${PYTHON_TEST_DIRECTORIES[@]}"; do
             relative_directory=${test_directory#"${REPOSITORY_ROOT}/"}
-            run_case "python-unit-tests:${relative_directory}" \
-                run_in_repository env -u PYTHONPYCACHEPREFIX \
+            run_case_in_repository "python-unit-tests:${relative_directory}" \
+                env -u PYTHONPYCACHEPREFIX \
                 PYTHONDONTWRITEBYTECODE=1 \
                 "${PYTHON_BIN}" -m unittest discover \
                 -s "${test_directory}" -p 'test_*.py' -v
@@ -422,16 +572,26 @@ else
     if [[ -d /var/db/pkg && -d /var/db/repos ]] && \
         PYTHONDONTWRITEBYTECODE=1 "${PYTHON_BIN}" -c 'import portage' \
             >/dev/null 2>&1; then
-        run_case package-env-duplicate-policy \
-            run_in_repository "${PYTHON_BIN}" \
+        run_case_in_repository package-env-duplicate-policy \
+            "${PYTHON_BIN}" \
             "${PACKAGE_ENV_DUPLICATE_CHECKER}" --require-portage-universe
     else
-        run_case package-env-duplicate-policy \
-            run_in_repository "${PYTHON_BIN}" \
+        run_case_in_repository package-env-duplicate-policy \
+            "${PYTHON_BIN}" \
             "${PACKAGE_ENV_DUPLICATE_CHECKER}" --skip-portage-universe
         skip_case package-env-portage-semantic \
             'Portage Python API and live /var/db/pkg plus /var/db/repos are unavailable; portable policy checks ran, live atom/overlap semantics did not'
     fi
+fi
+
+BOLT_COMMAND_POLICY_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-command-policy.sh
+if [[ ! -f ${BOLT_COMMAND_POLICY_FIXTURE} ]]; then
+    skip_case bolt-command-policy \
+        "fixture is absent: ${BOLT_COMMAND_POLICY_FIXTURE}"
+elif ! require_commands bash grep; then
+    skip_case bolt-command-policy "${PREFLIGHT_REASON}"
+else
+    run_case bolt-command-policy bash -- "${BOLT_COMMAND_POLICY_FIXTURE}"
 fi
 
 BOLT_TRANSACTION_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-transaction.sh
@@ -719,6 +879,24 @@ preflight_bolt() {
     return 0
 }
 
+resolve_capability_deadlines() {
+    local capability=$1 capability_suffix timeout_override_name
+    local kill_after_override_name
+    capability_suffix=${capability^^}
+    capability_suffix=${capability_suffix//-/_}
+    timeout_override_name=TEST_CASE_TIMEOUT_SECONDS_${capability_suffix}
+    kill_after_override_name=TEST_CASE_KILL_AFTER_SECONDS_${capability_suffix}
+
+    RESOLVED_CASE_TIMEOUT_SECONDS=${TEST_CASE_TIMEOUT_SECONDS}
+    RESOLVED_CASE_KILL_AFTER_SECONDS=${TEST_CASE_KILL_AFTER_SECONDS}
+    if [[ -v ${timeout_override_name} ]]; then
+        RESOLVED_CASE_TIMEOUT_SECONDS=${!timeout_override_name}
+    fi
+    if [[ -v ${kill_after_override_name} ]]; then
+        RESOLVED_CASE_KILL_AFTER_SECONDS=${!kill_after_override_name}
+    fi
+}
+
 run_capability() {
     local capability=$1
     local runner output description
@@ -791,7 +969,11 @@ run_capability() {
         skip_case "capability:${capability}" "fixture runner is absent: ${runner}"
         return 0
     fi
-    run_case "capability:${capability}:${description}" bash -- "${runner}" "${output}"
+    resolve_capability_deadlines "${capability}"
+    run_case_with_deadline "capability:${capability}:${description}" \
+        "${RESOLVED_CASE_TIMEOUT_SECONDS}" \
+        "${RESOLVED_CASE_KILL_AFTER_SECONDS}" \
+        bash -- "${runner}" "${output}"
 }
 
 for capability in "${ALL_CAPABILITIES[@]}"; do
