@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -714,6 +715,25 @@ class SampleConversionTest(unittest.TestCase):
             self.assertIn("already exists", stderr)
             self.assertEqual(final.read_text(encoding="ascii"), "PREEXISTING\n")
             self.assertFalse(metadata_path.exists())
+
+    def test_legacy_weak_sample_producer_is_unconditionally_disabled(self) -> None:
+        legacy = REPOSITORY_ROOT / "scripts" / "pgo" / "make-sample-prof.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            completed = subprocess.run(
+                [os.fspath(legacy), "cat", "pkg", "/bin/true", "/tmp/perf.data"],
+                cwd=directory,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=5,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn("permanently disabled", completed.stderr)
+            self.assertIn("sample-convert", completed.stderr)
+            self.assertNotIn("wrote", completed.stdout)
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
 
 if __name__ == "__main__":

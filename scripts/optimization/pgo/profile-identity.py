@@ -963,7 +963,7 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
     )
 
     completed = False
-    old_handlers: dict[int, Any] = {}
+    old_handlers: dict[signal.Signals, Any] = {}
 
     def interrupted(signum: int, _frame: object) -> NoReturn:
         fail(f"sample conversion interrupted by signal {signum}")
