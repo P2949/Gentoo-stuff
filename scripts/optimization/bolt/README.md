@@ -15,9 +15,13 @@ capture-input.sh --ed "${ED}" --cache-root "${GENTOO_OPT_BOLT_CACHE_ROOT}" \
 
 Eligibility requires ELF64, x86-64, `ET_EXEC` or `ET_DYN`, executable code, a
 full symbol table, `.rel.text`/`.rela.text`, a GNU build ID, and a nonempty
-`.text`. The manifest also records every ineligible ELF reason, hardlink group,
+`.text`. The manifest also records every automatic readiness failure, hardlink group,
 symlink, mode, ownership intent, xattr/capability value, file hash, build ID,
 and `.text` hash.
+
+Readiness failures are not terminal exclusions. Missing build IDs, relocation
+metadata, or symbols remain remediable pending items until the later policy
+classifier records a separately reviewed terminal decision.
 
 After an exact captured input has been profiled and optimized, register the
 prepared output. Registration rejects an invalid ELF or an output without
@@ -25,8 +29,15 @@ prepared output. Registration rejects an invalid ELF or an output without
 
 ```bash
 register-output.sh --cache-root "${GENTOO_OPT_BOLT_CACHE_ROOT}" \
-  --fingerprint "${GENTOO_OPT_FINGERPRINT}" --artifact-id ID --output FILE
+  --fingerprint "${GENTOO_OPT_FINGERPRINT}" --artifact-id ID \
+  --input "${GENTOO_OPT_BOLT_CACHE_ROOT}/inputs/${GENTOO_OPT_FINGERPRINT}/objects/ID.elf" \
+  --output FILE
 ```
+
+The required `--input` must match the captured full-file hash, build ID, and
+`.text` hash. The BOLT profiling/optimization transaction must invoke BOLT on
+that exact object and pass the same path at registration; a merely similar
+installed binary is not accepted as provenance.
 
 Deployment requires registered output for every eligible input. It validates
 the package fingerprint, full input hash, build ID, `.text` hash, hardlinks,

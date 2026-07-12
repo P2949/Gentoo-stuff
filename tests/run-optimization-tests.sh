@@ -94,8 +94,10 @@ quick suites:
   python-unit-tests
   package-env-duplicate-policy (portable checks plus required live Portage semantics on Gentoo)
   package-env-portage-semantic (explicit SKIP when the live Portage universe is unavailable)
+  pgo-dispatcher (strict backend/ABI/fingerprint and stage-hook fixture)
   bolt-command-policy (exact static layout policy in both BOLT command producers)
   bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
+  bolt-pre-strip-hooks (hermetic capture/register/deploy and rollback fixture)
   driver-cli-self-test
   recovery-boot-evidence-fixture (fake root)
   recovery-rollback-fixture (fake root, including Clang/libc++ and GCC/libstdc++)
@@ -584,6 +586,16 @@ else
     fi
 fi
 
+PGO_DISPATCHER_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-pgo-dispatcher.sh
+if [[ ! -f ${PGO_DISPATCHER_FIXTURE} ]]; then
+    skip_case pgo-dispatcher "fixture is absent: ${PGO_DISPATCHER_FIXTURE}"
+elif ! require_commands awk bash chmod find grep head mkdir mktemp realpath rm sed \
+    sha256sum sort touch wc; then
+    skip_case pgo-dispatcher "${PREFLIGHT_REASON}"
+else
+    run_case pgo-dispatcher bash -- "${PGO_DISPATCHER_FIXTURE}"
+fi
+
 BOLT_COMMAND_POLICY_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-command-policy.sh
 if [[ ! -f ${BOLT_COMMAND_POLICY_FIXTURE} ]]; then
     skip_case bolt-command-policy \
@@ -603,6 +615,17 @@ elif ! require_commands awk bash chmod cmp cp grep mkdir mktemp mv ps rm sleep \
     skip_case bolt-transaction-fixture "${PREFLIGHT_REASON}"
 else
     run_case bolt-transaction-fixture bash -- "${BOLT_TRANSACTION_FIXTURE}"
+fi
+
+BOLT_HOOK_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-hooks.sh
+if [[ ! -f ${BOLT_HOOK_FIXTURE} ]]; then
+    skip_case bolt-pre-strip-hooks \
+        "fixture is absent: ${BOLT_HOOK_FIXTURE}"
+elif ! require_commands awk bash cc chmod cmp cp find grep ln mkdir mktemp \
+    objcopy python3 readelf readlink rm sed sha256sum sort stat; then
+    skip_case bolt-pre-strip-hooks "${PREFLIGHT_REASON}"
+else
+    run_case bolt-pre-strip-hooks bash -- "${BOLT_HOOK_FIXTURE}"
 fi
 
 DRIVER_SELF_TEST=${REPOSITORY_ROOT}/tests/optimization/test-run-optimization-tests.sh

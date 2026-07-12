@@ -92,6 +92,8 @@ assert all(item["machine"] == "Advanced Micro Devices X86-64" for item in manife
 assert all(item["has_symtab"] and item["symbol_count"] for item in manifest["artifacts"])
 assert all(item["text_relocation_sections"] for item in manifest["artifacts"])
 assert all(item["build_id"] and item["text_sha256"] for item in manifest["artifacts"])
+assert all(item["readiness_failures"] == [] for item in manifest["artifacts"])
+assert all("terminal_reasons" not in item for item in manifest["artifacts"])
 hardlinks = [item for item in manifest["artifacts"] if item["hardlink_count"] == 2]
 assert len(hardlinks) == 1
 assert hardlinks[0]["paths"] == ["usr/bin/fixed", "usr/bin/fixed-hardlink"]
@@ -123,7 +125,8 @@ while IFS=$'\t' read -r artifact_id object_file; do
         --set-section-flags .note.bolt_info=alloc,readonly \
         "${prepared}"
     "${REGISTER}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
-        --artifact-id "${artifact_id}" --output "${prepared}" \
+        --artifact-id "${artifact_id}" \
+        --input "${CACHE}/inputs/${FINGERPRINT}/${object_file}" --output "${prepared}" \
         >"${WORK}/register-${artifact_id}.out"
 done < <(python3 - "${MANIFEST}" <<'PY'
 import json
@@ -141,11 +144,37 @@ import sys
 print(json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"][0]["artifact_id"])
 PY
 )
+FIRST_OBJECT=$(python3 - "${MANIFEST}" "${FIRST_ID}" <<'PY'
+import json
+import sys
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+print(next(item["cache_object"] for item in manifest["artifacts"] if item["artifact_id"] == sys.argv[2]))
+PY
+)
+OTHER_OBJECT=$(python3 - "${MANIFEST}" "${FIRST_ID}" <<'PY'
+import json
+import sys
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+print(next(item["cache_object"] for item in manifest["artifacts"] if item["artifact_id"] != sys.argv[2]))
+PY
+)
+
+if "${REGISTER}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+        --artifact-id "${FIRST_ID}" \
+        --input "${CACHE}/inputs/${FINGERPRINT}/${OTHER_OBJECT}" \
+        --output "${WORK}/${FIRST_ID}.bolt" \
+        >"${WORK}/wrong-input.out" 2>"${WORK}/wrong-input.err"; then
+    fail 'output registration accepted the wrong exact BOLT input'
+fi
+grep -Fq 'exact BOLT input full-file hash differs' "${WORK}/wrong-input.err" || \
+    fail 'wrong exact-input rejection lacked an exact reason'
 
 # Registration rejects a symlink even when its target is a valid BOLT output.
 ln -s -- "${WORK}/${FIRST_ID}.bolt" "${WORK}/prepared-output-symlink"
 if "${REGISTER}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
-        --artifact-id "${FIRST_ID}" --output "${WORK}/prepared-output-symlink" \
+        --artifact-id "${FIRST_ID}" \
+        --input "${CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
+        --output "${WORK}/prepared-output-symlink" \
         >"${WORK}/symlink-output.out" 2>"${WORK}/symlink-output.err"; then
     fail 'output registration accepted a symlink'
 fi
@@ -193,18 +222,14 @@ cp -- "${WORK}/manifest.good" "${MANIFEST}"
 # Force a post-rename verifier failure through a deterministic readelf proxy.
 # The deployer must roll every group back to exact bytes and topology.
 REAL_READELF=$(command -v readelf)
-READELF_COUNT=${WORK}/readelf-count
 READELF_PROXY=${WORK}/readelf-post-rename-failure
 # The single-quoted lines intentionally become a separate proxy script.
 # shellcheck disable=SC2016
 printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
-    'count=0' \
-    '[[ ! -s ${READELF_COUNT} ]] || count=$(<"${READELF_COUNT}")' \
-    '((count += 1))' \
-    'printf "%s\\n" "${count}" >"${READELF_COUNT}"' \
-    'if (( count >= 26 )) && [[ ${1-} == -SW ]]; then' \
+    'last=${!#}' \
+    'if [[ ${1-} == -SW && ${last} == "${FAIL_PATH}" ]]; then' \
     '    "${REAL_READELF}" "$@" | sed "/[.]note[.]bolt_info/d"' \
     'else' \
     '    exec "${REAL_READELF}" "$@"' \
@@ -213,7 +238,7 @@ printf '%s\n' \
 chmod 0755 -- "${READELF_PROXY}"
 sha256sum -- "${ED}/usr/bin/fixed" "${ED}/usr/bin/pie" \
     "${ED}/usr/lib64/libfixture.so.1" >"${WORK}/pre-rollback-hashes"
-if READELF_COUNT=${READELF_COUNT} REAL_READELF=${REAL_READELF} \
+if FAIL_PATH=${ED}/usr/bin/fixed REAL_READELF=${REAL_READELF} \
         "${DEPLOY}" --ed "${ED}" --cache-root "${CACHE}" \
         --fingerprint "${FINGERPRINT}" --readelf "${READELF_PROXY}" \
         >"${WORK}/post-rename-failure.out" 2>"${WORK}/post-rename-failure.err"; then
@@ -317,7 +342,8 @@ assert manifest["elf_total"] == 2
 classes = {item["elf_class"]: item for item in manifest["artifacts"]}
 assert classes["ELF64"]["eligible"] is True
 assert classes["ELF32"]["eligible"] is False
-assert "unsupported-elf-class" in classes["ELF32"]["terminal_reasons"]
+assert "unsupported-elf-class" in classes["ELF32"]["readiness_failures"]
+assert "terminal_reasons" not in classes["ELF32"]
 PY
 else
     printf 'SKIP: compiler cannot link the hermetic ELF32 mixed-ABI fixture\n'

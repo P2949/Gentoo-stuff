@@ -301,7 +301,10 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         "text_size": text_size,
         "has_bolt_info": ".note.bolt_info" in section_names,
         "eligible": not reasons,
-        "terminal_reasons": reasons,
+        # These are automatic readiness findings, never reviewed terminal
+        # exclusions. Later classification policy must remediate or explicitly
+        # adjudicate each finding.
+        "readiness_failures": reasons,
     }
 
 
@@ -569,12 +572,29 @@ def command_register(arguments: argparse.Namespace) -> None:
         fail("output registration requires readelf and objcopy")
     _, capture = capture_paths(cache, fingerprint)
     source_artifact = find_artifact(capture, arguments.artifact_id)
+    input_unresolved = reject_symlink_components(arguments.input, "exact BOLT input")
+    input_status = input_unresolved.lstat()
+    if not stat.S_ISREG(input_status.st_mode):
+        fail(f"exact BOLT input is not a regular file: {input_unresolved}")
+    input_source = input_unresolved.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="bolt-output-classify-", dir=cache) as temporary:
-        classification = classify_elf(
-            output_source, readelf, objcopy, Path(temporary)
+        temporary_root = Path(temporary)
+        input_classification = classify_elf(
+            input_source, readelf, objcopy, temporary_root / "input"
         )
+        classification = classify_elf(
+            output_source, readelf, objcopy, temporary_root / "output"
+        )
+    if sha256_file(input_source) != source_artifact["file_sha256"]:
+        fail("exact BOLT input full-file hash differs from captured input")
+    if input_classification["build_id"] != source_artifact["build_id"]:
+        fail("exact BOLT input GNU build ID differs from captured input")
+    if input_classification["text_sha256"] != source_artifact["text_sha256"]:
+        fail("exact BOLT input .text hash differs from captured input")
     if not classification["has_bolt_info"]:
         fail("prepared output lacks .note.bolt_info")
+    if classification["build_id"] is None:
+        fail("prepared output lacks a GNU build ID")
     for key in ("elf_class", "elf_type", "machine"):
         if classification[key] != source_artifact[key]:
             fail(f"prepared output {key} differs from captured input")
@@ -889,6 +909,7 @@ def build_parser() -> argparse.ArgumentParser:
     register.add_argument("--cache-root", required=True)
     register.add_argument("--fingerprint", required=True)
     register.add_argument("--artifact-id", required=True)
+    register.add_argument("--input", required=True)
     register.add_argument("--output", required=True)
     register.add_argument("--readelf", default="readelf")
     register.add_argument("--objcopy", default="objcopy")

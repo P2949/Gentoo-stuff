@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import stat
 import subprocess
 import sys
@@ -80,6 +81,27 @@ SAMPLE_METADATA_FIELDS = {
     "input_identity",
     "validator",
     "validation",
+    "source",
+}
+SAMPLE_SOURCE_EXTERNAL_FIELDS = {"kind"}
+SAMPLE_SOURCE_PROFGEN_FIELDS = {
+    "kind",
+    "binary_path",
+    "binary_sha256",
+    "debug_binary_path",
+    "debug_binary_sha256",
+    "perf_data_path",
+    "perf_data_sha256",
+    "producer",
+    "readelf",
+    "objcopy",
+    "command_arguments",
+}
+LLVM_TOOL_IDENTITY_FIELDS = {
+    "realpath",
+    "sha256",
+    "version_stderr",
+    "version_stdout",
 }
 
 
@@ -290,6 +312,83 @@ def run_tool(path: Path, arguments: list[str], label: str) -> tuple[str, str]:
         diagnostic = (stderr or stdout).strip().replace("\n", " ")[:400]
         fail(f"{label} exited {completed.returncode}: {diagnostic}")
     return stdout, stderr
+
+
+def terminate_process_group(process: subprocess.Popen[bytes], kill_after: float) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=kill_after)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=kill_after)
+    except subprocess.TimeoutExpired:
+        fail("converter process group survived SIGKILL")
+
+
+def run_bounded_tool(
+    path: Path,
+    arguments: list[str],
+    label: str,
+    timeout_seconds: float,
+    kill_after_seconds: float,
+) -> tuple[str, str]:
+    try:
+        process = subprocess.Popen(
+            [os.fspath(path), *arguments],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+            env={"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin"},
+        )
+    except OSError as exc:
+        fail(f"cannot execute {label} {path}: {exc}")
+    try:
+        try:
+            stdout_bytes, stderr_bytes = process.communicate(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            terminate_process_group(process, kill_after_seconds)
+            fail(f"{label} timed out after {timeout_seconds:g} seconds")
+    except BaseException:
+        terminate_process_group(process, kill_after_seconds)
+        raise
+    if len(stdout_bytes) > MAX_TOOL_OUTPUT or len(stderr_bytes) > MAX_TOOL_OUTPUT:
+        fail(f"{label} output exceeds {MAX_TOOL_OUTPUT} bytes")
+    try:
+        stdout = stdout_bytes.decode("utf-8", errors="strict")
+        stderr = stderr_bytes.decode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        fail(f"{label} output is not UTF-8: {exc}")
+    if process.returncode != 0:
+        diagnostic = (stderr or stdout).strip().replace("\n", " ")[:400]
+        fail(f"{label} exited {process.returncode}: {diagnostic}")
+    return stdout, stderr
+
+
+def canonical_regular_input(path: Path, label: str, *, nonempty: bool = True) -> Path:
+    if not path.is_absolute():
+        fail(f"{label} must be an absolute path")
+    try:
+        canonical = path.resolve(strict=True)
+        path_stat = canonical.stat()
+    except OSError as exc:
+        fail(f"cannot resolve {label} {path}: {exc}")
+    if not stat.S_ISREG(path_stat.st_mode):
+        fail(f"{label} does not resolve to a regular file: {path}")
+    if nonempty and path_stat.st_size == 0:
+        fail(f"{label} is empty: {path}")
+    return canonical
 
 
 def inspect_executable(path_value: object, label: str) -> tuple[Path, Path, str]:
@@ -580,18 +679,20 @@ def profile_path_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def inspect_llvm_profdata(path_value: Path, clang_major: int) -> dict[str, object]:
+def inspect_llvm_tool(
+    path_value: Path, clang_major: int, label: str
+) -> dict[str, object]:
     _requested, realpath, binary_sha256 = inspect_executable(
-        os.fspath(path_value), "llvm_profdata"
+        os.fspath(path_value), label
     )
-    stdout, stderr = run_tool(realpath, ["--version"], "llvm-profdata version command")
+    stdout, stderr = run_tool(realpath, ["--version"], f"{label} version command")
     match = re.search(r"(?im)LLVM version\s+([0-9]+)(?:\.|\s)", stdout + "\n" + stderr)
     if match is None:
-        fail("llvm-profdata output does not contain an LLVM major")
+        fail(f"{label} output does not contain an LLVM major")
     observed_major = int(match.group(1))
     if observed_major != clang_major:
         fail(
-            f"llvm-profdata major {observed_major} does not match Clang major {clang_major}"
+            f"{label} major {observed_major} does not match Clang major {clang_major}"
         )
     return {
         "realpath": os.fspath(realpath),
@@ -599,6 +700,10 @@ def inspect_llvm_profdata(path_value: Path, clang_major: int) -> dict[str, objec
         "version_stderr": stderr,
         "version_stdout": stdout,
     }
+
+
+def inspect_llvm_profdata(path_value: Path, clang_major: int) -> dict[str, object]:
+    return inspect_llvm_tool(path_value, clang_major, "llvm-profdata")
 
 
 def validate_sample_file(profile: Path, llvm_profdata: Path) -> dict[str, object]:

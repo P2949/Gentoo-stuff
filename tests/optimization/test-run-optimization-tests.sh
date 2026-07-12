@@ -34,10 +34,14 @@ grep -Fq 'package-env-duplicate-policy' "${FIXTURE}/list.txt" || \
     fail 'suite list omits package.env duplicate-policy validation'
 grep -Fq 'package-env-portage-semantic' "${FIXTURE}/list.txt" || \
     fail 'suite list omits explicit live Portage semantic status'
+grep -Fq 'pgo-dispatcher' "${FIXTURE}/list.txt" || \
+    fail 'suite list omits the strict PGO dispatcher fixture'
 grep -Fq 'bolt-command-policy' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the exact BOLT command-policy gate'
 grep -Fq 'bolt-transaction-fixture' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the hermetic BOLT transaction fixture'
+grep -Fq 'bolt-pre-strip-hooks' "${FIXTURE}/list.txt" || \
+    fail 'suite list omits the pre-strip BOLT hook fixture'
 for capability in clang-ir clang-sample gcc rust go bolt; do
     grep -Eq "^[[:space:]]+${capability}([[:space:]]|$)" \
         "${FIXTURE}/list.txt" || fail "suite list omits ${capability}"
