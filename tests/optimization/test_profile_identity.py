@@ -100,8 +100,10 @@ class Fixture:
             "  exit 0\n"
             "fi\n"
             "if [ \"$1\" = --dump-section ]; then\n"
+            "  [ \"$#\" -eq 4 ] || exit 68\n"
             "  output=${2#.text=}\n"
             "  printf '%s\\n' TEXT >\"$output\"\n"
+            "  cp -- \"$3\" \"$4\"\n"
             "  exit 0\n"
             "fi\n"
             "exit 67\n",
@@ -210,6 +212,7 @@ class Fixture:
             "--perf-data", os.fspath(self.perf_data),
             "--profile-out", os.fspath(profile),
             "--metadata-out", os.fspath(metadata),
+            "--manifest-out", os.fspath(metadata.with_suffix(".manifest")),
             "--cpv", "dev-util/example-1.2.3-r1",
             "--fingerprint", "b" * 64,
             "--abi", "amd64",
@@ -499,7 +502,9 @@ class SampleProfileTest(unittest.TestCase):
             metadata_path = fixture.root / "sample-metadata.json"
             arguments = fixture.sample_arguments(profile)
             status, stdout, stderr = fixture.invoke(
-                "sample-record", *arguments, "--metadata-out", os.fspath(metadata_path)
+                "sample-record", *arguments,
+                "--metadata-out", os.fspath(metadata_path),
+                "--manifest-out", os.fspath(fixture.root / "sample.manifest"),
             )
             self.assertEqual(status, 0, stderr)
             self.assertRegex(stdout.strip(), r"^[0-9a-f]{64}$")
@@ -510,6 +515,22 @@ class SampleProfileTest(unittest.TestCase):
             self.assertEqual(metadata["input_identity"]["build_id"], "c" * 40)
             self.assertEqual(metadata["input_identity"]["text_sha256"], "d" * 64)
             self.assertEqual(metadata["validation"]["command_arguments"][1], "--sample")
+            manifest_lines = (fixture.root / "sample.manifest").read_text(
+                encoding="ascii"
+            ).splitlines()
+            self.assertEqual(
+                manifest_lines,
+                [
+                    "schema=gentoo-optimization-profile-v1",
+                    "backend=clang-sample",
+                    f"fingerprint={'b' * 64}",
+                    "abi=amd64",
+                    "compiler_family=clang",
+                    f"profile_path={profile}",
+                    f"profile_sha256={stdout.strip()}",
+                    "validation_status=passed",
+                ],
+            )
 
             status, validate_stdout, validate_stderr = fixture.invoke(
                 "sample-validate", *arguments, "--metadata", os.fspath(metadata_path)
@@ -533,6 +554,8 @@ class SampleProfileTest(unittest.TestCase):
                         *fixture.sample_arguments(profile),
                         "--metadata-out",
                         os.fspath(fixture.root / f"{name}.json"),
+                        "--manifest-out",
+                        os.fspath(fixture.root / f"{name}.manifest"),
                     )
                     self.assertEqual(status, 1)
                     self.assertIn("ERROR:", stderr)
@@ -542,6 +565,8 @@ class SampleProfileTest(unittest.TestCase):
                 *fixture.sample_arguments(missing),
                 "--metadata-out",
                 os.fspath(fixture.root / "missing.json"),
+                "--manifest-out",
+                os.fspath(fixture.root / "missing.manifest"),
             )
             self.assertEqual(status, 1)
             self.assertIn("ERROR:", stderr)
@@ -557,9 +582,11 @@ class SampleProfileTest(unittest.TestCase):
                 *fixture.sample_arguments(profile),
                 "--metadata-out",
                 os.fspath(profile),
+                "--manifest-out",
+                os.fspath(fixture.root / "must-not-exist.manifest"),
             )
             self.assertEqual(status, 1)
-            self.assertIn("must not replace", stderr)
+            self.assertIn("must be distinct", stderr)
             self.assertEqual(profile.read_bytes(), original)
 
     def test_profile_content_identity_tool_and_metadata_mismatches_fail(self) -> None:
@@ -570,7 +597,9 @@ class SampleProfileTest(unittest.TestCase):
             metadata_path = fixture.root / "sample-metadata.json"
             arguments = fixture.sample_arguments(profile)
             status, _stdout, stderr = fixture.invoke(
-                "sample-record", *arguments, "--metadata-out", os.fspath(metadata_path)
+                "sample-record", *arguments,
+                "--metadata-out", os.fspath(metadata_path),
+                "--manifest-out", os.fspath(fixture.root / "sample.manifest"),
             )
             self.assertEqual(status, 0, stderr)
 
@@ -617,6 +646,8 @@ class SampleConversionTest(unittest.TestCase):
             output.parent.mkdir()
             partial = output.with_name("sample.prof.partial")
             partial.write_text("STALE\n", encoding="ascii")
+            binary_hash_before = hashlib.sha256(fixture.binary.read_bytes()).hexdigest()
+            binary_stat_before = fixture.binary.stat()
             status, stdout, stderr = fixture.invoke(
                 "sample-convert",
                 *fixture.conversion_arguments(
@@ -626,6 +657,15 @@ class SampleConversionTest(unittest.TestCase):
             self.assertEqual(status, 0, stderr)
             self.assertEqual(output.read_text(encoding="ascii"), "SAMPLE\n")
             self.assertFalse(partial.exists())
+            self.assertEqual(
+                hashlib.sha256(fixture.binary.read_bytes()).hexdigest(),
+                binary_hash_before,
+            )
+            binary_stat_after = fixture.binary.stat()
+            self.assertEqual(binary_stat_after.st_ino, binary_stat_before.st_ino)
+            self.assertEqual(binary_stat_after.st_mode, binary_stat_before.st_mode)
+            self.assertEqual(binary_stat_after.st_size, binary_stat_before.st_size)
+            self.assertEqual(binary_stat_after.st_mtime_ns, binary_stat_before.st_mtime_ns)
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             source = metadata["source"]
             self.assertEqual(source["kind"], "llvm-profgen")
@@ -651,6 +691,11 @@ class SampleConversionTest(unittest.TestCase):
                 metadata["input_identity"]["text_sha256"], expected_text_sha
             )
             self.assertEqual(metadata["profile_sha256"], stdout.strip())
+            manifest_path = metadata_path.with_suffix(".manifest")
+            manifest = manifest_path.read_text(encoding="ascii")
+            self.assertIn("backend=clang-sample\n", manifest)
+            self.assertIn(f"profile_path={output}\n", manifest)
+            self.assertIn(f"profile_sha256={stdout.strip()}\n", manifest)
 
             validation_arguments = fixture.sample_arguments(output)
             text_index = validation_arguments.index("--text-sha256") + 1
@@ -690,6 +735,7 @@ class SampleConversionTest(unittest.TestCase):
                         self.assertIn("timed out", stderr)
                     self.assertFalse(output.exists())
                     self.assertFalse(metadata_path.exists())
+                    self.assertFalse(metadata_path.with_suffix(".manifest").exists())
                     self.assertFalse(output.with_name("sample.prof.partial").exists())
 
     def test_ambiguous_destination_and_preexisting_final_are_never_reused(self) -> None:
