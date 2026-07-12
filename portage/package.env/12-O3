@@ -13,7 +13,6 @@ x11-libs/cairo O3.conf
 x11-libs/libdrm O3.conf
 x11-libs/pango O3.conf
 x11-libs/pixman O3.conf
-x11-base/xorg-server O3-no-vtables.conf
 media-libs/mesa O3-thin-lto-no-libs.conf
 # Xwayland shares Xserver-derived C code; use the same family as xorg-server,
 # but also avoid forced runtime libraries during libbsd-overlay links.

@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "reviewed_multi_environment_stacks": {
+    "dev-build/make": {
+      "environments": [
+        "gcc.conf",
+        "make-no-discarded-qualifiers-werror.conf"
+      ],
+      "rationale": "The reviewed mixed GCC lane is followed by one append-only C warning override required by live GNU make sources."
+    },
+    "dev-java/openjdk": {
+      "environments": [
+        "unsafe-no-ccache-no-sandbox.conf",
+        "no-polly.conf"
+      ],
+      "rationale": "The sandbox and ccache FEATURES exception is independent of the no-Polly compiler tier."
+    },
+    "dev-util/cargo-c": {
+      "environments": [
+        "no-lto.conf",
+        "no-polly.conf"
+      ],
+      "rationale": "The first profile supplies non-LTO Rust flags; the later profile intentionally supplies no-Polly C-family flags."
+    },
+    "media-sound/ncspot": {
+      "environments": [
+        "thin-lto-only.conf",
+        "no-polly.conf",
+        "needs-term.conf"
+      ],
+      "rationale": "Rust retains the ThinLTO profile, C-family helpers use no-Polly flags, and the terminal workaround is an independent variable."
+    },
+    "sys-apps/hwloc": {
+      "environments": [
+        "O2.conf",
+        "rocm-extra-econf.conf"
+      ],
+      "rationale": "The O2 compiler tier and the package-specific ROCm configure argument affect independent variables."
+    },
+    "sys-apps/lact": {
+      "environments": [
+        "no-lto.conf",
+        "no-polly.conf"
+      ],
+      "rationale": "The first profile supplies non-LTO Rust flags; the later profile intentionally supplies no-Polly C-family flags."
+    },
+    "sys-devel/gcc": {
+      "environments": [
+        "gcc.conf",
+        "no-ccache-only.conf"
+      ],
+      "rationale": "The reviewed GCC compiler lane and ccache FEATURES removal affect independent settings."
+    },
+    "sys-fs/zfs": {
+      "environments": [
+        "gcc.conf",
+        "zfs-cachyos-rt-local-license-hack.conf"
+      ],
+      "rationale": "The kernel-compatible GCC lane is independent of the explicitly local-only package bashrc hook."
+    },
+    "x11-base/xorg-server": {
+      "environments": [
+        "O2.conf",
+        "xwayland-libbsd-overlay-cdefs-fix.conf"
+      ],
+      "rationale": "The O2 fallback is followed by the append-only libbsd and glibc cdefs compatibility fix."
+    },
+    "x11-base/xwayland": {
+      "environments": [
+        "O3-no-vtables-no-forced-libs.conf",
+        "xwayland-libbsd-overlay-cdefs-fix.conf"
+      ],
+      "rationale": "The O3 ABI tier is followed by the append-only libbsd and glibc cdefs compatibility fix."
+    }
+  },
+  "allowed_unmatched_atoms": {},
+  "allowed_effective_atom_overlaps": [],
+  "compiler_profiles": {
+    "clang-libstdcxx.conf": {
+      "lane": "clang22-libstdcxx-llvm22-tools",
+      "tools": {
+        "CC": "clang",
+        "CXX": "clang++",
+        "CPP": "clang-cpp",
+        "LD": "ld.lld",
+        "AR": "llvm-ar",
+        "NM": "llvm-nm",
+        "RANLIB": "llvm-ranlib"
+      },
+      "rationale": "Clang and LLVM tools with the active GCC libstdc++ ABI for packages that cannot use libc++."
+    },
+    "gcc.conf": {
+      "lane": "gcc-frontends-gcc-binutils-clang-cpp-lld",
+      "tools": {
+        "CC": "gcc",
+        "CXX": "g++",
+        "CPP": "clang-cpp",
+        "LD": "ld.lld",
+        "AR": "gcc-ar",
+        "NM": "gcc-nm",
+        "RANLIB": "gcc-ranlib"
+      },
+      "rationale": "Preserves the established GCC frontend and GCC binutils lane while making its inherited clang preprocessor and lld linker explicit."
+    },
+    "highway-noavx512.conf": {
+      "lane": "gcc-frontends-llvm22-tools-noavx512",
+      "tools": {
+        "CC": "gcc",
+        "CXX": "g++",
+        "CPP": "clang-cpp",
+        "LD": "ld.lld",
+        "AR": "llvm-ar",
+        "NM": "llvm-nm",
+        "RANLIB": "llvm-ranlib"
+      },
+      "rationale": "Preserves the tested GCC frontend and LLVM support-tool tuple used by Highway and libjxl while AVX512 is disabled."
+    },
+    "libstdcxx-headers.conf": {
+      "lane": "clang22-active-libstdcxx-llvm22-tools",
+      "tools": {
+        "CC": "clang",
+        "CXX": "clang++",
+        "CPP": "clang-cpp",
+        "LD": "ld.lld",
+        "AR": "llvm-ar",
+        "NM": "llvm-nm",
+        "RANLIB": "llvm-ranlib"
+      },
+      "rationale": "Clang and LLVM tools use driver discovery of the active GCC libstdc++ installation without a stale GCC-major path."
+    },
+    "rust-llvm21.conf": {
+      "lane": "clang21-frontends-llvm21-archive-llvm22-support",
+      "tools": {
+        "CC": "clang-21",
+        "CXX": "clang++-21",
+        "CPP": "clang-cpp",
+        "LD": "ld.lld",
+        "AR": "/usr/lib/llvm/21/bin/llvm-ar",
+        "NM": "llvm-nm",
+        "RANLIB": "/usr/lib/llvm/21/bin/llvm-ranlib"
+      },
+      "rationale": "Records the already-tested mixed Rust bootstrap lane exactly instead of incorrectly claiming that every support tool is LLVM 21."
+    }
+  },
+  "forbidden_environment_patterns": [
+    "(^|/)recovery/",
+    "(^|/)(pgo-instrument|pgo-use-if-available|no-pgo-use)\\.conf$",
+    "(^|/)(pgo|bolt|autofdo|propeller).*(generated|active|deploy|capture)",
+    "(^|/)generated.*(pgo|bolt|autofdo|propeller)"
+  ],
+  "forbidden_policy_file_patterns": [
+    "(^|/)50-global-pgo$",
+    "(^|/)(50-pgo-generated|51-bolt-capture-generated|52-bolt-deploy-generated|99-recovery-optimization-off)$",
+    "(^|/)(pgo|bolt|autofdo|propeller).*(generated|active|deploy|capture)",
+    "(^|/)generated.*(pgo|bolt|autofdo|propeller)"
+  ],
+  "forbidden_marker_variables": [
+    "PGO_INSTRUMENT",
+    "PGO_USE_IF_AVAILABLE",
+    "PGO_DISABLE_USE",
+    "BOLT_CAPTURE",
+    "BOLT_DEPLOY",
+    "OPTIMIZATION_GENERATION_ID"
+  ]
+}

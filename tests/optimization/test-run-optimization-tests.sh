@@ -26,6 +26,8 @@ grep -Fq 'recovery-rollback-fixture' "${FIXTURE}/list.txt" || fail 'suite list o
 grep -Fq 'Clang/libc++ and GCC/libstdc++' "${FIXTURE}/list.txt" || fail 'suite list omits ABI lanes'
 grep -Fq 'package-env-duplicate-policy' "${FIXTURE}/list.txt" || \
     fail 'suite list omits package.env duplicate-policy validation'
+grep -Fq 'package-env-portage-semantic' "${FIXTURE}/list.txt" || \
+    fail 'suite list omits explicit live Portage semantic status'
 grep -Fq 'bolt-transaction-fixture' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the hermetic BOLT transaction fixture'
 for capability in clang-ir clang-sample gcc rust go bolt; do

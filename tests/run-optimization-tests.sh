@@ -72,7 +72,8 @@ quick suites:
   shellcheck (same shell source set; skipped when unavailable)
   python-source-compilation (temporary pycache only)
   python-unit-tests
-  package-env-duplicate-policy
+  package-env-duplicate-policy (portable checks plus required live Portage semantics on Gentoo)
+  package-env-portage-semantic (explicit SKIP when the live Portage universe is unavailable)
   bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
   driver-cli-self-test
   recovery-boot-evidence-fixture (fake root)
@@ -418,8 +419,19 @@ elif [[ ! -f ${PACKAGE_ENV_DUPLICATE_CHECKER} ]]; then
     skip_case package-env-duplicate-policy \
         "checker is absent: ${PACKAGE_ENV_DUPLICATE_CHECKER}"
 else
-    run_case package-env-duplicate-policy \
-        run_in_repository "${PYTHON_BIN}" "${PACKAGE_ENV_DUPLICATE_CHECKER}"
+    if [[ -d /var/db/pkg && -d /var/db/repos ]] && \
+        PYTHONDONTWRITEBYTECODE=1 "${PYTHON_BIN}" -c 'import portage' \
+            >/dev/null 2>&1; then
+        run_case package-env-duplicate-policy \
+            run_in_repository "${PYTHON_BIN}" \
+            "${PACKAGE_ENV_DUPLICATE_CHECKER}" --require-portage-universe
+    else
+        run_case package-env-duplicate-policy \
+            run_in_repository "${PYTHON_BIN}" \
+            "${PACKAGE_ENV_DUPLICATE_CHECKER}" --skip-portage-universe
+        skip_case package-env-portage-semantic \
+            'Portage Python API and live /var/db/pkg plus /var/db/repos are unavailable; portable policy checks ran, live atom/overlap semantics did not'
+    fi
 fi
 
 BOLT_TRANSACTION_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-transaction.sh

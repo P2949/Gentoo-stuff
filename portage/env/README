@@ -246,9 +246,6 @@ Other package-specific profiles:
     highway-noavx512.conf
         O3/native with AVX512 disabled for dev-cpp/highway consumers.
 
-    include-string.conf
-        O3 plus CXXFLAGS --include string for packages missing an include.
-
     mount-defines.conf
         Extra include/define handling for xfsprogs mount API fallout.
 

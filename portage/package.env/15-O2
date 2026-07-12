@@ -38,6 +38,6 @@ dev-libs/libxmlb O2.conf
 
 # FFmpeg is a public C ABI library stack; global hidden/LTO/OpenMP/WPD flags break symbol export/linking.
 media-video/ffmpeg O2.conf
-media-libs/SVT-AV1 O2.conf
+media-libs/svt-av1 O2.conf
 media-libs/libaom O2.conf
 media-libs/dav1d O2.conf

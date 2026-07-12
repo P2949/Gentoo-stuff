@@ -4,7 +4,6 @@ media-libs/libjxl highway-noavx512.conf
 dev-util/colm libstdcxx-headers.conf
 dev-util/ragel libstdcxx-headers.conf
 gui-wm/gamescope clang-libstdcxx.conf
-gui-wm/hyprland include-string.conf
 gui-wm/hyprland O3-thin-lto-no-libs.conf
 media-gfx/gimp gimp.conf
 dev-tcltk/tix tix-gnu89.conf
@@ -12,6 +11,4 @@ sys-fs/xfsprogs mount-defines.conf
 dev-util/source-highlight no-hidden-visibility.conf
 # Java: ccache and sandboxing break the build; OpenJDK rejects Polly flags.
 dev-java/openjdk unsafe-no-ccache-no-sandbox.conf no-polly.conf
-dev-java/openjdk:25 no-polly.conf
 gui-libs/hyprutils O2.conf
-

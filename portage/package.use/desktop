@@ -29,7 +29,6 @@ gui-apps/waybar tray niri
 gui-libs/gtk X introspection
 gui-libs/libadwaita vala introspection
 gui-libs/wlroots x11-backend xcb-errors vulkan lcms liftoff
-gui-wm/hyprland X qtutils
 gui-wm/niri screencast
 gui-wm/sway -tray -swaybar
 kde-frameworks/kconfig qml

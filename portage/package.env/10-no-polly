@@ -25,7 +25,6 @@ gui-libs/gtk no-polly.conf
 # Polly ICE: IslNodeBuilder assertion 'Access relation not defined on
 # full schedule domain' (clang 22.1.7)
 media-libs/tiff no-polly.conf
-media-libs/svt-av1 no-polly.conf
 net-libs/gnutls no-polly.conf
 sys-apps/busybox no-polly.conf
 # cargo-audit does not work with polly it seems
