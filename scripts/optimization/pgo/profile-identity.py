@@ -221,16 +221,22 @@ def reject_symlink_traversal(path: Path, label: str, *, include_leaf: bool) -> N
             fail(f"{label} traverses a non-directory component: {current}")
 
 
-def atomic_write(path: Path, data: bytes, mode: int = 0o644) -> None:
+def validate_output_destination(path: Path) -> None:
     reject_symlink_traversal(path, "output path", include_leaf=True)
     try:
+        output_stat = path.lstat()
+    except FileNotFoundError:
+        output_stat = None
+    except OSError as exc:
+        fail(f"cannot inspect output path {path}: {exc}")
+    if output_stat is not None and not stat.S_ISREG(output_stat.st_mode):
+        fail(f"output path exists and is not a regular file: {path}")
+
+
+def atomic_write(path: Path, data: bytes, mode: int = 0o644) -> None:
+    validate_output_destination(path)
+    try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            output_stat = path.lstat()
-        except FileNotFoundError:
-            output_stat = None
-        if output_stat is not None and not stat.S_ISREG(output_stat.st_mode):
-            fail(f"output path exists and is not a regular file: {path}")
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{path.name}.", suffix=".partial", dir=path.parent
         )
@@ -335,7 +341,7 @@ def inspect_compiler(value: object) -> dict[str, object]:
         fail(
             f"compiler.profile_format {profile_format!r} is incompatible with {family}"
         )
-    requested, realpath, binary_sha256 = inspect_executable(value["path"], "compiler")
+    _requested, realpath, binary_sha256 = inspect_executable(value["path"], "compiler")
     version_arguments = compiler_version_arguments(family)
     stdout, stderr = run_tool(realpath, version_arguments, "compiler version command")
     observed_major = detect_compiler_major(family, stdout + "\n" + stderr)
@@ -346,7 +352,6 @@ def inspect_compiler(value: object) -> dict[str, object]:
     return {
         "family": family,
         "major": major,
-        "path": os.fspath(requested),
         "profile_format": profile_format,
         "realpath": os.fspath(realpath),
         "sha256": binary_sha256,
@@ -454,6 +459,15 @@ def fingerprint_command(arguments: argparse.Namespace) -> int:
         "fingerprint_id": f"sha256:{fingerprint}",
         "schema_version": SCHEMA_VERSION,
     }
+    destinations = [
+        path
+        for path in (arguments.metadata_out, arguments.key_out)
+        if path is not None
+    ]
+    if len({os.path.normpath(path) for path in destinations}) != len(destinations):
+        fail("--metadata-out and --key-out must be distinct paths")
+    for destination in destinations:
+        validate_output_destination(destination)
     if arguments.metadata_out is not None:
         atomic_write(
             arguments.metadata_out,
@@ -566,8 +580,8 @@ def profile_path_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def inspect_llvm_profdata(path_value: object, clang_major: int) -> dict[str, object]:
-    requested, realpath, binary_sha256 = inspect_executable(
+def inspect_llvm_profdata(path_value: Path, clang_major: int) -> dict[str, object]:
+    _requested, realpath, binary_sha256 = inspect_executable(
         os.fspath(path_value), "llvm_profdata"
     )
     stdout, stderr = run_tool(realpath, ["--version"], "llvm-profdata version command")
@@ -580,7 +594,6 @@ def inspect_llvm_profdata(path_value: object, clang_major: int) -> dict[str, obj
             f"llvm-profdata major {observed_major} does not match Clang major {clang_major}"
         )
     return {
-        "path": os.fspath(requested),
         "realpath": os.fspath(realpath),
         "sha256": binary_sha256,
         "version_stderr": stderr,
@@ -636,6 +649,9 @@ def sample_identity(arguments: argparse.Namespace) -> dict[str, object]:
 
 
 def sample_record_command(arguments: argparse.Namespace) -> int:
+    validate_output_destination(arguments.metadata_out)
+    if os.path.normpath(arguments.metadata_out) == os.path.normpath(arguments.profile):
+        fail("--metadata-out must not replace the sample profile")
     metadata = sample_identity(arguments)
     atomic_write(
         arguments.metadata_out,

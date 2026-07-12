@@ -2,14 +2,14 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 and Phase 1 are complete. All seven hardware/tool capability lanes, the package-policy remediation rebuilds, the exact current-system recovery checkpoint, reverse-dependency closure, and the Phase 1 boundary suite pass. Phase 2 is the next active implementation phase; the unsafe legacy global PGO implementation remains deleted behind a fail-closed stale-marker guard.
+- **Project state:** active; Phase 0 and Phase 1 are complete. Phase 2 is active: the unsafe legacy consumer and marker files are gone, and the exact backend/ABI/fingerprint dispatcher plus stage-specific environment files pass their first authoritative gate. Sample-profile identity and transactional BOLT capture/deployment remain under validation; no generated package assignment is active.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
 - **Current non-frozen live package count:** 1,217 installed CPVs after the package-managed BOLT installation; this is live progress evidence, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
-- **Last plan review:** 2026-07-12; the complete plan and all binding prose gates were re-read after the three queued source rebuilds, the independently discovered `newt` SONAME repair, the 1,217-CPV current-system checkpoint and offline restore, exact `cdsort` binding, fail-closed environment parsing, and the bounded 45/0/6 boundary suite were recorded.
+- **Last plan review:** 2026-07-12; the complete plan and all binding prose gates were re-read after the exact Phase 2 dispatcher, legacy-marker removal, stage-specific environments, their root-owned 18/18 evidence, and the still-binding absence of a generation/frozen inventory were recorded.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. This authorizes Phase 2 capture/deployment-hook implementation and does not claim that any installed-system candidate has yet been BOLT-optimized.
 
@@ -798,16 +798,18 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
 ## 11.1 Remove the unsafe global consumer
 
 - [x] Delete or disable `portage/package.env/50-global-pgo` in its current form.
-- [ ] Remove `pgo-use-if-available.conf` and `pgo-instrument.conf` or replace them with backend-specific mode files.
+- [x] Remove `pgo-use-if-available.conf` and `pgo-instrument.conf` or replace them with backend-specific mode files.
 - [x] Ensure absence of a profile file can never silently change an unrelated package’s compiler flags.
 
 ### Immediate legacy-consumer neutralization evidence
 
-- The live `/etc/portage` resolves to this repository. `50-global-pgo` is now assignment-free, and `/var/tmp/pgo-profiles` did not exist, so no raw/profile payload required quarantine. The old env marker files remain only for explicit removal/replacement during the rest of Phase 2.
-- Until the exact dispatcher replaces it, `portage/bashrc` leaves all flags unchanged with no marker and fails closed with exit 1 if either stale `PGO_USE_IF_AVAILABLE=1` or `PGO_INSTRUMENT=1` is supplied. Bash syntax and ShellCheck 0.11.0 pass.
+- The live `/etc/portage` resolves to this repository. `50-global-pgo` is assignment-free, `/var/tmp/pgo-profiles` did not exist, and the obsolete `pgo-instrument.conf`, `pgo-use-if-available.conf`, and `no-pgo-use.conf` files have now been deleted. Backend-specific files live only below `portage/env/optimization/` and no generated package assignments are active.
+- The exact dispatcher now leaves all flags byte-identical in unset/`off` mode and still fails closed if either stale `PGO_USE_IF_AVAILABLE=1` or `PGO_INSTRUMENT=1` is supplied. Bash syntax and ShellCheck 0.11.0 pass.
 - The dormant implementation itself is now deleted: no weak `CATEGORY/PN` path, profile flag, Fortran injection, Clang-incompatible correction flag, silent missing-profile fallback, or legacy helper function remains available for accidental reconnection. A no-marker source test proves all five compiler/linker flag variables remain byte-identical, while both stale markers still fail with status 1. Current evidence is `/var/lib/gentoo-optimization/reports/phase-1-dead-legacy-pgo-removal.log` (SHA-256 `6acdd8d373f3bd9bd54e6afda5e4a75c5bd5ab8a41995fa8260f98338378f101`); current state is `/var/lib/gentoo-optimization/state/project/legacy-pgo-neutralization.json` (SHA-256 `aeba82f79f4e6ec7028d9db60a30a4999203d4cfb434f552a1adac928f2e897d`). The initial neutralization log remains preserved. No package build may proceed through the legacy lane.
 
 ## 11.2 Rewrite `portage/bashrc`
+
+- [x] Implement and validate the strict backend/ABI/fingerprint dispatcher described below.
 
 Implement named functions with a strict mode dispatch. Suggested environment variable:
 
@@ -841,9 +843,17 @@ The hook must:
 
 Keep profile generation flags out of build scripts and host tools where the language workflow requires it, especially Cargo build scripts.
 
+The dispatcher is implemented at commit `2b18e6134a5abd85996d48274a492a8080828a0b`. Active modes require an exact 64-hex package fingerprint, explicit ABI and compiler family, an absolute profile path, and—for every use mode—a manifest whose backend, fingerprint, ABI, compiler family, validation status, and payload SHA-256 match. Format validation is backend-specific: Clang IR and Rust indexed profiles, Clang sample profiles, GCC gcov directories, and Go pprof data never share a consumer. Flags append exactly once; generation/use disables ccache; `FCFLAGS` and `FFLAGS` remain untouched; GCC correction remains confined to the GCC lane; Rust target isolation and the installed Go tool's `go version` interface are tested. Composite capture/deploy stages retain Rust/Go language-lane behavior and invoke only the exact executable wrapper interface during Portage's pre-strip `post_src_install` boundary.
+
+The authoritative fixture passes 18/18 cases with zero failures. Root-owned evidence is `/var/lib/gentoo-optimization/reports/phase-2-dispatcher-20260712` (manifest SHA-256 `d93607db4d6f2285f69ea6aa18e0148bc8972787024234faaec2ac161879f9ae`); component state is `/var/lib/gentoo-optimization/state/project/phase-2-dispatcher.json` (SHA-256 `8436d46147625c3699bc5dffe82907db4a288b6d1c9e581ed565e35e53007933`). The same evidence records 30/30 package-policy unit tests and a strict live validation of 147 atom/environment pairs over 1,217 installed CPVs. `active_generation` remains null and `inventory_frozen` remains false.
+
 ## 11.3 Implement stage-specific env files
 
+- [x] Create and validate assignment-only, minimum-marker stage environment files.
+
 Create the files listed in section 4. Each file must contain only mode markers and the minimum flags for that mode. Avoid copying the entire global flag stack into every env file.
+
+The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the narrowly scoped readiness marker required by that stage; package fingerprints, ABI identities, generation IDs, and profile paths remain machine-generated state outside Git. The authoritative dispatcher evidence above syntax-checks every stage file and proves the files are not assigned to live packages yet.
 
 ## 11.4 Fix sample-profile scripts
 

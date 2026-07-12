@@ -100,6 +100,17 @@ assert manifest["symlinks"] == [
 ]
 assert hardlinks[0]["metadata"]["mode"] == "4755"
 PY
+while IFS= read -r cached_object; do
+    [[ $(stat -c '%a' "${CACHE}/inputs/${FINGERPRINT}/${cached_object}") == 600 ]] || \
+        fail "captured object is not private: ${cached_object}"
+done < <(python3 - "${MANIFEST}" <<'PY'
+import json
+import sys
+for item in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]:
+    if item["cache_object"]:
+        print(item["cache_object"])
+PY
+)
 
 # Create syntactically valid stand-ins for prepared BOLT outputs. The added
 # note exercises the deployment invariant without requiring llvm-bolt in this
@@ -184,6 +195,8 @@ cp -- "${WORK}/manifest.good" "${MANIFEST}"
 REAL_READELF=$(command -v readelf)
 READELF_COUNT=${WORK}/readelf-count
 READELF_PROXY=${WORK}/readelf-post-rename-failure
+# The single-quoted lines intentionally become a separate proxy script.
+# shellcheck disable=SC2016
 printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
@@ -232,6 +245,8 @@ readelf -SW "${ED}/usr/lib64/libfixture.so.1" | grep -Fq '.note.bolt_info' || fa
 [[ $(stat -c '%a' "${ED}/usr/bin/fixed") == 4755 ]] || fail 'deployment lost setuid mode'
 [[ -s ${CACHE}/diagnostics/${FINGERPRINT}/pre-deploy/${FIRST_ID}.elf ]] || \
     fail 'deployment did not preserve its diagnostic input'
+[[ $(stat -c '%a' "${CACHE}/diagnostics/${FINGERPRINT}/pre-deploy/${FIRST_ID}.elf") == 600 ]] || \
+    fail 'diagnostic input is not private'
 if [[ ${XATTR_SUPPORTED} == true ]]; then
     [[ $(getfattr --only-values -n user.gentoo-bolt-test "${ED}/usr/bin/fixed" 2>/dev/null) == preserved ]] || \
         fail 'deployment lost user xattr metadata'
@@ -286,6 +301,8 @@ for item in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]:
         break
 PY
 )" "${MIXED_ED}/usr/bin/elf64"
+# The assembler register names are literal C source, not shell variables.
+# shellcheck disable=SC2016
 printf '%s\n' 'void _start(void) { __asm__ volatile("mov $1, %eax; xor %ebx, %ebx; int $0x80"); }' \
     >"${SOURCE}/elf32.c"
 if cc -m32 -nostdlib -fno-pie -no-pie -Wl,-e,_start,--build-id=sha1,--emit-relocs \

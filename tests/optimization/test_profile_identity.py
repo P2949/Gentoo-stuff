@@ -172,6 +172,14 @@ class FingerprintTest(unittest.TestCase):
             second_status, second_stdout, second_stderr = fixture.fingerprint(reordered)
             self.assertEqual(second_status, 0, second_stderr)
             self.assertEqual(second_stdout.strip(), fingerprint)
+
+            compiler_alias = fixture.root / "active-clang"
+            compiler_alias.symlink_to(fixture.compiler)
+            aliased = copy.deepcopy(original)
+            aliased["compiler"]["path"] = os.fspath(compiler_alias)
+            alias_status, alias_stdout, alias_stderr = fixture.fingerprint(aliased)
+            self.assertEqual(alias_status, 0, alias_stderr)
+            self.assertEqual(alias_stdout.strip(), fingerprint)
             self.assertFalse(list(fixture.root.glob("*.partial")))
 
     def test_every_build_axis_and_ordered_environment_stack_affect_key(self) -> None:
@@ -265,6 +273,65 @@ class FingerprintTest(unittest.TestCase):
             status, _stdout, _stderr = fixture.fingerprint(module)
             self.assertEqual(status, 1)
 
+    def test_only_amd64_and_x86_abi_lanes_are_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            invalid = fixture.manifest()
+            invalid["abi"] = "arm64"
+            status, _stdout, stderr = fixture.fingerprint(invalid)
+            self.assertEqual(status, 1)
+            self.assertIn("amd64", stderr)
+
+    def test_atomic_outputs_reject_relative_symlink_and_symlink_parent_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            input_path = fixture.write_manifest(fixture.manifest())
+            status, _stdout, stderr = fixture.invoke(
+                "fingerprint", "--input", os.fspath(input_path),
+                "--metadata-out", "relative-metadata.json",
+            )
+            self.assertEqual(status, 1)
+            self.assertIn("absolute", stderr)
+
+            preflight_metadata = fixture.root / "must-not-be-written.json"
+            status, _stdout, stderr = fixture.invoke(
+                "fingerprint", "--input", os.fspath(input_path),
+                "--metadata-out", os.fspath(preflight_metadata),
+                "--key-out", "relative-key.env",
+            )
+            self.assertEqual(status, 1)
+            self.assertFalse(preflight_metadata.exists())
+
+            same_output = fixture.root / "same-output"
+            status, _stdout, stderr = fixture.invoke(
+                "fingerprint", "--input", os.fspath(input_path),
+                "--metadata-out", os.fspath(same_output),
+                "--key-out", os.fspath(same_output),
+            )
+            self.assertEqual(status, 1)
+            self.assertFalse(same_output.exists())
+
+            dangling = fixture.root / "dangling.json"
+            dangling.symlink_to(fixture.root / "does-not-exist")
+            status, _stdout, stderr = fixture.invoke(
+                "fingerprint", "--input", os.fspath(input_path),
+                "--metadata-out", os.fspath(dangling),
+            )
+            self.assertEqual(status, 1)
+            self.assertTrue(dangling.is_symlink())
+
+            real_parent = fixture.root / "real-parent"
+            real_parent.mkdir()
+            linked_parent = fixture.root / "linked-parent"
+            linked_parent.symlink_to(real_parent, target_is_directory=True)
+            status, _stdout, stderr = fixture.invoke(
+                "fingerprint", "--input", os.fspath(input_path),
+                "--metadata-out", os.fspath(linked_parent / "metadata.json"),
+            )
+            self.assertEqual(status, 1)
+            self.assertIn("symlink", stderr)
+            self.assertFalse((real_parent / "metadata.json").exists())
+
 
 class ProfileFamilyPathTest(unittest.TestCase):
     def test_families_have_nonoverlapping_exact_layouts(self) -> None:
@@ -320,13 +387,29 @@ class ProfileFamilyPathTest(unittest.TestCase):
             root = os.fspath(fixture.root / "profiles")
             cases = (
                 ["profile-path", "--root", root, "--family", "clang-ir", "--compiler-major", "22", "--abi", "amd64"],
+                ["profile-path", "--root", root, "--family", "clang-ir", "--generation", "g", "--abi", "amd64"],
+                ["profile-path", "--root", root, "--family", "rust", "--language-version", "1.88", "--generation", "g", "--abi", "amd64"],
+                ["profile-path", "--root", root, "--family", "gcc", "--cpv", "dev-util/example-1.2.3", "--fingerprint", "a" * 64, "--abi", "amd64"],
                 ["profile-path", "--root", root, "--family", "clang-ir", "--compiler-major", "22", "--generation", "../bad", "--abi", "amd64"],
+                ["profile-path", "--root", root, "--family", "clang-ir", "--compiler-major", "22", "--generation", "g", "--abi", "x32"],
                 ["profile-path", "--root", root, "--family", "kernel", "--kernel-release", "7.1", "--config-hash", "a" * 64, "--abi", "amd64"],
+                ["profile-path", "--root", "/", "--family", "kernel", "--kernel-release", "7.1", "--config-hash", "a" * 64],
             )
             for arguments in cases:
                 status, _stdout, stderr = fixture.invoke(*arguments)
                 self.assertEqual(status, 1)
                 self.assertIn("ERROR:", stderr)
+
+            real_root = fixture.root / "real-profile-root"
+            real_root.mkdir()
+            linked_root = fixture.root / "linked-profile-root"
+            linked_root.symlink_to(real_root, target_is_directory=True)
+            status, _stdout, stderr = fixture.invoke(
+                "profile-path", "--root", os.fspath(linked_root), "--family", "kernel",
+                "--kernel-release", "7.1", "--config-hash", "a" * 64,
+            )
+            self.assertEqual(status, 1)
+            self.assertIn("symlink", stderr)
 
 
 class SampleProfileTest(unittest.TestCase):
@@ -384,6 +467,22 @@ class SampleProfileTest(unittest.TestCase):
             )
             self.assertEqual(status, 1)
             self.assertIn("ERROR:", stderr)
+
+    def test_sample_metadata_cannot_replace_the_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            profile = fixture.root / "sample.prof"
+            profile.write_text("SAMPLE\n", encoding="ascii")
+            original = profile.read_bytes()
+            status, _stdout, stderr = fixture.invoke(
+                "sample-record",
+                *fixture.sample_arguments(profile),
+                "--metadata-out",
+                os.fspath(profile),
+            )
+            self.assertEqual(status, 1)
+            self.assertIn("must not replace", stderr)
+            self.assertEqual(profile.read_bytes(), original)
 
     def test_profile_content_identity_tool_and_metadata_mismatches_fail(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

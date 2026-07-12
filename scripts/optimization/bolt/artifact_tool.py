@@ -31,6 +31,7 @@ SECTION_RE = re.compile(
     r"\S+\s+(\S*)\s+"
 )
 ELF_MAGIC = b"\x7fELF"
+SYSTEM_ROOT = Path("/usr")
 
 
 class BoltArtifactError(RuntimeError):
@@ -85,7 +86,7 @@ def validate_root(path_text: str, label: str) -> Path:
     path = unresolved.resolve(strict=True)
     if not path.is_dir():
         fail(f"{label} is not a directory: {path}")
-    if path == Path("/") or path == Path("/usr"):
+    if path == Path("/") or path == SYSTEM_ROOT or SYSTEM_ROOT in path.parents:
         fail(f"refusing unsafe {label}: {path}")
     return path
 
@@ -95,7 +96,7 @@ def validate_cache_root(path_text: str, ed: Path) -> Path:
     raw.mkdir(mode=0o700, parents=True, exist_ok=True)
     reject_symlink_components(str(raw), "cache root")
     path = raw.resolve(strict=True)
-    if path in (Path("/"), Path("/usr")):
+    if path == Path("/") or path == SYSTEM_ROOT or SYSTEM_ROOT in path.parents:
         fail(f"refusing unsafe cache root: {path}")
     if path == ed or ed in path.parents or path in ed.parents:
         fail("cache root and ED must be disjoint")
@@ -203,13 +204,15 @@ def is_elf(path: Path) -> bool:
 def dump_text(objcopy: str, path: Path, directory: Path) -> tuple[str | None, int]:
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     output = directory / "text.section"
+    rewritten = directory / "objcopy.output"
     completed = subprocess.run(
-        [objcopy, "--dump-section", f".text={output}", str(path)],
+        [objcopy, "--dump-section", f".text={output}", str(path), str(rewritten)],
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
+    rewritten.unlink(missing_ok=True)
     if completed.returncode != 0 or not output.is_file():
         return None, 0
     return sha256_file(output), output.stat().st_size
@@ -417,6 +420,7 @@ def command_capture(arguments: argparse.Namespace) -> None:
 
     inputs = cache / "inputs"
     inputs.mkdir(mode=0o700, exist_ok=True)
+    reject_symlink_components(str(inputs), "capture input root")
     final = inputs / fingerprint
     if final.exists() or final.is_symlink():
         fail(f"capture already exists; refusing overwrite: {final}")
@@ -434,6 +438,11 @@ def command_capture(arguments: argparse.Namespace) -> None:
         with tempfile.TemporaryDirectory(prefix="classify-", dir=stage) as scratch_text:
             scratch_root = Path(scratch_text)
             for index, (paths, info) in enumerate(regular_groups, 1):
+                if info.st_nlink != len(paths):
+                    fail(
+                        "regular inode has hardlinks outside ED or changed during scan: "
+                        f"{paths[0]} (st_nlink={info.st_nlink}, discovered={len(paths)})"
+                    )
                 source = path_from_relative(ed, paths[0])
                 scratch = scratch_root / f"{index:06d}.file"
                 copy_noatime(source, scratch, info)
@@ -514,6 +523,7 @@ def sha256_file_noatime(path: Path, expected: os.stat_result) -> str:
 
 def capture_paths(cache: Path, fingerprint: str) -> tuple[Path, dict[str, Any]]:
     root = cache / "inputs" / fingerprint
+    reject_symlink_components(str(root), "capture identity root")
     manifest = load_json(root / "manifest.json", SCHEMA_CAPTURE)
     if manifest.get("package_fingerprint") != fingerprint:
         fail("capture manifest fingerprint mismatch")
@@ -550,7 +560,7 @@ def command_register(arguments: argparse.Namespace) -> None:
     cache_raw.mkdir(mode=0o700, parents=True, exist_ok=True)
     reject_symlink_components(str(cache_raw), "cache root")
     cache = cache_raw.resolve(strict=True)
-    if cache in (Path("/"), Path("/usr")):
+    if cache == Path("/") or cache == SYSTEM_ROOT or SYSTEM_ROOT in cache.parents:
         fail(f"refusing unsafe cache root: {cache}")
     fingerprint = validate_fingerprint(arguments.fingerprint)
     readelf = shutil.which(arguments.readelf)
@@ -572,6 +582,7 @@ def command_register(arguments: argparse.Namespace) -> None:
     output_root = cache / "outputs" / fingerprint
     objects = output_root / "objects"
     objects.mkdir(mode=0o700, parents=True, exist_ok=True)
+    reject_symlink_components(str(objects), "prepared output root")
     manifest_path = output_root / "manifest.json"
     if manifest_path.exists():
         document = load_json(manifest_path, SCHEMA_OUTPUT)
@@ -708,6 +719,7 @@ def command_deploy(arguments: argparse.Namespace) -> None:
         fail("deployment requires readelf and objcopy")
     _, capture = capture_paths(cache, fingerprint)
     output_root = cache / "outputs" / fingerprint
+    reject_symlink_components(str(output_root), "prepared output root")
     output_manifest = load_json(output_root / "manifest.json", SCHEMA_OUTPUT)
     if output_manifest.get("package_fingerprint") != fingerprint:
         fail("output manifest fingerprint mismatch")
@@ -730,6 +742,7 @@ def command_deploy(arguments: argparse.Namespace) -> None:
 
     diagnostics = cache / "diagnostics" / fingerprint / "pre-deploy"
     diagnostics.mkdir(mode=0o700, parents=True, exist_ok=True)
+    reject_symlink_components(str(diagnostics), "diagnostic root")
     prepared: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory(prefix="bolt-deploy-validate-", dir=cache) as temporary:
         scratch_root = Path(temporary)
@@ -768,6 +781,7 @@ def command_deploy(arguments: argparse.Namespace) -> None:
             if not isinstance(output_object, str):
                 fail(f"missing output object for {artifact_id}")
             output_path = path_from_relative(output_root, output_object)
+            reject_symlink_components(str(output_path), "prepared output object")
             if not output_path.is_file() or output_path.is_symlink():
                 fail(f"prepared output is absent or not regular: {output_path}")
             if sha256_file(output_path) != output_record.get("output_sha256"):
@@ -804,6 +818,9 @@ def command_deploy(arguments: argparse.Namespace) -> None:
             for item in prepared:
                 diagnostic = diagnostics / f"{item['artifact']['artifact_id']}.elf"
                 if diagnostic.exists():
+                    reject_symlink_components(str(diagnostic), "diagnostic input")
+                    if diagnostic.is_symlink() or not diagnostic.is_file():
+                        fail(f"diagnostic input is not a regular file: {diagnostic}")
                     if sha256_file(diagnostic) != item["artifact"]["file_sha256"]:
                         fail(f"diagnostic input collision: {diagnostic}")
                 else:
