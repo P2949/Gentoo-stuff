@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1090
+# The fixture intentionally writes literal ${...} expressions into fake tools
+# and isolates every environment mutation inside a case subshell.
+# shellcheck disable=SC1090,SC2016,SC2030,SC2031
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -39,7 +41,7 @@ for compiler in clang gcc rustc go; do
         clang) body='printf "%s\n" "clang version 22.1.8"' ;;
         gcc) body='printf "%s\n" "gcc (Gentoo fake) 15.1.0"' ;;
         rustc) body='printf "%s\n" "rustc 1.90.0"' ;;
-        go) body='if [[ ${1-} == tool ]]; then [[ ${2-} == pprof && ${3-} == -top && -s ${4-} ]]; else printf "%s\n" "go version go1.27 linux/amd64"; fi' ;;
+        go) body='if [[ ${1-} == tool ]]; then [[ ${2-} == pprof && ${3-} == -top && -s ${4-} ]]; else [[ ${1-} == version ]] && printf "%s\n" "go version go1.27 linux/amd64"; fi' ;;
     esac
     printf '#!/usr/bin/env bash\nset -euo pipefail\n%s\n' "${body}" > "${compiler_path}"
     chmod +x "${compiler_path}"
@@ -236,6 +238,7 @@ write_manifest_file "${TMP}/profiles/go.manifest" go go "${TMP}/profiles/cpu.ppr
 
 case_go_use_only_goflags() (
     export PATH="${TMP}/bin:/usr/bin:/bin" GO=go ABI=amd64
+    go --version >/dev/null 2>&1 && return 1
     export GENTOO_OPT_MODE=go-use GENTOO_OPT_ABI=amd64
     export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/cpu.pprof"
@@ -244,6 +247,28 @@ case_go_use_only_goflags() (
     source "${BASHRC}" >/dev/null 2>&1
     [[ ${GOFLAGS} == *"-pgo=${GENTOO_OPT_PROFILE_PATH}"* ]]
     [[ ${CFLAGS} == c && ${CXXFLAGS} == cxx && ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+)
+
+case_rust_and_go_bolt_layering() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" RUSTC=rustc ABI=amd64
+    export GENTOO_OPT_MODE=rust-generate GENTOO_OPT_BOLT_STAGE=capture
+    export GENTOO_OPT_ABI=amd64 GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-rust"
+    export GENTOO_OPT_RUST_TARGET=x86_64-unknown-linux-gnu
+    RUSTFLAGS='-Copt-level=3'; CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'
+    source "${BASHRC}" >/dev/null 2>&1
+    [[ ${RUSTFLAGS} == *'-Clink-arg=-Wl,--emit-relocs'* ]]
+    [[ ${RUSTFLAGS} == *'-Clink-arg=-Wl,--build-id=sha1'* ]]
+    [[ ${CFLAGS} == c && ${CXXFLAGS} == cxx && ${LDFLAGS} == ld ]]
+
+    export GO=go GENTOO_OPT_MODE=go-use
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/cpu.pprof"
+    export GENTOO_OPT_PROFILE_MANIFEST="${TMP}/profiles/go.manifest"
+    unset RUSTC GENTOO_OPT_RUST_TARGET CARGO_BUILD_TARGET
+    GOFLAGS='-trimpath'; CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'
+    source "${BASHRC}" >/dev/null 2>&1
+    [[ ${GOFLAGS} == *"-pgo=${GENTOO_OPT_PROFILE_PATH}"* ]]
+    [[ ${CFLAGS} == c && ${CXXFLAGS} == cxx && ${LDFLAGS} == ld ]]
 )
 
 case_bolt_layer_and_gcc_guard() (
@@ -274,6 +299,33 @@ case_fingerprint_file_strict() (
     [[ ${GENTOO_OPT_ACTIVE_FINGERPRINT} == "${FINGERPRINT}" ]]
 )
 
+case_root_path_is_not_safe_identity() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT_FILE=/
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_bolt_post_install_wrapper() (
+    mkdir -p "${TMP}/ed" "${TMP}/bolt-cache"
+    printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+        'printf "%s\n" "$@" > "${BOLT_WRAPPER_EVIDENCE}"' \
+        > "${TMP}/bin/capture-wrapper"
+    chmod +x "${TMP}/bin/capture-wrapper"
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export GENTOO_OPT_MODE=bolt-capture GENTOO_OPT_COMPILER_FAMILY=clang
+    export GENTOO_OPT_ABI=amd64 GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/bolt-cache"
+    export GENTOO_OPT_BOLT_CAPTURE_TOOL="${TMP}/bin/capture-wrapper"
+    export BOLT_WRAPPER_EVIDENCE="${TMP}/wrapper.args" ED="${TMP}/ed"
+    source "${BASHRC}" >/dev/null 2>&1
+    post_src_install
+    mapfile -t arguments < "${BOLT_WRAPPER_EVIDENCE}"
+    [[ ${arguments[*]} == "--ed ${ED} --cache-root ${GENTOO_OPT_BOLT_CACHE_ROOT} --fingerprint ${FINGERPRINT}" ]]
+)
+
 run_case 'off/unset leaves all flags unchanged' case_off_is_noop
 run_case 'legacy marker paths fail closed' case_legacy_rejected
 run_case 'unknown modes fail closed' case_unknown_mode_rejected
@@ -287,8 +339,11 @@ run_case 'Clang generation appends exactly once' case_clang_generate_exact_once
 run_case 'GCC correction remains isolated from Fortran' case_gcc_use_isolated_correction
 run_case 'Rust instrumentation requires target isolation' case_rust_target_isolation
 run_case 'Go PGO changes GOFLAGS only' case_go_use_only_goflags
+run_case 'Rust and Go BOLT stages remain language-lane specific' case_rust_and_go_bolt_layering
 run_case 'BOLT readiness layers and guards the GCC lane' case_bolt_layer_and_gcc_guard
 run_case 'strict fingerprint.env loading works' case_fingerprint_file_strict
+run_case 'root is rejected as an identity file path' case_root_path_is_not_safe_identity
+run_case 'post_src_install invokes the exact BOLT wrapper interface' case_bolt_post_install_wrapper
 
 printf 'SUMMARY: pass=%d fail=%d total=%d\n' "${PASS}" "${FAIL}" "$((PASS + FAIL))"
 ((FAIL == 0))

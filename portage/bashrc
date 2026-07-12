@@ -14,7 +14,7 @@ gentoo_opt_error() {
 
 gentoo_opt_safe_absolute_path() {
     local path=${1-}
-    [[ ${path} == /* && ${path} != *//* && ${path} != *'/../'* &&
+    [[ ${path} == /* && ${path} != / && ${path} != *//* && ${path} != *'/../'* &&
         ${path} != */.. && ${path} != *'/./'* && ${path} != */. &&
         ${path} != *[$'\n\r\t ']* ]]
 }
@@ -173,7 +173,11 @@ gentoo_opt_detect_compiler_family() {
         *) gentoo_opt_error "unsupported compiler family request: ${requested}"; return 1 ;;
     esac
     gentoo_opt_resolve_tool "${variable}" "${fallback}" || return 1
-    version=$("${GENTOO_OPT_RESOLVED_TOOL}" --version 2>&1) || {
+    if [[ ${requested} == go ]]; then
+        version=$("${GENTOO_OPT_RESOLVED_TOOL}" version 2>&1)
+    else
+        version=$("${GENTOO_OPT_RESOLVED_TOOL}" --version 2>&1)
+    fi || {
         gentoo_opt_error "cannot query compiler identity: ${GENTOO_OPT_RESOLVED_TOOL}"
         return 1
     }
@@ -480,20 +484,35 @@ gentoo_opt_apply_readiness_flags() {
     fi
     if [[ ${GENTOO_OPT_ACTIVE_BOLT_STAGE} == capture ||
         ${GENTOO_OPT_ACTIVE_BOLT_STAGE} == deploy ]]; then
-        [[ ${family} == clang || ${family} == gcc ]] || {
-            gentoo_opt_error 'BOLT readiness requires an explicit Clang or GCC compiler lane'; return 1;
-        }
-        gentoo_opt_append_flag_once CFLAGS -g1
-        gentoo_opt_append_flag_once CXXFLAGS -g1
-        gentoo_opt_append_flag_once LDFLAGS -Wl,--emit-relocs
-        gentoo_opt_append_flag_once LDFLAGS -Wl,--build-id=sha1
-        if [[ ${family} == gcc ]]; then
-            [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 ]] || {
-                gentoo_opt_error 'GCC BOLT builds require bolt-gcc-ready.conf'; return 1;
-            }
-            gentoo_opt_append_flag_once CFLAGS -fno-reorder-blocks-and-partition
-            gentoo_opt_append_flag_once CXXFLAGS -fno-reorder-blocks-and-partition
-        fi
+        case ${family} in
+            clang|gcc)
+                gentoo_opt_append_flag_once CFLAGS -g1
+                gentoo_opt_append_flag_once CXXFLAGS -g1
+                gentoo_opt_append_flag_once LDFLAGS -Wl,--emit-relocs
+                gentoo_opt_append_flag_once LDFLAGS -Wl,--build-id=sha1
+                if [[ ${family} == gcc ]]; then
+                    [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 ]] || {
+                        gentoo_opt_error 'GCC BOLT builds require bolt-gcc-ready.conf'; return 1;
+                    }
+                    gentoo_opt_append_flag_once CFLAGS -fno-reorder-blocks-and-partition
+                    gentoo_opt_append_flag_once CXXFLAGS -fno-reorder-blocks-and-partition
+                fi
+                ;;
+            rust)
+                # CARGO_BUILD_TARGET was made explicit by the Rust PGO lane,
+                # so these RUSTFLAGS do not instrument host build scripts.
+                gentoo_opt_append_flag_once RUSTFLAGS -Cdebuginfo=1
+                gentoo_opt_append_flag_once RUSTFLAGS -Clink-arg=-Wl,--emit-relocs
+                gentoo_opt_append_flag_once RUSTFLAGS -Clink-arg=-Wl,--build-id=sha1
+                ;;
+            go)
+                # Go's native/external linker and build-ID policies differ by
+                # package.  Capture the exact package-produced input without
+                # leaking C/C++ flags; the artifact classifier remains the
+                # fail-closed BOLT eligibility gate.
+                ;;
+            *) gentoo_opt_error 'BOLT readiness has no supported compiler lane'; return 1 ;;
+        esac
     elif [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 ]]; then
         [[ ${family} == gcc ]] || {
             gentoo_opt_error 'bolt-gcc readiness cannot be applied outside the GCC lane'; return 1;
@@ -555,8 +574,10 @@ rust-generate|rust-use|go-use) ;;
         gentoo_opt_apply_primary_mode "${mode}" || return 1
     else
         [[ ${GENTOO_OPT_COMPILER_FAMILY-} == clang ||
-            ${GENTOO_OPT_COMPILER_FAMILY-} == gcc ]] || {
-            gentoo_opt_error 'readiness-only mode requires GENTOO_OPT_COMPILER_FAMILY=clang or gcc'; return 1;
+            ${GENTOO_OPT_COMPILER_FAMILY-} == gcc ||
+            ${GENTOO_OPT_COMPILER_FAMILY-} == rust ||
+            ${GENTOO_OPT_COMPILER_FAMILY-} == go ]] || {
+            gentoo_opt_error 'readiness-only mode requires an explicit supported compiler family'; return 1;
         }
         gentoo_opt_detect_compiler_family "${GENTOO_OPT_COMPILER_FAMILY}" || return 1
         GENTOO_OPT_ACTIVE_BACKEND=none
@@ -568,20 +589,56 @@ rust-generate|rust-use|go-use) ;;
 # The BOLT hook implementation supplies one or both named functions.  Keeping
 # this dispatch separate makes the pre-strip phase boundary explicit and lets
 # the hook implementation be tested without sourcing arbitrary package code.
+gentoo_opt_bolt_wrapper_path() {
+    local operation=$1 configured variable source_path repository_root wrapper
+    case ${operation} in
+        capture) variable=GENTOO_OPT_BOLT_CAPTURE_TOOL ;;
+        deploy) variable=GENTOO_OPT_BOLT_DEPLOY_TOOL ;;
+        *) return 1 ;;
+    esac
+    configured=${!variable-}
+    if [[ -n ${configured} ]]; then
+        gentoo_opt_safe_absolute_path "${configured}" || {
+            gentoo_opt_error "${variable} must be a safe absolute path"; return 1;
+        }
+        wrapper=${configured}
+    else
+        source_path=$(realpath -e -- "${BASH_SOURCE[0]}") || return 1
+        repository_root=$(realpath -e -- "$(dirname -- "${source_path}")/..") || return 1
+        wrapper=${repository_root}/scripts/optimization/bolt/${operation}-input.sh
+        [[ ${operation} == deploy ]] && wrapper=${repository_root}/scripts/optimization/bolt/deploy-output.sh
+    fi
+    [[ -x ${wrapper} && -f ${wrapper} && ! -L ${wrapper} ]] || {
+        gentoo_opt_error "BOLT ${operation} wrapper is unavailable or not executable: ${wrapper}"; return 1;
+    }
+    GENTOO_OPT_BOLT_WRAPPER=${wrapper}
+}
+
+gentoo_opt_run_bolt_wrapper() {
+    local operation=$1
+    gentoo_opt_safe_absolute_path "${ED-}" || {
+        gentoo_opt_error 'BOLT hook requires ED to be a safe absolute staging path'; return 1;
+    }
+    [[ -d ${ED} ]] || {
+        gentoo_opt_error "BOLT hook staging root does not exist: ${ED}"; return 1;
+    }
+    gentoo_opt_safe_absolute_path "${GENTOO_OPT_BOLT_CACHE_ROOT-}" || {
+        gentoo_opt_error 'BOLT hook requires a safe absolute GENTOO_OPT_BOLT_CACHE_ROOT'; return 1;
+    }
+    gentoo_opt_bolt_wrapper_path "${operation}" || return 1
+    "${GENTOO_OPT_BOLT_WRAPPER}" --ed "${ED}" \
+        --cache-root "${GENTOO_OPT_BOLT_CACHE_ROOT}" \
+        --fingerprint "${GENTOO_OPT_ACTIVE_FINGERPRINT}"
+}
+
 gentoo_opt_post_src_install() {
     case ${GENTOO_OPT_ACTIVE_BOLT_STAGE:-off} in
         off) return 0 ;;
         capture)
-            declare -F gentoo_opt_bolt_capture >/dev/null || {
-                gentoo_opt_error 'BOLT capture requested but gentoo_opt_bolt_capture is unavailable'; return 1;
-            }
-            gentoo_opt_bolt_capture
+            gentoo_opt_run_bolt_wrapper capture
             ;;
         deploy)
-            declare -F gentoo_opt_bolt_deploy >/dev/null || {
-                gentoo_opt_error 'BOLT deploy requested but gentoo_opt_bolt_deploy is unavailable'; return 1;
-            }
-            gentoo_opt_bolt_deploy
+            gentoo_opt_run_bolt_wrapper deploy
             ;;
     esac
 }
