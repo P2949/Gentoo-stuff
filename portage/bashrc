@@ -626,6 +626,28 @@ rust-generate|rust-use|go-use) ;;
     gentoo_opt_log_selection || return 1
 }
 
+gentoo_opt_depend_phase_preflight() {
+    local mode=${GENTOO_OPT_MODE:-off} bolt_stage=${GENTOO_OPT_BOLT_STAGE:-off}
+    if [[ ${PGO_INSTRUMENT:-0} == 1 || ${PGO_USE_IF_AVAILABLE:-0} == 1 ]]; then
+        gentoo_opt_error 'legacy PGO marker requested during dependency evaluation'
+        return 1
+    fi
+    case ${mode} in
+        off|''|clang-ir-generate|clang-ir-use|clang-sample-use|gcc-generate|gcc-use|\
+rust-generate|rust-use|go-use|bolt-capture|bolt-deploy) ;;
+        *) gentoo_opt_error "unknown GENTOO_OPT_MODE during dependency evaluation: ${mode}"; return 1 ;;
+    esac
+    case ${bolt_stage} in
+        off|capture|deploy) ;;
+        *) gentoo_opt_error "unknown GENTOO_OPT_BOLT_STAGE during dependency evaluation: ${bolt_stage}"; return 1 ;;
+    esac
+    if [[ ${mode} == bolt-capture && ${bolt_stage} == deploy ]] ||
+        [[ ${mode} == bolt-deploy && ${bolt_stage} == capture ]]; then
+        gentoo_opt_error 'conflicting BOLT mode/stage during dependency evaluation'
+        return 1
+    fi
+}
+
 # The BOLT hook implementation supplies one or both named functions.  Keeping
 # this dispatch separate makes the pre-strip phase boundary explicit and lets
 # the hook implementation be tested without sourcing arbitrary package code.
@@ -706,6 +728,10 @@ post_src_install() {
     fi
 }
 
-if ! gentoo_opt_dispatch; then
+if [[ ${EBUILD_PHASE:-} == depend ]]; then
+    if ! gentoo_opt_depend_phase_preflight; then
+        gentoo_opt_abort 'optimization mode preflight failed during dependency evaluation' || return 1
+    fi
+elif ! gentoo_opt_dispatch; then
     gentoo_opt_abort 'optimization mode dispatch failed' || return 1
 fi

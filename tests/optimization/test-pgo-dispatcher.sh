@@ -395,6 +395,35 @@ case_portage_source_dispatch_failure_is_fatal() (
     [[ ${status} -eq 96 ]]
 )
 
+case_depend_phase_is_external_command_free() (
+    export EBUILD_PHASE=depend PATH=/dev/null
+    GENTOO_OPT_MODE=clang-ir-use
+    GENTOO_OPT_BOLT_STAGE=capture
+    GENTOO_OPT_FINGERPRINT_FILE=/does/not/exist
+    GENTOO_OPT_PROFILE_PATH=/does/not/exist
+    GENTOO_OPT_BOLT_CACHE_ROOT=/does/not/exist
+    CFLAGS='depend-c'; CXXFLAGS='depend-cxx'; LDFLAGS='depend-ld'
+    RUSTFLAGS='depend-rust'; GOFLAGS='depend-go'; FEATURES='ccache sandbox'
+    SANDBOX_WRITE='/depend/write'
+    source "${BASHRC}" >/dev/null 2>&1
+    [[ ${CFLAGS} == depend-c && ${CXXFLAGS} == depend-cxx && ${LDFLAGS} == depend-ld ]]
+    [[ ${RUSTFLAGS} == depend-rust && ${GOFLAGS} == depend-go ]]
+    [[ ${FEATURES} == 'ccache sandbox' && ${SANDBOX_WRITE} == /depend/write ]]
+    [[ -z ${GENTOO_OPT_ACTIVE_FINGERPRINT-} && -z ${GENTOO_OPT_ACTIVE_BACKEND-} ]]
+)
+
+case_depend_phase_invalid_mode_is_fatal() (
+    set +e
+    (
+        die() { exit 95; }
+        EBUILD_PHASE=depend PATH=/dev/null GENTOO_OPT_MODE=invalid source "${BASHRC}"
+        exit 0
+    ) >/dev/null 2>&1
+    status=$?
+    set -e
+    [[ ${status} -eq 95 ]]
+)
+
 run_case 'off/unset leaves all flags unchanged' case_off_is_noop
 run_case 'legacy marker paths fail closed' case_legacy_rejected
 run_case 'unknown modes fail closed' case_unknown_mode_rejected
@@ -417,6 +446,8 @@ run_case 'post_src_install invokes the exact BOLT wrapper interface' case_bolt_p
 run_case 'post_src_install chains an existing Portage hook' case_existing_post_install_hook_is_chained
 run_case 'Portage cannot swallow a BOLT transaction failure' case_portage_phase_cannot_swallow_bolt_failure
 run_case 'Portage cannot swallow dispatcher failure while sourcing' case_portage_source_dispatch_failure_is_fatal
+run_case 'depend phase performs no external command or flag/path mutation' case_depend_phase_is_external_command_free
+run_case 'depend phase rejects invalid modes through Portage fatal path' case_depend_phase_invalid_mode_is_fatal
 
 printf 'SUMMARY: pass=%d fail=%d total=%d\n' "${PASS}" "${FAIL}" "$((PASS + FAIL))"
 ((FAIL == 0))
