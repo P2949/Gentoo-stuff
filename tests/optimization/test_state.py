@@ -137,6 +137,7 @@ def nonapplicable_pgo() -> dict[str, Any]:
 def component(component_id: str, kind: str, languages: list[str], abi: str, backend: str) -> dict[str, Any]:
     tc = None if backend == "not-applicable" else toolchain(languages, backend, component_id)
     tc_fingerprint = None if tc is None else tc["environment_fingerprint"]
+    pgo_state = nonapplicable_pgo() if tc_fingerprint is None else optimized_pgo(backend, tc_fingerprint)
     is_kernel = kind == "kernel"
     item: dict[str, Any] = {
         "component_id": component_id, "component_kind": kind,
@@ -144,7 +145,7 @@ def component(component_id: str, kind: str, languages: list[str], abi: str, back
         "target": None if abi == "none" else target(abi, kernel_release="6.18.0-test" if is_kernel else None),
         "build_backend": backend, "toolchain": tc,
         "fingerprint": f"sha256:{hashlib.sha256(component_id.encode()).hexdigest()}",
-        "pgo": nonapplicable_pgo() if backend == "not-applicable" else optimized_pgo(backend, tc_fingerprint),
+        "pgo": pgo_state,
         "kernel": None,
     }
     if is_kernel:
