@@ -235,7 +235,7 @@ tool_record["version"] = subprocess.run([tool, "--version"], check=True, text=Tr
 input_record = identity(source)
 output_record = identity(output)
 fdata_records = [identity(fdata)]
-argv = [str(pathlib.Path(tool).resolve()), str(pathlib.Path(source).resolve()), "-o", str(pathlib.Path(output).resolve()), *options, f"-data={pathlib.Path(fdata).resolve()}"]
+argv = [str(pathlib.Path(tool).resolve()), str(pathlib.Path(source).resolve()), "-o", str(pathlib.Path(output).resolve()), f"-data={pathlib.Path(fdata).resolve()}", *options]
 document = {
     "schema": "gentoo-optimization-bolt-command-v1",
     "argv": argv,
@@ -258,7 +258,7 @@ PY
 }
 
 registration_arguments() {
-    local record=$1 option
+    local record=$1 command_output=$2 option
     REGISTER_ARGUMENTS=(
         --llvm-bolt "${FAKE_BOLT}"
         --option-policy-revision "${POLICY_REVISION}"
@@ -266,6 +266,7 @@ registration_arguments() {
         --workload-evidence "${WORKLOAD_EVIDENCE}"
         --profile-evidence "${PROFILE_EVIDENCE}"
         --command-record "${record}"
+        --command-output-path "${command_output}"
     )
     for option in "${BOLT_OPTIONS[@]}"; do
         REGISTER_ARGUMENTS+=(--bolt-option="${option}")
@@ -274,14 +275,16 @@ registration_arguments() {
 
 while IFS=$'\t' read -r artifact_id object_file; do
     prepared=${WORK}/${artifact_id}.bolt
+    command_output=${prepared}.partial
     stdout=${WORK}/${artifact_id}.bolt.stdout
     stderr=${WORK}/${artifact_id}.bolt.stderr
     command_record=${WORK}/${artifact_id}.bolt.command.json
-    "${FAKE_BOLT}" "${CACHE}/inputs/${FINGERPRINT}/${object_file}" -o "${prepared}" \
-        "${BOLT_OPTIONS[@]}" "-data=${FDATA}" >"${stdout}" 2>"${stderr}"
-    make_command_record "${CACHE}/inputs/${FINGERPRINT}/${object_file}" "${prepared}" \
+    "${FAKE_BOLT}" "${CACHE}/inputs/${FINGERPRINT}/${object_file}" -o "${command_output}" \
+        "-data=${FDATA}" "${BOLT_OPTIONS[@]}" >"${stdout}" 2>"${stderr}"
+    make_command_record "${CACHE}/inputs/${FINGERPRINT}/${object_file}" "${command_output}" \
         "${stdout}" "${stderr}" "${command_record}"
-    registration_arguments "${command_record}"
+    mv -- "${command_output}" "${prepared}"
+    registration_arguments "${command_record}" "${command_output}"
     "${REGISTER}" --test-mode --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
         --artifact-id "${artifact_id}" \
         --input "${CACHE}/inputs/${FINGERPRINT}/${object_file}" --output "${prepared}" \
@@ -304,7 +307,7 @@ mkdir -p -- "${CONCURRENT_CACHE}/inputs"
 cp -a -- "${CACHE}/inputs/${FINGERPRINT}" "${CONCURRENT_CACHE}/inputs/"
 CONCURRENT_PIDS=()
 while IFS=$'\t' read -r artifact_id object_file; do
-    registration_arguments "${WORK}/${artifact_id}.bolt.command.json"
+    registration_arguments "${WORK}/${artifact_id}.bolt.command.json" "${WORK}/${artifact_id}.bolt.partial"
     "${REGISTER}" --test-mode --test-lock-hold-seconds 0.2 \
         --lock-timeout-seconds 5 --cache-root "${CONCURRENT_CACHE}" \
         --fingerprint "${FINGERPRINT}" --artifact-id "${artifact_id}" \
@@ -330,6 +333,8 @@ import json
 import sys
 manifest = json.load(open(sys.argv[1], encoding="utf-8"))
 assert manifest["schema"] == "gentoo-optimization-bolt-output-v2"
+assert manifest["expected_eligible_count"] == 3
+assert manifest["zero_eligible_proof"] is None
 assert len(manifest["outputs"]) == 3
 assert len({item["artifact_id"] for item in manifest["outputs"]}) == 3
 assert all(item["option_policy_revision"] == "gentoo-system-wide-bolt-v1-cdsort-20260712" for item in manifest["outputs"])
@@ -383,7 +388,7 @@ manifest = json.load(open(sys.argv[1], encoding="utf-8"))
 print(next(item["cache_object"] for item in manifest["artifacts"] if item["artifact_id"] != sys.argv[2]))
 PY
 )
-registration_arguments "${WORK}/${FIRST_ID}.bolt.command.json"
+registration_arguments "${WORK}/${FIRST_ID}.bolt.command.json" "${WORK}/${FIRST_ID}.bolt.partial"
 
 # A structurally valid GNU BOLT note alone is not proof that llvm-bolt
 # transformed the object. Removing the origin code section must fail closed.

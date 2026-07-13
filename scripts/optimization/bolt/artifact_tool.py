@@ -651,7 +651,9 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
     bolt_origin_sections = sorted(
         section["name"]
         for section in sections
-        if section["name"].startswith(".bolt.org.") and section["size"] > 0
+        if section["name"].startswith(".bolt.org.")
+        and section["size"] > 0
+        and "X" in section["flags"]
     )
     cet_properties = sorted(
         value.strip()
@@ -912,6 +914,14 @@ def file_record(path_text: str, label: str) -> dict[str, Any]:
     }
 
 
+def canonical_command_output(path_text: str) -> Path:
+    candidate = Path(path_text)
+    if not candidate.is_absolute() or ".." in candidate.parts:
+        fail(f"BOLT command output path must be absolute and traversal-free: {path_text}")
+    unresolved = reject_symlink_components(path_text, "BOLT command output")
+    return unresolved.resolve(strict=False)
+
+
 def zero_eligibility_proof(
     path_text: str | None, fingerprint: str, expected_count: int
 ) -> dict[str, Any] | None:
@@ -954,8 +964,17 @@ def validate_recorded_files(records: Any, label: str) -> list[dict[str, Any]]:
     return validated
 
 
-def llvm_bolt_identity(path_text: str) -> dict[str, Any]:
+def llvm_bolt_identity(path_text: str, test_mode: bool) -> dict[str, Any]:
     record = file_record(path_text, "llvm-bolt executable")
+    path = Path(record["path"])
+    info = path.stat()
+    if stat.S_IMODE(info.st_mode) & 0o022:
+        fail(f"llvm-bolt executable is group/world-writable: {path}")
+    if not test_mode:
+        if info.st_uid != 0:
+            fail(f"production llvm-bolt executable is not root-owned: {path}")
+        if path.name != "llvm-bolt" or SYSTEM_ROOT not in path.parents:
+            fail(f"production llvm-bolt executable is outside trusted /usr: {path}")
     if not os.access(record["path"], os.X_OK):
         fail(f"llvm-bolt executable is not executable: {record['path']}")
     status, stdout, stderr = run_bounded([record["path"], "--version"])
@@ -975,8 +994,8 @@ def expected_bolt_argv(
         str(input_path),
         "-o",
         str(output_path),
-        *APPROVED_BOLT_OPTIONS,
         *(f"-data={item['path']}" for item in fdata),
+        *APPROVED_BOLT_OPTIONS,
     ]
 
 
@@ -1049,12 +1068,14 @@ def validate_command_record(
     return document, record_identity
 
 
-def verify_bolt_provenance(record: dict[str, Any]) -> None:
+def verify_bolt_provenance(record: dict[str, Any], test_mode: bool) -> None:
     if record.get("option_policy_revision") != POLICY_REVISION:
         fail("prepared output uses an unreviewed BOLT option-policy revision")
     if record.get("options") != APPROVED_BOLT_OPTIONS:
         fail("prepared output uses an unreviewed BOLT option list")
-    tool = llvm_bolt_identity(str(record.get("llvm_bolt", {}).get("path", "")))
+    tool = llvm_bolt_identity(
+        str(record.get("llvm_bolt", {}).get("path", "")), test_mode
+    )
     if tool != record.get("llvm_bolt"):
         fail("prepared output llvm-bolt identity is stale or mismatched")
     for key, label in (
@@ -1296,7 +1317,7 @@ def command_register(arguments: argparse.Namespace) -> None:
             "unreviewed BOLT option list/order: "
             f"expected {APPROVED_BOLT_OPTIONS}, got {arguments.bolt_option}"
         )
-    tool = llvm_bolt_identity(arguments.llvm_bolt)
+    tool = llvm_bolt_identity(arguments.llvm_bolt, arguments.test_mode)
     fdata = [file_record(value, "BOLT fdata") for value in arguments.fdata]
     workloads = [
         file_record(value, "BOLT workload evidence")
@@ -1316,9 +1337,14 @@ def command_register(arguments: argparse.Namespace) -> None:
         if len({item["path"] for item in records}) != len(records):
             fail(f"duplicate {label} paths are forbidden")
     input_record = file_record(str(input_source), "exact BOLT input")
-    output_record = file_record(str(output_source), "prepared BOLT output")
+    prepared_output_record = file_record(str(output_source), "prepared BOLT output")
+    command_output = canonical_command_output(arguments.command_output_path)
+    output_record = {
+        **prepared_output_record,
+        "path": str(command_output),
+    }
     expected_argv = expected_bolt_argv(
-        tool, input_source, output_source, fdata
+        tool, input_source, command_output, fdata
     )
     try:
         note_argv = shlex.split(str(classification["bolt_info_command_line"]), posix=True)
@@ -1578,7 +1604,7 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                     fail(f"prepared output input identity mismatch for {artifact_id}: {key}")
             if output_record.get("source_abi_security_identity") != abi_identity(artifact):
                 fail(f"prepared output source ABI/security identity mismatch for {artifact_id}")
-            verify_bolt_provenance(output_record)
+            verify_bolt_provenance(output_record, arguments.test_mode)
             output_object = output_record.get("output_object")
             if not isinstance(output_object, str):
                 fail(f"missing output object for {artifact_id}")
@@ -1749,6 +1775,7 @@ def build_parser() -> argparse.ArgumentParser:
     register.add_argument("--workload-evidence", action="append", default=[])
     register.add_argument("--profile-evidence", action="append", default=[])
     register.add_argument("--command-record", required=True)
+    register.add_argument("--command-output-path", required=True)
     register.add_argument("--readelf", default="readelf")
     register.add_argument("--objcopy", default="objcopy")
     register.set_defaults(function=command_register)

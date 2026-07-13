@@ -63,8 +63,6 @@
 =dev-lang/python-3.13.9999
 =dev-lang/python-3.14.9999
 =dev-lang/python-3.15.9999
-=dev-lang/python-0.3.14.9999
-=dev-lang/python-0.3.15.9999
 =dev-lang/ruby-3.4.9999
 =dev-lang/ruby-4.0.9999
 # Catch versioned Qt live snapshots too.
@@ -91,7 +89,6 @@
 
 # More phase 1 guardrails: useful tools, but not worth live during migration.
 =dev-build/cmake-9999
-=dev-vcs/git-9999-r3
 =app-portage/gentoolkit-9999
 =app-admin/eclean-kernel-9999
 =dev-util/pkgcheck-9999
@@ -127,7 +124,7 @@
 =media-libs/harfbuzz-9999
 =x11-libs/cairo-9999
 =dev-libs/json-c-9999
-=net-libs/libssh2-9999
+=net-libs/libssh2-9999*
 =dev-libs/oniguruma-9999
 
 # Phase 1: more non-core live ebuilds that already caused build/fetch/install failures.
@@ -157,10 +154,6 @@
 =dev-util/vulkan-headers-9999
 =dev-util/spirv-headers-9999
 =dev-util/vulkan-utility-libraries-9999
-=dev-util/vulkan-tools-9999
-=media-libs/vulkan-layers-9999
-=dev-util/spirv-tools-9999
-=dev-util/glslang-9999
 
 # Phase 1: no live legacy Xorg DDX drivers.
 =x11-drivers/xf86-video-amdgpu-9999
@@ -169,7 +162,6 @@
 =x11-drivers/xf86-video-fbdev-9999
 =x11-drivers/xf86-video-vesa-9999
 =x11-drivers/xf86-input-libinput-9999
-=net-libs/libssh2-9999*
 =x11-base/xorg-drivers-9999*
 
 =x11-base/xorg-server-9999*
@@ -179,23 +171,8 @@
 =media-libs/babl-9999*
 =media-libs/gegl-9999*
 
-# Phase 1 fallback: LLVM 23 live currently fails Sphinx manpage generation
-# looking for missing work/mlir/utils/pygments/mlir_lexer.py.
-=llvm-core/llvm-23.0.0.9999
-=llvm-core/clang-common-23.0.0.9999
-=llvm-core/clang-23.0.0.9999
-=llvm-core/lld-23.0.0.9999
-=llvm-core/polly-23.0.0.9999
-=llvm-runtimes/compiler-rt-23.0.0.9999
-=llvm-runtimes/compiler-rt-sanitizers-23.0.0.9999
-=llvm-runtimes/libunwind-23.0.0.9999
-=llvm-runtimes/libcxxabi-23.0.0.9999
-=llvm-runtimes/libcxx-23.0.0.9999
-=llvm-runtimes/openmp-23.0.0.9999
-=llvm-runtimes/openmp-amdgcn-amd-amdhsa-23.0.0.9999
-=llvm-runtimes/openmp-spirv64-intel-23.0.0.9999
-
-# Phase 1 fallback: avoid LLVM 23 snapshots too; finish migration on LLVM 22.
+# Phase 1 fallback: avoid LLVM 23 snapshots, including the Sphinx-broken live
+# source generation, and finish migration on LLVM 22.
 =llvm-core/clang-common-23*
 =llvm-core/llvm-23*
 =llvm-core/lld-23*
@@ -225,9 +202,6 @@
 =dev-db/sqlite-9999*
 =net-libs/libqmi-9999*
 =games-util/mangohud-9999*
-=dev-util/pahole-9999*
-=media-libs/babl-9999*
-=media-libs/gegl-9999*
 
 # Phase 1: keep Vulkan loader aligned with the release Vulkan SDK stack.
 =media-libs/vulkan-loader-9999*

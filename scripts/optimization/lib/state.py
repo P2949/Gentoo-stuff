@@ -303,15 +303,20 @@ def _toolchain(value: Any, path: str, languages: set[str], backend: str) -> dict
             _error(f"{path}.{role}", f"is required for {language}")
     if backend != "not-applicable" and tools["linker"] is None and languages & {"c", "c++", "fortran", "rust", "go"}:
         _error(f"{path}.linker", "is required for machine-code components")
+    if backend in {"clang-ir", "clang-sample"}:
+        compiler_roles = [role for role in ("cc", "cxx") if tools[role] is not None]
+        compiler_tools = [tools[role] for role in compiler_roles]
+        if not compiler_tools or any(compiler_tool is None or compiler_tool["family"] != "clang" for compiler_tool in compiler_tools):
+            _error(path, f"{backend} requires a pure Clang CC/CXX tuple")
     family_requirements = {
-        "clang-ir": ("cc", "clang"), "clang-sample": ("cc", "clang"),
         "gcc-gcov": ("cc", "gcc"), "rust-llvm-ir": ("rustc", "rust"),
         "go-pprof": ("go", "go"), "kernel-autofdo": ("cc", "clang"),
     }
     requirement = family_requirements.get(backend)
     if requirement:
         role, family = requirement
-        if tools[role] is None or tools[role]["family"] != family:
+        required_tool = tools[role]
+        if required_tool is None or required_tool["family"] != family:
             _error(f"{path}.{role}", f"{backend} requires {family}")
     runtimes = item["runtimes"]
     if not isinstance(runtimes, list):
@@ -603,9 +608,12 @@ def _assert_lane(item: Mapping[str, Any], expected: Mapping[str, int], path: str
     actual = {key: item[key] for key in expected}
     if actual != expected:
         _error(path, f"counts do not match child records (expected={dict(expected)})")
-    candidate_key = "candidate_count" if "candidate_count" in expected else "eligible_count"
-    if expected[candidate_key] != expected["optimized_count"] + expected["pending_count"] + expected["unknown_count"] + expected["failed_count"] + expected["excluded_count"]:
-        _error(path, "eligible/candidate accounting is incomplete")
+    if "candidate_count" in expected:
+        covered = expected["optimized_count"] + expected["pending_count"] + expected["unknown_count"] + expected["failed_count"] + expected["excluded_count"]
+        if expected["candidate_count"] != covered:
+            _error(path, "candidate accounting is incomplete")
+    elif expected["eligible_count"] != expected["optimized_count"] + expected["pending_count"] + expected["failed_count"]:
+        _error(path, "eligible accounting is incomplete")
     status = _expected_final(expected["optimized_count"], expected["excluded_count"], expected["not_applicable_count"], expected["pending_count"], expected["unknown_count"], expected["failed_count"])
     if item["status"] != status:
         _error(f"{path}.status", f"must be {status}")
@@ -760,8 +768,8 @@ def _elf(value: Any, path: str, abi: str, role: str) -> dict[str, Any]:
     version_keys: list[tuple[str, str, bool]] = []
     for index, raw in enumerate(versions):
         vpath = f"{path}.symbol_versions[{index}]"
-        version = _object(raw, vpath, {"name", "provider", "default"})
-        version_keys.append((_string(version["name"], f"{vpath}.name"), _string(version["provider"], f"{vpath}.provider"), _bool(version["default"], f"{vpath}.default")))
+        symbol_version = _object(raw, vpath, {"name", "provider", "default"})
+        version_keys.append((_string(symbol_version["name"], f"{vpath}.name"), _string(symbol_version["provider"], f"{vpath}.provider"), _bool(symbol_version["default"], f"{vpath}.default")))
     if version_keys != sorted(set(version_keys)):
         _error(f"{path}.symbol_versions", "must be sorted and unique")
     debug = _object(item["debug"], f"{path}.debug", {"has_debug_info", "has_full_symtab", "separate_debug_path", "separate_debug_sha256", "gnu_debuglink"})
@@ -1246,10 +1254,10 @@ def reconcile_collection(
                         continue
                     cpv = f"{category.name}/{instance.name}"
                     live_cpvs.add(cpv)
-                    package = package_by_cpv.get(cpv)
-                    if package is None:
+                    live_package = package_by_cpv.get(cpv)
+                    if live_package is None:
                         continue
-                    live = package["live_instance"]
+                    live = live_package["live_instance"]
                     if Path(live["vdb_path"]) != instance:
                         _error(f"collection.vdb[{cpv}]", "vdb_path does not equal live instance")
                     if _file_sha(instance / "CONTENTS") != live["contents_sha256"]:

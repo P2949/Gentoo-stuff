@@ -94,6 +94,7 @@ quick suites:
   python-unit-tests
   package-env-duplicate-policy (portable checks plus required live Portage semantics on Gentoo)
   package-env-portage-semantic (explicit SKIP when the live Portage universe is unavailable)
+  portage-config-cleanup (reviewed package.mask and shared O3 baseline)
   no-legacy-pgo (retired weak paths/helpers remain unusable)
   pgo-dispatcher (strict backend/ABI/fingerprint and stage-hook fixture)
   portage-qa-hook-state (lost/mismatched active state and marker invalidation)
@@ -592,6 +593,15 @@ else
         skip_case package-env-portage-semantic \
             'Portage Python API and live /var/db/pkg plus /var/db/repos are unavailable; portable policy checks ran, live atom/overlap semantics did not'
     fi
+fi
+
+PORTAGE_CONFIG_CLEANUP_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-config-cleanup.sh
+if [[ ! -f ${PORTAGE_CONFIG_CLEANUP_FIXTURE} ]]; then
+    skip_case portage-config-cleanup "fixture is absent: ${PORTAGE_CONFIG_CLEANUP_FIXTURE}"
+elif ! require_commands bash grep rg stat wc; then
+    skip_case portage-config-cleanup "${PREFLIGHT_REASON}"
+else
+    run_case portage-config-cleanup bash -- "${PORTAGE_CONFIG_CLEANUP_FIXTURE}"
 fi
 
 NO_LEGACY_PGO_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-no-legacy-pgo.sh

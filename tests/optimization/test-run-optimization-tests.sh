@@ -34,6 +34,8 @@ grep -Fq 'package-env-duplicate-policy' "${FIXTURE}/list.txt" || \
     fail 'suite list omits package.env duplicate-policy validation'
 grep -Fq 'package-env-portage-semantic' "${FIXTURE}/list.txt" || \
     fail 'suite list omits explicit live Portage semantic status'
+grep -Fq 'portage-config-cleanup' "${FIXTURE}/list.txt" || \
+    fail 'suite list omits reviewed Portage configuration cleanup'
 grep -Fq 'no-legacy-pgo' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the retired legacy PGO gate'
 grep -Fq 'pgo-dispatcher' "${FIXTURE}/list.txt" || \
