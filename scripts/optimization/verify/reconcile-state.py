@@ -43,6 +43,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--artifacts-dir", required=True, type=Path)
     parser.add_argument("--inventory", required=True, type=Path)
     parser.add_argument("--vdb-root", type=Path)
+    parser.add_argument("--installed-root", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--require-complete", action="store_true")
     return parser.parse_args(argv)
@@ -50,6 +51,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.require_complete and (args.vdb_root is None or args.installed_root is None):
+        print("ERROR: --require-complete requires --vdb-root and --installed-root", file=sys.stderr)
+        return 2
     try:
         packages = _records(args.packages_dir, "package")
         artifacts = _records(args.artifacts_dir, "artifact")
@@ -65,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
             inventory=inventory,
             inventory_sha256=inventory_sha256,
             vdb_root=args.vdb_root,
+            installed_root=args.installed_root,
         )
         digest = STATE.atomic_publish(summary, args.output)
     except (OSError, json.JSONDecodeError, STATE.StateValidationError) as error:

@@ -10,12 +10,15 @@ claims which are not derivable from the package and artifact records.
 from __future__ import annotations
 
 import hashlib
+import errno
 import json
 import os
 import posixpath
 import re
 import shlex
+import shutil
 import stat
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Mapping, NoReturn, Sequence
@@ -993,8 +996,15 @@ def validate_artifact(record: Any) -> dict[str, Any]:
     _int(artifact["size"], "$.size")
     abi = _enum(artifact["abi"], "$.abi", ABIS)
     target = _target(artifact["target"], "$.target", abi)
-    metadata = _object(artifact["metadata"], "$.metadata", {"file_type", "mode", "uid", "gid", "mtime_ns", "xattrs", "file_capabilities", "selinux_context"})
-    _enum(metadata["file_type"], "$.metadata.file_type", {"regular", "fifo", "char-device", "block-device"})
+    metadata = _object(artifact["metadata"], "$.metadata", {"file_type", "device_major", "device_minor", "mode", "uid", "gid", "mtime_ns", "xattrs", "file_capabilities", "selinux_context"})
+    file_type = _enum(metadata["file_type"], "$.metadata.file_type", {"regular", "fifo", "char-device", "block-device"})
+    device_major = metadata["device_major"]
+    device_minor = metadata["device_minor"]
+    if file_type in {"char-device", "block-device"}:
+        _int(device_major, "$.metadata.device_major")
+        _int(device_minor, "$.metadata.device_minor")
+    elif device_major is not None or device_minor is not None:
+        _error("$.metadata", "device major/minor are valid only for device nodes")
     mode = _int(metadata["mode"], "$.metadata.mode")
     if mode > 0o7777:
         _error("$.metadata.mode", "must contain only Unix permission/special bits")
@@ -1245,6 +1255,133 @@ def _read_vdb_scalar(path: Path) -> str:
         raise StateValidationError(f"{path}: {error}") from error
 
 
+def _rooted_path(root: Path, installed_path: str) -> Path:
+    root_real = root.resolve(strict=True)
+    candidate = root / installed_path.lstrip("/")
+    try:
+        parent_real = candidate.parent.resolve(strict=True)
+    except OSError as error:
+        raise StateValidationError(f"installed parent is unavailable for {installed_path}: {error}") from error
+    try:
+        if os.path.commonpath((str(root_real), str(parent_real))) != str(root_real):
+            raise StateValidationError(f"installed path escapes root: {installed_path}")
+    except ValueError as error:
+        raise StateValidationError(f"installed path is on an unrelated root: {installed_path}") from error
+    return candidate
+
+
+def _installed_file_type(mode: int) -> str:
+    if stat.S_ISREG(mode):
+        return "regular"
+    if stat.S_ISFIFO(mode):
+        return "fifo"
+    if stat.S_ISCHR(mode):
+        return "char-device"
+    if stat.S_ISBLK(mode):
+        return "block-device"
+    raise StateValidationError("installed canonical object is not a supported file type")
+
+
+def _special_content_sha256(file_type: str, device_major: int | None, device_minor: int | None) -> str:
+    return hashlib.sha256(canonical_bytes({"file_type": file_type, "device_major": device_major, "device_minor": device_minor})).hexdigest()
+
+
+def _get_file_capabilities(path: Path) -> list[str]:
+    command = shutil.which("getcap")
+    if command is None:
+        raise StateValidationError("getcap is required for strict installed-artifact verification")
+    try:
+        result = subprocess.run(
+            [command, "-n", str(path)], check=False, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, timeout=10,
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "LANG": "C"},
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise StateValidationError(f"getcap failed for {path}: {error}") from error
+    if result.returncode != 0:
+        raise StateValidationError(f"getcap failed for {path}: {result.stderr.strip()}")
+    line = result.stdout.strip()
+    if not line:
+        return []
+    prefix = f"{path} "
+    if not line.startswith(prefix) or "\n" in line:
+        raise StateValidationError(f"unexpected getcap output for {path}")
+    return [line[len(prefix):]]
+
+
+def verify_installed_artifacts(artifacts: Sequence[Mapping[str, Any]], installed_root: Path) -> None:
+    """Verify every recorded path and exact post-strip installed metadata."""
+    if not installed_root.is_absolute() or not installed_root.is_dir():
+        _error("collection.installed_root", "must be an existing absolute directory")
+    for artifact in artifacts:
+        artifact_id = artifact["artifact_id"]
+        metadata = artifact["metadata"]
+        hardlink_stats: list[os.stat_result] = []
+        for installed in artifact["topology"]["hardlink_paths"]:
+            path = _rooted_path(installed_root, installed)
+            try:
+                path_metadata = path.lstat()
+            except OSError as error:
+                raise StateValidationError(f"collection.installed[{artifact_id}]: {installed}: {error}") from error
+            if stat.S_ISLNK(path_metadata.st_mode):
+                _error(f"collection.installed[{artifact_id}]", f"hardlink path is a symlink: {installed}")
+            hardlink_stats.append(path_metadata)
+        canonical = _rooted_path(installed_root, artifact["canonical_path"])
+        canonical_stat = canonical.lstat()
+        actual_type = _installed_file_type(canonical_stat.st_mode)
+        if actual_type != metadata["file_type"]:
+            _error(f"collection.installed[{artifact_id}].file_type", f"must be {actual_type}")
+        if len({(item.st_dev, item.st_ino) for item in hardlink_stats}) != 1:
+            _error(f"collection.installed[{artifact_id}].topology", "recorded hardlink paths do not share one inode")
+        if (canonical_stat.st_dev, canonical_stat.st_ino) != (artifact["topology"]["device"], artifact["topology"]["inode"]):
+            _error(f"collection.installed[{artifact_id}].topology", "device/inode mismatch")
+        if canonical_stat.st_nlink != artifact["topology"]["link_count"]:
+            _error(f"collection.installed[{artifact_id}].topology", "hardlink count mismatch")
+        scalar_actual = {"mode": stat.S_IMODE(canonical_stat.st_mode), "uid": canonical_stat.st_uid, "gid": canonical_stat.st_gid, "mtime_ns": canonical_stat.st_mtime_ns}
+        for field, actual in scalar_actual.items():
+            if metadata[field] != actual:
+                _error(f"collection.installed[{artifact_id}].{field}", f"must be {actual}")
+        if artifact["size"] != canonical_stat.st_size:
+            _error(f"collection.installed[{artifact_id}].size", f"must be {canonical_stat.st_size}")
+        if actual_type == "regular":
+            actual_sha = _file_sha(canonical)
+        else:
+            major = os.major(canonical_stat.st_rdev) if actual_type in {"char-device", "block-device"} else None
+            minor = os.minor(canonical_stat.st_rdev) if actual_type in {"char-device", "block-device"} else None
+            if (metadata["device_major"], metadata["device_minor"]) != (major, minor):
+                _error(f"collection.installed[{artifact_id}].device", "major/minor mismatch")
+            actual_sha = _special_content_sha256(actual_type, major, minor)
+        if artifact["content_sha256"] != actual_sha:
+            _error(f"collection.installed[{artifact_id}].content_sha256", "live content hash mismatch")
+        try:
+            xattr_names = sorted(os.listxattr(canonical, follow_symlinks=False))
+            actual_xattrs = [{"name": name, "value_sha256": hashlib.sha256(os.getxattr(canonical, name, follow_symlinks=False)).hexdigest()} for name in xattr_names]
+        except OSError as error:
+            raise StateValidationError(f"collection.installed[{artifact_id}].xattrs: {error}") from error
+        if metadata["xattrs"] != actual_xattrs:
+            _error(f"collection.installed[{artifact_id}].xattrs", "exact xattr set/hash mismatch")
+        capabilities = _get_file_capabilities(canonical)
+        if metadata["file_capabilities"] != capabilities:
+            _error(f"collection.installed[{artifact_id}].file_capabilities", "capability mismatch")
+        selinux_raw = None
+        try:
+            selinux_raw = os.getxattr(canonical, "security.selinux", follow_symlinks=False)
+        except OSError as error:
+            if error.errno != errno.ENODATA:
+                raise StateValidationError(f"collection.installed[{artifact_id}].selinux_context: {error}") from error
+        selinux_context = None if selinux_raw is None else selinux_raw.rstrip(b"\x00").decode("utf-8")
+        if metadata["selinux_context"] != selinux_context:
+            _error(f"collection.installed[{artifact_id}].selinux_context", "SELinux context mismatch")
+        for link in artifact["topology"]["symlinks"]:
+            link_path = _rooted_path(installed_root, link["path"])
+            try:
+                link_stat = link_path.lstat()
+            except OSError as error:
+                raise StateValidationError(f"collection.installed[{artifact_id}]: {link['path']}: {error}") from error
+            if not stat.S_ISLNK(link_stat.st_mode) or os.readlink(link_path) != link["target"]:
+                _error(f"collection.installed[{artifact_id}].symlinks", f"target/type mismatch for {link['path']}")
+
+
 def reconcile_collection(
     packages: Sequence[dict[str, Any]],
     artifacts: Sequence[dict[str, Any]],
@@ -1252,6 +1389,7 @@ def reconcile_collection(
     inventory: dict[str, Any] | None = None,
     inventory_sha256: str | None = None,
     vdb_root: Path | None = None,
+    installed_root: Path | None = None,
 ) -> dict[str, Any]:
     """Validate links and derive authoritative completion totals for a generation."""
     validated_packages = [validate_package(package) for package in packages]
@@ -1401,6 +1539,8 @@ def reconcile_collection(
                 _error("collection.vdb.contents", f"file type mismatch for {installed}")
             if entry_type == "dev" and artifact["metadata"]["file_type"] not in {"char-device", "block-device"}:
                 _error("collection.vdb.contents", f"device type mismatch for {installed}")
+    if installed_root is not None:
+        verify_installed_artifacts(validated_artifacts, installed_root)
 
     pgo_counts = _pgo_counts([component for package in validated_packages for component in package["components"]])
     bolt_counts = _bolt_counts(validated_artifacts)
@@ -1422,10 +1562,12 @@ def reconcile_collection(
     }
     inventory_verified = inventory is not None
     vdb_verified = vdb_root is not None
+    installed_artifacts_verified = installed_root is not None
     return {
         "schema_version": 1, "record_type": "state-reconciliation",
         "generation_id": generation_tuple[0], "inventory_id": generation_tuple[1],
         "inventory_sha256": generation_tuple[2], "inventory_verified": inventory_verified,
-        "vdb_verified": vdb_verified, "counts": counts,
-        "coverage_complete": bool(validated_packages) and inventory_verified and source_succeeded == len(validated_packages) and pending_total == unknown_total == failed_total == 0,
+        "vdb_verified": vdb_verified, "installed_artifacts_verified": installed_artifacts_verified,
+        "counts": counts,
+        "coverage_complete": bool(validated_packages) and inventory_verified and vdb_verified and installed_artifacts_verified and source_succeeded == len(validated_packages) and pending_total == unknown_total == failed_total == 0,
     }

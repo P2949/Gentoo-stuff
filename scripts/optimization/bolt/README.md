@@ -87,6 +87,12 @@ Deployment revalidates the live tool and evidence plus the immutable command
 record before touching `${ED}`. Production accepts only a root-owned,
 non-writable `llvm-bolt` below `/usr`; hermetic fixtures must opt into
 `--test-mode` explicitly and still supply every provenance argument.
+Every production fdata, workload, profile, command-record, stdout, stderr,
+captured-input, and prepared-output path must also live below root-owned,
+non-group/world-writable `/var/cache/gentoo-optimization` or
+`/var/lib/gentoo-optimization`, with no symlink or untrusted component anywhere
+in its ancestry. Arbitrary absolute paths are accepted only in explicit
+hermetic test mode.
 
 Deployment requires registered output for every eligible input. It validates
 the package fingerprint, full input hash, build ID, `.text` hash, hardlinks,

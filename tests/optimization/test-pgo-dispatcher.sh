@@ -70,7 +70,7 @@ chmod +x "${TMP}/bin/llvm-profdata" "${TMP}/bin/gcov-tool"
 printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
     '[[ $# == 5 && $1 == verify && $2 == --manifest && $4 == --metadata ]]' \
     '[[ $5 == "$3.metadata.json" ]]' \
-    'grep -Fxq VALIDATOR_OK "$5"' \
+    '/usr/bin/jq -e '\''(.compiler.path | type) == "string" and (.compiler.sha256 | test("^[0-9a-f]{64}$"))'\'' "$5" >/dev/null' \
     'backend=$(sed -n "s/^backend=//p" "$3")' \
     'profile=$(sed -n "s/^profile_path=//p" "$3")' \
     'case ${backend} in' \
@@ -83,6 +83,11 @@ printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
     'printf "%s\\n" "$*" >> "${VALIDATOR_LOG}"' \
     > "${TMP}/bin/profile-validator"
 chmod +x "${TMP}/bin/profile-validator"
+printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+    '[[ $# == 3 && $1 == fingerprint && $2 == --input ]]' \
+    'grep -Fxq IDENTITY_OK "$3"' \
+    'printf "b%.0s" {1..64}' 'printf "\n"' > "${TMP}/bin/profile-key-tool"
+chmod +x "${TMP}/bin/profile-key-tool"
 export GENTOO_OPT_DISPATCHER_TEST_MODE=1
 export GENTOO_OPT_PROFILE_VALIDATOR="${TMP}/bin/profile-validator"
 export VALIDATOR_LOG="${TMP}/profile-validator.log"
@@ -104,8 +109,23 @@ write_manifest_file() {
         "profile_path=${profile}" \
         "profile_sha256=${digest}" \
         'validation_status=passed' > "${output}"
-    printf '%s\n' VALIDATOR_OK > "${output}.metadata.json"
-    chmod 0600 -- "${output}.metadata.json"
+    write_metadata_file "${output}.metadata.json" "${family}"
+}
+
+write_metadata_file() {
+    local output=$1 family=$2 compiler digest
+    case ${family} in
+        clang) compiler=${TMP}/bin/clang ;;
+        gcc) compiler=${TMP}/bin/gcc ;;
+        rust) compiler=${TMP}/bin/rustc ;;
+        go) compiler=${TMP}/bin/go ;;
+        *) return 1 ;;
+    esac
+    digest=$(sha256sum -- "${compiler}")
+    digest=${digest%% *}
+    /usr/bin/jq -n --arg path "${compiler}" --arg sha256 "${digest}" \
+        '{compiler: {path: $path, sha256: $sha256}}' > "${output}"
+    chmod 0600 -- "${output}"
 }
 
 select_manifest() {
@@ -212,8 +232,7 @@ case_sample_use_and_format_separation() (
     # A correctly hashed sample payload cannot pass through the IR validator.
     sed 's/backend=clang-sample/backend=clang-ir/' \
         "${TMP}/profiles/sample.manifest" > "${TMP}/profiles/sample-as-ir.manifest"
-    printf '%s\n' VALIDATOR_OK > "${TMP}/profiles/sample-as-ir.manifest.metadata.json"
-    chmod 0600 -- "${TMP}/profiles/sample-as-ir.manifest.metadata.json"
+    write_metadata_file "${TMP}/profiles/sample-as-ir.manifest.metadata.json" clang
     export GENTOO_OPT_MODE=clang-ir-use
     select_manifest "${TMP}/profiles/sample-as-ir.manifest"
     source "${BASHRC}" >/dev/null 2>&1 && return 1
@@ -222,13 +241,29 @@ case_sample_use_and_format_separation() (
 
 case_manifest_mismatch_rejected() (
     sed 's/abi=amd64/abi=x86/' "${TMP}/profiles/ir.manifest" > "${TMP}/profiles/ir-x86.manifest"
-    printf '%s\n' VALIDATOR_OK > "${TMP}/profiles/ir-x86.manifest.metadata.json"
-    chmod 0600 -- "${TMP}/profiles/ir-x86.manifest.metadata.json"
+    write_metadata_file "${TMP}/profiles/ir-x86.manifest.metadata.json" clang
     export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang LLVM_PROFDATA=llvm-profdata ABI=amd64
     export GENTOO_OPT_MODE=clang-ir-use GENTOO_OPT_ABI=amd64
     export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/ir.profdata"
     select_manifest "${TMP}/profiles/ir-x86.manifest"
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_exact_profile_compiler_identity_is_bound() (
+    cp -- "${TMP}/profiles/ir.manifest" "${TMP}/profiles/ir-other-compiler.manifest"
+    other_hash=$(sha256sum -- "${TMP}/bin/clang++")
+    other_hash=${other_hash%% *}
+    /usr/bin/jq -n --arg path "${TMP}/bin/clang++" --arg sha256 "${other_hash}" \
+        '{compiler: {path: $path, sha256: $sha256}}' \
+        > "${TMP}/profiles/ir-other-compiler.manifest.metadata.json"
+    chmod 0600 -- "${TMP}/profiles/ir-other-compiler.manifest.metadata.json"
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang LLVM_PROFDATA=llvm-profdata ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-use GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/ir.profdata"
+    select_manifest "${TMP}/profiles/ir-other-compiler.manifest"
     source "${BASHRC}" >/dev/null 2>&1 && return 1
     return 0
 )
@@ -281,8 +316,7 @@ case_gcc_use_isolated_correction() (
         "profile_path=${TMP}/profiles/raw-gcc" \
         "profile_sha256=${digest}" \
         'validation_status=passed' > "${TMP}/profiles/gcc.manifest"
-    printf '%s\n' VALIDATOR_OK > "${TMP}/profiles/gcc.manifest.metadata.json"
-    chmod 0600 -- "${TMP}/profiles/gcc.manifest.metadata.json"
+    write_metadata_file "${TMP}/profiles/gcc.manifest.metadata.json" gcc
     export GENTOO_OPT_MODE=gcc-use GENTOO_OPT_ABI=amd64
     export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-gcc"
@@ -412,6 +446,90 @@ case_fingerprint_file_strict() (
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${GENTOO_OPT_ACTIVE_FINGERPRINT} == "${FINGERPRINT}" ]]
+)
+
+case_fingerprint_identity_tool_is_bounded() (
+    printf '%s\n' IDENTITY_OK > "${TMP}/identity.json"
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_ABI=amd64
+    unset GENTOO_OPT_FINGERPRINT GENTOO_OPT_FINGERPRINT_FILE
+    export GENTOO_OPT_IDENTITY_INPUT="${TMP}/identity.json"
+    export GENTOO_OPT_PROFILE_KEY_TOOL="${TMP}/bin/profile-key-tool"
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
+    [[ ${GENTOO_OPT_ACTIVE_FINGERPRINT} == $(printf 'b%.0s' {1..64}) ]]
+)
+
+case_production_trust_rejects_replaceable_paths() (
+    GENTOO_OPT_MODE=off source "${BASHRC}" >/dev/null 2>&1 || return 1
+    unset GENTOO_OPT_DISPATCHER_TEST_MODE GENTOO_OPT_PORTAGE_FIXTURE_MODE
+    gentoo_opt_trusted_root_executable /usr/bin/jq || return 1
+    gentoo_opt_trusted_root_executable "${TMP}/bin/clang" && return 1
+    ln -s -- /usr "${TMP}/trusted-link"
+    gentoo_opt_trusted_root_executable "${TMP}/trusted-link/bin/jq" && return 1
+    return 0
+)
+
+case_production_tools_are_exact_and_trusted() (
+    GENTOO_OPT_MODE=off source "${BASHRC}" >/dev/null 2>&1 || return 1
+    unset GENTOO_OPT_DISPATCHER_TEST_MODE GENTOO_OPT_PORTAGE_FIXTURE_MODE
+    GENTOO_OPT_PROFILE_KEY_TOOL="${TMP}/bin/profile-key-tool"
+    gentoo_opt_profile_key_tool >/dev/null 2>&1 && return 1
+    GENTOO_OPT_PROFILE_VALIDATOR="${TMP}/bin/profile-validator"
+    GENTOO_OPT_PROFILE_METADATA="${TMP}/profiles/ir.manifest.metadata.json"
+    GENTOO_OPT_PROFILE_MANIFEST="${TMP}/profiles/ir.manifest"
+    gentoo_opt_validate_profile_format >/dev/null 2>&1 && return 1
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang CXX=clang++
+    gentoo_opt_detect_compiler_family clang >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_production_namespaces_fail_closed() (
+    GENTOO_OPT_MODE=off source "${BASHRC}" >/dev/null 2>&1 || return 1
+    unset GENTOO_OPT_DISPATCHER_TEST_MODE GENTOO_OPT_PORTAGE_FIXTURE_MODE
+    gentoo_opt_require_immutable_input "${TMP}/fingerprint.env" \
+        /var/lib/gentoo-optimization/generations file fingerprint >/dev/null 2>&1 && return 1
+    gentoo_opt_require_immutable_input "${TMP}/profiles/ir.profdata" \
+        /var/cache/gentoo-optimization/pgo file profile >/dev/null 2>&1 && return 1
+    gentoo_opt_require_generation_spool "${TMP}/profiles/raw-clang" >/dev/null 2>&1 && return 1
+    gentoo_opt_require_bolt_cache_root "${TMP}/bolt-cache" >/dev/null 2>&1 && return 1
+    GENTOO_OPT_MODE=clang-ir-generate
+    GENTOO_OPT_ACTIVE_MODE=clang-ir-generate
+    GENTOO_OPT_ACTIVE_BOLT_STAGE=off
+    GENTOO_OPT_ACTIVE_BACKEND=clang-ir
+    GENTOO_OPT_ACTIVE_ABI=amd64
+    GENTOO_OPT_ACTIVE_COMPILER_FAMILY=clang
+    GENTOO_OPT_ACTIVE_COMPILER=/usr/bin/jq
+    GENTOO_OPT_ACTIVE_FINGERPRINT=${FINGERPRINT}
+    GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    GENTOO_OPT_LOG_FILE="${TMP}/arbitrary.log"
+    gentoo_opt_log_selection >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_production_inline_fingerprint_is_rejected() (
+    GENTOO_OPT_MODE=off source "${BASHRC}" >/dev/null 2>&1 || return 1
+    unset GENTOO_OPT_DISPATCHER_TEST_MODE GENTOO_OPT_PORTAGE_FIXTURE_MODE
+    GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    unset GENTOO_OPT_FINGERPRINT_FILE GENTOO_OPT_IDENTITY_INPUT
+    gentoo_opt_load_fingerprint >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_portage_fixture_override_is_exactly_bounded() (
+    GENTOO_OPT_MODE=off source "${BASHRC}" >/dev/null 2>&1 || return 1
+    unset GENTOO_OPT_DISPATCHER_TEST_MODE GENTOO_OPT_PORTAGE_FIXTURE_MODE
+    CATEGORY=app-test
+    PN=phase2-pgo-use-fixture
+    EBUILD_PHASE=compile
+    EBUILD=/var/tmp/gentoo-phase2-pgo-portage.ABC123/app-test/phase2-pgo-use-fixture/phase2-pgo-use-fixture-1.ebuild
+    gentoo_opt_fixture_override_allowed || return 1
+    EBUILD=/var/tmp/unreviewed/app-test/phase2-pgo-use-fixture/phase2-pgo-use-fixture-1.ebuild
+    gentoo_opt_fixture_override_allowed && return 1
+    PN=unreviewed
+    EBUILD=/var/tmp/gentoo-phase2-pgo-portage.ABC123/app-test/phase2-pgo-use-fixture/phase2-pgo-use-fixture-1.ebuild
+    gentoo_opt_fixture_override_allowed && return 1
+    return 0
 )
 
 case_root_path_is_not_safe_identity() (
@@ -559,6 +677,7 @@ run_case 'missing use profile fails closed' case_missing_profile_rejected
 run_case 'Clang IR use validates and appends exactly once' case_ir_use_and_exact_once
 run_case 'IR and sample profiles remain format/flag separated' case_sample_use_and_format_separation
 run_case 'profile manifest ABI mismatch fails closed' case_manifest_mismatch_rejected
+run_case 'profile use binds the exact compiler path and hash' case_exact_profile_compiler_identity_is_bound
 run_case 'Clang generation appends exactly once' case_clang_generate_exact_once
 run_case 'compiler cache and distribution masquerades are bypassed' case_compiler_masquerades_are_bypassed
 run_case 'GCC correction remains isolated from Fortran' case_gcc_use_isolated_correction
@@ -570,7 +689,13 @@ run_case 'Rust BOLT readiness requires an explicit target' case_rust_bolt_readin
 run_case 'BOLT readiness layers and guards the GCC lane' case_bolt_layer_and_gcc_guard
 run_case 'BOLT stages require an exact sandbox cache scope' case_bolt_cache_scope_is_required
 run_case 'strict fingerprint.env loading works' case_fingerprint_file_strict
+run_case 'fixture fingerprint computation uses only its bounded key tool' case_fingerprint_identity_tool_is_bounded
 run_case 'root is rejected as an identity file path' case_root_path_is_not_safe_identity
+run_case 'root trust rejects user-writable and symlinked ancestors' case_production_trust_rejects_replaceable_paths
+run_case 'production compiler and identity tools are exact trusted executables' case_production_tools_are_exact_and_trusted
+run_case 'production identity/profile/spool/log/BOLT namespaces fail closed' case_production_namespaces_fail_closed
+run_case 'production cannot inject an inline fingerprint' case_production_inline_fingerprint_is_rejected
+run_case 'real Portage fixture overrides are atom/path bounded' case_portage_fixture_override_is_exactly_bounded
 run_case 'post_src_install invokes the exact BOLT wrapper interface' case_bolt_post_install_wrapper
 run_case 'post_src_install chains an existing Portage hook' case_existing_post_install_hook_is_chained
 run_case 'Portage cannot swallow a BOLT transaction failure' case_portage_phase_cannot_swallow_bolt_failure

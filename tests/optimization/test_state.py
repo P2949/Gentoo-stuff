@@ -7,6 +7,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import stat
 import subprocess
 import sys
@@ -274,7 +275,7 @@ def artifact_record(*, inventory_sha: str = H["inventory"], kind: str = "elf", p
         "owner": {"cpv": "app-test/example-suite-1.0-r2", "cp": "app-test/example-suite", "component_id": "01-clang-ir", "component_fingerprint": f"sha256:{hashlib.sha256('01-clang-ir'.encode()).hexdigest()}"},
         "kind": kind, "format": "ELF" if elf else kind, "role": role, "installed_path": path, "canonical_path": path,
         "content_sha256": H["installed"] if optimized else H["artifact"], "size": 4096, "abi": abi, "target": machine_target,
-        "metadata": {"file_type": "regular", "mode": 0o755, "uid": 0, "gid": 0, "mtime_ns": 1783904400000000000, "xattrs": [{"name": "user.test", "value_sha256": H["xattr"]}], "file_capabilities": [], "selinux_context": None},
+        "metadata": {"file_type": "regular", "device_major": None, "device_minor": None, "mode": 0o755, "uid": 0, "gid": 0, "mtime_ns": 1783904400000000000, "xattrs": [{"name": "user.test", "value_sha256": H["xattr"]}], "file_capabilities": [], "selinux_context": None},
         "topology": {"device": 2049, "inode": 1001, "link_count": 1, "hardlink_paths": [path], "symlinks": []},
         "elf": elf, "kernel": kernel, "graphs": {"consumer_refs": [], "workload_refs": [workload()], "reverse_dependency_refs": []},
         "bolt": bolt, "final_status": "optimized" if optimized else "not-applicable", "resolution": None if optimized else resolution("bolt-not-elf"),
@@ -452,7 +453,10 @@ class CollectionTests(unittest.TestCase):
     def test_exact_inventory_owner_component_and_aggregate_reconciliation(self) -> None:
         package, artifact, inventory, payload = self.collection()
         summary = STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest())
-        self.assertTrue(summary["coverage_complete"])
+        self.assertTrue(summary["inventory_verified"])
+        self.assertFalse(summary["vdb_verified"])
+        self.assertFalse(summary["installed_artifacts_verified"])
+        self.assertFalse(summary["coverage_complete"])
         self.assertEqual(summary["counts"]["pending_total"], 0)
         self.assertEqual(summary["counts"]["unknown_total"], 0)
         self.assertEqual(summary["counts"]["failed_total"], 0)
@@ -507,7 +511,9 @@ class CollectionTests(unittest.TestCase):
 
     def test_live_vdb_cpv_contents_owner_and_symlink_types_are_exact(self) -> None:
         with tempfile.TemporaryDirectory(prefix="state-vdb.") as temporary:
-            root = Path(temporary); instance = root / "app-test/example-suite-1.0-r2"; instance.mkdir(parents=True)
+            root = Path(temporary); vdb_root = root / "vdb"; instance = vdb_root / "app-test/example-suite-1.0-r2"; instance.mkdir(parents=True)
+            installed_root = root / "installed"; installed_file = installed_root / "usr/bin/example"; installed_file.parent.mkdir(parents=True); installed_file.write_bytes(b"installed"); installed_file.chmod(0o755)
+            os.setxattr(installed_file, "user.test", b"xattr")
             contents = "obj /usr/bin/example deadbeef 1783904400\n"
             (instance / "CONTENTS").write_text(contents, encoding="utf-8")
             (instance / "repository").write_text("gentoo\n", encoding="utf-8")
@@ -519,15 +525,31 @@ class CollectionTests(unittest.TestCase):
             package["live_instance"].update({"vdb_path": str(instance), "contents_sha256": hashlib.sha256(contents.encode()).hexdigest(), "metadata_tree_sha256": STATE.vdb_metadata_tree_sha256(instance), "environment_bz2_sha256": hashlib.sha256(b"environment").hexdigest()})
             package["live_instance"]["identity_sha256"] = STATE.vdb_identity_sha256(package["live_instance"])
             package["source_rebuild"]["proof"]["installed_vdb_identity_sha256"] = package["live_instance"]["identity_sha256"]
-            summary = STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=root)
+            installed_stat = installed_file.lstat()
+            artifact["size"] = installed_stat.st_size
+            artifact["metadata"].update({"mode": stat.S_IMODE(installed_stat.st_mode), "uid": installed_stat.st_uid, "gid": installed_stat.st_gid, "mtime_ns": installed_stat.st_mtime_ns})
+            artifact["topology"].update({"device": installed_stat.st_dev, "inode": installed_stat.st_ino, "link_count": installed_stat.st_nlink})
+            summary = STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=vdb_root, installed_root=installed_root)
             self.assertTrue(summary["coverage_complete"])
+            self.assertTrue(summary["vdb_verified"])
+            self.assertTrue(summary["installed_artifacts_verified"])
+            packages_dir = root / "records/packages"; artifacts_dir = root / "records/artifacts"; packages_dir.mkdir(parents=True); artifacts_dir.mkdir(parents=True)
+            inventory_path = root / "inventory.json"; inventory_path.write_bytes(payload)
+            (packages_dir / "package.json").write_bytes(STATE.canonical_bytes(package)); (artifacts_dir / "artifact.json").write_bytes(STATE.canonical_bytes(artifact))
+            report = root / "report.json"
+            cli = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(packages_dir), "--artifacts-dir", str(artifacts_dir), "--inventory", str(inventory_path), "--vdb-root", str(vdb_root), "--installed-root", str(installed_root), "--output", str(report), "--require-complete"], text=True, capture_output=True, check=False)
+            self.assertEqual(cli.returncode, 0, cli.stderr)
+            installed_file.write_bytes(b"tamperedd"); os.utime(installed_file, ns=(installed_stat.st_atime_ns, installed_stat.st_mtime_ns))
+            with self.assertRaisesRegex(STATE.StateValidationError, "live content hash mismatch"):
+                STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=vdb_root, installed_root=installed_root)
+            installed_file.write_bytes(b"installed"); os.utime(installed_file, ns=(installed_stat.st_atime_ns, installed_stat.st_mtime_ns))
             (instance / "CONTENTS").write_text("sym /usr/bin/example -> example.real 1783904400\n", encoding="utf-8")
             package["live_instance"]["contents_sha256"] = hashlib.sha256((instance / "CONTENTS").read_bytes()).hexdigest()
             package["live_instance"]["metadata_tree_sha256"] = STATE.vdb_metadata_tree_sha256(instance)
             package["live_instance"]["identity_sha256"] = STATE.vdb_identity_sha256(package["live_instance"])
             package["source_rebuild"]["proof"]["installed_vdb_identity_sha256"] = package["live_instance"]["identity_sha256"]
             with self.assertRaisesRegex(STATE.StateValidationError, "topology type mismatch"):
-                STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=root)
+                STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=vdb_root, installed_root=installed_root)
 
     def test_cli_atomically_publishes_summary_and_require_complete(self) -> None:
         package, artifact, inventory, payload = self.collection()
@@ -537,11 +559,14 @@ class CollectionTests(unittest.TestCase):
             # The canonical payload hash was already embedded in these records.
             (packages / "package.json").write_bytes(STATE.canonical_bytes(package)); (artifacts / "artifact.json").write_bytes(STATE.canonical_bytes(artifact))
             output = root / "report/reconciliation.json"
-            result = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(packages), "--artifacts-dir", str(artifacts), "--inventory", str(inventory_path), "--output", str(output), "--require-complete"], text=True, capture_output=True, check=False)
+            result = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(packages), "--artifacts-dir", str(artifacts), "--inventory", str(inventory_path), "--output", str(output)], text=True, capture_output=True, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertTrue(json.loads(output.read_text())["coverage_complete"])
+            self.assertFalse(json.loads(output.read_text())["coverage_complete"])
             self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
             self.assertFalse(list(output.parent.glob("*.partial")))
+            strict = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(packages), "--artifacts-dir", str(artifacts), "--inventory", str(inventory_path), "--output", str(output), "--require-complete"], text=True, capture_output=True, check=False)
+            self.assertEqual(strict.returncode, 2)
+            self.assertIn("requires --vdb-root and --installed-root", strict.stderr)
 
 
 class PublicationAndSchemaTests(unittest.TestCase):

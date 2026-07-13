@@ -72,6 +72,10 @@ ABI_IDENTITY_KEYS = (
 ELF_MAGIC = b"\x7fELF"
 SYSTEM_ROOT = Path("/usr")
 PRODUCTION_CACHE_ROOT = Path("/var/cache/gentoo-optimization/bolt")
+PRODUCTION_EVIDENCE_ROOTS = (
+    Path("/var/cache/gentoo-optimization"),
+    Path("/var/lib/gentoo-optimization"),
+)
 DEFAULT_LOCK_TIMEOUT_SECONDS = 30.0
 DEFAULT_TOOL_TIMEOUT_SECONDS = 30.0
 DEFAULT_TOOL_KILL_AFTER_SECONDS = 5.0
@@ -196,6 +200,54 @@ def reject_symlink_components(path_text: str, label: str) -> Path:
     return path
 
 
+def validate_root_owned_nonwritable_chain(path: Path, label: str) -> None:
+    """Require an existing path and every ancestor to be root-owned and trusted."""
+    if not path.is_absolute():
+        fail(f"{label} must be absolute: {path}")
+    current = Path(path.anchor)
+    root_info = current.lstat()
+    if root_info.st_uid != 0 or stat.S_IMODE(root_info.st_mode) & 0o022:
+        fail(f"{label} has an untrusted filesystem root: {current}")
+    for part in path.parts[1:]:
+        current /= part
+        try:
+            info = current.lstat()
+        except OSError as error:
+            fail(f"cannot inspect {label} trust ancestor {current}: {error}")
+        if stat.S_ISLNK(info.st_mode):
+            fail(f"{label} contains a symlink component: {current}")
+        if info.st_uid != 0:
+            fail(f"{label} has a non-root-owned component: {current}")
+        if stat.S_IMODE(info.st_mode) & 0o022:
+            fail(f"{label} has a group/world-writable component: {current}")
+
+
+def validate_existing_root_owned_chain(path: Path, label: str) -> None:
+    """Validate every existing ancestor before a trusted directory is created."""
+    current = Path(path.anchor)
+    for part in (current, *(path.parts[1:])):
+        if isinstance(part, str):
+            current /= part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            break
+        except OSError as error:
+            fail(f"cannot inspect {label} trust ancestor {current}: {error}")
+        if stat.S_ISLNK(info.st_mode):
+            fail(f"{label} contains a symlink component: {current}")
+        if info.st_uid != 0 or stat.S_IMODE(info.st_mode) & 0o022:
+            fail(f"{label} has an untrusted ancestor: {current}")
+
+
+def validate_production_evidence_path(path: Path, label: str) -> None:
+    if not any(path == root or root in path.parents for root in PRODUCTION_EVIDENCE_ROOTS):
+        fail(
+            f"production {label} is outside trusted optimization storage: {path}"
+        )
+    validate_root_owned_nonwritable_chain(path, label)
+
+
 def validate_private_directory(path: Path, expected_uid: int, label: str) -> None:
     info = path.lstat()
     if not stat.S_ISDIR(info.st_mode):
@@ -252,6 +304,7 @@ def validate_cache_root(path_text: str, ed: Path | None, test_mode: bool) -> Pat
                 "production cache root must be exactly "
                 f"{PRODUCTION_CACHE_ROOT}; use --test-mode only for hermetic fixtures"
             )
+        validate_existing_root_owned_chain(raw, "cache root")
     raw.mkdir(mode=0o700, parents=True, exist_ok=True)
     reject_symlink_components(str(raw), "cache root")
     path = raw.resolve(strict=True)
@@ -260,6 +313,8 @@ def validate_cache_root(path_text: str, ed: Path | None, test_mode: bool) -> Pat
     if ed is not None and (path == ed or ed in path.parents or path in ed.parents):
         fail("cache root and ED must be disjoint")
     validate_private_directory(path, os.geteuid() if test_mode else 0, "cache root")
+    if not test_mode:
+        validate_root_owned_nonwritable_chain(path, "cache root")
     return path
 
 
@@ -923,7 +978,7 @@ def canonical_command_output(path_text: str) -> Path:
 
 
 def zero_eligibility_proof(
-    path_text: str | None, fingerprint: str, expected_count: int
+    path_text: str | None, fingerprint: str, expected_count: int, test_mode: bool
 ) -> dict[str, Any] | None:
     if expected_count != 0:
         if path_text is not None:
@@ -934,7 +989,7 @@ def zero_eligibility_proof(
             "expected eligible count zero requires --zero-eligible-proof from the "
             "frozen inventory"
         )
-    identity = file_record(path_text, "zero-eligibility proof")
+    identity = provenance_file_record(path_text, "zero-eligibility proof", test_mode)
     document = load_json(Path(identity["path"]), SCHEMA_ZERO_ELIGIBILITY)
     required = {"schema", "package_fingerprint", "eligible_count", "inventory_evidence"}
     if set(document) != required:
@@ -942,20 +997,35 @@ def zero_eligibility_proof(
     if document["package_fingerprint"] != fingerprint or document["eligible_count"] != 0:
         fail("zero-eligibility proof does not bind this fingerprint to count zero")
     inventory = document["inventory_evidence"]
-    validated = validate_recorded_files([inventory], "frozen inventory evidence")[0]
+    validated = validate_recorded_files(
+        [inventory], "frozen inventory evidence", test_mode=test_mode
+    )[0]
     if validated != inventory:
         fail("zero-eligibility frozen inventory identity mismatch")
     return {"identity": identity, "document": document}
 
 
-def validate_recorded_files(records: Any, label: str) -> list[dict[str, Any]]:
+def provenance_file_record(
+    path_text: str, label: str, test_mode: bool
+) -> dict[str, Any]:
+    record = file_record(path_text, label)
+    if not test_mode:
+        validate_production_evidence_path(Path(record["path"]), label)
+    return record
+
+
+def validate_recorded_files(
+    records: Any, label: str, *, test_mode: bool = True
+) -> list[dict[str, Any]]:
     if not isinstance(records, list) or not records:
         fail(f"{label} records must be a nonempty list")
     validated: list[dict[str, Any]] = []
     for index, expected in enumerate(records):
         if not isinstance(expected, dict) or set(expected) != {"path", "sha256", "size"}:
             fail(f"invalid {label} record at index {index}")
-        actual = file_record(str(expected.get("path", "")), f"{label} file")
+        actual = provenance_file_record(
+            str(expected.get("path", "")), f"{label} file", test_mode
+        )
         if actual != expected:
             fail(f"{label} file identity mismatch: expected {expected}, got {actual}")
         validated.append(actual)
@@ -971,6 +1041,7 @@ def llvm_bolt_identity(path_text: str, test_mode: bool) -> dict[str, Any]:
     if stat.S_IMODE(info.st_mode) & 0o022:
         fail(f"llvm-bolt executable is group/world-writable: {path}")
     if not test_mode:
+        validate_root_owned_nonwritable_chain(path, "llvm-bolt executable")
         if info.st_uid != 0:
             fail(f"production llvm-bolt executable is not root-owned: {path}")
         if path.name != "llvm-bolt" or SYSTEM_ROOT not in path.parents:
@@ -1009,8 +1080,11 @@ def validate_command_record(
     fdata: list[dict[str, Any]],
     workloads: list[dict[str, Any]],
     profiles: list[dict[str, Any]],
+    test_mode: bool,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    record_identity = file_record(path_text, "BOLT command record")
+    record_identity = provenance_file_record(
+        path_text, "BOLT command record", test_mode
+    )
     document = load_json(Path(record_identity["path"]), SCHEMA_COMMAND)
     required = {
         "schema",
@@ -1063,8 +1137,12 @@ def validate_command_record(
     ):
         if document[field] != expected:
             fail(f"BOLT command record {field} identity mismatch")
-    validate_recorded_files([document["stdout"]], "BOLT stdout")
-    validate_recorded_files([document["stderr"]], "BOLT stderr")
+    validate_recorded_files(
+        [document["stdout"]], "BOLT stdout", test_mode=test_mode
+    )
+    validate_recorded_files(
+        [document["stderr"]], "BOLT stderr", test_mode=test_mode
+    )
     return document, record_identity
 
 
@@ -1084,11 +1162,13 @@ def verify_bolt_provenance(record: dict[str, Any], test_mode: bool) -> None:
         ("workload_evidence", "BOLT workload evidence"),
         ("profile_evidence", "BOLT profile evidence"),
     ):
-        validate_recorded_files(record.get(key), label)
+        validate_recorded_files(record.get(key), label, test_mode=test_mode)
     command_record = record.get("command_record")
     if not isinstance(command_record, dict):
         fail("prepared output lacks a command-record identity")
-    actual = file_record(str(command_record.get("path", "")), "BOLT command record")
+    actual = provenance_file_record(
+        str(command_record.get("path", "")), "BOLT command record", test_mode
+    )
     if actual != command_record:
         fail("prepared output command-record identity is stale or mismatched")
     command = load_json(Path(actual["path"]), SCHEMA_COMMAND)
@@ -1107,8 +1187,12 @@ def verify_bolt_provenance(record: dict[str, Any], test_mode: bool) -> None:
     ):
         if command.get(key) != record.get(key):
             fail(f"prepared output command/{key} binding mismatch")
-    validate_recorded_files([command.get("stdout")], "BOLT stdout")
-    validate_recorded_files([command.get("stderr")], "BOLT stderr")
+    validate_recorded_files(
+        [command.get("stdout")], "BOLT stdout", test_mode=test_mode
+    )
+    validate_recorded_files(
+        [command.get("stderr")], "BOLT stderr", test_mode=test_mode
+    )
     if command.get("exit_status") != 0:
         fail("prepared output command did not exit successfully")
     command_output = command.get("output")
@@ -1126,7 +1210,10 @@ def command_capture(arguments: argparse.Namespace) -> None:
     cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
     fingerprint = validate_fingerprint(arguments.fingerprint)
     zero_proof = zero_eligibility_proof(
-        arguments.zero_eligible_proof, fingerprint, arguments.expected_eligible_count
+        arguments.zero_eligible_proof,
+        fingerprint,
+        arguments.expected_eligible_count,
+        arguments.test_mode,
     )
     readelf = shutil.which(arguments.readelf)
     objcopy = shutil.which(arguments.objcopy)
@@ -1282,13 +1369,25 @@ def command_register(arguments: argparse.Namespace) -> None:
     objcopy = shutil.which(arguments.objcopy)
     if readelf is None or objcopy is None:
         fail("output registration requires readelf and objcopy")
-    _, capture = capture_paths(cache, fingerprint)
+    capture_root, capture = capture_paths(cache, fingerprint)
     source_artifact = find_artifact(capture, arguments.artifact_id)
     input_unresolved = reject_symlink_components(arguments.input, "exact BOLT input")
     input_status = input_unresolved.lstat()
     if not stat.S_ISREG(input_status.st_mode):
         fail(f"exact BOLT input is not a regular file: {input_unresolved}")
     input_source = input_unresolved.resolve(strict=True)
+    cache_object = source_artifact.get("cache_object")
+    if not isinstance(cache_object, str):
+        fail("captured artifact lacks its exact cache object path")
+    expected_input = path_from_relative(capture_root, cache_object).resolve(strict=True)
+    if not arguments.test_mode and input_source != expected_input:
+        fail(
+            "exact BOLT input path is not the captured immutable object: "
+            f"expected={expected_input}, got={input_source}"
+        )
+    if not arguments.test_mode:
+        validate_production_evidence_path(input_source, "exact BOLT input")
+        validate_production_evidence_path(output_source, "prepared BOLT output")
     with tempfile.TemporaryDirectory(prefix="bolt-output-classify-", dir=cache) as temporary:
         temporary_root = Path(temporary)
         input_classification = classify_elf(
@@ -1323,13 +1422,16 @@ def command_register(arguments: argparse.Namespace) -> None:
             f"expected {APPROVED_BOLT_OPTIONS}, got {arguments.bolt_option}"
         )
     tool = llvm_bolt_identity(arguments.llvm_bolt, arguments.test_mode)
-    fdata = [file_record(value, "BOLT fdata") for value in arguments.fdata]
+    fdata = [
+        provenance_file_record(value, "BOLT fdata", arguments.test_mode)
+        for value in arguments.fdata
+    ]
     workloads = [
-        file_record(value, "BOLT workload evidence")
+        provenance_file_record(value, "BOLT workload evidence", arguments.test_mode)
         for value in arguments.workload_evidence
     ]
     profiles = [
-        file_record(value, "BOLT profile evidence")
+        provenance_file_record(value, "BOLT profile evidence", arguments.test_mode)
         for value in arguments.profile_evidence
     ]
     for records, label in (
@@ -1341,11 +1443,27 @@ def command_register(arguments: argparse.Namespace) -> None:
             fail(f"at least one {label} file is required")
         if len({item["path"] for item in records}) != len(records):
             fail(f"duplicate {label} paths are forbidden")
-    input_record = file_record(str(input_source), "exact BOLT input")
+    input_record = provenance_file_record(
+        str(input_source), "exact BOLT input", arguments.test_mode
+    )
     if input_record["sha256"] != source_artifact["file_sha256"]:
         fail("exact BOLT input changed while registration was validating it")
-    prepared_output_record = file_record(str(output_source), "prepared BOLT output")
+    prepared_output_record = provenance_file_record(
+        str(output_source), "prepared BOLT output", arguments.test_mode
+    )
     command_output = canonical_command_output(arguments.command_output_path)
+    if not arguments.test_mode:
+        if not any(
+            command_output == root or root in command_output.parents
+            for root in PRODUCTION_EVIDENCE_ROOTS
+        ):
+            fail(
+                "production BOLT command output is outside trusted optimization "
+                f"storage: {command_output}"
+            )
+        validate_root_owned_nonwritable_chain(
+            command_output.parent, "BOLT command output parent"
+        )
     output_record = {
         **prepared_output_record,
         "path": str(command_output),
@@ -1368,6 +1486,7 @@ def command_register(arguments: argparse.Namespace) -> None:
         fdata=fdata,
         workloads=workloads,
         profiles=profiles,
+        test_mode=arguments.test_mode,
     )
 
     output_root = cache / "outputs" / fingerprint
@@ -1547,7 +1666,10 @@ def command_deploy(arguments: argparse.Namespace) -> None:
     cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
     fingerprint = validate_fingerprint(arguments.fingerprint)
     zero_proof = zero_eligibility_proof(
-        arguments.zero_eligible_proof, fingerprint, arguments.expected_eligible_count
+        arguments.zero_eligible_proof,
+        fingerprint,
+        arguments.expected_eligible_count,
+        arguments.test_mode,
     )
     readelf = shutil.which(arguments.readelf)
     objcopy = shutil.which(arguments.objcopy)

@@ -74,9 +74,16 @@ gentoo_opt_fixture_override_allowed() {
     if [[ ${GENTOO_OPT_DISPATCHER_TEST_MODE:-0} == 1 && -z ${EBUILD_PHASE-} ]]; then
         return 0
     fi
-    [[ ${GENTOO_OPT_PORTAGE_FIXTURE_MODE:-0} == 1 &&
+    if [[ ${GENTOO_OPT_PORTAGE_FIXTURE_MODE:-0} == 1 &&
         ${CATEGORY-} == app-test && ${PN-} == phase2-portage-fixture &&
-        ${EBUILD-} == /var/tmp/gentoo-phase2-portage-fixture.*/* ]] || return 1
+        ${EBUILD-} == /var/tmp/gentoo-phase2-portage-fixture.*/app-test/phase2-portage-fixture/phase2-portage-fixture-1.ebuild ]]; then
+        return 0
+    fi
+    # The real PGO integration fixture predates the marker variable, but its
+    # disposable repository, exact atom, exact ebuild name, and canonical
+    # mktemp prefix form an equally bounded test-only identity.
+    [[ ${CATEGORY-} == app-test && ${PN-} == phase2-pgo-use-fixture &&
+        ${EBUILD-} == /var/tmp/gentoo-phase2-pgo-portage.*/app-test/phase2-pgo-use-fixture/phase2-pgo-use-fixture-1.ebuild ]]
 }
 
 gentoo_opt_trusted_root_path() {
@@ -201,6 +208,25 @@ gentoo_opt_require_generation_spool() {
     done
     [[ -w ${path} ]] || {
         gentoo_opt_error "generation profile spool is not writable: ${path}"
+        return 1
+    }
+}
+
+gentoo_opt_require_bolt_cache_root() {
+    local path=${1-}
+    if gentoo_opt_fixture_override_allowed; then
+        gentoo_opt_safe_absolute_path "${path}" || {
+            gentoo_opt_error 'fixture BOLT stage requires a safe absolute cache root'
+            return 1
+        }
+        return 0
+    fi
+    [[ ${path} == /var/cache/gentoo-optimization/bolt ]] || {
+        gentoo_opt_error 'production BOLT cache root must be exactly /var/cache/gentoo-optimization/bolt'
+        return 1
+    }
+    gentoo_opt_trusted_root_path "${path}" directory || {
+        gentoo_opt_error 'production BOLT cache root or an ancestor is not trusted root-owned state'
         return 1
     }
 }
@@ -526,14 +552,8 @@ gentoo_opt_read_profile_manifest() {
     local schema='' backend='' fingerprint='' abi='' compiler_family=''
     local profile_path='' profile_sha256='' validation_status=''
     declare -A seen=()
-    gentoo_opt_safe_absolute_path "${path}" || {
-        gentoo_opt_error 'GENTOO_OPT_PROFILE_MANIFEST must be a safe absolute path'
-        return 1
-    }
-    [[ -f ${path} && ! -L ${path} ]] || {
-        gentoo_opt_error "profile manifest is not a regular non-symlink file: ${path}"
-        return 1
-    }
+    gentoo_opt_require_immutable_input "${path}" \
+        /var/cache/gentoo-optimization/pgo file 'profile manifest' || return 1
     while IFS= read -r line || [[ -n ${line} ]]; do
         [[ ${line} =~ ^([a-z_][a-z0-9_]*)=(.*)$ ]] || {
             gentoo_opt_error "malformed profile manifest line: ${line}"
@@ -588,7 +608,8 @@ gentoo_opt_read_profile_manifest() {
 }
 
 gentoo_opt_validate_profile_format() {
-    local expected_validator validator metadata
+    local expected_validator validator metadata compiler_identity
+    local metadata_compiler metadata_compiler_sha256 active_compiler_sha256
     expected_validator=/usr/local/libexec/gentoo-optimization/pgo/validate-profile.py
     validator=${GENTOO_OPT_PROFILE_VALIDATOR:-${expected_validator}}
     if [[ ${validator} != "${expected_validator}" ]]; then
@@ -614,12 +635,53 @@ gentoo_opt_validate_profile_format() {
     [[ ${metadata} == "${GENTOO_OPT_PROFILE_MANIFEST}.metadata.json" ]] || {
         gentoo_opt_error 'profile metadata must be the deterministic <manifest>.metadata.json sidecar'; return 1;
     }
-    [[ -f ${metadata} && -s ${metadata} && ! -L ${metadata} ]] || {
-        gentoo_opt_error "profile metadata is absent, empty, or symlinked: ${metadata}"; return 1;
+    gentoo_opt_require_immutable_input "${metadata}" \
+        /var/cache/gentoo-optimization/pgo file 'profile validation metadata' || return 1
+    [[ -s ${metadata} ]] || {
+        gentoo_opt_error "profile metadata is empty: ${metadata}"; return 1;
     }
     "${validator}" verify --manifest "${GENTOO_OPT_PROFILE_MANIFEST}" \
         --metadata "${metadata}" || {
         gentoo_opt_error 'authoritative profile manifest/sidecar verification failed'; return 1;
+    }
+
+    # The authoritative sidecar contains the complete compiler observation
+    # used when the profile was published.  Family equality is not enough:
+    # bind profile consumption to the exact compiler realpath and bytes that
+    # were resolved for this build.
+    if ! gentoo_opt_trusted_root_executable /usr/bin/jq; then
+        gentoo_opt_error 'cannot trust the exact /usr/bin/jq metadata reader'
+        return 1
+    fi
+    compiler_identity=$(/usr/bin/jq -er \
+        'if (.compiler | type) == "object" and (.compiler.path | type) == "string" and (.compiler.sha256 | type) == "string" then .compiler.path, .compiler.sha256 else error("missing compiler identity") end' \
+        -- "${metadata}") || {
+        gentoo_opt_error 'cannot extract the exact compiler identity from validation metadata'
+        return 1
+    }
+    [[ ${compiler_identity} == *$'\n'* && ${compiler_identity} != *$'\n'*$'\n'* ]] || {
+        gentoo_opt_error 'validation metadata compiler identity is not exactly path plus SHA-256'
+        return 1
+    }
+    metadata_compiler=${compiler_identity%%$'\n'*}
+    metadata_compiler_sha256=${compiler_identity#*$'\n'}
+    gentoo_opt_safe_absolute_path "${metadata_compiler}" || {
+        gentoo_opt_error 'validation metadata compiler path is unsafe'
+        return 1
+    }
+    [[ ${metadata_compiler_sha256} =~ ^[0-9a-f]{64}$ ]] || {
+        gentoo_opt_error 'validation metadata compiler SHA-256 is malformed'
+        return 1
+    }
+    [[ ${metadata_compiler} == "${GENTOO_OPT_ACTIVE_COMPILER}" ]] || {
+        gentoo_opt_error 'profile compiler path differs from the compiler resolved for this build'
+        return 1
+    }
+    active_compiler_sha256=$(sha256sum -- "${GENTOO_OPT_ACTIVE_COMPILER}") || return 1
+    active_compiler_sha256=${active_compiler_sha256%% *}
+    [[ ${metadata_compiler_sha256} == "${active_compiler_sha256}" ]] || {
+        gentoo_opt_error 'profile compiler hash differs from the compiler resolved for this build'
+        return 1
     }
 }
 
@@ -629,9 +691,7 @@ gentoo_opt_prepare_profile_path() {
         gentoo_opt_error 'active PGO mode requires a safe absolute GENTOO_OPT_PROFILE_PATH'; return 1;
     }
     if gentoo_opt_profile_is_generate_mode "${mode}"; then
-        [[ -d ${GENTOO_OPT_PROFILE_PATH} && -w ${GENTOO_OPT_PROFILE_PATH} ]] || {
-            gentoo_opt_error "generation profile directory must already exist and be writable: ${GENTOO_OPT_PROFILE_PATH}"; return 1;
-        }
+        gentoo_opt_require_generation_spool "${GENTOO_OPT_PROFILE_PATH}" || return 1
         gentoo_opt_allow_sandbox_write "${GENTOO_OPT_PROFILE_PATH}" || return 1
         return 0
     fi
@@ -639,17 +699,21 @@ gentoo_opt_prepare_profile_path() {
         gentoo_opt_error 'profile-use mode requires GENTOO_OPT_PROFILE_MANIFEST'; return 1;
     }
     if [[ ${GENTOO_OPT_ACTIVE_BACKEND} == gcc ]]; then
-        [[ -d ${GENTOO_OPT_PROFILE_PATH} ]] || {
-            gentoo_opt_error "GCC profile directory is absent: ${GENTOO_OPT_PROFILE_PATH}"; return 1;
+        gentoo_opt_require_immutable_input "${GENTOO_OPT_PROFILE_PATH}" \
+            /var/cache/gentoo-optimization/pgo directory 'GCC profile directory' || return 1
+        gentoo_opt_require_immutable_tree "${GENTOO_OPT_PROFILE_PATH}" || {
+            gentoo_opt_error 'GCC profile tree contains mutable, symlinked, or non-root-owned input'
+            return 1
         }
         gcda_count=$(find "${GENTOO_OPT_PROFILE_PATH}" -type f -name '*.gcda' -size +0c -print -quit)
         [[ -n ${gcda_count} ]] || {
             gentoo_opt_error 'GCC profile directory contains no nonempty .gcda file'; return 1;
         }
     else
-        [[ -f ${GENTOO_OPT_PROFILE_PATH} && -s ${GENTOO_OPT_PROFILE_PATH} &&
-            ! -L ${GENTOO_OPT_PROFILE_PATH} ]] || {
-            gentoo_opt_error "profile file is absent, empty, or a symlink: ${GENTOO_OPT_PROFILE_PATH}"; return 1;
+        gentoo_opt_require_immutable_input "${GENTOO_OPT_PROFILE_PATH}" \
+            /var/cache/gentoo-optimization/pgo file 'profile payload' || return 1
+        [[ -s ${GENTOO_OPT_PROFILE_PATH} ]] || {
+            gentoo_opt_error "profile file is empty: ${GENTOO_OPT_PROFILE_PATH}"; return 1;
         }
     fi
     gentoo_opt_read_profile_manifest "${GENTOO_OPT_PROFILE_MANIFEST}" || return 1
@@ -807,6 +871,10 @@ gentoo_opt_log_selection() {
     local message="mode=${GENTOO_OPT_MODE} active_mode=${GENTOO_OPT_ACTIVE_MODE} bolt_stage=${GENTOO_OPT_ACTIVE_BOLT_STAGE} backend=${GENTOO_OPT_ACTIVE_BACKEND:-none} abi=${GENTOO_OPT_ACTIVE_ABI} compiler=${GENTOO_OPT_ACTIVE_COMPILER_FAMILY:-none} cc=${GENTOO_OPT_ACTIVE_COMPILER:-none} cxx=${GENTOO_OPT_ACTIVE_CXX:-none} fingerprint=${GENTOO_OPT_ACTIVE_FINGERPRINT} profile=${profile}"
     printf 'gentoo-optimization: %s\n' "${message}" >&2
     if [[ -n ${GENTOO_OPT_LOG_FILE-} ]]; then
+        gentoo_opt_fixture_override_allowed || {
+            gentoo_opt_error 'production dispatcher file logging is disabled; preserve Portage stderr as the authoritative build log'
+            return 1
+        }
         gentoo_opt_safe_absolute_path "${GENTOO_OPT_LOG_FILE}" || {
             gentoo_opt_error 'GENTOO_OPT_LOG_FILE must be a safe absolute path'; return 1;
         }
@@ -855,9 +923,7 @@ rust-generate|rust-use|go-use) ;;
     gentoo_opt_detect_abi || return 1
     gentoo_opt_load_fingerprint || return 1
     if [[ ${bolt_stage} == capture || ${bolt_stage} == deploy ]]; then
-        gentoo_opt_safe_absolute_path "${GENTOO_OPT_BOLT_CACHE_ROOT-}" || {
-            gentoo_opt_error 'BOLT stage requires a safe absolute GENTOO_OPT_BOLT_CACHE_ROOT'; return 1;
-        }
+        gentoo_opt_require_bolt_cache_root "${GENTOO_OPT_BOLT_CACHE_ROOT-}" || return 1
         [[ ${GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT-} =~ ^[1-9][0-9]*$ ]] || {
             gentoo_opt_error 'BOLT stage requires a positive inventory-derived expected eligible count'
             return 1
@@ -953,6 +1019,7 @@ gentoo_opt_run_bolt_wrapper() {
         gentoo_opt_error 'BOLT hook requires a safe absolute GENTOO_OPT_BOLT_CACHE_ROOT'; return 1;
     }
     cache=${GENTOO_OPT_BOLT_CACHE_ROOT}
+    gentoo_opt_require_bolt_cache_root "${cache}" || return 1
     fingerprint=${GENTOO_OPT_ACTIVE_FINGERPRINT}
     gentoo_opt_allow_sandbox_write "${cache}/locks/${fingerprint}.lock" || return 1
     case ${operation} in
