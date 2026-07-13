@@ -79,6 +79,17 @@ gentoo_opt_fixture_override_allowed() {
         ${EBUILD-} == /var/tmp/gentoo-phase2-portage-fixture.*/* ]] || return 1
 }
 
+gentoo_opt_trusted_root_executable() {
+    local path=$1 canonical owner mode
+    [[ -f ${path} && -x ${path} && ! -L ${path} ]] || return 1
+    canonical=$(realpath -e -- "${path}") || return 1
+    [[ ${canonical} == "${path}" ]] || return 1
+    owner=$(stat -c %u -- "${path}") || return 1
+    mode=$(stat -c %a -- "${path}") || return 1
+    [[ ${owner} == 0 && ${mode} =~ ^[0-7]{3,4}$ ]] || return 1
+    (( (8#${mode} & 8#022) == 0 ))
+}
+
 gentoo_opt_disable_ccache() {
     gentoo_opt_append_flag_once FEATURES -ccache
     gentoo_opt_append_flag_once FEATURES -distcc
@@ -453,6 +464,11 @@ gentoo_opt_validate_profile_format() {
     [[ -f ${validator} && -x ${validator} && ! -L ${validator} ]] || {
         gentoo_opt_error "profile validator is unavailable, non-regular, or symlinked: ${validator}"; return 1;
     }
+    if [[ ${validator} == "${expected_validator}" ]] && \
+        ! gentoo_opt_trusted_root_executable "${validator}"; then
+        gentoo_opt_error "authoritative profile validator is not a trusted root executable: ${validator}"
+        return 1
+    fi
     gentoo_opt_safe_absolute_path "${GENTOO_OPT_PROFILE_METADATA-}" || {
         gentoo_opt_error 'profile use requires a safe absolute GENTOO_OPT_PROFILE_METADATA'; return 1;
     }
@@ -775,6 +791,11 @@ gentoo_opt_bolt_wrapper_path() {
     [[ -x ${wrapper} && -f ${wrapper} && ! -L ${wrapper} ]] || {
         gentoo_opt_error "BOLT ${operation} wrapper is unavailable or not executable: ${wrapper}"; return 1;
     }
+    if [[ ${wrapper} == "${expected_wrapper}" ]] && \
+        ! gentoo_opt_trusted_root_executable "${wrapper}"; then
+        gentoo_opt_error "installed BOLT ${operation} wrapper is not a trusted root executable: ${wrapper}"
+        return 1
+    fi
     GENTOO_OPT_BOLT_WRAPPER=${wrapper}
 }
 

@@ -85,7 +85,7 @@ import json
 import sys
 
 manifest = json.load(open(sys.argv[1], encoding="utf-8"))
-assert manifest["schema"] == "gentoo-optimization-bolt-capture-v1"
+assert manifest["schema"] == "gentoo-optimization-bolt-capture-v2"
 assert manifest["elf_total"] == 3
 assert manifest["eligible_total"] == 3
 assert manifest["ineligible_total"] == 0
@@ -97,6 +97,22 @@ assert all(item["has_symtab"] and item["symbol_count"] for item in manifest["art
 assert all(item["defined_function_symbols"] > 0 for item in manifest["artifacts"])
 assert all(item["text_relocation_sections"] for item in manifest["artifacts"])
 assert all(item["build_id"] and item["text_sha256"] for item in manifest["artifacts"])
+assert {item["elf_role"] for item in manifest["artifacts"]} == {
+    "fixed-executable", "pie-executable", "shared-object"
+}
+assert all(item["elf_data"] == "2's complement, little endian" for item in manifest["artifacts"])
+assert all(item["gnu_stack_policy"] == "non-executable" for item in manifest["artifacts"])
+assert all(item["has_gnu_relro"] and item["bind_now"] for item in manifest["artifacts"])
+assert all(item["cet_properties"] for item in manifest["artifacts"])
+fixed = next(item for item in manifest["artifacts"] if item["elf_role"] == "fixed-executable")
+pie = next(item for item in manifest["artifacts"] if item["elf_role"] == "pie-executable")
+dso = next(item for item in manifest["artifacts"] if item["elf_role"] == "shared-object")
+assert fixed["interpreter"] and pie["interpreter"]
+assert dso["interpreter"] is None and dso["soname"] == "libfixture.so.1"
+assert fixed["runpath"] == ["$ORIGIN/../lib64"] and fixed["rpath"] == []
+assert dso["rpath"] == ["$ORIGIN"] and dso["runpath"] == []
+assert all(item["needed"] for item in (fixed, pie))
+assert any(symbol["name"].startswith("exported_fixture") for symbol in dso["exported_dynamic_symbols"])
 assert all(item["readiness_failures"] == [] for item in manifest["artifacts"])
 assert all("terminal_reasons" not in item for item in manifest["artifacts"])
 hardlinks = [item for item in manifest["artifacts"] if item["hardlink_count"] == 2]
@@ -107,6 +123,25 @@ assert manifest["symlinks"] == [
 ]
 assert hardlinks[0]["metadata"]["mode"] == "4755"
 PY
+
+# An interrupted caller may retry capture with the same fingerprint. Adoption
+# is permitted only after a complete fresh capture is byte-identical.
+CAPTURE_HASH=$(sha256sum "${MANIFEST}" | awk '{print $1}')
+"${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+    >"${WORK}/capture-retry.out"
+[[ $(sha256sum "${MANIFEST}" | awk '{print $1}') == "${CAPTURE_HASH}" ]] || \
+    fail 'byte-identical capture retry changed the authoritative manifest'
+cp -- "${ED}/usr/bin/pie" "${WORK}/pie.pre-mismatch"
+printf 'mismatch\n' >>"${ED}/usr/bin/pie"
+if "${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+        >"${WORK}/capture-mismatch.out" 2>"${WORK}/capture-mismatch.err"; then
+    fail 'capture retry adopted mismatching object contents'
+fi
+grep -Fq 'quarantined candidate' "${WORK}/capture-mismatch.err" || \
+    fail 'mismatching capture retry lacked quarantine evidence'
+find "${CACHE}/quarantine/capture-mismatch" -mindepth 1 -maxdepth 1 -type d -print -quit | \
+    grep -q . || fail 'mismatching fresh capture was not quarantined'
+cp -- "${WORK}/pie.pre-mismatch" "${ED}/usr/bin/pie"
 while IFS= read -r cached_object; do
     [[ $(stat -c '%a' "${CACHE}/inputs/${FINGERPRINT}/${cached_object}") == 600 ]] || \
         fail "captured object is not private: ${cached_object}"
@@ -119,19 +154,127 @@ for item in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]:
 PY
 )
 
-# Create syntactically valid stand-ins for prepared BOLT outputs. The added
-# note exercises the deployment invariant without requiring llvm-bolt in this
-# hermetic transaction test.
-printf 'fixture-bolt-note\n' >"${WORK}/bolt-note"
+# The transaction fixture uses an explicit hermetic BOLT stand-in. It emits
+# the same structured GNU BOLT note and nonempty origin-code section required
+# from production output; a note-only objcopy forgery is tested and rejected
+# below. Tool identity and every invocation input are still exact and hashed.
+FAKE_BOLT=${WORK}/llvm-bolt-fixture
+printf '%s\n' \
+    '#!/usr/bin/python3' \
+    'import os, pathlib, shlex, shutil, struct, subprocess, sys, tempfile' \
+    'if sys.argv[1:] == ["--version"]:' \
+    '    print("LLVM (fixture):\\n  LLVM version 22.1.8\\n  BOLT revision fixture")' \
+    '    raise SystemExit(0)' \
+    'tool = os.path.realpath(sys.argv[0])' \
+    'argv = [tool, *sys.argv[1:]]' \
+    'source = pathlib.Path(sys.argv[1])' \
+    'output = pathlib.Path(sys.argv[sys.argv.index("-o") + 1])' \
+    'shutil.copyfile(source, output)' \
+    'with tempfile.TemporaryDirectory() as temporary:' \
+    '    root = pathlib.Path(temporary)' \
+    '    text = root / "text"' \
+    '    rewrite = root / "rewrite"' \
+    '    subprocess.run(["objcopy", "--dump-section", f".text={text}", str(source), str(rewrite)], check=True)' \
+    '    description = f"BOLT revision: fixture, command line: {shlex.join(argv)}".encode()' \
+    '    name = b"GNU\\0"' \
+    '    note = struct.pack("<III", len(name), len(description), 4) + name + description' \
+    '    note += b"\\0" * ((-len(description)) % 4)' \
+    '    note_path = root / "note"' \
+    '    note_path.write_bytes(note)' \
+    '    subprocess.run(["objcopy", "--add-section", f".bolt.org.text={text}", "--set-section-flags", ".bolt.org.text=code,readonly", "--add-section", f".note.bolt_info={note_path}", "--set-section-flags", ".note.bolt_info=readonly", str(output)], check=True)' \
+    >"${FAKE_BOLT}"
+chmod 0755 -- "${FAKE_BOLT}"
+FDATA=${WORK}/merged.fdata
+WORKLOAD_EVIDENCE=${WORK}/workload-evidence.json
+PROFILE_EVIDENCE=${WORK}/profile-evidence.json
+printf '1 main 100\n' >"${FDATA}"
+printf '{"workload":"fixture","samples":1200}\n' >"${WORKLOAD_EVIDENCE}"
+printf '{"ignored":0,"mismatches":0,"out_of_range":0}\n' >"${PROFILE_EVIDENCE}"
+POLICY_REVISION=gentoo-system-wide-bolt-v1-cdsort-20260712
+BOLT_OPTIONS=(
+    -reorder-blocks=ext-tsp
+    -reorder-functions=cdsort
+    -split-functions
+    -split-all-cold
+    -split-eh
+    -icf=safe
+    -update-debug-sections
+    -dyno-stats
+)
+
+make_command_record() {
+    local input=$1 output=$2 stdout=$3 stderr=$4 record=$5
+    python3 - "${FAKE_BOLT}" "${input}" "${output}" "${FDATA}" \
+        "${WORKLOAD_EVIDENCE}" "${PROFILE_EVIDENCE}" "${stdout}" "${stderr}" \
+        "${record}" "${POLICY_REVISION}" "${BOLT_OPTIONS[@]}" <<'PY'
+import hashlib
+import json
+import pathlib
+import subprocess
+import sys
+
+tool, source, output, fdata, workload, profile, stdout, stderr, record, policy, *options = sys.argv[1:]
+
+def identity(value):
+    path = pathlib.Path(value).resolve(strict=True)
+    return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "size": path.stat().st_size}
+
+tool_record = identity(tool)
+tool_record["version"] = subprocess.run([tool, "--version"], check=True, text=True, capture_output=True).stdout.strip()
+input_record = identity(source)
+output_record = identity(output)
+fdata_records = [identity(fdata)]
+argv = [str(pathlib.Path(tool).resolve()), str(pathlib.Path(source).resolve()), "-o", str(pathlib.Path(output).resolve()), *options, f"-data={pathlib.Path(fdata).resolve()}"]
+document = {
+    "schema": "gentoo-optimization-bolt-command-v1",
+    "argv": argv,
+    "exit_status": 0,
+    "started_at_utc": "2026-07-13T00:00:00Z",
+    "completed_at_utc": "2026-07-13T00:00:01Z",
+    "tool": tool_record,
+    "input": input_record,
+    "output": output_record,
+    "option_policy_revision": policy,
+    "options": options,
+    "fdata": fdata_records,
+    "workload_evidence": [identity(workload)],
+    "profile_evidence": [identity(profile)],
+    "stdout": identity(stdout),
+    "stderr": identity(stderr),
+}
+pathlib.Path(record).write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
+registration_arguments() {
+    local record=$1 option
+    REGISTER_ARGUMENTS=(
+        --llvm-bolt "${FAKE_BOLT}"
+        --option-policy-revision "${POLICY_REVISION}"
+        --fdata "${FDATA}"
+        --workload-evidence "${WORKLOAD_EVIDENCE}"
+        --profile-evidence "${PROFILE_EVIDENCE}"
+        --command-record "${record}"
+    )
+    for option in "${BOLT_OPTIONS[@]}"; do
+        REGISTER_ARGUMENTS+=(--bolt-option="${option}")
+    done
+}
+
 while IFS=$'\t' read -r artifact_id object_file; do
     prepared=${WORK}/${artifact_id}.bolt
-    cp -- "${CACHE}/inputs/${FINGERPRINT}/${object_file}" "${prepared}"
-    objcopy --add-section ".note.bolt_info=${WORK}/bolt-note" \
-        --set-section-flags .note.bolt_info=alloc,readonly \
-        "${prepared}"
+    stdout=${WORK}/${artifact_id}.bolt.stdout
+    stderr=${WORK}/${artifact_id}.bolt.stderr
+    command_record=${WORK}/${artifact_id}.bolt.command.json
+    "${FAKE_BOLT}" "${CACHE}/inputs/${FINGERPRINT}/${object_file}" -o "${prepared}" \
+        "${BOLT_OPTIONS[@]}" "-data=${FDATA}" >"${stdout}" 2>"${stderr}"
+    make_command_record "${CACHE}/inputs/${FINGERPRINT}/${object_file}" "${prepared}" \
+        "${stdout}" "${stderr}" "${command_record}"
+    registration_arguments "${command_record}"
     "${REGISTER}" --test-mode --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
         --artifact-id "${artifact_id}" \
         --input "${CACHE}/inputs/${FINGERPRINT}/${object_file}" --output "${prepared}" \
+        "${REGISTER_ARGUMENTS[@]}" \
         >"${WORK}/register-${artifact_id}.out"
 done < <(python3 - "${MANIFEST}" <<'PY'
 import json
