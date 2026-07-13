@@ -269,6 +269,7 @@ snapshot_inputs() {
         [[ -z $(git -C "${ROOT}" ls-files --others --exclude-standard) ]] || GIT_DIRTY=dirty
     GIT_COMMIT=$(git -C "${ROOT}" rev-parse --verify HEAD)
     before=$(source_identity "${ROOT}")
+    failure_point before-source-copy
     SNAPSHOT=$(mktemp -d "${BASE}/.framework-source-snapshot.XXXXXXXX")
     mkdir -p -- "${SNAPSHOT}/scripts/optimization/bolt" \
         "${SNAPSHOT}/scripts/optimization/pgo"
@@ -542,7 +543,11 @@ failure_point() {
     [[ -n ${TEST_ROOT} ]] || return 0
     if [[ ${GENTOO_OPT_INSTALLER_PAUSE_AT:-} == "${point}" ]]; then
         printf 'PAUSE: %s\n' "${point}" >&2
-        while :; do sleep 1; done
+        if [[ -n ${GENTOO_OPT_INSTALLER_PAUSE_FILE:-} ]]; then
+            while [[ -e ${GENTOO_OPT_INSTALLER_PAUSE_FILE} ]]; do sleep 0.1; done
+        else
+            while :; do sleep 1; done
+        fi
     fi
     [[ ${GENTOO_OPT_INSTALLER_FAIL_AT:-} != "${point}" ]] || \
         fail "injected installer failure at ${point}"

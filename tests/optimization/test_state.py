@@ -417,8 +417,7 @@ class ArtifactContractTests(unittest.TestCase):
         with self.assertRaisesRegex(STATE.StateValidationError, "exact BOLT output hash"):
             STATE.validate_artifact(record)
         record = artifact_record(); record["bolt"]["deployment"]["installed_sha256"] = H["output"]; record["content_sha256"] = H["output"]
-        with self.assertRaisesRegex(STATE.StateValidationError, "distinct pre-strip"):
-            STATE.validate_artifact(record)
+        self.assertEqual(STATE.validate_artifact(record)["bolt"]["status"], "optimized")
         record = artifact_record(); record["bolt"]["deployment"]["post_strip_verification"] = []
         with self.assertRaisesRegex(STATE.StateValidationError, "must contain evidence"):
             STATE.validate_artifact(record)

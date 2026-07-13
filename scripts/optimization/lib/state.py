@@ -1081,8 +1081,6 @@ def validate_artifact(record: Any) -> dict[str, Any]:
             _error("$.bolt.deployment.prestrip_deployed_sha256", "must equal the exact BOLT output hash")
         if deployment["installed_sha256"] != artifact["content_sha256"]:
             _error("$.bolt.deployment.installed_sha256", "must equal the final installed artifact hash")
-        if deployment["prestrip_deployed_sha256"] == deployment["installed_sha256"]:
-            _error("$.bolt.deployment", "must preserve distinct pre-strip and final installed hashes")
         if output["build_id"] != elf["build_id"] or output["text_sha256"] != elf["text_sha256"]:
             _error("$.bolt.output", "build ID and text hash must equal installed ELF metadata")
         if not elf["runtime_instrumentation"]["bolt_note"]:

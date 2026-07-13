@@ -95,6 +95,7 @@ quick suites:
   package-env-duplicate-policy (portable checks plus required live Portage semantics on Gentoo)
   package-env-portage-semantic (explicit SKIP when the live Portage universe is unavailable)
   portage-config-cleanup (reviewed package.mask and shared O3 baseline)
+  framework-installer (hermetic snapshot, trust, transaction, and rollback gate)
   no-legacy-pgo (retired weak paths/helpers remain unusable)
   pgo-dispatcher (strict backend/ABI/fingerprint and stage-hook fixture)
   portage-qa-hook-state (lost/mismatched active state and marker invalidation)
@@ -602,6 +603,17 @@ elif ! require_commands bash grep rg stat wc; then
     skip_case portage-config-cleanup "${PREFLIGHT_REASON}"
 else
     run_case portage-config-cleanup bash -- "${PORTAGE_CONFIG_CLEANUP_FIXTURE}"
+fi
+
+FRAMEWORK_INSTALLER_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-framework-installer.sh
+if [[ ! -f ${FRAMEWORK_INSTALLER_FIXTURE} ]]; then
+    skip_case framework-installer "fixture is absent: ${FRAMEWORK_INSTALLER_FIXTURE}"
+elif ! require_commands awk bash chmod cmp cp find flock git grep install ln \
+    mkdir mktemp mv readlink realpath rm runuser sed seq sha256sum sleep sort \
+    stat sync tr; then
+    skip_case framework-installer "${PREFLIGHT_REASON}"
+else
+    run_case framework-installer bash -- "${FRAMEWORK_INSTALLER_FIXTURE}"
 fi
 
 NO_LEGACY_PGO_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-no-legacy-pgo.sh
