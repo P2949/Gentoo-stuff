@@ -19,6 +19,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -31,6 +32,8 @@ HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 BUILD_ID_RE = re.compile(r"^[0-9a-f]{8,128}$")
 SAFE_GO_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_./+@~-]+$")
 SAFE_GO_SYMBOL_RE = re.compile(r"^[^\s\x00=]+$")
+SAFE_REPRODUCIBILITY_COMPONENT_RE = re.compile(r"^[A-Za-z0-9+_.@-]+$")
+DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
 BACKEND_FAMILY = {
     "clang-ir": "clang",
@@ -102,6 +105,7 @@ BACKEND_PROOF_FIELDS = {
         "source_kind",
         "input_build_id",
         "input_text_sha256",
+        "reproducibility",
         "recorded_validation_output_sha256",
         "detailed_validation_arguments",
         "detailed_validation_output_sha256",
@@ -145,6 +149,7 @@ SAMPLE_METADATA_FIELDS = {
     "validator",
     "validation",
     "source",
+    "reproducibility",
 }
 SAMPLE_PACKAGE_FIELDS = {"abi", "cpv", "fingerprint"}
 SAMPLE_COMPILER_FIELDS = {"family", "major"}
@@ -156,7 +161,6 @@ LLVM_TOOL_IDENTITY_FIELDS = {
     "version_stderr",
     "version_stdout",
 }
-SAMPLE_EXTERNAL_SOURCE_FIELDS = {"kind"}
 SAMPLE_PROFGEN_SOURCE_FIELDS = {
     "kind",
     "binary_path",
@@ -170,6 +174,28 @@ SAMPLE_PROFGEN_SOURCE_FIELDS = {
     "objcopy",
     "command_arguments",
     "command_output_sha256",
+    "binary_observation",
+    "debug_binary_observation",
+    "perf_data_observation",
+}
+FILE_OBSERVATION_FIELDS = {
+    "device",
+    "inode",
+    "mode",
+    "uid",
+    "gid",
+    "link_count",
+    "size",
+    "mtime_ns",
+    "ctime_ns",
+    "sha256",
+}
+REPRODUCIBILITY_FIELDS = {
+    "optimization_generation_id",
+    "workload_revision",
+    "source_identity_sha256",
+    "production_host",
+    "production_date",
 }
 
 
@@ -212,6 +238,16 @@ def require_hex64(value: object, label: str) -> str:
     return text
 
 
+def require_safe_reproducibility_component(value: object, label: str) -> str:
+    text = require_string(value, label)
+    if (
+        not SAFE_REPRODUCIBILITY_COMPONENT_RE.fullmatch(text)
+        or text in {".", ".."}
+    ):
+        fail(f"{label} is not a safe exact reproducibility component")
+    return text
+
+
 def require_positive_integer(value: object, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         fail(f"{label} must be a positive integer")
@@ -227,6 +263,77 @@ def sha256_file(path: Path) -> str:
     except OSError as error:
         fail(f"cannot hash {path}: {error}")
     return digest.hexdigest()
+
+
+def observe_regular_file(path: Path, label: str) -> dict[str, object]:
+    try:
+        path_stat = path.stat()
+    except OSError as error:
+        fail(f"cannot stat {label} {path}: {error}")
+    if not stat.S_ISREG(path_stat.st_mode):
+        fail(f"{label} is not a regular file: {path}")
+    return {
+        "ctime_ns": path_stat.st_ctime_ns,
+        "device": path_stat.st_dev,
+        "gid": path_stat.st_gid,
+        "inode": path_stat.st_ino,
+        "link_count": path_stat.st_nlink,
+        "mode": path_stat.st_mode,
+        "mtime_ns": path_stat.st_mtime_ns,
+        "sha256": sha256_file(path),
+        "size": path_stat.st_size,
+        "uid": path_stat.st_uid,
+    }
+
+
+def validate_file_observation(
+    value: object, path: Path, label: str
+) -> dict[str, object]:
+    observation = require_object(value, f"{label} observation")
+    require_exact_fields(
+        observation, FILE_OBSERVATION_FIELDS, f"{label} observation"
+    )
+    for field in FILE_OBSERVATION_FIELDS - {"sha256"}:
+        item = observation[field]
+        if not isinstance(item, int) or isinstance(item, bool) or item < 0:
+            fail(f"{label} observation {field} must be a nonnegative integer")
+    require_hex64(observation["sha256"], f"{label} observation sha256")
+    observed = observe_regular_file(path, label)
+    if observation != observed:
+        fail(f"{label} no longer matches its exact recorded observation")
+    return observed
+
+
+def validate_reproducibility(value: object) -> dict[str, object]:
+    reproducibility = require_object(value, "sample reproducibility")
+    require_exact_fields(
+        reproducibility, REPRODUCIBILITY_FIELDS, "sample reproducibility"
+    )
+    production_date = require_string(
+        reproducibility["production_date"], "sample production date"
+    )
+    if not DATE_RE.fullmatch(production_date):
+        fail("sample production date must use exact YYYY-MM-DD format")
+    try:
+        date.fromisoformat(production_date)
+    except ValueError:
+        fail("sample production date is not a valid calendar date")
+    return {
+        "optimization_generation_id": require_safe_reproducibility_component(
+            reproducibility["optimization_generation_id"],
+            "optimization generation ID",
+        ),
+        "production_date": production_date,
+        "production_host": require_safe_reproducibility_component(
+            reproducibility["production_host"], "production host"
+        ),
+        "source_identity_sha256": require_hex64(
+            reproducibility["source_identity_sha256"], "source identity SHA-256"
+        ),
+        "workload_revision": require_safe_reproducibility_component(
+            reproducibility["workload_revision"], "workload revision"
+        ),
+    }
 
 
 def safe_absolute_path(path: Path, label: str, *, must_exist: bool) -> Path:
@@ -452,11 +559,14 @@ def validate_indexed_profile(profile: Path, tool: Path, backend: str) -> dict[st
     }
 
 
-def validate_recorded_file(path_value: object, sha_value: object, label: str) -> None:
+def validate_recorded_file(
+    path_value: object, sha_value: object, label: str
+) -> tuple[Path, str]:
     path = regular_input(Path(require_string(path_value, f"{label}_path")), label)
     expected = require_hex64(sha_value, f"{label}_sha256")
     if sha256_file(path) != expected:
         fail(f"recorded {label} SHA-256 no longer matches")
+    return path, expected
 
 
 def validate_recorded_tool_identity(value: object, label: str) -> None:
@@ -480,22 +590,44 @@ def validate_recorded_tool_identity(value: object, label: str) -> None:
         fail(f"recorded {label} complete version output no longer matches")
 
 
-def validate_sample_source(value: object, profile: Path) -> None:
+def validate_sample_source(value: object, profile: Path) -> dict[str, object]:
     source = require_object(value, "sample source")
     kind = require_string(source.get("kind"), "sample source kind")
-    if kind == "external":
-        require_exact_fields(source, SAMPLE_EXTERNAL_SOURCE_FIELDS, "sample source")
-        return
     if kind != "llvm-profgen":
-        fail(f"unsupported sample source kind: {kind}")
+        fail(
+            f"unsupported sample source kind: {kind}; "
+            "authoritative sample profiles require llvm-profgen"
+        )
     require_exact_fields(source, SAMPLE_PROFGEN_SOURCE_FIELDS, "sample source")
-    validate_recorded_file(source["binary_path"], source["binary_sha256"], "binary")
-    validate_recorded_file(source["perf_data_path"], source["perf_data_sha256"], "perf_data")
+    binary, binary_sha256 = validate_recorded_file(
+        source["binary_path"], source["binary_sha256"], "binary"
+    )
+    binary_observation = validate_file_observation(
+        source["binary_observation"], binary, "binary"
+    )
+    perf_data, perf_data_sha256 = validate_recorded_file(
+        source["perf_data_path"], source["perf_data_sha256"], "perf_data"
+    )
+    perf_data_observation = validate_file_observation(
+        source["perf_data_observation"], perf_data, "perf data"
+    )
+    debug_binary: Path | None
+    debug_binary_sha256: str | None
+    debug_binary_observation: dict[str, object] | None
     if source["debug_binary_path"] is None and source["debug_binary_sha256"] is None:
-        pass
+        debug_binary = None
+        debug_binary_sha256 = None
+        if source["debug_binary_observation"] is not None:
+            fail(
+                "sample debug binary observation must be null when no debug binary is set"
+            )
+        debug_binary_observation = None
     elif source["debug_binary_path"] is not None and source["debug_binary_sha256"] is not None:
-        validate_recorded_file(
+        debug_binary, debug_binary_sha256 = validate_recorded_file(
             source["debug_binary_path"], source["debug_binary_sha256"], "debug_binary"
+        )
+        debug_binary_observation = validate_file_observation(
+            source["debug_binary_observation"], debug_binary, "debug binary"
         )
     else:
         fail("sample debug binary path and SHA-256 must both be null or both be set")
@@ -506,12 +638,12 @@ def validate_sample_source(value: object, profile: Path) -> None:
         isinstance(item, str) and item for item in arguments
     ):
         fail("sample source command_arguments must be a nonempty string array")
-    expected_arguments = [f"--binary={source['binary_path']}"]
-    if source["debug_binary_path"] is not None:
-        expected_arguments.append(f"--debug-binary={source['debug_binary_path']}")
+    expected_arguments = [f"--binary={binary}"]
+    if debug_binary is not None:
+        expected_arguments.append(f"--debug-binary={debug_binary}")
     expected_arguments.extend(
         [
-            f"--perfdata={source['perf_data_path']}",
+            f"--perfdata={perf_data}",
             "--format=extbinary",
             "--show-detailed-warning",
             f"--output={profile}.partial",
@@ -519,7 +651,28 @@ def validate_sample_source(value: object, profile: Path) -> None:
     )
     if arguments != expected_arguments:
         fail("sample source command does not match its exact binary/perf/profile inputs")
-    require_hex64(source["command_output_sha256"], "command_output_sha256")
+    command_output_sha256 = require_hex64(
+        source["command_output_sha256"], "command_output_sha256"
+    )
+    return {
+        "binary_path": os.fspath(binary),
+        "binary_sha256": binary_sha256,
+        "binary_observation": binary_observation,
+        "command_arguments": arguments,
+        "command_output_sha256": command_output_sha256,
+        "debug_binary_path": (
+            os.fspath(debug_binary) if debug_binary is not None else None
+        ),
+        "debug_binary_sha256": debug_binary_sha256,
+        "debug_binary_observation": debug_binary_observation,
+        "kind": "llvm-profgen",
+        "objcopy": source["objcopy"],
+        "perf_data_path": os.fspath(perf_data),
+        "perf_data_sha256": perf_data_sha256,
+        "perf_data_observation": perf_data_observation,
+        "producer": source["producer"],
+        "readelf": source["readelf"],
+    }
 
 
 def validate_sample_metadata(
@@ -532,11 +685,11 @@ def validate_sample_metadata(
     tool_identity: dict[str, object],
     sample_stdout: str,
     sample_stderr: str,
-) -> None:
+) -> dict[str, Any]:
     metadata = load_json(metadata_path, "sample metadata")
     require_exact_fields(metadata, SAMPLE_METADATA_FIELDS, "sample metadata")
-    if metadata["schema_version"] != 1:
-        fail("sample metadata schema_version must be 1")
+    if metadata["schema_version"] != 2:
+        fail("sample metadata schema_version must be 2")
     if metadata["profile_family"] != "clang-sample" or metadata["profile_format"] != "llvm-sample":
         fail("sample metadata has the wrong family or format")
     if metadata["profile_path"] != os.fspath(profile):
@@ -586,6 +739,10 @@ def validate_sample_metadata(
     if validation["output_sha256"] != output_hash:
         fail("sample metadata validation output mismatch")
     validate_sample_source(metadata["source"], profile)
+    metadata["reproducibility"] = validate_reproducibility(
+        metadata["reproducibility"]
+    )
+    return metadata
 
 
 def validate_sample_profile(
@@ -617,7 +774,7 @@ def validate_sample_profile(
     ]
     if functions < 1 or not any(value > 0 for value in positive_totals):
         fail("Clang sample profile has no function with a nonzero sample total")
-    validate_sample_metadata(
+    metadata = validate_sample_metadata(
         metadata_path,
         profile,
         profile_sha256,
@@ -628,7 +785,6 @@ def validate_sample_profile(
         recorded_stdout,
         recorded_stderr,
     )
-    metadata = load_json(metadata_path, "sample metadata")
     source = require_object(metadata["source"], "sample source")
     if source.get("kind") != "llvm-profgen":
         fail("authoritative sample manifests require source.kind=llvm-profgen")
@@ -642,6 +798,7 @@ def validate_sample_profile(
         "source_kind": "llvm-profgen",
         "input_build_id": input_identity["build_id"],
         "input_text_sha256": input_identity["text_sha256"],
+        "reproducibility": metadata["reproducibility"],
         "recorded_validation_output_sha256": hashlib.sha256(
             (recorded_stdout + "\0" + recorded_stderr).encode("utf-8")
         ).hexdigest(),
@@ -1338,6 +1495,7 @@ def arguments_from_metadata(
             require_string(proof["sample_metadata_path"], "sample metadata path")
         )
         require_hex64(proof["sample_metadata_sha256"], "sample metadata SHA-256")
+        validate_reproducibility(proof["reproducibility"])
     elif backend == "go":
         namespace.go_binary = Path(
             require_string(proof["profiled_binary_path"], "profiled Go binary path")

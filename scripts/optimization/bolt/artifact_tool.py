@@ -12,9 +12,11 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -24,15 +26,47 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 
-SCHEMA_CAPTURE = "gentoo-optimization-bolt-capture-v1"
-SCHEMA_OUTPUT = "gentoo-optimization-bolt-output-v1"
+SCHEMA_CAPTURE = "gentoo-optimization-bolt-capture-v2"
+SCHEMA_OUTPUT = "gentoo-optimization-bolt-output-v2"
+SCHEMA_COMMAND = "gentoo-optimization-bolt-command-v1"
 FINGERPRINT_RE = re.compile(r"[0-9a-f]{64}")
 BUILD_ID_RE = re.compile(r"Build ID:\s*([0-9A-Fa-f]+)")
 HEADER_RE = re.compile(r"^\s*(Class|Data|Type|Machine):\s*(.*?)\s*$")
 SECTION_RE = re.compile(
     r"^\s*\[\s*(\d+)\]\s+(\S+)\s+(\S+)\s+"
-    r"[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+"
+    r"[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+([0-9A-Fa-f]+)\s+"
     r"\S+\s+(\S*)\s+(\d+)\s+(\d+)\s+\d+\s*$"
+)
+INTERPRETER_RE = re.compile(r"Requesting program interpreter:\s*([^\]]+)\]")
+POLICY_REVISION = "gentoo-system-wide-bolt-v1-cdsort-20260712"
+APPROVED_BOLT_OPTIONS = [
+    "-reorder-blocks=ext-tsp",
+    "-reorder-functions=cdsort",
+    "-split-functions",
+    "-split-all-cold",
+    "-split-eh",
+    "-icf=safe",
+    "-update-debug-sections",
+    "-dyno-stats",
+]
+ABI_IDENTITY_KEYS = (
+    "elf_class",
+    "elf_data",
+    "elf_type",
+    "machine",
+    "elf_role",
+    "interpreter",
+    "needed",
+    "soname",
+    "rpath",
+    "runpath",
+    "exported_dynamic_symbols",
+    "symbol_version_names",
+    "symbol_version_files",
+    "cet_properties",
+    "gnu_stack_policy",
+    "has_gnu_relro",
+    "bind_now",
 )
 ELF_MAGIC = b"\x7fELF"
 SYSTEM_ROOT = Path("/usr")
@@ -372,25 +406,145 @@ def is_elf(path: Path) -> bool:
         return stream.read(4) == ELF_MAGIC
 
 
-def dump_text(objcopy: str, path: Path, directory: Path) -> tuple[str | None, int]:
+def dump_section(
+    objcopy: str, path: Path, directory: Path, section: str
+) -> tuple[Path | None, str | None, int]:
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    output = directory / "text.section"
+    safe_name = hashlib.sha256(section.encode("utf-8")).hexdigest()
+    output = directory / f"{safe_name}.section"
     rewritten = directory / "objcopy.output"
     output.unlink(missing_ok=True)
     rewritten.unlink(missing_ok=True)
     try:
         status, _, _ = run_bounded(
-            [objcopy, "--dump-section", f".text={output}", str(path), str(rewritten)]
+            [objcopy, "--dump-section", f"{section}={output}", str(path), str(rewritten)]
         )
         if status != 0 or not output.is_file():
             output.unlink(missing_ok=True)
-            return None, 0
-        return sha256_file(output), output.stat().st_size
+            return None, None, 0
+        return output, sha256_file(output), output.stat().st_size
     except BaseException:
         output.unlink(missing_ok=True)
         raise
     finally:
         rewritten.unlink(missing_ok=True)
+
+
+def dump_text(objcopy: str, path: Path, directory: Path) -> tuple[str | None, int]:
+    _, digest, size = dump_section(objcopy, path, directory, ".text")
+    return digest, size
+
+
+def parse_bolt_note(path: Path, elf_data: str) -> tuple[bool, str | None, str | None]:
+    data = path.read_bytes()
+    endian = "<" if "little endian" in elf_data else ">"
+    offset = 0
+    descriptions: list[str] = []
+    try:
+        while offset + 12 <= len(data):
+            namesz, descsz, note_type = struct.unpack_from(f"{endian}III", data, offset)
+            offset += 12
+            if namesz > len(data) - offset:
+                return False, None, None
+            name = data[offset : offset + namesz]
+            offset += (namesz + 3) & ~3
+            if descsz > len(data) - offset:
+                return False, None, None
+            description = data[offset : offset + descsz]
+            offset += (descsz + 3) & ~3
+            if name.rstrip(b"\0") == b"GNU" and note_type == 4:
+                descriptions.append(description.rstrip(b"\0").decode("utf-8", "strict"))
+    except (UnicodeDecodeError, struct.error):
+        return False, None, None
+    if offset != len(data) or len(descriptions) != 1:
+        return False, None, None
+    description = descriptions[0]
+    marker = ", command line: "
+    if not description.startswith("BOLT revision: ") or marker not in description:
+        return False, description, None
+    command_line = description.split(marker, 1)[1]
+    if not command_line:
+        return False, description, None
+    return True, description, command_line
+
+
+def parse_program_identity(output: str) -> dict[str, Any]:
+    interpreter_match = INTERPRETER_RE.search(output)
+    gnu_stack_policy = "absent"
+    has_gnu_relro = False
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("GNU_RELRO"):
+            has_gnu_relro = True
+        if stripped.startswith("GNU_STACK"):
+            tokens = stripped.split()
+            flags = next(
+                (token for token in tokens[1:] if re.fullmatch(r"[RWE]+", token)), ""
+            )
+            gnu_stack_policy = "executable" if "E" in flags else "non-executable"
+    return {
+        "interpreter": interpreter_match.group(1) if interpreter_match else None,
+        "gnu_stack_policy": gnu_stack_policy,
+        "has_gnu_relro": has_gnu_relro,
+    }
+
+
+def parse_dynamic_identity(output: str) -> dict[str, Any]:
+    needed: list[str] = []
+    sonames: list[str] = []
+    rpath: list[str] = []
+    runpath: list[str] = []
+    bind_now = False
+    for line in output.splitlines():
+        bracket = re.search(r"\[([^]]*)\]", line)
+        if "(NEEDED)" in line and bracket:
+            needed.append(bracket.group(1))
+        elif "(SONAME)" in line and bracket:
+            sonames.append(bracket.group(1))
+        elif "(RPATH)" in line and bracket:
+            rpath.append(bracket.group(1))
+        elif "(RUNPATH)" in line and bracket:
+            runpath.append(bracket.group(1))
+        if "(BIND_NOW)" in line or re.search(r"\bFlags(?:_1)?:.*\bNOW\b", line):
+            bind_now = True
+    if len(sonames) > 1:
+        fail(f"ELF has multiple DT_SONAME entries: {sonames}")
+    return {
+        "needed": needed,
+        "soname": sonames[0] if sonames else None,
+        "rpath": rpath,
+        "runpath": runpath,
+        "bind_now": bind_now,
+    }
+
+
+def parse_dynamic_symbols(output: str) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for line in output.splitlines():
+        fields = line.split(maxsplit=7)
+        if len(fields) < 8 or not fields[0].rstrip(":").isdigit():
+            continue
+        _, _, size, symbol_type, binding, visibility, index, name = fields
+        if index == "UND" or binding not in ("GLOBAL", "WEAK"):
+            continue
+        if visibility not in ("DEFAULT", "PROTECTED") or not name:
+            continue
+        result.append(
+            {
+                "name": name,
+                "size": int(size),
+                "type": symbol_type,
+                "binding": binding,
+                "visibility": visibility,
+            }
+        )
+    return sorted(result, key=lambda item: json.dumps(item, sort_keys=True))
+
+
+def parse_symbol_versions(output: str) -> tuple[list[str], list[str]]:
+    names = sorted(set(re.findall(r"\bName:\s*(\S+)", output)))
+    files = sorted(set(re.findall(r"\bFile:\s*(\S+)", output)))
+    return names, files
 
 
 def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[str, Any]:
@@ -417,9 +571,10 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
                     "index": int(match.group(1)),
                     "name": match.group(2),
                     "type": match.group(3),
-                    "flags": match.group(4),
-                    "link": int(match.group(5)),
-                    "info": int(match.group(6)),
+                    "size": int(match.group(4), 16),
+                    "flags": match.group(5),
+                    "link": int(match.group(6)),
+                    "info": int(match.group(7)),
                 }
             )
     section_names = {section["name"] for section in sections}
@@ -457,12 +612,48 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
             if fields[3] == "FUNC" and fields[6] != "UND":
                 defined_function_symbols += 1
 
+    program_identity = parse_program_identity(run_checked([readelf, "-lW", str(path)]))
+    dynamic_identity = parse_dynamic_identity(run_checked([readelf, "-dW", str(path)]))
+    dynamic_symbols = parse_dynamic_symbols(
+        run_checked([readelf, "--dyn-syms", "-W", str(path)])
+    )
+    version_names, version_files = parse_symbol_versions(
+        run_checked([readelf, "--version-info", "-W", str(path)])
+    )
     notes = run_checked([readelf, "-nW", str(path)])
     build_ids = [value.lower() for value in BUILD_ID_RE.findall(notes)]
     if len(set(build_ids)) > 1:
         fail(f"multiple different GNU build IDs in {path}: {build_ids}")
     build_id = build_ids[0] if build_ids else None
     text_sha256, text_size = dump_text(objcopy, path, scratch)
+    bolt_note_path, bolt_note_sha256, bolt_note_size = dump_section(
+        objcopy, path, scratch / "bolt-note", ".note.bolt_info"
+    )
+    bolt_note_valid = False
+    bolt_note_description: str | None = None
+    bolt_command_line: str | None = None
+    if bolt_note_path is not None:
+        bolt_note_valid, bolt_note_description, bolt_command_line = parse_bolt_note(
+            bolt_note_path, headers["Data"]
+        )
+    bolt_origin_sections = sorted(
+        section["name"]
+        for section in sections
+        if section["name"].startswith(".bolt.org.") and section["size"] > 0
+    )
+    cet_properties = sorted(
+        value.strip()
+        for value in re.findall(r"Properties:\s*([^\n]+)", notes)
+        if value.strip()
+    )
+    if headers["Type"] == "EXEC":
+        elf_role = "fixed-executable"
+    elif headers["Type"] == "DYN" and program_identity["interpreter"] is not None:
+        elf_role = "pie-executable"
+    elif headers["Type"] == "DYN":
+        elf_role = "shared-object"
+    else:
+        elf_role = "unsupported"
 
     reasons: list[str] = []
     if headers["Class"] != "ELF64":
@@ -488,7 +679,14 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         "elf_class": headers["Class"],
         "elf_data": headers["Data"],
         "elf_type": headers["Type"],
+        "elf_role": elf_role,
         "machine": headers["Machine"],
+        **program_identity,
+        **dynamic_identity,
+        "exported_dynamic_symbols": dynamic_symbols,
+        "symbol_version_names": version_names,
+        "symbol_version_files": version_files,
+        "cet_properties": cet_properties,
         "executable_sections": executable_sections,
         "section_names": sorted(section_names),
         "has_symtab": symtab,
@@ -501,6 +699,12 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         "text_sha256": text_sha256,
         "text_size": text_size,
         "has_bolt_info": ".note.bolt_info" in section_names,
+        "bolt_info_sha256": bolt_note_sha256,
+        "bolt_info_size": bolt_note_size,
+        "bolt_info_valid": bolt_note_valid,
+        "bolt_info_description": bolt_note_description,
+        "bolt_info_command_line": bolt_command_line,
+        "bolt_origin_sections": bolt_origin_sections,
         "eligible": not reasons,
         # These are automatic readiness findings, never reviewed terminal
         # exclusions. Later classification policy must remediate or explicitly
@@ -594,6 +798,7 @@ def write_json_atomic(path: Path, document: dict[str, Any]) -> None:
     temporary = path.with_name(f".{path.name}.partial.{os.getpid()}")
     try:
         with temporary.open("x", encoding="utf-8") as stream:
+            os.chmod(temporary, 0o600)
             json.dump(document, stream, indent=2, sort_keys=True)
             stream.write("\n")
             stream.flush()
@@ -601,6 +806,58 @@ def write_json_atomic(path: Path, document: dict[str, Any]) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def byte_tree_identity(root: Path) -> list[dict[str, Any]]:
+    identity: list[dict[str, Any]] = []
+    for directory, names, files in os.walk(root, topdown=True, followlinks=False):
+        names.sort()
+        files.sort()
+        base = Path(directory)
+        for name in names:
+            path = base / name
+            info = path.lstat()
+            if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+                fail(f"capture cache contains an unsupported directory entry: {path}")
+            identity.append(
+                {"path": safe_relative(path, root), "type": "directory", "mode": stat.S_IMODE(info.st_mode)}
+            )
+        for name in files:
+            path = base / name
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+                fail(f"capture cache contains an unsupported file entry: {path}")
+            identity.append(
+                {
+                    "path": safe_relative(path, root),
+                    "type": "file",
+                    "mode": stat.S_IMODE(info.st_mode),
+                    "size": info.st_size,
+                    "sha256": sha256_file(path),
+                }
+            )
+    return identity
+
+
+def adopt_or_quarantine_capture(stage: Path, final: Path, cache: Path, fingerprint: str) -> None:
+    if not final.exists() and not final.is_symlink():
+        os.replace(stage, final)
+        return
+    reject_symlink_components(str(final), "existing capture")
+    if not final.is_dir():
+        fail(f"existing capture identity is not a directory: {final}")
+    if byte_tree_identity(stage) == byte_tree_identity(final):
+        shutil.rmtree(stage)
+        return
+    quarantine_root = cache / "quarantine" / "capture-mismatch"
+    quarantine_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    reject_symlink_components(str(quarantine_root), "capture quarantine root")
+    quarantine = quarantine_root / f"{fingerprint}.{time.time_ns()}.{os.getpid()}"
+    os.replace(stage, quarantine)
+    fail(
+        "fresh capture differs byte-for-byte from the existing identity; "
+        f"quarantined candidate at {quarantine}"
+    )
 
 
 def load_json(path: Path, schema: str) -> dict[str, Any]:
@@ -611,6 +868,165 @@ def load_json(path: Path, schema: str) -> dict[str, Any]:
     if not isinstance(document, dict) or document.get("schema") != schema:
         fail(f"manifest {path} does not use schema {schema}")
     return document
+
+
+def assert_abi_identity(
+    candidate: dict[str, Any], reference: dict[str, Any], context: str
+) -> None:
+    for key in ABI_IDENTITY_KEYS:
+        if candidate.get(key) != reference.get(key):
+            fail(
+                f"{context} ABI/security identity mismatch for {key}: "
+                f"expected {reference.get(key)!r}, got {candidate.get(key)!r}"
+            )
+
+
+def file_record(path_text: str, label: str) -> dict[str, Any]:
+    unresolved = reject_symlink_components(path_text, label)
+    if not unresolved.is_absolute():
+        fail(f"{label} path must be absolute: {path_text}")
+    info = unresolved.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        fail(f"{label} is not a regular file: {unresolved}")
+    path = unresolved.resolve(strict=True)
+    return {
+        "path": str(path),
+        "sha256": sha256_file(path),
+        "size": path.stat().st_size,
+    }
+
+
+def validate_recorded_files(records: Any, label: str) -> list[dict[str, Any]]:
+    if not isinstance(records, list) or not records:
+        fail(f"{label} records must be a nonempty list")
+    validated: list[dict[str, Any]] = []
+    for index, expected in enumerate(records):
+        if not isinstance(expected, dict) or set(expected) != {"path", "sha256", "size"}:
+            fail(f"invalid {label} record at index {index}")
+        actual = file_record(str(expected.get("path", "")), f"{label} file")
+        if actual != expected:
+            fail(f"{label} file identity mismatch: expected {expected}, got {actual}")
+        validated.append(actual)
+    if len({item["path"] for item in validated}) != len(validated):
+        fail(f"{label} contains duplicate paths")
+    return validated
+
+
+def llvm_bolt_identity(path_text: str) -> dict[str, Any]:
+    record = file_record(path_text, "llvm-bolt executable")
+    if not os.access(record["path"], os.X_OK):
+        fail(f"llvm-bolt executable is not executable: {record['path']}")
+    status, stdout, stderr = run_bounded([record["path"], "--version"])
+    if status != 0:
+        fail(f"llvm-bolt --version failed ({status}): {(stderr or stdout).strip()}")
+    version = stdout.strip()
+    if "LLVM version" not in version or not version:
+        fail("llvm-bolt --version did not identify an LLVM BOLT build")
+    return {**record, "version": version}
+
+
+def expected_bolt_argv(
+    tool: dict[str, Any], input_path: Path, output_path: Path, fdata: list[dict[str, Any]]
+) -> list[str]:
+    return [
+        str(tool["path"]),
+        str(input_path),
+        "-o",
+        str(output_path),
+        *APPROVED_BOLT_OPTIONS,
+        *(f"-data={item['path']}" for item in fdata),
+    ]
+
+
+def validate_command_record(
+    path_text: str,
+    *,
+    expected_argv: list[str],
+    tool: dict[str, Any],
+    input_record: dict[str, Any],
+    output_record: dict[str, Any],
+    fdata: list[dict[str, Any]],
+    workloads: list[dict[str, Any]],
+    profiles: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    record_identity = file_record(path_text, "BOLT command record")
+    document = load_json(Path(record_identity["path"]), SCHEMA_COMMAND)
+    required = {
+        "schema",
+        "argv",
+        "exit_status",
+        "started_at_utc",
+        "completed_at_utc",
+        "tool",
+        "input",
+        "output",
+        "option_policy_revision",
+        "options",
+        "fdata",
+        "workload_evidence",
+        "profile_evidence",
+        "stdout",
+        "stderr",
+    }
+    if set(document) != required:
+        fail(
+            "BOLT command record fields differ from the strict schema: "
+            f"expected={sorted(required)}, got={sorted(document)}"
+        )
+    if document["argv"] != expected_argv:
+        fail("BOLT command record argv differs from the exact reviewed invocation")
+    if document["exit_status"] != 0:
+        fail("BOLT command record does not record exit status zero")
+    for field in ("started_at_utc", "completed_at_utc"):
+        value = document[field]
+        if not isinstance(value, str) or re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value
+        ) is None:
+            fail(f"BOLT command record has invalid {field}")
+    if document["completed_at_utc"] < document["started_at_utc"]:
+        fail("BOLT command record completion precedes its start")
+    if document["tool"] != tool:
+        fail("BOLT command record tool identity mismatch")
+    if document["input"] != input_record:
+        fail("BOLT command record input identity mismatch")
+    if document["output"] != output_record:
+        fail("BOLT command record output identity mismatch")
+    if document["option_policy_revision"] != POLICY_REVISION:
+        fail("BOLT command record option-policy revision mismatch")
+    if document["options"] != APPROVED_BOLT_OPTIONS:
+        fail("BOLT command record option list mismatch")
+    for field, expected in (
+        ("fdata", fdata),
+        ("workload_evidence", workloads),
+        ("profile_evidence", profiles),
+    ):
+        if document[field] != expected:
+            fail(f"BOLT command record {field} identity mismatch")
+    validate_recorded_files([document["stdout"]], "BOLT stdout")
+    validate_recorded_files([document["stderr"]], "BOLT stderr")
+    return document, record_identity
+
+
+def verify_bolt_provenance(record: dict[str, Any]) -> None:
+    if record.get("option_policy_revision") != POLICY_REVISION:
+        fail("prepared output uses an unreviewed BOLT option-policy revision")
+    if record.get("options") != APPROVED_BOLT_OPTIONS:
+        fail("prepared output uses an unreviewed BOLT option list")
+    tool = llvm_bolt_identity(str(record.get("llvm_bolt", {}).get("path", "")))
+    if tool != record.get("llvm_bolt"):
+        fail("prepared output llvm-bolt identity is stale or mismatched")
+    for key, label in (
+        ("fdata", "BOLT fdata"),
+        ("workload_evidence", "BOLT workload evidence"),
+        ("profile_evidence", "BOLT profile evidence"),
+    ):
+        validate_recorded_files(record.get(key), label)
+    command_record = record.get("command_record")
+    if not isinstance(command_record, dict):
+        fail("prepared output lacks a command-record identity")
+    actual = file_record(str(command_record.get("path", "")), "BOLT command record")
+    if actual != command_record:
+        fail("prepared output command-record identity is stale or mismatched")
 
 
 def command_capture(arguments: argparse.Namespace) -> None:
@@ -626,8 +1042,6 @@ def command_capture(arguments: argparse.Namespace) -> None:
     inputs.mkdir(mode=0o700, exist_ok=True)
     reject_symlink_components(str(inputs), "capture input root")
     final = inputs / fingerprint
-    if final.exists() or final.is_symlink():
-        fail(f"capture already exists; refusing overwrite: {final}")
     stage = inputs / f"{fingerprint}.partial"
     if stage.exists():
         fail(f"stale capture stage exists: {stage}")
@@ -699,7 +1113,7 @@ def command_capture(arguments: argparse.Namespace) -> None:
             "symlinks": symlinks,
         }
         write_json_atomic(stage / "manifest.json", manifest)
-        os.replace(stage, final)
+        adopt_or_quarantine_capture(stage, final, cache, fingerprint)
     except BaseException:
         shutil.rmtree(stage, ignore_errors=True)
         raise

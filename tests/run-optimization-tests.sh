@@ -502,7 +502,7 @@ done < <(
         "${REPOSITORY_ROOT}/scripts" "${REPOSITORY_ROOT}/tests" \
         -type f -name '*.sh' -print0 | LC_ALL=C sort -z
 )
-PORTAGE_BOLT_QA_HOOK=${REPOSITORY_ROOT}/portage/install-qa-check.d/50-gentoo-optimization-bolt
+PORTAGE_BOLT_QA_HOOK=${REPOSITORY_ROOT}/portage/install-qa-check.d/zz-gentoo-optimization-bolt
 if [[ -f ${PORTAGE_BOLT_QA_HOOK} ]]; then
     SHELL_SOURCES+=("${PORTAGE_BOLT_QA_HOOK}")
 fi

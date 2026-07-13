@@ -8,6 +8,7 @@ readonly ROOT
 TEMPLATE=${ROOT}/optimization/fixtures/portage/phase2-portage-fixture-1.ebuild.in
 PROXY_TEMPLATE=${ROOT}/optimization/fixtures/portage/capture-proxy.sh.in
 CAPTURE_TOOL=${ROOT}/scripts/optimization/bolt/capture-input.sh
+FRAMEWORK_INSTALLER=${ROOT}/scripts/optimization/install-framework.sh
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -24,8 +25,9 @@ for command in b2sum ebuild portageq python3 readelf sed sha256sum sha512sum sta
 done
 [[ -f ${TEMPLATE} && -f ${PROXY_TEMPLATE} && -x ${CAPTURE_TOOL} ]] || \
     fail 'fixture template, proxy template, or capture tool is absent'
-[[ $(readlink -f /etc/portage/bashrc) == "${ROOT}/portage/bashrc" ]] || \
-    fail 'live /etc/portage/bashrc does not resolve to this repository'
+[[ -x ${FRAMEWORK_INSTALLER} ]] || fail 'root-owned framework installer is absent'
+"${FRAMEWORK_INSTALLER}" --check >/dev/null || \
+    fail 'live root-owned framework does not match the reviewed repository source'
 
 WORK=$(mktemp -d /var/tmp/gentoo-phase2-portage-fixture.XXXXXX)
 SUCCESS_FINGERPRINT=''
@@ -55,6 +57,8 @@ trap cleanup EXIT HUP INT TERM
 PACKAGE_ROOT=${WORK}/app-test/phase2-portage-fixture
 EBUILD=${PACKAGE_ROOT}/phase2-portage-fixture-1.ebuild
 FAIL_SWITCH=${WORK}/force-capture-failure
+PROXY_MODE_SWITCH=${WORK}/use-capture-proxy
+OFF_SWITCH=${WORK}/optimization-off
 CAPTURE_PROXY=${WORK}/capture-proxy.sh
 SUCCESS_FINGERPRINT=$(printf '%s' "${WORK}:success" | sha256sum | awk '{print $1}')
 mkdir -p -- "${PACKAGE_ROOT}" "${WORK}/metadata" "${WORK}/profiles"
@@ -71,6 +75,8 @@ escape_sed() {
 sed \
     -e "s|@CACHE_ROOT@|$(escape_sed "${CACHE_ROOT}")|g" \
     -e "s|@CAPTURE_PROXY@|$(escape_sed "${CAPTURE_PROXY}")|g" \
+    -e "s|@PROXY_MODE_SWITCH@|$(escape_sed "${PROXY_MODE_SWITCH}")|g" \
+    -e "s|@OFF_SWITCH@|$(escape_sed "${OFF_SWITCH}")|g" \
     -e "s|@SUCCESS_FINGERPRINT@|${SUCCESS_FINGERPRINT}|g" \
     "${TEMPLATE}" > "${EBUILD}"
 sed \
@@ -123,6 +129,7 @@ cp -- "${MANIFEST}" "${WORK}/first-capture-manifest.json"
 # must remove that marker so a retry cannot bypass src_install/post_src_install.
 ebuild "${EBUILD}" clean >"${WORK}/pre-failure-clean.log" 2>&1
 rm -rf -- "${CACHE_ROOT}/inputs/${SUCCESS_FINGERPRINT}"
+: > "${PROXY_MODE_SWITCH}"
 : > "${FAIL_SWITCH}"
 if ebuild "${EBUILD}" install >"${WORK}/install-failure.log" 2>&1; then
     fail 'real Portage install accepted a failing BOLT capture wrapper'
@@ -146,5 +153,14 @@ PY
 grep -Fq 'Completed installing app-test/phase2-portage-fixture-1' \
     "${WORK}/install-retry.log" || fail 'retry appears to have skipped src_install'
 
+# A clean off-mode build must run the same package hook yet publish no capture.
+ebuild "${EBUILD}" clean >"${WORK}/pre-off-clean.log" 2>&1
+rm -rf -- "${CACHE_ROOT}/inputs/${SUCCESS_FINGERPRINT}"
+rm -f -- "${PROXY_MODE_SWITCH}"
+: > "${OFF_SWITCH}"
+ebuild "${EBUILD}" install >"${WORK}/install-off.log" 2>&1
+[[ ! -e ${MANIFEST} ]] || fail 'off-mode real Portage build unexpectedly published a capture'
+[[ -f ${BUILD_ROOT}/.installed ]] || fail 'off-mode disposable install did not complete'
+
 ebuild "${EBUILD}" clean >"${WORK}/final-clean.log" 2>&1
-printf 'PASS: real Portage phase, sandbox, fatal marker, and retry integration fixture\n'
+printf 'PASS: real Portage phase, default helper, sandbox, fatal marker, retry, and off mode\n'

@@ -81,8 +81,12 @@ gentoo_opt_fixture_override_allowed() {
 
 gentoo_opt_disable_ccache() {
     gentoo_opt_append_flag_once FEATURES -ccache
+    gentoo_opt_append_flag_once FEATURES -distcc
+    gentoo_opt_append_flag_once FEATURES -icecream
     CCACHE_DISABLE=1
-    export CCACHE_DISABLE
+    SCCACHE_DISABLE=1
+    RUSTC_WRAPPER=
+    export CCACHE_DISABLE SCCACHE_DISABLE RUSTC_WRAPPER
 }
 
 gentoo_opt_normalize_abi() {
@@ -310,7 +314,15 @@ gentoo_opt_detect_compiler_family() {
             return 1
         }
         GENTOO_OPT_ACTIVE_CXX=${GENTOO_OPT_RESOLVED_TOOL}
-        export GENTOO_OPT_ACTIVE_CXX
+        CC=${GENTOO_OPT_ACTIVE_COMPILER}
+        CXX=${GENTOO_OPT_ACTIVE_CXX}
+        export CC CXX GENTOO_OPT_ACTIVE_CXX
+    elif [[ ${requested} == rust ]]; then
+        RUSTC=${GENTOO_OPT_ACTIVE_COMPILER}
+        export RUSTC
+    elif [[ ${requested} == go ]]; then
+        GO=${GENTOO_OPT_ACTIVE_COMPILER}
+        export GO
     fi
 }
 
@@ -612,8 +624,9 @@ gentoo_opt_apply_readiness_flags() {
                 fi
                 ;;
             rust)
-                # CARGO_BUILD_TARGET was made explicit by the Rust PGO lane,
-                # so these RUSTFLAGS do not instrument host build scripts.
+                # Require a target even in BOLT-only readiness so these flags
+                # cannot leak into host build scripts.
+                gentoo_opt_require_rust_target_isolation || return 1
                 gentoo_opt_append_flag_once RUSTFLAGS -Cdebuginfo=1
                 gentoo_opt_append_flag_once RUSTFLAGS -Clink-arg=-Wl,--emit-relocs
                 gentoo_opt_append_flag_once RUSTFLAGS -Clink-arg=-Wl,--build-id=sha1

@@ -8,6 +8,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from typing import Any, Callable
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -400,6 +401,21 @@ class ProfileValidatorTests(unittest.TestCase):
                 "version_stdout": version,
             }
 
+        def observation(path: Path) -> dict[str, int | str]:
+            path_stat = path.stat()
+            return {
+                "ctime_ns": path_stat.st_ctime_ns,
+                "device": path_stat.st_dev,
+                "gid": path_stat.st_gid,
+                "inode": path_stat.st_ino,
+                "link_count": path_stat.st_nlink,
+                "mode": path_stat.st_mode,
+                "mtime_ns": path_stat.st_mtime_ns,
+                "sha256": sha256(path),
+                "size": path_stat.st_size,
+                "uid": path_stat.st_uid,
+            }
+
         metadata: dict[str, object] = {
             "compiler": {"family": "clang", "major": 22},
             "input_identity": {
@@ -416,15 +432,25 @@ class ProfileValidatorTests(unittest.TestCase):
             "profile_path": os.fspath(profile),
             "profile_sha256": sha256(profile),
             "profile_size": profile.stat().st_size,
-            "schema_version": 1,
+            "reproducibility": {
+                "optimization_generation_id": "generation-20260713-a",
+                "production_date": "2026-07-13",
+                "production_host": "gentoo-fixture",
+                "source_identity_sha256": "e" * 64,
+                "workload_revision": "workloads-sha256-a1",
+            },
+            "schema_version": 2,
             "source": {
                 "kind": "llvm-profgen",
                 "binary_path": os.fspath(profiled_binary),
                 "binary_sha256": sha256(profiled_binary),
+                "binary_observation": observation(profiled_binary),
                 "debug_binary_path": None,
                 "debug_binary_sha256": None,
+                "debug_binary_observation": None,
                 "perf_data_path": os.fspath(perf_data),
                 "perf_data_sha256": sha256(perf_data),
+                "perf_data_observation": observation(perf_data),
                 "producer": recorded_tool(self.llvm22, version_stdout),
                 "readelf": recorded_tool(self.llvm22, version_stdout),
                 "objcopy": recorded_tool(self.llvm22, version_stdout),
@@ -466,6 +492,13 @@ class ProfileValidatorTests(unittest.TestCase):
         ) + ["--sample-metadata", os.fspath(metadata)]
         self._run(arguments, success=True)
         self._assert_manifest(manifest, "clang-sample", "clang", profile, sha256(profile))
+        sidecar_path = Path(os.fspath(manifest) + ".metadata.json")
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        sample_metadata = json.loads(metadata.read_text(encoding="utf-8"))
+        self.assertEqual(
+            sidecar["backend_proof"]["reproducibility"],
+            sample_metadata["reproducibility"],
+        )
 
         unknown_manifest = self.root / "sample-unknown.manifest"
         unknown_arguments = self._common(
@@ -501,8 +534,131 @@ class ProfileValidatorTests(unittest.TestCase):
             external_manifest,
         ) + ["--sample-metadata", os.fspath(external_metadata)]
         completed = self._run(external_arguments, success=False)
-        self.assertIn("source.kind=llvm-profgen", completed.stderr)
+        self.assertIn("require llvm-profgen", completed.stderr)
         self.assertFalse(external_manifest.exists())
+
+    def test_sample_sidecar_reproducibility_tamper_is_rejected(self) -> None:
+        profile = self.profiles / "sample.prof"
+        profile.write_text("SAMPLE\n", encoding="utf-8")
+        sample_metadata = self._sample_metadata(profile)
+        manifest = self.root / "sample-sidecar-tamper.manifest"
+        arguments = self._common(
+            "clang-sample",
+            profile,
+            "clang",
+            self.clang,
+            22,
+            self.llvm22,
+            22,
+            manifest,
+        ) + ["--sample-metadata", os.fspath(sample_metadata)]
+        self._run(arguments, success=True)
+        sidecar_path = Path(os.fspath(manifest) + ".metadata.json")
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        sidecar["backend_proof"]["reproducibility"]["production_host"] = (
+            "tampered-host"
+        )
+        sidecar_path.write_text(
+            json.dumps(sidecar, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        completed = self._run(
+            [
+                os.fspath(VALIDATOR),
+                "verify",
+                "--manifest",
+                os.fspath(manifest),
+                "--metadata",
+                os.fspath(sidecar_path),
+            ],
+            success=False,
+        )
+        self.assertIn("no longer matches", completed.stderr)
+
+    def test_sample_metadata_v2_rejects_downgrade_missing_unknown_and_tampering(self) -> None:
+        profile = self.profiles / "sample.prof"
+        profile.write_text("SAMPLE\n", encoding="utf-8")
+
+        mutations: dict[str, Callable[[dict[str, Any]], object]] = {
+            "schema-v1": lambda data: data.__setitem__("schema_version", 1),
+            "missing-reproducibility": lambda data: data.pop("reproducibility"),
+            "unknown-reproducibility": lambda data: data["reproducibility"].__setitem__(
+                "unreviewed", "value"
+            ),
+            "tampered-generation": lambda data: data["reproducibility"].__setitem__(
+                "optimization_generation_id", "../wrong-generation"
+            ),
+            "tampered-workload": lambda data: data["reproducibility"].__setitem__(
+                "workload_revision", "wrong/workload"
+            ),
+            "tampered-source": lambda data: data["reproducibility"].__setitem__(
+                "source_identity_sha256", "not-a-sha256"
+            ),
+            "tampered-host": lambda data: data["reproducibility"].__setitem__(
+                "production_host", "wrong host"
+            ),
+            "tampered-date": lambda data: data["reproducibility"].__setitem__(
+                "production_date", "2026-02-30"
+            ),
+            "missing-observation": lambda data: data["source"].pop(
+                "binary_observation"
+            ),
+            "unknown-observation": lambda data: data["source"][
+                "binary_observation"
+            ].__setitem__("unreviewed", 1),
+            "tampered-observation": lambda data: data["source"][
+                "binary_observation"
+            ].__setitem__("inode", 0),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                metadata_path = self._sample_metadata(profile)
+                data = json.loads(metadata_path.read_text(encoding="utf-8"))
+                mutate(data)
+                metadata_path = self.profiles / f"sample-{name}.json"
+                metadata_path.write_text(
+                    json.dumps(data, sort_keys=True) + "\n", encoding="utf-8"
+                )
+                manifest = self.root / f"sample-{name}.manifest"
+                arguments = self._common(
+                    "clang-sample",
+                    profile,
+                    "clang",
+                    self.clang,
+                    22,
+                    self.llvm22,
+                    22,
+                    manifest,
+                ) + ["--sample-metadata", os.fspath(metadata_path)]
+                self._run(arguments, success=False)
+                self.assertFalse(manifest.exists())
+
+    def test_sample_observation_rejects_restored_content(self) -> None:
+        profile = self.profiles / "sample.prof"
+        profile.write_text("SAMPLE\n", encoding="utf-8")
+        metadata_path = self._sample_metadata(profile)
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        binary = Path(metadata["source"]["binary_path"])
+        original = binary.read_bytes()
+        original_sha256 = sha256(binary)
+        binary.unlink()
+        binary.write_bytes(b"temporary different content\n")
+        binary.write_bytes(original)
+        self.assertEqual(sha256(binary), original_sha256)
+
+        manifest = self.root / "sample-restored-content.manifest"
+        arguments = self._common(
+            "clang-sample",
+            profile,
+            "clang",
+            self.clang,
+            22,
+            self.llvm22,
+            22,
+            manifest,
+        ) + ["--sample-metadata", os.fspath(metadata_path)]
+        completed = self._run(arguments, success=False)
+        self.assertIn("exact recorded observation", completed.stderr)
+        self.assertFalse(manifest.exists())
 
     def test_gcc_directory_is_hashed_like_the_dispatcher(self) -> None:
         profile = self.profiles / "gcc"

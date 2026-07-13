@@ -1,0 +1,58 @@
+# shellcheck shell=bash
+# Installed as the lexically last sysadmin Portage install-QA override. Portage
+# sources this after package post_src_install and all earlier QA normalization,
+# immediately before its remaining compression/metadata/strip pipeline.
+
+gentoo_opt_hook_abort() {
+    local message=$1 builddir=${PORTAGE_BUILDDIR-} portage_tmp=${PORTAGE_TMPDIR-}
+    local marker
+    if [[ ${builddir} == /* && ${builddir} != / && ${portage_tmp} == /* &&
+        ${portage_tmp} != / && ${builddir} == "${portage_tmp%/}/portage/"* ]]; then
+        marker=${builddir}/.installed
+        if [[ ! -L ${marker} && ( ! -e ${marker} || -f ${marker} ) ]]; then
+            rm -f -- "${marker}" || :
+        fi
+    fi
+    die "gentoo-optimization: ${message}"
+}
+
+requested_stage=off
+case ${GENTOO_OPT_MODE:-off} in
+    bolt-capture) requested_stage=capture ;;
+    bolt-deploy) requested_stage=deploy ;;
+    *)
+        case ${GENTOO_OPT_BOLT_STAGE:-off} in
+            off|'') ;;
+            capture|deploy) requested_stage=${GENTOO_OPT_BOLT_STAGE} ;;
+            *) gentoo_opt_hook_abort 'invalid requested BOLT stage at the pre-strip boundary' ;;
+        esac
+        ;;
+esac
+
+active_stage=${GENTOO_OPT_ACTIVE_BOLT_STAGE-}
+if [[ -z ${active_stage} ]]; then
+    [[ ${requested_stage} == off ]] || \
+        gentoo_opt_hook_abort 'active BOLT dispatcher state was lost before the pre-strip boundary'
+    active_stage=off
+fi
+[[ ${active_stage} == "${requested_stage}" ]] || \
+    gentoo_opt_hook_abort \
+        "requested/active BOLT stage mismatch (${requested_stage}/${active_stage})"
+
+case ${active_stage} in
+    off) ;;
+    capture|deploy)
+        declare -F gentoo_opt_post_src_install >/dev/null || \
+            gentoo_opt_hook_abort 'strict BOLT transaction function is unavailable'
+        declare -F gentoo_opt_post_install_abort >/dev/null || \
+            gentoo_opt_hook_abort 'strict BOLT marker invalidator is unavailable'
+        if ! gentoo_opt_post_src_install; then
+            gentoo_opt_post_install_abort \
+                'the pre-strip BOLT install-QA transaction failed' || \
+                gentoo_opt_hook_abort 'failed to abort the BOLT transaction'
+        fi
+        ;;
+    *) gentoo_opt_hook_abort 'unknown active BOLT stage at the pre-strip boundary' ;;
+esac
+
+unset active_stage requested_stage
