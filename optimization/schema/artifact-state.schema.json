@@ -107,8 +107,8 @@
       "properties": {"workload_id": {"type": "string", "minLength": 1}, "perf_data": {"$ref": "#/$defs/evidence"}, "perf_tool": {"$ref": "#/$defs/tool"}, "samples": {"type": "integer", "minimum": 1}, "branch_entries": {"type": "integer", "minimum": 1}, "lost_samples": {"type": "integer", "minimum": 0}}
     },
     "fdata": {
-      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "merge_log", "sample_count", "stale_percent"],
-      "properties": {"path": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"}, "merge_log": {"$ref": "#/$defs/evidence"}, "sample_count": {"type": "integer", "minimum": 1}, "stale_percent": {"type": "number", "minimum": 0, "maximum": 100}}
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "merge_log", "input_sample_count", "fdata_record_count", "count_evidence", "stale_percent"],
+      "properties": {"path": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"}, "merge_log": {"$ref": "#/$defs/evidence"}, "input_sample_count": {"type": "integer", "minimum": 1}, "fdata_record_count": {"type": "integer", "minimum": 1}, "count_evidence": {"$ref": "#/$defs/evidence"}, "stale_percent": {"type": "number", "minimum": 0, "maximum": 100}}
     },
     "bolt_tools": {
       "type": "object", "additionalProperties": false, "required": ["llvm_bolt", "perf2bolt", "merge_fdata"], "properties": {"llvm_bolt": {"$ref": "#/$defs/tool"}, "perf2bolt": {"$ref": "#/$defs/tool"}, "merge_fdata": {"$ref": "#/$defs/tool"}}
@@ -118,8 +118,8 @@
       "properties": {"path": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"}, "text_sha256": {"$ref": "#/$defs/sha256"}, "build_id": {"type": "string", "pattern": "^[0-9a-f]+$"}, "bolt_note": {"const": true}, "verification": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
     },
     "deployment": {
-      "type": "object", "additionalProperties": false, "required": ["transaction_id", "prestrip_path", "deploy_log", "rollback_artifact", "installed_sha256", "metadata_verified", "runtime_verified"],
-      "properties": {"transaction_id": {"type": "string", "minLength": 1}, "prestrip_path": {"$ref": "#/$defs/absolute_path"}, "deploy_log": {"$ref": "#/$defs/evidence"}, "rollback_artifact": {"$ref": "#/$defs/evidence"}, "installed_sha256": {"$ref": "#/$defs/sha256"}, "metadata_verified": {"const": true}, "runtime_verified": {"const": true}}
+      "type": "object", "additionalProperties": false, "required": ["transaction_id", "prestrip_path", "prestrip_deployed_sha256", "deploy_log", "rollback_artifact", "installed_sha256", "post_strip_verification", "metadata_verified", "runtime_verified"],
+      "properties": {"transaction_id": {"type": "string", "minLength": 1}, "prestrip_path": {"$ref": "#/$defs/absolute_path"}, "prestrip_deployed_sha256": {"$ref": "#/$defs/sha256"}, "deploy_log": {"$ref": "#/$defs/evidence"}, "rollback_artifact": {"$ref": "#/$defs/evidence"}, "installed_sha256": {"$ref": "#/$defs/sha256"}, "post_strip_verification": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}, "metadata_verified": {"const": true}, "runtime_verified": {"const": true}}
     },
     "bolt": {
       "type": "object", "additionalProperties": false,

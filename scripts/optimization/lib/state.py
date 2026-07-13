@@ -308,8 +308,13 @@ def _toolchain(value: Any, path: str, languages: set[str], backend: str, abi: st
         compiler_tools = [tools[role] for role in compiler_roles]
         if not compiler_tools or any(compiler_tool is None or compiler_tool["family"] != "clang" for compiler_tool in compiler_tools):
             _error(path, f"{backend} requires a pure Clang CC/CXX tuple")
+    if backend == "gcc-gcov":
+        compiler_roles = [role for role in ("cc", "cxx", "fc") if tools[role] is not None]
+        compiler_tools = [tools[role] for role in compiler_roles]
+        if not compiler_tools or any(compiler_tool is None or compiler_tool["family"] != "gcc" for compiler_tool in compiler_tools):
+            _error(path, "gcc-gcov requires a pure GCC CC/CXX/FC tuple")
     family_requirements = {
-        "gcc-gcov": ("cc", "gcc"), "rust-llvm-ir": ("rustc", "rust"),
+        "rust-llvm-ir": ("rustc", "rust"),
         "go-pprof": ("go", "go"), "kernel-autofdo": ("cc", "clang"),
     }
     requirement = family_requirements.get(backend)
@@ -689,7 +694,11 @@ def validate_package(record: Any) -> dict[str, Any]:
     source_rebuild = _source_rebuild(package["source_rebuild"], "$.source_rebuild", generation["generation_id"])
     if source_rebuild["proof"] is not None and source_rebuild["proof"]["installed_vdb_identity_sha256"] != live["identity_sha256"]:
         _error("$.source_rebuild.proof.installed_vdb_identity_sha256", "must equal live_instance.identity_sha256")
-    _graphs(package["graphs"], "$.graphs")
+    package_graphs = _graphs(package["graphs"], "$.graphs")
+    registered_workloads = {(ref["workload_id"], ref["revision"]) for ref in package_graphs["workload_refs"]}
+    used_workloads = {(ref["workload_id"], ref["revision"]) for component in components for ref in component["pgo"]["workload_refs"]}
+    if not used_workloads <= registered_workloads:
+        _error("$.graphs.workload_refs", f"does not register component PGO workloads {sorted(used_workloads-registered_workloads)}")
     aggregate = _object(package["aggregate"], "$.aggregate", {"component_count", "artifact_count", "pgo", "bolt"})
     if _int(aggregate["component_count"], "$.aggregate.component_count", 1) != len(components):
         _error("$.aggregate.component_count", "must equal components length")
@@ -882,11 +891,13 @@ def _bolt(value: Any, path: str, kind: str, role: str, abi: str, elf: dict[str, 
         _error(f"{path}.perf_profiles", "must be sorted by unique workload_id")
     fdata = item["fdata"]
     if fdata is not None:
-        fobj = _object(fdata, f"{path}.fdata", {"path", "sha256", "merge_log", "sample_count", "stale_percent"})
+        fobj = _object(fdata, f"{path}.fdata", {"path", "sha256", "merge_log", "input_sample_count", "fdata_record_count", "count_evidence", "stale_percent"})
         _string(fobj["path"], f"{path}.fdata.path", absolute=True)
         _sha(fobj["sha256"], f"{path}.fdata.sha256")
         _evidence(fobj["merge_log"], f"{path}.fdata.merge_log")
-        _int(fobj["sample_count"], f"{path}.fdata.sample_count", 1)
+        _int(fobj["input_sample_count"], f"{path}.fdata.input_sample_count", 1)
+        _int(fobj["fdata_record_count"], f"{path}.fdata.fdata_record_count", 1)
+        _evidence(fobj["count_evidence"], f"{path}.fdata.count_evidence")
         _number(fobj["stale_percent"], f"{path}.fdata.stale_percent", 0, 100)
     tools = item["tools"]
     if tools is not None:
@@ -908,12 +919,14 @@ def _bolt(value: Any, path: str, kind: str, role: str, abi: str, elf: dict[str, 
         _evidence_list(out["verification"], f"{path}.output.verification", required=True)
     deployment = item["deployment"]
     if deployment is not None:
-        dep = _object(deployment, f"{path}.deployment", {"transaction_id", "prestrip_path", "deploy_log", "rollback_artifact", "installed_sha256", "metadata_verified", "runtime_verified"})
+        dep = _object(deployment, f"{path}.deployment", {"transaction_id", "prestrip_path", "prestrip_deployed_sha256", "deploy_log", "rollback_artifact", "installed_sha256", "post_strip_verification", "metadata_verified", "runtime_verified"})
         _string(dep["transaction_id"], f"{path}.deployment.transaction_id")
         _string(dep["prestrip_path"], f"{path}.deployment.prestrip_path", absolute=True)
+        _sha(dep["prestrip_deployed_sha256"], f"{path}.deployment.prestrip_deployed_sha256")
         _evidence(dep["deploy_log"], f"{path}.deployment.deploy_log")
         _evidence(dep["rollback_artifact"], f"{path}.deployment.rollback_artifact")
         _sha(dep["installed_sha256"], f"{path}.deployment.installed_sha256")
+        _evidence_list(dep["post_strip_verification"], f"{path}.deployment.post_strip_verification", required=True)
         for key in ("metadata_verified", "runtime_verified"):
             if _bool(dep[key], f"{path}.deployment.{key}") is not True:
                 _error(f"{path}.deployment.{key}", "must be true")
@@ -942,6 +955,8 @@ def _bolt(value: Any, path: str, kind: str, role: str, abi: str, elf: dict[str, 
         _error(path, "optimized BOLT requires exact options, output, and deployment proof")
     if status_value != "optimized" and (output is not None or deployment is not None):
         _error(path, "output/deployment is valid only for optimized BOLT")
+    if fdata is not None and fdata["input_sample_count"] != sum(profile["samples"] for profile in profiles):
+        _error(f"{path}.fdata.input_sample_count", "must equal the exact contributing perf input sample total")
     return item
 
 
@@ -1042,8 +1057,26 @@ def validate_artifact(record: Any) -> dict[str, Any]:
     kernel = _kernel_artifact(artifact["kernel"], "$.kernel", kernel_required, role)
     if kernel is not None and target is not None and kernel["release"] != target["kernel_release"]:
         _error("$.kernel.release", "must equal target kernel_release")
-    _graphs(artifact["graphs"], "$.graphs")
+    artifact_graphs = _graphs(artifact["graphs"], "$.graphs")
     bolt = _bolt(artifact["bolt"], "$.bolt", kind, role, abi, elf, generation["generation_id"])
+    registered_bolt_workloads = {ref["workload_id"] for ref in artifact_graphs["workload_refs"]}
+    used_bolt_workloads = {profile["workload_id"] for profile in bolt["perf_profiles"]}
+    if not used_bolt_workloads <= registered_bolt_workloads:
+        _error("$.graphs.workload_refs", f"does not register BOLT perf workloads {sorted(used_bolt_workloads-registered_bolt_workloads)}")
+    if bolt["status"] == "optimized":
+        assert elf is not None and bolt["output"] is not None and bolt["deployment"] is not None
+        output = bolt["output"]
+        deployment = bolt["deployment"]
+        if output["sha256"] != deployment["prestrip_deployed_sha256"]:
+            _error("$.bolt.deployment.prestrip_deployed_sha256", "must equal the exact BOLT output hash")
+        if deployment["installed_sha256"] != artifact["content_sha256"]:
+            _error("$.bolt.deployment.installed_sha256", "must equal the final installed artifact hash")
+        if deployment["prestrip_deployed_sha256"] == deployment["installed_sha256"]:
+            _error("$.bolt.deployment", "must preserve distinct pre-strip and final installed hashes")
+        if output["build_id"] != elf["build_id"] or output["text_sha256"] != elf["text_sha256"]:
+            _error("$.bolt.output", "build ID and text hash must equal installed ELF metadata")
+        if not elf["runtime_instrumentation"]["bolt_note"]:
+            _error("$.elf.runtime_instrumentation.bolt_note", "optimized BOLT artifact must carry the installed note")
     expected = {
         "pending": "pending", "captured": "pending", "profiled": "pending",
         "optimized": "optimized", "not-applicable": "not-applicable",

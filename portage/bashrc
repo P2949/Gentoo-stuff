@@ -79,15 +79,130 @@ gentoo_opt_fixture_override_allowed() {
         ${EBUILD-} == /var/tmp/gentoo-phase2-portage-fixture.*/* ]] || return 1
 }
 
-gentoo_opt_trusted_root_executable() {
-    local path=$1 canonical owner mode
-    [[ -f ${path} && -x ${path} && ! -L ${path} ]] || return 1
+gentoo_opt_trusted_root_path() {
+    local path=$1 kind=$2 canonical current owner mode
+    gentoo_opt_safe_absolute_path "${path}" || return 1
     canonical=$(realpath -e -- "${path}") || return 1
     [[ ${canonical} == "${path}" ]] || return 1
-    owner=$(stat -c %u -- "${path}") || return 1
-    mode=$(stat -c %a -- "${path}") || return 1
-    [[ ${owner} == 0 && ${mode} =~ ^[0-7]{3,4}$ ]] || return 1
-    (( (8#${mode} & 8#022) == 0 ))
+    case ${kind} in
+        executable) [[ -f ${path} && -x ${path} ]] || return 1 ;;
+        file) [[ -f ${path} ]] || return 1 ;;
+        directory) [[ -d ${path} ]] || return 1 ;;
+        *) return 1 ;;
+    esac
+
+    # Checking only the leaf is insufficient: a root-owned executable below a
+    # replaceable directory is still controlled by whoever can rename that
+    # directory.  Reject symlinks and group/other-writable permissions at every
+    # component, including / itself.
+    current=${path}
+    while :; do
+        [[ ! -L ${current} ]] || return 1
+        owner=$(stat -c %u -- "${current}") || return 1
+        mode=$(stat -c %a -- "${current}") || return 1
+        [[ ${owner} == 0 && ${mode} =~ ^[0-7]{3,4}$ ]] || return 1
+        (( (8#${mode} & 8#022) == 0 )) || return 1
+        [[ ${current} == / ]] && break
+        current=${current%/*}
+        [[ -n ${current} ]] || current=/
+    done
+}
+
+gentoo_opt_trusted_root_executable() {
+    gentoo_opt_trusted_root_path "$1" executable
+}
+
+gentoo_opt_path_is_below() {
+    local path=$1 root=$2
+    [[ ${path} == "${root}/"* ]]
+}
+
+gentoo_opt_require_immutable_input() {
+    local path=$1 root=$2 kind=$3 label=$4
+    gentoo_opt_safe_absolute_path "${path}" || {
+        gentoo_opt_error "${label} must be a safe absolute path"
+        return 1
+    }
+    if gentoo_opt_fixture_override_allowed; then
+        case ${kind} in
+            file) [[ -f ${path} && ! -L ${path} ]] ;;
+            directory) [[ -d ${path} && ! -L ${path} ]] ;;
+            *) return 1 ;;
+        esac || {
+            gentoo_opt_error "${label} is unavailable or symlinked: ${path}"
+            return 1
+        }
+        return 0
+    fi
+    gentoo_opt_path_is_below "${path}" "${root}" || {
+        gentoo_opt_error "${label} is outside reviewed root-owned namespace ${root}"
+        return 1
+    }
+    gentoo_opt_trusted_root_path "${path}" "${kind}" || {
+        gentoo_opt_error "${label} or one of its ancestors is not immutable root-owned state: ${path}"
+        return 1
+    }
+}
+
+gentoo_opt_require_immutable_tree() {
+    local root=$1 entry
+    if gentoo_opt_fixture_override_allowed; then
+        [[ -d ${root} && ! -L ${root} ]]
+        return
+    fi
+    while IFS= read -r -d '' entry; do
+        if [[ -d ${entry} && ! -L ${entry} ]]; then
+            gentoo_opt_trusted_root_path "${entry}" directory || return 1
+        elif [[ -f ${entry} && ! -L ${entry} ]]; then
+            gentoo_opt_trusted_root_path "${entry}" file || return 1
+        else
+            return 1
+        fi
+    done < <(find "${root}" -xdev -print0)
+}
+
+gentoo_opt_require_generation_spool() {
+    local path=$1 current owner mode
+    gentoo_opt_safe_absolute_path "${path}" || {
+        gentoo_opt_error 'generation profile path must be a safe absolute path'
+        return 1
+    }
+    if gentoo_opt_fixture_override_allowed; then
+        [[ -d ${path} && -w ${path} && ! -L ${path} ]] || {
+            gentoo_opt_error "fixture generation spool is unavailable: ${path}"
+            return 1
+        }
+        return 0
+    fi
+    gentoo_opt_path_is_below "${path}" /var/tmp/gentoo-optimization/pgo-raw || {
+        gentoo_opt_error 'generation profiles must use /var/tmp/gentoo-optimization/pgo-raw/<generation-specific-path>'
+        return 1
+    }
+    current=${path}
+    while :; do
+        [[ -d ${current} && ! -L ${current} ]] || return 1
+        owner=$(stat -c %u -- "${current}") || return 1
+        mode=$(stat -c %a -- "${current}") || return 1
+        [[ ${owner} == 0 && ${mode} =~ ^[0-7]{3,4}$ ]] || return 1
+        if [[ ${current} == "${path}" ]]; then
+            # The exact leaf may deliberately be 01777 for runtime writers,
+            # but any broadly writable leaf must retain sticky semantics.
+            if (( (8#${mode} & 8#022) != 0 )); then
+                (( (8#${mode} & 8#1000) != 0 )) || return 1
+            fi
+        elif [[ ${current} == /var/tmp ]]; then
+            (( (8#${mode} & 8#1000) != 0 )) || return 1
+        else
+            (( (8#${mode} & 8#022) == 0 )) || return 1
+        fi
+        [[ ${current} == / ]] && break
+        current=${current%/*}
+        [[ -n ${current} ]] || current=/
+    done
+    [[ -w ${path} ]] || {
+        gentoo_opt_error "generation profile spool is not writable: ${path}"
+        return 1
+    }
 }
 
 gentoo_opt_disable_ccache() {
@@ -139,14 +254,8 @@ gentoo_opt_detect_abi() {
 gentoo_opt_load_fingerprint() {
     local loaded='' line='' computed='' line_count
     if [[ -n ${GENTOO_OPT_FINGERPRINT_FILE-} ]]; then
-        gentoo_opt_safe_absolute_path "${GENTOO_OPT_FINGERPRINT_FILE}" || {
-            gentoo_opt_error 'GENTOO_OPT_FINGERPRINT_FILE must be a safe absolute path'
-            return 1
-        }
-        [[ -f ${GENTOO_OPT_FINGERPRINT_FILE} && ! -L ${GENTOO_OPT_FINGERPRINT_FILE} ]] || {
-            gentoo_opt_error "fingerprint file is not a regular non-symlink file: ${GENTOO_OPT_FINGERPRINT_FILE}"
-            return 1
-        }
+        gentoo_opt_require_immutable_input "${GENTOO_OPT_FINGERPRINT_FILE}" \
+            /var/lib/gentoo-optimization/generations file 'fingerprint file' || return 1
         IFS= read -r line < "${GENTOO_OPT_FINGERPRINT_FILE}" || {
             gentoo_opt_error "cannot read fingerprint file: ${GENTOO_OPT_FINGERPRINT_FILE}"
             return 1
@@ -160,19 +269,10 @@ gentoo_opt_load_fingerprint() {
     fi
 
     if [[ -n ${GENTOO_OPT_IDENTITY_INPUT-} ]]; then
-        gentoo_opt_safe_absolute_path "${GENTOO_OPT_IDENTITY_INPUT}" || {
-            gentoo_opt_error 'GENTOO_OPT_IDENTITY_INPUT must be a safe absolute path'
-            return 1
-        }
-        gentoo_opt_safe_absolute_path "${GENTOO_OPT_PROFILE_KEY_TOOL-}" || {
-            gentoo_opt_error 'computing a fingerprint requires an absolute GENTOO_OPT_PROFILE_KEY_TOOL'
-            return 1
-        }
-        [[ -x ${GENTOO_OPT_PROFILE_KEY_TOOL} ]] || {
-            gentoo_opt_error "fingerprint tool is not executable: ${GENTOO_OPT_PROFILE_KEY_TOOL}"
-            return 1
-        }
-        computed=$("${GENTOO_OPT_PROFILE_KEY_TOOL}" fingerprint \
+        gentoo_opt_require_immutable_input "${GENTOO_OPT_IDENTITY_INPUT}" \
+            /var/lib/gentoo-optimization/generations file 'fingerprint identity input' || return 1
+        gentoo_opt_profile_key_tool || return 1
+        computed=$("${GENTOO_OPT_SELECTED_PROFILE_KEY_TOOL}" fingerprint \
             --input "${GENTOO_OPT_IDENTITY_INPUT}") || {
             gentoo_opt_error 'fingerprint computation failed'
             return 1
@@ -189,6 +289,10 @@ gentoo_opt_load_fingerprint() {
     fi
 
     if [[ -n ${GENTOO_OPT_FINGERPRINT-} ]]; then
+        gentoo_opt_fixture_override_allowed || {
+            gentoo_opt_error 'production builds must load or compute fingerprints from reviewed root-owned generation state'
+            return 1
+        }
         [[ ${GENTOO_OPT_FINGERPRINT} =~ ^[0-9a-f]{64}$ ]] || {
             gentoo_opt_error 'GENTOO_OPT_FINGERPRINT must be 64 lowercase hex characters'
             return 1
@@ -204,6 +308,30 @@ gentoo_opt_load_fingerprint() {
         return 1
     }
     GENTOO_OPT_ACTIVE_FINGERPRINT=${loaded}
+}
+
+gentoo_opt_profile_key_tool() {
+    local expected configured
+    expected=/usr/local/libexec/gentoo-optimization/pgo/profile-identity.py
+    configured=${GENTOO_OPT_PROFILE_KEY_TOOL:-${expected}}
+    gentoo_opt_safe_absolute_path "${configured}" || {
+        gentoo_opt_error 'GENTOO_OPT_PROFILE_KEY_TOOL must be a safe absolute path'
+        return 1
+    }
+    if [[ ${configured} != "${expected}" ]]; then
+        gentoo_opt_fixture_override_allowed || {
+            gentoo_opt_error 'production fingerprint computation cannot override the installed profile identity tool'
+            return 1
+        }
+    elif ! gentoo_opt_trusted_root_executable "${configured}"; then
+        gentoo_opt_error "installed profile identity tool is not trusted through every ancestor: ${configured}"
+        return 1
+    fi
+    [[ -f ${configured} && -x ${configured} && ! -L ${configured} ]] || {
+        gentoo_opt_error "profile identity tool is unavailable or symlinked: ${configured}"
+        return 1
+    }
+    GENTOO_OPT_SELECTED_PROFILE_KEY_TOOL=${configured}
 }
 
 gentoo_opt_resolve_tool() {
@@ -309,6 +437,11 @@ gentoo_opt_detect_compiler_family() {
     fi
     GENTOO_OPT_ACTIVE_COMPILER_FAMILY=${requested}
     GENTOO_OPT_ACTIVE_COMPILER=${GENTOO_OPT_RESOLVED_TOOL}
+    if ! gentoo_opt_fixture_override_allowed && \
+        ! gentoo_opt_trusted_root_executable "${GENTOO_OPT_ACTIVE_COMPILER}"; then
+        gentoo_opt_error "active compiler is not immutable through every root-owned ancestor: ${GENTOO_OPT_ACTIVE_COMPILER}"
+        return 1
+    fi
 
     if [[ ${requested} == clang || ${requested} == gcc ]]; then
         cc_path=${GENTOO_OPT_ACTIVE_COMPILER}
@@ -325,6 +458,11 @@ gentoo_opt_detect_compiler_family() {
             return 1
         }
         GENTOO_OPT_ACTIVE_CXX=${GENTOO_OPT_RESOLVED_TOOL}
+        if ! gentoo_opt_fixture_override_allowed && \
+            ! gentoo_opt_trusted_root_executable "${GENTOO_OPT_ACTIVE_CXX}"; then
+            gentoo_opt_error "active C++ compiler is not immutable through every root-owned ancestor: ${GENTOO_OPT_ACTIVE_CXX}"
+            return 1
+        fi
         CC=${GENTOO_OPT_ACTIVE_COMPILER}
         CXX=${GENTOO_OPT_ACTIVE_CXX}
         export CC CXX GENTOO_OPT_ACTIVE_CXX

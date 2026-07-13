@@ -92,7 +92,7 @@ def toolchain(languages: list[str], backend: str, marker: str, abi: str) -> dict
     if "c" in languages:
         values["cc"] = tool("cc", "gcc" if backend == "gcc-gcov" else "clang", marker + "cc")
     if "c++" in languages:
-        values["cxx"] = tool("cxx", "clang", marker + "cxx")
+        values["cxx"] = tool("cxx", "gcc" if backend == "gcc-gcov" else "clang", marker + "cxx")
     if "fortran" in languages:
         values["fc"] = tool("fc", "gcc", marker + "fc")
         # gcc-gcov's family check is anchored in cc; keep the complete tuple.
@@ -245,11 +245,11 @@ def optimized_bolt() -> dict[str, Any]:
         "eligibility": "eligible", "status": "optimized", "generation_id": "generation-test", "resolution": None,
         "capture": {"input_path": "/var/cache/gentoo-optimization/bolt/inputs/example", "input_sha256": H["artifact"], "input_text_sha256": H["text"], "input_build_id": "ab12cd34", "manifest": evidence("manifest", "manifest"), "metadata_snapshot": evidence("metadata", "report")},
         "perf_profiles": [{"workload_id": "representative-cli", "perf_data": evidence("perf", "profile"), "perf_tool": tool("profiler", "perf"), "samples": 1200, "branch_entries": 24000, "lost_samples": 0}],
-        "fdata": {"path": "/var/cache/gentoo-optimization/bolt/fdata/example.fdata", "sha256": H["profile"], "merge_log": evidence("merge", "log"), "sample_count": 1200, "stale_percent": 0.1},
+        "fdata": {"path": "/var/cache/gentoo-optimization/bolt/fdata/example.fdata", "sha256": H["profile"], "merge_log": evidence("merge", "log"), "input_sample_count": 1200, "fdata_record_count": 24000, "count_evidence": evidence("diagnostic", "command-output"), "stale_percent": 0.1},
         "tools": {"llvm_bolt": tool("llvm-bolt", "llvm-binutils"), "perf2bolt": tool("perf2bolt", "llvm-binutils"), "merge_fdata": tool("merge-fdata", "llvm-binutils")},
         "options": ["-icf=safe", "-reorder-blocks=ext-tsp", "-reorder-functions=cdsort"],
         "output": {"path": "/var/cache/gentoo-optimization/bolt/outputs/example", "sha256": H["output"], "text_sha256": H["installed"], "build_id": "cd34ef56", "bolt_note": True, "verification": [evidence("validation", "report")]},
-        "deployment": {"transaction_id": "bolt-deploy-1", "prestrip_path": "/var/tmp/portage/app-test/example/image/usr/bin/example", "deploy_log": evidence("deploy", "log"), "rollback_artifact": evidence("rollback", "binary"), "installed_sha256": H["output"], "metadata_verified": True, "runtime_verified": True},
+        "deployment": {"transaction_id": "bolt-deploy-1", "prestrip_path": "/var/tmp/portage/app-test/example/image/usr/bin/example", "prestrip_deployed_sha256": H["output"], "deploy_log": evidence("deploy", "log"), "rollback_artifact": evidence("rollback", "binary"), "installed_sha256": H["installed"], "post_strip_verification": [evidence("validation", "report")], "metadata_verified": True, "runtime_verified": True},
     }
 
 
@@ -264,13 +264,16 @@ def artifact_record(*, inventory_sha: str = H["inventory"], kind: str = "elf", p
         is_module = kind == "kernel-module"
         kernel = {"release": "6.18.0-test", "artifact_type": "module" if is_module else "image", "module_name": "example" if is_module else None, "vermagic": "6.18.0-test SMP" if is_module else None, "config_sha256": H["config"], "signed": True, "signature_key_id": "test-key", "boot_entry_id": None if is_module else "Boot0004", "boot_evidence": [] if is_module else [evidence("boot", "report")]}
     optimized = kind == "elf"
+    if optimized and elf is not None:
+        elf["build_id"] = "cd34ef56"
+        elf["text_sha256"] = H["installed"]
     bolt = optimized_bolt() if optimized else {"eligibility": "not-applicable", "status": "not-applicable", "generation_id": None, "resolution": resolution("bolt-not-elf"), "capture": None, "perf_profiles": [], "fdata": None, "tools": None, "options": [], "output": None, "deployment": None}
     artifact_id = hashlib.sha256((kind + path).encode()).hexdigest()
     return {
         "schema_version": 3, "record_type": "artifact", "generation": generation(inventory_sha), "artifact_id": f"sha256:{artifact_id}",
         "owner": {"cpv": "app-test/example-suite-1.0-r2", "cp": "app-test/example-suite", "component_id": "01-clang-ir", "component_fingerprint": f"sha256:{hashlib.sha256('01-clang-ir'.encode()).hexdigest()}"},
         "kind": kind, "format": "ELF" if elf else kind, "role": role, "installed_path": path, "canonical_path": path,
-        "content_sha256": H["output"] if optimized else H["artifact"], "size": 4096, "abi": abi, "target": machine_target,
+        "content_sha256": H["installed"] if optimized else H["artifact"], "size": 4096, "abi": abi, "target": machine_target,
         "metadata": {"file_type": "regular", "mode": 0o755, "uid": 0, "gid": 0, "mtime_ns": 1783904400000000000, "xattrs": [{"name": "user.test", "value_sha256": H["xattr"]}], "file_capabilities": [], "selinux_context": None},
         "topology": {"device": 2049, "inode": 1001, "link_count": 1, "hardlink_paths": [path], "symlinks": []},
         "elf": elf, "kernel": kernel, "graphs": {"consumer_refs": [], "workload_refs": [workload()], "reverse_dependency_refs": []},
@@ -318,6 +321,9 @@ class PackageContractTests(unittest.TestCase):
                     STATE.validate_package(record)
         record = package_record(); record["components"][0]["pgo"]["workload_refs"] = []
         with self.assertRaisesRegex(STATE.StateValidationError, "workload"):
+            STATE.validate_package(record)
+        record = package_record(); record["graphs"]["workload_refs"] = []
+        with self.assertRaisesRegex(STATE.StateValidationError, "does not register component PGO"):
             STATE.validate_package(record)
 
     def test_tool_tuple_target_and_runtime_identity_are_strict(self) -> None:
@@ -400,6 +406,27 @@ class ArtifactContractTests(unittest.TestCase):
         record = artifact_record(); record["bolt"]["deployment"]["metadata_verified"] = False
         with self.assertRaisesRegex(STATE.StateValidationError, "must be true"):
             STATE.validate_artifact(record)
+        record = artifact_record(); record["bolt"]["fdata"]["input_sample_count"] = 1199
+        with self.assertRaisesRegex(STATE.StateValidationError, "perf input sample"):
+            STATE.validate_artifact(record)
+        record = artifact_record(); record["bolt"]["deployment"]["installed_sha256"] = "0" * 64
+        with self.assertRaisesRegex(STATE.StateValidationError, "final installed artifact hash"):
+            STATE.validate_artifact(record)
+        record = artifact_record(); record["bolt"]["deployment"]["prestrip_deployed_sha256"] = "0" * 64
+        with self.assertRaisesRegex(STATE.StateValidationError, "exact BOLT output hash"):
+            STATE.validate_artifact(record)
+        record = artifact_record(); record["bolt"]["deployment"]["installed_sha256"] = H["output"]; record["content_sha256"] = H["output"]
+        with self.assertRaisesRegex(STATE.StateValidationError, "distinct pre-strip"):
+            STATE.validate_artifact(record)
+        record = artifact_record(); record["bolt"]["deployment"]["post_strip_verification"] = []
+        with self.assertRaisesRegex(STATE.StateValidationError, "must contain evidence"):
+            STATE.validate_artifact(record)
+        record = artifact_record(); record["elf"]["runtime_instrumentation"]["bolt_note"] = False
+        with self.assertRaisesRegex(STATE.StateValidationError, "must carry the installed note"):
+            STATE.validate_artifact(record)
+        record = artifact_record(); record["graphs"]["workload_refs"] = []
+        with self.assertRaisesRegex(STATE.StateValidationError, "does not register BOLT"):
+            STATE.validate_artifact(record)
 
     def test_machine_abi_role_and_kernel_state_are_exact(self) -> None:
         record = artifact_record(); record["target"]["machine"] = "Intel 80386"
@@ -431,6 +458,18 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(summary["counts"]["failed_total"], 0)
         self.assertEqual(summary["counts"]["source_rebuild_succeeded_total"], 1)
 
+    def test_unresolved_leaf_state_is_derived_and_blocks_completion(self) -> None:
+        package, artifact, inventory, payload = self.collection()
+        artifact["bolt"] = {"eligibility": "eligible", "status": "pending", "generation_id": None, "resolution": None, "capture": None, "perf_profiles": [], "fdata": None, "tools": None, "options": [], "output": None, "deployment": None}
+        artifact["final_status"] = "pending"
+        package["aggregate"]["bolt"].update({"optimized_count": 0, "pending_count": 1, "status": "pending"})
+        package["final_status"] = "pending"
+        summary = STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest())
+        self.assertEqual(summary["counts"]["pending_total"], 1)
+        self.assertEqual(summary["counts"]["unknown_total"], 0)
+        self.assertEqual(summary["counts"]["failed_total"], 0)
+        self.assertFalse(summary["coverage_complete"])
+
     def test_inventory_cpv_owned_path_and_generation_must_be_exact(self) -> None:
         package, artifact, inventory, payload = self.collection()
         for mutation, message in (
@@ -442,6 +481,9 @@ class CollectionTests(unittest.TestCase):
                 package, artifact, inventory, payload = self.collection(); mutation()
                 with self.assertRaisesRegex(STATE.StateValidationError, message):
                     STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest())
+        package, artifact, inventory, payload = self.collection(); inventory["packages"][0]["entry_sha256"] = "0" * 64
+        with self.assertRaisesRegex(STATE.StateValidationError, "entry hash mismatch"):
+            STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest())
 
     def test_owner_component_fingerprint_aggregate_and_topology_ambiguity_fail(self) -> None:
         package, artifact, inventory, payload = self.collection(); artifact["owner"]["component_fingerprint"] = f"sha256:{'0' * 64}"
