@@ -374,6 +374,11 @@ class ArtifactContractTests(unittest.TestCase):
         record = artifact_record(); record["topology"]["symlinks"] = [{"path": "/usr/bin/example", "target": "example.real"}]
         with self.assertRaisesRegex(STATE.StateValidationError, "must not overlap"):
             STATE.validate_artifact(record)
+        record = artifact_record(); record["installed_path"] = "/usr/bin/example-link"; record["topology"]["symlinks"] = [{"path": "/usr/bin/example-link", "target": "example"}]
+        self.assertEqual(STATE.validate_artifact(record)["installed_path"], "/usr/bin/example-link")
+        record["topology"]["symlinks"][0]["target"] = "outside"
+        with self.assertRaisesRegex(STATE.StateValidationError, "outside this artifact topology"):
+            STATE.validate_artifact(record)
 
     def test_elf_contract_covers_soname_paths_exports_versions_debug_and_runtime(self) -> None:
         record = artifact_record(); record["elf"]["runpath"] = ["$ORIGIN"]
@@ -445,8 +450,11 @@ class CollectionTests(unittest.TestCase):
         package, artifact, inventory, payload = self.collection(); package["aggregate"]["artifact_count"] = 2; package["aggregate"]["bolt"]["not_applicable_count"] = 1
         with self.assertRaisesRegex(STATE.StateValidationError, "artifact_count"):
             STATE.reconcile_collection([package], [artifact])
-        package, artifact, inventory, payload = self.collection(); second = copy.deepcopy(artifact); second["artifact_id"] = f"sha256:{'f' * 64}"
+        package, artifact, inventory, payload = self.collection(); second = copy.deepcopy(artifact); second["artifact_id"] = f"sha256:{'f' * 64}"; second["topology"]["inode"] = 1002
         with self.assertRaisesRegex(STATE.StateValidationError, "ambiguous path"):
+            STATE.reconcile_collection([package], [artifact, second])
+        package, artifact, inventory, payload = self.collection(); second = copy.deepcopy(artifact); second["artifact_id"] = f"sha256:{'f' * 64}"; second["installed_path"] = "/usr/bin/second"; second["canonical_path"] = "/usr/bin/second"; second["topology"]["hardlink_paths"] = ["/usr/bin/second"]
+        with self.assertRaisesRegex(STATE.StateValidationError, "split inode"):
             STATE.reconcile_collection([package], [artifact, second])
 
     def test_graph_references_must_resolve(self) -> None:
@@ -469,7 +477,7 @@ class CollectionTests(unittest.TestCase):
             package["live_instance"].update({"vdb_path": str(instance), "contents_sha256": hashlib.sha256(contents.encode()).hexdigest(), "metadata_tree_sha256": STATE.vdb_metadata_tree_sha256(instance), "environment_bz2_sha256": hashlib.sha256(b"environment").hexdigest()})
             package["live_instance"]["identity_sha256"] = STATE.vdb_identity_sha256(package["live_instance"])
             package["source_rebuild"]["proof"]["installed_vdb_identity_sha256"] = package["live_instance"]["identity_sha256"]
-            summary = STATE.reconcile_collection([package], [artifact], vdb_root=root)
+            summary = STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=root)
             self.assertTrue(summary["coverage_complete"])
             (instance / "CONTENTS").write_text("sym /usr/bin/example -> example.real 1783904400\n", encoding="utf-8")
             package["live_instance"]["contents_sha256"] = hashlib.sha256((instance / "CONTENTS").read_bytes()).hexdigest()
@@ -477,7 +485,7 @@ class CollectionTests(unittest.TestCase):
             package["live_instance"]["identity_sha256"] = STATE.vdb_identity_sha256(package["live_instance"])
             package["source_rebuild"]["proof"]["installed_vdb_identity_sha256"] = package["live_instance"]["identity_sha256"]
             with self.assertRaisesRegex(STATE.StateValidationError, "topology type mismatch"):
-                STATE.reconcile_collection([package], [artifact], vdb_root=root)
+                STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=root)
 
     def test_cli_atomically_publishes_summary_and_require_complete(self) -> None:
         package, artifact, inventory, payload = self.collection()

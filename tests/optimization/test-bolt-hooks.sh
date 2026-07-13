@@ -572,6 +572,19 @@ PY
             2>"${WORK}/provenance-${provenance_case}.err"; then
         fail "deployment accepted tampered BOLT provenance: ${provenance_case}"
     fi
+    case ${provenance_case} in
+        llvm_bolt_hash|llvm_bolt_version) expected_reason='llvm-bolt identity is stale or mismatched' ;;
+        policy) expected_reason='unreviewed BOLT option-policy revision' ;;
+        options) expected_reason='unreviewed BOLT option list' ;;
+        fdata) expected_reason='BOLT fdata file identity mismatch' ;;
+        workload) expected_reason='BOLT workload evidence file identity mismatch' ;;
+        profile) expected_reason='BOLT profile evidence file identity mismatch' ;;
+        command_record) expected_reason='command-record identity is stale or mismatched' ;;
+        command_document) expected_reason='embedded command record differs' ;;
+        bolt_note|bolt_origin) expected_reason='BOLT transformation identity mismatch' ;;
+    esac
+    grep -Fq "${expected_reason}" "${WORK}/provenance-${provenance_case}.err" || \
+        fail "tampered provenance lacked its exact rejection: ${provenance_case}"
 done
 cp -- "${WORK}/output-manifest.good" "${OUTPUT_MANIFEST}"
 

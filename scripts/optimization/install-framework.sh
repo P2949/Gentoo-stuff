@@ -8,6 +8,7 @@ readonly ROOT
 STATE_ROOT=/var/lib/gentoo-optimization/state/project
 MANIFEST=${STATE_ROOT}/phase-2-framework-install.manifest
 PORTAGE_CURRENT=/var/lib/gentoo-optimization/portage-current
+OVERLAY_CURRENT=/var/lib/gentoo-optimization/repos/codex-local-current
 MODE=install
 
 if (($#)); then
@@ -95,11 +96,55 @@ portage_source_hash() {
     ) | sha256sum | awk '{print $1}'
 }
 
+overlay_source_hash() {
+    local entry relative mode digest target
+    (
+        cd -- "${ROOT}/local-overlay"
+        while IFS= read -r -d '' entry; do
+            relative=${entry#./}
+            if [[ -L ${entry} ]]; then
+                target=$(readlink -- "${entry}")
+                printf 'l\t%s\t%s\n' "${relative}" "${target}"
+            elif [[ -d ${entry} ]]; then
+                printf 'd\t0755\t%s\n' "${relative}"
+            elif [[ -f ${entry} ]]; then
+                if [[ -x ${entry} ]]; then mode=0755; else mode=0644; fi
+                digest=$(sha256sum -- "${entry}"); digest=${digest%% *}
+                printf 'f\t%s\t%s\t%s\n' "${mode}" "${relative}" "${digest}"
+            else
+                fail "unsupported overlay source entry type: ${entry}"
+            fi
+        done < <(find . -mindepth 1 -print0 | LC_ALL=C sort -z)
+    ) | sha256sum | awk '{print $1}'
+}
+
+verify_exact_entry_set() {
+    local source=$1 live=$2 marker=$3 index
+    local -a expected_entries=() actual_entries=()
+    mapfile -t expected_entries < <(
+        find "${source}" -mindepth 1 -printf '%y\t%P\n' | LC_ALL=C sort
+    )
+    mapfile -t actual_entries < <(
+        find "${live}" -mindepth 1 ! -path "${live}/${marker}" \
+            -printf '%y\t%P\n' | LC_ALL=C sort
+    )
+    [[ ${#actual_entries[@]} == "${#expected_entries[@]}" ]] ||
+        fail "published tree entry count differs: ${live}"
+    for index in "${!expected_entries[@]}"; do
+        [[ ${actual_entries[index]} == "${expected_entries[index]}" ]] ||
+            fail "published tree entry differs at index ${index}: ${live}"
+    done
+}
+
 verify_portage_tree() {
     local live=$1 entry relative expected actual mode
     [[ -d ${live} && ! -L ${live} ]] || fail "Portage live generation is invalid: ${live}"
     [[ $(<"${live}/.gentoo-optimization-source-hash") == "${PORTAGE_SOURCE_HASH}" ]] || \
         fail "Portage live generation has the wrong source hash: ${live}"
+    [[ $(stat -c '%U:%G:%a' -- "${live}/.gentoo-optimization-source-hash") == root:root:600 ]] || \
+        fail "Portage source-hash marker ownership/mode differs: ${live}"
+    verify_exact_entry_set "${ROOT}/portage" "${live}" \
+        .gentoo-optimization-source-hash
     while IFS= read -r -d '' entry; do
         relative=${entry#"${ROOT}/portage/"}
         [[ ${relative} != "${entry}" ]] || continue
@@ -126,6 +171,72 @@ verify_portage_tree() {
     done < <(find "${ROOT}/portage" -mindepth 1 -print0 | LC_ALL=C sort -z)
 }
 
+verify_overlay_tree() {
+    local live=$1 entry relative expected actual mode
+    [[ -d ${live} && ! -L ${live} ]] || fail "local overlay generation is invalid: ${live}"
+    [[ $(<"${live}/.gentoo-optimization-source-hash") == "${OVERLAY_SOURCE_HASH}" ]] || \
+        fail "local overlay generation has the wrong source hash: ${live}"
+    [[ $(stat -c '%U:%G:%a' -- "${live}/.gentoo-optimization-source-hash") == root:root:600 ]] || \
+        fail "local overlay source-hash marker ownership/mode differs: ${live}"
+    verify_exact_entry_set "${ROOT}/local-overlay" "${live}" \
+        .gentoo-optimization-source-hash
+    while IFS= read -r -d '' entry; do
+        relative=${entry#"${ROOT}/local-overlay/"}
+        [[ ${relative} != "${entry}" ]] || continue
+        if [[ -L ${entry} ]]; then
+            [[ -L ${live}/${relative} ]] || fail "live overlay symlink is absent: ${relative}"
+            expected=$(readlink -- "${entry}")
+            actual=$(readlink -- "${live}/${relative}")
+            [[ ${actual} == "${expected}" ]] || fail "live overlay symlink differs: ${relative}"
+        elif [[ -d ${entry} ]]; then
+            [[ -d ${live}/${relative} && ! -L ${live}/${relative} ]] || \
+                fail "live overlay directory is absent: ${relative}"
+            [[ $(stat -c '%U:%G:%a' -- "${live}/${relative}") == root:root:755 ]] || \
+                fail "live overlay directory ownership/mode differs: ${relative}"
+        elif [[ -f ${entry} ]]; then
+            [[ -f ${live}/${relative} && ! -L ${live}/${relative} ]] || \
+                fail "live overlay file is absent: ${relative}"
+            if [[ -x ${entry} ]]; then mode=755; else mode=644; fi
+            [[ $(stat -c '%U:%G:%a' -- "${live}/${relative}") == root:root:${mode} ]] || \
+                fail "live overlay file ownership/mode differs: ${relative}"
+            expected=$(sha256sum -- "${entry}"); expected=${expected%% *}
+            actual=$(sha256sum -- "${live}/${relative}"); actual=${actual%% *}
+            [[ ${actual} == "${expected}" ]] || fail "live overlay file hash differs: ${relative}"
+        fi
+    done < <(find "${ROOT}/local-overlay" -mindepth 1 -print0 | LC_ALL=C sort -z)
+}
+
+deploy_overlay_tree() {
+    local generation_root live stage second_hash link_tmp
+    install -d -o root -g root -m 0755 /var/lib/gentoo-optimization/repos
+    generation_root=/var/lib/gentoo-optimization/repos/codex-local-${OVERLAY_SOURCE_HASH}
+    live=${generation_root}/repository
+    if [[ ! -e ${generation_root} ]]; then
+        stage=${generation_root}.partial.$$
+        rm -rf -- "${stage}"
+        mkdir -p -- "${stage}/repository"
+        cp -a -- "${ROOT}/local-overlay/." "${stage}/repository/"
+        chmod 0755 -- "${stage}"
+        find "${stage}/repository" -type d -exec chmod 0755 -- {} +
+        while IFS= read -r -d '' entry; do
+            if [[ -x ${entry} ]]; then chmod 0755 -- "${entry}"; else chmod 0644 -- "${entry}"; fi
+        done < <(find "${stage}/repository" -type f -print0)
+        printf '%s\n' "${OVERLAY_SOURCE_HASH}" > \
+            "${stage}/repository/.gentoo-optimization-source-hash"
+        chmod 0600 -- "${stage}/repository/.gentoo-optimization-source-hash"
+        chown -R root:root -- "${stage}"
+        second_hash=$(overlay_source_hash)
+        [[ ${second_hash} == "${OVERLAY_SOURCE_HASH}" ]] || \
+            fail 'local overlay source changed during root-owned publication'
+        mv -T -- "${stage}" "${generation_root}"
+    fi
+    verify_overlay_tree "${live}"
+    verify_root_directory_chain "${live}"
+    link_tmp=${OVERLAY_CURRENT}.partial.$$
+    ln -s -- "${live}" "${link_tmp}"
+    mv -fT -- "${link_tmp}" "${OVERLAY_CURRENT}"
+}
+
 deploy_portage_tree() {
     local generation_root live stage second_hash link_tmp etc_tmp
     verify_root_directory_chain /
@@ -138,6 +249,7 @@ deploy_portage_tree() {
         rm -rf -- "${stage}"
         mkdir -p -- "${stage}/portage"
         cp -a -- "${ROOT}/portage/." "${stage}/portage/"
+        chmod 0755 -- "${stage}"
         find "${stage}/portage" -type d -exec chmod 0755 -- {} +
         while IFS= read -r -d '' entry; do
             if [[ -x ${entry} ]]; then chmod 0755 -- "${entry}"; else chmod 0644 -- "${entry}"; fi
@@ -206,13 +318,31 @@ publish_file() {
     sync -f -- "${directory}"
 }
 
+render_manifest() {
+    local index
+    printf 'schema=gentoo-optimization-framework-install-v2\n'
+    printf 'repository=%s\n' "${ROOT}"
+    printf 'portage_source_hash=%s\n' "${PORTAGE_SOURCE_HASH}"
+    printf 'portage_current=%s\n' "${PORTAGE_CURRENT}"
+    printf 'overlay_source_hash=%s\n' "${OVERLAY_SOURCE_HASH}"
+    printf 'overlay_current=%s\n' "${OVERLAY_CURRENT}"
+    printf 'path\tsha256\tmode\towner\n'
+    for index in "${!SOURCES[@]}"; do
+        verify_destination "${SOURCES[index]}" "${DESTINATIONS[index]}" \
+            "${MODES[index]}"
+    done
+}
+
 for source in "${SOURCES[@]}"; do
     verify_source "${source}"
 done
 PORTAGE_SOURCE_HASH=$(portage_source_hash)
 [[ ${PORTAGE_SOURCE_HASH} =~ ^[0-9a-f]{64}$ ]] || fail 'cannot hash Portage source tree'
+OVERLAY_SOURCE_HASH=$(overlay_source_hash)
+[[ ${OVERLAY_SOURCE_HASH} =~ ^[0-9a-f]{64}$ ]] || fail 'cannot hash local overlay source tree'
 
 if [[ ${MODE} == install ]]; then
+    deploy_overlay_tree
     deploy_portage_tree
     install -d -o root -g root -m 0700 \
         /var/cache/gentoo-optimization/bolt \
@@ -222,6 +352,11 @@ if [[ ${MODE} == install ]]; then
         /var/cache/gentoo-optimization/bolt/fdata \
         /var/cache/gentoo-optimization/bolt/diagnostics \
         /var/cache/gentoo-optimization/bolt/locks
+    install -d -o root -g root -m 0755 \
+        /usr/local/lib/install-qa-check.d \
+        /usr/local/libexec/gentoo-optimization \
+        /usr/local/libexec/gentoo-optimization/bolt \
+        /usr/local/libexec/gentoo-optimization/pgo
     for index in "${!SOURCES[@]}"; do
         publish_file "${SOURCES[index]}" "${DESTINATIONS[index]}" "${MODES[index]}"
     done
@@ -233,27 +368,27 @@ if [[ ${MODE} == install ]]; then
     mkdir -p -- "${STATE_ROOT}"
     chown root:root -- "${STATE_ROOT}"
     chmod 0700 -- "${STATE_ROOT}"
-    {
-        printf 'schema=gentoo-optimization-framework-install-v1\n'
-        printf 'repository=%s\n' "${ROOT}"
-        printf 'portage_source_hash=%s\n' "${PORTAGE_SOURCE_HASH}"
-        printf 'portage_current=%s\n' "${PORTAGE_CURRENT}"
-        printf 'path\tsha256\tmode\towner\n'
-        for index in "${!SOURCES[@]}"; do
-            verify_destination "${SOURCES[index]}" "${DESTINATIONS[index]}" \
-                "${MODES[index]}"
-        done
-    } > "${manifest_temporary}"
+    render_manifest > "${manifest_temporary}"
     chown root:root -- "${manifest_temporary}"
     chmod 0600 -- "${manifest_temporary}"
     sync -f -- "${manifest_temporary}"
     mv -fT -- "${manifest_temporary}" "${MANIFEST}"
     sync -f -- "${STATE_ROOT}"
 else
+    expected_manifest=${MANIFEST}.expected.$$
+    trap 'rm -f -- "${expected_manifest:-}"' EXIT
     [[ -f ${MANIFEST} && ! -L ${MANIFEST} ]] || \
         fail "framework install manifest is absent: ${MANIFEST}"
     [[ $(stat -c '%U:%G:%a' -- "${MANIFEST}") == root:root:600 ]] || \
         fail "framework install manifest ownership/mode is not root:root:0600"
+    render_manifest > "${expected_manifest}"
+    cmp -s -- "${expected_manifest}" "${MANIFEST}" || \
+        fail 'framework install manifest content differs from current trusted installation'
+    rm -f -- "${expected_manifest}"
+    trap - EXIT
+    [[ -L ${OVERLAY_CURRENT} ]] || fail 'root-owned local overlay current link is absent'
+    verify_overlay_tree "$(readlink -e -- "${OVERLAY_CURRENT}")"
+    verify_root_directory_chain "$(readlink -e -- "${OVERLAY_CURRENT}")"
     [[ -L /etc/portage && $(readlink -- /etc/portage) == "${PORTAGE_CURRENT}" ]] || \
         fail '/etc/portage is not the root-owned current-generation link'
     [[ -L ${PORTAGE_CURRENT} ]] || fail 'root-owned Portage current link is absent'

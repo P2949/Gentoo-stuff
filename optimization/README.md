@@ -30,10 +30,14 @@ doas scripts/optimization/install-framework.sh
 doas scripts/optimization/install-framework.sh --check
 ```
 
-The installer publishes a root-owned Portage configuration generation, points
-`/etc/portage` at that generation, installs regular root-owned validation and
-BOLT helpers below `/usr/local/libexec/gentoo-optimization`, and installs the
-lexically last pre-strip QA hook as a regular root-owned file. It records exact
+The installer publishes root-owned immutable generations for both the Portage
+configuration and this repository's `codex-local` overlay, points
+`/etc/portage` and the overlay's `repos.conf` entry at their root-owned current
+links, installs regular root-owned validation and BOLT helpers below
+`/usr/local/libexec/gentoo-optimization`, and installs the lexically last
+pre-strip QA hook as a regular root-owned file. Code/configuration ancestors are
+root-owned mode `0755` so Portage `userpriv` can traverse them; private profile,
+BOLT, and state namespaces remain mode `0700`. It records exact
 source/destination hashes in
 `/var/lib/gentoo-optimization/state/project/phase-2-framework-install.manifest`.
 An active optimization lane fails if its installed helper is absent, symlinked,

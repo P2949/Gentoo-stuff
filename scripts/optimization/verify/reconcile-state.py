@@ -41,7 +41,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--packages-dir", required=True, type=Path)
     parser.add_argument("--artifacts-dir", required=True, type=Path)
-    parser.add_argument("--inventory", type=Path)
+    parser.add_argument("--inventory", required=True, type=Path)
     parser.add_argument("--vdb-root", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--require-complete", action="store_true")

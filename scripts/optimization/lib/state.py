@@ -1012,6 +1012,21 @@ def validate_artifact(record: Any) -> dict[str, Any]:
         _error("$.canonical_path", "must be a recorded hardlink")
     if installed not in hardlinks and installed not in symlink_paths:
         _error("$.installed_path", "must be present in topology")
+    symlink_map = {link["path"]: link["target"] for link in symlinks}
+    def resolve_link(link_path: str, visiting: set[str]) -> str:
+        if link_path in visiting:
+            _error("$.topology.symlinks", f"cycle detected at {link_path}")
+        target_value = symlink_map[link_path]
+        resolved = posixpath.normpath(target_value if target_value.startswith("/") else posixpath.join(posixpath.dirname(link_path), target_value))
+        if not resolved.startswith("/"):
+            _error("$.topology.symlinks", f"target escapes installed hierarchy: {link_path}")
+        if resolved in hardlinks:
+            return resolved
+        if resolved in symlink_map:
+            return resolve_link(resolved, visiting | {link_path})
+        _error("$.topology.symlinks", f"target is outside this artifact topology: {link_path} -> {target_value}")
+    for symlink_path in symlink_paths:
+        resolve_link(symlink_path, set())
     elf_value = artifact["elf"]
     elf = None if elf_value is None else _elf(elf_value, "$.elf", abi, role)
     if kind in ELF_REQUIRED_KINDS and elf is None:
@@ -1225,12 +1240,18 @@ def reconcile_collection(
         for component in package["components"]:
             component_index[(cpv, component["component_id"])] = component
     artifact_ids: set[str] = set()
+    inode_owners: dict[tuple[int, int], str] = {}
     topology_owners: dict[str, tuple[str, str]] = {}
     artifacts_by_owner: dict[str, list[dict[str, Any]]] = {cpv: [] for cpv in package_by_cpv}
     for artifact in validated_artifacts:
         if artifact["artifact_id"] in artifact_ids:
             _error("collection.artifacts", f"duplicate artifact_id {artifact['artifact_id']}")
         artifact_ids.add(artifact["artifact_id"])
+        inode_key = (artifact["topology"]["device"], artifact["topology"]["inode"])
+        previous_inode = inode_owners.get(inode_key)
+        if previous_inode is not None:
+            _error("collection.topology", f"split inode {inode_key} across {previous_inode} and {artifact['artifact_id']}")
+        inode_owners[inode_key] = artifact["artifact_id"]
         generation = artifact["generation"]
         if (generation["generation_id"], generation["inventory_id"], generation["inventory_sha256"]) != generation_tuple:
             _error("collection.generation", f"artifact {artifact['artifact_id']} has a different generation")
@@ -1366,9 +1387,12 @@ def reconcile_collection(
         **{f"bolt_{key}": value for key, value in bolt_counts.items()},
         "pending_total": pending_total, "unknown_total": unknown_total, "failed_total": failed_total,
     }
+    inventory_verified = inventory is not None
+    vdb_verified = vdb_root is not None
     return {
         "schema_version": 1, "record_type": "state-reconciliation",
         "generation_id": generation_tuple[0], "inventory_id": generation_tuple[1],
-        "inventory_sha256": generation_tuple[2], "counts": counts,
-        "coverage_complete": bool(validated_packages) and source_succeeded == len(validated_packages) and pending_total == unknown_total == failed_total == 0,
+        "inventory_sha256": generation_tuple[2], "inventory_verified": inventory_verified,
+        "vdb_verified": vdb_verified, "counts": counts,
+        "coverage_complete": bool(validated_packages) and inventory_verified and source_succeeded == len(validated_packages) and pending_total == unknown_total == failed_total == 0,
     }
