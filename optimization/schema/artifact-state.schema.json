@@ -47,8 +47,8 @@
       "type": "object", "additionalProperties": false, "required": ["name", "value_sha256"], "properties": {"name": {"type": "string", "minLength": 1}, "value_sha256": {"$ref": "#/$defs/sha256"}}
     },
     "metadata": {
-      "type": "object", "additionalProperties": false, "required": ["mode", "uid", "gid", "mtime_ns", "xattrs", "file_capabilities", "selinux_context"],
-      "properties": {"mode": {"type": "integer", "minimum": 0, "maximum": 4095}, "uid": {"type": "integer", "minimum": 0}, "gid": {"type": "integer", "minimum": 0}, "mtime_ns": {"type": "integer", "minimum": 0}, "xattrs": {"type": "array", "items": {"$ref": "#/$defs/xattr"}}, "file_capabilities": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "selinux_context": {"type": ["string", "null"]}}
+      "type": "object", "additionalProperties": false, "required": ["file_type", "mode", "uid", "gid", "mtime_ns", "xattrs", "file_capabilities", "selinux_context"],
+      "properties": {"file_type": {"enum": ["regular", "fifo", "char-device", "block-device"]}, "mode": {"type": "integer", "minimum": 0, "maximum": 4095}, "uid": {"type": "integer", "minimum": 0}, "gid": {"type": "integer", "minimum": 0}, "mtime_ns": {"type": "integer", "minimum": 0}, "xattrs": {"type": "array", "items": {"$ref": "#/$defs/xattr"}}, "file_capabilities": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "selinux_context": {"type": ["string", "null"]}}
     },
     "symlink": {
       "type": "object", "additionalProperties": false, "required": ["path", "target"], "properties": {"path": {"$ref": "#/$defs/absolute_path"}, "target": {"type": "string", "minLength": 1}}

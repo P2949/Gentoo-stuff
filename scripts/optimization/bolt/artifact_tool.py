@@ -1073,10 +1073,11 @@ def verify_bolt_provenance(record: dict[str, Any], test_mode: bool) -> None:
         fail("prepared output uses an unreviewed BOLT option-policy revision")
     if record.get("options") != APPROVED_BOLT_OPTIONS:
         fail("prepared output uses an unreviewed BOLT option list")
-    tool = llvm_bolt_identity(
-        str(record.get("llvm_bolt", {}).get("path", "")), test_mode
-    )
-    if tool != record.get("llvm_bolt"):
+    recorded_tool = record.get("llvm_bolt")
+    if not isinstance(recorded_tool, dict):
+        fail("prepared output lacks an llvm-bolt identity")
+    tool = llvm_bolt_identity(str(recorded_tool.get("path", "")), test_mode)
+    if tool != recorded_tool:
         fail("prepared output llvm-bolt identity is stale or mismatched")
     for key, label in (
         ("fdata", "BOLT fdata"),
@@ -1110,9 +1111,13 @@ def verify_bolt_provenance(record: dict[str, Any], test_mode: bool) -> None:
     validate_recorded_files([command.get("stderr")], "BOLT stderr")
     if command.get("exit_status") != 0:
         fail("prepared output command did not exit successfully")
-    if command.get("output", {}).get("sha256") != record.get("output_sha256"):
+    command_output = command.get("output")
+    command_input = command.get("input")
+    if not isinstance(command_output, dict) or not isinstance(command_input, dict):
+        fail("prepared output command lacks exact input/output identities")
+    if command_output.get("sha256") != record.get("output_sha256"):
         fail("prepared output command/output hash binding mismatch")
-    if command.get("input", {}).get("sha256") != record.get("source_file_sha256"):
+    if command_input.get("sha256") != record.get("source_file_sha256"):
         fail("prepared output command/input hash binding mismatch")
 
 
@@ -1337,6 +1342,8 @@ def command_register(arguments: argparse.Namespace) -> None:
         if len({item["path"] for item in records}) != len(records):
             fail(f"duplicate {label} paths are forbidden")
     input_record = file_record(str(input_source), "exact BOLT input")
+    if input_record["sha256"] != source_artifact["file_sha256"]:
+        fail("exact BOLT input changed while registration was validating it")
     prepared_output_record = file_record(str(output_source), "prepared BOLT output")
     command_output = canonical_command_output(arguments.command_output_path)
     output_record = {
@@ -1398,10 +1405,32 @@ def command_register(arguments: argparse.Namespace) -> None:
             output_stream.flush()
             os.fsync(output_stream.fileno())
         os.chmod(partial, 0o600)
+        partial_sha256 = sha256_file(partial)
+        if partial_sha256 != prepared_output_record["sha256"]:
+            fail("prepared BOLT output changed while registration was publishing it")
+        with tempfile.TemporaryDirectory(
+            prefix="bolt-published-classify-", dir=cache
+        ) as published_temporary:
+            published_classification = classify_elf(
+                partial, readelf, objcopy, Path(published_temporary)
+            )
+        assert_abi_identity(
+            published_classification, classification, "published prepared output"
+        )
+        for key in (
+            "build_id",
+            "text_sha256",
+            "bolt_info_sha256",
+            "bolt_info_size",
+            "bolt_info_description",
+            "bolt_origin_sections",
+        ):
+            if published_classification.get(key) != classification.get(key):
+                fail(f"prepared BOLT output changed during registration: {key}")
         entry = {
             "artifact_id": arguments.artifact_id,
             "output_object": f"objects/{arguments.artifact_id}.bolt",
-            "output_sha256": sha256_file(partial),
+            "output_sha256": partial_sha256,
             "output_build_id": classification["build_id"],
             "output_text_sha256": classification["text_sha256"],
             "source_file_sha256": source_artifact["file_sha256"],
@@ -1632,6 +1661,10 @@ def command_deploy(arguments: argparse.Namespace) -> None:
             ):
                 if output_class.get(key) != output_record.get(key):
                     fail(f"prepared output BOLT transformation identity mismatch: {artifact_id}: {key}")
+            if output_class["build_id"] != output_record.get("output_build_id"):
+                fail(f"prepared output GNU build ID record mismatch: {artifact_id}")
+            if output_class["text_sha256"] != output_record.get("output_text_sha256"):
+                fail(f"prepared output .text identity record mismatch: {artifact_id}")
             prepared.append(
                 {
                     "artifact": artifact,

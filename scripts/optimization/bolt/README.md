@@ -101,6 +101,11 @@ deploy-output.sh --ed "${ED}" --cache-root "${GENTOO_OPT_BOLT_CACHE_ROOT}" \
   --expected-eligible-count "${GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT}"
 ```
 
+Deployment must receive the same frozen count and, for zero, the same
+`--zero-eligible-proof`; both capture and output manifests bind those values.
+Deployment of a zero-eligible package remains a deliberate no-op rejection,
+not a false optimized result.
+
 Capture never overwrites an existing identity blindly. A later retry always
 performs a complete fresh capture at the deterministic per-fingerprint partial
 path. It adopts the existing capture only when the fresh manifest, cached

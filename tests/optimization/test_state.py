@@ -87,7 +87,7 @@ def tool(role: str, family: str, marker: str | None = None) -> dict[str, Any]:
     }
 
 
-def toolchain(languages: list[str], backend: str, marker: str) -> dict[str, Any]:
+def toolchain(languages: list[str], backend: str, marker: str, abi: str) -> dict[str, Any]:
     values: dict[str, Any] = {role: None for role in ("cc", "cxx", "fc", "rustc", "go", "linker", "archiver", "profiler")}
     if "c" in languages:
         values["cc"] = tool("cc", "gcc" if backend == "gcc-gcov" else "clang", marker + "cc")
@@ -104,7 +104,7 @@ def toolchain(languages: list[str], backend: str, marker: str) -> dict[str, Any]
     values["linker"] = tool("linker", "lld", marker + "linker")
     values["archiver"] = tool("archiver", "llvm-binutils", marker + "archiver")
     values["profiler"] = tool("profiler", "perf", marker + "profiler")
-    values["runtimes"] = [{"name": "libc", "abi": "amd64", "path": "/lib64/libc.so.6", "sha256": hashlib.sha256((marker + "runtime").encode()).hexdigest(), "version": "glibc-test"}]
+    values["runtimes"] = [{"name": "libc", "abi": abi, "path": "/lib32/libc.so.6" if abi == "x86" else "/lib64/libc.so.6", "sha256": hashlib.sha256((marker + "runtime").encode()).hexdigest(), "version": "glibc-test"}]
     values["environment_fingerprint"] = f"sha256:{hashlib.sha256((marker + 'environment').encode()).hexdigest()}"
     return values
 
@@ -135,7 +135,7 @@ def nonapplicable_pgo() -> dict[str, Any]:
 
 
 def component(component_id: str, kind: str, languages: list[str], abi: str, backend: str) -> dict[str, Any]:
-    tc = None if backend == "not-applicable" else toolchain(languages, backend, component_id)
+    tc = None if backend == "not-applicable" else toolchain(languages, backend, component_id, abi)
     tc_fingerprint = None if tc is None else tc["environment_fingerprint"]
     pgo_state = nonapplicable_pgo() if tc_fingerprint is None else optimized_pgo(backend, tc_fingerprint)
     is_kernel = kind == "kernel"
@@ -192,7 +192,7 @@ def source_rebuild(live_identity_sha: str) -> dict[str, Any]:
 def package_record(*, inventory_sha: str = H["inventory"], artifact_count: int = 0, bolt_counts: dict[str, Any] | None = None, vdb_path: str = "/var/db/pkg/app-test/example-suite-1.0-r2", contents_sha: str = H["contents"], environment_sha: str | None = H["environment"]) -> dict[str, Any]:
     components = all_components()
     live: dict[str, Any] = {
-        "vdb_path": vdb_path, "contents_sha256": contents_sha, "repository": "gentoo", "slot": "0", "subslot": "0",
+        "vdb_path": vdb_path, "contents_sha256": contents_sha, "metadata_tree_sha256": H["vdb"], "repository": "gentoo", "slot": "0", "subslot": "0",
         "build_time": "1783904400", "counter": "17", "environment_bz2_sha256": environment_sha, "identity_sha256": "",
     }
     live["identity_sha256"] = STATE.vdb_identity_sha256(live)
@@ -271,7 +271,7 @@ def artifact_record(*, inventory_sha: str = H["inventory"], kind: str = "elf", p
         "owner": {"cpv": "app-test/example-suite-1.0-r2", "cp": "app-test/example-suite", "component_id": "01-clang-ir", "component_fingerprint": f"sha256:{hashlib.sha256('01-clang-ir'.encode()).hexdigest()}"},
         "kind": kind, "format": "ELF" if elf else kind, "role": role, "installed_path": path, "canonical_path": path,
         "content_sha256": H["output"] if optimized else H["artifact"], "size": 4096, "abi": abi, "target": machine_target,
-        "metadata": {"mode": 0o755, "uid": 0, "gid": 0, "mtime_ns": 1783904400000000000, "xattrs": [{"name": "user.test", "value_sha256": H["xattr"]}], "file_capabilities": [], "selinux_context": None},
+        "metadata": {"file_type": "regular", "mode": 0o755, "uid": 0, "gid": 0, "mtime_ns": 1783904400000000000, "xattrs": [{"name": "user.test", "value_sha256": H["xattr"]}], "file_capabilities": [], "selinux_context": None},
         "topology": {"device": 2049, "inode": 1001, "link_count": 1, "hardlink_paths": [path], "symlinks": []},
         "elf": elf, "kernel": kernel, "graphs": {"consumer_refs": [], "workload_refs": [workload()], "reverse_dependency_refs": []},
         "bolt": bolt, "final_status": "optimized" if optimized else "not-applicable", "resolution": None if optimized else resolution("bolt-not-elf"),
@@ -410,7 +410,7 @@ class ArtifactContractTests(unittest.TestCase):
 
 class CollectionTests(unittest.TestCase):
     def collection(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], bytes]:
-        inventory = {"schema_version": 1, "record_type": "frozen-inventory", "generation_id": "generation-test", "inventory_id": "inventory-test", "cpvs": ["app-test/example-suite-1.0-r2"], "owned_paths": [{"owner_cpv": "app-test/example-suite-1.0-r2", "path": "/usr/bin/example"}]}
+        inventory = {"schema_version": 1, "record_type": "frozen-inventory", "generation_id": "generation-test", "inventory_id": "inventory-test", "packages": [{"cpv": "app-test/example-suite-1.0-r2", "entry_sha256": H["entry"]}], "owned_paths": [{"owner_cpv": "app-test/example-suite-1.0-r2", "path": "/usr/bin/example"}]}
         payload = STATE.canonical_bytes(inventory); inv_sha = hashlib.sha256(payload).hexdigest()
         bolt_counts = {"candidate_count": 1, "optimized_count": 1, "excluded_count": 0, "not_applicable_count": 0, "pending_count": 0, "unknown_count": 0, "failed_count": 0, "status": "optimized"}
         package = package_record(inventory_sha=inv_sha, artifact_count=1, bolt_counts=bolt_counts)
@@ -429,7 +429,7 @@ class CollectionTests(unittest.TestCase):
     def test_inventory_cpv_owned_path_and_generation_must_be_exact(self) -> None:
         package, artifact, inventory, payload = self.collection()
         for mutation, message in (
-            (lambda: inventory["cpvs"].append("app-test/extra-1"), "exact CPV mismatch"),
+            (lambda: inventory["packages"].append({"cpv": "app-test/extra-1", "entry_sha256": H["entry"]}), "exact CPV mismatch"),
             (lambda: inventory["owned_paths"][0].__setitem__("path", "/usr/bin/other"), "owned-path mismatch"),
             (lambda: (artifact["generation"].__setitem__("generation_id", "other"), artifact["bolt"].__setitem__("generation_id", "other")), "different generation"),
         ):
@@ -466,13 +466,14 @@ class CollectionTests(unittest.TestCase):
             (instance / "COUNTER").write_text("17\n", encoding="utf-8")
             (instance / "environment.bz2").write_bytes(b"environment")
             package, artifact, inventory, payload = self.collection()
-            package["live_instance"].update({"vdb_path": str(instance), "contents_sha256": hashlib.sha256(contents.encode()).hexdigest(), "environment_bz2_sha256": hashlib.sha256(b"environment").hexdigest()})
+            package["live_instance"].update({"vdb_path": str(instance), "contents_sha256": hashlib.sha256(contents.encode()).hexdigest(), "metadata_tree_sha256": STATE.vdb_metadata_tree_sha256(instance), "environment_bz2_sha256": hashlib.sha256(b"environment").hexdigest()})
             package["live_instance"]["identity_sha256"] = STATE.vdb_identity_sha256(package["live_instance"])
             package["source_rebuild"]["proof"]["installed_vdb_identity_sha256"] = package["live_instance"]["identity_sha256"]
             summary = STATE.reconcile_collection([package], [artifact], vdb_root=root)
             self.assertTrue(summary["coverage_complete"])
             (instance / "CONTENTS").write_text("sym /usr/bin/example -> example.real 1783904400\n", encoding="utf-8")
             package["live_instance"]["contents_sha256"] = hashlib.sha256((instance / "CONTENTS").read_bytes()).hexdigest()
+            package["live_instance"]["metadata_tree_sha256"] = STATE.vdb_metadata_tree_sha256(instance)
             package["live_instance"]["identity_sha256"] = STATE.vdb_identity_sha256(package["live_instance"])
             package["source_rebuild"]["proof"]["installed_vdb_identity_sha256"] = package["live_instance"]["identity_sha256"]
             with self.assertRaisesRegex(STATE.StateValidationError, "topology type mismatch"):

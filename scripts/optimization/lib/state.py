@@ -240,7 +240,7 @@ def _generation(value: Any, path: str) -> dict[str, Any]:
 def vdb_identity_sha256(live_instance: Mapping[str, Any]) -> str:
     """Hash the exact live VDB identity fields, excluding the self hash."""
     identity = {key: live_instance[key] for key in (
-        "vdb_path", "contents_sha256", "repository", "slot", "subslot",
+        "vdb_path", "contents_sha256", "metadata_tree_sha256", "repository", "slot", "subslot",
         "build_time", "counter", "environment_bz2_sha256",
     )}
     return hashlib.sha256(canonical_bytes(identity)).hexdigest()
@@ -289,7 +289,7 @@ def _target(value: Any, path: str, abi: str) -> dict[str, Any] | None:
     return item
 
 
-def _toolchain(value: Any, path: str, languages: set[str], backend: str) -> dict[str, Any] | None:
+def _toolchain(value: Any, path: str, languages: set[str], backend: str, abi: str) -> dict[str, Any] | None:
     if value is None:
         if backend != "not-applicable":
             _error(path, "is required for a build backend")
@@ -333,6 +333,8 @@ def _toolchain(value: Any, path: str, languages: set[str], backend: str) -> dict
         runtime_keys.append((name, runtime_abi, runtime_path))
     if runtime_keys != sorted(set(runtime_keys)):
         _error(f"{path}.runtimes", "must be sorted and unique")
+    if languages & {"c", "c++", "fortran", "rust", "go"} and abi not in {runtime_abi for _name, runtime_abi, _path in runtime_keys}:
+        _error(f"{path}.runtimes", f"must identify at least one runtime for component ABI {abi}")
     _fingerprint(item["environment_fingerprint"], f"{path}.environment_fingerprint")
     return item
 
@@ -436,7 +438,7 @@ def _component(value: Any, path: str, generation_id: str) -> dict[str, Any]:
     abi = _enum(item["abi"], f"{path}.abi", ABIS)
     target = _target(item["target"], f"{path}.target", abi)
     backend = _enum(item["build_backend"], f"{path}.build_backend", BACKENDS)
-    toolchain = _toolchain(item["toolchain"], f"{path}.toolchain", set(language_list), backend)
+    toolchain = _toolchain(item["toolchain"], f"{path}.toolchain", set(language_list), backend, abi)
     _fingerprint(item["fingerprint"], f"{path}.fingerprint")
     if backend == "not-applicable" and (abi != "none" or toolchain is not None):
         _error(path, "not-applicable backend requires ABI none and no toolchain")
@@ -493,6 +495,8 @@ def _source_rebuild(value: Any, path: str, generation_id: str) -> dict[str, Any]
             _error(apath, "running attempt cannot have completed_at")
         if result != "running" and attempt["completed_at"] is None:
             _error(apath, "completed attempt requires completed_at")
+        if attempt["completed_at"] is not None and attempt["completed_at"] < attempt["started_at"]:
+            _error(apath, "completed_at cannot precede started_at")
         if result in {"failed", "interrupted"} and not failures:
             _error(f"{apath}.failure_evidence", "is required for failed/interrupted attempt")
         if result == "succeeded" and failures:
@@ -533,6 +537,13 @@ def _source_rebuild(value: Any, path: str, generation_id: str) -> dict[str, Any]
         _error(f"{path}.proof", "is valid only for succeeded status")
     if status_value in {"running", "succeeded"} and not transaction_id:
         _error(f"{path}.transaction_id", f"is required for {status_value}")
+    running_count = sum(attempt["result"] == "running" for attempt in attempts)
+    if status_value == "running" and running_count != 1:
+        _error(f"{path}.attempts", "running rebuild requires exactly one active attempt")
+    if status_value != "running" and running_count:
+        _error(f"{path}.attempts", "active attempt requires running rebuild status")
+    if status_value == "failed" and not attempts:
+        _error(f"{path}.attempts", "failed rebuild requires attempt evidence")
     if status_value == "pending" and attempts:
         _error(f"{path}.attempts", "must be empty while pending")
     return item
@@ -632,9 +643,9 @@ def validate_package(record: Any) -> dict[str, Any]:
     _sha(frozen["entry_sha256"], "$.frozen_inventory_entry.entry_sha256")
     if _bool(frozen["installed_at_freeze"], "$.frozen_inventory_entry.installed_at_freeze") is not True:
         _error("$.frozen_inventory_entry.installed_at_freeze", "must be true")
-    live = _object(package["live_instance"], "$.live_instance", {"vdb_path", "contents_sha256", "repository", "slot", "subslot", "build_time", "counter", "environment_bz2_sha256", "identity_sha256"})
+    live = _object(package["live_instance"], "$.live_instance", {"vdb_path", "contents_sha256", "metadata_tree_sha256", "repository", "slot", "subslot", "build_time", "counter", "environment_bz2_sha256", "identity_sha256"})
     _string(live["vdb_path"], "$.live_instance.vdb_path", absolute=True)
-    for key in ("contents_sha256", "identity_sha256"):
+    for key in ("contents_sha256", "metadata_tree_sha256", "identity_sha256"):
         _sha(live[key], f"$.live_instance.{key}")
     _sha(live["environment_bz2_sha256"], "$.live_instance.environment_bz2_sha256", nullable=True)
     for key in ("repository", "slot", "subslot", "build_time", "counter"):
@@ -967,7 +978,8 @@ def validate_artifact(record: Any) -> dict[str, Any]:
     _int(artifact["size"], "$.size")
     abi = _enum(artifact["abi"], "$.abi", ABIS)
     target = _target(artifact["target"], "$.target", abi)
-    metadata = _object(artifact["metadata"], "$.metadata", {"mode", "uid", "gid", "mtime_ns", "xattrs", "file_capabilities", "selinux_context"})
+    metadata = _object(artifact["metadata"], "$.metadata", {"file_type", "mode", "uid", "gid", "mtime_ns", "xattrs", "file_capabilities", "selinux_context"})
+    _enum(metadata["file_type"], "$.metadata.file_type", {"regular", "fifo", "char-device", "block-device"})
     mode = _int(metadata["mode"], "$.metadata.mode")
     if mode > 0o7777:
         _error("$.metadata.mode", "must contain only Unix permission/special bits")
@@ -1093,12 +1105,22 @@ def _load_records(paths: Iterable[Path], kind: str) -> list[dict[str, Any]]:
 
 
 def _inventory(raw: Any, path: str = "inventory") -> dict[str, Any]:
-    item = _object(raw, path, {"schema_version", "record_type", "generation_id", "inventory_id", "cpvs", "owned_paths"})
+    item = _object(raw, path, {"schema_version", "record_type", "generation_id", "inventory_id", "packages", "owned_paths"})
     if item["schema_version"] != 1 or item["record_type"] != "frozen-inventory":
         _error(path, "requires schema_version=1 and record_type=frozen-inventory")
     for key in ("generation_id", "inventory_id"):
         _string(item[key], f"{path}.{key}")
-    _sorted_strings(item["cpvs"], f"{path}.cpvs")
+    packages = item["packages"]
+    if not isinstance(packages, list):
+        _error(f"{path}.packages", "must be an array")
+    package_keys: list[str] = []
+    for index, raw_package in enumerate(packages):
+        ppath = f"{path}.packages[{index}]"
+        package = _object(raw_package, ppath, {"cpv", "entry_sha256"})
+        package_keys.append(_string(package["cpv"], f"{ppath}.cpv"))
+        _sha(package["entry_sha256"], f"{ppath}.entry_sha256")
+    if package_keys != sorted(set(package_keys)):
+        _error(f"{path}.packages", "must be sorted by unique CPV")
     owned = item["owned_paths"]
     if not isinstance(owned, list):
         _error(f"{path}.owned_paths", "must be an array")
@@ -1120,9 +1142,27 @@ def _file_sha(path: Path) -> str:
     return digest.hexdigest()
 
 
-def parse_vdb_contents(path: Path) -> dict[str, str]:
-    """Return non-directory installed paths mapped to obj/sym/fif/dev type."""
-    result: dict[str, str] = {}
+def vdb_metadata_tree_sha256(instance: Path) -> str:
+    """Hash every VDB metadata file/symlink by relative path, type, mode, and payload."""
+    entries: list[dict[str, Any]] = []
+    for path in sorted(instance.rglob("*")):
+        metadata = path.lstat()
+        relative = path.relative_to(instance).as_posix()
+        mode = stat.S_IMODE(metadata.st_mode)
+        if stat.S_ISDIR(metadata.st_mode):
+            entries.append({"path": relative, "type": "directory", "mode": mode, "sha256": None, "target": None})
+        elif stat.S_ISREG(metadata.st_mode):
+            entries.append({"path": relative, "type": "regular", "mode": mode, "sha256": _file_sha(path), "target": None})
+        elif stat.S_ISLNK(metadata.st_mode):
+            entries.append({"path": relative, "type": "symlink", "mode": mode, "sha256": None, "target": os.readlink(path)})
+        else:
+            raise StateValidationError(f"unsupported VDB metadata file type: {path}")
+    return hashlib.sha256(canonical_bytes({"entries": entries})).hexdigest()
+
+
+def parse_vdb_contents(path: Path) -> dict[str, tuple[str, str | None]]:
+    """Return non-directory installed paths mapped to (type, symlink target)."""
+    result: dict[str, tuple[str, str | None]] = {}
     try:
         lines = path.read_text(encoding="utf-8", errors="strict").splitlines()
     except OSError as error:
@@ -1141,7 +1181,12 @@ def parse_vdb_contents(path: Path) -> dict[str, str]:
             raise StateValidationError(f"{path}:{line_number}: noncanonical installed path")
         if installed in result:
             raise StateValidationError(f"{path}:{line_number}: duplicate installed path {installed}")
-        result[installed] = fields[0]
+        target: str | None = None
+        if fields[0] == "sym":
+            if len(fields) < 5 or fields[2] != "->":
+                raise StateValidationError(f"{path}:{line_number}: malformed symlink row")
+            target = fields[3]
+        result[installed] = (fields[0], target)
     return result
 
 
@@ -1230,9 +1275,12 @@ def reconcile_collection(
             _error("collection.inventory_sha256", "is required with a frozen inventory")
         if (inv["generation_id"], inv["inventory_id"], inventory_sha256) != generation_tuple:
             _error("collection.inventory", "identity/hash does not equal record generation")
-        inventory_cpvs = set(inv["cpvs"])
+        inventory_cpvs = {entry["cpv"] for entry in inv["packages"]}
         if inventory_cpvs != expected_cpvs:
             _error("collection.inventory.cpvs", f"exact CPV mismatch missing={sorted(inventory_cpvs-expected_cpvs)} extra={sorted(expected_cpvs-inventory_cpvs)}")
+        for entry in inv["packages"]:
+            if package_by_cpv[entry["cpv"]]["frozen_inventory_entry"]["entry_sha256"] != entry["entry_sha256"]:
+                _error("collection.inventory.packages", f"entry hash mismatch for {entry['cpv']}")
         inv_paths = {(entry["owner_cpv"], entry["path"]) for entry in inv["owned_paths"]}
         record_paths = {(owner[0], path) for path, owner in topology_owners.items()}
         if inv_paths != record_paths:
@@ -1244,7 +1292,7 @@ def reconcile_collection(
         if not vdb_root.is_absolute():
             _error("collection.vdb_root", "must be absolute")
         live_cpvs: set[str] = set()
-        live_paths: dict[str, tuple[str, str]] = {}
+        live_paths: dict[str, tuple[str, str, str | None]] = {}
         if vdb_root.exists():
             for category in sorted(vdb_root.iterdir()):
                 if not category.is_dir():
@@ -1262,7 +1310,9 @@ def reconcile_collection(
                         _error(f"collection.vdb[{cpv}]", "vdb_path does not equal live instance")
                     if _file_sha(instance / "CONTENTS") != live["contents_sha256"]:
                         _error(f"collection.vdb[{cpv}].CONTENTS", "hash mismatch")
-                    scalars = {"repository": "repository", "slot": "SLOT", "build_time": "BUILD_TIME", "counter": "COUNTER"}
+                    if vdb_metadata_tree_sha256(instance) != live["metadata_tree_sha256"]:
+                        _error(f"collection.vdb[{cpv}]", "metadata tree hash mismatch")
+                    scalars = {"repository": "repository", "build_time": "BUILD_TIME", "counter": "COUNTER"}
                     for field, filename in scalars.items():
                         if _read_vdb_scalar(instance / filename) != live[field]:
                             _error(f"collection.vdb[{cpv}].{filename}", "value mismatch")
@@ -1273,22 +1323,30 @@ def reconcile_collection(
                     env_sha = _file_sha(env_path) if env_path.exists() else None
                     if env_sha != live["environment_bz2_sha256"]:
                         _error(f"collection.vdb[{cpv}].environment.bz2", "hash mismatch")
-                    for installed, entry_type in parse_vdb_contents(instance / "CONTENTS").items():
+                    for installed, (entry_type, link_target) in parse_vdb_contents(instance / "CONTENTS").items():
                         if installed in live_paths:
                             _error("collection.vdb", f"duplicate ownership for {installed}")
-                        live_paths[installed] = (cpv, entry_type)
+                        live_paths[installed] = (cpv, entry_type, link_target)
         if live_cpvs != expected_cpvs:
             _error("collection.vdb.cpvs", f"exact CPV mismatch missing={sorted(live_cpvs-expected_cpvs)} extra={sorted(expected_cpvs-live_cpvs)}")
         expected_live_paths = {(owner[0], path) for path, owner in topology_owners.items()}
         actual_live_paths = {(owner[0], path) for path, owner in live_paths.items()}
         if expected_live_paths != actual_live_paths:
             _error("collection.vdb.contents", f"exact owned-path mismatch missing={sorted(actual_live_paths-expected_live_paths)} extra={sorted(expected_live_paths-actual_live_paths)}")
-        for installed, (cpv, entry_type) in live_paths.items():
+        vdb_type_to_file_type = {"obj": "regular", "fif": "fifo"}
+        for installed, (cpv, entry_type, link_target) in live_paths.items():
             artifact_id = topology_owners[installed][1]
             artifact = next(item for item in validated_artifacts if item["artifact_id"] == artifact_id)
-            symlink_set = {link["path"] for link in artifact["topology"]["symlinks"]}
+            symlink_map = {link["path"]: link["target"] for link in artifact["topology"]["symlinks"]}
+            symlink_set = set(symlink_map)
             if (entry_type == "sym") != (installed in symlink_set):
                 _error("collection.vdb.contents", f"topology type mismatch for {installed}")
+            if entry_type == "sym" and symlink_map[installed] != link_target:
+                _error("collection.vdb.contents", f"symlink target mismatch for {installed}")
+            if entry_type in vdb_type_to_file_type and artifact["metadata"]["file_type"] != vdb_type_to_file_type[entry_type]:
+                _error("collection.vdb.contents", f"file type mismatch for {installed}")
+            if entry_type == "dev" and artifact["metadata"]["file_type"] not in {"char-device", "block-device"}:
+                _error("collection.vdb.contents", f"device type mismatch for {installed}")
 
     pgo_counts = _pgo_counts([component for package in validated_packages for component in package["components"]])
     bolt_counts = _bolt_counts(validated_artifacts)

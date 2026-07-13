@@ -54,9 +54,9 @@
     },
     "live_instance": {
       "type": "object", "additionalProperties": false,
-      "required": ["vdb_path", "contents_sha256", "repository", "slot", "subslot", "build_time", "counter", "environment_bz2_sha256", "identity_sha256"],
+      "required": ["vdb_path", "contents_sha256", "metadata_tree_sha256", "repository", "slot", "subslot", "build_time", "counter", "environment_bz2_sha256", "identity_sha256"],
       "properties": {
-        "vdb_path": {"$ref": "#/$defs/absolute_path"}, "contents_sha256": {"$ref": "#/$defs/sha256"},
+        "vdb_path": {"$ref": "#/$defs/absolute_path"}, "contents_sha256": {"$ref": "#/$defs/sha256"}, "metadata_tree_sha256": {"$ref": "#/$defs/sha256"},
         "repository": {"type": "string", "minLength": 1}, "slot": {"type": "string", "minLength": 1}, "subslot": {"type": "string", "minLength": 1},
         "build_time": {"type": "string", "minLength": 1}, "counter": {"type": "string", "minLength": 1},
         "environment_bz2_sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]}, "identity_sha256": {"$ref": "#/$defs/sha256"}

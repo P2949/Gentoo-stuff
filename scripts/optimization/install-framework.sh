@@ -49,6 +49,30 @@ fail() {
     exit 1
 }
 
+verify_root_directory_chain() {
+    local path=$1 canonical current=/ component owner mode
+    canonical=$(realpath -e -- "${path}") || fail "cannot resolve trusted directory: ${path}"
+    [[ ${canonical} == /* ]] || fail "trusted directory is not absolute: ${path}"
+    owner=$(stat -c %u -- /)
+    mode=$(stat -c %a -- /)
+    [[ ${owner} == 0 && ${mode} =~ ^[0-7]{3,4}$ ]] || \
+        fail 'filesystem root has invalid ownership/mode'
+    (( (8#${mode} & 8#022) == 0 )) || \
+        fail 'filesystem root is group/world-writable'
+    while IFS= read -r component; do
+        [[ -n ${component} ]] || continue
+        if [[ ${current} == / ]]; then current=/${component}; else current=${current}/${component}; fi
+        [[ -d ${current} && ! -L ${current} ]] || \
+            fail "trusted directory chain contains a non-directory or symlink: ${current}"
+        owner=$(stat -c %u -- "${current}")
+        mode=$(stat -c %a -- "${current}")
+        [[ ${owner} == 0 && ${mode} =~ ^[0-7]{3,4}$ ]] || \
+            fail "trusted directory has invalid ownership/mode: ${current}"
+        (( (8#${mode} & 8#022) == 0 )) || \
+            fail "trusted directory is group/world-writable: ${current}"
+    done < <(tr '/' '\n' <<<"${canonical}")
+}
+
 portage_source_hash() {
     local entry relative mode digest target
     (
@@ -104,6 +128,9 @@ verify_portage_tree() {
 
 deploy_portage_tree() {
     local generation_root live stage second_hash link_tmp etc_tmp
+    verify_root_directory_chain /
+    verify_root_directory_chain /etc
+    verify_root_directory_chain /var/lib/gentoo-optimization
     generation_root=/var/lib/gentoo-optimization/portage-${PORTAGE_SOURCE_HASH}
     live=${generation_root}/portage
     if [[ ! -e ${generation_root} ]]; then
@@ -125,6 +152,7 @@ deploy_portage_tree() {
         mv -T -- "${stage}" "${generation_root}"
     fi
     verify_portage_tree "${live}"
+    verify_root_directory_chain "${live}"
     link_tmp=${PORTAGE_CURRENT}.partial.$$
     ln -s -- "${live}" "${link_tmp}"
     mv -fT -- "${link_tmp}" "${PORTAGE_CURRENT}"
@@ -162,11 +190,14 @@ verify_destination() {
 }
 
 publish_file() {
-    local source=$1 destination=$2 mode=$3 directory temporary
+    local source=$1 destination=$2 mode=$3 directory canonical_directory temporary
     directory=${destination%/*}
     mkdir -p -- "${directory}"
     chown root:root -- "${directory}"
     chmod go-w -- "${directory}"
+    canonical_directory=$(realpath -e -- "${directory}") || \
+        fail "cannot resolve installed destination directory: ${directory}"
+    verify_root_directory_chain "${canonical_directory}"
     temporary=${destination}.partial.$$
     rm -f -- "${temporary}"
     install -o root -g root -m "${mode}" -T -- "${source}" "${temporary}"
@@ -227,6 +258,7 @@ else
         fail '/etc/portage is not the root-owned current-generation link'
     [[ -L ${PORTAGE_CURRENT} ]] || fail 'root-owned Portage current link is absent'
     verify_portage_tree "$(readlink -e -- "${PORTAGE_CURRENT}")"
+    verify_root_directory_chain "$(readlink -e -- "${PORTAGE_CURRENT}")"
     for index in "${!SOURCES[@]}"; do
         verify_destination "${SOURCES[index]}" "${DESTINATIONS[index]}" \
             "${MODES[index]}" >/dev/null
