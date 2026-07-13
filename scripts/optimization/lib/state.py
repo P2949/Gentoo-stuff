@@ -237,6 +237,15 @@ def _generation(value: Any, path: str) -> dict[str, Any]:
     return item
 
 
+def vdb_identity_sha256(live_instance: Mapping[str, Any]) -> str:
+    """Hash the exact live VDB identity fields, excluding the self hash."""
+    identity = {key: live_instance[key] for key in (
+        "vdb_path", "contents_sha256", "repository", "slot", "subslot",
+        "build_time", "counter", "environment_bz2_sha256",
+    )}
+    return hashlib.sha256(canonical_bytes(identity)).hexdigest()
+
+
 def _tool(value: Any, path: str, expected_role: str | None = None) -> dict[str, Any]:
     item = _object(value, path, {"role", "family", "path", "realpath", "sha256", "version", "target_triple"})
     role = _enum(item["role"], f"{path}.role", TOOL_ROLES)
@@ -363,7 +372,7 @@ def _pgo(value: Any, path: str, backend: str, generation_id: str, toolchain: dic
         _sorted_strings(proof["flags"], f"{path}.build_use.flags", allow_empty=False)
         _evidence_list(proof["diagnostics"], f"{path}.build_use.diagnostics", required=True)
         _evidence_list(proof["installed_evidence"], f"{path}.build_use.installed_evidence", required=True)
-    reason_required = status in {"terminal-exclusion", "unknown", "failed"}
+    reason_required = status in {"not-applicable", "terminal-exclusion", "unknown", "failed"}
     _resolution(item["resolution"], f"{path}.resolution", reason_required)
 
     if eligibility == "eligible":
@@ -627,6 +636,8 @@ def validate_package(record: Any) -> dict[str, Any]:
     expected_vdb_suffix = "/" + identity["cpv"]
     if not live["vdb_path"].endswith(expected_vdb_suffix):
         _error("$.live_instance.vdb_path", "must end in the exact installed CPV")
+    if live["identity_sha256"] != vdb_identity_sha256(live):
+        _error("$.live_instance.identity_sha256", "does not hash the exact VDB identity fields")
     source = _object(package["source"], "$.source", {"ebuild", "manifest", "distfiles", "source_fingerprint"})
     _evidence(source["ebuild"], "$.source.ebuild")
     if source["manifest"] is not None:
@@ -657,6 +668,8 @@ def validate_package(record: Any) -> dict[str, Any]:
     if languages != actual_languages:
         _error("$.languages", f"must exactly equal component language coverage {actual_languages}")
     source_rebuild = _source_rebuild(package["source_rebuild"], "$.source_rebuild", generation["generation_id"])
+    if source_rebuild["proof"] is not None and source_rebuild["proof"]["installed_vdb_identity_sha256"] != live["identity_sha256"]:
+        _error("$.source_rebuild.proof.installed_vdb_identity_sha256", "must equal live_instance.identity_sha256")
     _graphs(package["graphs"], "$.graphs")
     aggregate = _object(package["aggregate"], "$.aggregate", {"component_count", "artifact_count", "pgo", "bolt"})
     if _int(aggregate["component_count"], "$.aggregate.component_count", 1) != len(components):
@@ -688,7 +701,7 @@ def validate_package(record: Any) -> dict[str, Any]:
     final = _enum(package["final_status"], "$.final_status", FINAL_STATUSES)
     if final != expected_final:
         _error("$.final_status", f"must be {expected_final}")
-    _resolution(package["resolution"], "$.resolution", final in {"terminal-exclusion", "unknown", "failed"})
+    _resolution(package["resolution"], "$.resolution", final in {"not-applicable", "terminal-exclusion", "unknown", "failed"})
     _sorted_strings(package["notes"], "$.notes")
     return package
 
@@ -820,7 +833,7 @@ def _bolt(value: Any, path: str, kind: str, role: str, abi: str, elf: dict[str, 
     eligibility = _enum(item["eligibility"], f"{path}.eligibility", ELIGIBILITIES)
     status_value = _enum(item["status"], f"{path}.status", BOLT_STATUSES)
     gen = _nullable_string(item["generation_id"], f"{path}.generation_id")
-    _resolution(item["resolution"], f"{path}.resolution", status_value in {"terminal-exclusion", "unknown", "failed"})
+    _resolution(item["resolution"], f"{path}.resolution", status_value in {"not-applicable", "terminal-exclusion", "unknown", "failed"})
     capture = item["capture"]
     if capture is not None:
         cap = _object(capture, f"{path}.capture", {"input_path", "input_sha256", "input_text_sha256", "input_build_id", "manifest", "metadata_snapshot"})
@@ -1004,7 +1017,7 @@ def validate_artifact(record: Any) -> dict[str, Any]:
     final = _enum(artifact["final_status"], "$.final_status", FINAL_STATUSES - {"optimized-with-exclusions"})
     if final != expected:
         _error("$.final_status", f"must be {expected}")
-    _resolution(artifact["resolution"], "$.resolution", final in {"terminal-exclusion", "unknown", "failed"})
+    _resolution(artifact["resolution"], "$.resolution", final in {"not-applicable", "terminal-exclusion", "unknown", "failed"})
     return artifact
 
 
@@ -1293,4 +1306,3 @@ def reconcile_collection(
         "inventory_sha256": generation_tuple[2], "counts": counts,
         "coverage_complete": bool(validated_packages) and source_succeeded == len(validated_packages) and pending_total == unknown_total == failed_total == 0,
     }
-

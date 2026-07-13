@@ -98,6 +98,7 @@ quick suites:
   pgo-dispatcher (strict backend/ABI/fingerprint and stage-hook fixture)
   portage-qa-hook-state (lost/mismatched active state and marker invalidation)
   portage-pre-strip-integration (real disposable ebuild; root-only)
+  portage-pgo-use-integration (real Clang generation/use/sidecar gate; root-only)
   bolt-command-policy (exact static layout policy in both BOLT command producers)
   bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
   bolt-pre-strip-hooks (hermetic capture/register/deploy and rollback fixture)
@@ -605,8 +606,8 @@ fi
 PGO_DISPATCHER_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-pgo-dispatcher.sh
 if [[ ! -f ${PGO_DISPATCHER_FIXTURE} ]]; then
     skip_case pgo-dispatcher "fixture is absent: ${PGO_DISPATCHER_FIXTURE}"
-elif ! require_commands awk bash chmod find grep head mkdir mktemp realpath rm sed \
-    sha256sum sort touch wc; then
+elif ! require_commands awk bash chmod dirname find grep head mkdir mktemp realpath \
+    rm sed sha256sum sort stat touch tr wc; then
     skip_case pgo-dispatcher "${PREFLIGHT_REASON}"
 else
     run_case pgo-dispatcher bash -- "${PGO_DISPATCHER_FIXTURE}"
@@ -633,6 +634,19 @@ elif ! require_commands awk b2sum bash ebuild portageq python3 readelf sed \
     skip_case portage-pre-strip-integration "${PREFLIGHT_REASON}"
 else
     run_case portage-pre-strip-integration bash -- "${PORTAGE_PHASE_FIXTURE}"
+fi
+
+PORTAGE_PGO_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-pgo-use-integration.sh
+if [[ ! -f ${PORTAGE_PGO_FIXTURE} ]]; then
+    skip_case portage-pgo-use-integration "fixture is absent: ${PORTAGE_PGO_FIXTURE}"
+elif ((EUID != 0)); then
+    skip_case portage-pgo-use-integration \
+        'real disposable Portage PGO-use integration requires a root driver invocation'
+elif ! require_commands awk b2sum bash cp ebuild find grep mv python3 rm sed \
+    sha256sum sha512sum stat tail wc; then
+    skip_case portage-pgo-use-integration "${PREFLIGHT_REASON}"
+else
+    run_case portage-pgo-use-integration bash -- "${PORTAGE_PGO_FIXTURE}"
 fi
 
 BOLT_COMMAND_POLICY_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-command-policy.sh

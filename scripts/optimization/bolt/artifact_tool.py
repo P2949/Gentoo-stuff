@@ -461,22 +461,24 @@ def parse_bolt_note(path: Path, elf_data: str) -> tuple[bool, str | None, str | 
             offset += (namesz + 3) & ~3
             if descsz > len(data) - offset:
                 return False, None, None
-            description = data[offset : offset + descsz]
+            raw_description = data[offset : offset + descsz]
             offset += (descsz + 3) & ~3
             if name.rstrip(b"\0") == b"GNU" and note_type == 4:
-                descriptions.append(description.rstrip(b"\0").decode("utf-8", "strict"))
+                descriptions.append(
+                    raw_description.rstrip(b"\0").decode("utf-8", "strict")
+                )
     except (UnicodeDecodeError, struct.error):
         return False, None, None
     if offset != len(data) or len(descriptions) != 1:
         return False, None, None
-    description = descriptions[0]
+    description_text = descriptions[0]
     marker = ", command line: "
-    if not description.startswith("BOLT revision: ") or marker not in description:
-        return False, description, None
-    command_line = description.split(marker, 1)[1]
+    if not description_text.startswith("BOLT revision: ") or marker not in description_text:
+        return False, description_text, None
+    command_line = description_text.split(marker, 1)[1]
     if not command_line:
-        return False, description, None
-    return True, description, command_line
+        return False, description_text, None
+    return True, description_text, command_line
 
 
 def parse_program_identity(output: str) -> dict[str, Any]:
@@ -535,7 +537,7 @@ def parse_dynamic_symbols(output: str) -> list[dict[str, Any]]:
         fields = line.split(maxsplit=7)
         if len(fields) < 8 or not fields[0].rstrip(":").isdigit():
             continue
-        _, _, size, symbol_type, binding, visibility, index, name = fields
+        _, _, _size, symbol_type, binding, visibility, index, name = fields
         if index == "UND" or binding not in ("GLOBAL", "WEAK"):
             continue
         if visibility not in ("DEFAULT", "PROTECTED") or not name:
@@ -543,7 +545,6 @@ def parse_dynamic_symbols(output: str) -> list[dict[str, Any]]:
         result.append(
             {
                 "name": name,
-                "size": int(size),
                 "type": symbol_type,
                 "binding": binding,
                 "visibility": visibility,
@@ -1345,10 +1346,16 @@ def command_register(arguments: argparse.Namespace) -> None:
         document = load_json(manifest_path, SCHEMA_OUTPUT)
         if document.get("package_fingerprint") != fingerprint:
             fail("output manifest fingerprint mismatch")
+        if document.get("expected_eligible_count") != capture.get(
+            "expected_eligible_count"
+        ) or document.get("zero_eligible_proof") != capture.get("zero_eligible_proof"):
+            fail("output manifest frozen eligible-count binding mismatch")
     else:
         document = {
             "schema": SCHEMA_OUTPUT,
             "package_fingerprint": fingerprint,
+            "expected_eligible_count": capture.get("expected_eligible_count"),
+            "zero_eligible_proof": capture.get("zero_eligible_proof"),
             "outputs": [],
         }
     outputs = document.get("outputs")
@@ -1484,16 +1491,27 @@ def command_deploy(arguments: argparse.Namespace) -> None:
     ed = validate_portage_ed(arguments.ed, arguments.test_mode)
     cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
     fingerprint = validate_fingerprint(arguments.fingerprint)
+    zero_proof = zero_eligibility_proof(
+        arguments.zero_eligible_proof, fingerprint, arguments.expected_eligible_count
+    )
     readelf = shutil.which(arguments.readelf)
     objcopy = shutil.which(arguments.objcopy)
     if readelf is None or objcopy is None:
         fail("deployment requires readelf and objcopy")
     _, capture = capture_paths(cache, fingerprint)
+    if capture.get("expected_eligible_count") != arguments.expected_eligible_count:
+        fail("deployment expected eligible count differs from captured frozen count")
+    if capture.get("zero_eligible_proof") != zero_proof:
+        fail("deployment zero-eligibility proof differs from captured proof")
     output_root = cache / "outputs" / fingerprint
     reject_symlink_components(str(output_root), "prepared output root")
     output_manifest = load_json(output_root / "manifest.json", SCHEMA_OUTPUT)
     if output_manifest.get("package_fingerprint") != fingerprint:
         fail("output manifest fingerprint mismatch")
+    if output_manifest.get("expected_eligible_count") != arguments.expected_eligible_count:
+        fail("output manifest expected eligible count mismatch")
+    if output_manifest.get("zero_eligible_proof") != zero_proof:
+        fail("output manifest zero-eligibility proof mismatch")
     output_entries = output_manifest.get("outputs")
     if not isinstance(output_entries, list):
         fail("output manifest outputs is not a list")
@@ -1506,6 +1524,11 @@ def command_deploy(arguments: argparse.Namespace) -> None:
     if not isinstance(artifacts, list):
         fail("capture artifacts is not a list")
     eligible = [item for item in artifacts if item.get("eligible")]
+    if len(eligible) != arguments.expected_eligible_count:
+        fail(
+            "deployment eligible artifact count differs from the frozen inventory: "
+            f"expected={arguments.expected_eligible_count}, actual={len(eligible)}"
+        )
     if not eligible:
         fail("deployment requested for a package with no BOLT-eligible ELF")
     if set(outputs_by_id) != {item.get("artifact_id") for item in eligible}:
@@ -1706,6 +1729,10 @@ def build_parser() -> argparse.ArgumentParser:
     capture = subparsers.add_parser("capture", help="capture eligible unstripped ED inputs")
     add_common_options(capture)
     capture.add_argument("--ed", required=True)
+    capture.add_argument(
+        "--expected-eligible-count", type=nonnegative_integer, required=True
+    )
+    capture.add_argument("--zero-eligible-proof")
     capture.add_argument("--readelf", default="readelf")
     capture.add_argument("--objcopy", default="objcopy")
     capture.set_defaults(function=command_capture)
@@ -1729,6 +1756,10 @@ def build_parser() -> argparse.ArgumentParser:
     deploy = subparsers.add_parser("deploy", help="deploy exact prepared outputs into ED")
     add_common_options(deploy)
     deploy.add_argument("--ed", required=True)
+    deploy.add_argument(
+        "--expected-eligible-count", type=nonnegative_integer, required=True
+    )
+    deploy.add_argument("--zero-eligible-proof")
     deploy.add_argument("--readelf", default="readelf")
     deploy.add_argument("--objcopy", default="objcopy")
     deploy.set_defaults(function=command_deploy)

@@ -1,280 +1,222 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://gentoo-optimization.invalid/schema/package-state.schema.json",
-  "title": "Gentoo optimization package state",
-  "description": "A versioned installed CPV with per-component/per-ABI build identities and CPV-level coverage aggregates.",
+  "title": "Gentoo optimization package state v3",
+  "description": "An exact frozen-generation installed package, its live VDB identity, source rebuild transaction, component toolchains, PGO proof, graph references, and derived coverage.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "record_type",
-    "cpv",
-    "cp",
-    "repository",
-    "slot",
-    "subslot",
-    "abis",
-    "ebuild_sha256",
-    "use_flags",
-    "build_identities",
-    "aggregate",
-    "final_status",
-    "terminal_reason",
-    "notes"
-  ],
+  "required": ["schema_version", "record_type", "generation", "identity", "frozen_inventory_entry", "live_instance", "source", "abis", "languages", "use_flags", "components", "source_rebuild", "graphs", "aggregate", "final_status", "resolution", "notes"],
   "properties": {
-    "schema_version": {"const": 2},
+    "schema_version": {"const": 3},
     "record_type": {"const": "package"},
-    "cpv": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*(?:-r[0-9]+)?$"
+    "generation": {"$ref": "#/$defs/generation"},
+    "identity": {"$ref": "#/$defs/package_identity"},
+    "frozen_inventory_entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["entry_sha256", "installed_at_freeze"],
+      "properties": {"entry_sha256": {"$ref": "#/$defs/sha256"}, "installed_at_freeze": {"const": true}}
     },
-    "cp": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$"
-    },
-    "repository": {"type": "string", "minLength": 1},
-    "slot": {"type": "string", "minLength": 1},
-    "subslot": {"type": "string", "minLength": 1},
-    "abis": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {"enum": ["amd64", "x86"]}
-    },
-    "ebuild_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "use_flags": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {"type": "string", "minLength": 1}
-    },
-    "build_identities": {
-      "type": "array",
-      "minItems": 1,
-      "items": {"$ref": "#/$defs/build_identity"}
-    },
+    "live_instance": {"$ref": "#/$defs/live_instance"},
+    "source": {"$ref": "#/$defs/source"},
+    "abis": {"type": "array", "uniqueItems": true, "items": {"enum": ["amd64", "x86", "other"]}},
+    "languages": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/language"}},
+    "use_flags": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "components": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/component"}},
+    "source_rebuild": {"$ref": "#/$defs/source_rebuild"},
+    "graphs": {"$ref": "#/$defs/graphs"},
     "aggregate": {"$ref": "#/$defs/aggregate"},
     "final_status": {"$ref": "#/$defs/final_status"},
-    "terminal_reason": {
-      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/terminal_reason"}]
-    },
-    "notes": {
-      "type": "array",
-      "items": {"type": "string", "minLength": 1}
-    }
+    "resolution": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/resolution"}]},
+    "notes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
   },
   "$defs": {
-    "fingerprint": {
-      "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$"
-    },
-    "terminal_reason": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["reason_code", "evidence", "reviewed"],
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "absolute_path": {"type": "string", "pattern": "^/[^\\u0000]+$"},
+    "timestamp": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "generation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["generation_id", "inventory_id", "inventory_sha256"],
       "properties": {
-        "reason_code": {"type": "string", "minLength": 1},
-        "evidence": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1}
-        },
-        "reviewed": {"const": true}
+        "generation_id": {"type": "string", "pattern": "^[A-Za-z0-9+_.:@-]+$"},
+        "inventory_id": {"type": "string", "pattern": "^[A-Za-z0-9+_.:@-]+$"},
+        "inventory_sha256": {"$ref": "#/$defs/sha256"}
       }
     },
-    "compiler": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["family", "path", "realpath", "sha256", "version", "profile_format"],
+    "package_identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cpv", "cp", "repository", "slot", "subslot"],
       "properties": {
-        "family": {"enum": ["clang", "gcc", "rust", "go", "native"]},
-        "path": {"type": "string", "pattern": "^/"},
-        "realpath": {"type": "string", "pattern": "^/"},
-        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "version": {"type": "string", "minLength": 1},
-        "profile_format": {"type": "string", "minLength": 1}
+        "cpv": {"type": "string", "pattern": "^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*(?:-r[0-9]+)?$"},
+        "cp": {"type": "string", "pattern": "^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$"},
+        "repository": {"type": "string", "minLength": 1}, "slot": {"type": "string", "minLength": 1}, "subslot": {"type": "string", "minLength": 1}
       }
+    },
+    "live_instance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["vdb_path", "contents_sha256", "repository", "slot", "subslot", "build_time", "counter", "environment_bz2_sha256", "identity_sha256"],
+      "properties": {
+        "vdb_path": {"$ref": "#/$defs/absolute_path"}, "contents_sha256": {"$ref": "#/$defs/sha256"},
+        "repository": {"type": "string", "minLength": 1}, "slot": {"type": "string", "minLength": 1}, "subslot": {"type": "string", "minLength": 1},
+        "build_time": {"type": "string", "minLength": 1}, "counter": {"type": "string", "minLength": 1},
+        "environment_bz2_sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]}, "identity_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "kind"],
+      "properties": {
+        "path": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"},
+        "kind": {"enum": ["binary", "binpkg", "command-output", "config", "log", "manifest", "profile", "report", "sidecar", "source", "transaction", "other"]}
+      }
+    },
+    "evidence_array": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+    "resolution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["registry_version", "reason_code", "reviewed_by", "reviewed_at", "evidence"],
+      "properties": {
+        "registry_version": {"const": "1"},
+        "reason_code": {"enum": ["bolt-no-relocations", "bolt-no-symbols", "bolt-not-elf", "bolt-unsupported-abi", "bolt-unsupported-role", "classification-unknown", "deterministic-no-benefit", "firmware-not-rebuildable", "generated-artifact", "kernel-policy-exclusion", "not-machine-code", "profile-format-unsupported", "runtime-unreachable", "toolchain-unsupported", "upstream-incompatible", "unsafe-to-profile", "verification-failed", "workload-unavailable"]},
+        "reviewed_by": {"type": "string", "minLength": 1}, "reviewed_at": {"$ref": "#/$defs/timestamp"},
+        "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
+      }
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ebuild", "manifest", "distfiles", "source_fingerprint"],
+      "properties": {
+        "ebuild": {"$ref": "#/$defs/evidence"}, "manifest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/evidence"}]},
+        "distfiles": {"$ref": "#/$defs/evidence_array"}, "source_fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "language": {"enum": ["c", "c++", "fortran", "rust", "go", "jvm", "python", "shell", "data", "other"]},
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["triple", "architecture", "machine", "abi", "elf_class", "endianness", "libc", "cxx_abi", "kernel_release"],
+      "properties": {
+        "triple": {"type": "string", "minLength": 1}, "architecture": {"type": "string", "minLength": 1}, "machine": {"type": "string", "minLength": 1},
+        "abi": {"enum": ["amd64", "x86", "other", "none"]}, "elf_class": {"enum": [32, 64, null]},
+        "endianness": {"enum": ["little", "big", "not-applicable"]}, "libc": {"type": ["string", "null"]},
+        "cxx_abi": {"type": ["string", "null"]}, "kernel_release": {"type": ["string", "null"]}
+      }
+    },
+    "tool": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "family", "path", "realpath", "sha256", "version", "target_triple"],
+      "properties": {
+        "role": {"enum": ["cc", "cxx", "fc", "rustc", "go", "linker", "archiver", "profiler", "llvm-bolt", "perf2bolt", "merge-fdata"]},
+        "family": {"enum": ["clang", "gcc", "rust", "go", "lld", "gnu-binutils", "llvm-binutils", "perf", "native"]},
+        "path": {"$ref": "#/$defs/absolute_path"}, "realpath": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"},
+        "version": {"type": "string", "minLength": 1}, "target_triple": {"type": ["string", "null"]}
+      }
+    },
+    "runtime": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "abi", "path", "sha256", "version"],
+      "properties": {"name": {"type": "string", "minLength": 1}, "abi": {"enum": ["amd64", "x86", "other"]}, "path": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"}, "version": {"type": "string", "minLength": 1}}
+    },
+    "toolchain": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cc", "cxx", "fc", "rustc", "go", "linker", "archiver", "profiler", "runtimes", "environment_fingerprint"],
+      "properties": {
+        "cc": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/tool"}]}, "cxx": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/tool"}]},
+        "fc": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/tool"}]}, "rustc": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/tool"}]},
+        "go": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/tool"}]}, "linker": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/tool"}]},
+        "archiver": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/tool"}]}, "profiler": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/tool"}]},
+        "runtimes": {"type": "array", "items": {"$ref": "#/$defs/runtime"}}, "environment_fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "workload_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workload_id", "revision", "evidence"],
+      "properties": {"workload_id": {"type": "string", "minLength": 1}, "revision": {"type": "string", "minLength": 1}, "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
+    },
+    "build_use": {
+      "type": "object", "additionalProperties": false,
+      "required": ["build_log", "flags", "diagnostics", "installed_evidence"],
+      "properties": {"build_log": {"$ref": "#/$defs/evidence"}, "flags": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}, "installed_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
     },
     "pgo": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "eligibility",
-        "mode",
-        "generation_id",
-        "profile_path",
-        "profile_sha256",
-        "profile_valid",
-        "build_verified",
-        "terminal_reason",
-        "status"
-      ],
+      "type": "object", "additionalProperties": false,
+      "required": ["eligibility", "mode", "status", "generation_id", "manifest", "sidecar", "profile", "toolchain_fingerprint", "workload_refs", "training_evidence", "validation_evidence", "build_use", "resolution"],
       "properties": {
-        "eligibility": {"enum": ["eligible", "not-applicable", "terminal-exclusion"]},
-        "mode": {
-          "enum": [
-            "clang-ir",
-            "clang-sample",
-            "gcc-gcov",
-            "rust-llvm-ir",
-            "go-pprof",
-            "ebuild-native",
-            "kernel-autofdo",
-            "not-applicable"
-          ]
-        },
-        "generation_id": {"type": ["string", "null"]},
-        "profile_path": {
-          "oneOf": [
-            {"type": "null"},
-            {"type": "string", "pattern": "^/"}
-          ]
-        },
-        "profile_sha256": {
-          "oneOf": [
-            {"type": "null"},
-            {"type": "string", "pattern": "^[0-9a-f]{64}$"}
-          ]
-        },
-        "profile_valid": {"type": "boolean"},
-        "build_verified": {"type": "boolean"},
-        "terminal_reason": {
-          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/terminal_reason"}]
-        },
-        "status": {
-          "enum": [
-            "pending",
-            "training",
-            "profiled",
-            "optimized",
-            "not-applicable",
-            "terminal-exclusion",
-            "failed"
-          ]
-        }
+        "eligibility": {"enum": ["eligible", "not-applicable", "terminal-exclusion", "unknown"]},
+        "mode": {"enum": ["clang-ir", "clang-sample", "gcc-gcov", "rust-llvm-ir", "go-pprof", "ebuild-native", "kernel-autofdo", "not-applicable"]},
+        "status": {"enum": ["pending", "training", "profiled", "optimized", "not-applicable", "terminal-exclusion", "unknown", "failed"]},
+        "generation_id": {"type": ["string", "null"]}, "manifest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/evidence"}]},
+        "sidecar": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/evidence"}]}, "profile": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/evidence"}]},
+        "toolchain_fingerprint": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/fingerprint"}]},
+        "workload_refs": {"type": "array", "items": {"$ref": "#/$defs/workload_ref"}}, "training_evidence": {"$ref": "#/$defs/evidence_array"},
+        "validation_evidence": {"$ref": "#/$defs/evidence_array"}, "build_use": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/build_use"}]},
+        "resolution": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/resolution"}]}
       }
     },
-    "build_identity": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "component_id",
-        "component_kind",
-        "abi",
-        "target_triple",
-        "build_backend",
-        "compiler",
-        "fingerprint",
-        "pgo"
-      ],
+    "kernel_build": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release", "config", "image", "modules_manifest", "boot_entry_id", "boot_evidence"],
+      "properties": {"release": {"type": "string", "minLength": 1}, "config": {"$ref": "#/$defs/evidence"}, "image": {"$ref": "#/$defs/evidence"}, "modules_manifest": {"$ref": "#/$defs/evidence"}, "boot_entry_id": {"type": "string", "minLength": 1}, "boot_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
+    },
+    "component": {
+      "type": "object", "additionalProperties": false,
+      "required": ["component_id", "component_kind", "languages", "abi", "target", "build_backend", "toolchain", "fingerprint", "pgo", "kernel"],
       "properties": {
-        "component_id": {"type": "string", "pattern": "^[A-Za-z0-9+_.@-]+$"},
-        "component_kind": {
-          "enum": ["native", "rust", "go", "kernel", "jvm", "script-data", "other"]
-        },
-        "abi": {"enum": ["amd64", "x86", "none"]},
-        "target_triple": {"type": ["string", "null"]},
-        "build_backend": {
-          "enum": [
-            "clang-ir",
-            "gcc-gcov",
-            "rust-llvm-ir",
-            "go-pprof",
-            "ebuild-native",
-            "clang-sample",
-            "kernel-autofdo",
-            "not-applicable"
-          ]
-        },
-        "compiler": {
-          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/compiler"}]
-        },
-        "fingerprint": {"$ref": "#/$defs/fingerprint"},
-        "pgo": {"$ref": "#/$defs/pgo"}
+        "component_id": {"type": "string", "pattern": "^[A-Za-z0-9+_.:@-]+$"}, "component_kind": {"enum": ["native", "rust", "go", "kernel", "jvm", "script-data", "gpu", "other"]},
+        "languages": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/language"}}, "abi": {"enum": ["amd64", "x86", "other", "none"]},
+        "target": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/target"}]}, "build_backend": {"enum": ["clang-ir", "clang-sample", "gcc-gcov", "rust-llvm-ir", "go-pprof", "ebuild-native", "kernel-autofdo", "not-applicable"]},
+        "toolchain": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/toolchain"}]}, "fingerprint": {"$ref": "#/$defs/fingerprint"}, "pgo": {"$ref": "#/$defs/pgo"},
+        "kernel": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/kernel_build"}]}
       }
     },
-    "lane_aggregate": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "eligible_count",
-        "optimized_count",
-        "excluded_count",
-        "not_applicable_count",
-        "pending_count",
-        "failed_count",
-        "status"
-      ],
+    "attempt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attempt_id", "started_at", "completed_at", "result", "environment_fingerprint", "build_log", "failure_evidence"],
+      "properties": {"attempt_id": {"type": "string", "minLength": 1}, "started_at": {"$ref": "#/$defs/timestamp"}, "completed_at": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]}, "result": {"enum": ["running", "succeeded", "failed", "interrupted"]}, "environment_fingerprint": {"$ref": "#/$defs/fingerprint"}, "build_log": {"$ref": "#/$defs/evidence"}, "failure_evidence": {"$ref": "#/$defs/evidence_array"}}
+    },
+    "check_result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "evidence"], "properties": {"status": {"enum": ["passed", "not-applicable"]}, "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
+    },
+    "smoke_test": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "status", "evidence"], "properties": {"name": {"type": "string", "minLength": 1}, "status": {"const": "passed"}, "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
+    },
+    "rebuild_proof": {
+      "type": "object", "additionalProperties": false,
+      "required": ["transaction_log", "install_log", "binpkg", "equery_check", "smoke_tests", "reverse_dependencies", "installed_vdb_identity_sha256"],
       "properties": {
-        "eligible_count": {"type": "integer", "minimum": 0},
-        "optimized_count": {"type": "integer", "minimum": 0},
-        "excluded_count": {"type": "integer", "minimum": 0},
-        "not_applicable_count": {"type": "integer", "minimum": 0},
-        "pending_count": {"type": "integer", "minimum": 0},
-        "failed_count": {"type": "integer", "minimum": 0},
-        "status": {
-          "enum": [
-            "pending",
-            "optimized",
-            "optimized-with-exclusions",
-            "not-applicable",
-            "terminal-exclusion",
-            "failed"
-          ]
-        }
+        "transaction_log": {"$ref": "#/$defs/evidence"}, "install_log": {"$ref": "#/$defs/evidence"},
+        "binpkg": {"type": "object", "additionalProperties": false, "required": ["path", "sha256", "format"], "properties": {"path": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"}, "format": {"enum": ["gpkg", "xpak"]}}},
+        "equery_check": {"$ref": "#/$defs/check_result"}, "smoke_tests": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/smoke_test"}},
+        "reverse_dependencies": {"$ref": "#/$defs/check_result"}, "installed_vdb_identity_sha256": {"$ref": "#/$defs/sha256"}
       }
+    },
+    "source_rebuild": {
+      "type": "object", "additionalProperties": false,
+      "required": ["required", "status", "generation_id", "transaction_id", "source_only", "attempts", "proof", "resolution"],
+      "properties": {"required": {"const": true}, "status": {"enum": ["pending", "running", "succeeded", "unknown", "failed"]}, "generation_id": {"type": "string", "minLength": 1}, "transaction_id": {"type": ["string", "null"]}, "source_only": {"type": "boolean"}, "attempts": {"type": "array", "items": {"$ref": "#/$defs/attempt"}}, "proof": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/rebuild_proof"}]}, "resolution": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/resolution"}]}}
+    },
+    "graph_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cpv", "component_id", "evidence"], "properties": {"cpv": {"type": "string", "minLength": 3}, "component_id": {"type": ["string", "null"]}, "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
+    },
+    "graphs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["consumer_refs", "workload_refs", "reverse_dependency_refs"], "properties": {"consumer_refs": {"type": "array", "items": {"$ref": "#/$defs/graph_ref"}}, "workload_refs": {"type": "array", "items": {"$ref": "#/$defs/workload_ref"}}, "reverse_dependency_refs": {"type": "array", "items": {"$ref": "#/$defs/graph_ref"}}}
+    },
+    "final_status": {"enum": ["pending", "optimized", "optimized-with-exclusions", "not-applicable", "terminal-exclusion", "unknown", "failed"]},
+    "pgo_aggregate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["eligible_count", "optimized_count", "excluded_count", "not_applicable_count", "pending_count", "unknown_count", "failed_count", "status"],
+      "properties": {"eligible_count": {"type": "integer", "minimum": 0}, "optimized_count": {"type": "integer", "minimum": 0}, "excluded_count": {"type": "integer", "minimum": 0}, "not_applicable_count": {"type": "integer", "minimum": 0}, "pending_count": {"type": "integer", "minimum": 0}, "unknown_count": {"type": "integer", "minimum": 0}, "failed_count": {"type": "integer", "minimum": 0}, "status": {"$ref": "#/$defs/final_status"}}
     },
     "bolt_aggregate": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "candidate_count",
-        "optimized_count",
-        "excluded_count",
-        "not_applicable_count",
-        "pending_count",
-        "failed_count",
-        "status"
-      ],
-      "properties": {
-        "candidate_count": {"type": "integer", "minimum": 0},
-        "optimized_count": {"type": "integer", "minimum": 0},
-        "excluded_count": {"type": "integer", "minimum": 0},
-        "not_applicable_count": {"type": "integer", "minimum": 0},
-        "pending_count": {"type": "integer", "minimum": 0},
-        "failed_count": {"type": "integer", "minimum": 0},
-        "status": {
-          "enum": [
-            "pending",
-            "optimized",
-            "optimized-with-exclusions",
-            "not-applicable",
-            "terminal-exclusion",
-            "failed"
-          ]
-        }
-      }
+      "type": "object", "additionalProperties": false,
+      "required": ["candidate_count", "optimized_count", "excluded_count", "not_applicable_count", "pending_count", "unknown_count", "failed_count", "status"],
+      "properties": {"candidate_count": {"type": "integer", "minimum": 0}, "optimized_count": {"type": "integer", "minimum": 0}, "excluded_count": {"type": "integer", "minimum": 0}, "not_applicable_count": {"type": "integer", "minimum": 0}, "pending_count": {"type": "integer", "minimum": 0}, "unknown_count": {"type": "integer", "minimum": 0}, "failed_count": {"type": "integer", "minimum": 0}, "status": {"$ref": "#/$defs/final_status"}}
     },
     "aggregate": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["component_count", "artifact_count", "pgo", "bolt"],
-      "properties": {
-        "component_count": {"type": "integer", "minimum": 1},
-        "artifact_count": {"type": "integer", "minimum": 0},
-        "pgo": {"$ref": "#/$defs/lane_aggregate"},
-        "bolt": {"$ref": "#/$defs/bolt_aggregate"}
-      }
-    },
-    "final_status": {
-      "enum": [
-        "pending",
-        "optimized",
-        "optimized-with-exclusions",
-        "not-applicable",
-        "terminal-exclusion",
-        "failed"
-      ]
+      "type": "object", "additionalProperties": false,
+      "required": ["component_count", "artifact_count", "pgo", "bolt"], "properties": {"component_count": {"type": "integer", "minimum": 1}, "artifact_count": {"type": "integer", "minimum": 0}, "pgo": {"$ref": "#/$defs/pgo_aggregate"}, "bolt": {"$ref": "#/$defs/bolt_aggregate"}}
     }
   }
 }

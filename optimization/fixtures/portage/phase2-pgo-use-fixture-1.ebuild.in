@@ -1,0 +1,48 @@
+EAPI=8
+
+DESCRIPTION="Disposable Phase 2 real-Portage PGO-use integration fixture"
+HOMEPAGE="https://invalid.example/"
+LICENSE="CC0-1.0"
+SLOT="0"
+KEYWORDS="amd64"
+
+S="${WORKDIR}/${P}"
+
+GENTOO_OPT_COMPILER_FAMILY=clang
+GENTOO_OPT_ABI=amd64
+GENTOO_OPT_FINGERPRINT="@FINGERPRINT@"
+if [[ -e @GENERATE_SWITCH@ ]]; then
+    GENTOO_OPT_MODE=clang-ir-generate
+    GENTOO_OPT_PROFILE_PATH="@RAW_ROOT@"
+else
+    GENTOO_OPT_MODE=clang-ir-use
+    GENTOO_OPT_PROFILE_PATH="@PROFILE@"
+    GENTOO_OPT_PROFILE_MANIFEST="@MANIFEST@"
+    GENTOO_OPT_PROFILE_METADATA="@METADATA@"
+fi
+
+src_unpack() {
+    mkdir -p -- "${S}" || die
+    printf '%s\n' \
+        '#include <stdio.h>' \
+        '__attribute__((noinline)) static int trained(int value) {' \
+        '    int result = 0;' \
+        '    for (int index = 0; index < value; ++index) result += index % 7;' \
+        '    return result;' \
+        '}' \
+        'int main(void) { printf("%d\\n", trained(5000)); return 0; }' \
+        > "${S}/fixture.c" || die
+}
+
+src_compile() {
+    "${CC}" ${CFLAGS} "${S}/fixture.c" ${LDFLAGS} \
+        -o "${S}/phase2-pgo-use-fixture" || die
+    if [[ ${GENTOO_OPT_MODE} == clang-ir-generate ]]; then
+        "${S}/phase2-pgo-use-fixture" > "${T}/training-output" || die
+        [[ $(<"${T}/training-output") == 14995 ]] || die 'unexpected training output'
+    fi
+}
+
+src_install() {
+    dobin "${S}/phase2-pgo-use-fixture"
+}

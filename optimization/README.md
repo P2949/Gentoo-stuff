@@ -19,3 +19,23 @@ deployment.
 `exclusions.yaml` and `package-overrides.yaml` start empty. Entries may be
 added only with exact package/artifact identity, a reviewed reason, and durable
 evidence. They are never a substitute for an unresolved or failed state.
+
+## Live framework trust boundary
+
+The reviewed checkout is not executed as root directly. After a framework
+change, install it with:
+
+```sh
+doas scripts/optimization/install-framework.sh
+doas scripts/optimization/install-framework.sh --check
+```
+
+The installer publishes a root-owned Portage configuration generation, points
+`/etc/portage` at that generation, installs regular root-owned validation and
+BOLT helpers below `/usr/local/libexec/gentoo-optimization`, and installs the
+lexically last pre-strip QA hook as a regular root-owned file. It records exact
+source/destination hashes in
+`/var/lib/gentoo-optimization/state/project/phase-2-framework-install.manifest`.
+An active optimization lane fails if its installed helper is absent, symlinked,
+non-root-owned, group/world-writable, or different from the reviewed source at
+the framework gate.

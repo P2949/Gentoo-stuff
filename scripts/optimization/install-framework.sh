@@ -233,5 +233,21 @@ else
     done
 fi
 
+for private_directory in /var/cache/gentoo-optimization/bolt \
+    /var/cache/gentoo-optimization/bolt/inputs \
+    /var/cache/gentoo-optimization/bolt/outputs \
+    /var/cache/gentoo-optimization/bolt/perf \
+    /var/cache/gentoo-optimization/bolt/fdata \
+    /var/cache/gentoo-optimization/bolt/diagnostics \
+    /var/cache/gentoo-optimization/bolt/locks; do
+    [[ -d ${private_directory} && ! -L ${private_directory} ]] || \
+        fail "private BOLT namespace is absent or symlinked: ${private_directory}"
+    [[ $(stat -c '%U:%G:%a' -- "${private_directory}") == root:root:700 ]] || \
+        fail "private BOLT namespace is not root:root:0700: ${private_directory}"
+done
+[[ ! -e /usr/local/lib/install-qa-check.d/50-gentoo-optimization-bolt &&
+    ! -L /usr/local/lib/install-qa-check.d/50-gentoo-optimization-bolt ]] || \
+    fail 'obsolete early/symlinked BOLT QA hook still exists'
+
 printf 'PASS: root-owned Phase 2 framework %s verified (%s)\n' \
     "${MODE}" "${MANIFEST}"
