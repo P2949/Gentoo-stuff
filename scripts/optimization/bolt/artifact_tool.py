@@ -881,10 +881,14 @@ def assert_abi_identity(
             )
 
 
+def abi_identity(document: dict[str, Any]) -> dict[str, Any]:
+    return {key: document.get(key) for key in ABI_IDENTITY_KEYS}
+
+
 def file_record(path_text: str, label: str) -> dict[str, Any]:
-    unresolved = reject_symlink_components(path_text, label)
-    if not unresolved.is_absolute():
+    if not Path(path_text).is_absolute():
         fail(f"{label} path must be absolute: {path_text}")
+    unresolved = reject_symlink_components(path_text, label)
     info = unresolved.lstat()
     if not stat.S_ISREG(info.st_mode):
         fail(f"{label} is not a regular file: {unresolved}")
@@ -1027,6 +1031,30 @@ def verify_bolt_provenance(record: dict[str, Any]) -> None:
     actual = file_record(str(command_record.get("path", "")), "BOLT command record")
     if actual != command_record:
         fail("prepared output command-record identity is stale or mismatched")
+    command = load_json(Path(actual["path"]), SCHEMA_COMMAND)
+    if command != record.get("command"):
+        fail("prepared output embedded command record differs from its exact file")
+    if command.get("tool") != record.get("llvm_bolt"):
+        fail("prepared output command/tool binding mismatch")
+    if command.get("option_policy_revision") != record.get("option_policy_revision"):
+        fail("prepared output command/policy binding mismatch")
+    if command.get("options") != record.get("options"):
+        fail("prepared output command/options binding mismatch")
+    for key, label in (
+        ("fdata", "BOLT fdata"),
+        ("workload_evidence", "BOLT workload evidence"),
+        ("profile_evidence", "BOLT profile evidence"),
+    ):
+        if command.get(key) != record.get(key):
+            fail(f"prepared output command/{key} binding mismatch")
+    validate_recorded_files([command.get("stdout")], "BOLT stdout")
+    validate_recorded_files([command.get("stderr")], "BOLT stderr")
+    if command.get("exit_status") != 0:
+        fail("prepared output command did not exit successfully")
+    if command.get("output", {}).get("sha256") != record.get("output_sha256"):
+        fail("prepared output command/output hash binding mismatch")
+    if command.get("input", {}).get("sha256") != record.get("source_file_sha256"):
+        fail("prepared output command/input hash binding mismatch")
 
 
 def command_capture(arguments: argparse.Namespace) -> None:
@@ -1201,13 +1229,65 @@ def command_register(arguments: argparse.Namespace) -> None:
         fail("exact BOLT input GNU build ID differs from captured input")
     if input_classification["text_sha256"] != source_artifact["text_sha256"]:
         fail("exact BOLT input .text hash differs from captured input")
-    if not classification["has_bolt_info"]:
-        fail("prepared output lacks .note.bolt_info")
+    assert_abi_identity(input_classification, source_artifact, "exact BOLT input")
+    if not classification["has_bolt_info"] or not classification["bolt_info_valid"]:
+        fail("prepared output lacks a structurally valid GNU .note.bolt_info")
+    if ".bolt.org.text" not in classification["bolt_origin_sections"]:
+        fail("prepared output lacks nonempty .bolt.org.text transformation evidence")
     if classification["build_id"] is None:
         fail("prepared output lacks a GNU build ID")
-    for key in ("elf_class", "elf_type", "machine"):
-        if classification[key] != source_artifact[key]:
-            fail(f"prepared output {key} differs from captured input")
+    assert_abi_identity(classification, source_artifact, "prepared output")
+
+    if arguments.option_policy_revision != POLICY_REVISION:
+        fail(
+            "unreviewed BOLT option-policy revision: "
+            f"expected {POLICY_REVISION}, got {arguments.option_policy_revision}"
+        )
+    if arguments.bolt_option != APPROVED_BOLT_OPTIONS:
+        fail(
+            "unreviewed BOLT option list/order: "
+            f"expected {APPROVED_BOLT_OPTIONS}, got {arguments.bolt_option}"
+        )
+    tool = llvm_bolt_identity(arguments.llvm_bolt)
+    fdata = [file_record(value, "BOLT fdata") for value in arguments.fdata]
+    workloads = [
+        file_record(value, "BOLT workload evidence")
+        for value in arguments.workload_evidence
+    ]
+    profiles = [
+        file_record(value, "BOLT profile evidence")
+        for value in arguments.profile_evidence
+    ]
+    for records, label in (
+        (fdata, "BOLT fdata"),
+        (workloads, "BOLT workload evidence"),
+        (profiles, "BOLT profile evidence"),
+    ):
+        if not records:
+            fail(f"at least one {label} file is required")
+        if len({item["path"] for item in records}) != len(records):
+            fail(f"duplicate {label} paths are forbidden")
+    input_record = file_record(str(input_source), "exact BOLT input")
+    output_record = file_record(str(output_source), "prepared BOLT output")
+    expected_argv = expected_bolt_argv(
+        tool, input_source, output_source, fdata
+    )
+    try:
+        note_argv = shlex.split(str(classification["bolt_info_command_line"]), posix=True)
+    except ValueError as error:
+        fail(f"prepared output BOLT note has an invalid command line: {error}")
+    if note_argv != expected_argv:
+        fail("prepared output BOLT note command differs from the exact reviewed invocation")
+    command_document, command_identity = validate_command_record(
+        arguments.command_record,
+        expected_argv=expected_argv,
+        tool=tool,
+        input_record=input_record,
+        output_record=output_record,
+        fdata=fdata,
+        workloads=workloads,
+        profiles=profiles,
+    )
 
     output_root = cache / "outputs" / fingerprint
     objects = output_root / "objects"
@@ -1251,6 +1331,20 @@ def command_register(arguments: argparse.Namespace) -> None:
             "elf_type": classification["elf_type"],
             "machine": classification["machine"],
             "has_bolt_info": True,
+            "abi_security_identity": abi_identity(classification),
+            "source_abi_security_identity": abi_identity(source_artifact),
+            "bolt_info_sha256": classification["bolt_info_sha256"],
+            "bolt_info_size": classification["bolt_info_size"],
+            "bolt_info_description": classification["bolt_info_description"],
+            "bolt_origin_sections": classification["bolt_origin_sections"],
+            "llvm_bolt": tool,
+            "option_policy_revision": POLICY_REVISION,
+            "options": APPROVED_BOLT_OPTIONS,
+            "fdata": fdata,
+            "workload_evidence": workloads,
+            "profile_evidence": profiles,
+            "command_record": command_identity,
+            "command": command_document,
         }
         os.replace(partial, destination)
         outputs.append(entry)

@@ -38,6 +38,8 @@ grep -Fq 'no-legacy-pgo' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the retired legacy PGO gate'
 grep -Fq 'pgo-dispatcher' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the strict PGO dispatcher fixture'
+grep -Fq 'portage-qa-hook-state' "${FIXTURE}/list.txt" || \
+    fail 'suite list omits the Portage QA hook state fixture'
 grep -Fq 'portage-pre-strip-integration' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the real Portage pre-strip integration fixture'
 grep -Fq 'bolt-command-policy' "${FIXTURE}/list.txt" || \

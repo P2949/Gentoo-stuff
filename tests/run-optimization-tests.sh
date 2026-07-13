@@ -96,6 +96,7 @@ quick suites:
   package-env-portage-semantic (explicit SKIP when the live Portage universe is unavailable)
   no-legacy-pgo (retired weak paths/helpers remain unusable)
   pgo-dispatcher (strict backend/ABI/fingerprint and stage-hook fixture)
+  portage-qa-hook-state (lost/mismatched active state and marker invalidation)
   portage-pre-strip-integration (real disposable ebuild; root-only)
   bolt-command-policy (exact static layout policy in both BOLT command producers)
   bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
@@ -609,6 +610,15 @@ elif ! require_commands awk bash chmod find grep head mkdir mktemp realpath rm s
     skip_case pgo-dispatcher "${PREFLIGHT_REASON}"
 else
     run_case pgo-dispatcher bash -- "${PGO_DISPATCHER_FIXTURE}"
+fi
+
+PORTAGE_QA_HOOK_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-qa-hook.sh
+if [[ ! -f ${PORTAGE_QA_HOOK_FIXTURE} ]]; then
+    skip_case portage-qa-hook-state "fixture is absent: ${PORTAGE_QA_HOOK_FIXTURE}"
+elif ! require_commands bash mkdir mktemp rm wc; then
+    skip_case portage-qa-hook-state "${PREFLIGHT_REASON}"
+else
+    run_case portage-qa-hook-state bash -- "${PORTAGE_QA_HOOK_FIXTURE}"
 fi
 
 PORTAGE_PHASE_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-phase-integration.sh

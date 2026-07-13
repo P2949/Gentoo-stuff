@@ -115,6 +115,40 @@ class ProfileValidatorTests(unittest.TestCase):
                 "LLVM version 22.1.8", "LLVM version 21.1.8"
             ),
         )
+        self.sample_readelf = self._write_executable(
+            "llvm-readelf-22",
+            r"""
+            #!/usr/bin/env python3
+            import sys
+            if sys.argv[1:] == ["--version"]:
+                print("LLVM version 22.1.8")
+                raise SystemExit(0)
+            if len(sys.argv) == 3 and sys.argv[1] == "-n":
+                print("    Build ID: abcdef1234567890")
+                raise SystemExit(0)
+            raise SystemExit(2)
+            """,
+        )
+        self.sample_objcopy = self._write_executable(
+            "llvm-objcopy-22",
+            r"""
+            #!/usr/bin/env python3
+            import pathlib
+            import shutil
+            import sys
+            if sys.argv[1:] == ["--version"]:
+                print("LLVM version 22.1.8")
+                raise SystemExit(0)
+            if len(sys.argv) == 5 and sys.argv[1] == "--dump-section":
+                section, output = sys.argv[2].split("=", 1)
+                if section != ".text":
+                    raise SystemExit(3)
+                pathlib.Path(output).write_bytes(b"TEXT\n")
+                shutil.copyfile(sys.argv[3], sys.argv[4])
+                raise SystemExit(0)
+            raise SystemExit(2)
+            """,
+        )
         self.gcov = self._write_executable(
             "gcov-tool",
             r"""
@@ -420,7 +454,7 @@ class ProfileValidatorTests(unittest.TestCase):
             "compiler": {"family": "clang", "major": 22},
             "input_identity": {
                 "build_id": "abcdef1234567890",
-                "text_sha256": "b" * 64,
+                "text_sha256": hashlib.sha256(b"TEXT\n").hexdigest(),
             },
             "package": {
                 "abi": "amd64",
@@ -452,8 +486,8 @@ class ProfileValidatorTests(unittest.TestCase):
                 "perf_data_sha256": sha256(perf_data),
                 "perf_data_observation": observation(perf_data),
                 "producer": recorded_tool(self.llvm22, version_stdout),
-                "readelf": recorded_tool(self.llvm22, version_stdout),
-                "objcopy": recorded_tool(self.llvm22, version_stdout),
+                "readelf": recorded_tool(self.sample_readelf, version_stdout),
+                "objcopy": recorded_tool(self.sample_objcopy, version_stdout),
                 "command_arguments": [
                     f"--binary={profiled_binary}",
                     f"--perfdata={perf_data}",

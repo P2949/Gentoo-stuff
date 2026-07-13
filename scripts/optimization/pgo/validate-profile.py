@@ -569,7 +569,7 @@ def validate_recorded_file(
     return path, expected
 
 
-def validate_recorded_tool_identity(value: object, label: str) -> None:
+def validate_recorded_tool_identity(value: object, label: str) -> Path:
     identity = require_object(value, f"{label} identity")
     require_exact_fields(identity, LLVM_TOOL_IDENTITY_FIELDS, f"{label} identity")
     path = regular_input(Path(require_string(identity["realpath"], f"{label}.realpath")), label, executable=True)
@@ -588,6 +588,43 @@ def validate_recorded_tool_identity(value: object, label: str) -> None:
         or identity["version_stderr"] != observed_stderr
     ):
         fail(f"recorded {label} complete version output no longer matches")
+    return path
+
+
+def extract_sample_binary_identity(
+    binary: Path, readelf: Path, objcopy: Path
+) -> tuple[str, str]:
+    notes_stdout, _notes_stderr = run_tool(
+        readelf, ["-n", os.fspath(binary)], "sample binary build-ID inspection"
+    )
+    build_ids = {
+        match.group(1).lower()
+        for match in re.finditer(
+            r"(?im)^\s*Build ID:\s*([0-9a-f]+)\s*$", notes_stdout
+        )
+    }
+    if len(build_ids) != 1:
+        fail("sample binary must contain exactly one unambiguous GNU build ID")
+    build_id = build_ids.pop()
+    if not BUILD_ID_RE.fullmatch(build_id) or len(build_id) % 2:
+        fail("sample binary contains an invalid GNU build ID")
+    with tempfile.TemporaryDirectory(prefix="gentoo-sample-validation-") as directory:
+        text_path = Path(directory) / "text.section"
+        rewritten_path = Path(directory) / "rewritten-elf"
+        run_tool(
+            objcopy,
+            [
+                "--dump-section",
+                f".text={text_path}",
+                os.fspath(binary),
+                os.fspath(rewritten_path),
+            ],
+            "sample binary .text extraction",
+        )
+        text_path = regular_input(text_path, "sample binary .text payload")
+        regular_input(rewritten_path, "sample binary scratch ELF")
+        text_sha256 = sha256_file(text_path)
+    return build_id, text_sha256
 
 
 def validate_sample_source(value: object, profile: Path) -> dict[str, object]:
@@ -631,8 +668,10 @@ def validate_sample_source(value: object, profile: Path) -> dict[str, object]:
         )
     else:
         fail("sample debug binary path and SHA-256 must both be null or both be set")
-    for name in ("producer", "readelf", "objcopy"):
-        validate_recorded_tool_identity(source[name], name)
+    tools = {
+        name: validate_recorded_tool_identity(source[name], name)
+        for name in ("producer", "readelf", "objcopy")
+    }
     arguments = source["command_arguments"]
     if not isinstance(arguments, list) or not arguments or not all(
         isinstance(item, str) and item for item in arguments
@@ -667,11 +706,13 @@ def validate_sample_source(value: object, profile: Path) -> dict[str, object]:
         "debug_binary_observation": debug_binary_observation,
         "kind": "llvm-profgen",
         "objcopy": source["objcopy"],
+        "objcopy_path": os.fspath(tools["objcopy"]),
         "perf_data_path": os.fspath(perf_data),
         "perf_data_sha256": perf_data_sha256,
         "perf_data_observation": perf_data_observation,
         "producer": source["producer"],
         "readelf": source["readelf"],
+        "readelf_path": os.fspath(tools["readelf"]),
     }
 
 
@@ -738,6 +779,18 @@ def validate_sample_metadata(
     ).hexdigest()
     if validation["output_sha256"] != output_hash:
         fail("sample metadata validation output mismatch")
+    source = validate_sample_source(metadata["source"], profile)
+    observed_build_id, observed_text_sha256 = extract_sample_binary_identity(
+        Path(require_string(source["binary_path"], "sample source binary path")),
+        Path(require_string(source["readelf_path"], "sample source readelf path")),
+        Path(require_string(source["objcopy_path"], "sample source objcopy path")),
+    )
+    if input_identity["build_id"] != observed_build_id:
+        fail("sample metadata build ID does not match the exact profiled binary")
+    if input_identity["text_sha256"] != observed_text_sha256:
+        fail("sample metadata .text SHA-256 does not match the exact profiled binary")
+    # Extraction is required to be read-only.  Re-run the complete source
+    # observation after the native identity proof before publication.
     validate_sample_source(metadata["source"], profile)
     metadata["reproducibility"] = validate_reproducibility(
         metadata["reproducibility"]
