@@ -65,6 +65,15 @@ printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
     '[[ $# == 5 && $1 == verify && $2 == --manifest && $4 == --metadata ]]' \
     '[[ $5 == "$3.metadata.json" ]]' \
     'grep -Fxq VALIDATOR_OK "$5"' \
+    'backend=$(sed -n "s/^backend=//p" "$3")' \
+    'profile=$(sed -n "s/^profile_path=//p" "$3")' \
+    'case ${backend} in' \
+    '  clang-ir|rust) grep -Fxq IR "${profile}" ;;' \
+    '  clang-sample) grep -Fxq SAMPLE "${profile}" ;;' \
+    '  gcc) [[ -d ${profile} ]] ;;' \
+    '  go) grep -Fxq GO "${profile}" ;;' \
+    '  *) exit 1 ;;' \
+    'esac' \
     'printf "%s\\n" "$*" >> "${VALIDATOR_LOG}"' \
     > "${TMP}/bin/profile-validator"
 chmod +x "${TMP}/bin/profile-validator"
@@ -100,7 +109,7 @@ select_manifest() {
 case_off_is_noop() (
     CFLAGS='c-before'; CXXFLAGS='cxx-before'; LDFLAGS='ld-before'
     FCFLAGS='fc-before'; FFLAGS='ff-before'; FEATURES='ccache sandbox'
-    source "${BASHRC}"
+    source "${BASHRC}" || return 1
     [[ ${CFLAGS} == c-before && ${CXXFLAGS} == cxx-before &&
         ${LDFLAGS} == ld-before && ${FCFLAGS} == fc-before &&
         ${FFLAGS} == ff-before && ${FEATURES} == 'ccache sandbox' ]]
@@ -168,8 +177,8 @@ case_ir_use_and_exact_once() (
     CFLAGS='-O2'; CXXFLAGS='-O2'; LDFLAGS='-Wl,--as-needed'
     FCFLAGS='fortran-c'; FFLAGS='fortran-f'; FEATURES='ccache sandbox'
     SANDBOX_WRITE='/existing/write'
-    source "${BASHRC}" >/dev/null 2>&1
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     local_flag="-fprofile-use=${GENTOO_OPT_PROFILE_PATH}"
     [[ $(count_token "${CFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${CXXFLAGS}" "${local_flag}") == 1 ]]
@@ -188,7 +197,7 @@ case_sample_use_and_format_separation() (
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/sample.prof"
     select_manifest "${TMP}/profiles/sample.manifest"
     CFLAGS='-O2'; CXXFLAGS='-O2'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${CFLAGS} == *"-fprofile-sample-use=${GENTOO_OPT_PROFILE_PATH}"* ]]
     [[ ${CFLAGS} != *'-fprofile-use='* && ${LDFLAGS} == ld ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
@@ -224,8 +233,8 @@ case_clang_generate_exact_once() (
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
     CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'; FEATURES='ccache'
     SANDBOX_WRITE='/existing/write'
-    source "${BASHRC}" >/dev/null 2>&1
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     local_flag="-fprofile-instr-generate=${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
     [[ $(count_token "${CFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${CXXFLAGS}" "${local_flag}") == 1 ]]
@@ -238,7 +247,7 @@ printf 'gcda\n' > "${TMP}/profiles/raw-gcc/unit.gcda"
 
 case_gcc_use_isolated_correction() (
     export PATH="${TMP}/bin:/usr/bin:/bin" CC=gcc CXX=g++ GCOV_TOOL=gcov-tool ABI=amd64
-    GENTOO_OPT_MODE=off source "${BASHRC}"
+    GENTOO_OPT_MODE=off source "${BASHRC}" || return 1
     digest=$(gentoo_opt_hash_profile_directory "${TMP}/profiles/raw-gcc")
     printf '%s\n' \
         'schema=gentoo-optimization-profile-v1' \
@@ -256,7 +265,7 @@ case_gcc_use_isolated_correction() (
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-gcc"
     select_manifest "${TMP}/profiles/gcc.manifest"
     CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${CFLAGS} == *-fprofile-correction* && ${CXXFLAGS} == *-fprofile-correction* ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
 )
@@ -268,7 +277,7 @@ case_rust_target_isolation() (
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-rust"
     export GENTOO_OPT_RUST_TARGET=x86_64-unknown-linux-gnu
     RUSTFLAGS='-Copt-level=3'; FCFLAGS='fc'; FFLAGS='ff'
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${RUSTFLAGS} == *"-Cprofile-generate=${GENTOO_OPT_PROFILE_PATH}"* ]]
     [[ ${CARGO_BUILD_TARGET} == x86_64-unknown-linux-gnu ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
@@ -286,7 +295,7 @@ case_go_use_only_goflags() (
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/cpu.pprof"
     select_manifest "${TMP}/profiles/go.manifest"
     GOFLAGS='-trimpath'; CFLAGS='c'; CXXFLAGS='cxx'; FCFLAGS='fc'; FFLAGS='ff'
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${GOFLAGS} == *"-pgo=${GENTOO_OPT_PROFILE_PATH}"* ]]
     [[ ${CFLAGS} == c && ${CXXFLAGS} == cxx && ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
 )
@@ -299,7 +308,7 @@ case_rust_and_go_bolt_layering() (
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-rust"
     export GENTOO_OPT_RUST_TARGET=x86_64-unknown-linux-gnu
     RUSTFLAGS='-Copt-level=3'; CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${RUSTFLAGS} == *'-Clink-arg=-Wl,--emit-relocs'* ]]
     [[ ${RUSTFLAGS} == *'-Clink-arg=-Wl,--build-id=sha1'* ]]
     [[ ${CFLAGS} == c && ${CXXFLAGS} == cxx && ${LDFLAGS} == ld ]]
@@ -310,7 +319,7 @@ case_rust_and_go_bolt_layering() (
     select_manifest "${TMP}/profiles/go.manifest"
     unset RUSTC GENTOO_OPT_RUST_TARGET CARGO_BUILD_TARGET
     GOFLAGS='-trimpath'; CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${GOFLAGS} == *"-pgo=${GENTOO_OPT_PROFILE_PATH}"* ]]
     [[ ${CFLAGS} == c && ${CXXFLAGS} == cxx && ${LDFLAGS} == ld ]]
 )
@@ -335,7 +344,7 @@ case_bolt_layer_and_gcc_guard() (
     export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/bolt-cache"
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
     CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${CFLAGS} == *-g1* && ${LDFLAGS} == *-Wl,--emit-relocs* ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
 
@@ -365,7 +374,7 @@ case_fingerprint_file_strict() (
     unset GENTOO_OPT_FINGERPRINT
     export GENTOO_OPT_FINGERPRINT_FILE="${TMP}/fingerprint.env"
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${GENTOO_OPT_ACTIVE_FINGERPRINT} == "${FINGERPRINT}" ]]
 )
 
@@ -392,7 +401,7 @@ case_bolt_post_install_wrapper() (
     export GENTOO_OPT_BOLT_CAPTURE_TOOL="${TMP}/bin/capture-wrapper"
     export BOLT_WRAPPER_EVIDENCE="${TMP}/wrapper.args" ED="${TMP}/ed"
     export PORTAGE_TMPDIR="${TMP}" PORTAGE_BUILDDIR="${TMP}/portage/cat/pkg"
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     post_src_install
     mapfile -t arguments < "${BOLT_WRAPPER_EVIDENCE}"
     [[ ${arguments[*]} == "--ed ${ED} --cache-root ${GENTOO_OPT_BOLT_CACHE_ROOT} --fingerprint ${FINGERPRINT}" ]]
@@ -403,10 +412,10 @@ case_existing_post_install_hook_is_chained() (
     post_src_install() {
         printf '%s\n' 'previous hook ran' >> "${TMP}/previous-hook.log"
     }
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     # An accidental second source must not capture our wrapper as its own
     # predecessor and recurse.
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     post_src_install
     [[ $(<"${TMP}/previous-hook.log") == 'previous hook ran' ]]
 )
@@ -423,7 +432,7 @@ case_portage_phase_cannot_swallow_bolt_failure() (
     export GENTOO_OPT_BOLT_CAPTURE_TOOL="${TMP}/bin/failing-capture-wrapper"
     export ED="${TMP}/fatal-ed"
     export PORTAGE_TMPDIR="${TMP}" PORTAGE_BUILDDIR="${TMP}/portage/cat/fatal"
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     set +e
     (
         die() { exit 97; }
@@ -462,7 +471,7 @@ case_depend_phase_is_external_command_free() (
     CFLAGS='depend-c'; CXXFLAGS='depend-cxx'; LDFLAGS='depend-ld'
     RUSTFLAGS='depend-rust'; GOFLAGS='depend-go'; FEATURES='ccache sandbox'
     SANDBOX_WRITE='/depend/write'
-    source "${BASHRC}" >/dev/null 2>&1
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${CFLAGS} == depend-c && ${CXXFLAGS} == depend-cxx && ${LDFLAGS} == depend-ld ]]
     [[ ${RUSTFLAGS} == depend-rust && ${GOFLAGS} == depend-go ]]
     [[ ${FEATURES} == 'ccache sandbox' && ${SANDBOX_WRITE} == /depend/write ]]
@@ -494,7 +503,7 @@ case_nonbuild_phase_matrix_is_noop() (
             CFLAGS='phase-c'; CXXFLAGS='phase-cxx'; LDFLAGS='phase-ld'
             RUSTFLAGS='phase-rust'; GOFLAGS='phase-go'; FEATURES='ccache sandbox'
             SANDBOX_WRITE='/phase/write'
-            source "${BASHRC}" >/dev/null 2>&1
+            source "${BASHRC}" >/dev/null 2>&1 || return 1
             [[ ${CFLAGS} == phase-c && ${CXXFLAGS} == phase-cxx && ${LDFLAGS} == phase-ld ]]
             [[ ${RUSTFLAGS} == phase-rust && ${GOFLAGS} == phase-go ]]
             [[ ${FEATURES} == 'ccache sandbox' && ${SANDBOX_WRITE} == /phase/write ]]

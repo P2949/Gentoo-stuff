@@ -66,6 +66,15 @@ gentoo_opt_allow_sandbox_write() {
     gentoo_opt_append_colon_path_once SANDBOX_WRITE "$1"
 }
 
+gentoo_opt_fixture_override_allowed() {
+    if [[ ${GENTOO_OPT_DISPATCHER_TEST_MODE:-0} == 1 && -z ${EBUILD_PHASE-} ]]; then
+        return 0
+    fi
+    [[ ${GENTOO_OPT_PORTAGE_FIXTURE_MODE:-0} == 1 &&
+        ${CATEGORY-} == app-test && ${PN-} == phase2-portage-fixture &&
+        ${EBUILD-} == /var/tmp/gentoo-phase2-portage-fixture.*/* ]] || return 1
+}
+
 gentoo_opt_disable_ccache() {
     gentoo_opt_append_flag_once FEATURES -ccache
     CCACHE_DISABLE=1
@@ -361,7 +370,7 @@ gentoo_opt_read_profile_manifest() {
         return 1
     }
     while IFS= read -r line || [[ -n ${line} ]]; do
-        [[ ${line} =~ ^([a-z_]+)=(.*)$ ]] || {
+        [[ ${line} =~ ^([a-z_][a-z0-9_]*)=(.*)$ ]] || {
             gentoo_opt_error "malformed profile manifest line: ${line}"
             return 1
         }
@@ -414,17 +423,11 @@ gentoo_opt_read_profile_manifest() {
 }
 
 gentoo_opt_validate_profile_format() {
-    local source_path repository_root expected_validator validator metadata
-    source_path=$(realpath -e -- "${BASH_SOURCE[0]}") || {
-        gentoo_opt_error 'cannot resolve the strict dispatcher source path'; return 1;
-    }
-    repository_root=$(realpath -e -- "$(dirname -- "${source_path}")/..") || {
-        gentoo_opt_error 'cannot resolve the strict dispatcher repository root'; return 1;
-    }
-    expected_validator=${repository_root}/scripts/optimization/pgo/validate-profile.py
+    local expected_validator validator metadata
+    expected_validator=/usr/local/libexec/gentoo-optimization/pgo/validate-profile.py
     validator=${GENTOO_OPT_PROFILE_VALIDATOR:-${expected_validator}}
     if [[ ${validator} != "${expected_validator}" ]]; then
-        [[ ${GENTOO_OPT_DISPATCHER_TEST_MODE:-0} == 1 && -z ${EBUILD_PHASE-} ]] || {
+        gentoo_opt_fixture_override_allowed || {
             gentoo_opt_error 'production profile use cannot override the authoritative validator'; return 1;
         }
     fi
@@ -729,23 +732,29 @@ rust-generate|rust-use|go-use|bolt-capture|bolt-deploy) ;;
 # this dispatch separate makes the pre-strip phase boundary explicit and lets
 # the hook implementation be tested without sourcing arbitrary package code.
 gentoo_opt_bolt_wrapper_path() {
-    local operation=$1 configured variable source_path repository_root wrapper
+    local operation=$1 configured variable wrapper expected_wrapper
     case ${operation} in
         capture) variable=GENTOO_OPT_BOLT_CAPTURE_TOOL ;;
         deploy) variable=GENTOO_OPT_BOLT_DEPLOY_TOOL ;;
         *) return 1 ;;
     esac
+    expected_wrapper=/usr/local/libexec/gentoo-optimization/bolt/${operation}-input.sh
+    [[ ${operation} == deploy ]] && \
+        expected_wrapper=/usr/local/libexec/gentoo-optimization/bolt/deploy-output.sh
     configured=${!variable-}
     if [[ -n ${configured} ]]; then
         gentoo_opt_safe_absolute_path "${configured}" || {
             gentoo_opt_error "${variable} must be a safe absolute path"; return 1;
         }
+        if [[ ${configured} != "${expected_wrapper}" ]]; then
+            gentoo_opt_fixture_override_allowed || {
+                gentoo_opt_error "production BOLT ${operation} cannot override the installed wrapper"
+                return 1
+            }
+        fi
         wrapper=${configured}
     else
-        source_path=$(realpath -e -- "${BASH_SOURCE[0]}") || return 1
-        repository_root=$(realpath -e -- "$(dirname -- "${source_path}")/..") || return 1
-        wrapper=${repository_root}/scripts/optimization/bolt/${operation}-input.sh
-        [[ ${operation} == deploy ]] && wrapper=${repository_root}/scripts/optimization/bolt/deploy-output.sh
+        wrapper=${expected_wrapper}
     fi
     [[ -x ${wrapper} && -f ${wrapper} && ! -L ${wrapper} ]] || {
         gentoo_opt_error "BOLT ${operation} wrapper is unavailable or not executable: ${wrapper}"; return 1;

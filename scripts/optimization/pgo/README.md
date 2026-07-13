@@ -11,7 +11,10 @@ The input is one strict JSON object. Unknown or missing fields are errors. Its
 fields correspond to plan section 7.1: exact package/slot/repository/ebuild,
 CHOST and ABI, the active compiler, complete flag sets, output-affecting
 FEATURES, the ordered `package.env` stack, build-system arguments and the
-kernel release when the package builds kernel modules. The tool resolves and
+kernel release when the package builds kernel modules. Rust fingerprints also
+require the exact target triple and the bundled LLVM version reported by the
+exact `rustc`; the target must appear in that compiler's target list. These
+fields must be null for every non-Rust compiler. The tool resolves and
 executes the compiler itself and records its real path, binary SHA-256 and full
 version output. Volatile fields such as timestamps cannot be added to the
 schema.
@@ -50,7 +53,8 @@ scripts/optimization/pgo/profile-identity.py profile-path \
 
 The families are `clang-ir`, `rust`, `gcc`, `go`, `clang-sample`, and
 `kernel`. They have non-overlapping compiler/generation/package/ABI identity
-axes. A caller must never substitute one family path for another.
+axes. Rust paths additionally separate the target triple and exact bundled
+LLVM version. A caller must never substitute one family path for another.
 
 ## Clang sample profiles
 
@@ -66,48 +70,54 @@ scripts/optimization/pgo/profile-identity.py sample-convert \
     --perf-data /absolute/path/to/perf.data \
     --profile-out /absolute/profile/tree/sample.prof \
     --metadata-out /absolute/profile/tree/sample-metadata.json \
-    --manifest-out /absolute/profile/tree/sample.manifest \
     --cpv dev-util/example-1.2.3-r1 --fingerprint "${fingerprint}" \
-    --abi amd64 --clang-major 22
+    --abi amd64 --clang-major 22 \
+    --optimization-generation-id generation-20260713-a \
+    --workload-revision workloads-sha256-a1 \
+    --source-identity-sha256 "${source_identity_sha256}" \
+    --production-host "$(hostname)" --production-date 2026-07-13
 ```
 
 `--debug-binary` supplies a separate exact DWARF input when required. The
 producer invokes LLVM tools of the requested major, derives the GNU build ID
-and `.text` SHA-256 from the binary, and records hashes of the binary, optional
-debug binary, perf data, tools, command, profile and validation output.
+and `.text` SHA-256 from the binary, and records hashes plus exact inode/stat
+observations of the binary, optional debug binary and perf data, as well as
+tool, command, profile and validation identities. Every input observation is
+captured before `llvm-profgen` and required to remain byte-for-byte and
+metadata-identical afterward. A change is rejected even if the caller restores
+the original bytes before the converter exits, closing the conversion TOCTOU
+window.
 `llvm-profgen` can write only `sample.prof.partial`; a successful sample-aware
 validation precedes the atomic rename to `sample.prof`. Ordinary failure,
 timeout, missing output and interruption remove the partial and any unpublished
 transaction outputs. Existing final profiles are immutable and are never
 reused or overwritten.
 
-If a trusted external process has already written the final `sample.prof`,
-record it with the exact package, compiler, ABI and input-ELF identity:
+There is no external-profile recording escape hatch. `sample-record` is kept
+only as an unconditional error for callers that have not migrated; it never
+writes metadata. Only this transactional `sample-convert` command can create
+sample provenance.
 
-```sh
-scripts/optimization/pgo/profile-identity.py sample-record \
-    --profile /absolute/profile/tree/sample.prof \
-    --llvm-profdata /usr/lib/llvm/22/bin/llvm-profdata \
-    --cpv dev-util/example-1.2.3-r1 --fingerprint "${fingerprint}" \
-    --abi amd64 --clang-major 22 --build-id "${build_id}" \
-    --text-sha256 "${text_sha256}" \
-    --metadata-out /absolute/profile/tree/sample-metadata.json \
-    --manifest-out /absolute/profile/tree/sample.manifest
-```
+Production metadata is required, not inferred: optimization generation ID,
+workload revision, a SHA-256 identity for the source/distfile set, production
+host, and a valid `YYYY-MM-DD` production date. These reproducibility fields
+are deliberately outside the canonical package fingerprint, so recording a
+production date cannot make an otherwise identical build identity unstable.
 
-Recording and later `sample-validate` both run the sample-aware command
+`sample-convert` and later `sample-validate` both run the sample-aware command
 `llvm-profdata show --sample`. Validation requires the same profile SHA-256,
 size, absolute path, tool identity, package fingerprint, ABI, Clang major,
-build ID, and `.text` SHA-256. An IR instrumentation profile, a profile named
+build ID, `.text` SHA-256, exact source observations, and reproducibility
+metadata. An IR instrumentation profile, a profile named
 `merged.profdata`, a missing profile, an LLVM-major mismatch, or changed
 metadata is rejected. The dispatcher consumes this family only with
 `-fprofile-sample-use`; this tool never emits compiler flags.
 
-The separately published manifest contains exactly the eight keys understood
-by the strict Portage dispatcher: schema, backend, fingerprint, ABI, compiler
-family, absolute profile path, profile SHA-256 and `validation_status=passed`.
-It is derived from the validated JSON metadata rather than from duplicate
-caller-provided values.
+`profile-identity.py` never publishes a Portage dispatcher manifest or its
+strict sidecar. `validate-profile.py` is the sole authority for that atomic
+manifest/sidecar transaction after it independently verifies this producer
+metadata. This prevents a second, weaker manifest implementation from drifting
+away from the dispatcher's validation contract.
 
 The obsolete `scripts/pgo/make-sample-prof.sh` entry point is retained only as
 an unconditional error explaining the migration. It cannot create a weak

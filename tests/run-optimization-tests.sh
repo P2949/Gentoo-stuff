@@ -96,6 +96,7 @@ quick suites:
   package-env-portage-semantic (explicit SKIP when the live Portage universe is unavailable)
   no-legacy-pgo (retired weak paths/helpers remain unusable)
   pgo-dispatcher (strict backend/ABI/fingerprint and stage-hook fixture)
+  portage-pre-strip-integration (real disposable ebuild; root-only)
   bolt-command-policy (exact static layout policy in both BOLT command producers)
   bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
   bolt-pre-strip-hooks (hermetic capture/register/deploy and rollback fixture)
@@ -501,6 +502,10 @@ done < <(
         "${REPOSITORY_ROOT}/scripts" "${REPOSITORY_ROOT}/tests" \
         -type f -name '*.sh' -print0 | LC_ALL=C sort -z
 )
+PORTAGE_BOLT_QA_HOOK=${REPOSITORY_ROOT}/portage/install-qa-check.d/50-gentoo-optimization-bolt
+if [[ -f ${PORTAGE_BOLT_QA_HOOK} ]]; then
+    SHELL_SOURCES+=("${PORTAGE_BOLT_QA_HOOK}")
+fi
 while IFS= read -r -d '' source_file; do
     PYTHON_SOURCES+=("${source_file}")
 done < <(
@@ -604,6 +609,20 @@ elif ! require_commands awk bash chmod find grep head mkdir mktemp realpath rm s
     skip_case pgo-dispatcher "${PREFLIGHT_REASON}"
 else
     run_case pgo-dispatcher bash -- "${PGO_DISPATCHER_FIXTURE}"
+fi
+
+PORTAGE_PHASE_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-phase-integration.sh
+if [[ ! -f ${PORTAGE_PHASE_FIXTURE} ]]; then
+    skip_case portage-pre-strip-integration \
+        "fixture is absent: ${PORTAGE_PHASE_FIXTURE}"
+elif ((EUID != 0)); then
+    skip_case portage-pre-strip-integration \
+        'real disposable Portage phase integration requires a root driver invocation'
+elif ! require_commands awk b2sum bash ebuild portageq python3 readelf sed \
+    sha256sum sha512sum stat; then
+    skip_case portage-pre-strip-integration "${PREFLIGHT_REASON}"
+else
+    run_case portage-pre-strip-integration bash -- "${PORTAGE_PHASE_FIXTURE}"
 fi
 
 BOLT_COMMAND_POLICY_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-command-policy.sh

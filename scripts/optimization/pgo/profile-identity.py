@@ -731,7 +731,14 @@ def profile_path_command(arguments: argparse.Namespace) -> int:
             required(arguments, "generation", family), "generation"
         ) / require_abi(required(arguments, "abi", family)) / "merged.profdata"
     elif family == "rust":
-        allowed = {"language_version", "compiler_major", "generation", "abi"}
+        allowed = {
+            "language_version",
+            "compiler_major",
+            "generation",
+            "abi",
+            "target_triple",
+            "rustc_llvm_version",
+        }
         reject_unused(arguments, allowed, family)
         major = require_positive_major(arguments.compiler_major, "compiler_major")
         path = (
@@ -739,6 +746,13 @@ def profile_path_command(arguments: argparse.Namespace) -> int:
             / family
             / require_component(required(arguments, "language_version", family), "language_version")
             / str(major)
+            / require_component(
+                required(arguments, "rustc_llvm_version", family),
+                "rustc_llvm_version",
+            )
+            / require_component(
+                required(arguments, "target_triple", family), "target_triple"
+            )
             / require_component(required(arguments, "generation", family), "generation")
             / require_abi(required(arguments, "abi", family))
             / "merged.profdata"
@@ -872,6 +886,13 @@ def build_reproducibility(arguments: argparse.Namespace) -> dict[str, object]:
             arguments.workload_revision, "workload_revision"
         ),
     }
+
+
+def validate_recorded_reproducibility(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        fail("reproducibility metadata must be a JSON object")
+    require_exact_fields(value, REPRODUCIBILITY_FIELDS, "reproducibility metadata")
+    return value
 
 
 def sample_identity(
@@ -1119,42 +1140,16 @@ def ensure_new_regular_destination(path: Path, label: str) -> None:
     fail(f"{label} already exists: {path}")
 
 
-def dispatcher_manifest_bytes(metadata: dict[str, object]) -> bytes:
-    package = metadata["package"]
-    compiler = metadata["compiler"]
-    if not isinstance(package, dict) or not isinstance(compiler, dict):
-        fail("internal sample metadata cannot produce a dispatcher manifest")
-    profile_path = require_string(metadata["profile_path"], "profile_path")
-    if re.search(r"[\s=]", profile_path):
-        fail("profile_path cannot be represented safely in the dispatcher manifest")
-    fields = (
-        ("schema", "gentoo-optimization-profile-v1"),
-        ("backend", "clang-sample"),
-        ("fingerprint", require_hex64(package.get("fingerprint"), "fingerprint")),
-        ("abi", require_abi(package.get("abi"))),
-        ("compiler_family", "clang"),
-        ("profile_path", profile_path),
-        (
-            "profile_sha256",
-            require_hex64(metadata["profile_sha256"], "profile_sha256"),
-        ),
-        ("validation_status", "passed"),
-    )
-    return "".join(f"{key}={value}\n" for key, value in fields).encode("ascii")
-
-
 def sample_convert_command(arguments: argparse.Namespace) -> int:
     profile = arguments.profile_out
     metadata_out = arguments.metadata_out
-    manifest_out = arguments.manifest_out
     if profile.name != "sample.prof":
         fail("--profile-out must end in the exact filename sample.prof")
     ensure_new_regular_destination(profile, "sample profile output")
     ensure_new_regular_destination(metadata_out, "sample metadata output")
-    ensure_new_regular_destination(manifest_out, "dispatcher manifest output")
-    destinations = {os.path.normpath(path) for path in (profile, metadata_out, manifest_out)}
-    if len(destinations) != 3:
-        fail("--profile-out, --metadata-out and --manifest-out must be distinct")
+    destinations = {os.path.normpath(path) for path in (profile, metadata_out)}
+    if len(destinations) != 2:
+        fail("--profile-out and --metadata-out must be distinct")
     partial = profile.with_name("sample.prof.partial")
     validate_output_destination(partial)
     try:
@@ -1172,12 +1167,21 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
         fail("--timeout-seconds must be greater than zero and at most 86400")
     if not 0 < kill_after_seconds <= 60:
         fail("--kill-after-seconds must be greater than zero and at most 60")
+    # Validate caller-supplied provenance before launching an expensive converter.
+    build_reproducibility(arguments)
 
     binary = canonical_regular_input(arguments.binary, "profiled binary")
     perf_data = canonical_regular_input(arguments.perf_data, "perf data")
     debug_binary = (
         canonical_regular_input(arguments.debug_binary, "debug binary")
         if arguments.debug_binary is not None
+        else None
+    )
+    binary_observation = observe_regular_file(binary, "profiled binary")
+    perf_data_observation = observe_regular_file(perf_data, "perf data")
+    debug_binary_observation = (
+        observe_regular_file(debug_binary, "debug binary")
+        if debug_binary is not None
         else None
     )
     clang_major = require_positive_major(arguments.clang_major, "clang_major")
@@ -1226,9 +1230,16 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
             Path(str(validator["realpath"])),
             allow_transaction_partial=True,
         )
+        require_unchanged_file(binary, binary_observation, "profiled binary")
+        require_unchanged_file(perf_data, perf_data_observation, "perf data")
+        if debug_binary is not None and debug_binary_observation is not None:
+            require_unchanged_file(
+                debug_binary, debug_binary_observation, "debug binary"
+            )
         source: dict[str, object] = {
             "binary_path": os.fspath(binary),
-            "binary_sha256": sha256_file(binary),
+            "binary_sha256": binary_observation["sha256"],
+            "binary_observation": binary_observation,
             "command_arguments": command_arguments,
             "command_output_sha256": hashlib.sha256(
                 (converter_stdout + "\0" + converter_stderr).encode("utf-8")
@@ -1237,12 +1248,16 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
                 os.fspath(debug_binary) if debug_binary is not None else None
             ),
             "debug_binary_sha256": (
-                sha256_file(debug_binary) if debug_binary is not None else None
+                debug_binary_observation["sha256"]
+                if debug_binary_observation is not None
+                else None
             ),
+            "debug_binary_observation": debug_binary_observation,
             "kind": "llvm-profgen",
             "objcopy": objcopy_identity,
             "perf_data_path": os.fspath(perf_data),
-            "perf_data_sha256": sha256_file(perf_data),
+            "perf_data_sha256": perf_data_observation["sha256"],
+            "perf_data_observation": perf_data_observation,
             "producer": producer,
             "readelf": readelf_identity,
         }
@@ -1256,11 +1271,16 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
         arguments.build_id = build_id
         arguments.text_sha256 = text_sha256
         metadata = sample_identity(arguments, source)
+        require_unchanged_file(binary, binary_observation, "profiled binary")
+        require_unchanged_file(perf_data, perf_data_observation, "perf data")
+        if debug_binary is not None and debug_binary_observation is not None:
+            require_unchanged_file(
+                debug_binary, debug_binary_observation, "debug binary"
+            )
         atomic_write(
             metadata_out,
             (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
         )
-        atomic_write(manifest_out, dispatcher_manifest_bytes(metadata))
         completed = True
         print(metadata["profile_sha256"])
         return 0
@@ -1268,35 +1288,9 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
         partial.unlink(missing_ok=True)
         if not completed:
             metadata_out.unlink(missing_ok=True)
-            manifest_out.unlink(missing_ok=True)
             profile.unlink(missing_ok=True)
         for signum, old_handler in old_handlers.items():
             signal.signal(signum, old_handler)
-
-
-def sample_record_command(arguments: argparse.Namespace) -> int:
-    destinations = {
-        os.path.normpath(arguments.profile),
-        os.path.normpath(arguments.metadata_out),
-        os.path.normpath(arguments.manifest_out),
-    }
-    if len(destinations) != 3:
-        fail("sample profile, metadata and dispatcher manifest paths must be distinct")
-    ensure_new_regular_destination(arguments.metadata_out, "sample metadata output")
-    ensure_new_regular_destination(arguments.manifest_out, "dispatcher manifest output")
-    metadata = sample_identity(arguments)
-    try:
-        atomic_write(
-            arguments.metadata_out,
-            (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
-        )
-        atomic_write(arguments.manifest_out, dispatcher_manifest_bytes(metadata))
-    except BaseException:
-        arguments.metadata_out.unlink(missing_ok=True)
-        arguments.manifest_out.unlink(missing_ok=True)
-        raise
-    print(metadata["profile_sha256"])
-    return 0
 
 
 def sample_validate_command(arguments: argparse.Namespace) -> int:
@@ -1305,6 +1299,7 @@ def sample_validate_command(arguments: argparse.Namespace) -> int:
     source = validate_sample_source(
         recorded["source"], arguments.clang_major, arguments.profile
     )
+    validate_recorded_reproducibility(recorded["reproducibility"])
     expected = sample_identity(arguments, source)
     if recorded != expected:
         differing = sorted(
@@ -1313,6 +1308,14 @@ def sample_validate_command(arguments: argparse.Namespace) -> int:
         fail(f"sample profile metadata mismatch in: {', '.join(differing)}")
     print(expected["profile_sha256"])
     return 0
+
+
+def sample_record_disabled(_arguments: argparse.Namespace) -> int:
+    fail(
+        "sample-record is permanently disabled: external caller-asserted sample "
+        "identity is not authoritative; use sample-convert, then validate-profile.py "
+        "for the sole dispatcher manifest/sidecar transaction"
+    )
 
 
 def add_sample_identity_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1331,6 +1334,14 @@ def add_sample_package_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--fingerprint", required=True)
     parser.add_argument("--abi", required=True)
     parser.add_argument("--clang-major", type=int, required=True)
+
+
+def add_reproducibility_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--optimization-generation-id", required=True)
+    parser.add_argument("--workload-revision", required=True)
+    parser.add_argument("--source-identity-sha256", required=True)
+    parser.add_argument("--production-host", required=True)
+    parser.add_argument("--production-date", required=True)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -1356,6 +1367,8 @@ def create_parser() -> argparse.ArgumentParser:
     )
     path_parser.add_argument("--compiler-major", type=int)
     path_parser.add_argument("--language-version")
+    path_parser.add_argument("--target-triple")
+    path_parser.add_argument("--rustc-llvm-version")
     path_parser.add_argument("--generation")
     path_parser.add_argument("--abi")
     path_parser.add_argument("--cpv")
@@ -1367,17 +1380,20 @@ def create_parser() -> argparse.ArgumentParser:
     path_parser.set_defaults(func=profile_path_command)
 
     sample_record_parser = subparsers.add_parser(
-        "sample-record", help="validate sample.prof and atomically record its identity"
+        "sample-record",
+        help="disabled legacy external sample identity recorder",
     )
     add_sample_identity_arguments(sample_record_parser)
+    add_reproducibility_arguments(sample_record_parser)
     sample_record_parser.add_argument("--metadata-out", type=Path, required=True)
     sample_record_parser.add_argument("--manifest-out", type=Path, required=True)
-    sample_record_parser.set_defaults(func=sample_record_command)
+    sample_record_parser.set_defaults(func=sample_record_disabled)
 
     sample_validate_parser = subparsers.add_parser(
         "sample-validate", help="fail closed unless sample.prof matches exact metadata"
     )
     add_sample_identity_arguments(sample_validate_parser)
+    add_reproducibility_arguments(sample_validate_parser)
     sample_validate_parser.add_argument("--metadata", type=Path, required=True)
     sample_validate_parser.set_defaults(func=sample_validate_command)
 
@@ -1386,6 +1402,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="transactionally convert exact perf/binary input into sample.prof",
     )
     add_sample_package_arguments(sample_convert_parser)
+    add_reproducibility_arguments(sample_convert_parser)
     sample_convert_parser.add_argument("--llvm-profgen", type=Path, required=True)
     sample_convert_parser.add_argument("--llvm-profdata", type=Path, required=True)
     sample_convert_parser.add_argument("--readelf", type=Path, required=True)
@@ -1395,7 +1412,6 @@ def create_parser() -> argparse.ArgumentParser:
     sample_convert_parser.add_argument("--perf-data", type=Path, required=True)
     sample_convert_parser.add_argument("--profile-out", type=Path, required=True)
     sample_convert_parser.add_argument("--metadata-out", type=Path, required=True)
-    sample_convert_parser.add_argument("--manifest-out", type=Path, required=True)
     sample_convert_parser.add_argument(
         "--timeout-seconds", type=float, default=600.0
     )

@@ -42,6 +42,20 @@ class Fixture:
             "fi\n"
             "exit 64\n",
         )
+        self.rustc = self.write_executable(
+            "rustc",
+            "#!/bin/sh\n"
+            "if [ \"$1 $2\" = '--print target-list' ]; then\n"
+            "  printf '%s\\n' x86_64-unknown-linux-gnu i686-unknown-linux-gnu\n"
+            "  exit 0\n"
+            "fi\n"
+            "if [ \"$1 $2\" = '--version --verbose' ]; then\n"
+            "  printf '%s\\n' 'rustc 1.88.0 (fixture 2026-01-01)' "
+            "'host: x86_64-unknown-linux-gnu' 'LLVM version: 20.1.7'\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 64\n",
+        )
         self.profdata = self.write_executable(
             "llvm-profdata",
             "#!/bin/sh\n"
@@ -64,17 +78,24 @@ class Fixture:
             "  printf '%s\\n' 'LLVM version 22.1.8'\n"
             "  exit 0\n"
             "fi\n"
-            "output= perfdata=\n"
+            "output= perfdata= binary=\n"
             "for argument do\n"
             "  case $argument in\n"
             "    --output=*) output=${argument#--output=} ;;\n"
             "    --perfdata=*) perfdata=${argument#--perfdata=} ;;\n"
+            "    --binary=*) binary=${argument#--binary=} ;;\n"
             "  esac\n"
             "done\n"
             "case $(cat \"$perfdata\") in\n"
             "  FAIL_AFTER_OUTPUT) printf '%s\\n' SAMPLE >\"$output\"; exit 23 ;;\n"
             "  TIMEOUT) trap '' TERM; (trap '' TERM; sleep 30) & wait ;;\n"
             "  NO_OUTPUT) exit 0 ;;\n"
+            "  MUTATE_RESTORE) original=$(cat \"$perfdata\"); "
+            "printf '%s\\n' CHANGED >\"$perfdata\"; "
+            "printf '%s\\n' \"$original\" >\"$perfdata\" ;;\n"
+            "  MUTATE_BINARY_RESTORE) original=$(cat \"$binary\"); "
+            "printf '%s\\n' CHANGED >\"$binary\"; "
+            "printf '%s\\n' \"$original\" >\"$binary\" ;;\n"
             "esac\n"
             "printf '%s\\n' SAMPLE >\"$output\"\n"
             "printf '%s\\n' 'conversion complete'\n",
@@ -123,7 +144,7 @@ class Fixture:
 
     def manifest(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "category": "dev-util",
             "pf": "example-1.2.3-r1",
             "slot": "0",
@@ -152,6 +173,8 @@ class Fixture:
             "extra_ecmake": "-DEXAMPLE=ON",
             "kernel_module": False,
             "kernel_release": None,
+            "rust_target_triple": None,
+            "rustc_llvm_version": None,
         }
 
     def write_manifest(self, value: dict[str, Any], name: str = "input.json") -> Path:
@@ -198,6 +221,11 @@ class Fixture:
             "c" * 40,
             "--text-sha256",
             "d" * 64,
+            "--optimization-generation-id", "generation-20260713-a",
+            "--workload-revision", "workloads-sha256-a1",
+            "--source-identity-sha256", "e" * 64,
+            "--production-host", "gentoo-fixture",
+            "--production-date", "2026-07-13",
         ]
 
     def conversion_arguments(
@@ -212,11 +240,15 @@ class Fixture:
             "--perf-data", os.fspath(self.perf_data),
             "--profile-out", os.fspath(profile),
             "--metadata-out", os.fspath(metadata),
-            "--manifest-out", os.fspath(metadata.with_suffix(".manifest")),
             "--cpv", "dev-util/example-1.2.3-r1",
             "--fingerprint", "b" * 64,
             "--abi", "amd64",
             "--clang-major", "22",
+            "--optimization-generation-id", "generation-20260713-a",
+            "--workload-revision", "workloads-sha256-a1",
+            "--source-identity-sha256", "e" * 64,
+            "--production-host", "gentoo-fixture",
+            "--production-date", "2026-07-13",
         ]
         if include_debug:
             arguments.extend(["--debug-binary", os.fspath(self.debug_binary)])
@@ -327,6 +359,44 @@ class FingerprintTest(unittest.TestCase):
                     self.assertEqual(result, 1)
                     self.assertIn("ERROR:", diagnostic)
 
+    def test_rust_target_and_bundled_llvm_are_exact_fingerprint_axes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            rust = fixture.manifest()
+            rust["compiler"] = {
+                "path": os.fspath(fixture.rustc),
+                "family": "rustc",
+                "major": 1,
+                "profile_format": "rust-llvm-v20",
+            }
+            rust["rust_target_triple"] = "x86_64-unknown-linux-gnu"
+            rust["rustc_llvm_version"] = "20.1.7"
+            status, stdout, stderr = fixture.fingerprint(rust)
+            self.assertEqual(status, 0, stderr)
+            baseline = stdout.strip()
+
+            alternate = copy.deepcopy(rust)
+            alternate["rust_target_triple"] = "i686-unknown-linux-gnu"
+            status, stdout, stderr = fixture.fingerprint(alternate)
+            self.assertEqual(status, 0, stderr)
+            self.assertNotEqual(stdout.strip(), baseline)
+
+            for field, value in (
+                ("rust_target_triple", "aarch64-unknown-linux-gnu"),
+                ("rustc_llvm_version", "19.1.7"),
+            ):
+                invalid = copy.deepcopy(rust)
+                invalid[field] = value
+                status, _stdout, stderr = fixture.fingerprint(invalid)
+                self.assertEqual(status, 1)
+                self.assertIn("ERROR:", stderr)
+
+            leaked = fixture.manifest()
+            leaked["rust_target_triple"] = "x86_64-unknown-linux-gnu"
+            status, _stdout, stderr = fixture.fingerprint(leaked)
+            self.assertEqual(status, 1)
+            self.assertIn("must be null", stderr)
+
     def test_schema_is_fail_closed_and_kernel_release_is_conditional(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = Fixture(Path(directory))
@@ -427,7 +497,9 @@ class ProfileFamilyPathTest(unittest.TestCase):
                 ],
                 "rust": [
                     "--family", "rust", "--language-version", "1.88.0",
-                    "--compiler-major", "20", "--generation", "generation-a",
+                    "--compiler-major", "1", "--rustc-llvm-version", "20.1.7",
+                    "--target-triple", "x86_64-unknown-linux-gnu",
+                    "--generation", "generation-a",
                     "--abi", "amd64",
                 ],
                 "gcc": [
@@ -469,7 +541,7 @@ class ProfileFamilyPathTest(unittest.TestCase):
             cases = (
                 ["profile-path", "--root", root, "--family", "clang-ir", "--compiler-major", "22", "--abi", "amd64"],
                 ["profile-path", "--root", root, "--family", "clang-ir", "--generation", "g", "--abi", "amd64"],
-                ["profile-path", "--root", root, "--family", "rust", "--language-version", "1.88", "--generation", "g", "--abi", "amd64"],
+                ["profile-path", "--root", root, "--family", "rust", "--language-version", "1.88", "--compiler-major", "1", "--rustc-llvm-version", "20.1.7", "--generation", "g", "--abi", "amd64"],
                 ["profile-path", "--root", root, "--family", "gcc", "--cpv", "dev-util/example-1.2.3", "--fingerprint", "a" * 64, "--abi", "amd64"],
                 ["profile-path", "--root", root, "--family", "clang-ir", "--compiler-major", "22", "--generation", "../bad", "--abi", "amd64"],
                 ["profile-path", "--root", root, "--family", "clang-ir", "--compiler-major", "22", "--generation", "g", "--abi", "x32"],
@@ -493,8 +565,8 @@ class ProfileFamilyPathTest(unittest.TestCase):
             self.assertIn("symlink", stderr)
 
 
-class SampleProfileTest(unittest.TestCase):
-    def test_sample_profile_record_and_exact_validation(self) -> None:
+class DisabledExternalSampleRecorderTest(unittest.TestCase):
+    def test_external_recording_is_disabled_even_for_valid_sample(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = Fixture(Path(directory))
             profile = fixture.root / "sample.prof"
@@ -506,40 +578,13 @@ class SampleProfileTest(unittest.TestCase):
                 "--metadata-out", os.fspath(metadata_path),
                 "--manifest-out", os.fspath(fixture.root / "sample.manifest"),
             )
-            self.assertEqual(status, 0, stderr)
-            self.assertRegex(stdout.strip(), r"^[0-9a-f]{64}$")
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            self.assertEqual(metadata["profile_family"], "clang-sample")
-            self.assertEqual(metadata["profile_format"], "llvm-sample")
-            self.assertEqual(metadata["profile_path"], os.fspath(profile))
-            self.assertEqual(metadata["input_identity"]["build_id"], "c" * 40)
-            self.assertEqual(metadata["input_identity"]["text_sha256"], "d" * 64)
-            self.assertEqual(metadata["validation"]["command_arguments"][1], "--sample")
-            manifest_lines = (fixture.root / "sample.manifest").read_text(
-                encoding="ascii"
-            ).splitlines()
-            self.assertEqual(
-                manifest_lines,
-                [
-                    "schema=gentoo-optimization-profile-v1",
-                    "backend=clang-sample",
-                    f"fingerprint={'b' * 64}",
-                    "abi=amd64",
-                    "compiler_family=clang",
-                    f"profile_path={profile}",
-                    f"profile_sha256={stdout.strip()}",
-                    "validation_status=passed",
-                ],
-            )
+            self.assertEqual(status, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("permanently disabled", stderr)
+            self.assertFalse(metadata_path.exists())
+            self.assertFalse((fixture.root / "sample.manifest").exists())
 
-            status, validate_stdout, validate_stderr = fixture.invoke(
-                "sample-validate", *arguments, "--metadata", os.fspath(metadata_path)
-            )
-            self.assertEqual(status, 0, validate_stderr)
-            self.assertEqual(validate_stdout, stdout)
-            self.assertFalse(list(fixture.root.glob("*.partial")))
-
-    def test_ir_profile_missing_profile_and_ambiguous_name_are_rejected(self) -> None:
+    def test_disabled_recording_never_accepts_profile_content_or_names(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = Fixture(Path(directory))
             for name, content in (
@@ -586,10 +631,10 @@ class SampleProfileTest(unittest.TestCase):
                 os.fspath(fixture.root / "must-not-exist.manifest"),
             )
             self.assertEqual(status, 1)
-            self.assertIn("must be distinct", stderr)
+            self.assertIn("permanently disabled", stderr)
             self.assertEqual(profile.read_bytes(), original)
 
-    def test_profile_content_identity_tool_and_metadata_mismatches_fail(self) -> None:
+    def test_disabled_recorder_never_publishes_metadata_or_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = Fixture(Path(directory))
             profile = fixture.root / "sample.prof"
@@ -601,40 +646,10 @@ class SampleProfileTest(unittest.TestCase):
                 "--metadata-out", os.fspath(metadata_path),
                 "--manifest-out", os.fspath(fixture.root / "sample.manifest"),
             )
-            self.assertEqual(status, 0, stderr)
-
-            mismatches = (
-                ("content", None),
-                ("expected-build-id", None),
-                ("unknown-metadata", None),
-                ("validator-major", None),
-            )
-            for mismatch, _unused in mismatches:
-                with self.subTest(mismatch=mismatch):
-                    profile.write_text("SAMPLE\n", encoding="ascii")
-                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-                    metadata.pop("unexpected", None)
-                    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
-                    current_arguments = list(arguments)
-                    if mismatch == "content":
-                        profile.write_text("SAMPLE\nchanged\n", encoding="ascii")
-                    elif mismatch == "expected-build-id":
-                        index = current_arguments.index("--build-id") + 1
-                        current_arguments[index] = "e" * 40
-                    elif mismatch == "unknown-metadata":
-                        metadata["unexpected"] = True
-                        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
-                    else:
-                        index = current_arguments.index("--clang-major") + 1
-                        current_arguments[index] = "21"
-                    status, _stdout, diagnostic = fixture.invoke(
-                        "sample-validate",
-                        *current_arguments,
-                        "--metadata",
-                        os.fspath(metadata_path),
-                    )
-                    self.assertEqual(status, 1)
-                    self.assertIn("ERROR:", diagnostic)
+            self.assertEqual(status, 1)
+            self.assertIn("permanently disabled", stderr)
+            self.assertFalse(metadata_path.exists())
+            self.assertFalse((fixture.root / "sample.manifest").exists())
 
 
 class SampleConversionTest(unittest.TestCase):
@@ -694,6 +709,14 @@ class SampleConversionTest(unittest.TestCase):
                 source["debug_binary_sha256"],
                 hashlib.sha256(fixture.debug_binary.read_bytes()).hexdigest(),
             )
+            self.assertEqual(
+                source["binary_observation"]["sha256"],
+                source["binary_sha256"],
+            )
+            self.assertEqual(
+                source["perf_data_observation"]["sha256"],
+                source["perf_data_sha256"],
+            )
             self.assertIn(
                 f"--debug-binary={fixture.debug_binary}", source["command_arguments"]
             )
@@ -703,11 +726,17 @@ class SampleConversionTest(unittest.TestCase):
                 metadata["input_identity"]["text_sha256"], expected_text_sha
             )
             self.assertEqual(metadata["profile_sha256"], stdout.strip())
-            manifest_path = metadata_path.with_suffix(".manifest")
-            manifest = manifest_path.read_text(encoding="ascii")
-            self.assertIn("backend=clang-sample\n", manifest)
-            self.assertIn(f"profile_path={output}\n", manifest)
-            self.assertIn(f"profile_sha256={stdout.strip()}\n", manifest)
+            self.assertEqual(
+                metadata["reproducibility"],
+                {
+                    "optimization_generation_id": "generation-20260713-a",
+                    "production_date": "2026-07-13",
+                    "production_host": "gentoo-fixture",
+                    "source_identity_sha256": "e" * 64,
+                    "workload_revision": "workloads-sha256-a1",
+                },
+            )
+            self.assertFalse(metadata_path.with_suffix(".manifest").exists())
 
             validation_arguments = fixture.sample_arguments(output)
             text_index = validation_arguments.index("--text-sha256") + 1
@@ -747,8 +776,77 @@ class SampleConversionTest(unittest.TestCase):
                         self.assertIn("timed out", stderr)
                     self.assertFalse(output.exists())
                     self.assertFalse(metadata_path.exists())
-                    self.assertFalse(metadata_path.with_suffix(".manifest").exists())
                     self.assertFalse(output.with_name("sample.prof.partial").exists())
+
+    def test_reproducibility_metadata_is_required_and_validated_exactly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            bad_output = fixture.root / "bad" / "sample.prof"
+            bad_metadata = fixture.root / "bad" / "sample-metadata.json"
+            bad_arguments = fixture.conversion_arguments(bad_output, bad_metadata)
+            date_index = bad_arguments.index("--production-date") + 1
+            bad_arguments[date_index] = "2026-02-30"
+            status, _stdout, stderr = fixture.invoke(
+                "sample-convert", *bad_arguments
+            )
+            self.assertEqual(status, 1)
+            self.assertIn("valid calendar date", stderr)
+            self.assertFalse(bad_output.exists())
+            self.assertFalse(bad_metadata.exists())
+
+            output = fixture.root / "good" / "sample.prof"
+            metadata_path = fixture.root / "good" / "sample-metadata.json"
+            status, _stdout, stderr = fixture.invoke(
+                "sample-convert",
+                *fixture.conversion_arguments(output, metadata_path),
+            )
+            self.assertEqual(status, 0, stderr)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["reproducibility"]["unexpected"] = "not-allowed"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            validation_arguments = fixture.sample_arguments(output)
+            text_index = validation_arguments.index("--text-sha256") + 1
+            validation_arguments[text_index] = hashlib.sha256(b"TEXT\n").hexdigest()
+            status, _stdout, stderr = fixture.invoke(
+                "sample-validate",
+                *validation_arguments,
+                "--metadata",
+                os.fspath(metadata_path),
+            )
+            self.assertEqual(status, 1)
+            self.assertIn("unknown unexpected", stderr)
+
+    def test_input_change_during_profgen_fails_even_when_content_is_restored(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            for mode, changed_path, diagnostic in (
+                ("MUTATE_RESTORE", fixture.perf_data, "perf data changed"),
+                (
+                    "MUTATE_BINARY_RESTORE",
+                    fixture.binary,
+                    "profiled binary changed",
+                ),
+            ):
+                with self.subTest(mode=mode):
+                    fixture.perf_data.write_text(mode + "\n", encoding="ascii")
+                    output = fixture.root / mode / "sample.prof"
+                    metadata_path = fixture.root / mode / "sample-metadata.json"
+                    original_hash = hashlib.sha256(changed_path.read_bytes()).hexdigest()
+                    status, _stdout, stderr = fixture.invoke(
+                        "sample-convert",
+                        *fixture.conversion_arguments(output, metadata_path),
+                    )
+                    self.assertEqual(status, 1)
+                    self.assertIn(diagnostic, stderr)
+                    self.assertEqual(
+                        hashlib.sha256(changed_path.read_bytes()).hexdigest(),
+                        original_hash,
+                    )
+                    self.assertFalse(output.exists())
+                    self.assertFalse(metadata_path.exists())
+                    self.assertFalse(
+                        output.with_name("sample.prof.partial").exists()
+                    )
 
     def test_ambiguous_destination_and_preexisting_final_are_never_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
