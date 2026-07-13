@@ -293,11 +293,13 @@ mkdir -p -- "${CONCURRENT_CACHE}/inputs"
 cp -a -- "${CACHE}/inputs/${FINGERPRINT}" "${CONCURRENT_CACHE}/inputs/"
 CONCURRENT_PIDS=()
 while IFS=$'\t' read -r artifact_id object_file; do
+    registration_arguments "${WORK}/${artifact_id}.bolt.command.json"
     "${REGISTER}" --test-mode --test-lock-hold-seconds 0.2 \
         --lock-timeout-seconds 5 --cache-root "${CONCURRENT_CACHE}" \
         --fingerprint "${FINGERPRINT}" --artifact-id "${artifact_id}" \
-        --input "${CONCURRENT_CACHE}/inputs/${FINGERPRINT}/${object_file}" \
+        --input "${CACHE}/inputs/${FINGERPRINT}/${object_file}" \
         --output "${WORK}/${artifact_id}.bolt" \
+        "${REGISTER_ARGUMENTS[@]}" \
         >"${WORK}/concurrent-register-${artifact_id}.out" \
         2>"${WORK}/concurrent-register-${artifact_id}.err" &
     CONCURRENT_PIDS+=("$!")
@@ -316,8 +318,13 @@ python3 - "${CONCURRENT_CACHE}/outputs/${FINGERPRINT}/manifest.json" <<'PY'
 import json
 import sys
 manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+assert manifest["schema"] == "gentoo-optimization-bolt-output-v2"
 assert len(manifest["outputs"]) == 3
 assert len({item["artifact_id"] for item in manifest["outputs"]}) == 3
+assert all(item["option_policy_revision"] == "gentoo-system-wide-bolt-v1-cdsort-20260712" for item in manifest["outputs"])
+assert all(item["llvm_bolt"]["version"].startswith("LLVM (fixture):") for item in manifest["outputs"])
+assert all(item["fdata"] and item["workload_evidence"] and item["profile_evidence"] for item in manifest["outputs"])
+assert all(item["command"]["exit_status"] == 0 for item in manifest["outputs"])
 PY
 
 # A held per-fingerprint lock bounds and rejects a conflicting deployment.
@@ -365,6 +372,22 @@ manifest = json.load(open(sys.argv[1], encoding="utf-8"))
 print(next(item["cache_object"] for item in manifest["artifacts"] if item["artifact_id"] != sys.argv[2]))
 PY
 )
+registration_arguments "${WORK}/${FIRST_ID}.bolt.command.json"
+
+# A structurally valid GNU BOLT note alone is not proof that llvm-bolt
+# transformed the object. Removing the origin code section must fail closed.
+NOTE_ONLY=${WORK}/note-only.bolt
+cp -- "${WORK}/${FIRST_ID}.bolt" "${NOTE_ONLY}"
+objcopy --remove-section .bolt.org.text "${NOTE_ONLY}"
+if "${REGISTER}" --test-mode --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
+        --artifact-id "${FIRST_ID}" \
+        --input "${CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
+        --output "${NOTE_ONLY}" "${REGISTER_ARGUMENTS[@]}" \
+        >"${WORK}/note-only.out" 2>"${WORK}/note-only.err"; then
+    fail 'registration accepted synthetic note-only BOLT output'
+fi
+grep -Fq 'lacks nonempty .bolt.org.text transformation evidence' "${WORK}/note-only.err" || \
+    fail 'synthetic note-only rejection lacked an exact reason'
 
 # Arbitrary standalone roots are never accepted without the explicit hermetic
 # flag; production registration is pinned to the reviewed root-owned cache.
@@ -372,6 +395,7 @@ if "${REGISTER}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
         --artifact-id "${FIRST_ID}" \
         --input "${CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
         --output "${WORK}/${FIRST_ID}.bolt" \
+        "${REGISTER_ARGUMENTS[@]}" \
         >"${WORK}/production-scope.out" 2>"${WORK}/production-scope.err"; then
     fail 'arbitrary cache root was accepted without --test-mode'
 fi
@@ -395,6 +419,7 @@ if "${REGISTER}" --test-mode --cache-root "${LOCK_SYMLINK_CACHE}" \
         --fingerprint "${FINGERPRINT}" --artifact-id "${FIRST_ID}" \
         --input "${LOCK_SYMLINK_CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
         --output "${WORK}/${FIRST_ID}.bolt" \
+        "${REGISTER_ARGUMENTS[@]}" \
         >"${WORK}/lock-symlink.out" 2>"${WORK}/lock-symlink.err"; then
     fail 'symlink fingerprint lock was accepted'
 fi
@@ -405,6 +430,7 @@ if "${REGISTER}" --test-mode --cache-root "${CACHE}" --fingerprint "${FINGERPRIN
         --artifact-id "${FIRST_ID}" \
         --input "${CACHE}/inputs/${FINGERPRINT}/${OTHER_OBJECT}" \
         --output "${WORK}/${FIRST_ID}.bolt" \
+        "${REGISTER_ARGUMENTS[@]}" \
         >"${WORK}/wrong-input.out" 2>"${WORK}/wrong-input.err"; then
     fail 'output registration accepted the wrong exact BOLT input'
 fi
@@ -417,6 +443,7 @@ if "${REGISTER}" --test-mode --cache-root "${CACHE}" --fingerprint "${FINGERPRIN
         --artifact-id "${FIRST_ID}" \
         --input "${CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
         --output "${WORK}/prepared-output-symlink" \
+        "${REGISTER_ARGUMENTS[@]}" \
         >"${WORK}/symlink-output.out" 2>"${WORK}/symlink-output.err"; then
     fail 'output registration accepted a symlink'
 fi

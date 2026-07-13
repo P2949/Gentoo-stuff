@@ -88,6 +88,7 @@ export GENTOO_OPT_PROFILE_VALIDATOR="${TMP}/bin/profile-validator"
 export VALIDATOR_LOG="${TMP}/profile-validator.log"
 
 FINGERPRINT=$(printf 'a%.0s' {1..64})
+export GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT=1
 
 write_manifest_file() {
     local output=$1 backend=$2 family=$3 profile=$4 abi=${5:-amd64}
@@ -439,7 +440,7 @@ case_bolt_post_install_wrapper() (
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     post_src_install
     mapfile -t arguments < "${BOLT_WRAPPER_EVIDENCE}"
-    [[ ${arguments[*]} == "--ed ${ED} --cache-root ${GENTOO_OPT_BOLT_CACHE_ROOT} --fingerprint ${FINGERPRINT} --readelf /usr/bin/readelf --objcopy /usr/bin/objcopy" ]]
+    [[ ${arguments[*]} == "--ed ${ED} --cache-root ${GENTOO_OPT_BOLT_CACHE_ROOT} --fingerprint ${FINGERPRINT} --expected-eligible-count 1 --readelf /usr/bin/readelf --objcopy /usr/bin/objcopy" ]]
     [[ -f ${PORTAGE_BUILDDIR}/.installed ]]
 )
 

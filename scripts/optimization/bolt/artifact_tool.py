@@ -29,6 +29,7 @@ from typing import Any, NoReturn
 SCHEMA_CAPTURE = "gentoo-optimization-bolt-capture-v2"
 SCHEMA_OUTPUT = "gentoo-optimization-bolt-output-v2"
 SCHEMA_COMMAND = "gentoo-optimization-bolt-command-v1"
+SCHEMA_ZERO_ELIGIBILITY = "gentoo-optimization-bolt-zero-eligibility-v1"
 FINGERPRINT_RE = re.compile(r"[0-9a-f]{64}")
 BUILD_ID_RE = re.compile(r"Build ID:\s*([0-9A-Fa-f]+)")
 HEADER_RE = re.compile(r"^\s*(Class|Data|Type|Machine):\s*(.*?)\s*$")
@@ -111,6 +112,16 @@ def nonnegative_seconds(value: str) -> float:
         raise argparse.ArgumentTypeError("must be a nonnegative number of seconds") from error
     if result < 0 or result > 30:
         raise argparse.ArgumentTypeError("must be between zero and 30 seconds")
+    return result
+
+
+def nonnegative_integer(value: str) -> int:
+    try:
+        result = int(value, 10)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a nonnegative integer") from error
+    if result < 0:
+        raise argparse.ArgumentTypeError("must be a nonnegative integer")
     return result
 
 
@@ -900,6 +911,32 @@ def file_record(path_text: str, label: str) -> dict[str, Any]:
     }
 
 
+def zero_eligibility_proof(
+    path_text: str | None, fingerprint: str, expected_count: int
+) -> dict[str, Any] | None:
+    if expected_count != 0:
+        if path_text is not None:
+            fail("--zero-eligible-proof is forbidden when expected eligible count is positive")
+        return None
+    if path_text is None:
+        fail(
+            "expected eligible count zero requires --zero-eligible-proof from the "
+            "frozen inventory"
+        )
+    identity = file_record(path_text, "zero-eligibility proof")
+    document = load_json(Path(identity["path"]), SCHEMA_ZERO_ELIGIBILITY)
+    required = {"schema", "package_fingerprint", "eligible_count", "inventory_evidence"}
+    if set(document) != required:
+        fail("zero-eligibility proof fields differ from the strict schema")
+    if document["package_fingerprint"] != fingerprint or document["eligible_count"] != 0:
+        fail("zero-eligibility proof does not bind this fingerprint to count zero")
+    inventory = document["inventory_evidence"]
+    validated = validate_recorded_files([inventory], "frozen inventory evidence")[0]
+    if validated != inventory:
+        fail("zero-eligibility frozen inventory identity mismatch")
+    return {"identity": identity, "document": document}
+
+
 def validate_recorded_files(records: Any, label: str) -> list[dict[str, Any]]:
     if not isinstance(records, list) or not records:
         fail(f"{label} records must be a nonempty list")
@@ -1061,6 +1098,9 @@ def command_capture(arguments: argparse.Namespace) -> None:
     ed = validate_portage_ed(arguments.ed, arguments.test_mode)
     cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
     fingerprint = validate_fingerprint(arguments.fingerprint)
+    zero_proof = zero_eligibility_proof(
+        arguments.zero_eligible_proof, fingerprint, arguments.expected_eligible_count
+    )
     readelf = shutil.which(arguments.readelf)
     objcopy = shutil.which(arguments.objcopy)
     if readelf is None or objcopy is None:
@@ -1129,6 +1169,11 @@ def command_capture(arguments: argparse.Namespace) -> None:
         after = tree_snapshot(ed)
         if before != after:
             fail("ED metadata/topology changed during capture")
+        if eligible_total != arguments.expected_eligible_count:
+            fail(
+                "captured BOLT-eligible count differs from the frozen inventory: "
+                f"expected={arguments.expected_eligible_count}, actual={eligible_total}"
+            )
         manifest = {
             "schema": SCHEMA_CAPTURE,
             "package_fingerprint": fingerprint,
@@ -1136,6 +1181,8 @@ def command_capture(arguments: argparse.Namespace) -> None:
             "regular_inode_groups_total": len(regular_groups),
             "elf_total": elf_total,
             "eligible_total": eligible_total,
+            "expected_eligible_count": arguments.expected_eligible_count,
+            "zero_eligible_proof": zero_proof,
             "ineligible_total": elf_total - eligible_total,
             "artifacts": artifacts,
             "symlinks": symlinks,

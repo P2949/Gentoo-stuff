@@ -720,6 +720,10 @@ rust-generate|rust-use|go-use) ;;
         gentoo_opt_safe_absolute_path "${GENTOO_OPT_BOLT_CACHE_ROOT-}" || {
             gentoo_opt_error 'BOLT stage requires a safe absolute GENTOO_OPT_BOLT_CACHE_ROOT'; return 1;
         }
+        [[ ${GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT-} =~ ^[1-9][0-9]*$ ]] || {
+            gentoo_opt_error 'BOLT stage requires a positive inventory-derived expected eligible count'
+            return 1
+        }
     fi
     if [[ ${mode} != off ]]; then
         gentoo_opt_apply_primary_mode "${mode}" || return 1
@@ -825,6 +829,7 @@ gentoo_opt_run_bolt_wrapper() {
     gentoo_opt_bolt_wrapper_path "${operation}" || return 1
     "${GENTOO_OPT_BOLT_WRAPPER}" --ed "${ED}" \
         --cache-root "${cache}" --fingerprint "${fingerprint}" \
+        --expected-eligible-count "${GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT}" \
         --readelf /usr/bin/readelf --objcopy /usr/bin/objcopy
 }
 
