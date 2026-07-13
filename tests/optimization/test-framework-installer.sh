@@ -57,6 +57,12 @@ cp -a -- "${SOURCE_ROOT}/scripts/optimization/bolt" \
     "${REPOSITORY}/scripts/optimization/bolt"
 cp -a -- "${SOURCE_ROOT}/scripts/optimization/pgo" \
     "${REPOSITORY}/scripts/optimization/pgo"
+cp -a -- "${SOURCE_ROOT}/scripts/optimization/lib" \
+    "${REPOSITORY}/scripts/optimization/lib"
+cp -a -- "${SOURCE_ROOT}/scripts/optimization/verify" \
+    "${REPOSITORY}/scripts/optimization/verify"
+mkdir -p -- "${REPOSITORY}/optimization"
+cp -a -- "${SOURCE_ROOT}/optimization/schema" "${REPOSITORY}/optimization/schema"
 install -m 0755 -T -- "${SOURCE_ROOT}/scripts/optimization/install-framework.sh" \
     "${REPOSITORY}/scripts/optimization/install-framework.sh"
 
@@ -75,6 +81,9 @@ git -C "${REPOSITORY}" commit -qm 'fixture baseline'
 PROFILE=${TARGET}/var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm
 mkdir -p -- "${PROFILE}"
 printf 'ARCH="amd64"\n' >"${PROFILE}/make.defaults"
+mkdir -p -- "${TARGET}/usr/bin"
+cp -- "$(command -v jq)" "${TARGET}/usr/bin/jq"
+chmod 0755 -- "${TARGET}/usr/bin/jq"
 
 # Unsafe destination ancestors must fail before the lock or framework base is
 # created.  The fixture root itself is the hermetic trust boundary.
@@ -83,6 +92,9 @@ mkdir -p -- "${UNSAFE}/usr"
 chmod 0777 -- "${UNSAFE}/usr"
 mkdir -p -- "${UNSAFE}/var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm"
 printf 'ARCH="amd64"\n' >"${UNSAFE}/var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm/make.defaults"
+mkdir -p -- "${UNSAFE}/usr/bin"
+cp -- "$(command -v jq)" "${UNSAFE}/usr/bin/jq"
+chmod 0755 -- "${UNSAFE}/usr/bin/jq"
 expect_failure 'trusted ancestor is group/world-writable' \
     env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
@@ -117,10 +129,21 @@ grep -Eq '^source_aggregate_sha256=[0-9a-f]{64}$' "${MANIFEST}" || \
     fail 'manifest source aggregate is invalid'
 grep -Eq '^git_commit=[0-9a-f]{40}$' "${MANIFEST}" || fail 'manifest Git commit is invalid'
 grep -Fxq 'git_worktree=clean' "${MANIFEST}" || fail 'manifest clean/dirty state differs'
+grep -Eq '^jq_sha256=[0-9a-f]{64}$' "${MANIFEST}" || fail 'manifest jq hash is invalid'
 [[ $(stat -c %a -- "${ACTIVE}/portage") == 755 ]] || fail 'Portage candidate root is not 0755'
 [[ $(stat -c %a -- "${ACTIVE}/portage/make.conf") == 644 ]] || fail 'Portage config is not 0644'
 [[ $(stat -c %a -- "${TARGET}/usr/local/libexec/gentoo-optimization/bolt/artifact_tool.py") == 755 ]] || \
     fail 'installed executable helper is not 0755'
+[[ -x ${TARGET}/usr/local/libexec/gentoo-optimization/scripts/optimization/verify/reconcile-state.py ]] || \
+    fail 'installed state reconciliation entry point is absent'
+[[ -f ${TARGET}/usr/local/share/gentoo-optimization/schema/package-state.schema.json ]] || \
+    fail 'installed package state schema is absent'
+[[ $(stat -c '%g:%a' -- "${TARGET}/var/cache/gentoo-optimization/pgo") == "$(id -g):750" ]] || \
+    fail 'validated PGO cache trust root mode differs'
+[[ $(stat -c '%g:%a' -- "${TARGET}/var/tmp/gentoo-optimization/pgo-raw") == "$(id -g):750" ]] || \
+    fail 'raw PGO spool trust root mode differs'
+[[ $(stat -c %a -- "${TARGET}/var/lib/gentoo-optimization/generations") == 755 ]] || \
+    fail 'generation trust root mode differs'
 [[ $(find "${ACTIVE}/generated-policy" -mindepth 1 -maxdepth 1 -printf '%f\n') == .empty-v1 ]] || \
     fail 'generated policy is not rigorously empty'
 

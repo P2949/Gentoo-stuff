@@ -608,7 +608,7 @@ fi
 FRAMEWORK_INSTALLER_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-framework-installer.sh
 if [[ ! -f ${FRAMEWORK_INSTALLER_FIXTURE} ]]; then
     skip_case framework-installer "fixture is absent: ${FRAMEWORK_INSTALLER_FIXTURE}"
-elif ! require_commands awk bash chmod cmp cp find flock git grep install ln \
+elif ! require_commands awk bash chmod cmp cp find flock git grep install jq ln \
     mkdir mktemp mv readlink realpath rm runuser sed seq sha256sum sleep sort \
     stat sync tr; then
     skip_case framework-installer "${PREFLIGHT_REASON}"

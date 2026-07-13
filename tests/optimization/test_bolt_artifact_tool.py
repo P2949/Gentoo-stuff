@@ -62,9 +62,9 @@ class ProductionTrustTests(unittest.TestCase):
     def test_system_tool_chain_is_root_owned_and_nonwritable(self) -> None:
         if os.geteuid() != 0 and Path("/").stat().st_uid != 0:
             self.skipTest("filesystem root is not root-owned")
-        candidate = Path("/bin/bash")
+        candidate = Path("/usr/bin/env")
         if not candidate.exists() or candidate.is_symlink():
-            self.skipTest("regular /bin/bash is unavailable")
+            self.skipTest("regular /usr/bin/env is unavailable")
         TOOL.validate_root_owned_nonwritable_chain(candidate, "system tool")
 
 

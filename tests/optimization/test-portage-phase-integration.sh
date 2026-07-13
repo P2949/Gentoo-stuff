@@ -9,6 +9,8 @@ TEMPLATE=${ROOT}/optimization/fixtures/portage/phase2-portage-fixture-1.ebuild.i
 PROXY_TEMPLATE=${ROOT}/optimization/fixtures/portage/capture-proxy.sh.in
 CAPTURE_TOOL=${ROOT}/scripts/optimization/bolt/capture-input.sh
 FRAMEWORK_INSTALLER=${ROOT}/scripts/optimization/install-framework.sh
+REGISTER_TOOL=/usr/local/libexec/gentoo-optimization/bolt/register-output.sh
+LLVM_BOLT=/usr/lib/llvm/22/bin/llvm-bolt
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -20,7 +22,7 @@ if ((EUID != 0)); then
     exit 77
 fi
 
-for command in b2sum ebuild portageq python3 readelf sed sha256sum sha512sum stat; do
+for command in b2sum date ebuild mv portageq python3 readelf sed sha256sum sha512sum stat; do
     command -v "${command}" >/dev/null 2>&1 || fail "missing required command: ${command}"
 done
 [[ -f ${TEMPLATE} && -f ${PROXY_TEMPLATE} && -x ${CAPTURE_TOOL} ]] || \
@@ -28,6 +30,8 @@ done
 [[ -x ${FRAMEWORK_INSTALLER} ]] || fail 'root-owned framework installer is absent'
 "${FRAMEWORK_INSTALLER}" --check >/dev/null || \
     fail 'live root-owned framework does not match the reviewed repository source'
+[[ -x ${REGISTER_TOOL} ]] || fail 'installed production BOLT output registrar is absent'
+[[ -x ${LLVM_BOLT} ]] || fail 'package-managed llvm-bolt 22 is absent'
 
 WORK=$(mktemp -d /var/tmp/gentoo-phase2-portage-fixture.XXXXXX)
 SUCCESS_FINGERPRINT=''
@@ -47,8 +51,13 @@ cleanup() {
         rm -rf -- "${CACHE_ROOT}/inputs/${fingerprint}" \
             "${CACHE_ROOT}/perf/${fingerprint}" \
             "${CACHE_ROOT}/fdata/${fingerprint}" \
-            "${CACHE_ROOT}/outputs/${fingerprint}"
+            "${CACHE_ROOT}/outputs/${fingerprint}" \
+            "${CACHE_ROOT}/diagnostics/${fingerprint}"
         rm -f -- "${CACHE_ROOT}/locks/${fingerprint}.lock"
+        if [[ -d ${CACHE_ROOT}/quarantine/capture-mismatch ]]; then
+            find "${CACHE_ROOT}/quarantine/capture-mismatch" -mindepth 1 -maxdepth 1 \
+                -name "${fingerprint}.*" -exec rm -rf -- {} +
+        fi
     done
     rm -rf -- "${WORK}"
     return "${status}"
@@ -59,6 +68,7 @@ EBUILD=${PACKAGE_ROOT}/phase2-portage-fixture-1.ebuild
 FAIL_SWITCH=${WORK}/force-capture-failure
 PROXY_MODE_SWITCH=${WORK}/use-capture-proxy
 OFF_SWITCH=${WORK}/optimization-off
+DEPLOY_SWITCH=${WORK}/optimization-deploy
 CAPTURE_PROXY=${WORK}/capture-proxy.sh
 SUCCESS_FINGERPRINT=$(printf '%s' "${WORK}:success" | sha256sum | awk '{print $1}')
 mkdir -p -- "${PACKAGE_ROOT}" "${WORK}/metadata" "${WORK}/profiles"
@@ -77,6 +87,7 @@ sed \
     -e "s|@CAPTURE_PROXY@|$(escape_sed "${CAPTURE_PROXY}")|g" \
     -e "s|@PROXY_MODE_SWITCH@|$(escape_sed "${PROXY_MODE_SWITCH}")|g" \
     -e "s|@OFF_SWITCH@|$(escape_sed "${OFF_SWITCH}")|g" \
+    -e "s|@DEPLOY_SWITCH@|$(escape_sed "${DEPLOY_SWITCH}")|g" \
     -e "s|@SUCCESS_FINGERPRINT@|${SUCCESS_FINGERPRINT}|g" \
     "${TEMPLATE}" > "${EBUILD}"
 sed \
@@ -153,14 +164,263 @@ PY
 grep -Fq 'Completed installing app-test/phase2-portage-fixture-1' \
     "${WORK}/install-retry.log" || fail 'retry appears to have skipped src_install'
 
+# Produce one real prepared output from the immutable captured object. This is
+# deliberately a hook-integration profile, not profile-quality evidence: the
+# minimal valid fdata record only proves that the production registrar and
+# pre-strip deployment path accept an exact llvm-bolt transformation.
+IFS=$'\t' read -r ARTIFACT_ID OBJECT_FILE < <(python3 - "${MANIFEST}" <<'PY'
+import json
+import sys
+
+eligible = [
+    item
+    for item in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]
+    if item["eligible"]
+]
+assert len(eligible) == 1
+print(eligible[0]["artifact_id"], eligible[0]["cache_object"], sep="\t")
+PY
+)
+[[ ${ARTIFACT_ID} =~ ^[0-9a-f]{64}$ ]] || fail 'capture returned an invalid artifact ID'
+CAPTURED_OBJECT=${CACHE_ROOT}/inputs/${SUCCESS_FINGERPRINT}/${OBJECT_FILE}
+[[ -s ${CAPTURED_OBJECT} ]] || fail 'exact captured BOLT input object is absent'
+
+EVIDENCE_ROOT=${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}/hook-integration
+FDATA_ROOT=${CACHE_ROOT}/fdata/${SUCCESS_FINGERPRINT}
+mkdir -p -- "${EVIDENCE_ROOT}" "${FDATA_ROOT}"
+chmod 0700 -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" \
+    "${EVIDENCE_ROOT}" "${FDATA_ROOT}"
+FDATA=${FDATA_ROOT}/minimal-hook-integration.fdata
+WORKLOAD_EVIDENCE=${EVIDENCE_ROOT}/workload-evidence.json
+PROFILE_EVIDENCE=${EVIDENCE_ROOT}/profile-evidence.json
+BOLT_STDOUT=${EVIDENCE_ROOT}/llvm-bolt.stdout
+BOLT_STDERR=${EVIDENCE_ROOT}/llvm-bolt.stderr
+BOLT_COMMAND_RECORD=${EVIDENCE_ROOT}/llvm-bolt-command.json
+BOLT_COMMAND_OUTPUT=${EVIDENCE_ROOT}/phase2-portage-fixture.bolt.partial
+BOLT_PREPARED=${EVIDENCE_ROOT}/phase2-portage-fixture.bolt
+REGISTER_STDOUT=${EVIDENCE_ROOT}/register-output.stdout
+REGISTER_STDERR=${EVIDENCE_ROOT}/register-output.stderr
+printf '%s\n' '1 main 0 1 main 1 0 100' > "${FDATA}"
+printf '%s\n' \
+    '{"classification":"synthetic-minimal-hook-integration-not-profile-quality-evidence","runtime_training":false,"schema":"gentoo-optimization-bolt-hook-integration-workload-v1"}' \
+    > "${WORKLOAD_EVIDENCE}"
+printf '%s\n' \
+    '{"branch_records":1,"classification":"synthetic-minimal-hook-integration-not-profile-quality-evidence","profile_quality_claim":false,"schema":"gentoo-optimization-bolt-hook-integration-profile-v1"}' \
+    > "${PROFILE_EVIDENCE}"
+chmod 0600 -- "${FDATA}" "${WORKLOAD_EVIDENCE}" "${PROFILE_EVIDENCE}"
+
+POLICY_REVISION=gentoo-system-wide-bolt-v1-cdsort-20260712
+BOLT_OPTIONS=(
+    -reorder-blocks=ext-tsp
+    -reorder-functions=cdsort
+    -split-functions
+    -split-all-cold
+    -split-eh
+    -icf=safe
+    -update-debug-sections
+    -dyno-stats
+)
+rm -f -- "${BOLT_COMMAND_OUTPUT}" "${BOLT_PREPARED}"
+BOLT_STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+"${LLVM_BOLT}" "${CAPTURED_OBJECT}" -o "${BOLT_COMMAND_OUTPUT}" \
+    "-data=${FDATA}" "${BOLT_OPTIONS[@]}" >"${BOLT_STDOUT}" 2>"${BOLT_STDERR}" || \
+    fail 'genuine llvm-bolt rejected the exact captured object or minimal integration fdata'
+BOLT_COMPLETED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+[[ -s ${BOLT_COMMAND_OUTPUT} ]] || fail 'genuine llvm-bolt published no output'
+chmod 0600 -- "${BOLT_COMMAND_OUTPUT}" "${BOLT_STDOUT}" "${BOLT_STDERR}"
+mv -- "${BOLT_COMMAND_OUTPUT}" "${BOLT_PREPARED}"
+
+python3 - "${LLVM_BOLT}" "${CAPTURED_OBJECT}" "${BOLT_PREPARED}" \
+    "${BOLT_COMMAND_OUTPUT}" "${FDATA}" "${WORKLOAD_EVIDENCE}" \
+    "${PROFILE_EVIDENCE}" "${BOLT_STDOUT}" "${BOLT_STDERR}" \
+    "${BOLT_COMMAND_RECORD}" "${BOLT_STARTED}" "${BOLT_COMPLETED}" \
+    "${POLICY_REVISION}" "${BOLT_OPTIONS[@]}" <<'PY'
+import hashlib
+import json
+import pathlib
+import subprocess
+import sys
+
+(
+    tool,
+    source,
+    prepared,
+    command_output,
+    fdata,
+    workload,
+    profile,
+    stdout,
+    stderr,
+    record,
+    started,
+    completed,
+    policy,
+    *options,
+) = sys.argv[1:]
+
+
+def identity(value: str, *, recorded_path: str | None = None) -> dict[str, object]:
+    path = pathlib.Path(value).resolve(strict=True)
+    return {
+        "path": recorded_path or str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "size": path.stat().st_size,
+    }
+
+
+tool_path = pathlib.Path(tool).resolve(strict=True)
+source_path = pathlib.Path(source).resolve(strict=True)
+fdata_path = pathlib.Path(fdata).resolve(strict=True)
+command_output_path = str(pathlib.Path(command_output).resolve(strict=False))
+tool_record = identity(str(tool_path))
+tool_record["version"] = subprocess.run(
+    [str(tool_path), "--version"],
+    check=True,
+    text=True,
+    capture_output=True,
+    env={"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin"},
+).stdout.strip()
+document = {
+    "schema": "gentoo-optimization-bolt-command-v1",
+    "argv": [
+        str(tool_path),
+        str(source_path),
+        "-o",
+        command_output_path,
+        f"-data={fdata_path}",
+        *options,
+    ],
+    "exit_status": 0,
+    "started_at_utc": started,
+    "completed_at_utc": completed,
+    "tool": tool_record,
+    "input": identity(str(source_path)),
+    "output": identity(prepared, recorded_path=command_output_path),
+    "option_policy_revision": policy,
+    "options": options,
+    "fdata": [identity(str(fdata_path))],
+    "workload_evidence": [identity(workload)],
+    "profile_evidence": [identity(profile)],
+    "stdout": identity(stdout),
+    "stderr": identity(stderr),
+}
+pathlib.Path(record).write_text(
+    json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+PY
+chmod 0600 -- "${BOLT_COMMAND_RECORD}"
+
+REGISTER_ARGUMENTS=(
+    --cache-root "${CACHE_ROOT}"
+    --fingerprint "${SUCCESS_FINGERPRINT}"
+    --artifact-id "${ARTIFACT_ID}"
+    --input "${CAPTURED_OBJECT}"
+    --output "${BOLT_PREPARED}"
+    --llvm-bolt "${LLVM_BOLT}"
+    --option-policy-revision "${POLICY_REVISION}"
+    --fdata "${FDATA}"
+    --workload-evidence "${WORKLOAD_EVIDENCE}"
+    --profile-evidence "${PROFILE_EVIDENCE}"
+    --command-record "${BOLT_COMMAND_RECORD}"
+    --command-output-path "${BOLT_COMMAND_OUTPUT}"
+    --readelf /usr/bin/readelf
+    --objcopy /usr/bin/objcopy
+)
+for option in "${BOLT_OPTIONS[@]}"; do
+    REGISTER_ARGUMENTS+=(--bolt-option="${option}")
+done
+"${REGISTER_TOOL}" "${REGISTER_ARGUMENTS[@]}" \
+    >"${REGISTER_STDOUT}" 2>"${REGISTER_STDERR}" || \
+    fail 'production BOLT output registration rejected the exact real-tool provenance'
+chmod 0600 -- "${REGISTER_STDOUT}" "${REGISTER_STDERR}"
+
+OUTPUT_MANIFEST=${CACHE_ROOT}/outputs/${SUCCESS_FINGERPRINT}/manifest.json
+[[ -s ${OUTPUT_MANIFEST} ]] || fail 'production output registrar published no manifest'
+OUTPUT_OBJECT=$(python3 - "${MANIFEST}" "${OUTPUT_MANIFEST}" <<'PY'
+import json
+import sys
+
+capture = json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"][0]
+output_manifest = json.load(open(sys.argv[2], encoding="utf-8"))
+assert output_manifest["expected_eligible_count"] == 1
+assert len(output_manifest["outputs"]) == 1
+output = output_manifest["outputs"][0]
+abi_keys = {
+    "elf_class",
+    "elf_data",
+    "elf_type",
+    "machine",
+    "elf_role",
+    "interpreter",
+    "needed",
+    "soname",
+    "rpath",
+    "runpath",
+    "exported_dynamic_symbols",
+    "symbol_version_names",
+    "symbol_version_files",
+    "cet_properties",
+    "gnu_stack_policy",
+    "has_gnu_relro",
+    "bind_now",
+}
+assert output["artifact_id"] == capture["artifact_id"]
+assert set(output["source_abi_security_identity"]) == abi_keys
+assert set(output["abi_security_identity"]) == abi_keys
+assert output["source_abi_security_identity"] == output["abi_security_identity"]
+assert output["source_abi_security_identity"] == {
+    key: capture[key] for key in output["source_abi_security_identity"]
+}
+assert output["option_policy_revision"] == "gentoo-system-wide-bolt-v1-cdsort-20260712"
+assert output["command"]["exit_status"] == 0
+print(output["output_object"])
+PY
+)
+REGISTERED_OUTPUT=${CACHE_ROOT}/outputs/${SUCCESS_FINGERPRINT}/${OUTPUT_OBJECT}
+[[ -s ${REGISTERED_OUTPUT} ]] || fail 'registered real BOLT output object is absent'
+
+# A genuine bolt-deploy Portage install must see the original object in the
+# package hook and replace it only in the lexically-last install-QA hook.
+: > "${DEPLOY_SWITCH}"
+ebuild "${EBUILD}" clean >"${WORK}/pre-deploy-clean.log" 2>&1
+ebuild "${EBUILD}" install >"${WORK}/install-deploy.log" 2>&1
+STAGED_EXECUTABLE=${BUILD_ROOT}/image/usr/bin/phase2-portage-fixture
+[[ -x ${STAGED_EXECUTABLE} ]] || fail 'bolt-deploy install did not stage its executable'
+[[ -f ${BUILD_ROOT}/.installed ]] || fail 'successful bolt-deploy lacks its .installed marker'
+[[ $(<"${BUILD_ROOT}/temp/previous-hook.log") == previous-hook-passed ]] || \
+    fail 'package post_src_install did not run before BOLT deployment'
+readelf -SW "${STAGED_EXECUTABLE}" | grep -F '.note.bolt_info' >/dev/null || \
+    fail 'deployed executable lacks .note.bolt_info'
+readelf -SW "${STAGED_EXECUTABLE}" | grep -F '.bolt.org.text' >/dev/null || \
+    fail 'deployed executable lacks .bolt.org.text'
+[[ $(sha256sum "${STAGED_EXECUTABLE}" | awk '{print $1}') == \
+    $(sha256sum "${REGISTERED_OUTPUT}" | awk '{print $1}') ]] || \
+    fail 'deployed executable differs from the exact registered BOLT object'
+[[ $("${STAGED_EXECUTABLE}") == 42 ]] || fail 'deployed BOLT executable failed runtime smoke test'
+
+# Remove the sole registered output and prove the fatal deploy path clears the
+# marker that would otherwise let Portage skip the next install attempt.
+ebuild "${EBUILD}" clean >"${WORK}/pre-deploy-failure-clean.log" 2>&1
+REGISTERED_OUTPUT_SAVED=${REGISTERED_OUTPUT}.saved
+mv -- "${REGISTERED_OUTPUT}" "${REGISTERED_OUTPUT_SAVED}"
+if ebuild "${EBUILD}" install >"${WORK}/install-deploy-failure.log" 2>&1; then
+    fail 'real Portage install accepted a missing registered BOLT output'
+fi
+[[ ! -e ${BUILD_ROOT}/.installed ]] || \
+    fail 'failed bolt-deploy left Portage .installed behind'
+mv -- "${REGISTERED_OUTPUT_SAVED}" "${REGISTERED_OUTPUT}"
+ebuild "${EBUILD}" install >"${WORK}/install-deploy-retry.log" 2>&1
+[[ -f ${BUILD_ROOT}/.installed ]] || fail 'bolt-deploy retry did not complete install phase'
+[[ $("${STAGED_EXECUTABLE}") == 42 ]] || fail 'bolt-deploy retry failed runtime smoke test'
+
 # A clean off-mode build must run the same package hook yet publish no capture.
 ebuild "${EBUILD}" clean >"${WORK}/pre-off-clean.log" 2>&1
 rm -rf -- "${CACHE_ROOT}/inputs/${SUCCESS_FINGERPRINT}"
-rm -f -- "${PROXY_MODE_SWITCH}"
+rm -f -- "${PROXY_MODE_SWITCH}" "${DEPLOY_SWITCH}"
 : > "${OFF_SWITCH}"
 ebuild "${EBUILD}" install >"${WORK}/install-off.log" 2>&1
 [[ ! -e ${MANIFEST} ]] || fail 'off-mode real Portage build unexpectedly published a capture'
 [[ -f ${BUILD_ROOT}/.installed ]] || fail 'off-mode disposable install did not complete'
 
 ebuild "${EBUILD}" clean >"${WORK}/final-clean.log" 2>&1
-printf 'PASS: real Portage phase, default helper, sandbox, fatal marker, retry, and off mode\n'
+printf 'PASS: real Portage capture/deploy hooks, exact BOLT provenance, fatal markers, retries, and off mode\n'

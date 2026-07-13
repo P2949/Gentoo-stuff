@@ -22,13 +22,16 @@ fi
 if [[ -e @OFF_SWITCH@ ]]; then
     GENTOO_OPT_MODE=off
 fi
+if [[ -e @DEPLOY_SWITCH@ ]]; then
+    GENTOO_OPT_MODE=bolt-deploy
+fi
 
 src_unpack() {
     mkdir -p -- "${S}" || die
     printf '%s\n' \
         '#include <stdio.h>' \
         'static int helper(int value) { return value + 7; }' \
-        'int main(void) { printf("%d\\n", helper(35)); return 0; }' \
+        'int main(void) { printf("%d\n", helper(35)); return 0; }' \
         > "${S}/fixture.c" || die
 }
 
@@ -46,5 +49,10 @@ post_src_install() {
         grep -q '[.]symtab' || die "pre-strip symtab is absent"
     readelf -SW "${ED}/usr/bin/phase2-portage-fixture" | \
         grep -Eq '[.]rela?[.]text' || die "pre-strip text relocations are absent"
+    if [[ ${GENTOO_OPT_MODE} == bolt-deploy ]] && \
+        readelf -SW "${ED}/usr/bin/phase2-portage-fixture" | \
+            grep -F '.note.bolt_info' >/dev/null; then
+        die "BOLT deployment ran before package post_src_install"
+    fi
     printf '%s\n' previous-hook-passed > "${T}/previous-hook.log" || die
 }
