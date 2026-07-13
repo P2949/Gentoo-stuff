@@ -1383,10 +1383,6 @@ def create_parser() -> argparse.ArgumentParser:
         "sample-record",
         help="disabled legacy external sample identity recorder",
     )
-    add_sample_identity_arguments(sample_record_parser)
-    add_reproducibility_arguments(sample_record_parser)
-    sample_record_parser.add_argument("--metadata-out", type=Path, required=True)
-    sample_record_parser.add_argument("--manifest-out", type=Path, required=True)
     sample_record_parser.set_defaults(func=sample_record_disabled)
 
     sample_validate_parser = subparsers.add_parser(

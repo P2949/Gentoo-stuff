@@ -53,8 +53,9 @@ scripts/optimization/pgo/profile-identity.py profile-path \
 
 The families are `clang-ir`, `rust`, `gcc`, `go`, `clang-sample`, and
 `kernel`. They have non-overlapping compiler/generation/package/ABI identity
-axes. Rust paths additionally separate the target triple and exact bundled
-LLVM version. A caller must never substitute one family path for another.
+axes. Rust paths additionally separate the exact Rust language/compiler
+version, bundled LLVM major, complete bundled LLVM version, and target triple.
+A caller must never substitute one family path for another.
 
 ## Clang sample profiles
 

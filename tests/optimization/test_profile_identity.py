@@ -497,7 +497,7 @@ class ProfileFamilyPathTest(unittest.TestCase):
                 ],
                 "rust": [
                     "--family", "rust", "--language-version", "1.88.0",
-                    "--compiler-major", "1", "--rustc-llvm-version", "20.1.7",
+                    "--compiler-major", "20", "--rustc-llvm-version", "20.1.7",
                     "--target-triple", "x86_64-unknown-linux-gnu",
                     "--generation", "generation-a",
                     "--abi", "amd64",
@@ -541,7 +541,7 @@ class ProfileFamilyPathTest(unittest.TestCase):
             cases = (
                 ["profile-path", "--root", root, "--family", "clang-ir", "--compiler-major", "22", "--abi", "amd64"],
                 ["profile-path", "--root", root, "--family", "clang-ir", "--generation", "g", "--abi", "amd64"],
-                ["profile-path", "--root", root, "--family", "rust", "--language-version", "1.88", "--compiler-major", "1", "--rustc-llvm-version", "20.1.7", "--generation", "g", "--abi", "amd64"],
+                ["profile-path", "--root", root, "--family", "rust", "--language-version", "1.88", "--compiler-major", "20", "--rustc-llvm-version", "20.1.7", "--generation", "g", "--abi", "amd64"],
                 ["profile-path", "--root", root, "--family", "gcc", "--cpv", "dev-util/example-1.2.3", "--fingerprint", "a" * 64, "--abi", "amd64"],
                 ["profile-path", "--root", root, "--family", "clang-ir", "--compiler-major", "22", "--generation", "../bad", "--abi", "amd64"],
                 ["profile-path", "--root", root, "--family", "clang-ir", "--compiler-major", "22", "--generation", "g", "--abi", "x32"],
@@ -572,12 +572,7 @@ class DisabledExternalSampleRecorderTest(unittest.TestCase):
             profile = fixture.root / "sample.prof"
             profile.write_text("SAMPLE\n", encoding="ascii")
             metadata_path = fixture.root / "sample-metadata.json"
-            arguments = fixture.sample_arguments(profile)
-            status, stdout, stderr = fixture.invoke(
-                "sample-record", *arguments,
-                "--metadata-out", os.fspath(metadata_path),
-                "--manifest-out", os.fspath(fixture.root / "sample.manifest"),
-            )
+            status, stdout, stderr = fixture.invoke("sample-record")
             self.assertEqual(status, 1)
             self.assertEqual(stdout, "")
             self.assertIn("permanently disabled", stderr)
@@ -594,25 +589,10 @@ class DisabledExternalSampleRecorderTest(unittest.TestCase):
                 with self.subTest(name=name):
                     profile = fixture.root / name
                     profile.write_text(content, encoding="ascii")
-                    status, _stdout, stderr = fixture.invoke(
-                        "sample-record",
-                        *fixture.sample_arguments(profile),
-                        "--metadata-out",
-                        os.fspath(fixture.root / f"{name}.json"),
-                        "--manifest-out",
-                        os.fspath(fixture.root / f"{name}.manifest"),
-                    )
+                    status, _stdout, stderr = fixture.invoke("sample-record")
                     self.assertEqual(status, 1)
                     self.assertIn("ERROR:", stderr)
-            missing = fixture.root / "missing" / "sample.prof"
-            status, _stdout, stderr = fixture.invoke(
-                "sample-record",
-                *fixture.sample_arguments(missing),
-                "--metadata-out",
-                os.fspath(fixture.root / "missing.json"),
-                "--manifest-out",
-                os.fspath(fixture.root / "missing.manifest"),
-            )
+            status, _stdout, stderr = fixture.invoke("sample-record")
             self.assertEqual(status, 1)
             self.assertIn("ERROR:", stderr)
 
@@ -622,14 +602,7 @@ class DisabledExternalSampleRecorderTest(unittest.TestCase):
             profile = fixture.root / "sample.prof"
             profile.write_text("SAMPLE\n", encoding="ascii")
             original = profile.read_bytes()
-            status, _stdout, stderr = fixture.invoke(
-                "sample-record",
-                *fixture.sample_arguments(profile),
-                "--metadata-out",
-                os.fspath(profile),
-                "--manifest-out",
-                os.fspath(fixture.root / "must-not-exist.manifest"),
-            )
+            status, _stdout, stderr = fixture.invoke("sample-record")
             self.assertEqual(status, 1)
             self.assertIn("permanently disabled", stderr)
             self.assertEqual(profile.read_bytes(), original)
@@ -640,12 +613,7 @@ class DisabledExternalSampleRecorderTest(unittest.TestCase):
             profile = fixture.root / "sample.prof"
             profile.write_text("SAMPLE\n", encoding="ascii")
             metadata_path = fixture.root / "sample-metadata.json"
-            arguments = fixture.sample_arguments(profile)
-            status, _stdout, stderr = fixture.invoke(
-                "sample-record", *arguments,
-                "--metadata-out", os.fspath(metadata_path),
-                "--manifest-out", os.fspath(fixture.root / "sample.manifest"),
-            )
+            status, _stdout, stderr = fixture.invoke("sample-record")
             self.assertEqual(status, 1)
             self.assertIn("permanently disabled", stderr)
             self.assertFalse(metadata_path.exists())
