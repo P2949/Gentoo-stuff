@@ -63,7 +63,11 @@ gentoo_opt_append_colon_path_once() {
 }
 
 gentoo_opt_allow_sandbox_write() {
-    gentoo_opt_append_colon_path_once SANDBOX_WRITE "$1"
+    local path=$1
+    gentoo_opt_append_colon_path_once SANDBOX_WRITE "${path}" || return 1
+    if declare -F addwrite >/dev/null; then
+        addwrite "${path}" || return 1
+    fi
 }
 
 gentoo_opt_fixture_override_allowed() {
@@ -687,7 +691,6 @@ rust-generate|rust-use|go-use) ;;
         gentoo_opt_safe_absolute_path "${GENTOO_OPT_BOLT_CACHE_ROOT-}" || {
             gentoo_opt_error 'BOLT stage requires a safe absolute GENTOO_OPT_BOLT_CACHE_ROOT'; return 1;
         }
-        gentoo_opt_allow_sandbox_write "${GENTOO_OPT_BOLT_CACHE_ROOT}" || return 1
     fi
     if [[ ${mode} != off ]]; then
         gentoo_opt_apply_primary_mode "${mode}" || return 1
@@ -763,7 +766,7 @@ gentoo_opt_bolt_wrapper_path() {
 }
 
 gentoo_opt_run_bolt_wrapper() {
-    local operation=$1
+    local operation=$1 cache fingerprint
     gentoo_opt_safe_absolute_path "${ED-}" || {
         gentoo_opt_error 'BOLT hook requires ED to be a safe absolute staging path'; return 1;
     }
@@ -773,10 +776,22 @@ gentoo_opt_run_bolt_wrapper() {
     gentoo_opt_safe_absolute_path "${GENTOO_OPT_BOLT_CACHE_ROOT-}" || {
         gentoo_opt_error 'BOLT hook requires a safe absolute GENTOO_OPT_BOLT_CACHE_ROOT'; return 1;
     }
+    cache=${GENTOO_OPT_BOLT_CACHE_ROOT}
+    fingerprint=${GENTOO_OPT_ACTIVE_FINGERPRINT}
+    gentoo_opt_allow_sandbox_write "${cache}/locks/${fingerprint}.lock" || return 1
+    case ${operation} in
+        capture)
+            gentoo_opt_allow_sandbox_write "${cache}/inputs/${fingerprint}" || return 1
+            gentoo_opt_allow_sandbox_write "${cache}/inputs/${fingerprint}.partial" || return 1
+            ;;
+        deploy)
+            gentoo_opt_allow_sandbox_write "${cache}/diagnostics/${fingerprint}" || return 1
+            ;;
+    esac
     gentoo_opt_bolt_wrapper_path "${operation}" || return 1
     "${GENTOO_OPT_BOLT_WRAPPER}" --ed "${ED}" \
-        --cache-root "${GENTOO_OPT_BOLT_CACHE_ROOT}" \
-        --fingerprint "${GENTOO_OPT_ACTIVE_FINGERPRINT}"
+        --cache-root "${cache}" --fingerprint "${fingerprint}" \
+        --readelf /usr/bin/readelf --objcopy /usr/bin/objcopy
 }
 
 gentoo_opt_post_src_install() {

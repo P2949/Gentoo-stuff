@@ -404,7 +404,7 @@ case_bolt_post_install_wrapper() (
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     post_src_install
     mapfile -t arguments < "${BOLT_WRAPPER_EVIDENCE}"
-    [[ ${arguments[*]} == "--ed ${ED} --cache-root ${GENTOO_OPT_BOLT_CACHE_ROOT} --fingerprint ${FINGERPRINT}" ]]
+    [[ ${arguments[*]} == "--ed ${ED} --cache-root ${GENTOO_OPT_BOLT_CACHE_ROOT} --fingerprint ${FINGERPRINT} --readelf /usr/bin/readelf --objcopy /usr/bin/objcopy" ]]
     [[ -f ${PORTAGE_BUILDDIR}/.installed ]]
 )
 

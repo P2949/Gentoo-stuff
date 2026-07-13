@@ -628,7 +628,7 @@ def command_capture(arguments: argparse.Namespace) -> None:
     final = inputs / fingerprint
     if final.exists() or final.is_symlink():
         fail(f"capture already exists; refusing overwrite: {final}")
-    stage = inputs / f".{fingerprint}.partial.{os.getpid()}"
+    stage = inputs / f"{fingerprint}.partial"
     if stage.exists():
         fail(f"stale capture stage exists: {stage}")
     stage.mkdir(mode=0o700)
@@ -960,7 +960,9 @@ def command_deploy(arguments: argparse.Namespace) -> None:
     diagnostics.mkdir(mode=0o700, parents=True, exist_ok=True)
     reject_symlink_components(str(diagnostics), "diagnostic root")
     prepared: list[dict[str, Any]] = []
-    with tempfile.TemporaryDirectory(prefix="bolt-deploy-validate-", dir=cache) as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="bolt-deploy-validate-", dir=diagnostics
+    ) as temporary:
         scratch_root = Path(temporary)
         for index, artifact in enumerate(eligible):
             artifact_id = artifact["artifact_id"]
