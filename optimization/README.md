@@ -61,8 +61,9 @@ The installer builds one content-addressed, root-owned candidate below
 exact Portage configuration, `codex-local` overlay, BOLT/PGO/state runtime,
 state schemas, generated-policy generation, source inventory, candidate
 inventory, and canonical manifest. It verifies the candidate completely before
-publishing regular root-owned entry points. While holding the installer lock,
-all extant BOLT transaction locks, and a Portage-process quiescence gate, it
+publishing regular root-owned entry points. It acquires the stable mode-0600
+locks in the global order `framework-install -> project -> generation`, then
+holds all extant BOLT transaction locks and a Portage-process quiescence gate. It
 changes `/var/lib/gentoo-optimization/framework-current` last. Both
 `/etc/portage` and `codex-local` resolve through that one current link. Error,
 timeout, and signal paths restore the previous helper, hook, manifest,

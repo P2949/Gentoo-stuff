@@ -124,6 +124,76 @@ else
     printf 'SKIP: file-capability setup unavailable to the current user/filesystem\n'
 fi
 
+# Hermetic writer-lock contract: framework (implicit in test mode), then exact
+# project, generation, and fingerprint.  Content mismatch and a busy project
+# must fail before the fingerprint inode is created; while waiting on a held
+# fingerprint lock, both generation locks remain held exclusively.
+PROJECT_LOCK_FIXTURE=${WORK}/project.lock
+GENERATION_LOCK_FIXTURE=${WORK}/generation.lock
+python3 - "${MAIN_INVENTORY_PROOF}" "${PROJECT_LOCK_FIXTURE}" "${GENERATION_LOCK_FIXTURE}" <<'PY'
+import json,pathlib,sys
+proof=json.load(open(sys.argv[1])); inv=proof["inventory_evidence"]
+payload=json.dumps({"generation_id":proof["generation_id"],"inventory_id":proof["inventory_id"],"inventory_sha256":inv["sha256"]},indent=2,sort_keys=True)+"\n"
+for path in sys.argv[2:]: pathlib.Path(path).write_text(payload)
+PY
+chmod 0600 "${PROJECT_LOCK_FIXTURE}" "${GENERATION_LOCK_FIXTURE}"
+cp "${PROJECT_LOCK_FIXTURE}" "${WORK}/project.lock.good"
+printf '%s\n' mismatch >"${PROJECT_LOCK_FIXTURE}"
+if "${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${CACHE}" \
+        --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+        --inventory-proof "${MAIN_INVENTORY_PROOF}" \
+        --test-project-lock "${PROJECT_LOCK_FIXTURE}" \
+        --test-generation-lock "${GENERATION_LOCK_FIXTURE}" \
+        >"${WORK}/lock-content.out" 2>"${WORK}/lock-content.err"; then
+    fail 'transaction accepted project lock content for another generation'
+fi
+grep -Fq 'does not match the exact proof generation' "${WORK}/lock-content.err" || \
+    fail 'generation-lock content rejection lacked an exact reason'
+[[ ! -e ${CACHE}/locks/${FINGERPRINT}.lock ]] || \
+    fail 'fingerprint lock was created before generation content validation'
+cp "${WORK}/project.lock.good" "${PROJECT_LOCK_FIXTURE}"
+(
+    exec 8<"${PROJECT_LOCK_FIXTURE}"
+    flock -x 8
+    : >"${WORK}/project-busy-ready"
+    sleep 30
+) &
+PROJECT_BUSY_PID=$!
+for _ in {1..100}; do [[ -e ${WORK}/project-busy-ready ]] && break; sleep 0.01; done
+if "${CAPTURE}" --test-mode --lock-timeout-seconds 0.2 --ed "${ED}" \
+        --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+        --inventory-proof "${MAIN_INVENTORY_PROOF}" \
+        --test-project-lock "${PROJECT_LOCK_FIXTURE}" \
+        --test-generation-lock "${GENERATION_LOCK_FIXTURE}" \
+        >"${WORK}/project-busy.out" 2>"${WORK}/project-busy.err"; then
+    fail 'transaction ignored a busy project writer lock'
+fi
+kill "${PROJECT_BUSY_PID}" 2>/dev/null || true; wait "${PROJECT_BUSY_PID}" 2>/dev/null || true
+[[ ! -e ${CACHE}/locks/${FINGERPRINT}.lock ]] || \
+    fail 'fingerprint lock was created before busy project lock acquisition'
+
+mkdir -p "${CACHE}/locks"; chmod 0700 "${CACHE}/locks"
+exec 7>"${CACHE}/locks/${FINGERPRINT}.lock"; chmod 0600 "${CACHE}/locks/${FINGERPRINT}.lock"
+flock -x 7
+"${CAPTURE}" --test-mode --lock-timeout-seconds 5 --ed "${ED}" \
+    --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+    --inventory-proof "${MAIN_INVENTORY_PROOF}" \
+    --test-project-lock "${PROJECT_LOCK_FIXTURE}" \
+    --test-generation-lock "${GENERATION_LOCK_FIXTURE}" \
+    >"${WORK}/ordered-lock.out" 2>"${WORK}/ordered-lock.err" &
+ORDERED_LOCK_PID=$!
+PROJECT_HELD=false
+for _ in {1..200}; do
+    if ! flock -n "${PROJECT_LOCK_FIXTURE}" -c true 2>/dev/null; then PROJECT_HELD=true; break; fi
+    sleep 0.01
+done
+[[ ${PROJECT_HELD} == true ]] || fail 'transaction did not hold project lock while waiting on fingerprint'
+if flock -n "${GENERATION_LOCK_FIXTURE}" -c true 2>/dev/null; then
+    fail 'transaction did not hold generation lock while waiting on fingerprint'
+fi
+flock -u 7; exec 7>&-
+wait "${ORDERED_LOCK_PID}" || fail 'ordered generation/fingerprint transaction failed'
+
 BEFORE_TREE=${WORK}/before-tree
 find "${ED}" -xdev -printf '%P\t%y\t%m\t%U\t%G\t%s\t%i\t%l\n' | sort >"${BEFORE_TREE}"
 "${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \

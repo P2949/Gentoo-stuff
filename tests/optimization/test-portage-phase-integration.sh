@@ -76,6 +76,8 @@ SUCCESS_FINGERPRINT=$(printf '%s' "${WORK}:success" | sha256sum | awk '{print $1
 INVENTORY_PROOF_ROOT=${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}/inventory-proof
 INVENTORY_EVIDENCE=${INVENTORY_PROOF_ROOT}/inventory.json
 INVENTORY_PROOF=${INVENTORY_PROOF_ROOT}/proof.json
+FIXTURE_PROJECT_LOCK=${WORK}/fixture-project.lock
+FIXTURE_GENERATION_LOCK=${WORK}/fixture-generation.lock
 mkdir -p -- "${INVENTORY_PROOF_ROOT}"
 chmod 0700 -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" "${INVENTORY_PROOF_ROOT}"
 python3 - "${INVENTORY_EVIDENCE}" "${INVENTORY_PROOF}" "${SUCCESS_FINGERPRINT}" <<'PY'
@@ -99,6 +101,12 @@ document={"schema":"gentoo-optimization-bolt-inventory-proof-v1","generation_id"
 pathlib.Path(sys.argv[2]).write_text(json.dumps(document,sort_keys=True)+"\n")
 PY
 chmod 0600 -- "${INVENTORY_EVIDENCE}" "${INVENTORY_PROOF}"
+python3 - "${INVENTORY_PROOF}" "${FIXTURE_PROJECT_LOCK}" "${FIXTURE_GENERATION_LOCK}" <<'PY'
+import json,pathlib,sys
+p=json.load(open(sys.argv[1])); payload=json.dumps({"generation_id":p["generation_id"],"inventory_id":p["inventory_id"],"inventory_sha256":p["inventory_evidence"]["sha256"]},indent=2,sort_keys=True)+"\n"
+for path in sys.argv[2:]: pathlib.Path(path).write_text(payload)
+PY
+chmod 0600 "${FIXTURE_PROJECT_LOCK}" "${FIXTURE_GENERATION_LOCK}"
 mkdir -p -- "${PACKAGE_ROOT}" "${WORK}/metadata" "${WORK}/profiles"
 chmod 0755 -- "${WORK}" "${WORK}/app-test" "${PACKAGE_ROOT}" \
     "${WORK}/metadata" "${WORK}/profiles"
@@ -120,13 +128,14 @@ sed \
     -e "s|@INVENTORY_PROOF@|$(escape_sed "${INVENTORY_PROOF}")|g" \
     -e "s|@SUCCESS_FINGERPRINT@|${SUCCESS_FINGERPRINT}|g" \
     "${TEMPLATE}" > "${EBUILD}"
+CAPTURE_COMMAND="${CAPTURE_TOOL} --test-mode --test-project-lock ${FIXTURE_PROJECT_LOCK} --test-generation-lock ${FIXTURE_GENERATION_LOCK}"
 sed \
-    -e "s|@CAPTURE_TOOL@|$(escape_sed "${CAPTURE_TOOL}")|g" \
+    -e "s|@CAPTURE_TOOL@|$(escape_sed "${CAPTURE_COMMAND}")|g" \
     -e "s|@FAIL_SWITCH@|$(escape_sed "${FAIL_SWITCH}")|g" \
     "${PROXY_TEMPLATE}" > "${CAPTURE_PROXY}"
 chmod 0755 -- "${CAPTURE_PROXY}"
 printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
-    "exec '${DEPLOY_TOOL}' --test-mode --fixture-quality-mode \"\$@\"" >"${DEPLOY_PROXY}"
+    "exec '${DEPLOY_TOOL}' --test-mode --fixture-quality-mode --test-project-lock '${FIXTURE_PROJECT_LOCK}' --test-generation-lock '${FIXTURE_GENERATION_LOCK}' \"\$@\"" >"${DEPLOY_PROXY}"
 chmod 0755 -- "${DEPLOY_PROXY}"
 chmod 0644 -- "${EBUILD}" "${WORK}/metadata/layout.conf" "${WORK}/profiles/repo_name"
 printf 'EBUILD %s %s BLAKE2B %s SHA512 %s\n' \
@@ -394,6 +403,8 @@ REGISTER_ARGUMENTS=(
     --objcopy /usr/bin/objcopy
     --test-mode
     --fixture-quality-mode
+    --test-project-lock "${FIXTURE_PROJECT_LOCK}"
+    --test-generation-lock "${FIXTURE_GENERATION_LOCK}"
 )
 for option in "${BOLT_OPTIONS[@]}"; do
     REGISTER_ARGUMENTS+=(--bolt-option="${option}")

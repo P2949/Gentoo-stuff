@@ -153,12 +153,15 @@ LIBEXEC_ROOT=$(physical /usr/local/libexec/gentoo-optimization)
 SHARE_ROOT=$(physical /usr/local/share/gentoo-optimization)
 ETC_PORTAGE=$(physical /etc/portage)
 LOCK_PATH=$(physical /run/gentoo-optimization/framework-install.lock)
+PROJECT_LOCK_PATH=$(physical /run/gentoo-optimization/project.lock)
+GENERATION_LOCK_PATH=$(physical /run/gentoo-optimization/generation.lock)
 JQ_PATH=$(physical /usr/bin/jq)
 GENERATIONS_ROOT=${BASE}/generations
 PGO_CACHE=$(physical /var/cache/gentoo-optimization/pgo)
 PGO_RAW=$(physical /var/tmp/gentoo-optimization/pgo-raw)
 readonly BASE FRAMEWORK_CURRENT STATE_ROOT MANIFEST CACHE_ROOT INSTALL_QA_ROOT \
-    LIBEXEC_ROOT SHARE_ROOT ETC_PORTAGE LOCK_PATH JQ_PATH GENERATIONS_ROOT \
+    LIBEXEC_ROOT SHARE_ROOT ETC_PORTAGE LOCK_PATH PROJECT_LOCK_PATH \
+    GENERATION_LOCK_PATH JQ_PATH GENERATIONS_ROOT \
     PGO_CACHE PGO_RAW PORTAGE_GID
 
 HOOK_BASENAME=zz-gentoo-optimization-bolt
@@ -212,6 +215,7 @@ ROLLBACK_ROOT=
 PREVIOUS_TARGET=none
 INSTALLER_LOCK_FD=
 declare -a HELD_BOLT_LOCK_FDS=()
+declare -a HELD_PROJECT_LOCK_FDS=()
 declare -A FROZEN_CPVS=()
 FROZEN_INVENTORY_SHA256=none
 
@@ -312,6 +316,10 @@ verify_directory() {
 
 verify_runtime_namespaces() {
     local directory
+    verify_directory "${LOCK_PATH%/*}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0700
+    verify_regular_trusted "${LOCK_PATH}" 0600
+    verify_regular_trusted "${PROJECT_LOCK_PATH}" 0600
+    verify_regular_trusted "${GENERATION_LOCK_PATH}" 0600
     verify_directory "${GENERATIONS_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
     verify_directory "${CACHE_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0700
     for directory in inputs outputs perf fdata diagnostics locks; do
@@ -342,6 +350,23 @@ preflight_destination_ancestors() {
         "${PGO_CACHE}" "${PGO_RAW}" "${JQ_PATH%/*}" "${BASE}/bootstrap"; do
         verify_existing_ancestor_chain "${path}"
     done
+}
+
+open_project_lock() {
+    local path=$1 mode=$2
+    if [[ ${MODE} == install ]]; then
+        [[ -e ${path} || -L ${path} ]] || : >"${path}"
+        chmod 0600 -- "${path}"
+    fi
+    verify_regular_trusted "${path}" 0600
+    local descriptor
+    exec {descriptor}<>"${path}"
+    if [[ ${mode} == exclusive ]]; then
+        flock -n -x "${descriptor}" || fail "cannot acquire exclusive project lock: ${path}"
+    else
+        flock -n -s "${descriptor}" || fail "cannot acquire shared project lock: ${path}"
+    fi
+    HELD_PROJECT_LOCK_FDS+=("${descriptor}")
 }
 
 verify_bootstrap_identity() {
@@ -1100,12 +1125,19 @@ if [[ ${MODE} == install ]]; then
     safe_mkdir 0700 "${LOCK_PATH%/*}"
     exec {INSTALLER_LOCK_FD}>"${LOCK_PATH}"
     chmod 0600 -- "${LOCK_PATH}"
+    flock -n -x "${INSTALLER_LOCK_FD}" || \
+        fail 'another framework installer holds the publication lock'
+    open_project_lock "${PROJECT_LOCK_PATH}" exclusive
+    open_project_lock "${GENERATION_LOCK_PATH}" exclusive
 else
     verify_directory "${LOCK_PATH%/*}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0700
     verify_regular_trusted "${LOCK_PATH}" 0600
     exec {INSTALLER_LOCK_FD}<>"${LOCK_PATH}"
+    flock -n -s "${INSTALLER_LOCK_FD}" || \
+        fail 'another framework installer holds the publication lock'
+    open_project_lock "${PROJECT_LOCK_PATH}" shared
+    open_project_lock "${GENERATION_LOCK_PATH}" shared
 fi
-flock -n "${INSTALLER_LOCK_FD}" || fail 'another framework installer holds the publication lock'
 portage_quiescent
 hold_bolt_locks
 validate_legacy_migration

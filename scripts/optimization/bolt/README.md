@@ -143,9 +143,12 @@ new package fingerprint.
 
 Production capture, registration and deployment first take `LOCK_SH` on the
 exact root-owned mode-0600
-`/run/gentoo-optimization/framework-install.lock`, then the private
-per-fingerprint lock. The installer takes `LOCK_EX` before enumerating those
-locks, closing the new-lock publication race. The default bounded wait is 30
+`/run/gentoo-optimization/framework-install.lock`, then exclusive stable
+`project.lock` and `generation.lock` in that order, verifies both contain the
+canonical generation/inventory/hash JSON from the strict inventory proof, and
+only then takes the private per-fingerprint lock. The installer takes
+framework `LOCK_EX` before enumerating those locks, closing the new-lock
+publication race. The default bounded wait is 30
 seconds. Production pins readelf/objcopy to the reviewed `/usr/bin` entry
 points and llvm-bolt to `/usr/lib/llvm/22/bin/llvm-bolt`. Every child receives
 only `LC_ALL=C`, `LANG=C` and fixed `PATH`, runs in a separate process group,

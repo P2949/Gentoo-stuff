@@ -45,7 +45,7 @@ AUTHORITATIVE_BINPKG_VALIDATOR = AUTHORITATIVE_RUNTIME_ROOT / "recovery/verify-b
 TRUSTED_STATE_ROOT = Path("/var/lib/gentoo-optimization")
 TRUSTED_CACHE_ROOT = Path("/var/cache/gentoo-optimization")
 AUTHORITATIVE_LOCKS = {
-    "framework": Path("/run/gentoo-optimization/framework.lock"),
+    "framework": Path("/run/gentoo-optimization/framework-install.lock"),
     "project": Path("/run/gentoo-optimization/project.lock"),
     "generation": Path("/run/gentoo-optimization/generation.lock"),
 }
@@ -568,10 +568,11 @@ def _source_rebuild(value: Any, path: str, generation_id: str) -> dict[str, Any]
         pobj = _object(proof, f"{path}.proof", {"transaction_log", "install_log", "binpkg", "equery_check", "smoke_tests", "reverse_dependencies", "installed_vdb_identity_sha256", "active_modes", "portage_transaction_receipt", "binpkg_validation_receipt"})
         _evidence(pobj["transaction_log"], f"{path}.proof.transaction_log")
         _evidence(pobj["install_log"], f"{path}.proof.install_log")
-        binpkg = _object(pobj["binpkg"], f"{path}.proof.binpkg", {"path", "sha256", "format"})
+        binpkg = _object(pobj["binpkg"], f"{path}.proof.binpkg", {"path", "sha256", "format", "production_marker"})
         _string(binpkg["path"], f"{path}.proof.binpkg.path", absolute=True)
         _sha(binpkg["sha256"], f"{path}.proof.binpkg.sha256")
         _enum(binpkg["format"], f"{path}.proof.binpkg.format", {"gpkg", "xpak"})
+        _evidence(binpkg["production_marker"], f"{path}.proof.binpkg.production_marker")
         _check_result(pobj["equery_check"], f"{path}.proof.equery_check")
         smoke = pobj["smoke_tests"]
         if not isinstance(smoke, list) or not smoke:
@@ -1148,7 +1149,7 @@ def validate_artifact(record: Any) -> dict[str, Any]:
         _error("$.installed_path", "must be present in topology")
     symlink_map = {link["path"]: link["target"] for link in symlinks}
     if kind == "symlink":
-        if role != "symlink" or file_type != "symlink" or hardlinks or len(symlinks) != 1 or installed != canonical or symlink_paths != [installed]:
+        if role != "symlink" or file_type != "symlink" or hardlinks or link_count != 1 or len(symlinks) != 1 or installed != canonical or symlink_paths != [installed]:
             _error("$.topology", "standalone symlink requires one independently owned link and no hardlinks")
     def resolve_link(link_path: str, visiting: set[str]) -> str:
         if link_path in visiting:
@@ -1474,8 +1475,9 @@ def validate_final_system_state(value: Any) -> dict[str, Any]:
         _evidence_list(edge["evidence"], f"{path}.evidence", required=True)
     if edge_keys != sorted(set(edge_keys)):
         _error("$.registries.dependency_edges", "must be sorted and unique")
-    transaction = _object(item["final_transaction"], "$.final_transaction", {"transaction_id", "active_modes", "portage_receipt", "vdb_receipt", "binpkg_snapshot_receipt"})
+    transaction = _object(item["final_transaction"], "$.final_transaction", {"transaction_id", "completed_at", "active_modes", "portage_receipt", "vdb_receipt", "binpkg_snapshot_receipt"})
     _string(transaction["transaction_id"], "$.final_transaction.transaction_id")
+    _timestamp(transaction["completed_at"], "$.final_transaction.completed_at")
     modes = _sorted_strings(transaction["active_modes"], "$.final_transaction.active_modes")
     if not set(modes) <= {"pgo-use", "bolt-deploy"}:
         _error("$.final_transaction.active_modes", "contains unsupported final mode")
@@ -1648,6 +1650,10 @@ def verify_installed_artifacts(artifacts: Sequence[Mapping[str, Any]], installed
                 raise StateValidationError(f"collection.installed[{artifact_id}].xattrs: {error}") from error
             if metadata["xattrs"] != actual_xattrs or metadata["file_capabilities"]:
                 _error(f"collection.installed[{artifact_id}]", "standalone symlink xattr/capability mismatch")
+            selinux_raw = next((os.getxattr(path, name, follow_symlinks=False) for name in os.listxattr(path, follow_symlinks=False) if name == "security.selinux"), None)
+            selinux_context = None if selinux_raw is None else selinux_raw.rstrip(b"\x00").decode("utf-8")
+            if metadata["selinux_context"] != selinux_context:
+                _error(f"collection.installed[{artifact_id}].selinux_context", "standalone symlink SELinux context mismatch")
             continue
         hardlink_stats: list[os.stat_result] = []
         for installed in artifact["topology"]["hardlink_paths"]:
@@ -1734,6 +1740,24 @@ def _readelf(tool: Path, path: Path, *arguments: str) -> str:
     return _run_exact(tool, [*arguments, str(path)]).decode("utf-8", errors="strict")
 
 
+def parse_program_security(program: str) -> tuple[str, bool, bool]:
+    stack = "absent"
+    relro = False
+    writable_executable = False
+    for line in program.splitlines():
+        if re.match(r"^\s*GNU_STACK\s", line):
+            fields = line.split()
+            flags = fields[6:-1] if len(fields) >= 8 else []
+            stack = "executable" if "E" in flags else "non-executable"
+        if re.match(r"^\s*GNU_RELRO\s", line):
+            relro = True
+        if re.match(r"^\s*LOAD\s", line):
+            fields = line.split()
+            load_flags = fields[6:-1] if len(fields) >= 8 else []
+            writable_executable = writable_executable or ("W" in load_flags and "E" in load_flags)
+    return stack, relro, writable_executable
+
+
 def observe_elf(path: Path, readelf: Path) -> dict[str, Any] | None:
     """Independently observe the ELF facts represented by artifact state."""
     payload = secure_read(path, fixture_mode=True)
@@ -1811,18 +1835,7 @@ def observe_elf(path: Path, readelf: Path) -> dict[str, Any] | None:
     runpath = sorted(set(part for value in dynamic_values("RUNPATH") for part in value.split(":")))
     interpreter_match = re.search(r"Requesting program interpreter:\s*([^\]]+)\]", program)
     interpreter = interpreter_match.group(1) if interpreter_match else None
-    stack = "absent"
-    relro = False
-    writable_executable = False
-    for line in program.splitlines():
-        if re.match(r"^\s*GNU_STACK\s", line):
-            stack = "executable" if re.search(r"\sRWE\s", line) else "non-executable"
-        if re.match(r"^\s*GNU_RELRO\s", line):
-            relro = True
-        if re.match(r"^\s*LOAD\s", line):
-            fields = line.split()
-            load_flags = fields[6:-1] if len(fields) >= 8 else []
-            writable_executable = "W" in load_flags and "E" in load_flags
+    stack, relro, writable_executable = parse_program_security(program)
     bind_now = bool(re.search(r"\(BIND_NOW\)|FLAGS.*\bNOW\b|FLAGS_1.*\bNOW\b", dynamic))
     exports: list[dict[str, Any]] = []
     defined_versions: list[tuple[str, bool]] = []
@@ -2050,6 +2063,120 @@ def _verify_bolt_provenance(
         _error(f"collection.bolt[{artifact['artifact_id']}].command", "command fdata identity differs")
 
 
+def _verify_source_transactions(
+    packages: Sequence[Mapping[str, Any]], artifacts: Sequence[Mapping[str, Any]],
+    final: Mapping[str, Any], *, fixture_mode: bool, evidence_root: Path,
+) -> None:
+    final_receipt_evidence = final["final_transaction"]["portage_receipt"]
+    final_receipt = secure_json(
+        Path(final_receipt_evidence["path"]), final_receipt_evidence["sha256"],
+        fixture_mode=fixture_mode, allowed_roots=[evidence_root],
+    )
+    if not isinstance(final_receipt, dict) or set(final_receipt) != {"schema", "generation", "transaction_id", "completed_at", "packages"}:
+        _error("collection.final_transaction.portage_receipt", "invalid final transaction receipt schema")
+    if final_receipt["schema"] != "gentoo-optimization-final-portage-transaction-v1" or final_receipt["generation"] != final["generation"] or final_receipt["transaction_id"] != final["final_transaction"]["transaction_id"]:
+        _error("collection.final_transaction.portage_receipt", "final transaction identity differs")
+    if final_receipt["completed_at"] != final["final_transaction"]["completed_at"]:
+        _error("collection.final_transaction.portage_receipt", "final transaction completion timestamp differs")
+    package_receipts = final_receipt["packages"]
+    if not isinstance(package_receipts, list):
+        _error("collection.final_transaction.portage_receipt", "packages must be an array")
+    receipt_index: dict[str, tuple[str, str]] = {}
+    for entry in package_receipts:
+        if not isinstance(entry, dict) or set(entry) != {"cpv", "path", "sha256"}:
+            _error("collection.final_transaction.portage_receipt", "invalid package receipt entry")
+        cpv = _string(entry["cpv"], "collection.final_transaction.portage_receipt.cpv")
+        path = _string(entry["path"], "collection.final_transaction.portage_receipt.path", absolute=True)
+        digest = _sha(entry["sha256"], "collection.final_transaction.portage_receipt.sha256")
+        assert digest is not None
+        if cpv in receipt_index:
+            _error("collection.final_transaction.portage_receipt", f"duplicate CPV {cpv}")
+        receipt_index[cpv] = (path, digest)
+    if set(receipt_index) != {package["identity"]["cpv"] for package in packages}:
+        _error("collection.final_transaction.portage_receipt", "package receipt coverage is not exact")
+    artifacts_by_owner: dict[str, list[Mapping[str, Any]]] = {}
+    for artifact in artifacts:
+        artifacts_by_owner.setdefault(artifact["owner"]["cpv"], []).append(artifact)
+    for package in packages:
+        cpv = package["identity"]["cpv"]
+        proof = package["source_rebuild"]["proof"]
+        if proof is None:
+            _error(f"collection.source[{cpv}]", "successful source proof is absent")
+        evidence = proof["portage_transaction_receipt"]
+        if receipt_index[cpv] != (evidence["path"], evidence["sha256"]):
+            _error(f"collection.source[{cpv}]", "package receipt is not registered by the final transaction")
+        receipt = secure_json(Path(evidence["path"]), evidence["sha256"], fixture_mode=fixture_mode, allowed_roots=[evidence_root])
+        required = {"schema", "generation", "cpv", "transaction_id", "source_only", "emerge_argv", "active_modes", "started_at", "completed_at", "pre_vdb", "post_vdb", "build_log", "profiles", "bolt_artifacts", "binpkg"}
+        if not isinstance(receipt, dict) or set(receipt) != required:
+            _error(f"collection.source[{cpv}]", "invalid source transaction receipt schema")
+        if receipt["schema"] != "gentoo-optimization-source-rebuild-v1" or receipt["generation"] != final["generation"] or receipt["cpv"] != cpv or receipt["transaction_id"] != package["source_rebuild"]["transaction_id"] or receipt["source_only"] is not True:
+            _error(f"collection.source[{cpv}]", "source transaction identity/source-only proof differs")
+        argv = receipt["emerge_argv"]
+        if not isinstance(argv, list) or not all(isinstance(argument, str) for argument in argv):
+            _error(f"collection.source[{cpv}].emerge_argv", "must be an exact argument vector")
+        if not fixture_mode and (not argv or argv[0] != "/usr/bin/emerge"):
+            _error(f"collection.source[{cpv}].emerge_argv", "must invoke exact /usr/bin/emerge")
+        if "--usepkg=n" not in argv or "--buildpkg=y" not in argv or f"={cpv}" not in argv or any(argument in {"--usepkgonly", "-K"} for argument in argv):
+            _error(f"collection.source[{cpv}].emerge_argv", "does not prove a source-only saved-binpkg build")
+        if receipt["active_modes"] != proof["active_modes"]:
+            _error(f"collection.source[{cpv}].active_modes", "receipt differs from resolved final modes")
+        _timestamp(receipt["started_at"], f"collection.source[{cpv}].started_at")
+        _timestamp(receipt["completed_at"], f"collection.source[{cpv}].completed_at")
+        if receipt["completed_at"] < receipt["started_at"]:
+            _error(f"collection.source[{cpv}]", "receipt completion precedes start")
+        for phase in ("pre_vdb", "post_vdb"):
+            vdb = receipt[phase]
+            if not isinstance(vdb, dict) or set(vdb) != {"build_time", "counter", "identity_sha256"}:
+                _error(f"collection.source[{cpv}].{phase}", "invalid VDB boundary")
+            for scalar in ("build_time", "counter"):
+                scalar_value = _string(vdb[scalar], f"collection.source[{cpv}].{phase}.{scalar}")
+                if not scalar_value.isdigit():
+                    _error(f"collection.source[{cpv}].{phase}.{scalar}", "must be a nonnegative decimal integer")
+            _sha(vdb["identity_sha256"], f"collection.source[{cpv}].{phase}.identity_sha256")
+        live = package["live_instance"]
+        post = receipt["post_vdb"]
+        if post != {"build_time": live["build_time"], "counter": live["counter"], "identity_sha256": live["identity_sha256"]}:
+            _error(f"collection.source[{cpv}].post_vdb", "does not equal exact final VDB identity")
+        if int(receipt["pre_vdb"]["build_time"]) >= int(post["build_time"]) or int(receipt["pre_vdb"]["counter"]) >= int(post["counter"]):
+            _error(f"collection.source[{cpv}]", "VDB BUILD_TIME/COUNTER did not advance across source rebuild")
+        successful_attempt = next(attempt for attempt in package["source_rebuild"]["attempts"] if attempt["result"] == "succeeded")
+        if receipt["build_log"] != successful_attempt["build_log"]:
+            _error(f"collection.source[{cpv}].build_log", "receipt does not bind the successful attempt log")
+        build_log = secure_read(Path(receipt["build_log"]["path"]), receipt["build_log"]["sha256"], fixture_mode=fixture_mode, allowed_roots=[evidence_root]).decode("utf-8", errors="strict")
+        mode_text = ",".join(proof["active_modes"]) if proof["active_modes"] else "none"
+        marker = f"gentoo-optimization-transaction-v1\tgeneration={final['generation']['generation_id']}\tcpv={cpv}\ttransaction={receipt['transaction_id']}\tsource_only=true\tactive_modes={mode_text}"
+        if marker not in build_log.splitlines():
+            _error(f"collection.source[{cpv}].build_log", "exact dispatcher transaction marker is absent")
+        expected_profiles = [
+            {"component_id": component["component_id"], "manifest_sha256": component["pgo"]["manifest"]["sha256"], "sidecar_sha256": component["pgo"]["sidecar"]["sha256"], "profile_sha256": component["pgo"]["profile"]["sha256"], "validator_receipt_sha256": component["pgo"]["build_use"]["validator_receipt"]["sha256"]}
+            for component in package["components"] if component["pgo"]["status"] == "optimized"
+        ]
+        if receipt["profiles"] != expected_profiles:
+            _error(f"collection.source[{cpv}].profiles", "profile-use receipt is not exact")
+        for profile in expected_profiles:
+            profile_marker = f"gentoo-optimization-profile-use-v1\tcomponent={profile['component_id']}\tmanifest_sha256={profile['manifest_sha256']}"
+            if profile_marker not in build_log.splitlines():
+                _error(f"collection.source[{cpv}].build_log", "profile-use marker is absent")
+        expected_bolt = [
+            {"artifact_id": artifact["artifact_id"], "installed_sha256": artifact["content_sha256"], "deploy_transaction_id": artifact["bolt"]["deployment"]["transaction_id"], "command_record_sha256": artifact["bolt"]["command"]["record"]["sha256"]}
+            for artifact in sorted(artifacts_by_owner.get(cpv, []), key=lambda item: item["artifact_id"])
+            if artifact["bolt"]["status"] == "optimized"
+        ]
+        if receipt["bolt_artifacts"] != expected_bolt:
+            _error(f"collection.source[{cpv}].bolt_artifacts", "BOLT-deploy receipt is not exact")
+        for bolt in expected_bolt:
+            bolt_marker = f"gentoo-optimization-bolt-deploy-v1\tartifact_id={bolt['artifact_id']}\tinstalled_sha256={bolt['installed_sha256']}"
+            if bolt_marker not in build_log.splitlines():
+                _error(f"collection.source[{cpv}].build_log", "BOLT-deploy marker is absent")
+        if receipt["binpkg"] != {"path": proof["binpkg"]["path"], "sha256": proof["binpkg"]["sha256"], "format": proof["binpkg"]["format"]}:
+            _error(f"collection.source[{cpv}].binpkg", "saved binpkg identity differs")
+        marker_evidence = proof["binpkg"]["production_marker"]
+        production_marker = secure_json(Path(marker_evidence["path"]), marker_evidence["sha256"], fixture_mode=fixture_mode, allowed_roots=[evidence_root])
+        expected_marker = {"schema": "gentoo-optimization-binpkg-production-v1", "generation": final["generation"], "cpv": cpv, "transaction_id": receipt["transaction_id"], "active_modes": proof["active_modes"], "binpkg_sha256": proof["binpkg"]["sha256"], "vdb_identity_sha256": live["identity_sha256"]}
+        if production_marker != expected_marker:
+            _error(f"collection.source[{cpv}].binpkg", "saved binpkg production marker differs")
+
+
 def _graph_key(ref: Mapping[str, Any]) -> tuple[str, str]:
     return ref["cpv"], ref["component_id"] or ""
 
@@ -2194,13 +2321,21 @@ def _verify_boot(final_state: Mapping[str, Any], validators: Mapping[str, Path],
     firmware_loader = "\\" + "\\".join(loader_path.relative_to("/efi").parts)
     if firmware_loader.casefold() not in current_line.casefold():
         _error("collection.boot.efi_loader", "BootCurrent does not reference the recorded /efi loader")
+    kernel_path = Path(boot["kernel_image"]["path"])
+    if not kernel_path.is_relative_to(Path("/efi")):
+        _error("collection.boot.kernel_image", "kernel image must be on /efi")
+    firmware_kernel = "\\" + "\\".join(kernel_path.relative_to("/efi").parts)
+    if loader_path != kernel_path and firmware_kernel.casefold() not in current_line.casefold():
+        _error("collection.boot.kernel_image", "BootCurrent options do not select the recorded kernel image")
+    initramfs_path = Path(boot["initramfs"]["path"])
+    if not initramfs_path.is_relative_to(Path("/efi")):
+        _error("collection.boot.initramfs", "initramfs must be on /efi")
+    firmware_initramfs = "\\" + "\\".join(initramfs_path.relative_to("/efi").parts)
+    if firmware_initramfs.casefold() not in current_line.casefold():
+        _error("collection.boot.initramfs", "BootCurrent options do not select the recorded initramfs")
     openrc = _run_exact(validators["rc_status"], ["--all"])
     if hashlib.sha256(openrc).hexdigest() != boot["openrc_output_sha256"]:
         _error("collection.boot.openrc_output_sha256", "live OpenRC state differs")
-    if not Path(boot["kernel_image"]["path"]).is_relative_to(Path("/efi")):
-        _error("collection.boot.kernel_image", "kernel image must be on /efi")
-    if not Path(boot["initramfs"]["path"]).is_relative_to(Path("/efi")):
-        _error("collection.boot.initramfs", "initramfs must be on /efi")
     modules_root = Path("/lib/modules") / kernel_release
     if not modules_root.is_dir():
         _error("collection.boot.modules_manifest", "running kernel module tree is absent")
@@ -2210,6 +2345,29 @@ def _verify_boot(final_state: Mapping[str, Any], validators: Mapping[str, Path],
         raise StateValidationError(f"invalid modules manifest: {error}") from error
     if modules_document != {"kernel_release": kernel_release, "entries": _tree_identity(modules_root)}:
         _error("collection.boot.modules_manifest", "running kernel module tree differs from the exact manifest")
+    if len(boot["reboot_evidence"]) != 1:
+        _error("collection.boot.reboot_evidence", "requires exactly one post-final-build reboot receipt")
+    reboot_evidence = boot["reboot_evidence"][0]
+    reboot = secure_json(Path(reboot_evidence["path"]), reboot_evidence["sha256"])
+    expected_reboot_keys = {"schema", "generation", "final_transaction_id", "final_transaction_completed_at", "pre_boot_id", "post_boot_id", "observed_at", "kernel_release", "boot_current", "efi_loader_sha256", "portage_receipt_sha256", "vdb_receipt_sha256"}
+    if not isinstance(reboot, dict) or set(reboot) != expected_reboot_keys:
+        _error("collection.boot.reboot_evidence", "invalid reboot receipt schema")
+    transaction = final_state["final_transaction"]
+    expected_reboot = {
+        "schema": "gentoo-optimization-post-final-reboot-v1", "generation": final_state["generation"],
+        "final_transaction_id": transaction["transaction_id"], "final_transaction_completed_at": transaction["completed_at"],
+        "post_boot_id": boot_id_before, "kernel_release": kernel_release,
+        "boot_current": boot["boot_current"], "efi_loader_sha256": boot["efi_loader"]["sha256"],
+        "portage_receipt_sha256": transaction["portage_receipt"]["sha256"],
+        "vdb_receipt_sha256": transaction["vdb_receipt"]["sha256"],
+    }
+    for key, expected in expected_reboot.items():
+        if reboot.get(key) != expected:
+            _error("collection.boot.reboot_evidence", f"reboot receipt differs for {key}")
+    pre_boot_id = _string(reboot.get("pre_boot_id"), "collection.boot.reboot_evidence.pre_boot_id")
+    observed_at = _timestamp(reboot.get("observed_at"), "collection.boot.reboot_evidence.observed_at")
+    if pre_boot_id == boot_id_before or observed_at is None or observed_at <= transaction["completed_at"]:
+        _error("collection.boot.reboot_evidence", "does not prove a distinct boot after final transaction completion")
     return boot_id_before
 
 
@@ -2252,17 +2410,22 @@ def verify_authoritative_state(
     allowed_proof_roots = [roots["generation_root"], roots["profiles_root"], roots["bolt_root"], roots["binpkg_snapshot"], Path("/efi")]
     lock_payloads: dict[str, bytes] = {}
     lock_descriptors: list[int] = []
-    for key, evidence in final["locks"].items():
+    for key in ("framework", "project", "generation"):
+        evidence = final["locks"][key]
         if not fixture_mode and Path(evidence["path"]) != AUTHORITATIVE_LOCKS[key]:
             _error(f"collection.locks.{key}", f"must use shared writer lock {AUTHORITATIVE_LOCKS[key]}")
-        payload = secure_read(Path(evidence["path"]), evidence["sha256"], fixture_mode=fixture_mode, allowed_roots=[roots["generation_root"]])
+        payload = secure_read(Path(evidence["path"]), evidence["sha256"], fixture_mode=fixture_mode)
         lock_payloads[key] = payload
-        try:
-            lock_generation = json.loads(payload)
-        except json.JSONDecodeError as error:
-            raise StateValidationError(f"invalid {key} lock JSON") from error
-        if lock_generation != final["generation"]:
-            _error(f"collection.locks.{key}", "must contain the exact generation identity")
+        if key == "framework":
+            if payload != b"":
+                _error("collection.locks.framework", "stable framework-install lock inode must remain empty")
+        else:
+            try:
+                lock_generation = json.loads(payload)
+            except json.JSONDecodeError as error:
+                raise StateValidationError(f"invalid {key} lock JSON") from error
+            if lock_generation != final["generation"]:
+                _error(f"collection.locks.{key}", "must contain the exact generation identity")
         flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
         lock_descriptor = os.open(evidence["path"], flags)
         try:
@@ -2331,8 +2494,6 @@ def verify_authoritative_state(
         proof = package["source_rebuild"]["proof"]
         if proof is not None:
             secure_read(Path(proof["binpkg"]["path"]), proof["binpkg"]["sha256"], fixture_mode=fixture_mode, allowed_roots=[roots["binpkg_snapshot"]])
-            if proof["portage_transaction_receipt"] != final["final_transaction"]["portage_receipt"]:
-                _error(f"collection.source[{package['identity']['cpv']}]", "package is not bound to the final Portage transaction receipt")
             if proof["binpkg_validation_receipt"] != final["final_transaction"]["binpkg_snapshot_receipt"]:
                 _error(f"collection.source[{package['identity']['cpv']}]", "package is not bound to the final binpkg validation receipt")
         for component in package["components"]:
@@ -2347,6 +2508,7 @@ def verify_authoritative_state(
                 if hashlib.sha256(result).hexdigest() != receipt["sha256"]:
                     _error("collection.pgo", "authoritative validator output differs from receipt")
         _verify_terminal_reason(package)
+    _verify_source_transactions(packages, artifacts, final, fixture_mode=fixture_mode, evidence_root=roots["evidence_root"])
     for artifact in artifacts:
         canonical = _rooted_path(installed_root, artifact["canonical_path"])
         magic_kind = observe_file_magic(canonical)
@@ -2389,6 +2551,8 @@ def verify_authoritative_state(
         "--snapshot", str(roots["binpkg_snapshot"]), "--vdb", str(vdb_root),
         "--validate-gpkg", "--format", "json",
     ], timeout=3600)
+    if hashlib.sha256(binpkg_output).hexdigest() != final["final_transaction"]["binpkg_snapshot_receipt"]["sha256"]:
+        _error("collection.binpkg_snapshot", "live semantic validator output differs from final receipt")
     try:
         binpkg_report = json.loads(binpkg_output)
     except json.JSONDecodeError as error:
@@ -2411,12 +2575,13 @@ def verify_authoritative_state(
         if environment_sha != live["environment_bz2_sha256"]:
             _error(f"collection.vdb[{package['identity']['cpv']}].environment.bz2", "changed during reconciliation")
     verify_installed_artifacts(artifacts, installed_root)
-    for key, evidence in final["locks"].items():
-        if secure_read(Path(evidence["path"]), evidence["sha256"], fixture_mode=fixture_mode, allowed_roots=[roots["generation_root"]]) != lock_payloads[key]:
+    for key in ("framework", "project", "generation"):
+        evidence = final["locks"][key]
+        if secure_read(Path(evidence["path"]), evidence["sha256"], fixture_mode=fixture_mode) != lock_payloads[key]:
             _error(f"collection.locks.{key}", "changed during reconciliation")
     if not fixture_mode and Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip() != boot_id:
         _error("collection.boot.boot_id", "boot changed during reconciliation")
-    for descriptor in lock_descriptors:
+    for descriptor in reversed(lock_descriptors):
         fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
     return {"authoritative": not fixture_mode, "strict_verified": True, "boot_id": boot_id}

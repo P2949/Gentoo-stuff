@@ -99,6 +99,8 @@ PRODUCTION_INVENTORY_VALIDATOR = (
     "/usr/local/libexec/gentoo-optimization/scripts/optimization/verify/reconcile-state.py"
 )
 FRAMEWORK_LOCK = Path("/run/gentoo-optimization/framework-install.lock")
+PROJECT_LOCK = Path("/run/gentoo-optimization/project.lock")
+GENERATION_LOCK = Path("/run/gentoo-optimization/generation.lock")
 PRODUCTION_CACHE_ROOT = Path("/var/cache/gentoo-optimization/bolt")
 PRODUCTION_EVIDENCE_ROOTS = (
     Path("/var/cache/gentoo-optimization"),
@@ -339,6 +341,82 @@ def framework_publication_lock(test_mode: bool, timeout_seconds: float) -> Itera
         if acquired:
             fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
+
+
+def canonical_generation_lock_payload(proof: dict[str, Any]) -> bytes:
+    document = proof["document"]
+    generation = {
+        "generation_id": document["generation_id"],
+        "inventory_id": document["inventory_id"],
+        "inventory_sha256": proof["validation_summary"]["inventory_sha256"],
+    }
+    return (json.dumps(generation, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+@contextlib.contextmanager
+def generation_writer_locks(
+    proof: dict[str, Any],
+    test_mode: bool,
+    timeout_seconds: float,
+    test_paths: tuple[Path, Path] | None = None,
+) -> Iterator[None]:
+    """Take project then generation EX locks and verify their stable payload."""
+    if test_mode and test_paths is None:
+        yield
+        return
+    paths = test_paths if test_paths is not None else (PROJECT_LOCK, GENERATION_LOCK)
+    expected_uid = os.geteuid() if test_mode else 0
+    expected_payload = canonical_generation_lock_payload(proof)
+    descriptors: list[int] = []
+    acquired: list[int] = []
+    try:
+        for label, path in zip(("project", "generation"), paths, strict=True):
+            if not test_mode:
+                validate_root_owned_nonwritable_chain(path, f"{label} writer lock")
+            flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+            try:
+                descriptor = os.open(path, flags)
+            except OSError as error:
+                fail(f"cannot open stable {label} writer lock {path}: {error}")
+            descriptors.append(descriptor)
+            info = os.fstat(descriptor)
+            before = path.lstat()
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != expected_uid
+                or stat.S_IMODE(info.st_mode) != 0o600
+                or (info.st_dev, info.st_ino) != (before.st_dev, before.st_ino)
+            ):
+                fail(f"{label} writer lock is not a stable owner mode-0600 regular inode: {path}")
+            deadline = time.monotonic() + timeout_seconds
+            while True:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired.append(descriptor)
+                    break
+                except BlockingIOError:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        fail(f"timed out after {timeout_seconds:g}s waiting for {label} writer lock: {path}")
+                    time.sleep(min(0.05, remaining))
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            payload = b""
+            while True:
+                chunk = os.read(descriptor, 65536)
+                if not chunk:
+                    break
+                payload += chunk
+            after = path.lstat()
+            if (info.st_dev, info.st_ino) != (after.st_dev, after.st_ino):
+                fail(f"{label} writer lock inode changed while held: {path}")
+            if payload != expected_payload:
+                fail(f"{label} writer lock content does not match the exact proof generation")
+        yield
+    finally:
+        for descriptor in reversed(acquired):
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
 def resolve_elf_tool(value: str, expected: str, label: str, test_mode: bool) -> str:
@@ -1239,6 +1317,41 @@ def file_record(path_text: str, label: str) -> dict[str, Any]:
     }
 
 
+def stable_recorded_bytes(record: dict[str, Any], label: str) -> bytes:
+    path = Path(str(record.get("path", "")))
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    before = path.lstat()
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        fail(f"cannot stably open {label} {path}: {error}")
+    try:
+        opened_before = os.fstat(descriptor)
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        opened_after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    after = path.lstat()
+    def identity(value: os.stat_result) -> tuple[int, ...]:
+        return (
+            value.st_dev, value.st_ino, value.st_mode, value.st_uid, value.st_gid,
+            value.st_size, value.st_mtime_ns, value.st_ctime_ns,
+        )
+    if not (
+        identity(before) == identity(opened_before) == identity(opened_after) == identity(after)
+    ):
+        fail(f"{label} changed while it was being read")
+    payload = b"".join(chunks)
+    if len(payload) != record.get("size") or hashlib.sha256(payload).hexdigest() != record.get("sha256"):
+        fail(f"{label} stable payload differs from its exact identity")
+    return payload
+
+
 def canonical_command_output(path_text: str) -> Path:
     candidate = Path(path_text)
     if not candidate.is_absolute() or ".." in candidate.parts:
@@ -1336,8 +1449,8 @@ def inventory_proof(
     if cpv not in summary["cpvs"]:
         fail("BOLT inventory proof CPV is absent from the strict frozen inventory")
     try:
-        frozen_inventory = json.loads(Path(evidence["path"]).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        frozen_inventory = json.loads(stable_recorded_bytes(evidence, "strict frozen inventory"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
         fail(f"cannot reopen strict frozen inventory: {error}")
     package_entries = [
         item for item in frozen_inventory["packages"]
@@ -2096,6 +2209,37 @@ def output_manifest_path(cache: Path, fingerprint: str) -> Path:
     return cache / "outputs" / fingerprint / "manifest.json"
 
 
+def prevalidate_transaction_inventory(
+    arguments: argparse.Namespace, cache: Path, fingerprint: str
+) -> dict[str, Any]:
+    if arguments.command in ("capture", "deploy"):
+        return inventory_proof(
+            arguments.inventory_proof,
+            fingerprint,
+            arguments.expected_eligible_count,
+            arguments.test_mode,
+        )
+    _root, capture = capture_paths(cache, fingerprint)
+    captured_proof = capture.get("inventory_proof")
+    captured_count = capture.get("expected_eligible_count")
+    if (
+        not isinstance(captured_proof, dict)
+        or not isinstance(captured_proof.get("identity"), dict)
+        or type(captured_count) is not int
+        or captured_count < 0
+    ):
+        fail("capture lacks a valid strict frozen inventory binding")
+    proof = inventory_proof(
+        str(captured_proof["identity"].get("path", "")),
+        fingerprint,
+        captured_count,
+        arguments.test_mode,
+    )
+    if proof != captured_proof:
+        fail("capture frozen inventory proof is stale or mismatched")
+    return proof
+
+
 def find_artifact(manifest: dict[str, Any], artifact_id: str) -> dict[str, Any]:
     matches = [
         item
@@ -2590,6 +2734,7 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                     "artifact": artifact,
                     "paths": paths,
                     "output": output_path,
+                    "output_class": output_class,
                     "current": scratch_root / f"diagnostic-source-{index}",
                 }
             )
@@ -2655,6 +2800,26 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                     "bolt_origin_sections"
                 ]:
                     fail(f"deployed file lacks BOLT transformation evidence: {paths[0]}")
+            _final_artifacts, final_identity = collect_ed_identity(
+                ed, readelf, objcopy, scratch_root / "complete-final-rescan"
+            )
+            expected_final_identity = json.loads(
+                json.dumps(capture["ed_identity"], sort_keys=True)
+            )
+            prepared_by_id = {
+                item["artifact"]["artifact_id"]: item for item in prepared
+            }
+            for group in expected_final_identity["regular_groups"]:
+                artifact_id = group.get("elf_artifact_id")
+                if artifact_id not in prepared_by_id:
+                    continue
+                item = prepared_by_id[artifact_id]
+                output_record = outputs_by_id[artifact_id]
+                group["file_sha256"] = output_record["output_sha256"]
+                group["size"] = item["output"].stat().st_size
+                group["elf_identity"] = item["output_class"]
+            if final_identity != expected_final_identity:
+                fail("complete post-deploy ED bytes/topology/ELF identity mismatch")
         except BaseException:
             for stages in staged_groups:
                 for partial, _ in stages:
@@ -2714,6 +2879,8 @@ def build_parser() -> argparse.ArgumentParser:
             default=0.0,
             help=argparse.SUPPRESS,
         )
+        command.add_argument("--test-project-lock", help=argparse.SUPPRESS)
+        command.add_argument("--test-generation-lock", help=argparse.SUPPRESS)
 
     capture = subparsers.add_parser("capture", help="capture eligible unstripped ED inputs")
     add_common_options(capture)
@@ -2786,14 +2953,31 @@ def main() -> int:
             arguments.test_mode, arguments.lock_timeout_seconds
         ):
             cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
-            with fingerprint_lock(
-                cache,
-                fingerprint,
-                arguments.lock_timeout_seconds,
+            proof = prevalidate_transaction_inventory(arguments, cache, fingerprint)
+            test_lock_paths: tuple[Path, Path] | None = None
+            if arguments.test_project_lock or arguments.test_generation_lock:
+                if not arguments.test_mode or not (
+                    arguments.test_project_lock and arguments.test_generation_lock
+                ):
+                    fail("hermetic project/generation lock paths require --test-mode and both paths")
+                test_lock_paths = (
+                    reject_symlink_components(arguments.test_project_lock, "test project lock"),
+                    reject_symlink_components(arguments.test_generation_lock, "test generation lock"),
+                )
+            with generation_writer_locks(
+                proof,
                 arguments.test_mode,
-                arguments.test_lock_hold_seconds,
+                arguments.lock_timeout_seconds,
+                test_lock_paths,
             ):
-                arguments.function(arguments)
+                with fingerprint_lock(
+                    cache,
+                    fingerprint,
+                    arguments.lock_timeout_seconds,
+                    arguments.test_mode,
+                    arguments.test_lock_hold_seconds,
+                ):
+                    arguments.function(arguments)
     except BoltArtifactError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

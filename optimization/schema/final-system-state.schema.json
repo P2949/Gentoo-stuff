@@ -43,9 +43,9 @@
     },
     "final_transaction": {
       "type": "object", "additionalProperties": false,
-      "required": ["transaction_id", "active_modes", "portage_receipt", "vdb_receipt", "binpkg_snapshot_receipt"],
+      "required": ["transaction_id", "completed_at", "active_modes", "portage_receipt", "vdb_receipt", "binpkg_snapshot_receipt"],
       "properties": {
-        "transaction_id": {"type": "string", "minLength": 1},
+        "transaction_id": {"type": "string", "minLength": 1}, "completed_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
         "active_modes": {"type": "array", "uniqueItems": true, "items": {"enum": ["pgo-use", "bolt-deploy"]}},
         "portage_receipt": {"$ref": "#/$defs/evidence"}, "vdb_receipt": {"$ref": "#/$defs/evidence"},
         "binpkg_snapshot_receipt": {"$ref": "#/$defs/evidence"}

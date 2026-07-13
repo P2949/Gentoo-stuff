@@ -112,7 +112,7 @@ expect_failure 'trusted ancestor is group/world-writable' \
     env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${UNSAFE}"
-[[ ! -e ${UNSAFE}/run/lock/gentoo-optimization-framework-install.lock ]] || \
+[[ ! -e ${UNSAFE}/run/gentoo-optimization ]] || \
     fail 'unsafe-ancestor rejection occurred after lock mutation'
 [[ ! -e ${UNSAFE}/var/lib/gentoo-optimization ]] || \
     fail 'unsafe-ancestor rejection occurred after framework mutation'
@@ -167,6 +167,29 @@ grep -Eq '^jq_sha256=[0-9a-f]{64}$' "${MANIFEST}" || fail 'manifest jq hash is i
     fail 'raw PGO spool trust root mode differs'
 [[ $(stat -c %a -- "${TARGET}/var/lib/gentoo-optimization/generations") == 755 ]] || \
     fail 'generation trust root mode differs'
+for lock in framework-install project generation; do
+    [[ $(stat -c '%u:%g:%a' -- "${TARGET}/run/gentoo-optimization/${lock}.lock") == \
+        "$(id -u):$(id -g):600" ]] || fail "${lock} lock ownership/mode differs"
+done
+for lock in project generation; do
+    ready=${WORK}/${lock}-lock-ready
+    (
+        exec 9<>"${TARGET}/run/gentoo-optimization/${lock}.lock"
+        flock -x 9
+        : >"${ready}"
+        sleep 20
+    ) &
+    holder=$!
+    for _ in $(seq 1 100); do
+        [[ -e ${ready} ]] && break
+        sleep 0.05
+    done
+    [[ -e ${ready} ]] || fail "${lock} lock holder did not start"
+    expect_failure "cannot acquire shared project lock: ${TARGET}/run/gentoo-optimization/${lock}.lock" \
+        run_installer --check
+    kill "${holder}" 2>/dev/null || true
+    wait "${holder}" 2>/dev/null || true
+done
 mapfile -t GENERATED_ENTRIES < <(find "${ACTIVE}/generated-policy" -mindepth 1 \
     -maxdepth 1 -printf '%f\n' | sort)
 [[ ${GENERATED_ENTRIES[*]} == $'.identity\nenv\npackage.env' && \

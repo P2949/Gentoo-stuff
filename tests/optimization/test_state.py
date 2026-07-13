@@ -180,7 +180,7 @@ def source_rebuild(live_identity_sha: str) -> dict[str, Any]:
         "attempts": [{"attempt_id": "attempt-001", "started_at": "2026-07-13T01:00:00Z", "completed_at": "2026-07-13T01:01:00Z", "result": "succeeded", "environment_fingerprint": f"sha256:{H['source']}", "build_log": evidence("build", "log"), "failure_evidence": []}],
         "proof": {
             "transaction_log": evidence("transaction", "transaction"), "install_log": evidence("install", "log"),
-            "binpkg": {"path": "/var/cache/binpkgs/app-test/example-suite-1.0-r2.gpkg.tar", "sha256": H["binpkg"], "format": "gpkg"},
+            "binpkg": {"path": "/var/cache/binpkgs/app-test/example-suite-1.0-r2.gpkg.tar", "sha256": H["binpkg"], "format": "gpkg", "production_marker": evidence("receipt", "manifest")},
             "equery_check": {"status": "passed", "evidence": [evidence("equery", "command-output")]},
             "smoke_tests": [{"name": "cli-version", "status": "passed", "evidence": [evidence("smoke", "command-output")]}],
             "reverse_dependencies": {"status": "passed", "evidence": [evidence("revdep", "report")]},
@@ -342,6 +342,9 @@ def strict_fixture(root: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str
     package["aggregate"]["pgo"] = {"eligible_count": 0, "optimized_count": 0, "excluded_count": 0, "not_applicable_count": 1, "pending_count": 0, "unknown_count": 0, "failed_count": 0, "status": "not-applicable"}
     package["graphs"]["workload_refs"] = []; package["final_status"] = "not-applicable"; package["resolution"] = resolution()
     package["source_rebuild"]["proof"]["active_modes"] = []
+    package["source_rebuild"]["proof"]["portage_transaction_receipt"] = evidence("package-transaction", "transaction")
+    package["source_rebuild"]["proof"]["binpkg_validation_receipt"] = evidence("binpkg-validation", "report")
+    package["source_rebuild"]["proof"]["binpkg"]["production_marker"] = evidence("binpkg-production-marker", "manifest")
     package["live_instance"].update({
         "vdb_path": str(instance), "contents_sha256": hashlib.sha256(contents.encode()).hexdigest(),
         "metadata_tree_sha256": STATE.vdb_metadata_tree_sha256(instance), "slot_raw": "0/0",
@@ -375,6 +378,25 @@ def strict_fixture(root: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str
     inventory_path = generation_root / "inventory.json"; inventory_path.write_bytes(inventory_payload)
 
     materialize_evidence(package, evidence_root); materialize_evidence(artifact, evidence_root)
+    build_log_evidence = package["source_rebuild"]["attempts"][0]["build_log"]
+    transaction_id = package["source_rebuild"]["transaction_id"]
+    build_marker = f"gentoo-optimization-transaction-v1\tgeneration=generation-test\tcpv=app-test/example-suite-1.0-r2\ttransaction={transaction_id}\tsource_only=true\tactive_modes=none\n".encode()
+    Path(build_log_evidence["path"]).write_bytes(build_marker)
+    build_log_evidence["sha256"] = hashlib.sha256(build_marker).hexdigest()
+    marker_evidence = package["source_rebuild"]["proof"]["binpkg"]["production_marker"]
+    marker_document = {"schema": "gentoo-optimization-binpkg-production-v1", "generation": generation(inventory_sha), "cpv": package["identity"]["cpv"], "transaction_id": transaction_id, "active_modes": [], "binpkg_sha256": package["source_rebuild"]["proof"]["binpkg"]["sha256"], "vdb_identity_sha256": package["live_instance"]["identity_sha256"]}
+    marker_payload = STATE.canonical_bytes(marker_document); Path(marker_evidence["path"]).write_bytes(marker_payload); marker_evidence["sha256"] = hashlib.sha256(marker_payload).hexdigest()
+    package_receipt_evidence = package["source_rebuild"]["proof"]["portage_transaction_receipt"]
+    package_receipt = {
+        "schema": "gentoo-optimization-source-rebuild-v1", "generation": generation(inventory_sha), "cpv": package["identity"]["cpv"], "transaction_id": transaction_id, "source_only": True,
+        "emerge_argv": ["/usr/bin/emerge", "--usepkg=n", "--buildpkg=y", "=app-test/example-suite-1.0-r2"], "active_modes": [],
+        "started_at": "2026-07-13T01:00:00Z", "completed_at": "2026-07-13T01:01:00Z",
+        "pre_vdb": {"build_time": "1783904300", "counter": "16", "identity_sha256": H["vdb"]},
+        "post_vdb": {"build_time": package["live_instance"]["build_time"], "counter": package["live_instance"]["counter"], "identity_sha256": package["live_instance"]["identity_sha256"]},
+        "build_log": build_log_evidence, "profiles": [], "bolt_artifacts": [],
+        "binpkg": {"path": package["source_rebuild"]["proof"]["binpkg"]["path"], "sha256": package["source_rebuild"]["proof"]["binpkg"]["sha256"], "format": "gpkg"},
+    }
+    package_receipt_payload = STATE.canonical_bytes(package_receipt); Path(package_receipt_evidence["path"]).write_bytes(package_receipt_payload); package_receipt_evidence["sha256"] = hashlib.sha256(package_receipt_payload).hexdigest()
     validators: dict[str, dict[str, str]] = {}
     validator_dir = root / "validators"; validator_dir.mkdir()
     for key in ("state_runtime", "reconciler_runtime", "profile", "readelf", "getcap", "uname", "efibootmgr", "rc_status"):
@@ -388,17 +410,25 @@ def strict_fixture(root: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str
     lock_payload = STATE.canonical_bytes(generation_identity)
     locks: dict[str, dict[str, str]] = {}
     for key in ("framework", "project", "generation"):
-        path = generation_root / f"{key}.lock"; path.write_bytes(lock_payload)
-        locks[key] = {"path": str(path), "sha256": hashlib.sha256(lock_payload).hexdigest()}
+        path = generation_root / f"{key}.lock"
+        payload = b"" if key == "framework" else lock_payload
+        path.write_bytes(payload)
+        locks[key] = {"path": str(path), "sha256": hashlib.sha256(payload).hexdigest()}
     final_state: dict[str, Any] = {
         "schema_version": 1, "record_type": "final-system-state", "generation": generation_identity,
         "trusted_roots": {"generation_root": str(generation_root), "evidence_root": str(evidence_root), "profiles_root": str(profiles_root), "bolt_root": str(bolt_root), "binpkg_snapshot": str(binpkg_root), "packages_dir": str(packages_dir), "artifacts_dir": str(artifacts_dir), "inventory": str(inventory_path)},
         "locks": locks, "validators": validators,
         "registries": {"workloads": [], "dependency_edges": []},
-        "final_transaction": {"transaction_id": "final-transaction", "active_modes": [], "portage_receipt": evidence("transaction", "transaction"), "vdb_receipt": evidence("validation", "report"), "binpkg_snapshot_receipt": evidence("receipt", "report")},
+        "final_transaction": {"transaction_id": "final-transaction", "completed_at": "2026-07-13T02:00:00Z", "active_modes": [], "portage_receipt": evidence("final-transaction", "transaction"), "vdb_receipt": evidence("validation", "report"), "binpkg_snapshot_receipt": evidence("binpkg-validation", "report")},
         "boot": {"boot_id": "fixture-boot", "kernel_release": "fixture-kernel", "boot_current": "0004", "efi_root": "/efi", "kernel_image": evidence("image", "binary"), "initramfs": evidence("boot", "binary"), "efi_loader": evidence("image", "binary"), "modules_manifest": evidence("modules", "manifest"), "efibootmgr_output_sha256": H["boot"], "openrc_output_sha256": H["validation"], "reboot_evidence": [evidence("boot", "report")]},
     }
     materialize_evidence(final_state["final_transaction"], evidence_root); materialize_evidence(final_state["boot"], evidence_root)
+    final_receipt_evidence = final_state["final_transaction"]["portage_receipt"]
+    final_receipt = {"schema": "gentoo-optimization-final-portage-transaction-v1", "generation": generation(inventory_sha), "transaction_id": "final-transaction", "completed_at": "2026-07-13T02:00:00Z", "packages": [{"cpv": package["identity"]["cpv"], "path": package_receipt_evidence["path"], "sha256": package_receipt_evidence["sha256"]}]}
+    final_receipt_payload = STATE.canonical_bytes(final_receipt); Path(final_receipt_evidence["path"]).write_bytes(final_receipt_payload); final_receipt_evidence["sha256"] = hashlib.sha256(final_receipt_payload).hexdigest()
+    binpkg_receipt_evidence = final_state["final_transaction"]["binpkg_snapshot_receipt"]
+    binpkg_output = b'{"status":"pass"}\n'; Path(binpkg_receipt_evidence["path"]).write_bytes(binpkg_output); binpkg_receipt_evidence["sha256"] = hashlib.sha256(binpkg_output).hexdigest()
+    package["source_rebuild"]["proof"]["binpkg_validation_receipt"] = copy.deepcopy(binpkg_receipt_evidence)
     # Lock evidence contains authoritative generation JSON and must not be rematerialized.
     (packages_dir / "package.json").write_bytes(STATE.canonical_bytes(package))
     (artifacts_dir / "artifact.json").write_bytes(STATE.canonical_bytes(artifact))
