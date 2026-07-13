@@ -33,7 +33,7 @@ count_token() {
 }
 
 mkdir -p "${TMP}/bin" "${TMP}/profiles/raw-clang" "${TMP}/profiles/raw-gcc" \
-    "${TMP}/profiles/raw-rust"
+    "${TMP}/profiles/raw-rust" "${TMP}/wrappers" "${TMP}/real-wrapper"
 
 for compiler in clang clang++ gcc g++ rustc go; do
     compiler_path=${TMP}/bin/${compiler}
@@ -48,6 +48,12 @@ for compiler in clang clang++ gcc g++ rustc go; do
     chmod +x "${compiler_path}"
 done
 ln -s -- clang++ "${TMP}/bin/c++"
+printf '%s\n' '#!/usr/bin/env bash' \
+    'printf invoked > "${CACHE_WRAPPER_MARKER}"' 'exit 88' \
+    > "${TMP}/real-wrapper/ccache"
+chmod +x "${TMP}/real-wrapper/ccache"
+ln -s -- "${TMP}/real-wrapper/ccache" "${TMP}/wrappers/clang"
+ln -s -- "${TMP}/real-wrapper/ccache" "${TMP}/wrappers/clang++"
 
 printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
     '[[ ${1-} == show ]]' \
@@ -243,6 +249,22 @@ case_clang_generate_exact_once() (
     [[ ${SANDBOX_WRITE} == "/existing/write:${GENTOO_OPT_PROFILE_PATH}" ]]
 )
 
+case_compiler_masquerades_are_bypassed() (
+    export PATH="${TMP}/wrappers:${TMP}/bin:/usr/bin:/bin" CC=clang CXX=clang++ ABI=amd64
+    export CACHE_WRAPPER_MARKER="${TMP}/cache-wrapper-invoked"
+    export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    FEATURES='ccache distcc icecream sandbox'; RUSTC_WRAPPER=/untrusted/sccache
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
+    [[ ${CC} == "${TMP}/bin/clang" && ${CXX} == "${TMP}/bin/clang++" ]]
+    [[ ${CCACHE_DISABLE} == 1 && ${SCCACHE_DISABLE} == 1 && -z ${RUSTC_WRAPPER} ]]
+    [[ $(count_token "${FEATURES}" -ccache) == 1 ]]
+    [[ $(count_token "${FEATURES}" -distcc) == 1 ]]
+    [[ $(count_token "${FEATURES}" -icecream) == 1 ]]
+    [[ ! -e ${CACHE_WRAPPER_MARKER} ]]
+)
+
 printf 'gcda\n' > "${TMP}/profiles/raw-gcc/unit.gcda"
 
 case_gcc_use_isolated_correction() (
@@ -322,6 +344,19 @@ case_rust_and_go_bolt_layering() (
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${GOFLAGS} == *"-pgo=${GENTOO_OPT_PROFILE_PATH}"* ]]
     [[ ${CFLAGS} == c && ${CXXFLAGS} == cxx && ${LDFLAGS} == ld ]]
+)
+
+case_rust_bolt_readiness_requires_target() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" RUSTC=rustc ABI=amd64
+    export GENTOO_OPT_MODE=bolt-capture GENTOO_OPT_COMPILER_FAMILY=rust
+    export GENTOO_OPT_ABI=amd64 GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/bolt-cache"
+    unset GENTOO_OPT_RUST_TARGET CARGO_BUILD_TARGET
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    export GENTOO_OPT_RUST_TARGET=x86_64-unknown-linux-gnu
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
+    [[ ${RUSTC} == "${TMP}/bin/rustc" ]]
+    [[ ${CARGO_BUILD_TARGET} == x86_64-unknown-linux-gnu ]]
 )
 
 case_go_multi_main_is_rejected() (
@@ -524,11 +559,13 @@ run_case 'Clang IR use validates and appends exactly once' case_ir_use_and_exact
 run_case 'IR and sample profiles remain format/flag separated' case_sample_use_and_format_separation
 run_case 'profile manifest ABI mismatch fails closed' case_manifest_mismatch_rejected
 run_case 'Clang generation appends exactly once' case_clang_generate_exact_once
+run_case 'compiler cache and distribution masquerades are bypassed' case_compiler_masquerades_are_bypassed
 run_case 'GCC correction remains isolated from Fortran' case_gcc_use_isolated_correction
 run_case 'Rust instrumentation requires target isolation' case_rust_target_isolation
 run_case 'Go PGO changes GOFLAGS only' case_go_use_only_goflags
 run_case 'generic Go PGO rejects multi-main or unclassified packages' case_go_multi_main_is_rejected
 run_case 'Rust and Go BOLT stages remain language-lane specific' case_rust_and_go_bolt_layering
+run_case 'Rust BOLT readiness requires an explicit target' case_rust_bolt_readiness_requires_target
 run_case 'BOLT readiness layers and guards the GCC lane' case_bolt_layer_and_gcc_guard
 run_case 'BOLT stages require an exact sandbox cache scope' case_bolt_cache_scope_is_required
 run_case 'strict fingerprint.env loading works' case_fingerprint_file_strict

@@ -40,13 +40,13 @@ printf '%s\n' \
     >"${SOURCE}/library.c"
 
 cc -O2 -g -fno-omit-frame-pointer -no-pie \
-    -Wl,--build-id=sha1,--emit-relocs \
+    -Wl,--build-id=sha1,--emit-relocs,-z,ibt,-z,shstk,-z,relro,-z,now,-z,noexecstack,--enable-new-dtags,-rpath,'$ORIGIN/../lib64' \
     "${SOURCE}/main.c" -o "${ED}/usr/bin/fixed"
 cc -O2 -g -fno-omit-frame-pointer -fPIE -pie \
-    -Wl,--build-id=sha1,--emit-relocs \
+    -Wl,--build-id=sha1,--emit-relocs,-z,ibt,-z,shstk,-z,relro,-z,now,-z,noexecstack \
     "${SOURCE}/main.c" -o "${ED}/usr/bin/pie"
 cc -O2 -g -fno-omit-frame-pointer -fPIC -shared \
-    -Wl,--build-id=sha1,--emit-relocs,-soname,libfixture.so.1 \
+    -Wl,--build-id=sha1,--emit-relocs,-soname,libfixture.so.1,-z,ibt,-z,shstk,-z,relro,-z,now,-z,noexecstack,--disable-new-dtags,-rpath,'$ORIGIN' \
     "${SOURCE}/library.c" -o "${ED}/usr/lib64/libfixture.so.1"
 ln -- "${ED}/usr/bin/fixed" "${ED}/usr/bin/fixed-hardlink"
 ln -s -- fixed-hardlink "${ED}/usr/bin/fixed-symlink"

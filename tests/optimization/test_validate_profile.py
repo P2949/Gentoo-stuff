@@ -642,6 +642,12 @@ class ProfileValidatorTests(unittest.TestCase):
             "tampered-observation": lambda data: data["source"][
                 "binary_observation"
             ].__setitem__("inode", 0),
+            "tampered-build-id": lambda data: data["input_identity"].__setitem__(
+                "build_id", "1234567890abcdef"
+            ),
+            "tampered-text-sha256": lambda data: data[
+                "input_identity"
+            ].__setitem__("text_sha256", "f" * 64),
         }
         for name, mutate in mutations.items():
             with self.subTest(name=name):

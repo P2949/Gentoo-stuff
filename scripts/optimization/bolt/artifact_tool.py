@@ -1494,8 +1494,11 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                 fail(f".text hash mismatch for {artifact['canonical_path']}")
             if file_sha != artifact["file_sha256"]:
                 fail(f"full-file hash mismatch for {artifact['canonical_path']}")
+            assert_abi_identity(identity, artifact, f"current input {artifact_id}")
 
             output_record = outputs_by_id[artifact_id]
+            if not isinstance(output_record, dict):
+                fail(f"prepared output record is not an object: {artifact_id}")
             for key, source_key in (
                 ("source_file_sha256", "file_sha256"),
                 ("source_build_id", "build_id"),
@@ -1503,6 +1506,9 @@ def command_deploy(arguments: argparse.Namespace) -> None:
             ):
                 if output_record.get(key) != artifact.get(source_key):
                     fail(f"prepared output input identity mismatch for {artifact_id}: {key}")
+            if output_record.get("source_abi_security_identity") != abi_identity(artifact):
+                fail(f"prepared output source ABI/security identity mismatch for {artifact_id}")
+            verify_bolt_provenance(output_record)
             output_object = output_record.get("output_object")
             if not isinstance(output_object, str):
                 fail(f"missing output object for {artifact_id}")
@@ -1515,11 +1521,21 @@ def command_deploy(arguments: argparse.Namespace) -> None:
             output_class = classify_elf(
                 output_path, readelf, objcopy, scratch_root / f"output-{index}"
             )
-            if not output_class["has_bolt_info"]:
-                fail(f"prepared output lacks .note.bolt_info: {artifact_id}")
-            for key in ("elf_class", "elf_type", "machine"):
-                if output_class[key] != artifact[key]:
-                    fail(f"prepared output {key} mismatch for {artifact_id}")
+            if not output_class["has_bolt_info"] or not output_class["bolt_info_valid"]:
+                fail(f"prepared output lacks a valid BOLT note: {artifact_id}")
+            if ".bolt.org.text" not in output_class["bolt_origin_sections"]:
+                fail(f"prepared output lacks BOLT transformation evidence: {artifact_id}")
+            assert_abi_identity(output_class, artifact, f"prepared output {artifact_id}")
+            if abi_identity(output_class) != output_record.get("abi_security_identity"):
+                fail(f"prepared output recorded ABI/security identity mismatch for {artifact_id}")
+            for key in (
+                "bolt_info_sha256",
+                "bolt_info_size",
+                "bolt_info_description",
+                "bolt_origin_sections",
+            ):
+                if output_class.get(key) != output_record.get(key):
+                    fail(f"prepared output BOLT transformation identity mismatch: {artifact_id}: {key}")
             prepared.append(
                 {
                     "artifact": artifact,
@@ -1579,6 +1595,17 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                 expected = outputs_by_id[item["artifact"]["artifact_id"]]
                 if sha256_file(paths[0]) != expected["output_sha256"]:
                     fail(f"deployed file hash mismatch: {paths[0]}")
+                assert_abi_identity(
+                    final_class,
+                    item["artifact"],
+                    f"deployed output {item['artifact']['artifact_id']}",
+                )
+                if abi_identity(final_class) != expected.get("abi_security_identity"):
+                    fail(f"deployed ABI/security record mismatch: {paths[0]}")
+                if not final_class["bolt_info_valid"] or ".bolt.org.text" not in final_class[
+                    "bolt_origin_sections"
+                ]:
+                    fail(f"deployed file lacks BOLT transformation evidence: {paths[0]}")
         except BaseException:
             for stages in staged_groups:
                 for partial, _ in stages:
@@ -1641,6 +1668,13 @@ def build_parser() -> argparse.ArgumentParser:
     register.add_argument("--artifact-id", required=True)
     register.add_argument("--input", required=True)
     register.add_argument("--output", required=True)
+    register.add_argument("--llvm-bolt", required=True)
+    register.add_argument("--option-policy-revision", required=True)
+    register.add_argument("--bolt-option", action="append", default=[])
+    register.add_argument("--fdata", action="append", default=[])
+    register.add_argument("--workload-evidence", action="append", default=[])
+    register.add_argument("--profile-evidence", action="append", default=[])
+    register.add_argument("--command-record", required=True)
     register.add_argument("--readelf", default="readelf")
     register.add_argument("--objcopy", default="objcopy")
     register.set_defaults(function=command_register)
