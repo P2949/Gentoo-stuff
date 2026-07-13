@@ -174,9 +174,23 @@ SAMPLE_PROFGEN_SOURCE_FIELDS = {
     "objcopy",
     "command_arguments",
     "command_output_sha256",
+    "conversion_log_path",
+    "conversion_log_sha256",
+    "conversion_log_observation",
     "binary_observation",
     "debug_binary_observation",
     "perf_data_observation",
+}
+CONVERSION_LOG_FIELDS = {
+    "schema_version",
+    "producer_realpath",
+    "producer_sha256",
+    "command_arguments",
+    "exit_status",
+    "stdout",
+    "stdout_sha256",
+    "stderr",
+    "stderr_sha256",
 }
 FILE_OBSERVATION_FIELDS = {
     "device",
@@ -398,10 +412,17 @@ def run_tool(
     allowed_exit_statuses: frozenset[int] = frozenset({0}),
 ) -> tuple[str, str]:
     try:
-        environment = os.environ.copy()
-        environment.update(
-            {"LC_ALL": "C", "LANG": "C", "LANGUAGE": "C", "TZ": "UTC"}
-        )
+        # Profile validation is authoritative and may run as root from Portage.
+        # Never inherit loader, Python, compiler-wrapper, or user startup state
+        # from the caller into an observed compiler/profile tool.
+        environment = {
+            "HOME": "/nonexistent",
+            "LANG": "C",
+            "LANGUAGE": "C",
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+            "TZ": "UTC",
+        }
         completed = subprocess.run(
             [os.fspath(path), *arguments],
             stdin=subprocess.DEVNULL,
@@ -693,12 +714,33 @@ def validate_sample_source(value: object, profile: Path) -> dict[str, object]:
     command_output_sha256 = require_hex64(
         source["command_output_sha256"], "command_output_sha256"
     )
+    conversion_log, conversion_log_sha256 = validate_recorded_file(
+        source["conversion_log_path"],
+        source["conversion_log_sha256"],
+        "conversion log",
+    )
+    if conversion_log != profile.parent / "llvm-profgen-conversion-log.json":
+        fail("conversion log is not the exact required sibling of sample.prof")
+    conversion_log_observation = validate_file_observation(
+        source["conversion_log_observation"], conversion_log, "conversion log"
+    )
+    validate_conversion_log(
+        conversion_log,
+        conversion_log_sha256,
+        conversion_log_observation,
+        source["producer"],
+        arguments,
+        command_output_sha256,
+    )
     return {
         "binary_path": os.fspath(binary),
         "binary_sha256": binary_sha256,
         "binary_observation": binary_observation,
         "command_arguments": arguments,
         "command_output_sha256": command_output_sha256,
+        "conversion_log_path": os.fspath(conversion_log),
+        "conversion_log_sha256": conversion_log_sha256,
+        "conversion_log_observation": conversion_log_observation,
         "debug_binary_path": (
             os.fspath(debug_binary) if debug_binary is not None else None
         ),
@@ -716,6 +758,56 @@ def validate_sample_source(value: object, profile: Path) -> dict[str, object]:
     }
 
 
+def validate_conversion_log(
+    path: Path,
+    expected_sha256: str,
+    expected_observation: dict[str, object],
+    producer: object,
+    command_arguments: list[str],
+    command_output_sha256: str,
+) -> dict[str, object]:
+    path_stat = path.stat()
+    if stat.S_IMODE(path_stat.st_mode) != 0o444 or path_stat.st_nlink != 1:
+        fail("conversion log must be a link-count-one, mode-0444 regular file")
+    if sha256_file(path) != expected_sha256:
+        fail("conversion log no longer matches its recorded SHA-256")
+    log = load_json(path, "conversion log")
+    require_exact_fields(log, CONVERSION_LOG_FIELDS, "conversion log")
+    if log["schema_version"] != 1:
+        fail("conversion log schema_version must be 1")
+    producer_identity = require_object(producer, "sample source producer")
+    if log["producer_realpath"] != producer_identity["realpath"]:
+        fail("conversion log producer realpath mismatch")
+    if log["producer_sha256"] != producer_identity["sha256"]:
+        fail("conversion log producer SHA-256 mismatch")
+    if log["command_arguments"] != command_arguments:
+        fail("conversion log command arguments mismatch")
+    if log["exit_status"] != 0:
+        fail("conversion log does not record a successful converter exit")
+    stdout = log["stdout"]
+    stderr = log["stderr"]
+    if not isinstance(stdout, str) or "\x00" in stdout:
+        fail("conversion log stdout must be a string without NUL bytes")
+    if not isinstance(stderr, str) or "\x00" in stderr:
+        fail("conversion log stderr must be a string without NUL bytes")
+    if require_hex64(log["stdout_sha256"], "conversion log stdout SHA-256") != hashlib.sha256(
+        stdout.encode("utf-8")
+    ).hexdigest():
+        fail("conversion log stdout hash mismatch")
+    if require_hex64(log["stderr_sha256"], "conversion log stderr SHA-256") != hashlib.sha256(
+        stderr.encode("utf-8")
+    ).hexdigest():
+        fail("conversion log stderr hash mismatch")
+    observed_output_sha256 = hashlib.sha256(
+        (stdout + "\0" + stderr).encode("utf-8")
+    ).hexdigest()
+    if observed_output_sha256 != command_output_sha256:
+        fail("conversion log streams do not match command_output_sha256")
+    if observe_regular_file(path, "conversion log") != expected_observation:
+        fail("conversion log changed while it was being validated")
+    return log
+
+
 def validate_sample_metadata(
     metadata_path: Path,
     profile: Path,
@@ -727,10 +819,12 @@ def validate_sample_metadata(
     sample_stdout: str,
     sample_stderr: str,
 ) -> dict[str, Any]:
+    if metadata_path != profile.parent / "sample-metadata.json":
+        fail("sample metadata is not the exact required sibling of sample.prof")
     metadata = load_json(metadata_path, "sample metadata")
     require_exact_fields(metadata, SAMPLE_METADATA_FIELDS, "sample metadata")
-    if metadata["schema_version"] != 2:
-        fail("sample metadata schema_version must be 2")
+    if metadata["schema_version"] != 3:
+        fail("sample metadata schema_version must be 3")
     if metadata["profile_family"] != "clang-sample" or metadata["profile_format"] != "llvm-sample":
         fail("sample metadata has the wrong family or format")
     if metadata["profile_path"] != os.fspath(profile):

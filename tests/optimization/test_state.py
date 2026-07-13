@@ -34,7 +34,7 @@ H = {
         "profile", "training", "validation", "diagnostic", "installed",
         "workload", "config", "image", "modules", "boot", "artifact", "text",
         "metadata", "perf", "merge", "output", "deploy", "rollback", "xattr",
-        "graph", "failure",
+        "graph", "failure", "receipt", "command",
     )
 }
 
@@ -121,7 +121,7 @@ def optimized_pgo(backend: str, toolchain_fingerprint: str) -> dict[str, Any]:
         "sidecar": evidence("profile-sidecar", "sidecar"), "profile": evidence("profile", "profile"),
         "toolchain_fingerprint": toolchain_fingerprint, "workload_refs": [workload()],
         "training_evidence": [evidence("training", "log")], "validation_evidence": [evidence("validation", "report")],
-        "build_use": {"build_log": evidence("build", "log"), "flags": ["-fprofile-use=/exact/profile"], "diagnostics": [evidence("diagnostic", "command-output")], "installed_evidence": [evidence("installed", "report")]},
+        "build_use": {"build_log": evidence("build", "log"), "flags": ["-fprofile-use=/exact/profile"], "diagnostics": [evidence("diagnostic", "command-output")], "installed_evidence": [evidence("installed", "report")], "validator_receipt": evidence("receipt", "report")},
         "resolution": None,
     }
 
@@ -185,6 +185,9 @@ def source_rebuild(live_identity_sha: str) -> dict[str, Any]:
             "smoke_tests": [{"name": "cli-version", "status": "passed", "evidence": [evidence("smoke", "command-output")]}],
             "reverse_dependencies": {"status": "passed", "evidence": [evidence("revdep", "report")]},
             "installed_vdb_identity_sha256": live_identity_sha,
+            "active_modes": ["pgo-use"],
+            "portage_transaction_receipt": evidence("transaction", "transaction"),
+            "binpkg_validation_receipt": evidence("receipt", "report"),
         },
         "resolution": None,
     }
@@ -193,19 +196,24 @@ def source_rebuild(live_identity_sha: str) -> dict[str, Any]:
 def package_record(*, inventory_sha: str = H["inventory"], artifact_count: int = 0, bolt_counts: dict[str, Any] | None = None, vdb_path: str = "/var/db/pkg/app-test/example-suite-1.0-r2", contents_sha: str = H["contents"], environment_sha: str | None = H["environment"]) -> dict[str, Any]:
     components = all_components()
     live: dict[str, Any] = {
-        "vdb_path": vdb_path, "contents_sha256": contents_sha, "metadata_tree_sha256": H["vdb"], "repository": "gentoo", "slot": "0", "subslot": "0",
+        "vdb_path": vdb_path, "contents_sha256": contents_sha, "metadata_tree_sha256": H["vdb"], "repository": "gentoo", "slot_raw": "0", "slot": "0", "subslot": "0",
         "build_time": "1783904400", "counter": "17", "environment_bz2_sha256": environment_sha, "identity_sha256": "",
     }
     live["identity_sha256"] = STATE.vdb_identity_sha256(live)
     if bolt_counts is None:
         bolt_counts = {"candidate_count": 0, "optimized_count": 0, "excluded_count": 0, "not_applicable_count": artifact_count, "pending_count": 0, "unknown_count": 0, "failed_count": 0, "status": "not-applicable"}
+    rebuilt = source_rebuild(live["identity_sha256"])
+    if bolt_counts["optimized_count"]:
+        rebuilt["proof"]["active_modes"] = ["bolt-deploy", "pgo-use"]
+    frozen_payload = {"cpv": "app-test/example-suite-1.0-r2", "repository": "gentoo", "slot_raw": "0", "contents_sha256": H["contents"], "metadata_tree_sha256": H["vdb"]}
+    frozen_sha = hashlib.sha256(STATE.canonical_bytes(frozen_payload)).hexdigest()
     return {
-        "schema_version": 3, "record_type": "package", "generation": generation(inventory_sha),
+        "schema_version": 4, "record_type": "package", "generation": generation(inventory_sha),
         "identity": {"cpv": "app-test/example-suite-1.0-r2", "cp": "app-test/example-suite", "repository": "gentoo", "slot": "0", "subslot": "0"},
-        "frozen_inventory_entry": {"entry_sha256": H["entry"], "installed_at_freeze": True}, "live_instance": live,
+        "frozen_inventory_entry": {"entry_sha256": frozen_sha, "installed_at_freeze": True, "payload": frozen_payload}, "live_instance": live,
         "source": {"ebuild": evidence("ebuild", "source"), "manifest": evidence("manifest", "manifest"), "distfiles": [evidence("source", "source")], "source_fingerprint": f"sha256:{H['source']}"},
         "abis": ["amd64", "x86"], "languages": sorted({language for item in components for language in item["languages"]}), "use_flags": ["abi_x86_32", "abi_x86_64", "pgo"],
-        "components": components, "source_rebuild": source_rebuild(live["identity_sha256"]),
+        "components": components, "source_rebuild": rebuilt,
         "graphs": {"consumer_refs": [], "workload_refs": [workload()], "reverse_dependency_refs": []},
         "aggregate": {
             "component_count": len(components), "artifact_count": artifact_count,
@@ -228,7 +236,7 @@ def elf_metadata(role: str = "pie-executable", abi: str = "amd64") -> dict[str, 
         elf_type, pie, interpreter = "REL", False, None
     machine = target(abi)["machine"]
     return {
-        "class": target(abi)["elf_class"], "type": elf_type, "machine": machine,
+        "class": target(abi)["elf_class"], "data_encoding": "little", "type": elf_type, "machine": machine,
         "build_id": "ab12cd34", "text_sha256": H["text"], "has_symbols": True,
         "has_relocations": True, "has_executable_sections": True,
         "soname": "libexample.so.1" if role == "shared-library" else None,
@@ -236,28 +244,34 @@ def elf_metadata(role: str = "pie-executable", abi: str = "amd64") -> dict[str, 
         "exports": [{"name": "example_api", "version": "EXAMPLE_1.0", "binding": "GLOBAL", "visibility": "DEFAULT", "type": "FUNC"}],
         "symbol_versions": [{"name": "EXAMPLE_1.0", "provider": "libexample.so.1", "default": True}],
         "debug": {"has_debug_info": True, "has_full_symtab": True, "separate_debug_path": "/usr/lib/debug/usr/bin/example.debug", "separate_debug_sha256": H["validation"], "gnu_debuglink": "example.debug"},
-        "runtime_instrumentation": {"pgo_markers": ["profile-use-verified"], "bolt_note": role in {"executable", "pie-executable", "shared-library", "plugin"}, "build_id_note": True, "cet_properties": ["IBT", "SHSTK"]},
+        "runtime_instrumentation": {"pgo_markers": [], "bolt_note": role in {"executable", "pie-executable", "shared-library", "plugin"}, "build_id_note": True, "cet_properties": ["IBT", "SHSTK"]},
         "dynamic_linkage": {"is_dynamic": role not in {"relocatable", "kernel-module", "ebpf"}, "pie": pie, "interpreter": interpreter, "needed": ["libc.so.6"] if role not in {"relocatable", "kernel-module", "ebpf"} else []},
+        "security": {"gnu_stack": "non-executable", "relro": True, "bind_now": True, "writable_executable_load": False},
     }
 
 
 def optimized_bolt() -> dict[str, Any]:
+    llvm = tool("llvm-bolt", "llvm-binutils")
+    command_record = evidence("command", "manifest")
+    partial = "/var/cache/gentoo-optimization/bolt/outputs/example.partial"
     return {
         "eligibility": "eligible", "status": "optimized", "generation_id": "generation-test", "resolution": None,
         "capture": {"input_path": "/var/cache/gentoo-optimization/bolt/inputs/example", "input_sha256": H["artifact"], "input_text_sha256": H["text"], "input_build_id": "ab12cd34", "manifest": evidence("manifest", "manifest"), "metadata_snapshot": evidence("metadata", "report")},
         "perf_profiles": [{"workload_id": "representative-cli", "perf_data": evidence("perf", "profile"), "perf_tool": tool("profiler", "perf"), "samples": 1200, "branch_entries": 24000, "lost_samples": 0}],
         "fdata": {"path": "/var/cache/gentoo-optimization/bolt/fdata/example.fdata", "sha256": H["profile"], "merge_log": evidence("merge", "log"), "input_sample_count": 1200, "fdata_record_count": 24000, "count_evidence": evidence("diagnostic", "command-output"), "stale_percent": 0.1},
-        "tools": {"llvm_bolt": tool("llvm-bolt", "llvm-binutils"), "perf2bolt": tool("perf2bolt", "llvm-binutils"), "merge_fdata": tool("merge-fdata", "llvm-binutils")},
-        "options": ["-icf=safe", "-reorder-blocks=ext-tsp", "-reorder-functions=cdsort"],
-        "output": {"path": "/var/cache/gentoo-optimization/bolt/outputs/example", "sha256": H["output"], "text_sha256": H["installed"], "build_id": "cd34ef56", "bolt_note": True, "verification": [evidence("validation", "report")]},
+        "tools": {"llvm_bolt": llvm, "perf2bolt": tool("perf2bolt", "llvm-binutils"), "merge_fdata": tool("merge-fdata", "llvm-binutils")},
+        "option_policy_revision": STATE.BOLT_POLICY_REVISION,
+        "options": STATE.BOLT_APPROVED_ARGV.copy(),
+        "command": {"argv": [llvm["realpath"], "/var/cache/gentoo-optimization/bolt/inputs/example", "-o", partial, "-data=/var/cache/gentoo-optimization/bolt/fdata/example.fdata", *STATE.BOLT_APPROVED_ARGV], "output_partial_path": partial, "record": command_record},
+        "output": {"path": "/var/cache/gentoo-optimization/bolt/outputs/example", "sha256": H["output"], "text_sha256": H["installed"], "build_id": "cd34ef56", "bolt_note": True, "note_binding": {"input_sha256": H["artifact"], "fdata_sha256": H["profile"], "option_policy_revision": STATE.BOLT_POLICY_REVISION, "command_record_sha256": command_record["sha256"]}, "verification": [evidence("validation", "report")]},
         "deployment": {"transaction_id": "bolt-deploy-1", "prestrip_path": "/var/tmp/portage/app-test/example/image/usr/bin/example", "prestrip_deployed_sha256": H["output"], "deploy_log": evidence("deploy", "log"), "rollback_artifact": evidence("rollback", "binary"), "installed_sha256": H["installed"], "post_strip_verification": [evidence("validation", "report")], "metadata_verified": True, "runtime_verified": True},
     }
 
 
 def artifact_record(*, inventory_sha: str = H["inventory"], kind: str = "elf", path: str = "/usr/bin/example") -> dict[str, Any]:
-    role_map = {"elf": "pie-executable", "static-archive": "archive", "relocatable-object": "relocatable", "kernel-image": "kernel-image", "kernel-module": "kernel-module", "ebpf": "ebpf", "gpu-object": "gpu-object", "firmware": "firmware", "bytecode": "bytecode", "script": "script", "data": "data"}
+    role_map = {"elf": "pie-executable", "static-archive": "archive", "relocatable-object": "relocatable", "kernel-image": "kernel-image", "kernel-module": "kernel-module", "ebpf": "ebpf", "gpu-object": "gpu-object", "firmware": "firmware", "bytecode": "bytecode", "script": "script", "data": "data", "symlink": "symlink"}
     role = role_map[kind]
-    abi = "other" if kind in {"ebpf", "gpu-object"} else ("none" if kind in {"firmware", "bytecode", "script", "data"} else "amd64")
+    abi = "other" if kind in {"ebpf", "gpu-object"} else ("none" if kind in {"firmware", "bytecode", "script", "data", "symlink"} else "amd64")
     machine_target = None if abi == "none" else target(abi, kernel_release="6.18.0-test" if kind in {"kernel-image", "kernel-module"} else None)
     elf = elf_metadata(role, abi) if kind in STATE.ELF_REQUIRED_KINDS else None
     kernel = None
@@ -268,10 +282,10 @@ def artifact_record(*, inventory_sha: str = H["inventory"], kind: str = "elf", p
     if optimized and elf is not None:
         elf["build_id"] = "cd34ef56"
         elf["text_sha256"] = H["installed"]
-    bolt = optimized_bolt() if optimized else {"eligibility": "not-applicable", "status": "not-applicable", "generation_id": None, "resolution": resolution("bolt-not-elf"), "capture": None, "perf_profiles": [], "fdata": None, "tools": None, "options": [], "output": None, "deployment": None}
+    bolt = optimized_bolt() if optimized else {"eligibility": "not-applicable", "status": "not-applicable", "generation_id": None, "resolution": resolution("bolt-not-elf"), "capture": None, "perf_profiles": [], "fdata": None, "tools": None, "option_policy_revision": None, "options": [], "command": None, "output": None, "deployment": None}
     artifact_id = hashlib.sha256((kind + path).encode()).hexdigest()
-    return {
-        "schema_version": 3, "record_type": "artifact", "generation": generation(inventory_sha), "artifact_id": f"sha256:{artifact_id}",
+    record = {
+        "schema_version": 4, "record_type": "artifact", "generation": generation(inventory_sha), "artifact_id": f"sha256:{artifact_id}",
         "owner": {"cpv": "app-test/example-suite-1.0-r2", "cp": "app-test/example-suite", "component_id": "01-clang-ir", "component_fingerprint": f"sha256:{hashlib.sha256('01-clang-ir'.encode()).hexdigest()}"},
         "kind": kind, "format": "ELF" if elf else kind, "role": role, "installed_path": path, "canonical_path": path,
         "content_sha256": H["installed"] if optimized else H["artifact"], "size": 4096, "abi": abi, "target": machine_target,
@@ -280,6 +294,123 @@ def artifact_record(*, inventory_sha: str = H["inventory"], kind: str = "elf", p
         "elf": elf, "kernel": kernel, "graphs": {"consumer_refs": [], "workload_refs": [workload()], "reverse_dependency_refs": []},
         "bolt": bolt, "final_status": "optimized" if optimized else "not-applicable", "resolution": None if optimized else resolution("bolt-not-elf"),
     }
+    if kind == "symlink":
+        record["metadata"]["file_type"] = "symlink"
+        record["topology"]["hardlink_paths"] = []
+        record["topology"]["symlinks"] = [{"path": path, "target": "/missing-target"}]
+        record["size"] = len("/missing-target")
+        record["content_sha256"] = hashlib.sha256(b"/missing-target").hexdigest()
+    return record
+
+
+def materialize_evidence(value: Any, root: Path) -> None:
+    """Move all evidence claims into one hermetic trusted tree with real hashes."""
+    if isinstance(value, dict):
+        if set(value) == {"path", "sha256", "kind"}:
+            payload = value["path"].encode()
+            path = root / hashlib.sha256(payload).hexdigest()
+            path.write_bytes(payload)
+            value["path"] = str(path)
+            value["sha256"] = hashlib.sha256(payload).hexdigest()
+            return
+        for child in value.values():
+            materialize_evidence(child, root)
+    elif isinstance(value, list):
+        for child in value:
+            materialize_evidence(child, root)
+
+
+def strict_fixture(root: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], bytes, dict[str, Any], dict[str, Path]]:
+    generation_root = root / "generation"; evidence_root = generation_root / "evidence"
+    profiles_root = root / "profiles"; bolt_root = root / "bolt"; binpkg_root = root / "binpkgs"
+    packages_dir = generation_root / "packages"; artifacts_dir = generation_root / "artifacts"
+    for directory in (evidence_root, profiles_root, bolt_root, binpkg_root, packages_dir, artifacts_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+    installed_root = root / "installed"; installed = installed_root / "usr/bin/example"
+    installed.parent.mkdir(parents=True); installed.write_bytes(b"artifact"); installed.chmod(0o755)
+    vdb_root = root / "vdb"; instance = vdb_root / "app-test/example-suite-1.0-r2"; instance.mkdir(parents=True)
+    contents = "dir /usr/bin\nobj /usr/bin/example deadbeef 1783904400\n"
+    (instance / "CONTENTS").write_text(contents)
+    (instance / "repository").write_text("gentoo\n"); (instance / "SLOT").write_text("0/0\n")
+    (instance / "BUILD_TIME").write_text("1783904400\n"); (instance / "COUNTER").write_text("17\n")
+    (instance / "environment.bz2").write_bytes(b"environment")
+
+    package = package_record(artifact_count=1, bolt_counts={"candidate_count": 0, "optimized_count": 0, "excluded_count": 0, "not_applicable_count": 1, "pending_count": 0, "unknown_count": 0, "failed_count": 0, "status": "not-applicable"})
+    script_component = component("09-script-data", "script-data", ["data", "python", "shell"], "none", "not-applicable")
+    package["components"] = [script_component]; package["abis"] = []; package["languages"] = script_component["languages"]
+    package["aggregate"]["component_count"] = 1
+    package["aggregate"]["pgo"] = {"eligible_count": 0, "optimized_count": 0, "excluded_count": 0, "not_applicable_count": 1, "pending_count": 0, "unknown_count": 0, "failed_count": 0, "status": "not-applicable"}
+    package["graphs"]["workload_refs"] = []; package["final_status"] = "not-applicable"; package["resolution"] = resolution()
+    package["source_rebuild"]["proof"]["active_modes"] = []
+    package["live_instance"].update({
+        "vdb_path": str(instance), "contents_sha256": hashlib.sha256(contents.encode()).hexdigest(),
+        "metadata_tree_sha256": STATE.vdb_metadata_tree_sha256(instance), "slot_raw": "0/0",
+        "environment_bz2_sha256": hashlib.sha256(b"environment").hexdigest(),
+    })
+    package["live_instance"]["identity_sha256"] = STATE.vdb_identity_sha256(package["live_instance"])
+    package["source_rebuild"]["proof"]["installed_vdb_identity_sha256"] = package["live_instance"]["identity_sha256"]
+    binpkg = binpkg_root / "example.gpkg.tar"; binpkg.write_bytes(b"binpkg")
+    package["source_rebuild"]["proof"]["binpkg"].update({"path": str(binpkg), "sha256": hashlib.sha256(b"binpkg").hexdigest()})
+
+    artifact = artifact_record(kind="data")
+    artifact["owner"].update({"component_id": script_component["component_id"], "component_fingerprint": script_component["fingerprint"]})
+    artifact["graphs"]["workload_refs"] = []
+    installed_stat = installed.lstat()
+    artifact.update({"content_sha256": hashlib.sha256(b"artifact").hexdigest(), "size": len(b"artifact")})
+    artifact["metadata"].update({"mode": stat.S_IMODE(installed_stat.st_mode), "uid": installed_stat.st_uid, "gid": installed_stat.st_gid, "mtime_ns": installed_stat.st_mtime_ns, "xattrs": []})
+    artifact["topology"].update({"device": installed_stat.st_dev, "inode": installed_stat.st_ino, "link_count": installed_stat.st_nlink})
+
+    frozen_payload = package["frozen_inventory_entry"]["payload"]
+    frozen_sha = hashlib.sha256(STATE.canonical_bytes(frozen_payload)).hexdigest()
+    package["frozen_inventory_entry"]["entry_sha256"] = frozen_sha
+    inventory = {
+        "schema_version": 2, "record_type": "frozen-inventory", "generation_id": "generation-test", "inventory_id": "inventory-test",
+        "packages": [{"cpv": package["identity"]["cpv"], "entry_sha256": frozen_sha}],
+        "owned_paths": [{"owner_cpv": package["identity"]["cpv"], "path": "/usr/bin/example"}],
+        "owned_directories": [{"owner_cpv": package["identity"]["cpv"], "path": "/usr/bin", "mode": stat.S_IMODE(installed.parent.stat().st_mode), "uid": installed.parent.stat().st_uid, "gid": installed.parent.stat().st_gid, "classification": "not-applicable", "resolution": resolution("not-machine-code")}],
+    }
+    materialize_evidence(inventory, evidence_root)
+    inventory_payload = STATE.canonical_bytes(inventory); inventory_sha = hashlib.sha256(inventory_payload).hexdigest()
+    package["generation"] = generation(inventory_sha); artifact["generation"] = generation(inventory_sha)
+    inventory_path = generation_root / "inventory.json"; inventory_path.write_bytes(inventory_payload)
+
+    materialize_evidence(package, evidence_root); materialize_evidence(artifact, evidence_root)
+    validators: dict[str, dict[str, str]] = {}
+    validator_dir = root / "validators"; validator_dir.mkdir()
+    for key in ("state_runtime", "reconciler_runtime", "profile", "readelf", "getcap", "uname", "efibootmgr", "rc_status"):
+        path = validator_dir / key
+        path.write_text("#!/bin/sh\nexit 0\n"); path.chmod(0o755)
+        validators[key] = {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    binpkg_validator = validator_dir / "binpkg_snapshot"
+    binpkg_validator.write_text("#!/bin/sh\nprintf '%s\\n' '{\"status\":\"pass\"}'\n"); binpkg_validator.chmod(0o755)
+    validators["binpkg_snapshot"] = {"path": str(binpkg_validator), "sha256": hashlib.sha256(binpkg_validator.read_bytes()).hexdigest()}
+    generation_identity = generation(inventory_sha)
+    lock_payload = STATE.canonical_bytes(generation_identity)
+    locks: dict[str, dict[str, str]] = {}
+    for key in ("framework", "project", "generation"):
+        path = generation_root / f"{key}.lock"; path.write_bytes(lock_payload)
+        locks[key] = {"path": str(path), "sha256": hashlib.sha256(lock_payload).hexdigest()}
+    final_state: dict[str, Any] = {
+        "schema_version": 1, "record_type": "final-system-state", "generation": generation_identity,
+        "trusted_roots": {"generation_root": str(generation_root), "evidence_root": str(evidence_root), "profiles_root": str(profiles_root), "bolt_root": str(bolt_root), "binpkg_snapshot": str(binpkg_root), "packages_dir": str(packages_dir), "artifacts_dir": str(artifacts_dir), "inventory": str(inventory_path)},
+        "locks": locks, "validators": validators,
+        "registries": {"workloads": [], "dependency_edges": []},
+        "final_transaction": {"transaction_id": "final-transaction", "active_modes": [], "portage_receipt": evidence("transaction", "transaction"), "vdb_receipt": evidence("validation", "report"), "binpkg_snapshot_receipt": evidence("receipt", "report")},
+        "boot": {"boot_id": "fixture-boot", "kernel_release": "fixture-kernel", "boot_current": "0004", "efi_root": "/efi", "kernel_image": evidence("image", "binary"), "initramfs": evidence("boot", "binary"), "efi_loader": evidence("image", "binary"), "modules_manifest": evidence("modules", "manifest"), "efibootmgr_output_sha256": H["boot"], "openrc_output_sha256": H["validation"], "reboot_evidence": [evidence("boot", "report")]},
+    }
+    materialize_evidence(final_state["final_transaction"], evidence_root); materialize_evidence(final_state["boot"], evidence_root)
+    # Lock evidence contains authoritative generation JSON and must not be rematerialized.
+    (packages_dir / "package.json").write_bytes(STATE.canonical_bytes(package))
+    (artifacts_dir / "artifact.json").write_bytes(STATE.canonical_bytes(artifact))
+    return package, artifact, inventory, inventory_payload, final_state, {"vdb": vdb_root, "installed": installed_root, "packages": packages_dir, "artifacts": artifacts_dir, "inventory": inventory_path}
+
+
+def mutate_live_magic(artifact: dict[str, Any], paths: dict[str, Path]) -> None:
+    path = paths["installed"] / "usr/bin/example"
+    payload = b"\x7fELFbad!"
+    path.write_bytes(payload)
+    os.utime(path, ns=(artifact["metadata"]["mtime_ns"], artifact["metadata"]["mtime_ns"]))
+    artifact["content_sha256"] = hashlib.sha256(payload).hexdigest()
 
 
 class PackageContractTests(unittest.TestCase):
@@ -399,7 +530,7 @@ class ArtifactContractTests(unittest.TestCase):
             STATE.validate_artifact(record)
 
     def test_optimized_bolt_requires_capture_perf_fdata_tools_exact_options_output_and_deploy(self) -> None:
-        for field, empty in (("capture", None), ("perf_profiles", []), ("fdata", None), ("tools", None), ("options", []), ("output", None), ("deployment", None)):
+        for field, empty in (("capture", None), ("perf_profiles", []), ("fdata", None), ("tools", None), ("options", []), ("command", None), ("output", None), ("deployment", None)):
             with self.subTest(field=field):
                 record = artifact_record(); record["bolt"][field] = empty
                 with self.assertRaises(STATE.StateValidationError):
@@ -427,6 +558,15 @@ class ArtifactContractTests(unittest.TestCase):
         record = artifact_record(); record["graphs"]["workload_refs"] = []
         with self.assertRaisesRegex(STATE.StateValidationError, "does not register BOLT"):
             STATE.validate_artifact(record)
+        record = artifact_record(); record["bolt"]["options"][0], record["bolt"]["options"][1] = record["bolt"]["options"][1], record["bolt"]["options"][0]
+        with self.assertRaisesRegex(STATE.StateValidationError, "ordered option policy"):
+            STATE.validate_artifact(record)
+        record = artifact_record(); record["bolt"]["option_policy_revision"] = "unreviewed"
+        with self.assertRaisesRegex(STATE.StateValidationError, "ordered option policy"):
+            STATE.validate_artifact(record)
+        record = artifact_record(); record["bolt"]["command"]["argv"][1] = "/wrong/input"
+        with self.assertRaisesRegex(STATE.StateValidationError, "exact reviewed argv"):
+            STATE.validate_artifact(record)
 
     def test_machine_abi_role_and_kernel_state_are_exact(self) -> None:
         record = artifact_record(); record["target"]["machine"] = "Intel 80386"
@@ -442,7 +582,8 @@ class ArtifactContractTests(unittest.TestCase):
 
 class CollectionTests(unittest.TestCase):
     def collection(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], bytes]:
-        inventory = {"schema_version": 1, "record_type": "frozen-inventory", "generation_id": "generation-test", "inventory_id": "inventory-test", "packages": [{"cpv": "app-test/example-suite-1.0-r2", "entry_sha256": H["entry"]}], "owned_paths": [{"owner_cpv": "app-test/example-suite-1.0-r2", "path": "/usr/bin/example"}]}
+        provisional = package_record()
+        inventory = {"schema_version": 2, "record_type": "frozen-inventory", "generation_id": "generation-test", "inventory_id": "inventory-test", "packages": [{"cpv": "app-test/example-suite-1.0-r2", "entry_sha256": provisional["frozen_inventory_entry"]["entry_sha256"]}], "owned_paths": [{"owner_cpv": "app-test/example-suite-1.0-r2", "path": "/usr/bin/example"}], "owned_directories": []}
         payload = STATE.canonical_bytes(inventory); inv_sha = hashlib.sha256(payload).hexdigest()
         bolt_counts = {"candidate_count": 1, "optimized_count": 1, "excluded_count": 0, "not_applicable_count": 0, "pending_count": 0, "unknown_count": 0, "failed_count": 0, "status": "optimized"}
         package = package_record(inventory_sha=inv_sha, artifact_count=1, bolt_counts=bolt_counts)
@@ -463,9 +604,10 @@ class CollectionTests(unittest.TestCase):
 
     def test_unresolved_leaf_state_is_derived_and_blocks_completion(self) -> None:
         package, artifact, inventory, payload = self.collection()
-        artifact["bolt"] = {"eligibility": "eligible", "status": "pending", "generation_id": None, "resolution": None, "capture": None, "perf_profiles": [], "fdata": None, "tools": None, "options": [], "output": None, "deployment": None}
+        artifact["bolt"] = {"eligibility": "eligible", "status": "pending", "generation_id": None, "resolution": None, "capture": None, "perf_profiles": [], "fdata": None, "tools": None, "option_policy_revision": None, "options": [], "command": None, "output": None, "deployment": None}
         artifact["final_status"] = "pending"
         package["aggregate"]["bolt"].update({"optimized_count": 0, "pending_count": 1, "status": "pending"})
+        package["source_rebuild"]["proof"]["active_modes"] = ["pgo-use"]
         package["final_status"] = "pending"
         summary = STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest())
         self.assertEqual(summary["counts"]["pending_total"], 1)
@@ -529,14 +671,14 @@ class CollectionTests(unittest.TestCase):
             artifact["metadata"].update({"mode": stat.S_IMODE(installed_stat.st_mode), "uid": installed_stat.st_uid, "gid": installed_stat.st_gid, "mtime_ns": installed_stat.st_mtime_ns})
             artifact["topology"].update({"device": installed_stat.st_dev, "inode": installed_stat.st_ino, "link_count": installed_stat.st_nlink})
             summary = STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=vdb_root, installed_root=installed_root)
-            self.assertTrue(summary["coverage_complete"])
+            self.assertFalse(summary["coverage_complete"])
             self.assertTrue(summary["vdb_verified"])
             self.assertTrue(summary["installed_artifacts_verified"])
             packages_dir = root / "records/packages"; artifacts_dir = root / "records/artifacts"; packages_dir.mkdir(parents=True); artifacts_dir.mkdir(parents=True)
             inventory_path = root / "inventory.json"; inventory_path.write_bytes(payload)
             (packages_dir / "package.json").write_bytes(STATE.canonical_bytes(package)); (artifacts_dir / "artifact.json").write_bytes(STATE.canonical_bytes(artifact))
             report = root / "report.json"
-            cli = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(packages_dir), "--artifacts-dir", str(artifacts_dir), "--inventory", str(inventory_path), "--vdb-root", str(vdb_root), "--installed-root", str(installed_root), "--output", str(report), "--require-complete"], text=True, capture_output=True, check=False)
+            cli = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(packages_dir), "--artifacts-dir", str(artifacts_dir), "--inventory", str(inventory_path), "--vdb-root", str(vdb_root), "--installed-root", str(installed_root), "--output", str(report)], text=True, capture_output=True, check=False)
             self.assertEqual(cli.returncode, 0, cli.stderr)
             installed_file.write_bytes(b"tamperedd"); os.utime(installed_file, ns=(installed_stat.st_atime_ns, installed_stat.st_mtime_ns))
             with self.assertRaisesRegex(STATE.StateValidationError, "live content hash mismatch"):
@@ -565,7 +707,90 @@ class CollectionTests(unittest.TestCase):
             self.assertFalse(list(output.parent.glob("*.partial")))
             strict = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(packages), "--artifacts-dir", str(artifacts), "--inventory", str(inventory_path), "--output", str(output), "--require-complete"], text=True, capture_output=True, check=False)
             self.assertEqual(strict.returncode, 2)
-            self.assertIn("requires --vdb-root and --installed-root", strict.stderr)
+            self.assertIn("requires --final-system-state", strict.stderr)
+
+    def test_strict_fixture_reopens_every_proof_but_can_never_complete(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="state-strict.") as temporary:
+            root = Path(temporary)
+            package, artifact, inventory, payload, final_state, paths = strict_fixture(root)
+            summary = STATE.reconcile_collection(
+                [package], [artifact], inventory=inventory,
+                inventory_sha256=hashlib.sha256(payload).hexdigest(),
+                vdb_root=paths["vdb"], installed_root=paths["installed"],
+                final_system_state=final_state, packages_dir=paths["packages"],
+                artifacts_dir=paths["artifacts"], inventory_path=paths["inventory"],
+                strict=True, fixture_mode=True,
+            )
+            self.assertTrue(summary["strict_verified"])
+            self.assertFalse(summary["authoritative_verified"])
+            self.assertFalse(summary["coverage_complete"])
+
+    def test_strict_fixture_rejects_missing_tampered_and_symlinked_proof(self) -> None:
+        for mutation, message in (
+            ("missing", "unavailable"), ("tampered", "hash mismatch"), ("symlink", "symlink"),
+        ):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory(prefix="state-proof.") as temporary:
+                root = Path(temporary)
+                package, artifact, inventory, payload, final_state, paths = strict_fixture(root)
+                proof = Path(package["source"]["ebuild"]["path"])
+                if mutation == "missing":
+                    proof.unlink()
+                elif mutation == "tampered":
+                    proof.write_bytes(b"tampered")
+                else:
+                    target = root / "target"; target.write_bytes(proof.read_bytes()); proof.unlink(); proof.symlink_to(target)
+                with self.assertRaisesRegex(STATE.StateValidationError, message):
+                    STATE.reconcile_collection(
+                        [package], [artifact], inventory=inventory,
+                        inventory_sha256=hashlib.sha256(payload).hexdigest(),
+                        vdb_root=paths["vdb"], installed_root=paths["installed"],
+                        final_system_state=final_state, packages_dir=paths["packages"],
+                        artifacts_dir=paths["artifacts"], inventory_path=paths["inventory"],
+                        strict=True, fixture_mode=True,
+                    )
+
+    def test_strict_fixture_rejects_magic_terminal_graph_directory_and_validator_lies(self) -> None:
+        mutations: tuple[tuple[str, Callable[[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Path]], Any], str], ...] = (
+            ("magic", lambda p, a, i, f, paths: mutate_live_magic(a, paths), "ELF"),
+            ("terminal", lambda p, a, i, f, paths: a["resolution"].__setitem__("reason_code", "firmware-not-rebuildable"), "contradicts"),
+            ("graph", lambda p, a, i, f, paths: f["registries"]["dependency_edges"].append({"consumer_cpv": p["identity"]["cpv"], "consumer_component_id": p["components"][0]["component_id"], "provider_cpv": p["identity"]["cpv"], "provider_component_id": p["components"][0]["component_id"], "evidence": [p["source"]["ebuild"]]}), "graph"),
+            ("directory", lambda p, a, i, f, paths: (paths["installed"] / "usr/bin").chmod(0o700), "metadata differs"),
+            ("validator", lambda p, a, i, f, paths: Path(f["validators"]["binpkg_snapshot"]["path"]).write_text("#!/bin/sh\nexit 1\n"), "hash mismatch"),
+        )
+        for name, mutation, message in mutations:
+            with self.subTest(name=name), tempfile.TemporaryDirectory(prefix="state-negative.") as temporary:
+                root = Path(temporary)
+                package, artifact, inventory, payload, final_state, paths = strict_fixture(root)
+                mutation(package, artifact, inventory, final_state, paths)
+                with self.assertRaisesRegex(STATE.StateValidationError, message):
+                    STATE.reconcile_collection(
+                        [package], [artifact], inventory=inventory,
+                        inventory_sha256=hashlib.sha256(payload).hexdigest(),
+                        vdb_root=paths["vdb"], installed_root=paths["installed"],
+                        final_system_state=final_state, packages_dir=paths["packages"],
+                        artifacts_dir=paths["artifacts"], inventory_path=paths["inventory"],
+                        strict=True, fixture_mode=True,
+                    )
+
+    def test_raw_slot_preserves_equal_subslot_and_named_forms(self) -> None:
+        for raw, expected in (("0", ("0", "0")), ("0/0", ("0", "0")), ("3.0/3", ("3.0", "3")), ("llvm/22", ("llvm", "22"))):
+            with self.subTest(raw=raw):
+                self.assertEqual(STATE.parse_slot(raw), expected)
+        for raw in ("", "/0", "0/", "0/0/1", " 0"):
+            with self.subTest(invalid=raw), self.assertRaises(STATE.StateValidationError):
+                STATE.parse_slot(raw)
+
+    def test_cli_inventory_authority_and_fixture_completion_guard(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="state-inventory-cli.") as temporary:
+            root = Path(temporary)
+            _package, _artifact, _inventory, payload, _final, paths = strict_fixture(root)
+            result = subprocess.run([sys.executable, str(RECONCILE_PATH), "--validate-inventory-only", "--inventory", str(paths["inventory"]), "--fixture-roots"], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertEqual(report["inventory_sha256"], hashlib.sha256(payload).hexdigest())
+            guarded = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(paths["packages"]), "--artifacts-dir", str(paths["artifacts"]), "--inventory", str(paths["inventory"]), "--output", str(root / "report"), "--require-complete", "--fixture-roots"], text=True, capture_output=True, check=False)
+            self.assertEqual(guarded.returncode, 2)
+            self.assertIn("can never", guarded.stderr)
 
 
 class PublicationAndSchemaTests(unittest.TestCase):
@@ -583,27 +808,32 @@ class PublicationAndSchemaTests(unittest.TestCase):
     def test_schema_json_parses_and_top_level_keys_match(self) -> None:
         package_schema = json.loads((REPOSITORY_ROOT / "optimization/schema/package-state.schema.json").read_text())
         artifact_schema = json.loads((REPOSITORY_ROOT / "optimization/schema/artifact-state.schema.json").read_text())
-        self.assertEqual(package_schema["properties"]["schema_version"]["const"], 3)
+        final_schema = json.loads((REPOSITORY_ROOT / "optimization/schema/final-system-state.schema.json").read_text())
+        self.assertEqual(package_schema["properties"]["schema_version"]["const"], 4)
+        self.assertEqual(artifact_schema["properties"]["schema_version"]["const"], 4)
         self.assertEqual(set(package_schema["required"]), STATE.PACKAGE_KEYS)
         self.assertEqual(set(artifact_schema["required"]), STATE.ARTIFACT_KEYS)
+        self.assertEqual(set(final_schema["required"]), STATE.FINAL_SYSTEM_KEYS)
 
     def test_draft_202012_schema_parity_positive_and_negative(self) -> None:
         try:
             import jsonschema  # type: ignore[import-untyped]
         except ImportError:
             self.skipTest("jsonschema unavailable: Draft 2020-12 parity cannot run")
-        pairs = (("package-state.schema.json", package_record(), STATE.validate_package), ("artifact-state.schema.json", artifact_record(), STATE.validate_artifact))
-        for filename, record, validator in pairs:
-            with self.subTest(filename=filename):
-                schema = json.loads((REPOSITORY_ROOT / "optimization/schema" / filename).read_text())
-                jsonschema.Draft202012Validator.check_schema(schema)
-                jsonschema.Draft202012Validator(schema).validate(record)
-                validator(record)
-                invalid = copy.deepcopy(record); invalid["schema_version"] = 2
-                with self.assertRaises(jsonschema.ValidationError):
-                    jsonschema.Draft202012Validator(schema).validate(invalid)
-                with self.assertRaises(STATE.StateValidationError):
-                    validator(invalid)
+        with tempfile.TemporaryDirectory(prefix="state-schema-final.") as temporary:
+            _package, _artifact, _inventory, _payload, final_state, _paths = strict_fixture(Path(temporary))
+            pairs = (("package-state.schema.json", package_record(), STATE.validate_package), ("artifact-state.schema.json", artifact_record(), STATE.validate_artifact), ("final-system-state.schema.json", final_state, STATE.validate_final_system_state))
+            for filename, record, validator in pairs:
+                with self.subTest(filename=filename):
+                    schema = json.loads((REPOSITORY_ROOT / "optimization/schema" / filename).read_text())
+                    jsonschema.Draft202012Validator.check_schema(schema)
+                    jsonschema.Draft202012Validator(schema).validate(record)
+                    validator(record)
+                    invalid = copy.deepcopy(record); invalid["schema_version"] = 99
+                    with self.assertRaises(jsonschema.ValidationError):
+                        jsonschema.Draft202012Validator(schema).validate(invalid)
+                    with self.assertRaises(STATE.StateValidationError):
+                        validator(invalid)
 
 
 if __name__ == "__main__":

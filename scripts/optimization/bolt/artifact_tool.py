@@ -26,13 +26,19 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 
-SCHEMA_CAPTURE = "gentoo-optimization-bolt-capture-v2"
-SCHEMA_OUTPUT = "gentoo-optimization-bolt-output-v2"
-SCHEMA_COMMAND = "gentoo-optimization-bolt-command-v1"
-SCHEMA_ZERO_ELIGIBILITY = "gentoo-optimization-bolt-zero-eligibility-v1"
+SCHEMA_CAPTURE = "gentoo-optimization-bolt-capture-v3"
+SCHEMA_OUTPUT = "gentoo-optimization-bolt-output-v3"
+SCHEMA_COMMAND = "gentoo-optimization-bolt-command-v2"
+SCHEMA_INVENTORY_PROOF = "gentoo-optimization-bolt-inventory-proof-v1"
+SCHEMA_WORKLOAD_PROOF = "gentoo-optimization-bolt-workload-proof-v1"
+SCHEMA_PROFILE_PROOF = "gentoo-optimization-bolt-profile-quality-proof-v1"
+SCHEMA_FDATA_PROOF = "gentoo-optimization-bolt-fdata-quality-proof-v1"
+SCHEMA_QUALITY_COMMAND = "gentoo-optimization-bolt-quality-command-v1"
 FINGERPRINT_RE = re.compile(r"[0-9a-f]{64}")
 BUILD_ID_RE = re.compile(r"Build ID:\s*([0-9A-Fa-f]+)")
-HEADER_RE = re.compile(r"^\s*(Class|Data|Type|Machine):\s*(.*?)\s*$")
+HEADER_RE = re.compile(
+    r"^\s*(Class|Data|Version|OS/ABI|ABI Version|Type|Machine|Flags):\s*(.*?)\s*$"
+)
 SECTION_RE = re.compile(
     r"^\s*\[\s*(\d+)\]\s+(\S+)\s+(\S+)\s+"
     r"[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+([0-9A-Fa-f]+)\s+"
@@ -53,6 +59,11 @@ APPROVED_BOLT_OPTIONS = [
 ABI_IDENTITY_KEYS = (
     "elf_class",
     "elf_data",
+    "elf_ident_version",
+    "elf_header_version",
+    "elf_osabi",
+    "elf_abi_version",
+    "elf_flags",
     "elf_type",
     "machine",
     "elf_role",
@@ -64,13 +75,30 @@ ABI_IDENTITY_KEYS = (
     "exported_dynamic_symbols",
     "symbol_version_names",
     "symbol_version_files",
+    "symbol_version_mappings",
     "cet_properties",
     "gnu_stack_policy",
     "has_gnu_relro",
     "bind_now",
+    "dynamic_flags",
+    "has_textrel",
+    "has_writable_executable_load",
+    "tls_segments",
 )
 ELF_MAGIC = b"\x7fELF"
 SYSTEM_ROOT = Path("/usr")
+PRODUCTION_READELF = "/usr/bin/readelf"
+PRODUCTION_OBJCOPY = "/usr/bin/objcopy"
+PRODUCTION_LLVM_BOLT = "/usr/lib/llvm/22/bin/llvm-bolt"
+PRODUCTION_PROFILE_TOOLS = {
+    "/usr/bin/perf",
+    "/usr/lib/llvm/22/bin/perf2bolt",
+}
+PRODUCTION_MERGE_FDATA = "/usr/lib/llvm/22/bin/merge-fdata"
+PRODUCTION_INVENTORY_VALIDATOR = (
+    "/usr/local/libexec/gentoo-optimization/scripts/optimization/verify/reconcile-state.py"
+)
+FRAMEWORK_LOCK = Path("/run/gentoo-optimization/framework-install.lock")
 PRODUCTION_CACHE_ROOT = Path("/var/cache/gentoo-optimization/bolt")
 PRODUCTION_EVIDENCE_ROOTS = (
     Path("/var/cache/gentoo-optimization"),
@@ -81,6 +109,7 @@ DEFAULT_TOOL_TIMEOUT_SECONDS = 30.0
 DEFAULT_TOOL_KILL_AFTER_SECONDS = 5.0
 TOOL_TIMEOUT_SECONDS = DEFAULT_TOOL_TIMEOUT_SECONDS
 TOOL_KILL_AFTER_SECONDS = DEFAULT_TOOL_KILL_AFTER_SECONDS
+ACTIVE_TEST_MODE = False
 
 
 class BoltArtifactError(RuntimeError):
@@ -150,9 +179,20 @@ def terminate_process_group(process: subprocess.Popen[str], kill_after: float) -
 
 
 def run_bounded(argv: list[str]) -> tuple[int, str, str]:
-    environment = os.environ.copy()
-    environment["LC_ALL"] = "C"
-    environment["LANG"] = "C"
+    # Production ELF inspection and BOLT identity checks must not inherit
+    # loader, Python, compiler-wrapper, locale, or tracing controls from an
+    # ebuild.  The four fixture variables are an intentionally narrow escape
+    # hatch used only by hermetic timeout/rollback tests.
+    environment = {"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin"}
+    if ACTIVE_TEST_MODE:
+        for name in (
+            "HUNG_LOCALE_FILE",
+            "HUNG_PID_FILE",
+            "FAIL_PATH",
+            "REAL_READELF",
+        ):
+            if name in os.environ:
+                environment[name] = os.environ[name]
     try:
         process = subprocess.Popen(
             argv,
@@ -256,6 +296,72 @@ def validate_private_directory(path: Path, expected_uid: int, label: str) -> Non
         fail(f"{label} has wrong owner uid {info.st_uid}; expected {expected_uid}: {path}")
     if stat.S_IMODE(info.st_mode) & 0o022:
         fail(f"{label} is group/world-writable: {path}")
+
+
+@contextlib.contextmanager
+def framework_publication_lock(test_mode: bool, timeout_seconds: float) -> Iterator[None]:
+    """Serialize production work with framework publication before cache locks.
+
+    The installer takes this lock and then every extant BOLT lock.  Taking it
+    first here closes the otherwise unavoidable race in which a transaction
+    could create its fingerprint lock after the installer enumerated locks.
+    """
+    if test_mode:
+        yield
+        return
+    validate_root_owned_nonwritable_chain(FRAMEWORK_LOCK, "framework installer lock")
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    try:
+        descriptor = os.open(FRAMEWORK_LOCK, flags)
+    except OSError as error:
+        fail(f"cannot open framework installer lock {FRAMEWORK_LOCK}: {error}")
+    acquired = False
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o600:
+            fail(f"framework installer lock is not a root-owned mode-0600 regular file: {FRAMEWORK_LOCK}")
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    fail(
+                        f"timed out after {timeout_seconds:g}s waiting for framework installer lock: "
+                        f"{FRAMEWORK_LOCK}"
+                    )
+                time.sleep(min(0.05, remaining))
+        yield
+    finally:
+        if acquired:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
+def resolve_elf_tool(value: str, expected: str, label: str, test_mode: bool) -> str:
+    if not test_mode and value != expected:
+        fail(f"production {label} must be exactly {expected}: got {value}")
+    resolved = shutil.which(value)
+    if resolved is None:
+        fail(f"{label} is unavailable: {value}")
+    requested = Path(resolved)
+    try:
+        path = requested.resolve(strict=True)
+    except OSError as error:
+        fail(f"cannot resolve {label} {requested}: {error}")
+    if not path.is_file() or not os.access(path, os.X_OK):
+        fail(f"{label} is not an executable regular file: {path}")
+    if not test_mode:
+        expected_path = Path(expected)
+        validate_root_owned_nonwritable_chain(expected_path.parent, f"{label} parent")
+        link_info = expected_path.lstat()
+        if link_info.st_uid != 0 or stat.S_IMODE(link_info.st_mode) & 0o022:
+            fail(f"production {label} entry is untrusted: {expected_path}")
+        validate_root_owned_nonwritable_chain(path, label)
+    return str(path)
 
 
 def validate_root(path_text: str, label: str) -> Path:
@@ -540,6 +646,8 @@ def parse_program_identity(output: str) -> dict[str, Any]:
     interpreter_match = INTERPRETER_RE.search(output)
     gnu_stack_policy = "absent"
     has_gnu_relro = False
+    load_segment_flags: list[str] = []
+    tls_segments: list[dict[str, Any]] = []
     for line in output.splitlines():
         stripped = line.strip()
         if stripped.startswith("GNU_RELRO"):
@@ -550,10 +658,36 @@ def parse_program_identity(output: str) -> dict[str, Any]:
                 (token for token in tokens[1:] if re.fullmatch(r"[RWE]+", token)), ""
             )
             gnu_stack_policy = "executable" if "E" in flags else "non-executable"
+        fields = stripped.split()
+        if fields and fields[0] in ("LOAD", "TLS") and len(fields) >= 8:
+            # readelf -lW emits offset/vaddr/paddr/filesz/memsz, then one or
+            # more flag tokens, then alignment.  Preserve security-relevant
+            # flags and exact TLS sizes/alignment, not layout addresses BOLT
+            # is expected to change.
+            flags = "".join(fields[6:-1])
+            if fields[0] == "LOAD":
+                load_segment_flags.append(flags)
+            else:
+                try:
+                    tls_segments.append(
+                        {
+                            "file_size": int(fields[4], 16),
+                            "memory_size": int(fields[5], 16),
+                            "flags": flags,
+                            "alignment": int(fields[-1], 16),
+                        }
+                    )
+                except ValueError:
+                    fail(f"cannot parse TLS program header: {stripped}")
     return {
         "interpreter": interpreter_match.group(1) if interpreter_match else None,
         "gnu_stack_policy": gnu_stack_policy,
         "has_gnu_relro": has_gnu_relro,
+        "load_segment_flags": load_segment_flags,
+        "has_writable_executable_load": any(
+            "W" in flags and "E" in flags for flags in load_segment_flags
+        ),
+        "tls_segments": tls_segments,
     }
 
 
@@ -563,6 +697,8 @@ def parse_dynamic_identity(output: str) -> dict[str, Any]:
     rpath: list[str] = []
     runpath: list[str] = []
     bind_now = False
+    has_textrel = False
+    dynamic_flags: list[dict[str, str]] = []
     for line in output.splitlines():
         bracket = re.search(r"\[([^]]*)\]", line)
         if "(NEEDED)" in line and bracket:
@@ -575,6 +711,13 @@ def parse_dynamic_identity(output: str) -> dict[str, Any]:
             runpath.append(bracket.group(1))
         if "(BIND_NOW)" in line or re.search(r"\bFlags(?:_1)?:.*\bNOW\b", line):
             bind_now = True
+        if "(TEXTREL)" in line or re.search(r"\bFlags(?:_1)?:.*\bTEXTREL\b", line):
+            has_textrel = True
+        flag_match = re.search(r"\((FLAGS(?:_1)?)\)\s+(?:Flags:\s*)?(.*?)\s*$", line)
+        if flag_match:
+            dynamic_flags.append(
+                {"tag": flag_match.group(1), "value": " ".join(flag_match.group(2).split())}
+            )
     if len(sonames) > 1:
         fail(f"ELF has multiple DT_SONAME entries: {sonames}")
     return {
@@ -583,6 +726,8 @@ def parse_dynamic_identity(output: str) -> dict[str, Any]:
         "rpath": rpath,
         "runpath": runpath,
         "bind_now": bind_now,
+        "dynamic_flags": dynamic_flags,
+        "has_textrel": has_textrel,
     }
 
 
@@ -592,14 +737,25 @@ def parse_dynamic_symbols(output: str) -> list[dict[str, Any]]:
         fields = line.split(maxsplit=7)
         if len(fields) < 8 or not fields[0].rstrip(":").isdigit():
             continue
-        _, _, _size, symbol_type, binding, visibility, index, name = fields
+        _, _, size, symbol_type, binding, visibility, index, name = fields
         if index == "UND" or binding not in ("GLOBAL", "WEAK"):
             continue
         if visibility not in ("DEFAULT", "PROTECTED") or not name:
             continue
+        version_default = "@@" in name
+        if "@@" in name:
+            base_name, version = name.rsplit("@@", 1)
+        elif "@" in name:
+            base_name, version = name.rsplit("@", 1)
+        else:
+            base_name, version = name, None
         result.append(
             {
                 "name": name,
+                "base_name": base_name,
+                "version": version,
+                "version_default": version_default,
+                "size": int(size, 0),
                 "type": symbol_type,
                 "binding": binding,
                 "visibility": visibility,
@@ -608,10 +764,20 @@ def parse_dynamic_symbols(output: str) -> list[dict[str, Any]]:
     return sorted(result, key=lambda item: json.dumps(item, sort_keys=True))
 
 
-def parse_symbol_versions(output: str) -> tuple[list[str], list[str]]:
+def parse_symbol_versions(output: str) -> tuple[list[str], list[str], list[str]]:
     names = sorted(set(re.findall(r"\bName:\s*(\S+)", output)))
     files = sorted(set(re.findall(r"\bFile:\s*(\S+)", output)))
-    return names, files
+    mappings: list[str] = []
+    for line in output.splitlines():
+        normalized = " ".join(line.split())
+        if not normalized or "Addr:" in normalized:
+            continue
+        # Version-definition/requirement record offsets are layout, not the
+        # symbol-to-version mapping.  Strip only that offset while retaining
+        # every index, name, parent, dependency and dynsym mapping.
+        normalized = re.sub(r"^0x[0-9A-Fa-f]+:\s*", "", normalized)
+        mappings.append(normalized)
+    return names, files, mappings
 
 
 def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[str, Any]:
@@ -621,10 +787,16 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         match = HEADER_RE.match(line)
         if match:
             value = match.group(2)
-            if match.group(1) == "Type":
+            key = match.group(1)
+            if key == "Version":
+                key = "Ident Version" if "Ident Version" not in headers else "Header Version"
+            if key == "Type":
                 value = value.split()[0]
-            headers[match.group(1)] = value
-    missing_headers = {"Class", "Data", "Type", "Machine"} - headers.keys()
+            headers[key] = value
+    missing_headers = {
+        "Class", "Data", "Ident Version", "Header Version", "OS/ABI",
+        "ABI Version", "Type", "Machine", "Flags"
+    } - headers.keys()
     if missing_headers:
         fail(f"readelf omitted required ELF headers for {path}: {sorted(missing_headers)}")
 
@@ -684,7 +856,7 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
     dynamic_symbols = parse_dynamic_symbols(
         run_checked([readelf, "--dyn-syms", "-W", str(path)])
     )
-    version_names, version_files = parse_symbol_versions(
+    version_names, version_files, version_mappings = parse_symbol_versions(
         run_checked([readelf, "--version-info", "-W", str(path)])
     )
     notes = run_checked([readelf, "-nW", str(path)])
@@ -747,6 +919,11 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
     return {
         "elf_class": headers["Class"],
         "elf_data": headers["Data"],
+        "elf_ident_version": headers["Ident Version"],
+        "elf_header_version": headers["Header Version"],
+        "elf_osabi": headers["OS/ABI"],
+        "elf_abi_version": headers["ABI Version"],
+        "elf_flags": headers["Flags"],
         "elf_type": headers["Type"],
         "elf_role": elf_role,
         "machine": headers["Machine"],
@@ -755,6 +932,7 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         "exported_dynamic_symbols": dynamic_symbols,
         "symbol_version_names": version_names,
         "symbol_version_files": version_files,
+        "symbol_version_mappings": version_mappings,
         "cet_properties": cet_properties,
         "executable_sections": executable_sections,
         "section_names": sorted(section_names),
@@ -861,6 +1039,98 @@ def scan_tree(root: Path) -> tuple[list[tuple[list[str], os.stat_result]], list[
     result.sort(key=lambda item: item[0][0])
     symlinks.sort(key=lambda item: item["path"])
     return result, symlinks
+
+
+def directory_identity(root: Path) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for directory, names, _files in os.walk(root, topdown=True, followlinks=False):
+        names.sort()
+        base = Path(directory)
+        for name in names:
+            path = base / name
+            info = path.lstat()
+            if stat.S_ISLNK(info.st_mode):
+                continue
+            if not stat.S_ISDIR(info.st_mode):
+                fail(f"unsupported non-directory entry encountered: {path}")
+            result.append(
+                {
+                    "path": safe_relative(path, root),
+                    "metadata": metadata(path, info),
+                }
+            )
+    return result
+
+
+def collect_ed_identity(
+    ed: Path,
+    readelf: str,
+    objcopy: str,
+    scratch_root: Path,
+    object_root: Path | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Classify every ELF and identify every directory/file/link in ED."""
+    regular_groups, symlinks = scan_tree(ed)
+    artifacts: list[dict[str, Any]] = []
+    regular_identity: list[dict[str, Any]] = []
+    if object_root is not None:
+        object_root.mkdir(mode=0o700)
+    for index, (paths, info) in enumerate(regular_groups, 1):
+        if info.st_nlink != len(paths):
+            fail(
+                "regular inode has hardlinks outside ED or changed during scan: "
+                f"{paths[0]} (st_nlink={info.st_nlink}, discovered={len(paths)})"
+            )
+        source = path_from_relative(ed, paths[0])
+        scratch = scratch_root / f"{index:06d}.file"
+        copy_noatime(source, scratch, info)
+        file_sha256 = sha256_file(scratch)
+        classification: dict[str, Any] | None = None
+        artifact_id: str | None = None
+        cache_object: str | None = None
+        if is_elf(scratch):
+            classification = classify_elf(
+                scratch, readelf, objcopy, scratch_root / f"{index:06d}.sections"
+            )
+            artifact_id = hashlib.sha256(paths[0].encode("utf-8")).hexdigest()
+            if object_root is not None and classification["eligible"]:
+                cache_object = f"objects/{artifact_id}.elf"
+                destination = object_root.parent / cache_object
+                os.replace(scratch, destination)
+                os.chmod(destination, 0o600)
+            artifacts.append(
+                {
+                    "artifact_id": artifact_id,
+                    "canonical_path": paths[0],
+                    "paths": paths,
+                    "hardlink_count": len(paths),
+                    "source_device": info.st_dev,
+                    "source_inode": info.st_ino,
+                    "file_sha256": file_sha256,
+                    "size": info.st_size,
+                    "metadata": metadata(source, info),
+                    "cache_object": cache_object,
+                    **classification,
+                }
+            )
+        if scratch.exists():
+            scratch.unlink()
+        regular_identity.append(
+            {
+                "paths": paths,
+                "hardlink_count": len(paths),
+                "file_sha256": file_sha256,
+                "size": info.st_size,
+                "metadata": metadata(source, info),
+                "elf_artifact_id": artifact_id,
+                "elf_identity": classification,
+            }
+        )
+    return artifacts, {
+        "directories": directory_identity(ed),
+        "regular_groups": regular_identity,
+        "symlinks": symlinks,
+    }
 
 
 def write_json_atomic(path: Path, document: dict[str, Any]) -> None:
@@ -977,32 +1247,151 @@ def canonical_command_output(path_text: str) -> Path:
     return unresolved.resolve(strict=False)
 
 
-def zero_eligibility_proof(
+def inventory_candidate_identity(artifact: dict[str, Any]) -> dict[str, Any]:
+    """Stable exact candidate facts required from the frozen inventory proof."""
+    return {
+        "artifact_id": artifact.get("artifact_id"),
+        "canonical_path": artifact.get("canonical_path"),
+        "paths": artifact.get("paths"),
+        "hardlink_count": artifact.get("hardlink_count"),
+        "elf_class": artifact.get("elf_class"),
+        "elf_data": artifact.get("elf_data"),
+        "elf_type": artifact.get("elf_type"),
+        "machine": artifact.get("machine"),
+        "elf_role": artifact.get("elf_role"),
+    }
+
+
+def inventory_proof(
     path_text: str | None, fingerprint: str, expected_count: int, test_mode: bool
-) -> dict[str, Any] | None:
-    if expected_count != 0:
-        if path_text is not None:
-            fail("--zero-eligible-proof is forbidden when expected eligible count is positive")
-        return None
+) -> dict[str, Any]:
     if path_text is None:
-        fail(
-            "expected eligible count zero requires --zero-eligible-proof from the "
-            "frozen inventory"
-        )
-    identity = provenance_file_record(path_text, "zero-eligibility proof", test_mode)
-    document = load_json(Path(identity["path"]), SCHEMA_ZERO_ELIGIBILITY)
-    required = {"schema", "package_fingerprint", "eligible_count", "inventory_evidence"}
+        fail("every BOLT capture/deployment requires --inventory-proof")
+    identity = provenance_file_record(path_text, "BOLT inventory proof", test_mode)
+    document = load_json(Path(identity["path"]), SCHEMA_INVENTORY_PROOF)
+    required = {
+        "schema",
+        "generation_id",
+        "inventory_id",
+        "cpv",
+        "inventory_entry_sha256",
+        "package_fingerprint",
+        "expected_eligible_count",
+        "inventory_evidence",
+        "candidates",
+    }
     if set(document) != required:
-        fail("zero-eligibility proof fields differ from the strict schema")
-    if document["package_fingerprint"] != fingerprint or document["eligible_count"] != 0:
-        fail("zero-eligibility proof does not bind this fingerprint to count zero")
-    inventory = document["inventory_evidence"]
-    validated = validate_recorded_files(
-        [inventory], "frozen inventory evidence", test_mode=test_mode
+        fail("BOLT inventory proof fields differ from the strict schema")
+    for field in ("generation_id", "inventory_id"):
+        if not isinstance(document[field], str) or re.fullmatch(r"[A-Za-z0-9._-]{1,128}", document[field]) is None:
+            fail(f"BOLT inventory proof has an invalid {field}")
+    cpv = document["cpv"]
+    if not isinstance(cpv, str) or re.fullmatch(
+        r"[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+", cpv
+    ) is None:
+        fail("BOLT inventory proof has an invalid exact CPV")
+    if not isinstance(document["inventory_entry_sha256"], str) or FINGERPRINT_RE.fullmatch(
+        document["inventory_entry_sha256"]
+    ) is None:
+        fail("BOLT inventory proof has an invalid inventory entry hash")
+    if document["package_fingerprint"] != fingerprint:
+        fail("BOLT inventory proof package fingerprint mismatch")
+    if document["expected_eligible_count"] != expected_count:
+        fail("BOLT inventory proof expected eligible count mismatch")
+    evidence = validate_recorded_files(
+        [document["inventory_evidence"]],
+        "frozen inventory evidence",
+        test_mode=test_mode,
     )[0]
-    if validated != inventory:
-        fail("zero-eligibility frozen inventory identity mismatch")
-    return {"identity": identity, "document": document}
+    if evidence != document["inventory_evidence"]:
+        fail("BOLT inventory proof frozen inventory identity mismatch")
+    if test_mode:
+        validator_path = Path(__file__).resolve().parents[3] / "scripts/optimization/verify/reconcile-state.py"
+        validator_arguments = [
+            "/usr/bin/python3", "-I", str(validator_path),
+            "--validate-inventory-only", "--inventory", evidence["path"],
+            "--fixture-roots",
+        ]
+    else:
+        validator_path = Path(PRODUCTION_INVENTORY_VALIDATOR)
+        validator_arguments = [
+            "/usr/bin/python3", "-I", str(validator_path),
+            "--validate-inventory-only", "--inventory", evidence["path"],
+        ]
+        validate_root_owned_nonwritable_chain(validator_path, "frozen inventory validator")
+    validator_identity = file_record(str(validator_path), "frozen inventory validator")
+    try:
+        summary = json.loads(run_checked(validator_arguments))
+    except json.JSONDecodeError as error:
+        fail(f"frozen inventory validator emitted invalid JSON: {error}")
+    if not isinstance(summary, dict) or set(summary) != {
+        "inventory_sha256", "generation_id", "inventory_id", "package_count",
+        "owned_path_count", "owned_directory_count", "cpvs",
+    }:
+        fail("frozen inventory validator summary differs from its strict interface")
+    if summary["inventory_sha256"] != evidence["sha256"]:
+        fail("frozen inventory validator hash differs from the proof evidence")
+    if summary["generation_id"] != document["generation_id"] or summary["inventory_id"] != document["inventory_id"]:
+        fail("BOLT inventory proof generation/inventory identity is self-asserted or mismatched")
+    if cpv not in summary["cpvs"]:
+        fail("BOLT inventory proof CPV is absent from the strict frozen inventory")
+    try:
+        frozen_inventory = json.loads(Path(evidence["path"]).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        fail(f"cannot reopen strict frozen inventory: {error}")
+    package_entries = [
+        item for item in frozen_inventory["packages"]
+        if isinstance(item, dict) and item.get("cpv") == cpv
+    ]
+    if len(package_entries) != 1 or package_entries[0].get("entry_sha256") != document["inventory_entry_sha256"]:
+        fail("BOLT inventory proof CPV entry hash is absent or mismatched")
+    candidates = document["candidates"]
+    if not isinstance(candidates, list) or len(candidates) != expected_count:
+        fail("BOLT inventory proof candidate count differs from its expected count")
+    expected_fields = {
+        "artifact_id", "canonical_path", "paths", "hardlink_count", "elf_class",
+        "elf_data", "elf_type", "machine", "elf_role",
+    }
+    for index, candidate in enumerate(candidates):
+        if not isinstance(candidate, dict) or set(candidate) != expected_fields:
+            fail(f"BOLT inventory candidate {index} differs from the strict schema")
+        if not isinstance(candidate["paths"], list) or not candidate["paths"]:
+            fail(f"BOLT inventory candidate {index} has no exact paths")
+        if candidate["canonical_path"] != candidate["paths"][0]:
+            fail(f"BOLT inventory candidate {index} canonical path mismatch")
+        if candidate["artifact_id"] != hashlib.sha256(
+            candidate["canonical_path"].encode("utf-8")
+        ).hexdigest():
+            fail(f"BOLT inventory candidate {index} artifact identity mismatch")
+    if len({item["artifact_id"] for item in candidates}) != len(candidates):
+        fail("BOLT inventory proof contains duplicate candidate identities")
+    owned_paths = {
+        item["path"] for item in frozen_inventory["owned_paths"]
+        if isinstance(item, dict) and item.get("owner_cpv") == cpv
+    }
+    candidate_paths = {f"/{path}" for item in candidates for path in item["paths"]}
+    if not candidate_paths <= owned_paths:
+        fail("BOLT inventory proof candidate path is not owned by its exact frozen CPV")
+    return {
+        "identity": identity,
+        "document": document,
+        "validator": validator_identity,
+        "validation_summary": summary,
+    }
+
+
+def bind_inventory_candidates(proof: dict[str, Any], artifacts: list[dict[str, Any]]) -> None:
+    actual = sorted(
+        (inventory_candidate_identity(item) for item in artifacts if item.get("eligible")),
+        key=lambda item: str(item["artifact_id"]),
+    )
+    expected = sorted(
+        proof["document"]["candidates"], key=lambda item: str(item["artifact_id"])
+    )
+    if actual != expected:
+        fail(
+            "captured BOLT candidate paths/artifact facts differ from the frozen inventory proof"
+        )
 
 
 def provenance_file_record(
@@ -1034,6 +1423,362 @@ def validate_recorded_files(
     return validated
 
 
+def validate_timestamp(value: Any, label: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value
+    ) is None:
+        fail(f"{label} has an invalid UTC timestamp")
+    return value
+
+
+def proof_binding(
+    document: dict[str, Any], capture: dict[str, Any], artifact: dict[str, Any], label: str
+) -> None:
+    expected = {
+        "generation_id": capture.get("generation_id"),
+        "inventory_id": capture.get("inventory_id"),
+        "package_fingerprint": capture.get("package_fingerprint"),
+        "artifact_id": artifact.get("artifact_id"),
+        "input_build_id": artifact.get("build_id"),
+        "input_text_sha256": artifact.get("text_sha256"),
+        "input_file_sha256": artifact.get("file_sha256"),
+    }
+    for key, value in expected.items():
+        if document.get(key) != value:
+            fail(f"{label} exact input/inventory binding mismatch: {key}")
+
+
+def validate_fixture_quality(document: dict[str, Any], arguments: argparse.Namespace, label: str) -> None:
+    fixture_only = document.get("fixture_only")
+    if not isinstance(fixture_only, bool):
+        fail(f"{label} fixture_only must be boolean")
+    if fixture_only and not (arguments.test_mode and arguments.fixture_quality_mode):
+        fail(f"{label} is synthetic fixture-only quality evidence")
+    if arguments.fixture_quality_mode and not arguments.test_mode:
+        fail("--fixture-quality-mode requires --test-mode")
+
+
+def validate_quality_command(
+    value: Any,
+    *,
+    role: str,
+    test_mode: bool,
+    fixture_only: bool,
+) -> dict[str, Any] | None:
+    if value is None:
+        if fixture_only and test_mode:
+            return None
+        fail(f"production BOLT {role} proof lacks an exact sanitized command record")
+    if not isinstance(value, dict) or set(value) != {"identity", "document"}:
+        fail(f"BOLT {role} command record wrapper differs from the strict schema")
+    identity = provenance_file_record(
+        str(value["identity"].get("path", "")), f"BOLT {role} command record", test_mode
+    )
+    if identity != value["identity"]:
+        fail(f"BOLT {role} command record identity mismatch")
+    document = load_json(Path(identity["path"]), SCHEMA_QUALITY_COMMAND)
+    if document != value["document"]:
+        fail(f"BOLT {role} embedded command record differs from its exact file")
+    required = {
+        "schema", "role", "argv", "environment", "tool", "inputs", "stdout",
+        "stderr", "exit_status", "started_at_utc", "completed_at_utc", "metrics",
+    }
+    if set(document) != required or document["role"] != role:
+        fail(f"BOLT {role} command record fields/role differ from the strict schema")
+    if document["environment"] != {"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin"}:
+        fail(f"BOLT {role} command record did not use the sanitized environment")
+    tool = document["tool"]
+    if not isinstance(tool, dict) or set(tool) != {"path", "sha256", "size"}:
+        fail(f"BOLT {role} command record has an invalid tool identity")
+    actual_tool = file_record(str(tool.get("path", "")), f"BOLT {role} tool")
+    if actual_tool != tool:
+        fail(f"BOLT {role} command tool identity mismatch")
+    argv = document["argv"]
+    if not isinstance(argv, list) or not argv or argv[0] != tool["path"] or not all(
+        isinstance(argument, str) and argument for argument in argv
+    ):
+        fail(f"BOLT {role} command argv is not exact")
+    if not test_mode:
+        validate_root_owned_nonwritable_chain(Path(tool["path"]), f"BOLT {role} tool")
+        expected_tools = {
+            "perf-record": {"/usr/bin/perf"},
+            "perf-report": {"/usr/bin/perf"},
+            "perf2bolt": {"/usr/lib/llvm/22/bin/perf2bolt"},
+            "merge-fdata": {PRODUCTION_MERGE_FDATA},
+        }
+        if role in expected_tools and tool["path"] not in expected_tools[role]:
+            fail(f"BOLT {role} command uses an unreviewed production tool")
+    validate_recorded_files(document["inputs"], f"BOLT {role} command inputs", test_mode=test_mode)
+    validate_recorded_files([document["stdout"]], f"BOLT {role} stdout", test_mode=test_mode)
+    validate_recorded_files([document["stderr"]], f"BOLT {role} stderr", test_mode=test_mode)
+    started = validate_timestamp(document["started_at_utc"], f"BOLT {role} command")
+    completed = validate_timestamp(document["completed_at_utc"], f"BOLT {role} command")
+    if completed < started or document["exit_status"] != 0:
+        fail(f"BOLT {role} command did not complete successfully")
+    if not isinstance(document["metrics"], dict):
+        fail(f"BOLT {role} command has no structured output metrics")
+    return document
+
+
+def validate_quality_proofs(
+    arguments: argparse.Namespace,
+    capture: dict[str, Any],
+    artifact: dict[str, Any],
+    input_record: dict[str, Any],
+    fdata: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    workload_required = {
+        "schema", "generation_id", "inventory_id", "package_fingerprint",
+        "artifact_id", "input_build_id", "input_text_sha256", "input_file_sha256",
+        "workload_id", "workload_definition", "workload_log",
+        "command_record",
+        "started_at_utc", "completed_at_utc", "exit_status",
+        "repetitions", "functional_passed", "fixture_only",
+    }
+    workloads: list[dict[str, Any]] = []
+    for path_text in arguments.workload_evidence:
+        identity = provenance_file_record(
+            path_text, "BOLT workload proof", arguments.test_mode
+        )
+        document = load_json(Path(identity["path"]), SCHEMA_WORKLOAD_PROOF)
+        if set(document) != workload_required:
+            fail("BOLT workload proof fields differ from the strict schema")
+        proof_binding(document, capture, artifact, "BOLT workload proof")
+        if not isinstance(document["workload_id"], str) or not document["workload_id"]:
+            fail("BOLT workload proof has an invalid workload ID")
+        for field in ("workload_definition", "workload_log"):
+            values = validate_recorded_files(
+                [document[field]], f"BOLT workload {field}", test_mode=arguments.test_mode
+            )
+            if values[0] != document[field]:
+                fail(f"BOLT workload proof {field} identity mismatch")
+        started = validate_timestamp(document["started_at_utc"], "BOLT workload proof")
+        completed = validate_timestamp(document["completed_at_utc"], "BOLT workload proof")
+        if completed < started or document["exit_status"] != 0:
+            fail("BOLT workload proof did not complete successfully")
+        if type(document["repetitions"]) is not int or document["repetitions"] < 1:
+            fail("BOLT workload proof has no representative repetition")
+        if document["functional_passed"] is not True:
+            fail("BOLT workload proof lacks functional validation")
+        validate_fixture_quality(document, arguments, "BOLT workload proof")
+        workload_command = validate_quality_command(
+            document["command_record"],
+            role="workload",
+            test_mode=arguments.test_mode,
+            fixture_only=document["fixture_only"],
+        )
+        if workload_command is not None and workload_command["metrics"] != {
+            "repetitions": document["repetitions"],
+            "functional_passed": document["functional_passed"],
+        }:
+            fail("BOLT workload command output does not support the claimed result")
+        if workload_command is not None:
+            input_records = workload_command["inputs"]
+            if document["workload_definition"] not in input_records or not any(
+                item.get("sha256") == document["input_file_sha256"] for item in input_records
+            ):
+                fail("BOLT workload command does not bind definition and exact input")
+        workloads.append({"identity": identity, "document": document})
+    if not workloads:
+        fail("at least one structured BOLT workload proof is required")
+
+    profile_required = {
+        "schema", "generation_id", "inventory_id", "package_fingerprint",
+        "artifact_id", "input_build_id", "input_text_sha256", "input_file_sha256",
+        "profile_tools", "events", "lbr_captured", "sample_count",
+        "branch_entry_count", "ignored_samples", "mismatching_samples",
+        "out_of_range_samples", "thresholds", "workload_contributors",
+        "profile_files", "command_records", "fdata", "fixture_only",
+    }
+    profiles: list[dict[str, Any]] = []
+    workload_identities = [item["identity"] for item in workloads]
+    for path_text in arguments.profile_evidence:
+        identity = provenance_file_record(
+            path_text, "BOLT profile quality proof", arguments.test_mode
+        )
+        document = load_json(Path(identity["path"]), SCHEMA_PROFILE_PROOF)
+        if set(document) != profile_required:
+            fail("BOLT profile quality proof fields differ from the strict schema")
+        proof_binding(document, capture, artifact, "BOLT profile quality proof")
+        tools = document["profile_tools"]
+        if not isinstance(tools, list) or not tools:
+            fail("BOLT profile quality proof has no tool identities")
+        actual_tools: list[dict[str, Any]] = []
+        for tool in tools:
+            if not isinstance(tool, dict) or set(tool) != {"path", "sha256", "size"}:
+                fail("BOLT profile quality proof has an invalid tool identity")
+            actual_tool = file_record(str(tool.get("path", "")), "BOLT profile tool")
+            if actual_tool != tool:
+                fail("BOLT profile quality proof tool identity mismatch")
+            if not arguments.test_mode:
+                validate_root_owned_nonwritable_chain(Path(actual_tool["path"]), "BOLT profile tool")
+            actual_tools.append(actual_tool)
+        if len({item["path"] for item in actual_tools}) != len(actual_tools):
+            fail("BOLT profile quality proof has duplicate tool paths")
+        if not arguments.test_mode and {item["path"] for item in actual_tools} != PRODUCTION_PROFILE_TOOLS:
+            fail("BOLT profile quality proof does not use the exact reviewed production tools")
+        events = document["events"]
+        if not isinstance(events, list) or not events or not all(
+            isinstance(item, str) and item for item in events
+        ):
+            fail("BOLT profile quality proof has no exact events")
+        validate_recorded_files(
+            document["profile_files"],
+            "BOLT raw/profile report evidence",
+            test_mode=arguments.test_mode,
+        )
+        if document["lbr_captured"] is not True:
+            fail("BOLT profile quality proof lacks LBR capture")
+        thresholds = document["thresholds"]
+        threshold_fields = {
+            "minimum_samples", "minimum_branch_entries", "maximum_ignored_samples",
+            "maximum_mismatch_ratio", "maximum_out_of_range_ratio",
+        }
+        if not isinstance(thresholds, dict) or set(thresholds) != threshold_fields:
+            fail("BOLT profile quality thresholds differ from the strict schema")
+        for key in ("minimum_samples", "minimum_branch_entries", "maximum_ignored_samples"):
+            if type(thresholds[key]) is not int or thresholds[key] < 0:
+                fail(f"BOLT profile quality threshold is invalid: {key}")
+        for key in ("maximum_mismatch_ratio", "maximum_out_of_range_ratio"):
+            if type(thresholds[key]) not in (int, float) or not 0 <= thresholds[key] <= 1:
+                fail(f"BOLT profile quality threshold is invalid: {key}")
+        counts = (
+            "sample_count", "branch_entry_count", "ignored_samples",
+            "mismatching_samples", "out_of_range_samples",
+        )
+        if any(type(document[key]) is not int or document[key] < 0 for key in counts):
+            fail("BOLT profile quality proof contains invalid counts")
+        sample_count = document["sample_count"]
+        branches = document["branch_entry_count"]
+        denominator = max(sample_count, 1)
+        if sample_count < thresholds["minimum_samples"] or branches < thresholds["minimum_branch_entries"]:
+            fail("BOLT profile quality proof is below its sample/LBR thresholds")
+        if document["ignored_samples"] > thresholds["maximum_ignored_samples"]:
+            fail("BOLT profile quality proof exceeds ignored-sample threshold")
+        if document["mismatching_samples"] / denominator > thresholds["maximum_mismatch_ratio"]:
+            fail("BOLT profile quality proof exceeds mismatch-ratio threshold")
+        if document["out_of_range_samples"] / denominator > thresholds["maximum_out_of_range_ratio"]:
+            fail("BOLT profile quality proof exceeds out-of-range threshold")
+        validate_fixture_quality(document, arguments, "BOLT profile quality proof")
+        commands = document["command_records"]
+        if not isinstance(commands, list):
+            fail("BOLT profile quality command records are not a list")
+        command_documents: dict[str, dict[str, Any]] = {}
+        for role in ("perf-record", "perf-report", "perf2bolt"):
+            matches = [
+                value for value in commands
+                if isinstance(value, dict)
+                and isinstance(value.get("document"), dict)
+                and value["document"].get("role") == role
+            ]
+            if document["fixture_only"] and arguments.test_mode and not matches:
+                continue
+            if len(matches) != 1:
+                fail(f"BOLT profile quality proof requires one exact {role} command")
+            validated_command = validate_quality_command(
+                matches[0], role=role, test_mode=arguments.test_mode,
+                fixture_only=document["fixture_only"],
+            )
+            assert validated_command is not None
+            command_documents[role] = validated_command
+        if not document["fixture_only"]:
+            profile_files = document["profile_files"]
+            if not all(
+                item in command_documents["perf-report"]["inputs"] for item in profile_files
+            ) or not all(
+                item in command_documents["perf2bolt"]["inputs"] for item in profile_files
+            ):
+                fail("profile commands do not bind every exact perf/profile input")
+            if not any(
+                item.get("sha256") == document["input_file_sha256"]
+                for item in command_documents["perf2bolt"]["inputs"]
+            ):
+                fail("perf2bolt command does not bind the exact captured ELF")
+            report_metrics = command_documents["perf-report"]["metrics"]
+            expected_metrics = {
+                "events": document["events"],
+                "lbr_captured": document["lbr_captured"],
+                "sample_count": document["sample_count"],
+                "branch_entry_count": document["branch_entry_count"],
+            }
+            if report_metrics != expected_metrics:
+                fail("perf-report command output does not support profile sample/LBR claims")
+            perf2bolt_metrics = command_documents["perf2bolt"]["metrics"]
+            if perf2bolt_metrics != {
+                "ignored_samples": document["ignored_samples"],
+                "mismatching_samples": document["mismatching_samples"],
+                "out_of_range_samples": document["out_of_range_samples"],
+            }:
+                fail("perf2bolt command output does not support profile quality claims")
+        if not document["fixture_only"] and (
+            thresholds["minimum_samples"] < 1000
+            or thresholds["minimum_branch_entries"] < 10000
+            or thresholds["maximum_mismatch_ratio"] > 0.05
+            or thresholds["maximum_out_of_range_ratio"] > 0.05
+        ):
+            fail("production BOLT profile thresholds are weaker than the reviewed minima")
+        if document["workload_contributors"] != workload_identities:
+            fail("BOLT profile proof does not bind the exact workload contributors")
+        if document["fdata"] != fdata:
+            fail("BOLT profile proof does not bind the exact fdata inputs")
+        profiles.append({"identity": identity, "document": document})
+    if not profiles:
+        fail("at least one structured BOLT profile quality proof is required")
+
+    fdata_required = {
+        "schema", "generation_id", "inventory_id", "package_fingerprint",
+        "artifact_id", "input_build_id", "input_text_sha256", "input_file_sha256",
+        "merge_tool", "fdata", "profile_contributors", "total_functions",
+        "total_samples", "command_record", "fixture_only",
+    }
+    fdata_proofs: list[dict[str, Any]] = []
+    profile_identities = [item["identity"] for item in profiles]
+    for path_text in arguments.fdata_quality_evidence:
+        identity = provenance_file_record(
+            path_text, "BOLT fdata quality proof", arguments.test_mode
+        )
+        document = load_json(Path(identity["path"]), SCHEMA_FDATA_PROOF)
+        if set(document) != fdata_required:
+            fail("BOLT fdata quality proof fields differ from the strict schema")
+        proof_binding(document, capture, artifact, "BOLT fdata quality proof")
+        merge_tool = document["merge_tool"]
+        if not isinstance(merge_tool, dict) or set(merge_tool) != {"path", "sha256", "size"}:
+            fail("BOLT fdata quality proof has an invalid merge-tool identity")
+        actual_merge = file_record(str(merge_tool.get("path", "")), "BOLT fdata merge tool")
+        if actual_merge != merge_tool:
+            fail("BOLT fdata quality proof merge-tool identity mismatch")
+        if not arguments.test_mode:
+            validate_root_owned_nonwritable_chain(Path(actual_merge["path"]), "BOLT fdata merge tool")
+            if actual_merge["path"] != PRODUCTION_MERGE_FDATA:
+                fail(
+                    "BOLT fdata quality proof merge tool is not the reviewed merge-fdata path"
+                )
+        if document["fdata"] != fdata or document["profile_contributors"] != profile_identities:
+            fail("BOLT fdata quality proof contributor/input binding mismatch")
+        if type(document["total_functions"]) is not int or document["total_functions"] < 1:
+            fail("BOLT fdata quality proof has no functions")
+        if type(document["total_samples"]) is not int or document["total_samples"] < 1:
+            fail("BOLT fdata quality proof has no samples")
+        validate_fixture_quality(document, arguments, "BOLT fdata quality proof")
+        merge_command = validate_quality_command(
+            document["command_record"], role="merge-fdata",
+            test_mode=arguments.test_mode, fixture_only=document["fixture_only"],
+        )
+        if merge_command is not None and merge_command["metrics"] != {
+            "total_functions": document["total_functions"],
+            "total_samples": document["total_samples"],
+        }:
+            fail("merge-fdata command output does not support fdata quality claims")
+        if merge_command is not None and not all(
+            item in merge_command["inputs"] for item in document["profile_contributors"]
+        ):
+            fail("merge-fdata command does not bind every exact profile contributor")
+        fdata_proofs.append({"identity": identity, "document": document})
+    if not fdata_proofs:
+        fail("at least one structured BOLT fdata quality proof is required")
+    return workloads, profiles, fdata_proofs
+
+
 def llvm_bolt_identity(path_text: str, test_mode: bool) -> dict[str, Any]:
     record = file_record(path_text, "llvm-bolt executable")
     path = Path(record["path"])
@@ -1041,11 +1786,13 @@ def llvm_bolt_identity(path_text: str, test_mode: bool) -> dict[str, Any]:
     if stat.S_IMODE(info.st_mode) & 0o022:
         fail(f"llvm-bolt executable is group/world-writable: {path}")
     if not test_mode:
+        if str(path) != PRODUCTION_LLVM_BOLT:
+            fail(
+                f"production llvm-bolt must be exactly {PRODUCTION_LLVM_BOLT}: {path}"
+            )
         validate_root_owned_nonwritable_chain(path, "llvm-bolt executable")
         if info.st_uid != 0:
             fail(f"production llvm-bolt executable is not root-owned: {path}")
-        if path.name != "llvm-bolt" or SYSTEM_ROOT not in path.parents:
-            fail(f"production llvm-bolt executable is outside trusted /usr: {path}")
     if not os.access(record["path"], os.X_OK):
         fail(f"llvm-bolt executable is not executable: {record['path']}")
     status, stdout, stderr = run_bounded([record["path"], "--version"])
@@ -1080,6 +1827,7 @@ def validate_command_record(
     fdata: list[dict[str, Any]],
     workloads: list[dict[str, Any]],
     profiles: list[dict[str, Any]],
+    fdata_quality: list[dict[str, Any]],
     test_mode: bool,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     record_identity = provenance_file_record(
@@ -1100,6 +1848,7 @@ def validate_command_record(
         "fdata",
         "workload_evidence",
         "profile_evidence",
+        "fdata_quality_evidence",
         "stdout",
         "stderr",
     }
@@ -1134,19 +1883,24 @@ def validate_command_record(
         ("fdata", fdata),
         ("workload_evidence", workloads),
         ("profile_evidence", profiles),
+        ("fdata_quality_evidence", fdata_quality),
     ):
         if document[field] != expected:
             fail(f"BOLT command record {field} identity mismatch")
-    validate_recorded_files(
-        [document["stdout"]], "BOLT stdout", test_mode=test_mode
-    )
+    validate_recorded_files([document["stdout"]], "BOLT stdout", test_mode=test_mode)
     validate_recorded_files(
         [document["stderr"]], "BOLT stderr", test_mode=test_mode
     )
     return document, record_identity
 
 
-def verify_bolt_provenance(record: dict[str, Any], test_mode: bool) -> None:
+def verify_bolt_provenance(
+    record: dict[str, Any],
+    test_mode: bool,
+    capture: dict[str, Any],
+    artifact: dict[str, Any],
+    fixture_quality_mode: bool,
+) -> None:
     if record.get("option_policy_revision") != POLICY_REVISION:
         fail("prepared output uses an unreviewed BOLT option-policy revision")
     if record.get("options") != APPROVED_BOLT_OPTIONS:
@@ -1159,10 +1913,24 @@ def verify_bolt_provenance(record: dict[str, Any], test_mode: bool) -> None:
         fail("prepared output llvm-bolt identity is stale or mismatched")
     for key, label in (
         ("fdata", "BOLT fdata"),
-        ("workload_evidence", "BOLT workload evidence"),
-        ("profile_evidence", "BOLT profile evidence"),
     ):
         validate_recorded_files(record.get(key), label, test_mode=test_mode)
+    for key, label, schema in (
+        ("workload_evidence", "BOLT workload proof", SCHEMA_WORKLOAD_PROOF),
+        ("profile_evidence", "BOLT profile proof", SCHEMA_PROFILE_PROOF),
+        ("fdata_quality_evidence", "BOLT fdata proof", SCHEMA_FDATA_PROOF),
+    ):
+        values = record.get(key)
+        if not isinstance(values, list) or not values:
+            fail(f"prepared output lacks {label}")
+        for value in values:
+            if not isinstance(value, dict) or set(value) != {"identity", "document"}:
+                fail(f"prepared output has malformed {label}")
+            actual = provenance_file_record(
+                str(value["identity"].get("path", "")), label, test_mode
+            )
+            if actual != value["identity"] or load_json(Path(actual["path"]), schema) != value["document"]:
+                fail(f"prepared output {label} identity/document mismatch")
     command_record = record.get("command_record")
     if not isinstance(command_record, dict):
         fail("prepared output lacks a command-record identity")
@@ -1174,6 +1942,30 @@ def verify_bolt_provenance(record: dict[str, Any], test_mode: bool) -> None:
     command = load_json(Path(actual["path"]), SCHEMA_COMMAND)
     if command != record.get("command"):
         fail("prepared output embedded command record differs from its exact file")
+    revalidation_arguments = argparse.Namespace(
+        test_mode=test_mode,
+        fixture_quality_mode=fixture_quality_mode,
+        workload_evidence=[item["identity"]["path"] for item in record["workload_evidence"]],
+        profile_evidence=[item["identity"]["path"] for item in record["profile_evidence"]],
+        fdata_quality_evidence=[
+            item["identity"]["path"] for item in record["fdata_quality_evidence"]
+        ],
+    )
+    expected_workloads, expected_profiles, expected_fdata_quality = validate_quality_proofs(
+        revalidation_arguments,
+        capture,
+        artifact,
+        provenance_file_record(
+            str(command.get("input", {}).get("path", "")), "exact BOLT input", test_mode
+        ),
+        record["fdata"],
+    )
+    if (
+        expected_workloads != record["workload_evidence"]
+        or expected_profiles != record["profile_evidence"]
+        or expected_fdata_quality != record["fdata_quality_evidence"]
+    ):
+        fail("prepared output structured quality proof revalidation mismatch")
     if command.get("tool") != record.get("llvm_bolt"):
         fail("prepared output command/tool binding mismatch")
     if command.get("option_policy_revision") != record.get("option_policy_revision"):
@@ -1184,6 +1976,7 @@ def verify_bolt_provenance(record: dict[str, Any], test_mode: bool) -> None:
         ("fdata", "BOLT fdata"),
         ("workload_evidence", "BOLT workload evidence"),
         ("profile_evidence", "BOLT profile evidence"),
+        ("fdata_quality_evidence", "BOLT fdata quality evidence"),
     ):
         if command.get(key) != record.get(key):
             fail(f"prepared output command/{key} binding mismatch")
@@ -1209,16 +2002,18 @@ def command_capture(arguments: argparse.Namespace) -> None:
     ed = validate_portage_ed(arguments.ed, arguments.test_mode)
     cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
     fingerprint = validate_fingerprint(arguments.fingerprint)
-    zero_proof = zero_eligibility_proof(
-        arguments.zero_eligible_proof,
+    proof = inventory_proof(
+        arguments.inventory_proof,
         fingerprint,
         arguments.expected_eligible_count,
         arguments.test_mode,
     )
-    readelf = shutil.which(arguments.readelf)
-    objcopy = shutil.which(arguments.objcopy)
-    if readelf is None or objcopy is None:
-        fail("capture requires readelf and objcopy")
+    readelf = resolve_elf_tool(
+        arguments.readelf, PRODUCTION_READELF, "readelf", arguments.test_mode
+    )
+    objcopy = resolve_elf_tool(
+        arguments.objcopy, PRODUCTION_OBJCOPY, "objcopy", arguments.test_mode
+    )
 
     inputs = cache / "inputs"
     inputs.mkdir(mode=0o700, exist_ok=True)
@@ -1229,57 +2024,14 @@ def command_capture(arguments: argparse.Namespace) -> None:
         fail(f"stale capture stage exists: {stage}")
     stage.mkdir(mode=0o700)
     before = tree_snapshot(ed)
-    artifacts: list[dict[str, Any]] = []
-    regular_groups, symlinks = scan_tree(ed)
-    elf_total = 0
-    eligible_total = 0
     try:
-        (stage / "objects").mkdir(mode=0o700)
         with tempfile.TemporaryDirectory(prefix="classify-", dir=stage) as scratch_text:
             scratch_root = Path(scratch_text)
-            for index, (paths, info) in enumerate(regular_groups, 1):
-                if info.st_nlink != len(paths):
-                    fail(
-                        "regular inode has hardlinks outside ED or changed during scan: "
-                        f"{paths[0]} (st_nlink={info.st_nlink}, discovered={len(paths)})"
-                    )
-                source = path_from_relative(ed, paths[0])
-                scratch = scratch_root / f"{index:06d}.file"
-                copy_noatime(source, scratch, info)
-                if not is_elf(scratch):
-                    scratch.unlink()
-                    continue
-                elf_total += 1
-                classification = classify_elf(
-                    scratch, readelf, objcopy, scratch_root / f"{index:06d}.sections"
-                )
-                artifact_id = hashlib.sha256(paths[0].encode("utf-8")).hexdigest()
-                object_name: str | None = None
-                if classification["eligible"]:
-                    eligible_total += 1
-                    object_name = f"objects/{artifact_id}.elf"
-                    destination = stage / object_name
-                    os.replace(scratch, destination)
-                    os.chmod(destination, 0o600)
-                else:
-                    scratch.unlink()
-                artifacts.append(
-                    {
-                        "artifact_id": artifact_id,
-                        "canonical_path": paths[0],
-                        "paths": paths,
-                        "hardlink_count": len(paths),
-                        "source_device": info.st_dev,
-                        "source_inode": info.st_ino,
-                        "file_sha256": sha256_file(stage / object_name)
-                        if object_name
-                        else sha256_file_noatime(source, info),
-                        "size": info.st_size,
-                        "metadata": metadata(source, info),
-                        "cache_object": object_name,
-                        **classification,
-                    }
-                )
+            artifacts, ed_identity = collect_ed_identity(
+                ed, readelf, objcopy, scratch_root, stage / "objects"
+            )
+        elf_total = len(artifacts)
+        eligible_total = sum(bool(item["eligible"]) for item in artifacts)
         after = tree_snapshot(ed)
         if before != after:
             fail("ED metadata/topology changed during capture")
@@ -1288,18 +2040,21 @@ def command_capture(arguments: argparse.Namespace) -> None:
                 "captured BOLT-eligible count differs from the frozen inventory: "
                 f"expected={arguments.expected_eligible_count}, actual={eligible_total}"
             )
+        bind_inventory_candidates(proof, artifacts)
         manifest = {
             "schema": SCHEMA_CAPTURE,
             "package_fingerprint": fingerprint,
             "ed_root": str(ed),
-            "regular_inode_groups_total": len(regular_groups),
+            "generation_id": proof["document"]["generation_id"],
+            "inventory_id": proof["document"]["inventory_id"],
+            "inventory_proof": proof,
+            "regular_inode_groups_total": len(ed_identity["regular_groups"]),
             "elf_total": elf_total,
             "eligible_total": eligible_total,
             "expected_eligible_count": arguments.expected_eligible_count,
-            "zero_eligible_proof": zero_proof,
             "ineligible_total": elf_total - eligible_total,
             "artifacts": artifacts,
-            "symlinks": symlinks,
+            "ed_identity": ed_identity,
         }
         write_json_atomic(stage / "manifest.json", manifest)
         adopt_or_quarantine_capture(stage, final, cache, fingerprint)
@@ -1365,11 +2120,29 @@ def command_register(arguments: argparse.Namespace) -> None:
         fail(f"prepared output is not a regular file: {output_source}")
     cache = validate_cache_root(arguments.cache_root, None, arguments.test_mode)
     fingerprint = validate_fingerprint(arguments.fingerprint)
-    readelf = shutil.which(arguments.readelf)
-    objcopy = shutil.which(arguments.objcopy)
-    if readelf is None or objcopy is None:
-        fail("output registration requires readelf and objcopy")
+    readelf = resolve_elf_tool(
+        arguments.readelf, PRODUCTION_READELF, "readelf", arguments.test_mode
+    )
+    objcopy = resolve_elf_tool(
+        arguments.objcopy, PRODUCTION_OBJCOPY, "objcopy", arguments.test_mode
+    )
     capture_root, capture = capture_paths(cache, fingerprint)
+    captured_proof = capture.get("inventory_proof")
+    if not isinstance(captured_proof, dict) or not isinstance(
+        captured_proof.get("identity"), dict
+    ):
+        fail("capture lacks its strict frozen inventory proof")
+    captured_count = capture.get("expected_eligible_count")
+    if type(captured_count) is not int or captured_count < 0:
+        fail("capture has an invalid frozen expected eligible count")
+    revalidated_proof = inventory_proof(
+        str(captured_proof["identity"].get("path", "")),
+        fingerprint,
+        captured_count,
+        arguments.test_mode,
+    )
+    if revalidated_proof != captured_proof:
+        fail("capture frozen inventory proof is stale or mismatched")
     source_artifact = find_artifact(capture, arguments.artifact_id)
     input_unresolved = reject_symlink_components(arguments.input, "exact BOLT input")
     input_status = input_unresolved.lstat()
@@ -1426,28 +2199,18 @@ def command_register(arguments: argparse.Namespace) -> None:
         provenance_file_record(value, "BOLT fdata", arguments.test_mode)
         for value in arguments.fdata
     ]
-    workloads = [
-        provenance_file_record(value, "BOLT workload evidence", arguments.test_mode)
-        for value in arguments.workload_evidence
-    ]
-    profiles = [
-        provenance_file_record(value, "BOLT profile evidence", arguments.test_mode)
-        for value in arguments.profile_evidence
-    ]
-    for records, label in (
-        (fdata, "BOLT fdata"),
-        (workloads, "BOLT workload evidence"),
-        (profiles, "BOLT profile evidence"),
-    ):
-        if not records:
-            fail(f"at least one {label} file is required")
-        if len({item["path"] for item in records}) != len(records):
-            fail(f"duplicate {label} paths are forbidden")
+    if not fdata:
+        fail("at least one BOLT fdata file is required")
+    if len({item["path"] for item in fdata}) != len(fdata):
+        fail("duplicate BOLT fdata paths are forbidden")
     input_record = provenance_file_record(
         str(input_source), "exact BOLT input", arguments.test_mode
     )
     if input_record["sha256"] != source_artifact["file_sha256"]:
         fail("exact BOLT input changed while registration was validating it")
+    workloads, profiles, fdata_quality = validate_quality_proofs(
+        arguments, capture, source_artifact, input_record, fdata
+    )
     prepared_output_record = provenance_file_record(
         str(output_source), "prepared BOLT output", arguments.test_mode
     )
@@ -1486,6 +2249,7 @@ def command_register(arguments: argparse.Namespace) -> None:
         fdata=fdata,
         workloads=workloads,
         profiles=profiles,
+        fdata_quality=fdata_quality,
         test_mode=arguments.test_mode,
     )
 
@@ -1500,14 +2264,16 @@ def command_register(arguments: argparse.Namespace) -> None:
             fail("output manifest fingerprint mismatch")
         if document.get("expected_eligible_count") != capture.get(
             "expected_eligible_count"
-        ) or document.get("zero_eligible_proof") != capture.get("zero_eligible_proof"):
-            fail("output manifest frozen eligible-count binding mismatch")
+        ) or document.get("inventory_proof") != capture.get("inventory_proof"):
+            fail("output manifest frozen inventory binding mismatch")
     else:
         document = {
             "schema": SCHEMA_OUTPUT,
             "package_fingerprint": fingerprint,
+            "generation_id": capture.get("generation_id"),
+            "inventory_id": capture.get("inventory_id"),
             "expected_eligible_count": capture.get("expected_eligible_count"),
-            "zero_eligible_proof": capture.get("zero_eligible_proof"),
+            "inventory_proof": capture.get("inventory_proof"),
             "outputs": [],
         }
     outputs = document.get("outputs")
@@ -1571,6 +2337,7 @@ def command_register(arguments: argparse.Namespace) -> None:
             "fdata": fdata,
             "workload_evidence": workloads,
             "profile_evidence": profiles,
+            "fdata_quality_evidence": fdata_quality,
             "command_record": command_identity,
             "command": command_document,
         }
@@ -1665,21 +2432,23 @@ def command_deploy(arguments: argparse.Namespace) -> None:
     ed = validate_portage_ed(arguments.ed, arguments.test_mode)
     cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
     fingerprint = validate_fingerprint(arguments.fingerprint)
-    zero_proof = zero_eligibility_proof(
-        arguments.zero_eligible_proof,
+    proof = inventory_proof(
+        arguments.inventory_proof,
         fingerprint,
         arguments.expected_eligible_count,
         arguments.test_mode,
     )
-    readelf = shutil.which(arguments.readelf)
-    objcopy = shutil.which(arguments.objcopy)
-    if readelf is None or objcopy is None:
-        fail("deployment requires readelf and objcopy")
+    readelf = resolve_elf_tool(
+        arguments.readelf, PRODUCTION_READELF, "readelf", arguments.test_mode
+    )
+    objcopy = resolve_elf_tool(
+        arguments.objcopy, PRODUCTION_OBJCOPY, "objcopy", arguments.test_mode
+    )
     _, capture = capture_paths(cache, fingerprint)
     if capture.get("expected_eligible_count") != arguments.expected_eligible_count:
         fail("deployment expected eligible count differs from captured frozen count")
-    if capture.get("zero_eligible_proof") != zero_proof:
-        fail("deployment zero-eligibility proof differs from captured proof")
+    if capture.get("inventory_proof") != proof:
+        fail("deployment inventory proof differs from captured proof")
     output_root = cache / "outputs" / fingerprint
     reject_symlink_components(str(output_root), "prepared output root")
     output_manifest = load_json(output_root / "manifest.json", SCHEMA_OUTPUT)
@@ -1687,8 +2456,8 @@ def command_deploy(arguments: argparse.Namespace) -> None:
         fail("output manifest fingerprint mismatch")
     if output_manifest.get("expected_eligible_count") != arguments.expected_eligible_count:
         fail("output manifest expected eligible count mismatch")
-    if output_manifest.get("zero_eligible_proof") != zero_proof:
-        fail("output manifest zero-eligibility proof mismatch")
+    if output_manifest.get("inventory_proof") != proof:
+        fail("output manifest inventory proof mismatch")
     output_entries = output_manifest.get("outputs")
     if not isinstance(output_entries, list):
         fail("output manifest outputs is not a list")
@@ -1696,7 +2465,6 @@ def command_deploy(arguments: argparse.Namespace) -> None:
     if len(outputs_by_id) != len(output_entries):
         fail("duplicate artifact IDs in output manifest")
 
-    verify_symlinks(ed, capture.get("symlinks"))
     artifacts = capture.get("artifacts")
     if not isinstance(artifacts, list):
         fail("capture artifacts is not a list")
@@ -1706,8 +2474,12 @@ def command_deploy(arguments: argparse.Namespace) -> None:
             "deployment eligible artifact count differs from the frozen inventory: "
             f"expected={arguments.expected_eligible_count}, actual={len(eligible)}"
         )
+    bind_inventory_candidates(proof, artifacts)
     if not eligible:
-        fail("deployment requested for a package with no BOLT-eligible ELF")
+        # A zero-candidate deployment is a verified no-op, not an optimized
+        # artifact claim.  It must still prove and rescan the complete ED.
+        if output_entries:
+            fail("zero-candidate deployment has unexpected registered outputs")
     if set(outputs_by_id) != {item.get("artifact_id") for item in eligible}:
         fail("prepared BOLT outputs do not exactly cover captured eligible artifacts")
 
@@ -1719,6 +2491,26 @@ def command_deploy(arguments: argparse.Namespace) -> None:
         prefix="bolt-deploy-validate-", dir=diagnostics
     ) as temporary:
         scratch_root = Path(temporary)
+        current_artifacts, current_ed_identity = collect_ed_identity(
+            ed, readelf, objcopy, scratch_root / "full-ed-rescan"
+        )
+        if current_ed_identity != capture.get("ed_identity"):
+            fail(
+                "complete ED topology/file/ELF classification differs from the captured input"
+            )
+        captured_artifact_identity = [
+            {key: value for key, value in item.items() if key not in ("source_device", "source_inode", "cache_object")}
+            for item in artifacts
+        ]
+        current_artifact_identity = [
+            {key: value for key, value in item.items() if key not in ("source_device", "source_inode", "cache_object")}
+            for item in current_artifacts
+        ]
+        if current_artifact_identity != captured_artifact_identity:
+            fail("complete current ELF set/classification differs from captured input")
+        if not eligible:
+            print(output_manifest_path(cache, fingerprint))
+            return
         for index, artifact in enumerate(eligible):
             artifact_id = artifact["artifact_id"]
             relative_paths = artifact.get("paths")
@@ -1755,7 +2547,13 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                     fail(f"prepared output input identity mismatch for {artifact_id}: {key}")
             if output_record.get("source_abi_security_identity") != abi_identity(artifact):
                 fail(f"prepared output source ABI/security identity mismatch for {artifact_id}")
-            verify_bolt_provenance(output_record, arguments.test_mode)
+            verify_bolt_provenance(
+                output_record,
+                arguments.test_mode,
+                capture,
+                artifact,
+                arguments.fixture_quality_mode,
+            )
             output_object = output_record.get("output_object")
             if not isinstance(output_object, str):
                 fail(f"missing output object for {artifact_id}")
@@ -1827,7 +2625,7 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                     os.replace(partial, destination)
 
             # Post-rename verification remains inside the rollback boundary.
-            verify_symlinks(ed, capture.get("symlinks"))
+            verify_symlinks(ed, capture.get("ed_identity", {}).get("symlinks"))
             final_scratch = scratch_root / "final-verification"
             for index, item in enumerate(prepared):
                 paths = item["paths"]
@@ -1873,6 +2671,11 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                     )
                     for partial, destination in restore:
                         os.replace(partial, destination)
+                _restored_artifacts, restored_identity = collect_ed_identity(
+                    ed, readelf, objcopy, scratch_root / "rollback-verification"
+                )
+                if restored_identity != capture.get("ed_identity"):
+                    fail("rollback failed to restore exact ED bytes/topology/ELF identity")
             raise
     print(output_manifest_path(cache, fingerprint))
 
@@ -1901,6 +2704,11 @@ def build_parser() -> argparse.ArgumentParser:
         )
         command.add_argument("--test-mode", action="store_true")
         command.add_argument(
+            "--fixture-quality-mode",
+            action="store_true",
+            help=argparse.SUPPRESS,
+        )
+        command.add_argument(
             "--test-lock-hold-seconds",
             type=nonnegative_seconds,
             default=0.0,
@@ -1913,9 +2721,9 @@ def build_parser() -> argparse.ArgumentParser:
     capture.add_argument(
         "--expected-eligible-count", type=nonnegative_integer, required=True
     )
-    capture.add_argument("--zero-eligible-proof")
-    capture.add_argument("--readelf", default="readelf")
-    capture.add_argument("--objcopy", default="objcopy")
+    capture.add_argument("--inventory-proof")
+    capture.add_argument("--readelf", default=PRODUCTION_READELF)
+    capture.add_argument("--objcopy", default=PRODUCTION_OBJCOPY)
     capture.set_defaults(function=command_capture)
 
     register = subparsers.add_parser("register-output", help="register one prepared BOLT output")
@@ -1929,10 +2737,11 @@ def build_parser() -> argparse.ArgumentParser:
     register.add_argument("--fdata", action="append", default=[])
     register.add_argument("--workload-evidence", action="append", default=[])
     register.add_argument("--profile-evidence", action="append", default=[])
+    register.add_argument("--fdata-quality-evidence", action="append", default=[])
     register.add_argument("--command-record", required=True)
     register.add_argument("--command-output-path", required=True)
-    register.add_argument("--readelf", default="readelf")
-    register.add_argument("--objcopy", default="objcopy")
+    register.add_argument("--readelf", default=PRODUCTION_READELF)
+    register.add_argument("--objcopy", default=PRODUCTION_OBJCOPY)
     register.set_defaults(function=command_register)
 
     deploy = subparsers.add_parser("deploy", help="deploy exact prepared outputs into ED")
@@ -1941,19 +2750,20 @@ def build_parser() -> argparse.ArgumentParser:
     deploy.add_argument(
         "--expected-eligible-count", type=nonnegative_integer, required=True
     )
-    deploy.add_argument("--zero-eligible-proof")
-    deploy.add_argument("--readelf", default="readelf")
-    deploy.add_argument("--objcopy", default="objcopy")
+    deploy.add_argument("--inventory-proof")
+    deploy.add_argument("--readelf", default=PRODUCTION_READELF)
+    deploy.add_argument("--objcopy", default=PRODUCTION_OBJCOPY)
     deploy.set_defaults(function=command_deploy)
     return parser
 
 
 def main() -> int:
-    global TOOL_KILL_AFTER_SECONDS, TOOL_TIMEOUT_SECONDS
+    global ACTIVE_TEST_MODE, TOOL_KILL_AFTER_SECONDS, TOOL_TIMEOUT_SECONDS
     parser = build_parser()
     arguments = parser.parse_args()
     TOOL_TIMEOUT_SECONDS = arguments.tool_timeout_seconds
     TOOL_KILL_AFTER_SECONDS = arguments.tool_kill_after_seconds
+    ACTIVE_TEST_MODE = arguments.test_mode
     handled_signals = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
     previous_handlers: dict[signal.Signals, Any] = {}
 
@@ -1972,15 +2782,18 @@ def main() -> int:
             if hasattr(arguments, "ed")
             else None
         )
-        cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
-        with fingerprint_lock(
-            cache,
-            fingerprint,
-            arguments.lock_timeout_seconds,
-            arguments.test_mode,
-            arguments.test_lock_hold_seconds,
+        with framework_publication_lock(
+            arguments.test_mode, arguments.lock_timeout_seconds
         ):
-            arguments.function(arguments)
+            cache = validate_cache_root(arguments.cache_root, ed, arguments.test_mode)
+            with fingerprint_lock(
+                cache,
+                fingerprint,
+                arguments.lock_timeout_seconds,
+                arguments.test_mode,
+                arguments.test_lock_hold_seconds,
+            ):
+                arguments.function(arguments)
     except BoltArtifactError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

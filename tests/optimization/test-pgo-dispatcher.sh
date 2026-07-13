@@ -94,6 +94,8 @@ export VALIDATOR_LOG="${TMP}/profile-validator.log"
 
 FINGERPRINT=$(printf 'a%.0s' {1..64})
 export GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT=1
+printf '%s\n' '{"fixture":"inventory-proof"}' > "${TMP}/bolt-inventory-proof.json"
+export GENTOO_OPT_BOLT_INVENTORY_PROOF="${TMP}/bolt-inventory-proof.json"
 
 write_manifest_file() {
     local output=$1 backend=$2 family=$3 profile=$4 abi=${5:-amd64}
@@ -437,6 +439,16 @@ case_bolt_cache_scope_is_required() (
     return 0
 )
 
+case_bolt_inventory_proof_is_required() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export GENTOO_OPT_MODE=bolt-capture GENTOO_OPT_COMPILER_FAMILY=clang
+    export GENTOO_OPT_ABI=amd64 GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/bolt-cache"
+    unset GENTOO_OPT_BOLT_INVENTORY_PROOF
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
 case_fingerprint_file_strict() (
     printf 'fingerprint=%s\n' "${FINGERPRINT}" > "${TMP}/fingerprint.env"
     export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
@@ -558,7 +570,7 @@ case_bolt_post_install_wrapper() (
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     post_src_install
     mapfile -t arguments < "${BOLT_WRAPPER_EVIDENCE}"
-    [[ ${arguments[*]} == "--ed ${ED} --cache-root ${GENTOO_OPT_BOLT_CACHE_ROOT} --fingerprint ${FINGERPRINT} --expected-eligible-count 1 --readelf /usr/bin/readelf --objcopy /usr/bin/objcopy" ]]
+    [[ ${arguments[*]} == "--ed ${ED} --cache-root ${GENTOO_OPT_BOLT_CACHE_ROOT} --fingerprint ${FINGERPRINT} --expected-eligible-count 1 --inventory-proof ${GENTOO_OPT_BOLT_INVENTORY_PROOF} --readelf /usr/bin/readelf --objcopy /usr/bin/objcopy" ]]
     [[ -f ${PORTAGE_BUILDDIR}/.installed ]]
 )
 
@@ -688,6 +700,7 @@ run_case 'Rust and Go BOLT stages remain language-lane specific' case_rust_and_g
 run_case 'Rust BOLT readiness requires an explicit target' case_rust_bolt_readiness_requires_target
 run_case 'BOLT readiness layers and guards the GCC lane' case_bolt_layer_and_gcc_guard
 run_case 'BOLT stages require an exact sandbox cache scope' case_bolt_cache_scope_is_required
+run_case 'BOLT stages require an exact inventory proof path' case_bolt_inventory_proof_is_required
 run_case 'strict fingerprint.env loading works' case_fingerprint_file_strict
 run_case 'fixture fingerprint computation uses only its bounded key tool' case_fingerprint_identity_tool_is_bounded
 run_case 'root is rejected as an identity file path' case_root_path_is_not_safe_identity

@@ -14,6 +14,7 @@ GENTOO_OPT_COMPILER_FAMILY=clang
 GENTOO_OPT_ABI=amd64
 GENTOO_OPT_BOLT_CACHE_ROOT="@CACHE_ROOT@"
 GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT=1
+GENTOO_OPT_BOLT_INVENTORY_PROOF="@INVENTORY_PROOF@"
 GENTOO_OPT_FINGERPRINT="@SUCCESS_FINGERPRINT@"
 
 if [[ -e @PROXY_MODE_SWITCH@ ]]; then
@@ -24,6 +25,7 @@ if [[ -e @OFF_SWITCH@ ]]; then
 fi
 if [[ -e @DEPLOY_SWITCH@ ]]; then
     GENTOO_OPT_MODE=bolt-deploy
+    GENTOO_OPT_BOLT_DEPLOY_TOOL="@DEPLOY_PROXY@"
 fi
 
 src_unpack() {
@@ -36,7 +38,7 @@ src_unpack() {
 }
 
 src_compile() {
-    "${CC}" ${CFLAGS} "${S}/fixture.c" ${LDFLAGS} \
+    "${CC}" ${CFLAGS} -fPIE "${S}/fixture.c" ${LDFLAGS} -pie \
         -o "${S}/phase2-portage-fixture" || die
 }
 

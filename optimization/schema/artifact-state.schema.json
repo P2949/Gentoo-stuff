@@ -1,16 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://gentoo-optimization.invalid/schema/artifact-state.schema.json",
-  "title": "Gentoo optimization installed artifact state v3",
+  "title": "Gentoo optimization installed artifact state v4",
   "description": "An exact installed artifact with owner/component binding, metadata/topology, ELF ABI/runtime identity, kernel state, and complete BOLT capture-to-deployment proof.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "record_type", "generation", "artifact_id", "owner", "kind", "format", "role", "installed_path", "canonical_path", "content_sha256", "size", "abi", "target", "metadata", "topology", "elf", "kernel", "graphs", "bolt", "final_status", "resolution"],
   "properties": {
-    "schema_version": {"const": 3}, "record_type": {"const": "artifact"},
+    "schema_version": {"const": 4}, "record_type": {"const": "artifact"},
     "generation": {"$ref": "#/$defs/generation"}, "artifact_id": {"$ref": "#/$defs/fingerprint"},
-    "owner": {"$ref": "#/$defs/owner"}, "kind": {"enum": ["elf", "static-archive", "relocatable-object", "kernel-image", "kernel-module", "ebpf", "gpu-object", "firmware", "bytecode", "script", "data"]},
-    "format": {"type": "string", "minLength": 1}, "role": {"enum": ["executable", "pie-executable", "shared-library", "plugin", "relocatable", "kernel-image", "kernel-module", "ebpf", "other", "archive", "firmware", "bytecode", "script", "data", "gpu-object"]},
+    "owner": {"$ref": "#/$defs/owner"}, "kind": {"enum": ["elf", "static-archive", "relocatable-object", "kernel-image", "kernel-module", "ebpf", "gpu-object", "firmware", "bytecode", "script", "data", "symlink"]},
+    "format": {"type": "string", "minLength": 1}, "role": {"enum": ["executable", "pie-executable", "shared-library", "plugin", "relocatable", "kernel-image", "kernel-module", "ebpf", "other", "archive", "firmware", "bytecode", "script", "data", "gpu-object", "symlink"]},
     "installed_path": {"$ref": "#/$defs/absolute_path"}, "canonical_path": {"$ref": "#/$defs/absolute_path"}, "content_sha256": {"$ref": "#/$defs/sha256"}, "size": {"type": "integer", "minimum": 0},
     "abi": {"enum": ["amd64", "x86", "other", "none"]}, "target": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/target"}]},
     "metadata": {"$ref": "#/$defs/metadata"}, "topology": {"$ref": "#/$defs/topology"},
@@ -48,7 +48,7 @@
     },
     "metadata": {
       "type": "object", "additionalProperties": false, "required": ["file_type", "device_major", "device_minor", "mode", "uid", "gid", "mtime_ns", "xattrs", "file_capabilities", "selinux_context"],
-      "properties": {"file_type": {"enum": ["regular", "fifo", "char-device", "block-device"]}, "device_major": {"type": ["integer", "null"], "minimum": 0}, "device_minor": {"type": ["integer", "null"], "minimum": 0}, "mode": {"type": "integer", "minimum": 0, "maximum": 4095}, "uid": {"type": "integer", "minimum": 0}, "gid": {"type": "integer", "minimum": 0}, "mtime_ns": {"type": "integer", "minimum": 0}, "xattrs": {"type": "array", "items": {"$ref": "#/$defs/xattr"}}, "file_capabilities": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "selinux_context": {"type": ["string", "null"]}}
+      "properties": {"file_type": {"enum": ["regular", "fifo", "char-device", "block-device", "symlink"]}, "device_major": {"type": ["integer", "null"], "minimum": 0}, "device_minor": {"type": ["integer", "null"], "minimum": 0}, "mode": {"type": "integer", "minimum": 0, "maximum": 4095}, "uid": {"type": "integer", "minimum": 0}, "gid": {"type": "integer", "minimum": 0}, "mtime_ns": {"type": "integer", "minimum": 0}, "xattrs": {"type": "array", "items": {"$ref": "#/$defs/xattr"}}, "file_capabilities": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "selinux_context": {"type": ["string", "null"]}}
     },
     "symlink": {
       "type": "object", "additionalProperties": false, "required": ["path", "target"], "properties": {"path": {"$ref": "#/$defs/absolute_path"}, "target": {"type": "string", "minLength": 1}}
@@ -78,8 +78,12 @@
     },
     "elf": {
       "type": "object", "additionalProperties": false,
-      "required": ["class", "type", "machine", "build_id", "text_sha256", "has_symbols", "has_relocations", "has_executable_sections", "soname", "rpath", "runpath", "exports", "symbol_versions", "debug", "runtime_instrumentation", "dynamic_linkage"],
-      "properties": {"class": {"enum": [32, 64]}, "type": {"enum": ["EXEC", "DYN", "REL", "CORE", "OTHER"]}, "machine": {"type": "string", "minLength": 1}, "build_id": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^[0-9a-f]+$"}]}, "text_sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]}, "has_symbols": {"type": "boolean"}, "has_relocations": {"type": "boolean"}, "has_executable_sections": {"type": "boolean"}, "soname": {"type": ["string", "null"]}, "rpath": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/absolute_path"}}, "runpath": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/absolute_path"}}, "exports": {"type": "array", "items": {"$ref": "#/$defs/export"}}, "symbol_versions": {"type": "array", "items": {"$ref": "#/$defs/symbol_version"}}, "debug": {"$ref": "#/$defs/debug"}, "runtime_instrumentation": {"$ref": "#/$defs/runtime_instrumentation"}, "dynamic_linkage": {"$ref": "#/$defs/dynamic_linkage"}}
+      "required": ["class", "data_encoding", "type", "machine", "build_id", "text_sha256", "has_symbols", "has_relocations", "has_executable_sections", "soname", "rpath", "runpath", "exports", "symbol_versions", "debug", "runtime_instrumentation", "dynamic_linkage", "security"],
+      "properties": {"class": {"enum": [32, 64]}, "data_encoding": {"enum": ["little", "big"]}, "type": {"enum": ["EXEC", "DYN", "REL", "CORE", "OTHER"]}, "machine": {"type": "string", "minLength": 1}, "build_id": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^[0-9a-f]+$"}]}, "text_sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]}, "has_symbols": {"type": "boolean"}, "has_relocations": {"type": "boolean"}, "has_executable_sections": {"type": "boolean"}, "soname": {"type": ["string", "null"]}, "rpath": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/absolute_path"}}, "runpath": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/absolute_path"}}, "exports": {"type": "array", "items": {"$ref": "#/$defs/export"}}, "symbol_versions": {"type": "array", "items": {"$ref": "#/$defs/symbol_version"}}, "debug": {"$ref": "#/$defs/debug"}, "runtime_instrumentation": {"$ref": "#/$defs/runtime_instrumentation"}, "dynamic_linkage": {"$ref": "#/$defs/dynamic_linkage"}, "security": {"$ref": "#/$defs/security"}}
+    },
+    "security": {
+      "type": "object", "additionalProperties": false, "required": ["gnu_stack", "relro", "bind_now", "writable_executable_load"],
+      "properties": {"gnu_stack": {"enum": ["absent", "executable", "non-executable"]}, "relro": {"type": "boolean"}, "bind_now": {"type": "boolean"}, "writable_executable_load": {"type": "boolean"}}
     },
     "kernel": {
       "type": "object", "additionalProperties": false, "required": ["release", "artifact_type", "module_name", "vermagic", "config_sha256", "signed", "signature_key_id", "boot_entry_id", "boot_evidence"],
@@ -114,8 +118,16 @@
       "type": "object", "additionalProperties": false, "required": ["llvm_bolt", "perf2bolt", "merge_fdata"], "properties": {"llvm_bolt": {"$ref": "#/$defs/tool"}, "perf2bolt": {"$ref": "#/$defs/tool"}, "merge_fdata": {"$ref": "#/$defs/tool"}}
     },
     "bolt_output": {
-      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "text_sha256", "build_id", "bolt_note", "verification"],
-      "properties": {"path": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"}, "text_sha256": {"$ref": "#/$defs/sha256"}, "build_id": {"type": "string", "pattern": "^[0-9a-f]+$"}, "bolt_note": {"const": true}, "verification": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "text_sha256", "build_id", "bolt_note", "note_binding", "verification"],
+      "properties": {"path": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"}, "text_sha256": {"$ref": "#/$defs/sha256"}, "build_id": {"type": "string", "pattern": "^[0-9a-f]+$"}, "bolt_note": {"const": true}, "note_binding": {"$ref": "#/$defs/note_binding"}, "verification": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
+    },
+    "note_binding": {
+      "type": "object", "additionalProperties": false, "required": ["input_sha256", "fdata_sha256", "option_policy_revision", "command_record_sha256"],
+      "properties": {"input_sha256": {"$ref": "#/$defs/sha256"}, "fdata_sha256": {"$ref": "#/$defs/sha256"}, "option_policy_revision": {"const": "gentoo-system-wide-bolt-v1-cdsort-20260712"}, "command_record_sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "bolt_command": {
+      "type": "object", "additionalProperties": false, "required": ["argv", "output_partial_path", "record"],
+      "properties": {"argv": {"type": "array", "minItems": 13, "items": {"type": "string", "minLength": 1}}, "output_partial_path": {"$ref": "#/$defs/absolute_path"}, "record": {"$ref": "#/$defs/evidence"}}
     },
     "deployment": {
       "type": "object", "additionalProperties": false, "required": ["transaction_id", "prestrip_path", "prestrip_deployed_sha256", "deploy_log", "rollback_artifact", "installed_sha256", "post_strip_verification", "metadata_verified", "runtime_verified"],
@@ -123,8 +135,8 @@
     },
     "bolt": {
       "type": "object", "additionalProperties": false,
-      "required": ["eligibility", "status", "generation_id", "resolution", "capture", "perf_profiles", "fdata", "tools", "options", "output", "deployment"],
-      "properties": {"eligibility": {"enum": ["eligible", "not-applicable", "terminal-exclusion", "unknown"]}, "status": {"enum": ["pending", "captured", "profiled", "optimized", "not-applicable", "terminal-exclusion", "unknown", "failed"]}, "generation_id": {"type": ["string", "null"]}, "resolution": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/resolution"}]}, "capture": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/capture"}]}, "perf_profiles": {"type": "array", "items": {"$ref": "#/$defs/perf_profile"}}, "fdata": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/fdata"}]}, "tools": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/bolt_tools"}]}, "options": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "output": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/bolt_output"}]}, "deployment": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/deployment"}]}}
+      "required": ["eligibility", "status", "generation_id", "resolution", "capture", "perf_profiles", "fdata", "tools", "option_policy_revision", "options", "command", "output", "deployment"],
+      "properties": {"eligibility": {"enum": ["eligible", "not-applicable", "terminal-exclusion", "unknown"]}, "status": {"enum": ["pending", "captured", "profiled", "optimized", "not-applicable", "terminal-exclusion", "unknown", "failed"]}, "generation_id": {"type": ["string", "null"]}, "resolution": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/resolution"}]}, "capture": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/capture"}]}, "perf_profiles": {"type": "array", "items": {"$ref": "#/$defs/perf_profile"}}, "fdata": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/fdata"}]}, "tools": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/bolt_tools"}]}, "option_policy_revision": {"type": ["string", "null"]}, "options": {"oneOf": [{"const": []}, {"const": ["-reorder-blocks=ext-tsp", "-reorder-functions=cdsort", "-split-functions", "-split-all-cold", "-split-eh", "-icf=safe", "-update-debug-sections", "-dyno-stats"]}]}, "command": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/bolt_command"}]}, "output": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/bolt_output"}]}, "deployment": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/deployment"}]}}
     }
   }
 }

@@ -924,8 +924,16 @@ rust-generate|rust-use|go-use) ;;
     gentoo_opt_load_fingerprint || return 1
     if [[ ${bolt_stage} == capture || ${bolt_stage} == deploy ]]; then
         gentoo_opt_require_bolt_cache_root "${GENTOO_OPT_BOLT_CACHE_ROOT-}" || return 1
-        [[ ${GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT-} =~ ^[1-9][0-9]*$ ]] || {
-            gentoo_opt_error 'BOLT stage requires a positive inventory-derived expected eligible count'
+        [[ ${GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT-} =~ ^(0|[1-9][0-9]*)$ ]] || {
+            gentoo_opt_error 'BOLT stage requires a nonnegative inventory-derived expected eligible count'
+            return 1
+        }
+        gentoo_opt_safe_absolute_path "${GENTOO_OPT_BOLT_INVENTORY_PROOF-}" || {
+            gentoo_opt_error 'BOLT stage requires a safe absolute inventory proof path'
+            return 1
+        }
+        [[ -f ${GENTOO_OPT_BOLT_INVENTORY_PROOF} && ! -L ${GENTOO_OPT_BOLT_INVENTORY_PROOF} ]] || {
+            gentoo_opt_error 'BOLT stage inventory proof is absent, non-regular, or symlinked'
             return 1
         }
     fi
@@ -1035,6 +1043,7 @@ gentoo_opt_run_bolt_wrapper() {
     "${GENTOO_OPT_BOLT_WRAPPER}" --ed "${ED}" \
         --cache-root "${cache}" --fingerprint "${fingerprint}" \
         --expected-eligible-count "${GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT}" \
+        --inventory-proof "${GENTOO_OPT_BOLT_INVENTORY_PROOF}" \
         --readelf /usr/bin/readelf --objcopy /usr/bin/objcopy
 }
 

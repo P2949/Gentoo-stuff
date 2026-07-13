@@ -35,8 +35,8 @@ expect_failure() {
 }
 
 wait_for_log() {
-    local needle=$1 index
-    for index in $(seq 1 100); do
+    local needle=$1
+    for _ in $(seq 1 100); do
         grep -Fq -- "${needle}" "${LOG}" 2>/dev/null && return 0
         sleep 0.1
     done
@@ -61,6 +61,8 @@ cp -a -- "${SOURCE_ROOT}/scripts/optimization/lib" \
     "${REPOSITORY}/scripts/optimization/lib"
 cp -a -- "${SOURCE_ROOT}/scripts/optimization/verify" \
     "${REPOSITORY}/scripts/optimization/verify"
+cp -a -- "${SOURCE_ROOT}/scripts/optimization/recovery" \
+    "${REPOSITORY}/scripts/optimization/recovery"
 mkdir -p -- "${REPOSITORY}/optimization"
 cp -a -- "${SOURCE_ROOT}/optimization/schema" "${REPOSITORY}/optimization/schema"
 install -m 0755 -T -- "${SOURCE_ROOT}/scripts/optimization/install-framework.sh" \
@@ -87,6 +89,17 @@ chmod 0755 -- "${TARGET}/usr/bin/jq"
 
 # Unsafe destination ancestors must fail before the lock or framework base is
 # created.  The fixture root itself is the hermetic trust boundary.
+UNSAFE_ROOT=${WORK}/unsafe-root-itself
+mkdir -p -- "${UNSAFE_ROOT}"
+chmod 0777 -- "${UNSAFE_ROOT}"
+expect_failure 'test trust root is group/world-writable' \
+    env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+    bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+    --test-root "${UNSAFE_ROOT}"
+[[ ! -e ${UNSAFE_ROOT}/run && ! -e ${UNSAFE_ROOT}/var ]] || \
+    fail 'unsafe filesystem-root rejection occurred after mutation'
+chmod 0700 -- "${UNSAFE_ROOT}"
+
 UNSAFE=${WORK}/unsafe-target
 mkdir -p -- "${UNSAFE}/usr"
 chmod 0777 -- "${UNSAFE}/usr"
@@ -110,10 +123,20 @@ ln -s -- /unmanaged/portage "${TARGET}/etc/portage"
 expect_failure '/etc/portage points to an unmanaged migration source' run_installer
 rm -f -- "${TARGET}/etc/portage"
 
+# Repository-local Git configuration is controlled by the checkout owner.  The
+# installer must override executable fsmonitor hooks, and production executes
+# all Git inspection as that non-root owner rather than as root.
+GIT_HELPER_MARKER=${WORK}/git-helper-executed
+GIT_HELPER=${WORK}/malicious-fsmonitor
+printf '#!/bin/sh\n: >%s\nexit 0\n' "${GIT_HELPER_MARKER}" >"${GIT_HELPER}"
+chmod 0755 -- "${GIT_HELPER}"
+git -C "${REPOSITORY}" config core.fsmonitor "${GIT_HELPER}"
 run_installer >"${LOG}" 2>&1 || { sed -n '1,260p' "${LOG}" >&2; fail 'initial install failed'; }
 grep -Fq 'PASS: root-owned Phase 2 framework install verified' "${LOG}" || \
     fail 'initial install lacks PASS evidence'
 run_installer --check >"${LOG}" 2>&1 || { sed -n '1,260p' "${LOG}" >&2; fail 'strict check failed'; }
+[[ ! -e ${GIT_HELPER_MARKER} ]] || fail 'installer executed repository-local Git helper'
+git -C "${REPOSITORY}" config --unset core.fsmonitor
 
 BASE=${TARGET}/var/lib/gentoo-optimization
 CURRENT=${BASE}/framework-current
@@ -140,12 +163,20 @@ grep -Eq '^jq_sha256=[0-9a-f]{64}$' "${MANIFEST}" || fail 'manifest jq hash is i
     fail 'installed package state schema is absent'
 [[ $(stat -c '%g:%a' -- "${TARGET}/var/cache/gentoo-optimization/pgo") == "$(id -g):750" ]] || \
     fail 'validated PGO cache trust root mode differs'
-[[ $(stat -c '%g:%a' -- "${TARGET}/var/tmp/gentoo-optimization/pgo-raw") == "$(id -g):750" ]] || \
+[[ $(stat -c '%g:%a' -- "${TARGET}/var/tmp/gentoo-optimization/pgo-raw") == "$(id -g):755" ]] || \
     fail 'raw PGO spool trust root mode differs'
 [[ $(stat -c %a -- "${TARGET}/var/lib/gentoo-optimization/generations") == 755 ]] || \
     fail 'generation trust root mode differs'
-[[ $(find "${ACTIVE}/generated-policy" -mindepth 1 -maxdepth 1 -printf '%f\n') == .empty-v1 ]] || \
+mapfile -t GENERATED_ENTRIES < <(find "${ACTIVE}/generated-policy" -mindepth 1 \
+    -maxdepth 1 -printf '%f\n' | sort)
+[[ ${GENERATED_ENTRIES[*]} == $'.identity\nenv\npackage.env' && \
+    ! -s ${ACTIVE}/generated-policy/package.env && \
+    -z $(find "${ACTIVE}/generated-policy/env" -mindepth 1 -print -quit) ]] || \
     fail 'generated policy is not rigorously empty'
+[[ $(readlink -- "${ACTIVE}/portage/package.env/99-generated-optimization") == \
+    ../../generated-policy/package.env ]] || fail 'generated package policy is not Portage-bound'
+[[ $(readlink -- "${ACTIVE}/portage/env/optimization/generated") == \
+    ../../../generated-policy/env ]] || fail 'generated environments are not Portage-bound'
 
 # Global ordering is checked over sysadmin, system, repositories and built-in
 # QA directories, not just the source Portage tree.
@@ -176,8 +207,7 @@ LOCK=${TARGET}/var/cache/gentoo-optimization/bolt/locks/busy.lock
     sleep 20
 ) &
 LOCK_PID=$!
-wait_for_log_not_used=1
-for unused in $(seq 1 100); do
+for _ in $(seq 1 100); do
     [[ -e ${WORK}/bolt-lock-ready ]] && break
     sleep 0.05
 done
@@ -262,6 +292,82 @@ NEW_ACTIVE=$(readlink -- "${CURRENT}")
 grep -Fxq "previous_generation=${BASELINE_CURRENT}" "${MANIFEST}" || \
     fail 'new manifest omits exact rollback generation'
 run_installer --check >/dev/null
+assert_no_transaction_debris
+
+# The future generated-policy interface is content-addressed and consumed from
+# inside the same framework generation.  A check without the exact policy input
+# then fails closed rather than silently treating it as the empty generation.
+POLICY_STAGE=${WORK}/policy-stage
+mkdir -p -- "${POLICY_STAGE}/env"
+printf '=app-misc/example-1 optimization/generated/example.conf\n' >"${POLICY_STAGE}/package.env"
+printf 'GENTOO_OPT_MODE=off\n' >"${POLICY_STAGE}/env/example.conf"
+POLICY_HASH=$(
+    while IFS= read -r -d '' entry; do
+        relative=${entry#"${POLICY_STAGE}/"}
+        if [[ -d ${entry} ]]; then
+            printf 'd\t0755\t-\tgenerated-policy/%s\t-\n' "${relative}"
+        else
+            digest=$(sha256sum -- "${entry}"); digest=${digest%% *}
+            printf 'f\t0644\t%s\tgenerated-policy/%s\t-\n' "${digest}" "${relative}"
+        fi
+    done < <(find "${POLICY_STAGE}" -mindepth 1 -print0 | sort -z)
+)
+POLICY_HASH=$( # Restore the record-terminating newline stripped by command substitution.
+    printf '%s\n' "${POLICY_HASH}" | sha256sum | awk '{print $1}'
+)
+POLICY_PARENT=${TARGET}/var/lib/gentoo-optimization/generated-policy-sources
+mkdir -p -- "${POLICY_PARENT}"
+POLICY=${POLICY_PARENT}/generated-policy-${POLICY_HASH}
+mv -- "${POLICY_STAGE}" "${POLICY}"
+FROZEN_INVENTORY=${TARGET}/var/lib/gentoo-optimization/generations/fixture/frozen-inventory.json
+mkdir -p -- "${FROZEN_INVENTORY%/*}"
+printf '%s\n' \
+    '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example-1"}]}' \
+    >"${FROZEN_INVENTORY}"
+expect_failure 'strict frozen-inventory semantic validation failed' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+printf '%s\n' \
+    '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example-1","entry_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"owned_paths":[],"owned_directories":[]}' \
+    >"${FROZEN_INVENTORY}"
+cp -- "${POLICY}/env/example.conf" "${WORK}/example.conf.saved"
+printf 'source /tmp/forbidden\n' >"${POLICY}/env/example.conf"
+expect_failure 'generated environment is not assignment-only' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+cp -- "${WORK}/example.conf.saved" "${POLICY}/env/example.conf"
+printf 'GENTOO_OPT_MODE=off\n' >"${POLICY}/env/unreferenced.conf"
+expect_failure 'generated environment is unreferenced' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+rm -f -- "${POLICY}/env/unreferenced.conf"
+printf 'not-an-atom optimization/generated/example.conf\n' >"${POLICY}/package.env"
+expect_failure 'generated package.env atom contains unsafe syntax' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+printf '=app-misc/example-1 optimization/generated/example.conf\n' >"${POLICY}/package.env"
+expect_failure 'a nonempty generated policy requires --frozen-inventory' \
+    run_installer --generated-policy-generation "${POLICY}"
+printf '%s\n' \
+    '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/different-1","entry_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],"owned_paths":[],"owned_directories":[]}' \
+    >"${FROZEN_INVENTORY}"
+expect_failure 'generated package.env atom is absent from the frozen inventory' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+printf '%s\n' \
+    '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example-1","entry_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"owned_paths":[],"owned_directories":[]}' \
+    >"${FROZEN_INVENTORY}"
+run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}" >/dev/null
+POLICY_ACTIVE=$(readlink -- "${CURRENT}")
+[[ $(<"${POLICY_ACTIVE}/generated-policy/.identity") == "${POLICY_HASH}" ]] || \
+    fail 'content-addressed generated policy identity differs'
+cmp -s -- "${POLICY}/package.env" "${POLICY_ACTIVE}/generated-policy/package.env" || \
+    fail 'generated package policy was not published exactly'
+run_installer --check --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}" >/dev/null
+expect_failure 'generated-policy identity differs' \
+    run_installer --check
 assert_no_transaction_debris
 
 printf 'PASS: framework installer snapshot/publication/rollback fixture\n'

@@ -10,6 +10,7 @@ PROXY_TEMPLATE=${ROOT}/optimization/fixtures/portage/capture-proxy.sh.in
 CAPTURE_TOOL=${ROOT}/scripts/optimization/bolt/capture-input.sh
 FRAMEWORK_INSTALLER=${ROOT}/scripts/optimization/install-framework.sh
 REGISTER_TOOL=/usr/local/libexec/gentoo-optimization/bolt/register-output.sh
+DEPLOY_TOOL=/usr/local/libexec/gentoo-optimization/bolt/deploy-output.sh
 LLVM_BOLT=/usr/lib/llvm/22/bin/llvm-bolt
 
 fail() {
@@ -70,7 +71,34 @@ PROXY_MODE_SWITCH=${WORK}/use-capture-proxy
 OFF_SWITCH=${WORK}/optimization-off
 DEPLOY_SWITCH=${WORK}/optimization-deploy
 CAPTURE_PROXY=${WORK}/capture-proxy.sh
+DEPLOY_PROXY=${WORK}/deploy-proxy.sh
 SUCCESS_FINGERPRINT=$(printf '%s' "${WORK}:success" | sha256sum | awk '{print $1}')
+INVENTORY_PROOF_ROOT=${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}/inventory-proof
+INVENTORY_EVIDENCE=${INVENTORY_PROOF_ROOT}/inventory.json
+INVENTORY_PROOF=${INVENTORY_PROOF_ROOT}/proof.json
+mkdir -p -- "${INVENTORY_PROOF_ROOT}"
+chmod 0700 -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" "${INVENTORY_PROOF_ROOT}"
+python3 - "${INVENTORY_EVIDENCE}" "${INVENTORY_PROOF}" "${SUCCESS_FINGERPRINT}" <<'PY'
+import hashlib,json,pathlib,sys
+evidence=pathlib.Path(sys.argv[1]).resolve()
+canonical="usr/bin/phase2-portage-fixture"
+cpv="app-test/phase2-portage-fixture-1"
+entry_sha=hashlib.sha256((cpv+sys.argv[3]).encode()).hexdigest()
+inventory={"schema_version":2,"record_type":"frozen-inventory","generation_id":"phase2-portage-fixture-generation-v1",
+"inventory_id":"phase2-portage-fixture-inventory-v1","packages":[{"cpv":cpv,"entry_sha256":entry_sha}],
+"owned_paths":[{"owner_cpv":cpv,"path":"/"+canonical}],"owned_directories":[]}
+evidence.write_text(json.dumps(inventory,sort_keys=True,separators=(",",":"))+"\n")
+record={"path":str(evidence),"sha256":hashlib.sha256(evidence.read_bytes()).hexdigest(),"size":evidence.stat().st_size}
+candidate={"artifact_id":hashlib.sha256(canonical.encode()).hexdigest(),"canonical_path":canonical,
+"paths":[canonical],"hardlink_count":1,"elf_class":"ELF64","elf_data":"2's complement, little endian",
+"elf_type":"DYN","machine":"Advanced Micro Devices X86-64","elf_role":"pie-executable"}
+document={"schema":"gentoo-optimization-bolt-inventory-proof-v1","generation_id":"phase2-portage-fixture-generation-v1",
+"inventory_id":"phase2-portage-fixture-inventory-v1","package_fingerprint":sys.argv[3],
+"cpv":cpv,"inventory_entry_sha256":entry_sha,
+"expected_eligible_count":1,"inventory_evidence":record,"candidates":[candidate]}
+pathlib.Path(sys.argv[2]).write_text(json.dumps(document,sort_keys=True)+"\n")
+PY
+chmod 0600 -- "${INVENTORY_EVIDENCE}" "${INVENTORY_PROOF}"
 mkdir -p -- "${PACKAGE_ROOT}" "${WORK}/metadata" "${WORK}/profiles"
 chmod 0755 -- "${WORK}" "${WORK}/app-test" "${PACKAGE_ROOT}" \
     "${WORK}/metadata" "${WORK}/profiles"
@@ -88,6 +116,8 @@ sed \
     -e "s|@PROXY_MODE_SWITCH@|$(escape_sed "${PROXY_MODE_SWITCH}")|g" \
     -e "s|@OFF_SWITCH@|$(escape_sed "${OFF_SWITCH}")|g" \
     -e "s|@DEPLOY_SWITCH@|$(escape_sed "${DEPLOY_SWITCH}")|g" \
+    -e "s|@DEPLOY_PROXY@|$(escape_sed "${DEPLOY_PROXY}")|g" \
+    -e "s|@INVENTORY_PROOF@|$(escape_sed "${INVENTORY_PROOF}")|g" \
     -e "s|@SUCCESS_FINGERPRINT@|${SUCCESS_FINGERPRINT}|g" \
     "${TEMPLATE}" > "${EBUILD}"
 sed \
@@ -95,6 +125,9 @@ sed \
     -e "s|@FAIL_SWITCH@|$(escape_sed "${FAIL_SWITCH}")|g" \
     "${PROXY_TEMPLATE}" > "${CAPTURE_PROXY}"
 chmod 0755 -- "${CAPTURE_PROXY}"
+printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+    "exec '${DEPLOY_TOOL}' --test-mode --fixture-quality-mode \"\$@\"" >"${DEPLOY_PROXY}"
+chmod 0755 -- "${DEPLOY_PROXY}"
 chmod 0644 -- "${EBUILD}" "${WORK}/metadata/layout.conf" "${WORK}/profiles/repo_name"
 printf 'EBUILD %s %s BLAKE2B %s SHA512 %s\n' \
     "$(basename -- "${EBUILD}")" "$(stat -c %s "${EBUILD}")" \
@@ -193,6 +226,7 @@ chmod 0700 -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" \
 FDATA=${FDATA_ROOT}/minimal-hook-integration.fdata
 WORKLOAD_EVIDENCE=${EVIDENCE_ROOT}/workload-evidence.json
 PROFILE_EVIDENCE=${EVIDENCE_ROOT}/profile-evidence.json
+FDATA_QUALITY_EVIDENCE=${EVIDENCE_ROOT}/fdata-quality-evidence.json
 BOLT_STDOUT=${EVIDENCE_ROOT}/llvm-bolt.stdout
 BOLT_STDERR=${EVIDENCE_ROOT}/llvm-bolt.stderr
 BOLT_COMMAND_RECORD=${EVIDENCE_ROOT}/llvm-bolt-command.json
@@ -201,13 +235,40 @@ BOLT_PREPARED=${EVIDENCE_ROOT}/phase2-portage-fixture.bolt
 REGISTER_STDOUT=${EVIDENCE_ROOT}/register-output.stdout
 REGISTER_STDERR=${EVIDENCE_ROOT}/register-output.stderr
 printf '%s\n' '1 main 0 1 main 1 0 100' > "${FDATA}"
-printf '%s\n' \
-    '{"classification":"synthetic-minimal-hook-integration-not-profile-quality-evidence","runtime_training":false,"schema":"gentoo-optimization-bolt-hook-integration-workload-v1"}' \
-    > "${WORKLOAD_EVIDENCE}"
-printf '%s\n' \
-    '{"branch_records":1,"classification":"synthetic-minimal-hook-integration-not-profile-quality-evidence","profile_quality_claim":false,"schema":"gentoo-optimization-bolt-hook-integration-profile-v1"}' \
-    > "${PROFILE_EVIDENCE}"
-chmod 0600 -- "${FDATA}" "${WORKLOAD_EVIDENCE}" "${PROFILE_EVIDENCE}"
+python3 - "${CAPTURED_OBJECT}" "${ARTIFACT_ID}" "${SUCCESS_FINGERPRINT}" \
+    "${FDATA}" "${LLVM_BOLT}" "${WORKLOAD_EVIDENCE}" "${PROFILE_EVIDENCE}" \
+    "${FDATA_QUALITY_EVIDENCE}" <<'PY'
+import hashlib,json,pathlib,re,subprocess,sys,tempfile
+source,artifact_id,fingerprint,fdata,tool,workload_path,profile_path,quality_path=sys.argv[1:]
+def identity(value):
+ p=pathlib.Path(value).resolve(strict=True); return {"path":str(p),"sha256":hashlib.sha256(p.read_bytes()).hexdigest(),"size":p.stat().st_size}
+notes=subprocess.run(["/usr/bin/readelf","-nW",source],check=True,text=True,capture_output=True,env={"LC_ALL":"C","LANG":"C","PATH":"/usr/bin:/bin"}).stdout
+build_id=re.search(r"Build ID:\s*([0-9a-fA-F]+)",notes).group(1).lower()
+with tempfile.TemporaryDirectory() as td:
+ text=pathlib.Path(td)/"text"; rewrite=pathlib.Path(td)/"rewrite"
+ subprocess.run(["/usr/bin/objcopy","--dump-section",f".text={text}",source,str(rewrite)],check=True)
+ text_hash=hashlib.sha256(text.read_bytes()).hexdigest()
+binding={"generation_id":"phase2-portage-fixture-generation-v1","inventory_id":"phase2-portage-fixture-inventory-v1",
+"package_fingerprint":fingerprint,"artifact_id":artifact_id,"input_build_id":build_id,
+"input_text_sha256":text_hash,"input_file_sha256":hashlib.sha256(pathlib.Path(source).read_bytes()).hexdigest()}
+workload={"schema":"gentoo-optimization-bolt-workload-proof-v1",**binding,"workload_id":"portage-hook-integration",
+"workload_definition":identity(source),"workload_log":identity(source),
+"command_record":None,
+"started_at_utc":"2026-07-13T00:00:00Z","completed_at_utc":"2026-07-13T00:00:01Z","exit_status":0,
+"repetitions":1,"functional_passed":True,"fixture_only":True}
+pathlib.Path(workload_path).write_text(json.dumps(workload,sort_keys=True)+"\n")
+fd=identity(fdata); wi=identity(workload_path)
+profile={"schema":"gentoo-optimization-bolt-profile-quality-proof-v1",**binding,"profile_tools":[identity(tool)],
+"events":["fixture-synthetic-branch"],"profile_files":[identity(source)],"command_records":[],"lbr_captured":True,"sample_count":1,"branch_entry_count":1,
+"ignored_samples":0,"mismatching_samples":0,"out_of_range_samples":0,
+"thresholds":{"minimum_samples":1,"minimum_branch_entries":1,"maximum_ignored_samples":0,
+"maximum_mismatch_ratio":0.0,"maximum_out_of_range_ratio":0.0},"workload_contributors":[wi],"fdata":[fd],"fixture_only":True}
+pathlib.Path(profile_path).write_text(json.dumps(profile,sort_keys=True)+"\n"); pi=identity(profile_path)
+quality={"schema":"gentoo-optimization-bolt-fdata-quality-proof-v1",**binding,"merge_tool":identity(tool),
+"fdata":[fd],"profile_contributors":[pi],"total_functions":1,"total_samples":1,"command_record":None,"fixture_only":True}
+pathlib.Path(quality_path).write_text(json.dumps(quality,sort_keys=True)+"\n")
+PY
+chmod 0600 -- "${FDATA}" "${WORKLOAD_EVIDENCE}" "${PROFILE_EVIDENCE}" "${FDATA_QUALITY_EVIDENCE}"
 
 POLICY_REVISION=gentoo-system-wide-bolt-v1-cdsort-20260712
 BOLT_OPTIONS=(
@@ -233,6 +294,7 @@ mv -- "${BOLT_COMMAND_OUTPUT}" "${BOLT_PREPARED}"
 python3 - "${LLVM_BOLT}" "${CAPTURED_OBJECT}" "${BOLT_PREPARED}" \
     "${BOLT_COMMAND_OUTPUT}" "${FDATA}" "${WORKLOAD_EVIDENCE}" \
     "${PROFILE_EVIDENCE}" "${BOLT_STDOUT}" "${BOLT_STDERR}" \
+    "${FDATA_QUALITY_EVIDENCE}" \
     "${BOLT_COMMAND_RECORD}" "${BOLT_STARTED}" "${BOLT_COMPLETED}" \
     "${POLICY_REVISION}" "${BOLT_OPTIONS[@]}" <<'PY'
 import hashlib
@@ -251,6 +313,7 @@ import sys
     profile,
     stdout,
     stderr,
+    fdata_quality,
     record,
     started,
     completed,
@@ -266,6 +329,8 @@ def identity(value: str, *, recorded_path: str | None = None) -> dict[str, objec
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "size": path.stat().st_size,
     }
+def bundle(value: str) -> dict[str, object]:
+    return {"identity": identity(value), "document": json.loads(pathlib.Path(value).read_text())}
 
 
 tool_path = pathlib.Path(tool).resolve(strict=True)
@@ -281,7 +346,7 @@ tool_record["version"] = subprocess.run(
     env={"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin"},
 ).stdout.strip()
 document = {
-    "schema": "gentoo-optimization-bolt-command-v1",
+    "schema": "gentoo-optimization-bolt-command-v2",
     "argv": [
         str(tool_path),
         str(source_path),
@@ -299,8 +364,9 @@ document = {
     "option_policy_revision": policy,
     "options": options,
     "fdata": [identity(str(fdata_path))],
-    "workload_evidence": [identity(workload)],
-    "profile_evidence": [identity(profile)],
+    "workload_evidence": [bundle(workload)],
+    "profile_evidence": [bundle(profile)],
+    "fdata_quality_evidence": [bundle(fdata_quality)],
     "stdout": identity(stdout),
     "stderr": identity(stderr),
 }
@@ -321,10 +387,13 @@ REGISTER_ARGUMENTS=(
     --fdata "${FDATA}"
     --workload-evidence "${WORKLOAD_EVIDENCE}"
     --profile-evidence "${PROFILE_EVIDENCE}"
+    --fdata-quality-evidence "${FDATA_QUALITY_EVIDENCE}"
     --command-record "${BOLT_COMMAND_RECORD}"
     --command-output-path "${BOLT_COMMAND_OUTPUT}"
     --readelf /usr/bin/readelf
     --objcopy /usr/bin/objcopy
+    --test-mode
+    --fixture-quality-mode
 )
 for option in "${BOLT_OPTIONS[@]}"; do
     REGISTER_ARGUMENTS+=(--bolt-option="${option}")
@@ -348,6 +417,11 @@ output = output_manifest["outputs"][0]
 abi_keys = {
     "elf_class",
     "elf_data",
+    "elf_ident_version",
+    "elf_header_version",
+    "elf_osabi",
+    "elf_abi_version",
+    "elf_flags",
     "elf_type",
     "machine",
     "elf_role",
@@ -359,10 +433,16 @@ abi_keys = {
     "exported_dynamic_symbols",
     "symbol_version_names",
     "symbol_version_files",
+    "symbol_version_mappings",
     "cet_properties",
     "gnu_stack_policy",
     "has_gnu_relro",
     "bind_now",
+    "dynamic_flags",
+    "has_textrel",
+    "load_segment_flags",
+    "has_writable_executable_load",
+    "tls_segments",
 }
 assert output["artifact_id"] == capture["artifact_id"]
 assert set(output["source_abi_security_identity"]) == abi_keys

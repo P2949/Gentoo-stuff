@@ -27,8 +27,65 @@ done
 ED=${WORK}/ed
 CACHE=${WORK}/cache
 SOURCE=${WORK}/source
-mkdir -p -- "${ED}/usr/bin" "${ED}/usr/lib64" "${CACHE}" "${SOURCE}"
+mkdir -p -- "${ED}/usr/bin" "${ED}/usr/lib64" "${ED}/usr/share/fixture" "${CACHE}" "${SOURCE}"
+printf '%s\n' 'non-ELF package payload' >"${ED}/usr/share/fixture/data.txt"
 FINGERPRINT=$(printf 'capture-deploy-fixture' | sha256sum | awk '{print $1}')
+
+make_inventory_proof() {
+    local proof=$1 fingerprint=$2 count=$3 candidates_json=$4
+    local evidence=${proof}.inventory.json
+    python3 - "${proof}" "${evidence}" "${fingerprint}" "${count}" "${candidates_json}" <<'PY'
+import hashlib, json, pathlib, sys
+proof, evidence, fingerprint, count, candidates = sys.argv[1:]
+candidate_documents=json.loads(candidates)
+evidence_path = pathlib.Path(evidence).resolve()
+cpv="app-test/bolt-fixture-1"
+entry_sha=hashlib.sha256((cpv+fingerprint).encode()).hexdigest()
+inventory={"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture-generation-v1",
+"inventory_id":"fixture-inventory-v1","packages":[{"cpv":cpv,"entry_sha256":entry_sha}],
+"owned_paths":sorted([{"owner_cpv":cpv,"path":"/"+path} for item in candidate_documents for path in item["paths"]],key=lambda x:(x["owner_cpv"],x["path"])),
+"owned_directories":[]}
+evidence_path.write_text(json.dumps(inventory,sort_keys=True,separators=(",",":"))+"\n")
+record = {
+    "path": str(evidence_path),
+    "sha256": hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
+    "size": evidence_path.stat().st_size,
+}
+document = {
+    "schema": "gentoo-optimization-bolt-inventory-proof-v1",
+    "generation_id": "fixture-generation-v1",
+    "inventory_id": "fixture-inventory-v1",
+    "cpv": cpv,
+    "inventory_entry_sha256": entry_sha,
+    "package_fingerprint": fingerprint,
+    "expected_eligible_count": int(count),
+    "inventory_evidence": record,
+    "candidates": candidate_documents,
+}
+pathlib.Path(proof).write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+PY
+}
+
+MAIN_INVENTORY_PROOF=${WORK}/main-inventory-proof.json
+MAIN_CANDIDATES=$(python3 - <<'PY'
+import hashlib, json
+items = []
+for canonical, paths, elf_type, role in (
+    ("usr/bin/fixed", ["usr/bin/fixed", "usr/bin/fixed-hardlink"], "EXEC", "fixed-executable"),
+    ("usr/bin/pie", ["usr/bin/pie"], "DYN", "pie-executable"),
+    ("usr/lib64/libfixture.so.1", ["usr/lib64/libfixture.so.1"], "DYN", "shared-object"),
+):
+    items.append({
+        "artifact_id": hashlib.sha256(canonical.encode()).hexdigest(),
+        "canonical_path": canonical, "paths": paths, "hardlink_count": len(paths),
+        "elf_class": "ELF64", "elf_data": "2's complement, little endian",
+        "elf_type": elf_type, "machine": "Advanced Micro Devices X86-64", "elf_role": role,
+    })
+print(json.dumps(items))
+PY
+)
+make_inventory_proof "${MAIN_INVENTORY_PROOF}" "${FINGERPRINT}" 3 "${MAIN_CANDIDATES}"
+DEPLOY_QUALITY_ARGS=(--inventory-proof "${MAIN_INVENTORY_PROOF}" --fixture-quality-mode)
 
 printf '%s\n' \
     '#include <stdio.h>' \
@@ -70,7 +127,7 @@ fi
 BEFORE_TREE=${WORK}/before-tree
 find "${ED}" -xdev -printf '%P\t%y\t%m\t%U\t%G\t%s\t%i\t%l\n' | sort >"${BEFORE_TREE}"
 "${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
-    --expected-eligible-count 3 \
+    --expected-eligible-count 3 --inventory-proof "${MAIN_INVENTORY_PROOF}" \
     >"${WORK}/capture.out"
 MANIFEST=${CACHE}/inputs/${FINGERPRINT}/manifest.json
 [[ -s ${MANIFEST} ]] || fail 'capture manifest was not published'
@@ -86,7 +143,7 @@ import json
 import sys
 
 manifest = json.load(open(sys.argv[1], encoding="utf-8"))
-assert manifest["schema"] == "gentoo-optimization-bolt-capture-v2"
+assert manifest["schema"] == "gentoo-optimization-bolt-capture-v3"
 assert manifest["elf_total"] == 3
 assert manifest["eligible_total"] == 3
 assert manifest["ineligible_total"] == 0
@@ -102,6 +159,8 @@ assert {item["elf_role"] for item in manifest["artifacts"]} == {
     "fixed-executable", "pie-executable", "shared-object"
 }
 assert all(item["elf_data"] == "2's complement, little endian" for item in manifest["artifacts"])
+assert all(item["elf_ident_version"] == "1 (current)" for item in manifest["artifacts"])
+assert all(item["elf_header_version"] == "0x1" for item in manifest["artifacts"])
 assert all(item["gnu_stack_policy"] == "non-executable" for item in manifest["artifacts"])
 assert all(item["has_gnu_relro"] and item["bind_now"] for item in manifest["artifacts"])
 assert all(item["cet_properties"] for item in manifest["artifacts"])
@@ -119,9 +178,10 @@ assert all("terminal_reasons" not in item for item in manifest["artifacts"])
 hardlinks = [item for item in manifest["artifacts"] if item["hardlink_count"] == 2]
 assert len(hardlinks) == 1
 assert hardlinks[0]["paths"] == ["usr/bin/fixed", "usr/bin/fixed-hardlink"]
-assert manifest["symlinks"] == [
-    {"gid": manifest["symlinks"][0]["gid"], "path": "usr/bin/fixed-symlink", "target": "fixed-hardlink", "uid": manifest["symlinks"][0]["uid"]}
+assert manifest["ed_identity"]["symlinks"] == [
+    {"gid": manifest["ed_identity"]["symlinks"][0]["gid"], "path": "usr/bin/fixed-symlink", "target": "fixed-hardlink", "uid": manifest["ed_identity"]["symlinks"][0]["uid"]}
 ]
+assert manifest["inventory_proof"]["document"]["generation_id"] == "fixture-generation-v1"
 assert hardlinks[0]["metadata"]["mode"] == "4755"
 PY
 
@@ -129,14 +189,14 @@ PY
 # is permitted only after a complete fresh capture is byte-identical.
 CAPTURE_HASH=$(sha256sum "${MANIFEST}" | awk '{print $1}')
 "${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
-    --expected-eligible-count 3 \
+    --expected-eligible-count 3 --inventory-proof "${MAIN_INVENTORY_PROOF}" \
     >"${WORK}/capture-retry.out"
 [[ $(sha256sum "${MANIFEST}" | awk '{print $1}') == "${CAPTURE_HASH}" ]] || \
     fail 'byte-identical capture retry changed the authoritative manifest'
 cp -- "${ED}/usr/bin/pie" "${WORK}/pie.pre-mismatch"
 printf 'mismatch\n' >>"${ED}/usr/bin/pie"
 if "${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
-        --expected-eligible-count 3 \
+        --expected-eligible-count 3 --inventory-proof "${MAIN_INVENTORY_PROOF}" \
         >"${WORK}/capture-mismatch.out" 2>"${WORK}/capture-mismatch.err"; then
     fail 'capture retry adopted mismatching object contents'
 fi
@@ -146,13 +206,47 @@ find "${CACHE}/quarantine/capture-mismatch" -mindepth 1 -maxdepth 1 -type d -pri
     grep -q . || fail 'mismatching fresh capture was not quarantined'
 cp -- "${WORK}/pie.pre-mismatch" "${ED}/usr/bin/pie"
 
+COUNT_MISMATCH_PROOF=${WORK}/count-mismatch-proof.json
+make_inventory_proof "${COUNT_MISMATCH_PROOF}" "${FINGERPRINT}" 2 \
+    "$(python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1])[:2]))' "${MAIN_CANDIDATES}")"
 if "${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
-        --expected-eligible-count 2 >"${WORK}/eligible-count-mismatch.out" \
+        --expected-eligible-count 2 --inventory-proof "${COUNT_MISMATCH_PROOF}" >"${WORK}/eligible-count-mismatch.out" \
         2>"${WORK}/eligible-count-mismatch.err"; then
     fail 'capture accepted an eligible count different from the frozen inventory'
 fi
 grep -Fq 'expected=2, actual=3' "${WORK}/eligible-count-mismatch.err" || \
     fail 'eligible-count mismatch lacked exact expected/actual evidence'
+WRONG_CANDIDATE_FINGERPRINT=$(printf wrong-candidate | sha256sum | awk '{print $1}')
+WRONG_CANDIDATE_PROOF=${WORK}/wrong-candidate-proof.json
+WRONG_CANDIDATES=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); d[0]["elf_role"]="shared-object"; print(json.dumps(d))' "${MAIN_CANDIDATES}")
+make_inventory_proof "${WRONG_CANDIDATE_PROOF}" "${WRONG_CANDIDATE_FINGERPRINT}" 3 "${WRONG_CANDIDATES}"
+if "${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${WORK}/wrong-candidate-cache" \
+        --fingerprint "${WRONG_CANDIDATE_FINGERPRINT}" --expected-eligible-count 3 \
+        --inventory-proof "${WRONG_CANDIDATE_PROOF}" \
+        >"${WORK}/wrong-candidate.out" 2>"${WORK}/wrong-candidate.err"; then
+    fail 'capture accepted inventory proof for a different candidate role/path set'
+fi
+grep -Fq 'candidate paths/artifact facts differ' "${WORK}/wrong-candidate.err" || \
+    fail 'candidate fact mismatch lacked an exact rejection'
+for inventory_tamper in cpv entry_sha generation_id; do
+    TAMPER_FINGERPRINT=$(printf 'inventory-%s' "${inventory_tamper}" | sha256sum | awk '{print $1}')
+    TAMPER_PROOF=${WORK}/inventory-${inventory_tamper}-proof.json
+    make_inventory_proof "${TAMPER_PROOF}" "${TAMPER_FINGERPRINT}" 3 "${MAIN_CANDIDATES}"
+    python3 - "${TAMPER_PROOF}" "${inventory_tamper}" <<'PY'
+import json,sys
+p,kind=sys.argv[1:]; d=json.load(open(p))
+if kind=="cpv": d["cpv"]="app-test/not-in-inventory-1"
+elif kind=="entry_sha": d["inventory_entry_sha256"]="0"*64
+else: d["generation_id"]="self-asserted-generation"
+open(p,"w").write(json.dumps(d,sort_keys=True)+"\n")
+PY
+    if "${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${WORK}/inventory-${inventory_tamper}-cache" \
+            --fingerprint "${TAMPER_FINGERPRINT}" --expected-eligible-count 3 \
+            --inventory-proof "${TAMPER_PROOF}" \
+            >"${WORK}/inventory-${inventory_tamper}.out" 2>"${WORK}/inventory-${inventory_tamper}.err"; then
+        fail "capture accepted self-asserted frozen inventory binding: ${inventory_tamper}"
+    fi
+done
 while IFS= read -r cached_object; do
     [[ $(stat -c '%a' "${CACHE}/inputs/${FINGERPRINT}/${cached_object}") == 600 ]] || \
         fail "captured object is not private: ${cached_object}"
@@ -196,11 +290,7 @@ printf '%s\n' \
     >"${FAKE_BOLT}"
 chmod 0755 -- "${FAKE_BOLT}"
 FDATA=${WORK}/merged.fdata
-WORKLOAD_EVIDENCE=${WORK}/workload-evidence.json
-PROFILE_EVIDENCE=${WORK}/profile-evidence.json
 printf '1 main 100\n' >"${FDATA}"
-printf '{"workload":"fixture","samples":1200}\n' >"${WORKLOAD_EVIDENCE}"
-printf '{"ignored":0,"mismatches":0,"out_of_range":0}\n' >"${PROFILE_EVIDENCE}"
 POLICY_REVISION=gentoo-system-wide-bolt-v1-cdsort-20260712
 BOLT_OPTIONS=(
     -reorder-blocks=ext-tsp
@@ -213,10 +303,60 @@ BOLT_OPTIONS=(
     -dyno-stats
 )
 
+make_quality_proofs() {
+    local artifact_id=$1 input=$2 workload=$3 profile=$4 fdata_quality=$5
+    python3 - "${artifact_id}" "${input}" "${FDATA}" "${FAKE_BOLT}" \
+        "${workload}" "${profile}" "${fdata_quality}" "${FINGERPRINT}" <<'PY'
+import hashlib, json, pathlib, sys
+artifact_id, source, fdata, tool, workload_path, profile_path, fdata_path, fingerprint = sys.argv[1:]
+def identity(value):
+    path = pathlib.Path(value).resolve(strict=True)
+    return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "size": path.stat().st_size}
+source_path = pathlib.Path(source)
+import subprocess, re
+notes = subprocess.run(["readelf", "-nW", source], check=True, text=True, capture_output=True).stdout
+build_id = re.search(r"Build ID:\s*([0-9a-fA-F]+)", notes).group(1).lower()
+with pathlib.Path(source).open("rb") as stream: pass
+tmp = pathlib.Path(str(workload_path) + ".text")
+rewrite = pathlib.Path(str(workload_path) + ".rewrite")
+subprocess.run(["objcopy", "--dump-section", f".text={tmp}", source, str(rewrite)], check=True)
+text_hash = hashlib.sha256(tmp.read_bytes()).hexdigest()
+tmp.unlink(); rewrite.unlink(missing_ok=True)
+binding = {
+    "generation_id": "fixture-generation-v1", "inventory_id": "fixture-inventory-v1",
+    "package_fingerprint": fingerprint, "artifact_id": artifact_id,
+    "input_build_id": build_id, "input_text_sha256": text_hash,
+    "input_file_sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
+}
+workload = {"schema":"gentoo-optimization-bolt-workload-proof-v1", **binding,
+    "workload_id":"hermetic-runtime-fixture", "workload_definition":identity(source),
+    "workload_log":identity(source), "command_record":None, "started_at_utc":"2026-07-13T00:00:00Z",
+    "completed_at_utc":"2026-07-13T00:00:01Z", "exit_status":0, "repetitions":1,
+    "functional_passed":True, "fixture_only":True}
+pathlib.Path(workload_path).write_text(json.dumps(workload,sort_keys=True)+"\n")
+workload_identity = identity(workload_path)
+fdata_identity = identity(fdata)
+profile = {"schema":"gentoo-optimization-bolt-profile-quality-proof-v1", **binding,
+    "profile_tools":[identity(tool)], "events":["cycles:u","branches:u"],
+    "profile_files":[identity(source)], "command_records":[], "lbr_captured":True,
+    "sample_count":1, "branch_entry_count":1, "ignored_samples":0,
+    "mismatching_samples":0, "out_of_range_samples":0,
+    "thresholds":{"minimum_samples":1,"minimum_branch_entries":1,"maximum_ignored_samples":0,
+        "maximum_mismatch_ratio":0.0,"maximum_out_of_range_ratio":0.0},
+    "workload_contributors":[workload_identity], "fdata":[fdata_identity], "fixture_only":True}
+pathlib.Path(profile_path).write_text(json.dumps(profile,sort_keys=True)+"\n")
+profile_identity = identity(profile_path)
+quality = {"schema":"gentoo-optimization-bolt-fdata-quality-proof-v1", **binding,
+    "merge_tool":identity(tool), "fdata":[fdata_identity], "profile_contributors":[profile_identity],
+    "total_functions":1,"total_samples":1,"command_record":None,"fixture_only":True}
+pathlib.Path(fdata_path).write_text(json.dumps(quality,sort_keys=True)+"\n")
+PY
+}
+
 make_command_record() {
-    local input=$1 output=$2 stdout=$3 stderr=$4 record=$5
+    local input=$1 output=$2 stdout=$3 stderr=$4 record=$5 workload=$6 profile=$7 fdata_quality=$8
     python3 - "${FAKE_BOLT}" "${input}" "${output}" "${FDATA}" \
-        "${WORKLOAD_EVIDENCE}" "${PROFILE_EVIDENCE}" "${stdout}" "${stderr}" \
+        "${workload}" "${profile}" "${fdata_quality}" "${stdout}" "${stderr}" \
         "${record}" "${POLICY_REVISION}" "${BOLT_OPTIONS[@]}" <<'PY'
 import hashlib
 import json
@@ -224,11 +364,14 @@ import pathlib
 import subprocess
 import sys
 
-tool, source, output, fdata, workload, profile, stdout, stderr, record, policy, *options = sys.argv[1:]
+tool, source, output, fdata, workload, profile, fdata_quality, stdout, stderr, record, policy, *options = sys.argv[1:]
 
 def identity(value):
     path = pathlib.Path(value).resolve(strict=True)
     return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "size": path.stat().st_size}
+def bundle(value):
+    record = identity(value)
+    return {"identity": record, "document": json.loads(pathlib.Path(value).read_text())}
 
 tool_record = identity(tool)
 tool_record["version"] = subprocess.run([tool, "--version"], check=True, text=True, capture_output=True).stdout.strip()
@@ -237,7 +380,7 @@ output_record = identity(output)
 fdata_records = [identity(fdata)]
 argv = [str(pathlib.Path(tool).resolve()), str(pathlib.Path(source).resolve()), "-o", str(pathlib.Path(output).resolve()), f"-data={pathlib.Path(fdata).resolve()}", *options]
 document = {
-    "schema": "gentoo-optimization-bolt-command-v1",
+    "schema": "gentoo-optimization-bolt-command-v2",
     "argv": argv,
     "exit_status": 0,
     "started_at_utc": "2026-07-13T00:00:00Z",
@@ -248,8 +391,9 @@ document = {
     "option_policy_revision": policy,
     "options": options,
     "fdata": fdata_records,
-    "workload_evidence": [identity(workload)],
-    "profile_evidence": [identity(profile)],
+    "workload_evidence": [bundle(workload)],
+    "profile_evidence": [bundle(profile)],
+    "fdata_quality_evidence": [bundle(fdata_quality)],
     "stdout": identity(stdout),
     "stderr": identity(stderr),
 }
@@ -258,15 +402,17 @@ PY
 }
 
 registration_arguments() {
-    local record=$1 command_output=$2 option
+    local record=$1 command_output=$2 workload=$3 profile=$4 fdata_quality=$5 option
     REGISTER_ARGUMENTS=(
         --llvm-bolt "${FAKE_BOLT}"
         --option-policy-revision "${POLICY_REVISION}"
         --fdata "${FDATA}"
-        --workload-evidence "${WORKLOAD_EVIDENCE}"
-        --profile-evidence "${PROFILE_EVIDENCE}"
+        --workload-evidence "${workload}"
+        --profile-evidence "${profile}"
+        --fdata-quality-evidence "${fdata_quality}"
         --command-record "${record}"
         --command-output-path "${command_output}"
+        --fixture-quality-mode
     )
     for option in "${BOLT_OPTIONS[@]}"; do
         REGISTER_ARGUMENTS+=(--bolt-option="${option}")
@@ -279,12 +425,17 @@ while IFS=$'\t' read -r artifact_id object_file; do
     stdout=${WORK}/${artifact_id}.bolt.stdout
     stderr=${WORK}/${artifact_id}.bolt.stderr
     command_record=${WORK}/${artifact_id}.bolt.command.json
+    workload=${WORK}/${artifact_id}.workload.json
+    profile=${WORK}/${artifact_id}.profile.json
+    fdata_quality=${WORK}/${artifact_id}.fdata-quality.json
+    make_quality_proofs "${artifact_id}" "${CACHE}/inputs/${FINGERPRINT}/${object_file}" \
+        "${workload}" "${profile}" "${fdata_quality}"
     "${FAKE_BOLT}" "${CACHE}/inputs/${FINGERPRINT}/${object_file}" -o "${command_output}" \
         "-data=${FDATA}" "${BOLT_OPTIONS[@]}" >"${stdout}" 2>"${stderr}"
     make_command_record "${CACHE}/inputs/${FINGERPRINT}/${object_file}" "${command_output}" \
-        "${stdout}" "${stderr}" "${command_record}"
+        "${stdout}" "${stderr}" "${command_record}" "${workload}" "${profile}" "${fdata_quality}"
     mv -- "${command_output}" "${prepared}"
-    registration_arguments "${command_record}" "${command_output}"
+    registration_arguments "${command_record}" "${command_output}" "${workload}" "${profile}" "${fdata_quality}"
     "${REGISTER}" --test-mode --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
         --artifact-id "${artifact_id}" \
         --input "${CACHE}/inputs/${FINGERPRINT}/${object_file}" --output "${prepared}" \
@@ -307,7 +458,9 @@ mkdir -p -- "${CONCURRENT_CACHE}/inputs"
 cp -a -- "${CACHE}/inputs/${FINGERPRINT}" "${CONCURRENT_CACHE}/inputs/"
 CONCURRENT_PIDS=()
 while IFS=$'\t' read -r artifact_id object_file; do
-    registration_arguments "${WORK}/${artifact_id}.bolt.command.json" "${WORK}/${artifact_id}.bolt.partial"
+    registration_arguments "${WORK}/${artifact_id}.bolt.command.json" "${WORK}/${artifact_id}.bolt.partial" \
+        "${WORK}/${artifact_id}.workload.json" "${WORK}/${artifact_id}.profile.json" \
+        "${WORK}/${artifact_id}.fdata-quality.json"
     "${REGISTER}" --test-mode --test-lock-hold-seconds 0.2 \
         --lock-timeout-seconds 5 --cache-root "${CONCURRENT_CACHE}" \
         --fingerprint "${FINGERPRINT}" --artifact-id "${artifact_id}" \
@@ -328,18 +481,46 @@ PY
 for child in "${CONCURRENT_PIDS[@]}"; do
     wait "${child}" || fail "concurrent output registration failed: pid=${child}"
 done
+
+# Production uses the installer's exact root-owned publication lock in shared
+# mode before creating/acquiring any per-fingerprint lock.  When the live
+# framework is present, directly exercise that context and prove an installer
+# exclusive lock cannot overlap it.
+FRAMEWORK_LOCK=/run/gentoo-optimization/framework-install.lock
+if ((EUID == 0)) && [[ -f ${FRAMEWORK_LOCK} && ! -L ${FRAMEWORK_LOCK} ]]; then
+    FRAMEWORK_SHARED_READY=${WORK}/framework-shared-ready
+    python3 - "${ROOT}/scripts/optimization/bolt/artifact_tool.py" \
+        "${FRAMEWORK_SHARED_READY}" <<'PY' &
+import importlib.util,pathlib,sys,time
+spec=importlib.util.spec_from_file_location("bolt_artifact_tool_fixture",sys.argv[1])
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+with module.framework_publication_lock(False,5.0):
+    pathlib.Path(sys.argv[2]).write_text("ready\n")
+    time.sleep(2)
+PY
+    FRAMEWORK_SHARED_PID=$!
+    for _ in {1..200}; do [[ -e ${FRAMEWORK_SHARED_READY} ]] && break; sleep 0.01; done
+    [[ -e ${FRAMEWORK_SHARED_READY} ]] || fail 'production framework shared-lock fixture did not start'
+    if flock -n "${FRAMEWORK_LOCK}" -c true; then
+        fail 'installer exclusive lock overlapped a production BOLT shared transaction'
+    fi
+    wait "${FRAMEWORK_SHARED_PID}" || fail 'production framework shared-lock fixture failed'
+else
+    printf 'SKIP: root-owned live framework lock unavailable for SH/EX exclusion fixture\n'
+fi
 python3 - "${CONCURRENT_CACHE}/outputs/${FINGERPRINT}/manifest.json" <<'PY'
 import json
 import sys
 manifest = json.load(open(sys.argv[1], encoding="utf-8"))
-assert manifest["schema"] == "gentoo-optimization-bolt-output-v2"
+assert manifest["schema"] == "gentoo-optimization-bolt-output-v3"
 assert manifest["expected_eligible_count"] == 3
-assert manifest["zero_eligible_proof"] is None
+assert manifest["inventory_proof"]["document"]["expected_eligible_count"] == 3
 assert len(manifest["outputs"]) == 3
 assert len({item["artifact_id"] for item in manifest["outputs"]}) == 3
 assert all(item["option_policy_revision"] == "gentoo-system-wide-bolt-v1-cdsort-20260712" for item in manifest["outputs"])
 assert all(item["llvm_bolt"]["version"].startswith("LLVM (fixture):") for item in manifest["outputs"])
 assert all(item["fdata"] and item["workload_evidence"] and item["profile_evidence"] for item in manifest["outputs"])
+assert all(item["fdata_quality_evidence"] for item in manifest["outputs"])
 assert all(item["command"]["exit_status"] == 0 for item in manifest["outputs"])
 PY
 
@@ -359,6 +540,7 @@ done
 [[ -e ${LOCK_READY} ]] || fail 'lock-holder fixture did not acquire the fingerprint lock'
 if "${DEPLOY}" --test-mode --lock-timeout-seconds 0.2 --ed "${ED}" \
         --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+        "${DEPLOY_QUALITY_ARGS[@]}" \
         >"${WORK}/lock-timeout.out" 2>"${WORK}/lock-timeout.err"; then
     fail 'deployment ignored a held per-fingerprint lock'
 fi
@@ -388,7 +570,78 @@ manifest = json.load(open(sys.argv[1], encoding="utf-8"))
 print(next(item["cache_object"] for item in manifest["artifacts"] if item["artifact_id"] != sys.argv[2]))
 PY
 )
-registration_arguments "${WORK}/${FIRST_ID}.bolt.command.json" "${WORK}/${FIRST_ID}.bolt.partial"
+registration_arguments "${WORK}/${FIRST_ID}.bolt.command.json" "${WORK}/${FIRST_ID}.bolt.partial" \
+    "${WORK}/${FIRST_ID}.workload.json" "${WORK}/${FIRST_ID}.profile.json" \
+    "${WORK}/${FIRST_ID}.fdata-quality.json"
+NO_FIXTURE_QUALITY_ARGUMENTS=()
+for argument in "${REGISTER_ARGUMENTS[@]}"; do
+    [[ ${argument} == --fixture-quality-mode ]] || NO_FIXTURE_QUALITY_ARGUMENTS+=("${argument}")
+done
+mkdir -p "${WORK}/quality-reject-cache/inputs"
+cp -a "${CACHE}/inputs/${FINGERPRINT}" "${WORK}/quality-reject-cache/inputs/"
+if "${REGISTER}" --test-mode --cache-root "${WORK}/quality-reject-cache" \
+        --fingerprint "${FINGERPRINT}" --artifact-id "${FIRST_ID}" \
+        --input "${CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
+        --output "${WORK}/${FIRST_ID}.bolt" "${NO_FIXTURE_QUALITY_ARGUMENTS[@]}" \
+        >"${WORK}/synthetic-production-quality.out" 2>"${WORK}/synthetic-production-quality.err"; then
+    fail 'registration accepted synthetic fixture quality without its bounded fixture gate'
+fi
+grep -Fq 'synthetic fixture-only quality evidence' "${WORK}/synthetic-production-quality.err" || \
+    fail 'synthetic quality rejection lacked an exact reason'
+BAD_LBR_PROFILE=${WORK}/bad-lbr-profile.json
+python3 - "${WORK}/${FIRST_ID}.profile.json" "${BAD_LBR_PROFILE}" <<'PY'
+import json,sys
+document=json.load(open(sys.argv[1])); document["lbr_captured"]=False
+open(sys.argv[2],"w").write(json.dumps(document,sort_keys=True)+"\n")
+PY
+BAD_LBR_ARGUMENTS=()
+skip_next=false
+for argument in "${REGISTER_ARGUMENTS[@]}"; do
+    if [[ ${skip_next} == true ]]; then
+        BAD_LBR_ARGUMENTS+=("${BAD_LBR_PROFILE}")
+        skip_next=false
+    elif [[ ${argument} == --profile-evidence ]]; then
+        BAD_LBR_ARGUMENTS+=("${argument}")
+        skip_next=true
+    else
+        BAD_LBR_ARGUMENTS+=("${argument}")
+    fi
+done
+if "${REGISTER}" --test-mode --cache-root "${WORK}/quality-reject-cache" \
+        --fingerprint "${FINGERPRINT}" --artifact-id "${FIRST_ID}" \
+        --input "${CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
+        --output "${WORK}/${FIRST_ID}.bolt" "${BAD_LBR_ARGUMENTS[@]}" \
+        >"${WORK}/bad-lbr.out" 2>"${WORK}/bad-lbr.err"; then
+    fail 'registration accepted a quality proof with no LBR capture'
+fi
+grep -Fq 'lacks LBR capture' "${WORK}/bad-lbr.err" || \
+    fail 'missing-LBR quality rejection lacked an exact reason'
+FALSE_PRODUCTION_WORKLOAD=${WORK}/false-production-workload.json
+python3 - "${WORK}/${FIRST_ID}.workload.json" "${FALSE_PRODUCTION_WORKLOAD}" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1])); d["fixture_only"]=False
+open(sys.argv[2],"w").write(json.dumps(d,sort_keys=True)+"\n")
+PY
+FALSE_PRODUCTION_ARGUMENTS=()
+skip_next=false
+for argument in "${REGISTER_ARGUMENTS[@]}"; do
+    if [[ ${skip_next} == true ]]; then
+        FALSE_PRODUCTION_ARGUMENTS+=("${FALSE_PRODUCTION_WORKLOAD}"); skip_next=false
+    elif [[ ${argument} == --workload-evidence ]]; then
+        FALSE_PRODUCTION_ARGUMENTS+=("${argument}"); skip_next=true
+    else
+        FALSE_PRODUCTION_ARGUMENTS+=("${argument}")
+    fi
+done
+if "${REGISTER}" --test-mode --fixture-quality-mode \
+        --cache-root "${WORK}/quality-reject-cache" --fingerprint "${FINGERPRINT}" \
+        --artifact-id "${FIRST_ID}" --input "${CACHE}/inputs/${FINGERPRINT}/${FIRST_OBJECT}" \
+        --output "${WORK}/${FIRST_ID}.bolt" "${FALSE_PRODUCTION_ARGUMENTS[@]}" \
+        >"${WORK}/false-production.out" 2>"${WORK}/false-production.err"; then
+    fail 'registration accepted caller-authored production quality without command proof'
+fi
+grep -Fq 'lacks an exact sanitized command record' "${WORK}/false-production.err" || \
+    fail 'fabricated production quality rejection lacked an exact reason'
 
 # A structurally valid GNU BOLT note alone is not proof that llvm-bolt
 # transformed the object. Removing the origin code section must fail closed.
@@ -415,7 +668,7 @@ if "${REGISTER}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" \
         >"${WORK}/production-scope.out" 2>"${WORK}/production-scope.err"; then
     fail 'arbitrary cache root was accepted without --test-mode'
 fi
-grep -Eq 'production BOLT cache operations must run as root|production cache root must be exactly' \
+grep -Eq 'framework installer lock|production BOLT cache operations must run as root|production cache root must be exactly' \
     "${WORK}/production-scope.err" || fail 'production cache rejection lacked an exact reason'
 PORTAGE_SCOPE_FINGERPRINT=$(printf 'portage-scope' | sha256sum | awk '{print $1}')
 if env -u ED -u D -u PORTAGE_BUILDDIR \
@@ -469,9 +722,11 @@ grep -Fq 'symlink component' "${WORK}/symlink-output.err" || \
 # Every captured ABI and hardening axis is independently enforced against the
 # live pre-deploy object, rather than merely recorded for later reporting.
 ABI_AXES=(
-    elf_data interpreter needed soname rpath runpath exported_dynamic_symbols
-    symbol_version_names symbol_version_files elf_role cet_properties
-    gnu_stack_policy has_gnu_relro bind_now
+    elf_data elf_ident_version elf_header_version elf_osabi elf_abi_version elf_flags interpreter
+    needed soname rpath runpath exported_dynamic_symbols symbol_version_names
+    symbol_version_files symbol_version_mappings elf_role cet_properties
+    gnu_stack_policy has_gnu_relro bind_now dynamic_flags has_textrel
+    has_writable_executable_load tls_segments
 )
 for axis in "${ABI_AXES[@]}"; do
     cp -- "${WORK}/manifest.good" "${MANIFEST}"
@@ -496,13 +751,33 @@ with open(path, "w", encoding="utf-8") as stream:
 PY
     if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" \
             --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+            "${DEPLOY_QUALITY_ARGS[@]}" \
             >"${WORK}/abi-${axis}.out" 2>"${WORK}/abi-${axis}.err"; then
         fail "deployment accepted tampered captured ABI/security axis: ${axis}"
     fi
-    grep -Fq "ABI/security identity mismatch for ${axis}" "${WORK}/abi-${axis}.err" || \
+    grep -Eq "ABI/security identity mismatch for ${axis}|captured BOLT candidate paths/artifact facts differ|complete current ELF set/classification differs" \
+        "${WORK}/abi-${axis}.err" || \
         fail "tampered ABI/security axis lacked an exact rejection: ${axis}"
 done
 cp -- "${WORK}/manifest.good" "${MANIFEST}"
+
+# A full rescan covers non-ELF payload and complete topology before any
+# mutation, not only the eligible paths that happen to have BOLT outputs.
+printf '%s\n' tampered >>"${ED}/usr/share/fixture/data.txt"
+sha256sum -- "${ED}/usr/bin/fixed" "${ED}/usr/bin/pie" \
+    "${ED}/usr/lib64/libfixture.so.1" >"${WORK}/pre-full-rescan-reject-hashes"
+if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" \
+        --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+        "${DEPLOY_QUALITY_ARGS[@]}" >"${WORK}/full-rescan.out" 2>"${WORK}/full-rescan.err"; then
+    fail 'deployment ignored a changed non-ELF package payload'
+fi
+grep -Fq 'complete ED topology/file/ELF classification differs' "${WORK}/full-rescan.err" || \
+    fail 'full ED rescan rejection lacked an exact reason'
+sha256sum -- "${ED}/usr/bin/fixed" "${ED}/usr/bin/pie" \
+    "${ED}/usr/lib64/libfixture.so.1" >"${WORK}/post-full-rescan-reject-hashes"
+cmp -s "${WORK}/pre-full-rescan-reject-hashes" "${WORK}/post-full-rescan-reject-hashes" || \
+    fail 'full-rescan rejection mutated eligible ELF bytes'
+printf '%s\n' 'non-ELF package payload' >"${ED}/usr/share/fixture/data.txt"
 
 OUTPUT_MANIFEST=${CACHE}/outputs/${FINGERPRINT}/manifest.json
 cp -- "${OUTPUT_MANIFEST}" "${WORK}/output-manifest.good"
@@ -529,6 +804,7 @@ with open(path, "w", encoding="utf-8") as stream:
 PY
     if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" \
             --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+            "${DEPLOY_QUALITY_ARGS[@]}" \
             >"${WORK}/output-abi-${axis}.out" 2>"${WORK}/output-abi-${axis}.err"; then
         fail "deployment accepted tampered output ABI/security record: ${axis}"
     fi
@@ -568,6 +844,7 @@ with open(path, "w", encoding="utf-8") as stream:
 PY
     if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" \
             --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+            "${DEPLOY_QUALITY_ARGS[@]}" \
             >"${WORK}/provenance-${provenance_case}.out" \
             2>"${WORK}/provenance-${provenance_case}.err"; then
         fail "deployment accepted tampered BOLT provenance: ${provenance_case}"
@@ -577,8 +854,8 @@ PY
         policy) expected_reason='unreviewed BOLT option-policy revision' ;;
         options) expected_reason='unreviewed BOLT option list' ;;
         fdata) expected_reason='BOLT fdata file identity mismatch' ;;
-        workload) expected_reason='BOLT workload evidence file identity mismatch' ;;
-        profile) expected_reason='BOLT profile evidence file identity mismatch' ;;
+        workload) expected_reason='malformed BOLT workload proof' ;;
+        profile) expected_reason='malformed BOLT profile proof' ;;
         command_record) expected_reason='command-record identity is stale or mismatched' ;;
         command_document) expected_reason='embedded command record differs' ;;
         bolt_note|bolt_origin) expected_reason='BOLT transformation identity mismatch' ;;
@@ -590,10 +867,12 @@ cp -- "${WORK}/output-manifest.good" "${OUTPUT_MANIFEST}"
 
 if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" \
         --fingerprint "${FINGERPRINT}" --expected-eligible-count 2 \
+        "${DEPLOY_QUALITY_ARGS[@]}" \
         >"${WORK}/deploy-count-mismatch.out" 2>"${WORK}/deploy-count-mismatch.err"; then
     fail 'deployment accepted an expected eligible count different from capture'
 fi
-grep -Fq 'differs from captured frozen count' "${WORK}/deploy-count-mismatch.err" || \
+grep -Eq 'differs from captured frozen count|inventory proof expected eligible count mismatch' \
+    "${WORK}/deploy-count-mismatch.err" || \
     fail 'deployment count mismatch lacked an exact reason'
 
 # A current-input GNU build-ID mismatch must fail before deployment.
@@ -607,11 +886,12 @@ with open(path, "w", encoding="utf-8") as stream:
     json.dump(data, stream, indent=2, sort_keys=True)
     stream.write("\n")
 PY
-if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 "${DEPLOY_QUALITY_ARGS[@]}" \
         >"${WORK}/build-id-mismatch.out" 2>"${WORK}/build-id-mismatch.err"; then
     fail 'deployment accepted a GNU build-ID mismatch'
 fi
-grep -Fq 'GNU build ID mismatch' "${WORK}/build-id-mismatch.err" || \
+grep -Eq 'GNU build ID mismatch|complete current ELF set/classification differs' \
+    "${WORK}/build-id-mismatch.err" || \
     fail 'build-ID mismatch rejection lacked an exact reason'
 cp -- "${WORK}/manifest.good" "${MANIFEST}"
 
@@ -626,11 +906,12 @@ with open(path, "w", encoding="utf-8") as stream:
     json.dump(data, stream, indent=2, sort_keys=True)
     stream.write("\n")
 PY
-if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+if "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 "${DEPLOY_QUALITY_ARGS[@]}" \
         >"${WORK}/text-mismatch.out" 2>"${WORK}/text-mismatch.err"; then
     fail 'deployment accepted a .text hash mismatch'
 fi
-grep -Fq '.text hash mismatch' "${WORK}/text-mismatch.err" || \
+grep -Eq '[.]text hash mismatch|complete current ELF set/classification differs' \
+    "${WORK}/text-mismatch.err" || \
     fail '.text mismatch rejection lacked an exact reason'
 cp -- "${WORK}/manifest.good" "${MANIFEST}"
 
@@ -656,6 +937,7 @@ sha256sum -- "${ED}/usr/bin/fixed" "${ED}/usr/bin/pie" \
 if FAIL_PATH=${ED}/usr/bin/fixed REAL_READELF=${REAL_READELF} \
         "${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" \
         --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 --readelf "${READELF_PROXY}" \
+        "${DEPLOY_QUALITY_ARGS[@]}" \
         >"${WORK}/post-rename-failure.out" 2>"${WORK}/post-rename-failure.err"; then
     fail 'forced post-rename verifier failure unexpectedly succeeded'
 fi
@@ -671,7 +953,7 @@ if readelf -SW "${ED}/usr/bin/fixed" | grep -Fq '.note.bolt_info'; then
     fail 'post-rename rollback left the replacement in ED'
 fi
 
-"${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 \
+"${DEPLOY}" --test-mode --ed "${ED}" --cache-root "${CACHE}" --fingerprint "${FINGERPRINT}" --expected-eligible-count 3 "${DEPLOY_QUALITY_ARGS[@]}" \
     >"${WORK}/deploy.out"
 
 readelf -SW "${ED}/usr/bin/fixed" | grep -Fq '.note.bolt_info' || fail 'fixed executable lacks BOLT note'
@@ -703,22 +985,11 @@ NO_ELF_CACHE=${WORK}/no-elf-cache
 NO_ELF_FINGERPRINT=$(printf 'no-elf' | sha256sum | awk '{print $1}')
 mkdir -p -- "${NO_ELF_ED}/usr/share/fixture" "${NO_ELF_CACHE}"
 printf 'data only\n' >"${NO_ELF_ED}/usr/share/fixture/data.txt"
-ZERO_INVENTORY=${WORK}/zero-inventory.json
 ZERO_PROOF=${WORK}/zero-proof.json
-printf '{"package":"fixture","bolt_candidates":[]}\n' >"${ZERO_INVENTORY}"
-python3 - "${ZERO_INVENTORY}" "${ZERO_PROOF}" "${NO_ELF_FINGERPRINT}" <<'PY'
-import hashlib
-import json
-import pathlib
-import sys
-inventory = pathlib.Path(sys.argv[1]).resolve()
-record = {"path": str(inventory), "sha256": hashlib.sha256(inventory.read_bytes()).hexdigest(), "size": inventory.stat().st_size}
-proof = {"schema": "gentoo-optimization-bolt-zero-eligibility-v1", "package_fingerprint": sys.argv[3], "eligible_count": 0, "inventory_evidence": record}
-pathlib.Path(sys.argv[2]).write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+make_inventory_proof "${ZERO_PROOF}" "${NO_ELF_FINGERPRINT}" 0 '[]'
 "${CAPTURE}" --test-mode --ed "${NO_ELF_ED}" --cache-root "${NO_ELF_CACHE}" \
     --fingerprint "${NO_ELF_FINGERPRINT}" --expected-eligible-count 0 \
-    --zero-eligible-proof "${ZERO_PROOF}" >/dev/null
+    --inventory-proof "${ZERO_PROOF}" >/dev/null
 python3 - "${NO_ELF_CACHE}/inputs/${NO_ELF_FINGERPRINT}/manifest.json" <<'PY'
 import json
 import sys
@@ -727,7 +998,7 @@ assert manifest["elf_total"] == 0
 assert manifest["eligible_total"] == 0
 assert manifest["artifacts"] == []
 assert manifest["expected_eligible_count"] == 0
-assert manifest["zero_eligible_proof"]["document"]["eligible_count"] == 0
+assert manifest["inventory_proof"]["document"]["expected_eligible_count"] == 0
 PY
 
 if "${CAPTURE}" --test-mode --ed "${NO_ELF_ED}" --cache-root "${WORK}/missing-zero-proof-cache" \
@@ -735,11 +1006,16 @@ if "${CAPTURE}" --test-mode --ed "${NO_ELF_ED}" --cache-root "${WORK}/missing-ze
         --expected-eligible-count 0 >"${WORK}/missing-zero-proof.out" 2>"${WORK}/missing-zero-proof.err"; then
     fail 'zero expected eligible count was accepted without frozen-inventory proof'
 fi
-grep -Fq 'requires --zero-eligible-proof from the frozen inventory' "${WORK}/missing-zero-proof.err" || \
+grep -Fq 'requires --inventory-proof' "${WORK}/missing-zero-proof.err" || \
     fail 'missing zero-count proof rejection lacked an exact reason'
+SELF_STRIPPED_FINGERPRINT=$(printf self-stripped | sha256sum | awk '{print $1}')
+SELF_STRIPPED_PROOF=${WORK}/self-stripped-proof.json
+make_inventory_proof "${SELF_STRIPPED_PROOF}" "${SELF_STRIPPED_FINGERPRINT}" 1 \
+    "$(python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1])[:1]))' "${MAIN_CANDIDATES}")"
 if "${CAPTURE}" --test-mode --ed "${NO_ELF_ED}" --cache-root "${WORK}/self-stripped-cache" \
-        --fingerprint "$(printf self-stripped | sha256sum | awk '{print $1}')" \
-        --expected-eligible-count 1 >"${WORK}/self-stripped.out" 2>"${WORK}/self-stripped.err"; then
+        --fingerprint "${SELF_STRIPPED_FINGERPRINT}" \
+        --expected-eligible-count 1 --inventory-proof "${SELF_STRIPPED_PROOF}" \
+        >"${WORK}/self-stripped.out" 2>"${WORK}/self-stripped.err"; then
     fail 'capture accepted self-stripped zero output when inventory expected one candidate'
 fi
 grep -Fq 'expected=1, actual=0' "${WORK}/self-stripped.err" || \
@@ -785,8 +1061,17 @@ cc -O0 -g -ffunction-sections -fno-pie -no-pie \
     "${SOURCE}/main.c" -o "${FUNCTION_ED}/usr/bin/function-sections"
 readelf -SW "${FUNCTION_ED}/usr/bin/function-sections" | \
     grep -Fq '.rela.text.main' || fail 'toolchain did not emit the function relocation fixture'
+FUNCTION_CANDIDATES=$(python3 - <<'PY'
+import hashlib,json
+p="usr/bin/function-sections"
+print(json.dumps([{"artifact_id":hashlib.sha256(p.encode()).hexdigest(),"canonical_path":p,"paths":[p],"hardlink_count":1,"elf_class":"ELF64","elf_data":"2's complement, little endian","elf_type":"EXEC","machine":"Advanced Micro Devices X86-64","elf_role":"fixed-executable"}]))
+PY
+)
+FUNCTION_PROOF=${WORK}/function-inventory-proof.json
+make_inventory_proof "${FUNCTION_PROOF}" "${FUNCTION_FINGERPRINT}" 1 "${FUNCTION_CANDIDATES}"
 "${CAPTURE}" --test-mode --ed "${FUNCTION_ED}" --cache-root "${FUNCTION_CACHE}" \
-    --fingerprint "${FUNCTION_FINGERPRINT}" --expected-eligible-count 1 >/dev/null
+    --fingerprint "${FUNCTION_FINGERPRINT}" --expected-eligible-count 1 \
+    --inventory-proof "${FUNCTION_PROOF}" >/dev/null
 python3 - "${FUNCTION_CACHE}/inputs/${FUNCTION_FINGERPRINT}/manifest.json" <<'PY'
 import json
 import sys
@@ -836,6 +1121,14 @@ for tool_kind in readelf objcopy; do
     HUNG_FINGERPRINT=$(printf 'hung-%s' "${tool_kind}" | sha256sum | awk '{print $1}')
     HUNG_PID_FILE=${WORK}/hung-${tool_kind}.pids
     HUNG_LOCALE_FILE=${WORK}/hung-${tool_kind}.locale
+    HUNG_CANDIDATES=$(python3 - <<'PY'
+import hashlib,json
+p="usr/bin/hung"
+print(json.dumps([{"artifact_id":hashlib.sha256(p.encode()).hexdigest(),"canonical_path":p,"paths":[p],"hardlink_count":1,"elf_class":"ELF64","elf_data":"2's complement, little endian","elf_type":"EXEC","machine":"Advanced Micro Devices X86-64","elf_role":"fixed-executable"}]))
+PY
+)
+    HUNG_PROOF=${WORK}/hung-${tool_kind}-proof.json
+    make_inventory_proof "${HUNG_PROOF}" "${HUNG_FINGERPRINT}" 1 "${HUNG_CANDIDATES}"
     mkdir -p -- "${HUNG_CACHE}"
     tool_arguments=(--readelf readelf --objcopy objcopy)
     if [[ ${tool_kind} == readelf ]]; then
@@ -847,7 +1140,7 @@ for tool_kind in readelf objcopy; do
             "${CAPTURE}" --test-mode --tool-timeout-seconds 0.2 \
             --tool-kill-after-seconds 0.2 --ed "${HUNG_ED}" \
             --cache-root "${HUNG_CACHE}" --fingerprint "${HUNG_FINGERPRINT}" \
-            --expected-eligible-count 1 \
+            --expected-eligible-count 1 --inventory-proof "${HUNG_PROOF}" \
             "${tool_arguments[@]}" \
             >"${WORK}/hung-${tool_kind}.out" 2>"${WORK}/hung-${tool_kind}.err"; then
         fail "hung ${tool_kind} command unexpectedly succeeded"
@@ -885,8 +1178,17 @@ printf '%s\n' 'void _start(void) { __asm__ volatile("mov $1, %eax; xor %ebx, %eb
     >"${SOURCE}/elf32.c"
 if cc -m32 -nostdlib -fno-pie -no-pie -Wl,-e,_start,--build-id=sha1,--emit-relocs \
         "${SOURCE}/elf32.c" -o "${MIXED_ED}/usr/bin/elf32" 2>"${WORK}/elf32-build.err"; then
+    MIXED_CANDIDATES=$(python3 - <<'PY'
+import hashlib,json
+p="usr/bin/elf64"
+print(json.dumps([{"artifact_id":hashlib.sha256(p.encode()).hexdigest(),"canonical_path":p,"paths":[p],"hardlink_count":1,"elf_class":"ELF64","elf_data":"2's complement, little endian","elf_type":"EXEC","machine":"Advanced Micro Devices X86-64","elf_role":"fixed-executable"}]))
+PY
+)
+    MIXED_PROOF=${WORK}/mixed-inventory-proof.json
+    make_inventory_proof "${MIXED_PROOF}" "${MIXED_FINGERPRINT}" 1 "${MIXED_CANDIDATES}"
     "${CAPTURE}" --test-mode --ed "${MIXED_ED}" --cache-root "${MIXED_CACHE}" \
-        --fingerprint "${MIXED_FINGERPRINT}" --expected-eligible-count 1 >/dev/null
+        --fingerprint "${MIXED_FINGERPRINT}" --expected-eligible-count 1 \
+        --inventory-proof "${MIXED_PROOF}" >/dev/null
     python3 - "${MIXED_CACHE}/inputs/${MIXED_FINGERPRINT}/manifest.json" <<'PY'
 import json
 import sys

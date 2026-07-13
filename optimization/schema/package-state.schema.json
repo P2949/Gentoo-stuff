@@ -1,20 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://gentoo-optimization.invalid/schema/package-state.schema.json",
-  "title": "Gentoo optimization package state v3",
+  "title": "Gentoo optimization package state v4",
   "description": "An exact frozen-generation installed package, its live VDB identity, source rebuild transaction, component toolchains, PGO proof, graph references, and derived coverage.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "record_type", "generation", "identity", "frozen_inventory_entry", "live_instance", "source", "abis", "languages", "use_flags", "components", "source_rebuild", "graphs", "aggregate", "final_status", "resolution", "notes"],
   "properties": {
-    "schema_version": {"const": 3},
+    "schema_version": {"const": 4},
     "record_type": {"const": "package"},
     "generation": {"$ref": "#/$defs/generation"},
     "identity": {"$ref": "#/$defs/package_identity"},
     "frozen_inventory_entry": {
       "type": "object", "additionalProperties": false,
-      "required": ["entry_sha256", "installed_at_freeze"],
-      "properties": {"entry_sha256": {"$ref": "#/$defs/sha256"}, "installed_at_freeze": {"const": true}}
+      "required": ["entry_sha256", "installed_at_freeze", "payload"],
+      "properties": {"entry_sha256": {"$ref": "#/$defs/sha256"}, "installed_at_freeze": {"const": true}, "payload": {"$ref": "#/$defs/frozen_payload"}}
     },
     "live_instance": {"$ref": "#/$defs/live_instance"},
     "source": {"$ref": "#/$defs/source"},
@@ -52,12 +52,17 @@
         "repository": {"type": "string", "minLength": 1}, "slot": {"type": "string", "minLength": 1}, "subslot": {"type": "string", "minLength": 1}
       }
     },
+    "frozen_payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cpv", "repository", "slot_raw", "contents_sha256", "metadata_tree_sha256"],
+      "properties": {"cpv": {"type": "string", "minLength": 3}, "repository": {"type": "string", "minLength": 1}, "slot_raw": {"type": "string", "minLength": 1}, "contents_sha256": {"$ref": "#/$defs/sha256"}, "metadata_tree_sha256": {"$ref": "#/$defs/sha256"}}
+    },
     "live_instance": {
       "type": "object", "additionalProperties": false,
-      "required": ["vdb_path", "contents_sha256", "metadata_tree_sha256", "repository", "slot", "subslot", "build_time", "counter", "environment_bz2_sha256", "identity_sha256"],
+      "required": ["vdb_path", "contents_sha256", "metadata_tree_sha256", "repository", "slot_raw", "slot", "subslot", "build_time", "counter", "environment_bz2_sha256", "identity_sha256"],
       "properties": {
         "vdb_path": {"$ref": "#/$defs/absolute_path"}, "contents_sha256": {"$ref": "#/$defs/sha256"}, "metadata_tree_sha256": {"$ref": "#/$defs/sha256"},
-        "repository": {"type": "string", "minLength": 1}, "slot": {"type": "string", "minLength": 1}, "subslot": {"type": "string", "minLength": 1},
+        "repository": {"type": "string", "minLength": 1}, "slot_raw": {"type": "string", "minLength": 1}, "slot": {"type": "string", "minLength": 1}, "subslot": {"type": "string", "minLength": 1},
         "build_time": {"type": "string", "minLength": 1}, "counter": {"type": "string", "minLength": 1},
         "environment_bz2_sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]}, "identity_sha256": {"$ref": "#/$defs/sha256"}
       }
@@ -133,8 +138,8 @@
     },
     "build_use": {
       "type": "object", "additionalProperties": false,
-      "required": ["build_log", "flags", "diagnostics", "installed_evidence"],
-      "properties": {"build_log": {"$ref": "#/$defs/evidence"}, "flags": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}, "installed_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
+      "required": ["build_log", "flags", "diagnostics", "installed_evidence", "validator_receipt"],
+      "properties": {"build_log": {"$ref": "#/$defs/evidence"}, "flags": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}, "installed_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}, "validator_receipt": {"$ref": "#/$defs/evidence"}}
     },
     "pgo": {
       "type": "object", "additionalProperties": false,
@@ -182,12 +187,14 @@
     },
     "rebuild_proof": {
       "type": "object", "additionalProperties": false,
-      "required": ["transaction_log", "install_log", "binpkg", "equery_check", "smoke_tests", "reverse_dependencies", "installed_vdb_identity_sha256"],
+      "required": ["transaction_log", "install_log", "binpkg", "equery_check", "smoke_tests", "reverse_dependencies", "installed_vdb_identity_sha256", "active_modes", "portage_transaction_receipt", "binpkg_validation_receipt"],
       "properties": {
         "transaction_log": {"$ref": "#/$defs/evidence"}, "install_log": {"$ref": "#/$defs/evidence"},
         "binpkg": {"type": "object", "additionalProperties": false, "required": ["path", "sha256", "format"], "properties": {"path": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"}, "format": {"enum": ["gpkg", "xpak"]}}},
         "equery_check": {"$ref": "#/$defs/check_result"}, "smoke_tests": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/smoke_test"}},
-        "reverse_dependencies": {"$ref": "#/$defs/check_result"}, "installed_vdb_identity_sha256": {"$ref": "#/$defs/sha256"}
+        "reverse_dependencies": {"$ref": "#/$defs/check_result"}, "installed_vdb_identity_sha256": {"$ref": "#/$defs/sha256"},
+        "active_modes": {"type": "array", "uniqueItems": true, "items": {"enum": ["pgo-use", "bolt-deploy"]}},
+        "portage_transaction_receipt": {"$ref": "#/$defs/evidence"}, "binpkg_validation_receipt": {"$ref": "#/$defs/evidence"}
       }
     },
     "source_rebuild": {

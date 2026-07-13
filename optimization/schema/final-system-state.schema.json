@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gentoo-optimization.invalid/schema/final-system-state.schema.json",
+  "title": "Gentoo optimization authoritative final-system state v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "record_type", "generation", "trusted_roots", "locks", "validators", "registries", "final_transaction", "boot"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "record_type": {"const": "final-system-state"},
+    "generation": {"$ref": "#/$defs/generation"},
+    "trusted_roots": {
+      "type": "object", "additionalProperties": false,
+      "required": ["generation_root", "evidence_root", "profiles_root", "bolt_root", "binpkg_snapshot", "packages_dir", "artifacts_dir", "inventory"],
+      "properties": {
+        "generation_root": {"$ref": "#/$defs/path"}, "evidence_root": {"$ref": "#/$defs/path"},
+        "profiles_root": {"$ref": "#/$defs/path"}, "bolt_root": {"$ref": "#/$defs/path"},
+        "binpkg_snapshot": {"$ref": "#/$defs/path"}, "packages_dir": {"$ref": "#/$defs/path"},
+        "artifacts_dir": {"$ref": "#/$defs/path"}, "inventory": {"$ref": "#/$defs/path"}
+      }
+    },
+    "locks": {
+      "type": "object", "additionalProperties": false, "required": ["framework", "project", "generation"],
+      "properties": {"framework": {"$ref": "#/$defs/validator"}, "project": {"$ref": "#/$defs/validator"}, "generation": {"$ref": "#/$defs/validator"}}
+    },
+    "validators": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state_runtime", "reconciler_runtime", "profile", "binpkg_snapshot", "readelf", "getcap", "uname", "efibootmgr", "rc_status"],
+      "properties": {
+        "state_runtime": {"$ref": "#/$defs/validator"}, "reconciler_runtime": {"$ref": "#/$defs/validator"},
+        "profile": {"$ref": "#/$defs/validator"}, "binpkg_snapshot": {"$ref": "#/$defs/validator"},
+        "readelf": {"$ref": "#/$defs/validator"}, "getcap": {"$ref": "#/$defs/validator"},
+        "uname": {"$ref": "#/$defs/validator"}, "efibootmgr": {"$ref": "#/$defs/validator"},
+        "rc_status": {"$ref": "#/$defs/validator"}
+      }
+    },
+    "registries": {
+      "type": "object", "additionalProperties": false, "required": ["workloads", "dependency_edges"],
+      "properties": {
+        "workloads": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/workload"}},
+        "dependency_edges": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/edge"}}
+      }
+    },
+    "final_transaction": {
+      "type": "object", "additionalProperties": false,
+      "required": ["transaction_id", "active_modes", "portage_receipt", "vdb_receipt", "binpkg_snapshot_receipt"],
+      "properties": {
+        "transaction_id": {"type": "string", "minLength": 1},
+        "active_modes": {"type": "array", "uniqueItems": true, "items": {"enum": ["pgo-use", "bolt-deploy"]}},
+        "portage_receipt": {"$ref": "#/$defs/evidence"}, "vdb_receipt": {"$ref": "#/$defs/evidence"},
+        "binpkg_snapshot_receipt": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "boot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["boot_id", "kernel_release", "boot_current", "efi_root", "kernel_image", "initramfs", "efi_loader", "modules_manifest", "efibootmgr_output_sha256", "openrc_output_sha256", "reboot_evidence"],
+      "properties": {
+        "boot_id": {"type": "string", "minLength": 1}, "kernel_release": {"type": "string", "minLength": 1},
+        "boot_current": {"type": "string", "pattern": "^[0-9A-Fa-f]{4}$"}, "efi_root": {"const": "/efi"},
+        "kernel_image": {"$ref": "#/$defs/evidence"}, "initramfs": {"$ref": "#/$defs/evidence"}, "efi_loader": {"$ref": "#/$defs/evidence"},
+        "modules_manifest": {"$ref": "#/$defs/evidence"}, "efibootmgr_output_sha256": {"$ref": "#/$defs/sha"},
+        "openrc_output_sha256": {"$ref": "#/$defs/sha"},
+        "reboot_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
+      }
+    }
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "path": {"type": "string", "pattern": "^/[^\\u0000]+$"},
+    "generation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["generation_id", "inventory_id", "inventory_sha256"],
+      "properties": {
+        "generation_id": {"type": "string", "pattern": "^[A-Za-z0-9+_.:@-]+$"},
+        "inventory_id": {"type": "string", "pattern": "^[A-Za-z0-9+_.:@-]+$"},
+        "inventory_sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "kind"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"}, "sha256": {"$ref": "#/$defs/sha"},
+        "kind": {"enum": ["binary", "binpkg", "command-output", "config", "log", "manifest", "profile", "report", "sidecar", "source", "transaction", "other"]}
+      }
+    },
+    "validator": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"$ref": "#/$defs/path"}, "sha256": {"$ref": "#/$defs/sha"}}
+    },
+    "workload": {
+      "type": "object", "additionalProperties": false, "required": ["workload_id", "revision", "evidence"],
+      "properties": {
+        "workload_id": {"type": "string", "minLength": 1}, "revision": {"type": "string", "minLength": 1},
+        "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
+      }
+    },
+    "edge": {
+      "type": "object", "additionalProperties": false,
+      "required": ["consumer_cpv", "consumer_component_id", "provider_cpv", "provider_component_id", "evidence"],
+      "properties": {
+        "consumer_cpv": {"type": "string", "minLength": 3}, "consumer_component_id": {"type": "string", "minLength": 1},
+        "provider_cpv": {"type": "string", "minLength": 3}, "provider_component_id": {"type": "string", "minLength": 1},
+        "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
+      }
+    }
+  }
+}

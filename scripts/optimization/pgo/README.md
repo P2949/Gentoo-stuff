@@ -71,6 +71,7 @@ scripts/optimization/pgo/profile-identity.py sample-convert \
     --perf-data /absolute/path/to/perf.data \
     --profile-out /absolute/profile/tree/sample.prof \
     --metadata-out /absolute/profile/tree/sample-metadata.json \
+    --conversion-log-out /absolute/profile/tree/llvm-profgen-conversion-log.json \
     --cpv dev-util/example-1.2.3-r1 --fingerprint "${fingerprint}" \
     --abi amd64 --clang-major 22 \
     --optimization-generation-id generation-20260713-a \
@@ -83,16 +84,31 @@ scripts/optimization/pgo/profile-identity.py sample-convert \
 producer invokes LLVM tools of the requested major, derives the GNU build ID
 and `.text` SHA-256 from the binary, and records hashes plus exact inode/stat
 observations of the binary, optional debug binary and perf data, as well as
-tool, command, profile and validation identities. Every input observation is
+tool, command, profile and validation identities. Sample producer metadata is
+schema version 3. It also records the canonical path, SHA-256, and complete
+inode/stat observation of the required sibling
+`llvm-profgen-conversion-log.json`. That mode-0444, link-count-one JSON record
+preserves the exact converter stdout and stderr, their individual hashes, the
+combined command-output hash, exact argv, exit status, and exact producer
+path/hash. Validation reopens the record and proves all of those bindings;
+restoring its original bytes after a replacement still fails through the stat
+observation.
+
+Every input observation is
 captured before `llvm-profgen` and required to remain byte-for-byte and
 metadata-identical afterward. A change is rejected even if the caller restores
 the original bytes before the converter exits, closing the conversion TOCTOU
 window.
-`llvm-profgen` can write only `sample.prof.partial`; a successful sample-aware
-validation precedes the atomic rename to `sample.prof`. Ordinary failure,
-timeout, missing output and interruption remove the partial and any unpublished
-transaction outputs. Existing final profiles are immutable and are never
-reused or overwritten.
+`llvm-profgen` can write only `sample.prof.partial`; the conversion log is also
+created at a private `.partial` path. A successful sample-aware validation
+precedes publication. The profile and log are renamed, fsynced, observed, and
+only then bound into the atomically written producer metadata. Ordinary
+failure, timeout, missing output and caught interruption remove every partial
+and unpublished transaction output. Existing final profiles, logs, or metadata
+are immutable inputs and are never reused or overwritten.
+The two metadata destinations are intentionally fixed:
+`sample-metadata.json` and `llvm-profgen-conversion-log.json` must be siblings
+of `sample.prof`.
 
 There is no external-profile recording escape hatch. `sample-record` is kept
 only as an unconditional error for callers that have not migrated; it never

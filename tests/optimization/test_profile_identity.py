@@ -16,6 +16,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -74,6 +75,14 @@ class Fixture:
         self.profgen = self.write_executable(
             "llvm-profgen",
             "#!/bin/sh\n"
+            "[ \"${HOME-}\" = /nonexistent ] || exit 72\n"
+            "[ \"${LANG-}\" = C ] || exit 72\n"
+            "[ \"${LANGUAGE-}\" = C ] || exit 72\n"
+            "[ \"${LC_ALL-}\" = C ] || exit 72\n"
+            "[ \"${PATH-}\" = /usr/bin:/bin ] || exit 72\n"
+            "[ \"${TZ-}\" = UTC ] || exit 72\n"
+            "[ -z \"${LD_PRELOAD-}${LD_LIBRARY_PATH-}${COMPILER_PATH-}\" ] || exit 72\n"
+            "[ -z \"${GCC_EXEC_PREFIX-}${RUSTC_WRAPPER-}${PYTHONPATH-}\" ] || exit 72\n"
             "if [ \"$1\" = --version ]; then\n"
             "  printf '%s\\n' 'LLVM version 22.1.8'\n"
             "  exit 0\n"
@@ -240,6 +249,8 @@ class Fixture:
             "--perf-data", os.fspath(self.perf_data),
             "--profile-out", os.fspath(profile),
             "--metadata-out", os.fspath(metadata),
+            "--conversion-log-out",
+            os.fspath(profile.parent / "llvm-profgen-conversion-log.json"),
             "--cpv", "dev-util/example-1.2.3-r1",
             "--fingerprint", "b" * 64,
             "--abi", "amd64",
@@ -629,6 +640,10 @@ class SampleConversionTest(unittest.TestCase):
             output.parent.mkdir()
             partial = output.with_name("sample.prof.partial")
             partial.write_text("STALE\n", encoding="ascii")
+            conversion_log_partial = output.parent / (
+                "llvm-profgen-conversion-log.json.partial"
+            )
+            conversion_log_partial.write_text("STALE LOG\n", encoding="ascii")
             binary_hash_before = hashlib.sha256(fixture.binary.read_bytes()).hexdigest()
             binary_stat_before = fixture.binary.stat()
             binary_xattrs_before = {
@@ -644,6 +659,7 @@ class SampleConversionTest(unittest.TestCase):
             self.assertEqual(status, 0, stderr)
             self.assertEqual(output.read_text(encoding="ascii"), "SAMPLE\n")
             self.assertFalse(partial.exists())
+            self.assertFalse(conversion_log_partial.exists())
             self.assertEqual(
                 hashlib.sha256(fixture.binary.read_bytes()).hexdigest(),
                 binary_hash_before,
@@ -662,6 +678,7 @@ class SampleConversionTest(unittest.TestCase):
                 binary_xattrs_before,
             )
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            self.assertEqual(metadata["schema_version"], 3)
             source = metadata["source"]
             self.assertEqual(source["kind"], "llvm-profgen")
             self.assertEqual(source["binary_path"], os.fspath(fixture.binary))
@@ -684,6 +701,21 @@ class SampleConversionTest(unittest.TestCase):
             self.assertEqual(
                 source["perf_data_observation"]["sha256"],
                 source["perf_data_sha256"],
+            )
+            conversion_log = output.parent / "llvm-profgen-conversion-log.json"
+            self.assertEqual(source["conversion_log_path"], os.fspath(conversion_log))
+            self.assertEqual(
+                source["conversion_log_sha256"],
+                hashlib.sha256(conversion_log.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(conversion_log.stat().st_mode & 0o777, 0o444)
+            conversion_record = json.loads(conversion_log.read_text(encoding="utf-8"))
+            self.assertEqual(conversion_record["stdout"], "conversion complete\n")
+            self.assertEqual(conversion_record["stderr"], "")
+            self.assertEqual(conversion_record["exit_status"], 0)
+            self.assertEqual(
+                conversion_record["command_arguments"],
+                source["command_arguments"],
             )
             self.assertIn(
                 f"--debug-binary={fixture.debug_binary}", source["command_arguments"]
@@ -745,6 +777,16 @@ class SampleConversionTest(unittest.TestCase):
                     self.assertFalse(output.exists())
                     self.assertFalse(metadata_path.exists())
                     self.assertFalse(output.with_name("sample.prof.partial").exists())
+                    self.assertFalse(
+                        output.parent.joinpath(
+                            "llvm-profgen-conversion-log.json"
+                        ).exists()
+                    )
+                    self.assertFalse(
+                        output.parent.joinpath(
+                            "llvm-profgen-conversion-log.json.partial"
+                        ).exists()
+                    )
 
     def test_reproducibility_metadata_is_required_and_validated_exactly(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -816,11 +858,69 @@ class SampleConversionTest(unittest.TestCase):
                         output.with_name("sample.prof.partial").exists()
                     )
 
+    def test_conversion_log_is_exact_and_restored_content_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            output = fixture.root / "profiles" / "sample.prof"
+            metadata_path = fixture.root / "profiles" / "sample-metadata.json"
+            status, _stdout, stderr = fixture.invoke(
+                "sample-convert", *fixture.conversion_arguments(output, metadata_path)
+            )
+            self.assertEqual(status, 0, stderr)
+            conversion_log = output.parent / "llvm-profgen-conversion-log.json"
+            original = conversion_log.read_bytes()
+            original_hash = hashlib.sha256(original).hexdigest()
+            conversion_log.chmod(0o644)
+            conversion_log.write_bytes(b"temporary hostile replacement\n")
+            conversion_log.write_bytes(original)
+            conversion_log.chmod(0o444)
+            self.assertEqual(hashlib.sha256(conversion_log.read_bytes()).hexdigest(), original_hash)
+
+            validation_arguments = fixture.sample_arguments(output)
+            text_index = validation_arguments.index("--text-sha256") + 1
+            validation_arguments[text_index] = hashlib.sha256(b"TEXT\n").hexdigest()
+            status, _stdout, stderr = fixture.invoke(
+                "sample-validate",
+                *validation_arguments,
+                "--metadata",
+                os.fspath(metadata_path),
+            )
+            self.assertEqual(status, 1)
+            self.assertIn("exact recorded observation", stderr)
+
+    def test_converter_environment_is_allowlisted_and_tool_aliases_are_canonical(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            producer_alias = fixture.root / "llvm-profgen-alias"
+            producer_alias.symlink_to(fixture.profgen)
+            output = fixture.root / "profiles" / "sample.prof"
+            metadata_path = fixture.root / "profiles" / "sample-metadata.json"
+            arguments = fixture.conversion_arguments(output, metadata_path)
+            arguments[arguments.index("--llvm-profgen") + 1] = os.fspath(producer_alias)
+            hostile = {
+                "LD_PRELOAD": "/must/not/load.so",
+                "LD_LIBRARY_PATH": "/must/not/search",
+                "COMPILER_PATH": "/must/not/search",
+                "GCC_EXEC_PREFIX": "/must/not/search",
+                "RUSTC_WRAPPER": "/must/not/run",
+                "PYTHONPATH": "/must/not/import",
+                "HOME": "/must/not/use",
+                "TZ": "Hostile/Zone",
+            }
+            with mock.patch.dict(os.environ, hostile, clear=False):
+                status, _stdout, stderr = fixture.invoke("sample-convert", *arguments)
+            self.assertEqual(status, 0, stderr)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                metadata["source"]["producer"]["realpath"],
+                os.fspath(fixture.profgen.resolve()),
+            )
+
     def test_ambiguous_destination_and_preexisting_final_are_never_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = Fixture(Path(directory))
             ambiguous = fixture.root / "merged.profdata"
-            metadata_path = fixture.root / "metadata.json"
+            metadata_path = fixture.root / "sample-metadata.json"
             status, _stdout, stderr = fixture.invoke(
                 "sample-convert",
                 *fixture.conversion_arguments(ambiguous, metadata_path),
@@ -839,6 +939,21 @@ class SampleConversionTest(unittest.TestCase):
             self.assertIn("already exists", stderr)
             self.assertEqual(final.read_text(encoding="ascii"), "PREEXISTING\n")
             self.assertFalse(metadata_path.exists())
+
+            clean_root = fixture.root / "log-collision"
+            log_output = clean_root / "sample.prof"
+            log_metadata = clean_root / "sample-metadata.json"
+            conversion_log = clean_root / "llvm-profgen-conversion-log.json"
+            clean_root.mkdir()
+            conversion_log.write_text("PREEXISTING\n", encoding="ascii")
+            status, _stdout, stderr = fixture.invoke(
+                "sample-convert",
+                *fixture.conversion_arguments(log_output, log_metadata),
+            )
+            self.assertEqual(status, 1)
+            self.assertIn("already exists", stderr)
+            self.assertEqual(conversion_log.read_text(encoding="ascii"), "PREEXISTING\n")
+            self.assertFalse(log_output.exists())
 
     def test_legacy_weak_sample_producer_is_unconditionally_disabled(self) -> None:
         legacy = REPOSITORY_ROOT / "scripts" / "pgo" / "make-sample-prof.sh"

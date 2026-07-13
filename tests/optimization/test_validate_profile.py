@@ -48,6 +48,10 @@ class ProfileValidatorTests(unittest.TestCase):
             import sys
             if os.environ.get("LC_ALL") != "C" or os.environ.get("LANG") != "C":
                 raise SystemExit(9)
+            if os.environ.get("PATH") != "/usr/bin:/bin" or os.environ.get("HOME") != "/nonexistent":
+                raise SystemExit(10)
+            if any(name in os.environ for name in ("LD_LIBRARY_PATH", "COMPILER_PATH", "GCC_EXEC_PREFIX", "RUSTC_WRAPPER")):
+                raise SystemExit(11)
             if sys.argv[1:] != ["--version"]:
                 raise SystemExit(2)
             print("clang version 22.1.8")
@@ -270,12 +274,22 @@ class ProfileValidatorTests(unittest.TestCase):
         ]
 
     def _run(self, arguments: list[str], success: bool) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "COMPILER_PATH": "/untrusted/compiler-path",
+                "GCC_EXEC_PREFIX": "/untrusted/gcc-prefix",
+                "LD_LIBRARY_PATH": "/untrusted/loader-path",
+                "RUSTC_WRAPPER": "/untrusted/rust-wrapper",
+            }
+        )
         completed = subprocess.run(
             arguments,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
+            env=environment,
         )
         if success and completed.returncode != 0:
             self.fail(f"command failed:\n{completed.stderr}")
@@ -450,6 +464,45 @@ class ProfileValidatorTests(unittest.TestCase):
                 "uid": path_stat.st_uid,
             }
 
+        conversion_stdout = "profgen stdout\n"
+        conversion_stderr = "profgen stderr\n"
+        conversion_arguments = [
+            f"--binary={profiled_binary}",
+            f"--perfdata={perf_data}",
+            "--format=extbinary",
+            "--show-detailed-warning",
+            f"--output={profile}.partial",
+        ]
+        conversion_log = self.profiles / "llvm-profgen-conversion-log.json"
+        if conversion_log.exists():
+            conversion_log.chmod(0o644)
+        conversion_log.write_text(
+            json.dumps(
+                {
+                    "command_arguments": conversion_arguments,
+                    "exit_status": 0,
+                    "producer_realpath": os.fspath(self.llvm22),
+                    "producer_sha256": sha256(self.llvm22),
+                    "schema_version": 1,
+                    "stderr": conversion_stderr,
+                    "stderr_sha256": hashlib.sha256(
+                        conversion_stderr.encode("utf-8")
+                    ).hexdigest(),
+                    "stdout": conversion_stdout,
+                    "stdout_sha256": hashlib.sha256(
+                        conversion_stdout.encode("utf-8")
+                    ).hexdigest(),
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        conversion_log.chmod(0o444)
+        conversion_output_sha256 = hashlib.sha256(
+            (conversion_stdout + "\0" + conversion_stderr).encode("utf-8")
+        ).hexdigest()
+
         metadata: dict[str, object] = {
             "compiler": {"family": "clang", "major": 22},
             "input_identity": {
@@ -473,7 +526,7 @@ class ProfileValidatorTests(unittest.TestCase):
                 "source_identity_sha256": "e" * 64,
                 "workload_revision": "workloads-sha256-a1",
             },
-            "schema_version": 2,
+            "schema_version": 3,
             "source": {
                 "kind": "llvm-profgen",
                 "binary_path": os.fspath(profiled_binary),
@@ -488,14 +541,11 @@ class ProfileValidatorTests(unittest.TestCase):
                 "producer": recorded_tool(self.llvm22, version_stdout),
                 "readelf": recorded_tool(self.sample_readelf, version_stdout),
                 "objcopy": recorded_tool(self.sample_objcopy, version_stdout),
-                "command_arguments": [
-                    f"--binary={profiled_binary}",
-                    f"--perfdata={perf_data}",
-                    "--format=extbinary",
-                    "--show-detailed-warning",
-                    f"--output={profile}.partial",
-                ],
-                "command_output_sha256": "c" * 64,
+                "command_arguments": conversion_arguments,
+                "command_output_sha256": conversion_output_sha256,
+                "conversion_log_path": os.fspath(conversion_log),
+                "conversion_log_sha256": sha256(conversion_log),
+                "conversion_log_observation": observation(conversion_log),
             },
             "validation": {
                 "command_arguments": ["show", "--sample", os.fspath(profile)],
@@ -512,7 +562,7 @@ class ProfileValidatorTests(unittest.TestCase):
         }
         if unknown:
             metadata["unreviewed"] = True
-        path = self.profiles / ("sample-unknown.json" if unknown else "sample.json")
+        path = self.profiles / "sample-metadata.json"
         path.write_text(json.dumps(metadata, sort_keys=True) + "\n", encoding="utf-8")
         return path
 
@@ -552,7 +602,6 @@ class ProfileValidatorTests(unittest.TestCase):
         external_metadata = self._sample_metadata(profile)
         external_data = json.loads(external_metadata.read_text(encoding="utf-8"))
         external_data["source"] = {"kind": "external"}
-        external_metadata = self.profiles / "sample-external.json"
         external_metadata.write_text(
             json.dumps(external_data, sort_keys=True) + "\n", encoding="utf-8"
         )
@@ -608,12 +657,12 @@ class ProfileValidatorTests(unittest.TestCase):
         )
         self.assertIn("no longer matches", completed.stderr)
 
-    def test_sample_metadata_v2_rejects_downgrade_missing_unknown_and_tampering(self) -> None:
+    def test_sample_metadata_v3_rejects_downgrade_missing_unknown_and_tampering(self) -> None:
         profile = self.profiles / "sample.prof"
         profile.write_text("SAMPLE\n", encoding="utf-8")
 
         mutations: dict[str, Callable[[dict[str, Any]], object]] = {
-            "schema-v1": lambda data: data.__setitem__("schema_version", 1),
+            "schema-v2": lambda data: data.__setitem__("schema_version", 2),
             "missing-reproducibility": lambda data: data.pop("reproducibility"),
             "unknown-reproducibility": lambda data: data["reproducibility"].__setitem__(
                 "unreviewed", "value"
@@ -648,13 +697,21 @@ class ProfileValidatorTests(unittest.TestCase):
             "tampered-text-sha256": lambda data: data[
                 "input_identity"
             ].__setitem__("text_sha256", "f" * 64),
+            "missing-conversion-log": lambda data: data["source"].pop(
+                "conversion_log_path"
+            ),
+            "tampered-conversion-log-hash": lambda data: data["source"].__setitem__(
+                "conversion_log_sha256", "f" * 64
+            ),
+            "tampered-conversion-output-hash": lambda data: data["source"].__setitem__(
+                "command_output_sha256", "f" * 64
+            ),
         }
         for name, mutate in mutations.items():
             with self.subTest(name=name):
                 metadata_path = self._sample_metadata(profile)
                 data = json.loads(metadata_path.read_text(encoding="utf-8"))
                 mutate(data)
-                metadata_path = self.profiles / f"sample-{name}.json"
                 metadata_path.write_text(
                     json.dumps(data, sort_keys=True) + "\n", encoding="utf-8"
                 )
@@ -686,6 +743,35 @@ class ProfileValidatorTests(unittest.TestCase):
         self.assertEqual(sha256(binary), original_sha256)
 
         manifest = self.root / "sample-restored-content.manifest"
+        arguments = self._common(
+            "clang-sample",
+            profile,
+            "clang",
+            self.clang,
+            22,
+            self.llvm22,
+            22,
+            manifest,
+        ) + ["--sample-metadata", os.fspath(metadata_path)]
+        completed = self._run(arguments, success=False)
+        self.assertIn("exact recorded observation", completed.stderr)
+        self.assertFalse(manifest.exists())
+
+    def test_sample_conversion_log_restored_content_is_rejected(self) -> None:
+        profile = self.profiles / "sample.prof"
+        profile.write_text("SAMPLE\n", encoding="utf-8")
+        metadata_path = self._sample_metadata(profile)
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        conversion_log = Path(metadata["source"]["conversion_log_path"])
+        original = conversion_log.read_bytes()
+        original_sha256 = sha256(conversion_log)
+        conversion_log.chmod(0o644)
+        conversion_log.write_bytes(b"temporary hostile conversion log\n")
+        conversion_log.write_bytes(original)
+        conversion_log.chmod(0o444)
+        self.assertEqual(sha256(conversion_log), original_sha256)
+
+        manifest = self.root / "sample-restored-conversion-log.manifest"
         arguments = self._common(
             "clang-sample",
             profile,

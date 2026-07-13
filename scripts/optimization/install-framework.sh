@@ -1,8 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -Eeuo pipefail
+shopt -s inherit_errexit
 IFS=$'\n\t'
 umask 077
 export LC_ALL=C
+export LANG=C LANGUAGE=C HOME=/root PATH=/usr/bin:/bin TZ=UTC
+unset BASH_ENV CDPATH ENV GLOBIGNORE
 
 # This installer is the only reviewed bridge from the mutable checkout to the
 # live, root-owned Phase 2 framework.  It snapshots every input once, builds and
@@ -14,12 +17,14 @@ DEFAULT_SOURCE_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 MODE=install
 TEST_ROOT=
 GENERATED_POLICY_INPUT=
+FROZEN_INVENTORY_INPUT=
 SOURCE_ROOT_ARG=
 
 usage() {
     cat <<EOF
 Usage: ${0##*/} --source-root ABSOLUTE_PATH [--check]
        [--generated-policy-generation ABSOLUTE_PATH]
+       [--frozen-inventory ABSOLUTE_PATH]
 
 The following interface exists only for the hermetic repository fixture:
   GENTOO_OPT_INSTALLER_TEST_MODE=1 ${0##*/} [--check] --test-root ABSOLUTE_PATH
@@ -40,6 +45,11 @@ while (($#)); do
             shift
             (($#)) || { usage >&2; exit 2; }
             GENERATED_POLICY_INPUT=$1
+            ;;
+        --frozen-inventory)
+            shift
+            (($#)) || { usage >&2; exit 2; }
+            FROZEN_INVENTORY_INPUT=$1
             ;;
         --source-root)
             shift
@@ -83,6 +93,10 @@ if [[ -n ${GENERATED_POLICY_INPUT} && ${GENERATED_POLICY_INPUT} != /* ]]; then
     printf 'ERROR: generated policy generation path must be absolute\n' >&2
     exit 2
 fi
+if [[ -n ${FROZEN_INVENTORY_INPUT} && ${FROZEN_INVENTORY_INPUT} != /* ]]; then
+    printf 'ERROR: frozen inventory path must be absolute\n' >&2
+    exit 2
+fi
 
 if [[ -n ${SOURCE_ROOT_ARG} ]]; then
     [[ ${SOURCE_ROOT_ARG} == /* && -d ${SOURCE_ROOT_ARG} ]] || {
@@ -98,6 +112,14 @@ else
     ROOT=${DEFAULT_SOURCE_ROOT}
 fi
 readonly ROOT SELF_PATH
+
+SOURCE_UID=$(stat -c %u -- "${ROOT}")
+SOURCE_USER=$(getent passwd "${SOURCE_UID}" | awk -F: 'NR == 1 { print $1 }')
+[[ -n ${SOURCE_USER} ]] || {
+    printf 'ERROR: cannot resolve the source checkout owner (%s)\n' "${SOURCE_UID}" >&2
+    exit 1
+}
+readonly SOURCE_UID SOURCE_USER
 
 EXPECTED_UID=$EUID
 EXPECTED_GID=$(id -g)
@@ -152,8 +174,10 @@ declare -a INPUT_FILES=(
     scripts/optimization/pgo/validate-profile.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
+    scripts/optimization/recovery/verify-binpkg-snapshot.py
     optimization/schema/package-state.schema.json
     optimization/schema/artifact-state.schema.json
+    optimization/schema/final-system-state.schema.json
 )
 declare -a HELPER_RELATIVE=(
     bolt/artifact_tool.py
@@ -164,6 +188,7 @@ declare -a HELPER_RELATIVE=(
     pgo/validate-profile.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
+    recovery/verify-binpkg-snapshot.py
 )
 declare -a HELPER_SOURCE_RELATIVE=(
     scripts/optimization/bolt/artifact_tool.py
@@ -174,6 +199,7 @@ declare -a HELPER_SOURCE_RELATIVE=(
     scripts/optimization/pgo/validate-profile.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
+    scripts/optimization/recovery/verify-binpkg-snapshot.py
 )
 
 SNAPSHOT=
@@ -186,10 +212,43 @@ ROLLBACK_ROOT=
 PREVIOUS_TARGET=none
 INSTALLER_LOCK_FD=
 declare -a HELD_BOLT_LOCK_FDS=()
+declare -A FROZEN_CPVS=()
+FROZEN_INVENTORY_SHA256=none
 
 fail() {
     printf 'ERROR: %s\n' "$*" >&2
     return 1
+}
+
+# Git may honor executable helpers from repository-local configuration.  Never
+# run it as root against a non-root-owned checkout: use the checkout owner and
+# a minimal environment, and override the executable configuration surfaces
+# needed by these read-only status/identity calls.
+source_git() {
+    local -a command=(
+        /usr/bin/git
+        -c core.fsmonitor=false
+        -c core.hooksPath=/dev/null
+        -c diff.external=
+        -c pager.status=false
+        -C "${ROOT}"
+    )
+    local -a environment=(
+        /usr/bin/env -i
+        HOME=/nonexistent
+        LANG=C
+        LC_ALL=C
+        PATH=/usr/bin:/bin
+        GIT_CONFIG_NOSYSTEM=1
+        GIT_CONFIG_GLOBAL=/dev/null
+        GIT_OPTIONAL_LOCKS=0
+    )
+    if [[ -n ${TEST_ROOT} || ${SOURCE_UID} == "${EXPECTED_UID}" ]]; then
+        "${environment[@]}" "${command[@]}" "$@"
+    else
+        /usr/bin/runuser -u "${SOURCE_USER}" -- \
+            "${environment[@]}" "${command[@]}" "$@"
+    fi
 }
 
 mode_is_trusted() {
@@ -262,7 +321,7 @@ verify_runtime_namespaces() {
     for directory in clang-ir clang-sample ebuild-native gcc go rust; do
         verify_directory "${PGO_CACHE}/${directory}" "${EXPECTED_UID}" "${PORTAGE_GID}" 0750
     done
-    verify_directory "${PGO_RAW}" "${EXPECTED_UID}" "${PORTAGE_GID}" 0750
+    verify_directory "${PGO_RAW}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
 }
 
 verify_jq() {
@@ -280,9 +339,18 @@ preflight_destination_ancestors() {
         "${BASE}" "${STATE_ROOT}" "${CACHE_ROOT}" \
         "${INSTALL_QA_ROOT}" "${LIBEXEC_ROOT}" "${LOCK_PATH%/*}" \
         "${SHARE_ROOT}" "${ETC_PORTAGE%/*}" "${GENERATIONS_ROOT}" \
-        "${PGO_CACHE}" "${PGO_RAW}" "${JQ_PATH%/*}"; do
+        "${PGO_CACHE}" "${PGO_RAW}" "${JQ_PATH%/*}" "${BASE}/bootstrap"; do
         verify_existing_ancestor_chain "${path}"
     done
+}
+
+verify_bootstrap_identity() {
+    local expected=${BASE}/bootstrap/install-framework.sh
+    [[ -n ${TEST_ROOT} ]] && return 0
+    [[ ${SELF_PATH} == "${expected}" ]] || \
+        fail "production installer must execute the root-owned bootstrap copy: ${expected}"
+    verify_existing_ancestor_chain "${SELF_PATH%/*}"
+    verify_regular_trusted "${SELF_PATH}" 0755
 }
 
 safe_mkdir() {
@@ -317,7 +385,7 @@ reject_control_name() {
 
 emit_tree_inventory() {
     local tree=$1 prefix=$2 exclude_one=${3:-} exclude_two=${4:-}
-    local entry relative type mode digest target
+    local entry relative mode digest target
     while IFS= read -r -d '' entry; do
         relative=${entry#"${tree}/"}
         [[ ${relative} != "${entry}" ]] || continue
@@ -358,6 +426,192 @@ source_identity() {
     emit_source_inventory "${source_root}" | sha256sum | awk '{print $1}'
 }
 
+snapshot_frozen_inventory() {
+    local before after cpv validation_json
+    [[ -n ${FROZEN_INVENTORY_INPUT} ]] || \
+        fail 'a nonempty generated policy requires --frozen-inventory'
+    if [[ -z ${TEST_ROOT} ]]; then
+        [[ ${FROZEN_INVENTORY_INPUT} == "${GENERATIONS_ROOT}"/*/frozen-inventory.json ]] || \
+            fail 'frozen inventory must be the authoritative file inside a versioned generation'
+    fi
+    verify_existing_ancestor_chain "${FROZEN_INVENTORY_INPUT%/*}"
+    verify_regular_trusted "${FROZEN_INVENTORY_INPUT}"
+    before=$(sha256sum -- "${FROZEN_INVENTORY_INPUT}"); before=${before%% *}
+    # Validate this data inside the already trusted bootstrap process.  Do not
+    # execute a Python helper copied from the mutable source checkout before
+    # publication.  This filter mirrors the strict state inventory contract:
+    # exact keys, ordered unique packages/paths, exact CPVs/hashes, canonical
+    # absolute paths, valid owners, and disjoint file/directory namespaces.
+    # shellcheck disable=SC2016 # jq variables are intentionally single-quoted.
+    validation_json=$("${JQ_PATH}" -ce --arg inventory_sha256 "${before}" '
+        def safe_id:
+            type == "string" and test("^[A-Za-z0-9+_.:@-]+$");
+        def exact_cpv:
+            type == "string" and
+            test("^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$");
+        def sha256:
+            type == "string" and test("^[0-9a-f]{64}$");
+        def canonical_absolute:
+            type == "string" and startswith("/") and . != "/" and
+            (test("[\\u0000-\\u001f]") | not) and
+            (contains("//") | not) and
+            (test("/(?:[.]{1,2})(?:/|$)") | not) and
+            (endswith("/") | not);
+        if (
+        keys == ["generation_id", "inventory_id", "owned_directories",
+                 "owned_paths", "packages", "record_type", "schema_version"] and
+        .schema_version == 2 and .record_type == "frozen-inventory" and
+        (.generation_id | safe_id) and (.inventory_id | safe_id) and
+        (.packages | type == "array" and length > 0) and
+        all(.packages[];
+            keys == ["cpv", "entry_sha256"] and
+            (.cpv | exact_cpv) and (.entry_sha256 | sha256)) and
+        ([.packages[].cpv] as $cpvs |
+            $cpvs == ($cpvs | sort) and
+            ($cpvs | length) == ($cpvs | unique | length) and
+            all(.owned_paths[], .owned_directories[];
+                . as $entry |
+                keys == ["owner_cpv", "path"] and
+                (.owner_cpv | exact_cpv) and
+                (.path | canonical_absolute) and
+                ($cpvs | index($entry.owner_cpv)) != null)) and
+        (.owned_paths | type == "array") and
+        (.owned_directories | type == "array") and
+        ([.owned_paths[] | [.owner_cpv, .path]] as $paths |
+         [.owned_directories[] | [.owner_cpv, .path]] as $directories |
+            $paths == ($paths | sort) and
+            ($paths | length) == ($paths | unique | length) and
+            $directories == ($directories | sort) and
+            ($directories | length) == ($directories | unique | length) and
+            all($directories[]; . as $directory | ($paths | index($directory)) == null))
+        ) then
+        {
+            cpvs: [.packages[].cpv],
+            generation_id: .generation_id,
+            inventory_id: .inventory_id,
+            inventory_sha256: $inventory_sha256,
+            owned_directory_count: (.owned_directories | length),
+            owned_path_count: (.owned_paths | length),
+            package_count: (.packages | length)
+        }
+        else error("frozen inventory violates the strict semantic contract") end
+    ' "${FROZEN_INVENTORY_INPUT}") || \
+        fail 'strict frozen-inventory semantic validation failed'
+    "${JQ_PATH}" -e '
+        keys == ["cpvs", "generation_id", "inventory_id", "inventory_sha256",
+                 "owned_directory_count", "owned_path_count", "package_count"] and
+        (.inventory_sha256 | test("^[0-9a-f]{64}$")) and
+        (.generation_id | type == "string" and length > 0) and
+        (.inventory_id | type == "string" and length > 0) and
+        (.package_count | type == "number") and
+        (.owned_path_count | type == "number") and
+        (.owned_directory_count | type == "number") and
+        (.cpvs | type == "array") and (.package_count == (.cpvs | length))
+    ' <<<"${validation_json}" >/dev/null || \
+        fail 'frozen-inventory validator returned an invalid summary'
+    [[ ${before} == "$("${JQ_PATH}" -r '.inventory_sha256' <<<"${validation_json}")" ]] || \
+        fail 'frozen inventory changed after strict semantic validation'
+    FROZEN_CPVS=()
+    while IFS= read -r cpv; do
+        [[ -z ${FROZEN_CPVS["${cpv}"]+x} ]] || \
+            fail "frozen inventory repeats CPV: ${cpv}"
+        FROZEN_CPVS["${cpv}"]=1
+    done < <("${JQ_PATH}" -r '.cpvs[]' <<<"${validation_json}")
+    ((${#FROZEN_CPVS[@]} > 0)) || fail 'frozen inventory has no package entries'
+    cp -- "${FROZEN_INVENTORY_INPUT}" "${SNAPSHOT}/frozen-inventory.json"
+    after=$(sha256sum -- "${FROZEN_INVENTORY_INPUT}"); after=${after%% *}
+    [[ ${before} == "${after}" && \
+        ${before} == "$(sha256sum -- "${SNAPSHOT}/frozen-inventory.json" | awk '{print $1}')" ]] || \
+        fail 'frozen inventory changed while it was snapshotted'
+    FROZEN_INVENTORY_SHA256=${before}
+}
+
+validate_generated_policy_grammar() {
+    local source=$1 line atom environment extra basename file variable value cpv
+    local atom_re='^[A-Za-z0-9+_.~=@<>,*:-]+/[A-Za-z0-9+_.~=@<>,*:-]+$'
+    local -A pairs=() referenced=() files=() variables=()
+    local -a top_entries=()
+    mapfile -t top_entries < <(
+        find "${source}" -mindepth 1 -maxdepth 1 -printf '%y\t%f\n' | sort
+    )
+    [[ ${top_entries[*]} == $'d\tenv\nf\tpackage.env' ]] || \
+        fail 'generated policy top-level entry set must be exactly package.env and env/'
+    while IFS= read -r line || [[ -n ${line} ]]; do
+        [[ ${line} =~ ^[[:space:]]*$ || ${line} =~ ^[[:space:]]*# ]] && continue
+        atom='' environment='' extra=''
+        IFS=$' \t' read -r atom environment extra <<<"${line}"
+        [[ -n ${atom} && -n ${environment} && -z ${extra} ]] || \
+            fail "generated package.env line is not exactly ATOM ENVIRONMENT: ${line}"
+        [[ ${atom} =~ ${atom_re} ]] || \
+            fail "generated package.env atom contains unsafe syntax: ${atom}"
+        [[ ${atom} == =* && ${atom} != *'*'* ]] || \
+            fail "generated package.env atom is not an exact CPV: ${atom}"
+        /usr/bin/python3 -I - "${atom}" <<'PY' >/dev/null 2>&1 || \
+            fail "generated package.env atom is invalid: ${atom}"
+import sys
+from portage.dep import Atom
+Atom(sys.argv[1])
+PY
+        cpv=${atom#=}
+        cpv=${cpv%%:*}
+        [[ -n ${FROZEN_CPVS["${cpv}"]+x} ]] || \
+            fail "generated package.env atom is absent from the frozen inventory: ${atom}"
+        if [[ -z ${TEST_ROOT} ]]; then
+            [[ -n $(portageq match / "${atom}" 2>/dev/null) ]] || \
+                fail "generated package.env atom does not match the live installed universe: ${atom}"
+        fi
+        [[ ${environment} =~ ^optimization/generated/([A-Za-z0-9][A-Za-z0-9_.-]*\.conf)$ ]] || \
+            fail "generated environment path escapes optimization/generated: ${environment}"
+        basename=${BASH_REMATCH[1]}
+        [[ -z ${pairs["${atom}\t${environment}"]+x} ]] || \
+            fail "duplicate generated package/environment pair: ${atom} ${environment}"
+        pairs["${atom}\t${environment}"]=1
+        referenced["${basename}"]=1
+    done <"${source}/package.env"
+
+    while IFS= read -r -d '' file; do
+        basename=${file##*/}
+        [[ ${basename} =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*\.conf$ ]] || \
+            fail "generated environment has an unsafe filename: ${basename}"
+        files["${basename}"]=1
+        variables=()
+        while IFS= read -r line || [[ -n ${line} ]]; do
+            [[ ${line} =~ ^[[:space:]]*$ || ${line} =~ ^[[:space:]]*# ]] && continue
+            [[ ${line} =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]] || \
+                fail "generated environment is not assignment-only: ${basename}: ${line}"
+            variable=${BASH_REMATCH[1]}
+            value=${BASH_REMATCH[2]}
+            case ${variable} in
+                GENTOO_OPT_MODE|GENTOO_OPT_BOLT_STAGE|GENTOO_OPT_BOLT_GCC_READY|\
+                GENTOO_OPT_PROFILE_MAP_READY|GENTOO_OPT_ABI|GENTOO_OPT_COMPILER_FAMILY|\
+                GENTOO_OPT_FINGERPRINT_FILE|\
+                GENTOO_OPT_IDENTITY_INPUT|GENTOO_OPT_PROFILE_MANIFEST|\
+                GENTOO_OPT_PROFILE_PATH|GENTOO_OPT_PROFILE_METADATA|\
+                GENTOO_OPT_RUST_TARGET|GENTOO_OPT_GO_MAIN_COUNT|GENTOO_OPT_GO_BINARY|\
+                GENTOO_OPT_BOLT_CACHE_ROOT|GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT|\
+                GENTOO_OPT_BOLT_ELIGIBILITY_PROOF) ;;
+                *) fail "generated environment assigns a forbidden variable: ${variable}" ;;
+            esac
+            [[ -z ${variables["${variable}"]+x} ]] || \
+                fail "generated environment repeats ${variable}: ${basename}"
+            variables["${variable}"]=1
+            [[ ${value} =~ ^[A-Za-z0-9_./:@,+%=-]*$ || \
+                ${value} =~ ^\"[A-Za-z0-9_./:@,+%=-]*\"$ ]] || \
+                fail "generated environment value contains shell syntax: ${basename}: ${line}"
+        done <"${file}"
+    done < <(find "${source}/env" -mindepth 1 -maxdepth 1 -type f -print0 | sort -z)
+    [[ $(find "${source}/env" -mindepth 1 ! -type f -print -quit) == '' ]] || \
+        fail 'generated env/ must contain regular files only at one level'
+    for basename in "${!referenced[@]}"; do
+        [[ -n ${files["${basename}"]+x} ]] || \
+            fail "generated package.env references a missing environment: ${basename}"
+    done
+    for basename in "${!files[@]}"; do
+        [[ -n ${referenced["${basename}"]+x} ]] || \
+            fail "generated environment is unreferenced: ${basename}"
+    done
+}
+
 generated_policy_identity() {
     local source=$1 basename expected entry uid mode calculated
     basename=${source##*/}
@@ -367,6 +621,7 @@ generated_policy_identity() {
     [[ -d ${source} && ! -L ${source} && -f ${source}/package.env && \
         ! -L ${source}/package.env && -d ${source}/env && ! -L ${source}/env ]] || \
         fail 'generated policy requires regular package.env and non-symlink env/'
+    validate_generated_policy_grammar "${source}"
     while IFS= read -r -d '' entry; do
         [[ -L ${entry} ]] && fail "generated policy contains a symlink: ${entry}"
         [[ -d ${entry} || -f ${entry} ]] || \
@@ -386,13 +641,16 @@ generated_policy_identity() {
 
 snapshot_inputs() {
     local before after snapshot_identity relative source_status_after commit_after \
-        generated_before generated_after snapshot_generated
-    SOURCE_STATUS=$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all | sha256sum | awk '{print $1}')
+        generated_before generated_after snapshot_generated git_status_before \
+        git_status_after
+    git_status_before=$(source_git status --porcelain=v1 --untracked-files=all \
+        --ignore-submodules=none)
+    SOURCE_STATUS=$(printf '%s' "${git_status_before}" | sha256sum | awk '{print $1}')
     GIT_DIRTY=clean
-    git -C "${ROOT}" diff --quiet --ignore-submodules -- && \
-        git -C "${ROOT}" diff --cached --quiet --ignore-submodules -- && \
-        [[ -z $(git -C "${ROOT}" ls-files --others --exclude-standard) ]] || GIT_DIRTY=dirty
-    GIT_COMMIT=$(git -C "${ROOT}" rev-parse --verify HEAD)
+    [[ -z ${git_status_before} ]] || GIT_DIRTY=dirty
+    GIT_COMMIT=$(source_git rev-parse --verify HEAD)
+    [[ -n ${TEST_ROOT} || ${GIT_DIRTY} == clean ]] || \
+        fail 'production framework publication requires a clean Git worktree'
     before=$(source_identity "${ROOT}")
     failure_point before-source-copy
     SNAPSHOT=$(mktemp -d "${BASE}/.framework-source-snapshot.XXXXXXXX")
@@ -400,6 +658,7 @@ snapshot_inputs() {
         "${SNAPSHOT}/scripts/optimization/pgo" \
         "${SNAPSHOT}/scripts/optimization/lib" \
         "${SNAPSHOT}/scripts/optimization/verify" \
+        "${SNAPSHOT}/scripts/optimization/recovery" \
         "${SNAPSHOT}/optimization/schema"
     cp -a -- "${ROOT}/portage" "${SNAPSHOT}/portage"
     cp -a -- "${ROOT}/local-overlay" "${SNAPSHOT}/local-overlay"
@@ -409,13 +668,16 @@ snapshot_inputs() {
     done
     after=$(source_identity "${ROOT}")
     snapshot_identity=$(source_identity "${SNAPSHOT}")
-    source_status_after=$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all | sha256sum | awk '{print $1}')
-    commit_after=$(git -C "${ROOT}" rev-parse --verify HEAD)
+    git_status_after=$(source_git status --porcelain=v1 --untracked-files=all \
+        --ignore-submodules=none)
+    source_status_after=$(printf '%s' "${git_status_after}" | sha256sum | awk '{print $1}')
+    commit_after=$(source_git rev-parse --verify HEAD)
     [[ ${before} == "${after}" && ${before} == "${snapshot_identity}" ]] || \
         fail 'reviewed inputs changed while the immutable source snapshot was created'
     [[ ${SOURCE_STATUS} == "${source_status_after}" && ${GIT_COMMIT} == "${commit_after}" ]] || \
         fail 'Git commit/worktree identity changed while inputs were snapshotted'
     if [[ -n ${GENERATED_POLICY_INPUT} ]]; then
+        snapshot_frozen_inventory
         verify_existing_ancestor_chain "${GENERATED_POLICY_INPUT}"
         generated_before=$(generated_policy_identity "${GENERATED_POLICY_INPUT}")
         cp -a -- "${GENERATED_POLICY_INPUT}" "${SNAPSHOT}/generated-policy"
@@ -427,6 +689,8 @@ snapshot_inputs() {
             fail 'generated policy changed while it was snapshotted'
         GENERATED_POLICY_ID=${generated_before}
     else
+        [[ -z ${FROZEN_INVENTORY_INPUT} ]] || \
+            fail '--frozen-inventory is invalid without a generated policy generation'
         mkdir -p -- "${SNAPSHOT}/generated-policy/env"
         : >"${SNAPSHOT}/generated-policy/package.env"
         GENERATED_POLICY_ID=empty-v1
@@ -435,6 +699,8 @@ snapshot_inputs() {
         "generated_policy=${GENERATED_POLICY_ID}" | sha256sum | awk '{print $1}')
     INSTALLER_SHA256=$(sha256sum -- "${SNAPSHOT}/scripts/optimization/install-framework.sh")
     INSTALLER_SHA256=${INSTALLER_SHA256%% *}
+    [[ ${INSTALLER_SHA256} == "$(sha256sum -- "${SELF_PATH}" | awk '{print $1}')" ]] || \
+        fail 'root-owned bootstrap installer differs from the snapshotted source installer'
     emit_source_inventory "${SNAPSHOT}" >"${SNAPSHOT}/source.inventory"
     emit_tree_inventory "${SNAPSHOT}/generated-policy" generated-policy \
         >>"${SNAPSHOT}/source.inventory"
@@ -483,6 +749,7 @@ render_manifest() {
     printf 'git_worktree=%s\n' "${GIT_DIRTY}"
     printf 'git_status_sha256=%s\n' "${SOURCE_STATUS}"
     printf 'generated_policy=%s\n' "${GENERATED_POLICY_ID}"
+    printf 'frozen_inventory_sha256=%s\n' "${FROZEN_INVENTORY_SHA256}"
     printf 'qa_hook_basename=%s\n' "${HOOK_BASENAME}"
     printf 'jq_sha256=%s\n' "${JQ_SHA256}"
     printf 'jq_version=%s\n' "${JQ_VERSION}"
@@ -502,7 +769,8 @@ render_manifest() {
             "${LIBEXEC_ROOT}" "${HELPER_RELATIVE[index]}" "${hash}" \
             "${EXPECTED_UID}" "${EXPECTED_GID}"
     done
-    for source in package-state.schema.json artifact-state.schema.json; do
+    for source in package-state.schema.json artifact-state.schema.json \
+        final-system-state.schema.json; do
         hash=$(sha256sum -- "${SNAPSHOT}/optimization/schema/${source}"); hash=${hash%% *}
         printf '%s/schema/%s\t%s\t0644\t%s:%s\n' \
             "${SHARE_ROOT}" "${source}" "${hash}" "${EXPECTED_UID}" "${EXPECTED_GID}"
@@ -512,7 +780,7 @@ render_manifest() {
 }
 
 candidate_inventory() {
-    local candidate=$1 entry relative type mode digest target
+    local candidate=$1 entry relative mode digest target
     while IFS= read -r -d '' entry; do
         relative=${entry#"${candidate}/"}
         [[ ${relative} != "${entry}" ]] || continue
@@ -536,7 +804,8 @@ candidate_inventory() {
 }
 
 verify_inventory_exact() {
-    local candidate=$1 expected=${candidate}/.candidate-inventory actual
+    local candidate=$1 expected actual
+    expected=${candidate}/.candidate-inventory
     verify_regular_trusted "${expected}" 0600
     actual=$(mktemp "${BASE}/.candidate-inventory-check.XXXXXXXX")
     candidate_inventory "${candidate}" >"${actual}"
@@ -548,7 +817,8 @@ verify_inventory_exact() {
 }
 
 verify_make_profile() {
-    local candidate=$1 profile=${candidate}/portage/make.profile expected actual probe
+    local candidate=$1 profile expected actual probe
+    profile=${candidate}/portage/make.profile
     [[ -L ${profile} ]] || fail 'candidate make.profile is not a symlink'
     [[ $(readlink -- "${profile}") == ../../../../../var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm ]] || \
         fail 'candidate make.profile has the wrong literal target'
@@ -569,7 +839,8 @@ verify_make_profile() {
 }
 
 verify_generated_policy() {
-    local candidate=$1 directory=${candidate}/generated-policy identity
+    local candidate=$1 directory identity calculated
+    directory=${candidate}/generated-policy
     [[ -d ${directory} && ! -L ${directory} ]] || fail 'generated-policy directory is absent'
     verify_regular_trusted "${directory}/.identity" 0600
     identity=$(<"${directory}/.identity")
@@ -589,6 +860,16 @@ verify_generated_policy() {
         [[ ! -s ${directory}/package.env && \
             -z $(find "${directory}/env" -mindepth 1 -print -quit) ]] || \
             fail 'empty generated-policy generation contains an assignment or environment'
+    else
+        verify_regular_trusted "${directory}/.frozen-inventory.json" 0600
+        [[ $(sha256sum -- "${directory}/.frozen-inventory.json" | awk '{print $1}') == \
+            "${FROZEN_INVENTORY_SHA256}" ]] || \
+            fail 'candidate generated policy frozen-inventory binding differs'
+        calculated=$(emit_tree_inventory "${directory}" generated-policy .identity \
+            .frozen-inventory.json | \
+            sha256sum | awk '{print $1}')
+        [[ ${calculated} == "${identity}" ]] || \
+            fail 'candidate generated-policy content differs from its identity'
     fi
 }
 
@@ -773,6 +1054,7 @@ rollback_install() {
     restore_path "${LIBEXEC_ROOT}/bolt" libexec-bolt
     restore_path "${LIBEXEC_ROOT}/pgo" libexec-pgo
     restore_path "${LIBEXEC_ROOT}/scripts" libexec-scripts
+    restore_path "${LIBEXEC_ROOT}/recovery" libexec-recovery
     restore_path "${SHARE_ROOT}/schema" share-schema
     restore_path "${INSTALL_QA_ROOT}/${HOOK_BASENAME}" qa-hook
     restore_path "${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt" qa-hook-legacy
@@ -812,6 +1094,7 @@ trap 'signal_exit TERM' TERM
 trap 'signal_exit HUP' HUP
 
 preflight_destination_ancestors
+verify_bootstrap_identity
 verify_jq
 if [[ ${MODE} == install ]]; then
     safe_mkdir 0700 "${LOCK_PATH%/*}"
@@ -850,6 +1133,7 @@ if [[ ${MODE} == check ]]; then
         "git_status=${SOURCE_STATUS}" \
         "jq=${JQ_SHA256}:${JQ_VERSION}" \
         "generated_policy=${GENERATED_POLICY_ID}" \
+        "frozen_inventory=${FROZEN_INVENTORY_SHA256}" \
         "previous=${ACTIVE_PREVIOUS}" | sha256sum | awk '{print $1}')
     [[ ${ACTIVE_TARGET} == "${BASE}/framework-${FRAMEWORK_AGGREGATE}" ]] || \
         fail 'active generation identity does not match the reviewed input snapshot'
@@ -872,7 +1156,8 @@ if [[ ${MODE} == check ]]; then
             "${LIBEXEC_ROOT}/${HELPER_RELATIVE[index]}" || \
             fail "installed helper differs: ${HELPER_RELATIVE[index]}"
     done
-    for schema in package-state.schema.json artifact-state.schema.json; do
+    for schema in package-state.schema.json artifact-state.schema.json \
+        final-system-state.schema.json; do
         verify_regular_trusted "${SHARE_ROOT}/schema/${schema}" 0644
         cmp -s -- "${ACTIVE_TARGET}/share/schema/${schema}" \
             "${SHARE_ROOT}/schema/${schema}" || fail "installed schema differs: ${schema}"
@@ -889,9 +1174,13 @@ if [[ ${MODE} == check ]]; then
         -printf '%y\t%P\n' | sort)
     [[ ${ACTUAL_STATE_HELPERS[*]} == $'d\toptimization\nd\toptimization/lib\nd\toptimization/verify\nf\toptimization/lib/state.py\nf\toptimization/verify/reconcile-state.py' ]] || \
         fail 'installed state runtime entry set differs'
+    mapfile -t ACTUAL_RECOVERY_HELPERS < <(find "${LIBEXEC_ROOT}/recovery" -mindepth 1 \
+        -maxdepth 1 -printf '%f\n' | sort)
+    [[ ${ACTUAL_RECOVERY_HELPERS[*]} == verify-binpkg-snapshot.py ]] || \
+        fail 'installed recovery verifier entry set differs'
     mapfile -t ACTUAL_SCHEMAS < <(find "${SHARE_ROOT}/schema" -mindepth 1 -maxdepth 1 \
         -printf '%f\n' | sort)
-    [[ ${ACTUAL_SCHEMAS[*]} == $'artifact-state.schema.json\npackage-state.schema.json' ]] || \
+    [[ ${ACTUAL_SCHEMAS[*]} == $'artifact-state.schema.json\nfinal-system-state.schema.json\npackage-state.schema.json' ]] || \
         fail 'installed schema entry set differs'
     [[ ! -e ${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt && \
         ! -L ${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt ]] || \
@@ -915,7 +1204,7 @@ for pgo_backend in clang-ir clang-sample ebuild-native gcc go rust; do
     safe_mkdir_owner 0750 "${EXPECTED_UID}" "${PORTAGE_GID}" "${PGO_CACHE}/${pgo_backend}"
 done
 safe_mkdir 0755 "${PGO_RAW%/*}"
-safe_mkdir_owner 0750 "${EXPECTED_UID}" "${PORTAGE_GID}" "${PGO_RAW}"
+safe_mkdir 0755 "${PGO_RAW}"
 snapshot_inputs
 verify_source_symlinks
 
@@ -928,6 +1217,7 @@ FRAMEWORK_AGGREGATE=$(printf '%s\n' \
     "git_status=${SOURCE_STATUS}" \
     "jq=${JQ_SHA256}:${JQ_VERSION}" \
     "generated_policy=${GENERATED_POLICY_ID}" \
+    "frozen_inventory=${FROZEN_INVENTORY_SHA256}" \
     "previous=${PREVIOUS_TARGET}" | sha256sum | awk '{print $1}')
 CANDIDATE_FINAL=${BASE}/framework-${FRAMEWORK_AGGREGATE}
 CANDIDATE_STAGE=${CANDIDATE_FINAL}.partial.$$
@@ -940,18 +1230,25 @@ if [[ ${PREVIOUS_TARGET} != none && -f ${PREVIOUS_TARGET}/install.manifest ]] &&
     grep -Fxq "git_status_sha256=${SOURCE_STATUS}" "${PREVIOUS_TARGET}/install.manifest" && \
     grep -Fxq "jq_sha256=${JQ_SHA256}" "${PREVIOUS_TARGET}/install.manifest" && \
     grep -Fxq "jq_version=${JQ_VERSION}" "${PREVIOUS_TARGET}/install.manifest" && \
-    grep -Fxq "generated_policy=${GENERATED_POLICY_ID}" "${PREVIOUS_TARGET}/install.manifest"; then
+    grep -Fxq "generated_policy=${GENERATED_POLICY_ID}" "${PREVIOUS_TARGET}/install.manifest" && \
+    grep -Fxq "frozen_inventory_sha256=${FROZEN_INVENTORY_SHA256}" \
+        "${PREVIOUS_TARGET}/install.manifest"; then
     printf 'INFO: reviewed inputs already match the active generation; running strict check\n'
     COMMITTED=1
     trap - EXIT INT TERM HUP
     rm -rf -- "${SNAPSHOT}"
+    REEXEC_ARGS=("${SELF_PATH}" --check --source-root "${ROOT}")
+    [[ -z ${GENERATED_POLICY_INPUT} ]] || REEXEC_ARGS+=(
+        --generated-policy-generation "${GENERATED_POLICY_INPUT}"
+    )
+    [[ -z ${FROZEN_INVENTORY_INPUT} ]] || REEXEC_ARGS+=(
+        --frozen-inventory "${FROZEN_INVENTORY_INPUT}"
+    )
     if [[ -n ${TEST_ROOT} ]]; then
-        exec env -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
-            "${ROOT}/scripts/optimization/install-framework.sh" --check --test-root "${TEST_ROOT}"
-    else
-        exec env -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
-            "${ROOT}/scripts/optimization/install-framework.sh" --check
+        REEXEC_ARGS+=(--test-root "${TEST_ROOT}")
     fi
+    exec env -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
+        "${REEXEC_ARGS[@]}"
 fi
 
 rm -rf -- "${CANDIDATE_STAGE}"
@@ -960,11 +1257,16 @@ mkdir -p -- "${CANDIDATE_STAGE}/portage" "${CANDIDATE_STAGE}/local-overlay" \
     "${CANDIDATE_STAGE}/libexec/pgo" \
     "${CANDIDATE_STAGE}/libexec/scripts/optimization/lib" \
     "${CANDIDATE_STAGE}/libexec/scripts/optimization/verify" \
+    "${CANDIDATE_STAGE}/libexec/recovery" \
     "${CANDIDATE_STAGE}/share/schema" "${CANDIDATE_STAGE}/qa"
 cp -a -- "${SNAPSHOT}/portage/." "${CANDIDATE_STAGE}/portage/"
 cp -a -- "${SNAPSHOT}/local-overlay/." "${CANDIDATE_STAGE}/local-overlay/"
 rm -rf -- "${CANDIDATE_STAGE}/generated-policy"
 cp -a -- "${SNAPSHOT}/generated-policy" "${CANDIDATE_STAGE}/generated-policy"
+if [[ ${GENERATED_POLICY_ID} != empty-v1 ]]; then
+    install -m 0600 -T -- "${SNAPSHOT}/frozen-inventory.json" \
+        "${CANDIDATE_STAGE}/generated-policy/.frozen-inventory.json"
+fi
 ln -s -- ../../generated-policy/package.env \
     "${CANDIDATE_STAGE}/portage/package.env/99-generated-optimization"
 ln -s -- ../../../generated-policy/env \
@@ -977,6 +1279,8 @@ install -m 0644 -T -- "${SNAPSHOT}/optimization/schema/package-state.schema.json
     "${CANDIDATE_STAGE}/share/schema/package-state.schema.json"
 install -m 0644 -T -- "${SNAPSHOT}/optimization/schema/artifact-state.schema.json" \
     "${CANDIDATE_STAGE}/share/schema/artifact-state.schema.json"
+install -m 0644 -T -- "${SNAPSHOT}/optimization/schema/final-system-state.schema.json" \
+    "${CANDIDATE_STAGE}/share/schema/final-system-state.schema.json"
 install -m 0644 -T -- "${SNAPSHOT}/portage/install-qa-check.d/${HOOK_BASENAME}" \
     "${CANDIDATE_STAGE}/qa/${HOOK_BASENAME}"
 printf '%s\n' "${SOURCE_AGGREGATE}" >"${CANDIDATE_STAGE}/portage/.gentoo-optimization-source-hash"
@@ -986,6 +1290,9 @@ normalize_tree "${CANDIDATE_STAGE}"
 chmod 0600 -- "${CANDIDATE_STAGE}/portage/.gentoo-optimization-source-hash" \
     "${CANDIDATE_STAGE}/local-overlay/.gentoo-optimization-source-hash" \
     "${CANDIDATE_STAGE}/generated-policy/.identity"
+if [[ ${GENERATED_POLICY_ID} != empty-v1 ]]; then
+    chmod 0600 -- "${CANDIDATE_STAGE}/generated-policy/.frozen-inventory.json"
+fi
 candidate_inventory "${CANDIDATE_STAGE}" >"${CANDIDATE_STAGE}/.candidate-inventory"
 chmod 0600 -- "${CANDIDATE_STAGE}/.candidate-inventory"
 CANDIDATE_INVENTORY_SHA=$(sha256sum -- "${CANDIDATE_STAGE}/.candidate-inventory" | awk '{print $1}')
@@ -1016,6 +1323,7 @@ ROLLBACK_REQUIRED=1
 backup_path "${LIBEXEC_ROOT}/bolt" libexec-bolt
 backup_path "${LIBEXEC_ROOT}/pgo" libexec-pgo
 backup_path "${LIBEXEC_ROOT}/scripts" libexec-scripts
+backup_path "${LIBEXEC_ROOT}/recovery" libexec-recovery
 backup_path "${SHARE_ROOT}/schema" share-schema
 backup_path "${INSTALL_QA_ROOT}/${HOOK_BASENAME}" qa-hook
 backup_path "${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt" qa-hook-legacy
@@ -1026,14 +1334,16 @@ safe_mkdir 0755 "${LIBEXEC_ROOT}"
 cp -a -- "${CANDIDATE_FINAL}/libexec/bolt" "${LIBEXEC_ROOT}/bolt"
 cp -a -- "${CANDIDATE_FINAL}/libexec/pgo" "${LIBEXEC_ROOT}/pgo"
 cp -a -- "${CANDIDATE_FINAL}/libexec/scripts" "${LIBEXEC_ROOT}/scripts"
+cp -a -- "${CANDIDATE_FINAL}/libexec/recovery" "${LIBEXEC_ROOT}/recovery"
 safe_mkdir 0755 "${SHARE_ROOT}"
 cp -a -- "${CANDIDATE_FINAL}/share/schema" "${SHARE_ROOT}/schema"
 chown -R "${EXPECTED_UID}:${EXPECTED_GID}" -- "${LIBEXEC_ROOT}/bolt" "${LIBEXEC_ROOT}/pgo"
 chown -R "${EXPECTED_UID}:${EXPECTED_GID}" -- "${LIBEXEC_ROOT}/scripts" "${SHARE_ROOT}/schema"
+chown -R "${EXPECTED_UID}:${EXPECTED_GID}" -- "${LIBEXEC_ROOT}/recovery"
 find "${LIBEXEC_ROOT}/bolt" "${LIBEXEC_ROOT}/pgo" "${LIBEXEC_ROOT}/scripts" \
-    "${SHARE_ROOT}/schema" -type d -exec chmod 0755 -- {} +
+    "${LIBEXEC_ROOT}/recovery" "${SHARE_ROOT}/schema" -type d -exec chmod 0755 -- {} +
 find "${LIBEXEC_ROOT}/bolt" "${LIBEXEC_ROOT}/pgo" "${LIBEXEC_ROOT}/scripts" \
-    -type f -exec chmod 0755 -- {} +
+    "${LIBEXEC_ROOT}/recovery" -type f -exec chmod 0755 -- {} +
 find "${SHARE_ROOT}/schema" -type f -exec chmod 0644 -- {} +
 publish_regular "${CANDIDATE_FINAL}/qa/${HOOK_BASENAME}" \
     "${INSTALL_QA_ROOT}/${HOOK_BASENAME}" 0644
@@ -1042,6 +1352,7 @@ ln -s -- "${FRAMEWORK_CURRENT}/portage" "${ETC_PORTAGE}"
 sync_tree "${LIBEXEC_ROOT}/bolt"
 sync_tree "${LIBEXEC_ROOT}/pgo"
 sync_tree "${LIBEXEC_ROOT}/scripts"
+sync_tree "${LIBEXEC_ROOT}/recovery"
 sync_tree "${SHARE_ROOT}/schema"
 sync_path "${INSTALL_QA_ROOT}"
 sync_path "${STATE_ROOT}"

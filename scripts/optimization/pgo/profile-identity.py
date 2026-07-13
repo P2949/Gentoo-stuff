@@ -25,10 +25,20 @@ from typing import Any, NoReturn
 
 
 SCHEMA_VERSION = 2
+SAMPLE_SCHEMA_VERSION = 3
+CONVERSION_LOG_SCHEMA_VERSION = 1
 BUFFER_SIZE = 1024 * 1024
 MAX_INPUT_SIZE = 4 * 1024 * 1024
 MAX_TOOL_OUTPUT = 1024 * 1024
 TOOL_TIMEOUT_SECONDS = 15
+TOOL_ENVIRONMENT = {
+    "HOME": "/nonexistent",
+    "LANG": "C",
+    "LANGUAGE": "C",
+    "LC_ALL": "C",
+    "PATH": "/usr/bin:/bin",
+    "TZ": "UTC",
+}
 
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 BUILD_ID_RE = re.compile(r"^[0-9a-f]{8,128}$")
@@ -100,9 +110,23 @@ SAMPLE_SOURCE_PROFGEN_FIELDS = {
     "objcopy",
     "command_arguments",
     "command_output_sha256",
+    "conversion_log_path",
+    "conversion_log_sha256",
+    "conversion_log_observation",
     "binary_observation",
     "debug_binary_observation",
     "perf_data_observation",
+}
+CONVERSION_LOG_FIELDS = {
+    "schema_version",
+    "producer_realpath",
+    "producer_sha256",
+    "command_arguments",
+    "exit_status",
+    "stdout",
+    "stdout_sha256",
+    "stderr",
+    "stderr_sha256",
 }
 LLVM_TOOL_IDENTITY_FIELDS = {
     "realpath",
@@ -324,7 +348,7 @@ def run_tool(path: Path, arguments: list[str], label: str) -> tuple[str, str]:
             stderr=subprocess.PIPE,
             check=False,
             timeout=TOOL_TIMEOUT_SECONDS,
-            env={"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin"},
+            env=TOOL_ENVIRONMENT.copy(),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         fail(f"cannot execute {label} {path}: {exc}")
@@ -377,7 +401,7 @@ def run_bounded_tool(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
-            env={"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin"},
+            env=TOOL_ENVIRONMENT.copy(),
         )
     except OSError as exc:
         fail(f"cannot execute {label} {path}: {exc}")
@@ -917,7 +941,7 @@ def sample_identity(
         "profile_sha256": sha256_file(profile),
         "profile_size": profile.stat().st_size,
         "reproducibility": build_reproducibility(arguments),
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": SAMPLE_SCHEMA_VERSION,
         "source": source,
         "validation": validation,
         "validator": validator,
@@ -1017,12 +1041,37 @@ def validate_sample_source(
     command_output_sha256 = require_hex64(
         value["command_output_sha256"], "command_output_sha256"
     )
+    conversion_log_path, conversion_log_sha256 = validate_recorded_source_file(
+        value["conversion_log_path"],
+        value["conversion_log_sha256"],
+        "conversion_log",
+    )
+    if profile is not None and Path(conversion_log_path) != profile.parent / (
+        "llvm-profgen-conversion-log.json"
+    ):
+        fail("conversion log is not the exact required sibling of sample.prof")
+    conversion_log_observation = validate_file_observation(
+        value["conversion_log_observation"],
+        Path(conversion_log_path),
+        "conversion log",
+    )
+    validate_conversion_log(
+        Path(conversion_log_path),
+        conversion_log_sha256,
+        conversion_log_observation,
+        producer,
+        command_arguments,
+        command_output_sha256,
+    )
     return {
         "binary_path": binary_path,
         "binary_sha256": binary_sha256,
         "binary_observation": binary_observation,
         "command_arguments": command_arguments,
         "command_output_sha256": command_output_sha256,
+        "conversion_log_path": conversion_log_path,
+        "conversion_log_sha256": conversion_log_sha256,
+        "conversion_log_observation": conversion_log_observation,
         "debug_binary_path": debug_path,
         "debug_binary_sha256": debug_sha256,
         "debug_binary_observation": debug_binary_observation,
@@ -1034,6 +1083,71 @@ def validate_sample_source(
         "producer": producer,
         "readelf": readelf,
     }
+
+
+def build_conversion_log(
+    producer: dict[str, object],
+    command_arguments: list[str],
+    stdout: str,
+    stderr: str,
+) -> dict[str, object]:
+    return {
+        "command_arguments": command_arguments,
+        "exit_status": 0,
+        "producer_realpath": producer["realpath"],
+        "producer_sha256": producer["sha256"],
+        "schema_version": CONVERSION_LOG_SCHEMA_VERSION,
+        "stderr": stderr,
+        "stderr_sha256": hashlib.sha256(stderr.encode("utf-8")).hexdigest(),
+        "stdout": stdout,
+        "stdout_sha256": hashlib.sha256(stdout.encode("utf-8")).hexdigest(),
+    }
+
+
+def validate_conversion_log(
+    path: Path,
+    expected_sha256: str,
+    expected_observation: dict[str, object],
+    producer: dict[str, object],
+    command_arguments: list[str],
+    command_output_sha256: str,
+) -> dict[str, object]:
+    path_stat = path.stat()
+    if stat.S_IMODE(path_stat.st_mode) != 0o444 or path_stat.st_nlink != 1:
+        fail("conversion log must be a link-count-one, mode-0444 regular file")
+    if sha256_file(path) != expected_sha256:
+        fail("conversion log no longer matches its recorded SHA-256")
+    recorded = load_json_object(path, "conversion log")
+    require_exact_fields(recorded, CONVERSION_LOG_FIELDS, "conversion log")
+    if recorded["schema_version"] != CONVERSION_LOG_SCHEMA_VERSION:
+        fail("conversion log has an unsupported schema_version")
+    if recorded["producer_realpath"] != producer["realpath"]:
+        fail("conversion log producer realpath mismatch")
+    if recorded["producer_sha256"] != producer["sha256"]:
+        fail("conversion log producer SHA-256 mismatch")
+    if recorded["command_arguments"] != command_arguments:
+        fail("conversion log command arguments mismatch")
+    if recorded["exit_status"] != 0:
+        fail("conversion log does not record a successful converter exit")
+    stdout = require_string(recorded["stdout"], "conversion log stdout", allow_empty=True)
+    stderr = require_string(recorded["stderr"], "conversion log stderr", allow_empty=True)
+    if require_hex64(recorded["stdout_sha256"], "conversion log stdout_sha256") != hashlib.sha256(
+        stdout.encode("utf-8")
+    ).hexdigest():
+        fail("conversion log stdout hash mismatch")
+    if require_hex64(recorded["stderr_sha256"], "conversion log stderr_sha256") != hashlib.sha256(
+        stderr.encode("utf-8")
+    ).hexdigest():
+        fail("conversion log stderr hash mismatch")
+    observed_output_sha256 = hashlib.sha256(
+        (stdout + "\0" + stderr).encode("utf-8")
+    ).hexdigest()
+    if observed_output_sha256 != command_output_sha256:
+        fail("conversion log streams do not match command_output_sha256")
+    after = observe_regular_file(path, "conversion log")
+    if after != expected_observation:
+        fail("conversion log changed while it was being validated")
+    return recorded
 
 
 def extract_binary_identity(
@@ -1143,23 +1257,39 @@ def ensure_new_regular_destination(path: Path, label: str) -> None:
 def sample_convert_command(arguments: argparse.Namespace) -> int:
     profile = arguments.profile_out
     metadata_out = arguments.metadata_out
+    conversion_log = arguments.conversion_log_out
     if profile.name != "sample.prof":
         fail("--profile-out must end in the exact filename sample.prof")
     ensure_new_regular_destination(profile, "sample profile output")
+    if metadata_out != profile.parent / "sample-metadata.json":
+        fail("--metadata-out must be the exact sibling sample-metadata.json")
     ensure_new_regular_destination(metadata_out, "sample metadata output")
-    destinations = {os.path.normpath(path) for path in (profile, metadata_out)}
-    if len(destinations) != 2:
-        fail("--profile-out and --metadata-out must be distinct")
+    if conversion_log != profile.parent / "llvm-profgen-conversion-log.json":
+        fail(
+            "--conversion-log-out must be the exact sibling "
+            "llvm-profgen-conversion-log.json"
+        )
+    ensure_new_regular_destination(conversion_log, "conversion log output")
+    destinations = {
+        os.path.normpath(path) for path in (profile, metadata_out, conversion_log)
+    }
+    if len(destinations) != 3:
+        fail("profile, metadata, and conversion-log outputs must be distinct")
     partial = profile.with_name("sample.prof.partial")
+    conversion_log_partial = conversion_log.with_name(
+        f"{conversion_log.name}.partial"
+    )
     validate_output_destination(partial)
-    try:
-        partial_stat = partial.lstat()
-    except FileNotFoundError:
-        partial_stat = None
-    if partial_stat is not None:
-        if not stat.S_ISREG(partial_stat.st_mode):
-            fail(f"stale transaction path is not a regular file: {partial}")
-        partial.unlink()
+    validate_output_destination(conversion_log_partial)
+    for stale_partial in (partial, conversion_log_partial):
+        try:
+            partial_stat = stale_partial.lstat()
+        except FileNotFoundError:
+            partial_stat = None
+        if partial_stat is not None:
+            if not stat.S_ISREG(partial_stat.st_mode):
+                fail(f"stale transaction path is not a regular file: {stale_partial}")
+            stale_partial.unlink()
 
     timeout_seconds = arguments.timeout_seconds
     kill_after_seconds = arguments.kill_after_seconds
@@ -1189,6 +1319,15 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
     validator = inspect_llvm_profdata(arguments.llvm_profdata, clang_major)
     readelf_identity = inspect_llvm_tool(arguments.readelf, clang_major, "llvm-readelf")
     objcopy_identity = inspect_llvm_tool(arguments.objcopy, clang_major, "llvm-objcopy")
+    tool_observations = {
+        label: observe_regular_file(Path(str(identity["realpath"])), label)
+        for label, identity in (
+            ("llvm-profgen", producer),
+            ("llvm-profdata", validator),
+            ("llvm-readelf", readelf_identity),
+            ("llvm-objcopy", objcopy_identity),
+        )
+    }
     build_id, text_sha256 = extract_binary_identity(
         binary,
         Path(str(readelf_identity["realpath"])),
@@ -1236,6 +1375,15 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
             require_unchanged_file(
                 debug_binary, debug_binary_observation, "debug binary"
             )
+        for label, identity in (
+            ("llvm-profgen", producer),
+            ("llvm-profdata", validator),
+            ("llvm-readelf", readelf_identity),
+            ("llvm-objcopy", objcopy_identity),
+        ):
+            require_unchanged_file(
+                Path(str(identity["realpath"])), tool_observations[label], label
+            )
         source: dict[str, object] = {
             "binary_path": os.fspath(binary),
             "binary_sha256": binary_observation["sha256"],
@@ -1261,12 +1409,31 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
             "producer": producer,
             "readelf": readelf_identity,
         }
+        conversion_log_data = build_conversion_log(
+            producer, command_arguments, converter_stdout, converter_stderr
+        )
+        atomic_write(
+            conversion_log_partial,
+            (json.dumps(conversion_log_data, indent=2, sort_keys=True) + "\n").encode(
+                "utf-8"
+            ),
+            mode=0o444,
+        )
         os.replace(partial, profile)
+        os.replace(conversion_log_partial, conversion_log)
         directory_descriptor = os.open(profile.parent, os.O_RDONLY | os.O_DIRECTORY)
         try:
             os.fsync(directory_descriptor)
         finally:
             os.close(directory_descriptor)
+        conversion_log_observation = observe_regular_file(
+            conversion_log, "conversion log"
+        )
+        source["conversion_log_path"] = os.fspath(
+            conversion_log.resolve(strict=True)
+        )
+        source["conversion_log_sha256"] = conversion_log_observation["sha256"]
+        source["conversion_log_observation"] = conversion_log_observation
         arguments.profile = profile
         arguments.build_id = build_id
         arguments.text_sha256 = text_sha256
@@ -1281,14 +1448,19 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
             metadata_out,
             (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
         )
+        require_unchanged_file(
+            conversion_log, conversion_log_observation, "conversion log"
+        )
         completed = True
         print(metadata["profile_sha256"])
         return 0
     finally:
         partial.unlink(missing_ok=True)
+        conversion_log_partial.unlink(missing_ok=True)
         if not completed:
             metadata_out.unlink(missing_ok=True)
             profile.unlink(missing_ok=True)
+            conversion_log.unlink(missing_ok=True)
         for signum, old_handler in old_handlers.items():
             signal.signal(signum, old_handler)
 
@@ -1408,6 +1580,9 @@ def create_parser() -> argparse.ArgumentParser:
     sample_convert_parser.add_argument("--perf-data", type=Path, required=True)
     sample_convert_parser.add_argument("--profile-out", type=Path, required=True)
     sample_convert_parser.add_argument("--metadata-out", type=Path, required=True)
+    sample_convert_parser.add_argument(
+        "--conversion-log-out", type=Path, required=True
+    )
     sample_convert_parser.add_argument(
         "--timeout-seconds", type=float, default=600.0
     )
