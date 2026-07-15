@@ -3,6 +3,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
+export PYTHONDONTWRITEBYTECODE=1
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 readonly SCRIPT_DIR
@@ -678,9 +679,9 @@ fi
 FRAMEWORK_INSTALLER_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-framework-installer.sh
 if [[ ! -f ${FRAMEWORK_INSTALLER_FIXTURE} ]]; then
     skip_case framework-installer "fixture is absent: ${FRAMEWORK_INSTALLER_FIXTURE}"
-elif ! require_commands awk bash chmod cmp cp find flock git grep install jq ln \
-    mkdir mktemp mv readlink realpath rm runuser sed seq sha256sum sleep sort \
-    stat sync tr; then
+elif ! require_commands awk bash chmod cmp cp find flock getfattr git grep install jq ln \
+    mkdir mktemp mv ps readlink realpath rm runuser sed seq setsid sha256sum \
+    sleep sort stat sync tar tr rmdir setfattr; then
     skip_case framework-installer "${PREFLIGHT_REASON}"
 else
     run_case framework-installer env \
@@ -760,6 +761,16 @@ else
 fi
 
 PORTAGE_SAMPLE_PGO_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-sample-pgo-integration.sh
+PORTAGE_SAMPLE_ENV_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-sample-production-env.sh
+if [[ ! -f ${PORTAGE_SAMPLE_ENV_FIXTURE} ]]; then
+    skip_case portage-sample-production-env \
+        "fixture is absent: ${PORTAGE_SAMPLE_ENV_FIXTURE}"
+elif ! require_commands bash env grep mktemp realpath sha256sum; then
+    skip_case portage-sample-production-env "${PREFLIGHT_REASON}"
+else
+    run_case portage-sample-production-env bash -- "${PORTAGE_SAMPLE_ENV_FIXTURE}"
+fi
+
 if [[ ! -f ${PORTAGE_SAMPLE_PGO_FIXTURE} ]]; then
     skip_case portage-sample-pgo-integration \
         "fixture is absent: ${PORTAGE_SAMPLE_PGO_FIXTURE}"

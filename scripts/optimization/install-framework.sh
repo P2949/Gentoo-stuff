@@ -1,11 +1,22 @@
 #!/bin/bash
 set -Eeuo pipefail
 shopt -s inherit_errexit
+shopt -u varredir_close
 IFS=$'\n\t'
 umask 077
 export LC_ALL=C
 export LANG=C LANGUAGE=C HOME=/root PATH=/usr/bin:/bin TZ=UTC
 unset BASH_ENV CDPATH ENV GLOBIGNORE
+
+# A supervised Phase 2 check may carry one bearer token.  Capture it before
+# the first external command and immediately remove it from the exported
+# environment.  The shell-only copies are cleared after the candidate-bound
+# coordinator verifies the active transaction.
+PROFILE_TRANSACTION_TOKEN=${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN-}
+PROFILE_TRANSACTION_AUTHORIZATION=${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION-}
+export -n PROFILE_TRANSACTION_TOKEN PROFILE_TRANSACTION_AUTHORIZATION
+unset GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN \
+    GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION
 
 # This installer is the only reviewed bridge from the mutable checkout to the
 # live, root-owned Phase 2 framework.  It snapshots every input once, builds and
@@ -157,6 +168,9 @@ FRAMEWORK_CURRENT=${BASE}/framework-current
 ACTIVATION_JOURNAL=${BASE}/framework-activation.pending
 STATE_ROOT=${BASE}/state/project
 MANIFEST=${STATE_ROOT}/phase-2-framework-install.manifest
+PROFILE_TRANSACTION_ROOT=${BASE}/state/profile-transactions
+PROFILE_TRANSACTION_JOURNAL=${PROFILE_TRANSACTION_ROOT}/phase-2-production-profile-locks.pending
+PROFILE_TRANSACTION_JOURNAL_PARTIAL=${PROFILE_TRANSACTION_JOURNAL}.partial
 CACHE_ROOT=$(physical /var/cache/gentoo-optimization/bolt)
 INSTALL_QA_ROOT=$(physical /usr/local/lib/install-qa-check.d)
 LIBEXEC_ROOT=$(physical /usr/local/libexec/gentoo-optimization)
@@ -173,7 +187,9 @@ VAR_TMP_BOUNDARY=$(physical /var/tmp)
 readonly BASE FRAMEWORK_CURRENT ACTIVATION_JOURNAL STATE_ROOT MANIFEST CACHE_ROOT INSTALL_QA_ROOT \
     LIBEXEC_ROOT SHARE_ROOT ETC_PORTAGE LOCK_PATH PROJECT_LOCK_PATH \
     GENERATION_LOCK_PATH JQ_PATH GENERATIONS_ROOT \
-    PGO_CACHE PGO_RAW VAR_TMP_BOUNDARY PORTAGE_GID
+    PGO_CACHE PGO_RAW VAR_TMP_BOUNDARY PORTAGE_GID \
+    PROFILE_TRANSACTION_ROOT PROFILE_TRANSACTION_JOURNAL \
+    PROFILE_TRANSACTION_JOURNAL_PARTIAL
 
 HOOK_BASENAME=zz-gentoo-optimization-bolt
 readonly HOOK_BASENAME
@@ -187,6 +203,8 @@ declare -a INPUT_FILES=(
     scripts/optimization/pgo/profile-identity.py
     scripts/optimization/pgo/profile_locks.py
     scripts/optimization/pgo/validate-profile.py
+    tests/optimization/production_profile_lock_transaction.py
+    tests/optimization/authorization_token_scan.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
     scripts/optimization/recovery/verify-binpkg-snapshot.py
@@ -202,6 +220,8 @@ declare -a HELPER_RELATIVE=(
     pgo/profile-identity.py
     pgo/profile_locks.py
     pgo/validate-profile.py
+    pgo/production-profile-lock-transaction.py
+    pgo/authorization-token-scan.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
     recovery/verify-binpkg-snapshot.py
@@ -214,12 +234,34 @@ declare -a HELPER_SOURCE_RELATIVE=(
     scripts/optimization/pgo/profile-identity.py
     scripts/optimization/pgo/profile_locks.py
     scripts/optimization/pgo/validate-profile.py
+    tests/optimization/production_profile_lock_transaction.py
+    tests/optimization/authorization_token_scan.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
     scripts/optimization/recovery/verify-binpkg-snapshot.py
 )
+# Exact stable-bootstrap layout installed by the preceding framework schema.
+# It is accepted only as the source of this reviewed additive migration; the
+# whole fixed tree is exchanged for the current layout while Portage is
+# quiescent and all framework/project/generation locks are held.
+declare -ar LEGACY_BOOTSTRAP_HELPER_RELATIVE=(
+    bolt/artifact_tool.py
+    bolt/capture-input.sh
+    bolt/deploy-output.sh
+    bolt/register-output.sh
+    pgo/profile-identity.py
+    pgo/profile_locks.py
+    pgo/validate-profile.py
+    recovery/verify-binpkg-snapshot.py
+    scripts/optimization/lib/state.py
+    scripts/optimization/verify/reconcile-state.py
+)
 
 SNAPSHOT=
+SOURCE_CONTRACT_TEMP=
+METADATA_AUDIT_TEMP=
+RAW_HEAD_OID_LENGTH=
+EXPECTED_CHECK_MANIFEST=
 CANDIDATE_STAGE=
 CANDIDATE_FINAL=
 CREATED_CANDIDATE=0
@@ -257,6 +299,7 @@ source_git() {
         LANG=C
         LC_ALL=C
         PATH=/usr/bin:/bin
+        GIT_NO_REPLACE_OBJECTS=1
         GIT_CONFIG_NOSYSTEM=1
         GIT_CONFIG_GLOBAL=/dev/null
         GIT_OPTIONAL_LOCKS=0
@@ -269,9 +312,47 @@ source_git() {
     fi
 }
 
+initialize_raw_git_identity() {
+    local object_format
+    object_format=$(source_git --no-replace-objects \
+        rev-parse --show-object-format=storage) || \
+        fail 'cannot determine the raw Git object format'
+    case ${object_format} in
+        sha1) RAW_HEAD_OID_LENGTH=40 ;;
+        sha256) RAW_HEAD_OID_LENGTH=64 ;;
+        *) fail "unsupported Git object format: ${object_format}" ;;
+    esac
+}
+
+resolve_raw_head_commit() {
+    local commit object_type
+    if ! commit=$(source_git --no-replace-objects \
+        rev-parse --verify 'HEAD^{commit}'); then
+        fail 'raw HEAD does not resolve to a commit object'
+        return 1
+    fi
+    [[ ${commit} =~ ^[0-9a-f]+$ && \
+        ${#commit} == "${RAW_HEAD_OID_LENGTH}" ]] || {
+        fail 'raw HEAD resolved to an invalid commit identity'
+        return 1
+    }
+    if ! object_type=$(source_git --no-replace-objects cat-file -t "${commit}"); then
+        fail 'cannot inspect the raw HEAD commit object'
+        return 1
+    fi
+    [[ ${object_type} == commit ]] || {
+        fail 'raw HEAD did not peel to a commit object'
+        return 1
+    }
+    printf '%s\n' "${commit}"
+}
+
 mode_is_trusted() {
     local mode=$1
-    [[ ${mode} =~ ^[0-7]{3,4}$ ]] && (( (8#${mode} & 8#022) == 0 ))
+    # No behavior-affecting framework object may carry setuid, setgid, sticky,
+    # or group/world-write bits.  The single reviewed exception is the exact
+    # root-owned 01777 /var/tmp boundary handled by the ancestor walker.
+    [[ ${mode} =~ ^[0-7]{3,4}$ ]] && (( (8#${mode} & 8#7022) == 0 ))
 }
 
 # Walk lexical components without realpath so an unsafe symlink is rejected,
@@ -324,6 +405,23 @@ verify_regular_trusted() {
         fail "file mode is ${mode}, expected ${expected_mode}: ${path}"
 }
 
+verify_candidate_portage_readable() {
+    local path=$1 expected_gid=${EXPECTED_GID} expected_mode=0600 uid gid mode nlink
+    if [[ -z ${TEST_ROOT} ]]; then
+        expected_gid=${PORTAGE_GID}
+        expected_mode=0640
+    fi
+    [[ -f ${path} && ! -L ${path} ]] || \
+        fail "expected a regular candidate evidence file: ${path}"
+    uid=$(stat -c %u -- "${path}")
+    gid=$(stat -c %g -- "${path}")
+    mode=$(stat -c %a -- "${path}")
+    nlink=$(stat -c %h -- "${path}")
+    [[ ${uid}:${gid}:${mode}:${nlink} == \
+        "${EXPECTED_UID}:${expected_gid}:${expected_mode#0}:1" ]] || \
+        fail "candidate evidence is not trusted Portage-readable data: ${path}"
+}
+
 verify_directory() {
     local path=$1 uid=$2 gid=$3 expected_mode=$4
     [[ -d ${path} && ! -L ${path} ]] || fail "expected a non-symlink directory: ${path}"
@@ -334,9 +432,39 @@ verify_directory() {
 verify_lock_file() {
     local path=$1
     [[ -f ${path} && ! -L ${path} ]] || fail "expected a regular non-symlink lock file: ${path}"
-    [[ $(stat -c '%u:%g:%a' -- "${path}") == \
-        "${EXPECTED_UID}:${LOCK_GID}:${LOCK_FILE_MODE#0}" ]] || \
-        fail "lock ownership/mode differs from ${EXPECTED_UID}:${LOCK_GID}:${LOCK_FILE_MODE}: ${path}"
+    [[ $(stat -c '%u:%g:%a:%h' -- "${path}") == \
+        "${EXPECTED_UID}:${LOCK_GID}:${LOCK_FILE_MODE#0}:1" ]] || \
+        fail "lock ownership/mode/link-count differs from ${EXPECTED_UID}:${LOCK_GID}:${LOCK_FILE_MODE}:1: ${path}"
+}
+
+create_lock_if_absent() {
+    local path=$1
+    if [[ ! -e ${path} && ! -L ${path} ]]; then
+        if ! (umask 077; set -o noclobber; : >"${path}") 2>/dev/null; then
+            [[ -e ${path} || -L ${path} ]] || \
+                fail "cannot atomically create lock file: ${path}"
+        else
+            chown "${EXPECTED_UID}:${LOCK_GID}" -- "${path}"
+            chmod "${LOCK_FILE_MODE}" -- "${path}"
+            sync_path "${path}"
+            sync_path "${path%/*}"
+        fi
+    fi
+    verify_lock_file "${path}"
+}
+
+open_verified_lock_descriptor() {
+    local path=$1 destination=$2 opened_fd before opened after
+    verify_lock_file "${path}"
+    before=$(stat -c '%d:%i:%u:%g:%a:%h' -- "${path}")
+    exec {opened_fd}<>"${path}"
+    opened=$(stat -Lc '%d:%i:%u:%g:%a:%h' -- "/proc/${BASHPID}/fd/${opened_fd}")
+    after=$(stat -c '%d:%i:%u:%g:%a:%h' -- "${path}")
+    if ! [[ ${before} == "${opened}" && ${before} == "${after}" ]]; then
+        exec {opened_fd}>&-
+        fail "lock identity changed while it was opened: ${path}"
+    fi
+    printf -v "${destination}" '%s' "${opened_fd}"
 }
 
 verify_runtime_namespaces() {
@@ -346,6 +474,8 @@ verify_runtime_namespaces() {
     verify_lock_file "${PROJECT_LOCK_PATH}"
     verify_lock_file "${GENERATION_LOCK_PATH}"
     verify_directory "${GENERATIONS_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
+    verify_directory "${PROFILE_TRANSACTION_ROOT}" "${EXPECTED_UID}" \
+        "${LOCK_GID}" "${LOCK_DIRECTORY_MODE}"
     verify_directory "${CACHE_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0700
     for directory in inputs outputs perf fdata diagnostics locks; do
         verify_directory "${CACHE_ROOT}/${directory}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0700
@@ -366,10 +496,55 @@ verify_jq() {
         fail "jq reported an invalid version identity: ${JQ_VERSION}"
 }
 
+verify_profile_transaction_authorization() {
+    local token=${PROFILE_TRANSACTION_TOKEN-}
+    local authorization=${PROFILE_TRANSACTION_AUTHORIZATION-}
+    local helper=${LIBEXEC_ROOT}/pgo/production-profile-lock-transaction.py
+    local child_identity=${PROFILE_TRANSACTION_JOURNAL}.child.json
+    local -a arguments=(verify-active)
+    PROFILE_TRANSACTION_TOKEN=
+    PROFILE_TRANSACTION_AUTHORIZATION=
+    if [[ -e ${PROFILE_TRANSACTION_JOURNAL_PARTIAL} || \
+          -L ${PROFILE_TRANSACTION_JOURNAL_PARTIAL} || \
+          -e ${child_identity}.partial || -L ${child_identity}.partial ]]; then
+        fail 'production profile-lock transaction publication is incomplete'
+    fi
+    if [[ ! -e ${PROFILE_TRANSACTION_JOURNAL} && \
+          ! -L ${PROFILE_TRANSACTION_JOURNAL} ]]; then
+        [[ ! -e ${child_identity} && ! -L ${child_identity} ]] || \
+            fail 'orphan production profile-lock child identity is pending'
+        [[ -z ${token}${authorization} ]] || \
+            fail 'stale production profile transaction authorization is present without a journal'
+        PROFILE_TRANSACTION_TOKEN=
+        PROFILE_TRANSACTION_AUTHORIZATION=
+        return 0
+    fi
+    [[ ${MODE} == check ]] || \
+        fail "production profile-lock transaction journal is pending: ${PROFILE_TRANSACTION_JOURNAL}"
+    [[ ${token} =~ ^[0-9a-f]{64}$ && -n ${authorization} ]] || \
+        fail 'pending production profile transaction lacks the exact coordinator token'
+    if [[ -n ${TEST_ROOT} ]]; then
+        arguments+=(
+            --test-mode
+            --test-root "${TEST_ROOT}"
+            --test-framework-lock "${LOCK_PATH}"
+            --test-project-lock "${PROJECT_LOCK_PATH}"
+            --test-generation-lock "${GENERATION_LOCK_PATH}"
+            --test-journal "${PROFILE_TRANSACTION_JOURNAL}"
+        )
+    fi
+    verify_regular_trusted "${helper}" 0755
+    arguments+=(--token-fd 0 --authorization "${authorization}")
+    printf '%s\n' "${token}" | "${helper}" "${arguments[@]}" >/dev/null || \
+        fail 'candidate-bound coordinator rejected the active profile transaction'
+    PROFILE_TRANSACTION_TOKEN=
+    PROFILE_TRANSACTION_AUTHORIZATION=
+}
+
 preflight_destination_ancestors() {
     local path
     for path in \
-        "${BASE}" "${STATE_ROOT}" "${CACHE_ROOT}" \
+        "${BASE}" "${STATE_ROOT}" "${PROFILE_TRANSACTION_ROOT}" "${CACHE_ROOT}" \
         "${INSTALL_QA_ROOT}" "${LIBEXEC_ROOT}" "${LOCK_PATH%/*}" \
         "${SHARE_ROOT%/*}" "${ETC_PORTAGE%/*}" "${GENERATIONS_ROOT}" \
         "${PGO_CACHE}" "${PGO_RAW}" "${JQ_PATH%/*}" "${BASE}/bootstrap"; do
@@ -438,13 +613,12 @@ preflight_atomic_exchange_destinations() {
 open_project_lock() {
     local path=$1 mode=$2
     if [[ ${MODE} == install ]]; then
-        [[ -e ${path} || -L ${path} ]] || : >"${path}"
-        chown "${EXPECTED_UID}:${LOCK_GID}" -- "${path}"
-        chmod "${LOCK_FILE_MODE}" -- "${path}"
+        create_lock_if_absent "${path}"
+    else
+        verify_lock_file "${path}"
     fi
-    verify_lock_file "${path}"
     local descriptor
-    exec {descriptor}<>"${path}"
+    open_verified_lock_descriptor "${path}" descriptor
     if [[ ${mode} == exclusive ]]; then
         flock -n -x "${descriptor}" || fail "cannot acquire exclusive project lock: ${path}"
     else
@@ -488,8 +662,16 @@ sync_tree() {
 
 reject_control_name() {
     local value=$1 label=$2
-    [[ ${value} != *$'\n'* && ${value} != *$'\r'* && ${value} != *$'\t'* ]] || \
-        fail "${label} contains a newline, carriage return, or tab"
+    [[ ! ${value} =~ [[:cntrl:]] ]] || fail "${label} contains a control byte"
+}
+
+read_exact_symlink_target() {
+    local path=$1 destination=$2 value=''
+    [[ -L ${path} ]] || fail "expected a symlink: ${path}"
+    IFS= read -r -d '' value < <(readlink -z -- "${path}") || \
+        fail "cannot read exact NUL-terminated symlink target: ${path}"
+    reject_control_name "${value}" 'symlink target'
+    printf -v "${destination}" '%s' "${value}"
 }
 
 emit_tree_inventory() {
@@ -501,8 +683,8 @@ emit_tree_inventory() {
         [[ ${relative} != "${exclude_one}" && ${relative} != "${exclude_two}" ]] || continue
         reject_control_name "${relative}" 'relative path'
         if [[ -L ${entry} ]]; then
-            target=$(readlink -- "${entry}")
-            reject_control_name "${target}" 'symlink target'
+            target=
+            read_exact_symlink_target "${entry}" target
             printf 'l\t-\t-\t%s/%s\t%s\n' "${prefix}" "${relative}" "${target}"
         elif [[ -d ${entry} ]]; then
             printf 'd\t0755\t-\t%s/%s\t-\n' "${prefix}" "${relative}"
@@ -533,6 +715,229 @@ emit_source_inventory() {
 source_identity() {
     local source_root=$1
     emit_source_inventory "${source_root}" | sha256sum | awk '{print $1}'
+}
+
+verify_source_entry_trust() {
+    local entry=$1 label=$2 uid mode nlink
+    [[ -e ${entry} || -L ${entry} ]] || fail "${label} is absent: ${entry}"
+    uid=$(stat -c %u -- "${entry}")
+    [[ ${uid} == "${SOURCE_UID}" || ${uid} == "${EXPECTED_UID}" ]] || \
+        fail "${label} has an untrusted owner: ${entry}"
+    if [[ -L ${entry} ]]; then
+        return 0
+    fi
+    mode=$(stat -c %a -- "${entry}")
+    mode_is_trusted "${mode}" || fail "${label} mode is unsafe: ${entry} (${mode})"
+    if [[ -f ${entry} ]]; then
+        nlink=$(stat -c %h -- "${entry}")
+        [[ ${nlink} == 1 ]] || fail "${label} is not a single-link regular file: ${entry}"
+    elif [[ ! -d ${entry} ]]; then
+        fail "${label} is not a regular file, directory, or symlink: ${entry}"
+    fi
+}
+
+verify_source_parent_chain() {
+    local relative=$1 current=${ROOT} component
+    local -a components=()
+    IFS=/ read -r -a components <<<"${relative%/*}"
+    verify_source_entry_trust "${current}" 'framework source root'
+    for component in "${components[@]}"; do
+        [[ -n ${component} && ${component} != . && ${component} != .. ]] || \
+            fail "framework source input has an unsafe parent component: ${relative}"
+        current=${current}/${component}
+        [[ -d ${current} && ! -L ${current} ]] || \
+            fail "framework source input parent is not a real directory: ${current}"
+        verify_source_entry_trust "${current}" 'framework source input parent'
+    done
+}
+
+verify_source_filesystem_trust() {
+    local entry relative path_list=${SOURCE_CONTRACT_TEMP}/source-paths
+    verify_source_entry_trust "${ROOT}" 'framework source root'
+    find "${ROOT}/portage" "${ROOT}/local-overlay" -print0 >"${path_list}" || \
+        fail 'cannot enumerate framework source trust metadata'
+    while IFS= read -r -d '' entry; do
+        verify_source_entry_trust "${entry}" 'framework source input'
+    done <"${path_list}"
+    for relative in "${INPUT_FILES[@]}"; do
+        verify_source_parent_chain "${relative}"
+        entry=${ROOT}/${relative}
+        [[ -f ${entry} && ! -L ${entry} ]] || \
+            fail "framework explicit source input is not a regular file: ${relative}"
+        verify_source_entry_trust "${entry}" 'framework source input'
+    done
+}
+
+raw_head_path_is_input_ancestor() {
+    local candidate=$1 relative parent
+    for relative in "${INPUT_FILES[@]}"; do
+        parent=${relative%/*}
+        while [[ ${parent} == */* || -n ${parent} ]]; do
+            [[ ${candidate} != "${parent}" ]] || return 0
+            [[ ${parent} == */* ]] || break
+            parent=${parent%/*}
+        done
+    done
+    return 1
+}
+
+render_raw_head_entry() {
+    local path=$1 mode=$2 type=$3 oid=$4 digest target
+    local blob=${SOURCE_CONTRACT_TEMP}/raw-head.blob
+    local scrubbed=${SOURCE_CONTRACT_TEMP}/raw-head.blob.scrubbed
+    case ${mode}:${type} in
+        040000:tree)
+            printf 'd\t0755\t-\t%s\t-\n' "${path}"
+            ;;
+        100644:blob|100755:blob)
+            source_git --no-replace-objects cat-file blob "${oid}" >"${blob}" || \
+                fail "cannot read raw HEAD blob: ${path}"
+            digest=$(sha256sum -- "${blob}"); digest=${digest%% *}
+            if [[ ${mode} == 100755 ]]; then mode=0755; else mode=0644; fi
+            printf 'f\t%s\t%s\t%s\t-\n' "${mode}" "${digest}" "${path}"
+            ;;
+        120000:blob)
+            source_git --no-replace-objects cat-file blob "${oid}" >"${blob}" || \
+                fail "cannot read raw HEAD symlink blob: ${path}"
+            [[ -s ${blob} ]] || fail "raw HEAD symlink target is empty: ${path}"
+            LC_ALL=C tr -d '\000-\037\177' <"${blob}" >"${scrubbed}"
+            cmp -s -- "${blob}" "${scrubbed}" || \
+                fail "raw HEAD symlink target contains a control byte: ${path}"
+            target=$(<"${blob}")
+            [[ ${#target} == $(stat -c %s -- "${blob}") ]] || \
+                fail "raw HEAD symlink target cannot be represented exactly: ${path}"
+            printf 'l\t-\t-\t%s\t%s\n' "${path}" "${target}"
+            ;;
+        *)
+            fail "unsupported raw HEAD mode/type ${mode}:${type}: ${path}"
+            ;;
+    esac
+}
+
+emit_raw_head_inventory() {
+    local raw_commit=$1
+    local stream=${SOURCE_CONTRACT_TEMP}/raw-head.ls-tree
+    local portage_records=${SOURCE_CONTRACT_TEMP}/raw-head.portage
+    local overlay_records=${SOURCE_CONTRACT_TEMP}/raw-head.local-overlay
+    local record header path mode type oid extra input_index index
+    local previous='' root_portage=0 root_overlay=0
+    local -a input_modes=() input_types=() input_oids=()
+    : >"${portage_records}"
+    : >"${overlay_records}"
+    source_git --no-replace-objects --literal-pathspecs \
+        ls-tree -r -z -t --full-tree "${raw_commit}" -- \
+        portage local-overlay "${INPUT_FILES[@]}" >"${stream}" || \
+        fail 'cannot enumerate the raw HEAD commit tree'
+    [[ -s ${stream} ]] || fail 'raw HEAD commit tree selection is empty'
+    while IFS= read -r -d '' record; do
+        [[ ${record} == *$'\t'* ]] || fail 'raw HEAD contains a malformed ls-tree record'
+        header=${record%%$'\t'*}
+        path=${record#*$'\t'}
+        mode=''; type=''; oid=''; extra=''
+        IFS=' ' read -r mode type oid extra <<<"${header}"
+        [[ -z ${extra} && ${header} == "${mode} ${type} ${oid}" && \
+            ${oid} =~ ^[0-9a-f]+$ && ${#oid} == "${RAW_HEAD_OID_LENGTH}" ]] || \
+            fail "raw HEAD contains a malformed object identity: ${path:-unknown}"
+        reject_control_name "${path}" 'raw HEAD path'
+        [[ -n ${path} && ${path} != /* && ${path} != *//* ]] || \
+            fail "raw HEAD contains an unsafe path: ${path}"
+        case /${path}/ in
+            */./*|*/../*) fail "raw HEAD contains an unsafe path component: ${path}" ;;
+        esac
+        case ${mode}:${type} in
+            040000:tree|100644:blob|100755:blob|120000:blob) ;;
+            *) fail "unsupported raw HEAD mode/type ${mode}:${type}: ${path}" ;;
+        esac
+        case ${path} in
+            portage)
+                [[ ${mode}:${type} == 040000:tree ]] || \
+                    fail 'raw HEAD portage root is not a tree'
+                root_portage=1
+                ;;
+            local-overlay)
+                [[ ${mode}:${type} == 040000:tree ]] || \
+                    fail 'raw HEAD local-overlay root is not a tree'
+                root_overlay=1
+                ;;
+            portage/*)
+                printf '%s\t%s\t%s\t%s\n' "${path}" "${mode}" "${type}" "${oid}" \
+                    >>"${portage_records}"
+                ;;
+            local-overlay/*)
+                printf '%s\t%s\t%s\t%s\n' "${path}" "${mode}" "${type}" "${oid}" \
+                    >>"${overlay_records}"
+                ;;
+            *)
+                input_index=-1
+                for index in "${!INPUT_FILES[@]}"; do
+                    if [[ ${path} == "${INPUT_FILES[index]}" ]]; then
+                        input_index=${index}
+                        break
+                    fi
+                done
+                if ((input_index >= 0)); then
+                    [[ ${mode}:${type} == 100644:blob || \
+                        ${mode}:${type} == 100755:blob ]] || \
+                        fail "raw HEAD explicit input is not a regular blob: ${path}"
+                    [[ -z ${input_oids[input_index]+x} ]] || \
+                        fail "raw HEAD repeats explicit input: ${path}"
+                    input_modes[input_index]=${mode}
+                    input_types[input_index]=${type}
+                    input_oids[input_index]=${oid}
+                elif raw_head_path_is_input_ancestor "${path}"; then
+                    [[ ${mode}:${type} == 040000:tree ]] || \
+                        fail "raw HEAD explicit-input ancestor is not a tree: ${path}"
+                else
+                    fail "raw HEAD selection contains an unexpected path: ${path}"
+                fi
+                ;;
+        esac
+    done <"${stream}"
+    ((root_portage && root_overlay)) || fail 'raw HEAD lacks a required framework source root'
+
+    for record in "${portage_records}" "${overlay_records}"; do
+        sort -o "${record}" -- "${record}"
+        previous=
+        while IFS=$'\t' read -r path mode type oid extra; do
+            [[ -z ${extra} && -n ${path} ]] || fail 'raw HEAD record serialization is malformed'
+            [[ ${path} != "${previous}" ]] || fail "raw HEAD repeats path: ${path}"
+            previous=${path}
+            render_raw_head_entry "${path}" "${mode}" "${type}" "${oid}"
+        done <"${record}"
+    done
+    for index in "${!INPUT_FILES[@]}"; do
+        [[ -n ${input_oids[index]+x} ]] || \
+            fail "raw HEAD lacks explicit input: ${INPUT_FILES[index]}"
+        render_raw_head_entry "${INPUT_FILES[index]}" "${input_modes[index]}" \
+            "${input_types[index]}" "${input_oids[index]}"
+    done
+}
+
+verify_source_git_contract() {
+    local raw_commit=$1
+    # A clean Git status does not describe ignored files or empty directories;
+    # index flags and repository-local core.fileMode can also hide byte/mode
+    # changes. Read raw tree/blob objects with replacement objects disabled and
+    # compare the exact normalized framework inventory, never archive
+    # attributes, checkout filters, the index, or a configurable worktree diff.
+    SOURCE_CONTRACT_TEMP=$(mktemp -d "${BASE}/.source-git-contract.XXXXXXXX")
+    verify_source_filesystem_trust
+    emit_source_inventory "${ROOT}" >"${SOURCE_CONTRACT_TEMP}/filesystem.inventory"
+    emit_raw_head_inventory "${raw_commit}" >"${SOURCE_CONTRACT_TEMP}/head.inventory"
+    if ! cmp -s -- "${SOURCE_CONTRACT_TEMP}/head.inventory" \
+        "${SOURCE_CONTRACT_TEMP}/filesystem.inventory"; then
+        fail 'source filesystem inventory differs from the raw HEAD commit tree'
+        return 1
+    fi
+
+    # cp -a would otherwise carry checkout ACLs, capabilities, or user xattrs
+    # into a candidate even though Git and the source identity do not bind
+    # them.  No extended metadata is valid on a framework source input.
+    verify_no_extended_metadata 'framework source input' \
+        "${ROOT}/portage" "${ROOT}/local-overlay" \
+        "${INPUT_FILES[@]/#/${ROOT}/}"
+    rm -rf -- "${SOURCE_CONTRACT_TEMP}"
+    SOURCE_CONTRACT_TEMP=
 }
 
 snapshot_frozen_inventory() {
@@ -752,12 +1157,14 @@ snapshot_inputs() {
     local before after snapshot_identity relative source_status_after commit_after \
         generated_before generated_after snapshot_generated git_status_before \
         git_status_after
+    initialize_raw_git_identity
+    GIT_COMMIT=$(resolve_raw_head_commit)
+    verify_source_git_contract "${GIT_COMMIT}"
     git_status_before=$(source_git status --porcelain=v1 --untracked-files=all \
         --ignore-submodules=none)
     SOURCE_STATUS=$(printf '%s' "${git_status_before}" | sha256sum | awk '{print $1}')
     GIT_DIRTY=clean
     [[ -z ${git_status_before} ]] || GIT_DIRTY=dirty
-    GIT_COMMIT=$(source_git rev-parse --verify HEAD)
     [[ -n ${TEST_ROOT} || ${GIT_DIRTY} == clean ]] || \
         fail 'production framework publication requires a clean Git worktree'
     before=$(source_identity "${ROOT}")
@@ -772,15 +1179,17 @@ snapshot_inputs() {
     cp -a -- "${ROOT}/portage" "${SNAPSHOT}/portage"
     cp -a -- "${ROOT}/local-overlay" "${SNAPSHOT}/local-overlay"
     for relative in "${INPUT_FILES[@]}"; do
+        mkdir -p -- "${SNAPSHOT}/${relative%/*}"
         install -m "$(if [[ -x ${ROOT}/${relative} ]]; then printf 0755; else printf 0644; fi)" \
             -T -- "${ROOT}/${relative}" "${SNAPSHOT}/${relative}"
     done
+    verify_source_git_contract "${GIT_COMMIT}"
     after=$(source_identity "${ROOT}")
     snapshot_identity=$(source_identity "${SNAPSHOT}")
     git_status_after=$(source_git status --porcelain=v1 --untracked-files=all \
         --ignore-submodules=none)
     source_status_after=$(printf '%s' "${git_status_after}" | sha256sum | awk '{print $1}')
-    commit_after=$(source_git rev-parse --verify HEAD)
+    commit_after=$(resolve_raw_head_commit)
     [[ ${before} == "${after}" && ${before} == "${snapshot_identity}" ]] || \
         fail 'reviewed inputs changed while the immutable source snapshot was created'
     [[ ${SOURCE_STATUS} == "${source_status_after}" && ${GIT_COMMIT} == "${commit_after}" ]] || \
@@ -820,7 +1229,8 @@ verify_source_symlinks() {
     local entry relative target
     while IFS= read -r -d '' entry; do
         relative=${entry#"${SNAPSHOT}/"}
-        target=$(readlink -- "${entry}")
+        target=
+        read_exact_symlink_target "${entry}" target
         case ${relative} in
             portage/make.profile)
                 [[ ${target} == ../../../../../var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm ]] || \
@@ -843,6 +1253,25 @@ normalize_tree() {
         if [[ -x ${entry} ]]; then chmod 0755 -- "${entry}"; else chmod 0644 -- "${entry}"; fi
     done < <(find "${tree}" -type f -print0)
     chown -R "${EXPECTED_UID}:${EXPECTED_GID}" -- "${tree}"
+}
+
+verify_no_extended_metadata() {
+    local label=$1 entry quoted
+    shift
+    METADATA_AUDIT_TEMP=$(mktemp "${BASE}/.extended-metadata-audit.XXXXXXXX")
+    if ! /usr/bin/getfattr -R -P -d -m - --absolute-names -- "$@" \
+        >"${METADATA_AUDIT_TEMP}" 2>"${METADATA_AUDIT_TEMP}.stderr"; then
+        fail "cannot audit extended metadata on ${label}"
+        return 1
+    fi
+    if [[ -s ${METADATA_AUDIT_TEMP} ]]; then
+        entry=$(sed -n 's/^# file: //p' "${METADATA_AUDIT_TEMP}" | head -n 1)
+        printf -v quoted '%q' "${entry:-unknown}"
+        fail "${label} carries unbound extended metadata: ${quoted}"
+        return 1
+    fi
+    rm -f -- "${METADATA_AUDIT_TEMP}" "${METADATA_AUDIT_TEMP}.stderr"
+    METADATA_AUDIT_TEMP=
 }
 
 render_bound_portage_bashrc() {
@@ -1186,8 +1615,8 @@ candidate_inventory() {
         [[ ${relative} != install.manifest && ${relative} != .candidate-inventory ]] || continue
         reject_control_name "${relative}" 'relative path'
         if [[ -L ${entry} ]]; then
-            target=$(readlink -- "${entry}")
-            reject_control_name "${target}" 'symlink target'
+            target=
+            read_exact_symlink_target "${entry}" target
             printf 'l\t-\t-\tframework/%s\t%s\n' "${relative}" "${target}"
         elif [[ -d ${entry} ]]; then
             mode=$(stat -c %a -- "${entry}")
@@ -1216,10 +1645,12 @@ verify_inventory_exact() {
 }
 
 verify_make_profile() {
-    local candidate=$1 profile expected actual probe
+    local candidate=$1 profile expected actual probe literal_target
     profile=${candidate}/portage/make.profile
     [[ -L ${profile} ]] || fail 'candidate make.profile is not a symlink'
-    [[ $(readlink -- "${profile}") == ../../../../../var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm ]] || \
+    literal_target=
+    read_exact_symlink_target "${profile}" literal_target
+    [[ ${literal_target} == ../../../../../var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm ]] || \
         fail 'candidate make.profile has the wrong literal target'
     expected=$(physical /var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm)
     actual=$(realpath -e -- "${profile}") || fail 'candidate make.profile target cannot be resolved'
@@ -1245,22 +1676,24 @@ verify_make_profile() {
 }
 
 verify_generated_policy() {
-    local candidate=$1 directory identity calculated
+    local candidate=$1 directory identity calculated package_env_target generated_env_target
     directory=${candidate}/generated-policy
     [[ -d ${directory} && ! -L ${directory} ]] || fail 'generated-policy directory is absent'
-    verify_regular_trusted "${directory}/.identity" 0600
+    verify_candidate_portage_readable "${directory}/.identity"
     identity=$(<"${directory}/.identity")
     [[ ${identity} == "${GENERATED_POLICY_ID}" ]] || fail 'generated-policy identity differs'
     [[ -f ${directory}/package.env && ! -L ${directory}/package.env && \
         -d ${directory}/env && ! -L ${directory}/env ]] || \
         fail 'candidate generated policy shape differs'
-    [[ -L ${candidate}/portage/package.env/99-generated-optimization && \
-        $(readlink -- "${candidate}/portage/package.env/99-generated-optimization") == \
-            ../../generated-policy/package.env ]] || \
+    package_env_target=
+    generated_env_target=
+    read_exact_symlink_target \
+        "${candidate}/portage/package.env/99-generated-optimization" package_env_target
+    read_exact_symlink_target \
+        "${candidate}/portage/env/optimization/generated" generated_env_target
+    [[ ${package_env_target} == ../../generated-policy/package.env ]] || \
         fail 'Portage package.env is not bound to the candidate generated policy'
-    [[ -L ${candidate}/portage/env/optimization/generated && \
-        $(readlink -- "${candidate}/portage/env/optimization/generated") == \
-            ../../../generated-policy/env ]] || \
+    [[ ${generated_env_target} == ../../../generated-policy/env ]] || \
         fail 'Portage env is not bound to the candidate generated policy'
     if [[ ${identity} == empty-v1 ]]; then
         [[ ! -s ${directory}/package.env && \
@@ -1280,20 +1713,46 @@ verify_generated_policy() {
 }
 
 verify_candidate() {
-    local candidate=$1 expected_manifest=${2:-} entry uid mode
+    local candidate=$1 expected_manifest=${2:-} entry uid gid mode nlink expected_gid
     [[ -d ${candidate} && ! -L ${candidate} ]] || fail "candidate is not a directory: ${candidate}"
     [[ $(stat -c '%u:%g:%a' -- "${candidate}") == "${EXPECTED_UID}:${EXPECTED_GID}:755" ]] || \
         fail "candidate root ownership/mode differs: ${candidate}"
     verify_existing_ancestor_chain "${candidate}"
     while IFS= read -r -d '' entry; do
-        [[ -L ${entry} ]] && continue
         uid=$(stat -c %u -- "${entry}")
+        gid=$(stat -c %g -- "${entry}")
+        expected_gid=${EXPECTED_GID}
+        if [[ -z ${TEST_ROOT} && \
+            (${entry} == "${candidate}/install.manifest" || \
+             ${entry} == "${candidate}/generated-policy/.identity") ]]; then
+            expected_gid=${PORTAGE_GID}
+        fi
+        [[ ${uid}:${gid} == "${EXPECTED_UID}:${expected_gid}" ]] || \
+            fail "candidate entry has the wrong owner/group: ${entry}"
+        if [[ -L ${entry} ]]; then
+            nlink=$(stat -c %h -- "${entry}")
+            [[ ${nlink} == 1 ]] || \
+                fail "candidate symlink is not single-link: ${entry}"
+            continue
+        fi
         mode=$(stat -c %a -- "${entry}")
-        [[ ${uid} == "${EXPECTED_UID}" ]] || fail "candidate entry has the wrong owner: ${entry}"
-        mode_is_trusted "${mode}" || fail "candidate entry is group/world-writable: ${entry}"
+        [[ ${mode} =~ ^[0-7]{3,4}$ ]] || \
+            fail "candidate entry has an invalid mode: ${entry}"
+        (( (8#${mode} & 8#022) == 0 )) || \
+            fail "candidate entry is group/world-writable: ${entry}"
+        (( (8#${mode} & 8#7000) == 0 )) || \
+            fail "candidate entry has unsafe special mode bits: ${entry}"
+        if [[ -f ${entry} ]]; then
+            nlink=$(stat -c %h -- "${entry}")
+            [[ ${nlink} == 1 ]] || \
+                fail "candidate regular file is not single-link: ${entry}"
+        elif [[ ! -d ${entry} ]]; then
+            fail "candidate entry has an unsupported filesystem type: ${entry}"
+        fi
     done < <(find "${candidate}" -mindepth 1 -print0)
+    verify_no_extended_metadata 'immutable framework candidate' "${candidate}"
     verify_inventory_exact "${candidate}"
-    verify_regular_trusted "${candidate}/install.manifest" 0600
+    verify_candidate_portage_readable "${candidate}/install.manifest"
     [[ -z ${expected_manifest} ]] || cmp -s -- "${expected_manifest}" "${candidate}/install.manifest" || \
         fail 'candidate manifest is not the canonical expected manifest'
     verify_generated_policy "${candidate}"
@@ -1449,11 +1908,28 @@ bootstrap_tree_matches() {
     local -a actual=()
     [[ -d ${root} && ! -L ${root} ]] || return 1
     mapfile -t actual < <(find "${root}" -mindepth 1 -printf '%y\t%P\n' | sort)
-    [[ ${actual[*]} == $'d\tbolt\nd\tpgo\nd\trecovery\nd\tscripts\nd\tscripts/optimization\nd\tscripts/optimization/lib\nd\tscripts/optimization/verify\nf\tbolt/artifact_tool.py\nf\tbolt/capture-input.sh\nf\tbolt/deploy-output.sh\nf\tbolt/register-output.sh\nf\tpgo/profile-identity.py\nf\tpgo/profile_locks.py\nf\tpgo/validate-profile.py\nf\trecovery/verify-binpkg-snapshot.py\nf\tscripts/optimization/lib/state.py\nf\tscripts/optimization/verify/reconcile-state.py' ]] || return 1
+    [[ ${actual[*]} == $'d\tbolt\nd\tpgo\nd\trecovery\nd\tscripts\nd\tscripts/optimization\nd\tscripts/optimization/lib\nd\tscripts/optimization/verify\nf\tbolt/artifact_tool.py\nf\tbolt/capture-input.sh\nf\tbolt/deploy-output.sh\nf\tbolt/register-output.sh\nf\tpgo/authorization-token-scan.py\nf\tpgo/production-profile-lock-transaction.py\nf\tpgo/profile-identity.py\nf\tpgo/profile_locks.py\nf\tpgo/validate-profile.py\nf\trecovery/verify-binpkg-snapshot.py\nf\tscripts/optimization/lib/state.py\nf\tscripts/optimization/verify/reconcile-state.py' ]] || return 1
     for index in "${!HELPER_RELATIVE[@]}"; do
         temporary=$(mktemp "${BASE}/.helper-bootstrap-check.XXXXXXXX")
         render_helper_bootstrap "${HELPER_RELATIVE[index]}" >"${temporary}"
         if ! cmp -s -- "${temporary}" "${root}/${HELPER_RELATIVE[index]}"; then
+            rm -f -- "${temporary}"
+            return 1
+        fi
+        rm -f -- "${temporary}"
+    done
+}
+
+legacy_bootstrap_tree_matches() {
+    local root=$1 relative temporary
+    local -a actual=()
+    [[ -d ${root} && ! -L ${root} ]] || return 1
+    mapfile -t actual < <(find "${root}" -mindepth 1 -printf '%y\t%P\n' | sort)
+    [[ ${actual[*]} == $'d\tbolt\nd\tpgo\nd\trecovery\nd\tscripts\nd\tscripts/optimization\nd\tscripts/optimization/lib\nd\tscripts/optimization/verify\nf\tbolt/artifact_tool.py\nf\tbolt/capture-input.sh\nf\tbolt/deploy-output.sh\nf\tbolt/register-output.sh\nf\tpgo/profile-identity.py\nf\tpgo/profile_locks.py\nf\tpgo/validate-profile.py\nf\trecovery/verify-binpkg-snapshot.py\nf\tscripts/optimization/lib/state.py\nf\tscripts/optimization/verify/reconcile-state.py' ]] || return 1
+    for relative in "${LEGACY_BOOTSTRAP_HELPER_RELATIVE[@]}"; do
+        temporary=$(mktemp "${BASE}/.helper-bootstrap-check.XXXXXXXX")
+        render_helper_bootstrap "${relative}" >"${temporary}"
+        if ! cmp -s -- "${temporary}" "${root}/${relative}"; then
             rm -f -- "${temporary}"
             return 1
         fi
@@ -1475,6 +1951,7 @@ require_stable_bootstrap_compatibility() {
         return 0
     fi
     bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+        legacy_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         fail 'stable-bootstrap migration required: installed helper bootstraps differ from the reviewed invariant bytes'
     temporary=$(mktemp "${BASE}/.qa-bootstrap-compatibility.XXXXXXXX")
     render_qa_bootstrap >"${temporary}"
@@ -1486,14 +1963,14 @@ require_stable_bootstrap_compatibility() {
 }
 
 legacy_helper_tree_matches() {
-    local root=$1 candidate=$2 index
+    local root=$1 candidate=$2 relative
     local -a actual=()
     [[ -d ${root} && ! -L ${root} ]] || return 1
     mapfile -t actual < <(find "${root}" -mindepth 1 -printf '%y\t%P\n' | sort)
     [[ ${actual[*]} == $'d\tbolt\nd\tpgo\nd\trecovery\nd\tscripts\nd\tscripts/optimization\nd\tscripts/optimization/lib\nd\tscripts/optimization/verify\nf\tbolt/artifact_tool.py\nf\tbolt/capture-input.sh\nf\tbolt/deploy-output.sh\nf\tbolt/register-output.sh\nf\tpgo/profile-identity.py\nf\tpgo/profile_locks.py\nf\tpgo/validate-profile.py\nf\trecovery/verify-binpkg-snapshot.py\nf\tscripts/optimization/lib/state.py\nf\tscripts/optimization/verify/reconcile-state.py' ]] || return 1
-    for index in "${!HELPER_RELATIVE[@]}"; do
-        cmp -s -- "${root}/${HELPER_RELATIVE[index]}" \
-            "${candidate}/libexec/${HELPER_RELATIVE[index]}" || return 1
+    for relative in "${LEGACY_BOOTSTRAP_HELPER_RELATIVE[@]}"; do
+        cmp -s -- "${root}/${relative}" \
+            "${candidate}/libexec/${relative}" || return 1
     done
 }
 
@@ -1565,6 +2042,7 @@ verify_external_migration_source() {
     local candidate=$1 qa=${INSTALL_QA_ROOT}/${HOOK_BASENAME}
     if [[ -e ${LIBEXEC_ROOT} || -L ${LIBEXEC_ROOT} ]]; then
         bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+            legacy_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
             manifest_bootstrap_tree_matches "${LIBEXEC_ROOT}" "${candidate}" || \
             legacy_helper_tree_matches "${LIBEXEC_ROOT}" "${candidate}" || \
             fail 'fixed libexec tree is neither the reviewed bootstrap nor the active generation implementation'
@@ -1707,6 +2185,10 @@ cleanup_stale_publication_debris() {
         "${BASE}/framework-*.partial.*"
         "${BASE}/.framework-expected-manifest.*"
         "${BASE}/.framework-source-snapshot.*"
+        "${BASE}/.source-git-contract.*"
+        "${BASE}/.extended-metadata-audit.*"
+        "${BASE}/.candidate-inventory-check.*"
+        "${BASE}/.framework-check-manifest.*"
         "${BASE}/.framework-rollback.*"
         "${BASE}/.helper-bootstrap-check.*"
         "${BASE}/.qa-bootstrap-check.*"
@@ -1719,6 +2201,39 @@ cleanup_stale_publication_debris() {
         while IFS= read -r entry; do
             rm -rf -- "${entry}"
         done < <(compgen -G "${pattern}" || true)
+    done
+}
+
+verify_no_stale_publication_debris() {
+    local pattern
+    local -a matches=()
+    local -a patterns=(
+        "${LIBEXEC_ROOT}.partial.*"
+        "${SHARE_ROOT}.partial.*"
+        "${ETC_PORTAGE}.partial.*"
+        "${MANIFEST}.partial.*"
+        "${INSTALL_QA_ROOT}/${HOOK_BASENAME}.partial.*"
+        "${FRAMEWORK_CURRENT}.partial.*"
+        "${BASE}/framework-*.partial.*"
+        "${BASE}/.framework-expected-manifest.*"
+        "${BASE}/.framework-source-snapshot.*"
+        "${BASE}/.source-git-contract.*"
+        "${BASE}/.extended-metadata-audit.*"
+        "${BASE}/.candidate-inventory-check.*"
+        "${BASE}/.framework-check-manifest.*"
+        "${BASE}/.framework-rollback.*"
+        "${BASE}/.helper-bootstrap-check.*"
+        "${BASE}/.qa-bootstrap-check.*"
+        "${BASE}/.qa-bootstrap-compatibility.*"
+        "${BASE}/.portage-migration-guard-check.*"
+        "${BASE}/.framework-activation-expected.*"
+        "${ACTIVATION_JOURNAL}.partial.*"
+    )
+    for pattern in "${patterns[@]}"; do
+        matches=()
+        mapfile -t matches < <(compgen -G "${pattern}" || true)
+        ((${#matches[@]} == 0)) || \
+            fail "stale framework publication debris remains: ${matches[0]}"
     done
 }
 
@@ -1758,8 +2273,12 @@ cleanup() {
         rm -rf -- "${CANDIDATE_FINAL}"
     fi
     [[ -n ${SNAPSHOT} ]] && rm -rf -- "${SNAPSHOT}"
+    [[ -n ${SOURCE_CONTRACT_TEMP} ]] && rm -rf -- "${SOURCE_CONTRACT_TEMP}"
+    [[ -n ${METADATA_AUDIT_TEMP} ]] && \
+        rm -f -- "${METADATA_AUDIT_TEMP}" "${METADATA_AUDIT_TEMP}.stderr"
     [[ -n ${CANDIDATE_STAGE} ]] && rm -rf -- "${CANDIDATE_STAGE}"
     [[ -n ${EXPECTED_MANIFEST:-} ]] && rm -f -- "${EXPECTED_MANIFEST}"
+    [[ -n ${EXPECTED_CHECK_MANIFEST} ]] && rm -f -- "${EXPECTED_CHECK_MANIFEST}"
     for exchange_probe in "${EXCHANGE_PROBE_ROOTS[@]}"; do
         [[ -n ${exchange_probe} ]] && rm -rf -- "${exchange_probe}"
     done
@@ -1782,19 +2301,24 @@ verify_bootstrap_identity
 verify_jq
 if [[ ${MODE} == install ]]; then
     safe_mkdir_owner "${LOCK_DIRECTORY_MODE}" "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_PATH%/*}"
-    exec {INSTALLER_LOCK_FD}>"${LOCK_PATH}"
-    chown "${EXPECTED_UID}:${LOCK_GID}" -- "${LOCK_PATH}"
-    chmod "${LOCK_FILE_MODE}" -- "${LOCK_PATH}"
+    create_lock_if_absent "${LOCK_PATH}"
+    open_verified_lock_descriptor "${LOCK_PATH}" INSTALLER_LOCK_FD
     flock -n -x "${INSTALLER_LOCK_FD}" || \
         fail 'another framework installer holds the publication lock'
+    [[ ! -s /proc/${BASHPID}/fd/${INSTALLER_LOCK_FD} ]] || \
+        fail 'framework publication lock payload is unexpectedly nonempty'
+    verify_profile_transaction_authorization
     open_project_lock "${PROJECT_LOCK_PATH}" exclusive
     open_project_lock "${GENERATION_LOCK_PATH}" exclusive
 else
     verify_directory "${LOCK_PATH%/*}" "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_DIRECTORY_MODE}"
     verify_lock_file "${LOCK_PATH}"
-    exec {INSTALLER_LOCK_FD}<>"${LOCK_PATH}"
+    open_verified_lock_descriptor "${LOCK_PATH}" INSTALLER_LOCK_FD
     flock -n -s "${INSTALLER_LOCK_FD}" || \
         fail 'another framework installer holds the publication lock'
+    [[ ! -s /proc/${BASHPID}/fd/${INSTALLER_LOCK_FD} ]] || \
+        fail 'framework publication lock payload is unexpectedly nonempty'
+    verify_profile_transaction_authorization
     open_project_lock "${PROJECT_LOCK_PATH}" shared
     open_project_lock "${GENERATION_LOCK_PATH}" shared
 fi
@@ -1805,6 +2329,7 @@ validate_legacy_migration
 get_previous_target
 
 if [[ ${MODE} == check ]]; then
+    verify_no_stale_publication_debris
     [[ ! -e ${ACTIVATION_JOURNAL} && ! -L ${ACTIVATION_JOURNAL} ]] || \
         fail 'framework activation journal remains pending'
     [[ -L ${FRAMEWORK_CURRENT} ]] || fail 'framework-current is absent'
@@ -1840,6 +2365,7 @@ if [[ ${MODE} == check ]]; then
     cmp -s -- "${ACTIVE_TARGET}/install.manifest" "${MANIFEST}" || \
         fail 'active manifest indirection does not expose the active generation manifest'
     rm -f -- "${EXPECTED_CHECK_MANIFEST}"
+    EXPECTED_CHECK_MANIFEST=
     assert_global_qa_order
     for schema in package-state.schema.json artifact-state.schema.json \
         final-system-state.schema.json; do
@@ -1855,6 +2381,8 @@ fi
 
 safe_mkdir 0755 "${BASE}"
 safe_mkdir 0700 "${STATE_ROOT}"
+safe_mkdir_owner "${LOCK_DIRECTORY_MODE}" "${EXPECTED_UID}" "${LOCK_GID}" \
+    "${PROFILE_TRANSACTION_ROOT}"
 safe_mkdir 0755 "${GENERATIONS_ROOT}"
 safe_mkdir 0700 "${CACHE_ROOT}"
 for cache_dir in inputs outputs perf fdata diagnostics locks; do
@@ -1956,8 +2484,12 @@ printf '%s\n' "${SOURCE_AGGREGATE}" >"${CANDIDATE_STAGE}/local-overlay/.gentoo-o
 printf '%s\n' "${GENERATED_POLICY_ID}" >"${CANDIDATE_STAGE}/generated-policy/.identity"
 normalize_tree "${CANDIDATE_STAGE}"
 chmod 0600 -- "${CANDIDATE_STAGE}/portage/.gentoo-optimization-source-hash" \
-    "${CANDIDATE_STAGE}/local-overlay/.gentoo-optimization-source-hash" \
-    "${CANDIDATE_STAGE}/generated-policy/.identity"
+    "${CANDIDATE_STAGE}/local-overlay/.gentoo-optimization-source-hash"
+if [[ -n ${TEST_ROOT} ]]; then
+    chmod 0600 -- "${CANDIDATE_STAGE}/generated-policy/.identity"
+else
+    chmod 0640 -- "${CANDIDATE_STAGE}/generated-policy/.identity"
+fi
 if [[ ${GENERATED_POLICY_ID} != empty-v1 ]]; then
     chmod 0600 -- "${CANDIDATE_STAGE}/generated-policy/.frozen-inventory.json"
 fi
@@ -1966,8 +2498,17 @@ chmod 0600 -- "${CANDIDATE_STAGE}/.candidate-inventory"
 CANDIDATE_INVENTORY_SHA=$(sha256sum -- "${CANDIDATE_STAGE}/.candidate-inventory" | awk '{print $1}')
 render_manifest "${CANDIDATE_INVENTORY_SHA}" "${CANDIDATE_FINAL}" "${PREVIOUS_TARGET}" \
     >"${CANDIDATE_STAGE}/install.manifest"
-chmod 0600 -- "${CANDIDATE_STAGE}/install.manifest"
+if [[ -n ${TEST_ROOT} ]]; then
+    chmod 0600 -- "${CANDIDATE_STAGE}/install.manifest"
+else
+    chmod 0640 -- "${CANDIDATE_STAGE}/install.manifest"
+fi
 chown -R "${EXPECTED_UID}:${EXPECTED_GID}" -- "${CANDIDATE_STAGE}"
+if [[ -z ${TEST_ROOT} ]]; then
+    chown "${EXPECTED_UID}:${PORTAGE_GID}" -- \
+        "${CANDIDATE_STAGE}/install.manifest" \
+        "${CANDIDATE_STAGE}/generated-policy/.identity"
+fi
 render_manifest "${CANDIDATE_INVENTORY_SHA}" "${CANDIDATE_FINAL}" "${PREVIOUS_TARGET}" \
     >"${EXPECTED_MANIFEST}"
 verify_candidate "${CANDIDATE_STAGE}" "${EXPECTED_MANIFEST}"

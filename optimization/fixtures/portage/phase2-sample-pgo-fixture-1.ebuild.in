@@ -73,6 +73,7 @@ src_compile() {
         printf 'profile_map_ready\t%s\n' "${GENTOO_OPT_PROFILE_MAP_READY:-0}"
         printf 'active_fingerprint\t%s\n' "${GENTOO_OPT_ACTIVE_FINGERPRINT:-unset}"
         printf 'active_compiler\t%s\n' "${GENTOO_OPT_ACTIVE_COMPILER:-unset}"
+        printf 'framework_target\t%s\n' "${GENTOO_OPT_FRAMEWORK_TARGET:-unset}"
         printf 'phase_euid\t%s\n' "${EUID}"
         printf 'phase_egid\t%s\n' "$(id -g)"
         printf 'CFLAGS\t%s\n' "${CFLAGS}"

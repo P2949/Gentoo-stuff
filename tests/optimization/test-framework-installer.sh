@@ -27,7 +27,72 @@ fi
 ((INSTALLER_MARKER_TIMEOUT_SECONDS <= 120)) || INSTALLER_MARKER_TIMEOUT_SECONDS=120
 LOCK_BASELINE_IDENTITY=
 LOCK_BASELINE_SHA256=
-trap 'rm -rf -- "${WORK}"' EXIT
+declare -a BACKGROUND_PIDS=()
+
+background_group_exists() {
+    kill -0 -- "-$1" 2>/dev/null
+}
+
+track_background_pid() {
+    local pid=$1 pgid='' fixture_pgid
+    fixture_pgid=$(ps -o pgid= -p "${BASHPID}")
+    fixture_pgid=${fixture_pgid//[[:space:]]/}
+    for _ in $(seq 1 100); do
+        pgid=$(ps -o pgid= -p "${pid}" 2>/dev/null || true)
+        pgid=${pgid//[[:space:]]/}
+        [[ ${pgid} == "${pid}" ]] && break
+        sleep 0.01
+    done
+    [[ ${pgid} == "${pid}" && ${pgid} != "${fixture_pgid}" ]] || \
+        fail "background process lacks a private process group: pid=${pid} pgid=${pgid:-absent}"
+    BACKGROUND_PIDS+=("${pid}")
+}
+
+untrack_background_pid() {
+    local completed=$1 pid
+    local -a remaining=()
+    for pid in "${BACKGROUND_PIDS[@]}"; do
+        [[ ${pid} == "${completed}" ]] || remaining+=("${pid}")
+    done
+    BACKGROUND_PIDS=("${remaining[@]}")
+}
+
+terminate_background_group() {
+    local pid=$1
+    kill -TERM -- "-${pid}" 2>/dev/null || true
+    for _ in $(seq 1 100); do
+        background_group_exists "${pid}" || return 0
+        sleep 0.01
+    done
+    kill -KILL -- "-${pid}" 2>/dev/null || true
+    wait "${pid}" 2>/dev/null || true
+    for _ in $(seq 1 100); do
+        background_group_exists "${pid}" || return 0
+        sleep 0.01
+    done
+    fail "background process group survived SIGKILL: ${pid}"
+}
+
+assert_background_group_gone() {
+    background_group_exists "$1" && \
+        fail "completed background process left a live process group: $1"
+    return 0
+}
+
+cleanup_fixture() {
+    local pid
+    trap - EXIT INT TERM HUP
+    for pid in "${BACKGROUND_PIDS[@]}"; do
+        kill -TERM -- "-${pid}" 2>/dev/null || true
+    done
+    sleep 0.1
+    for pid in "${BACKGROUND_PIDS[@]}"; do
+        kill -KILL -- "-${pid}" 2>/dev/null || true
+        wait "${pid}" 2>/dev/null || true
+    done
+    rm -rf -- "${WORK}"
+}
+trap cleanup_fixture EXIT INT TERM HUP
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -153,13 +218,82 @@ grep -Fq 'fixture child failed before marker' "${EARLY_EXIT_DIAGNOSTIC}" || {
     fail 'early installer child failure lost its underlying log'
 }
 
+# The fixture's own cleanup primitive must cover descendants, including a
+# TERM-resistant child, rather than merely reaping a leader PID.
+GROUP_CHILD_PID_FILE=${WORK}/process-group-child.pid
+# shellcheck disable=SC2016  # Positional parameters expand in the child shell.
+/usr/bin/setsid --wait bash -Eeuo pipefail -c '
+    trap "" TERM
+    sleep 300 &
+    printf "%s\n" "$!" >"$1"
+    wait
+' bash "${GROUP_CHILD_PID_FILE}" &
+GROUP_TEST_PID=$!
+track_background_pid "${GROUP_TEST_PID}"
+for _ in $(seq 1 100); do
+    [[ -s ${GROUP_CHILD_PID_FILE} ]] && break
+    sleep 0.01
+done
+[[ -s ${GROUP_CHILD_PID_FILE} ]] || fail 'process-group cleanup child did not start'
+GROUP_CHILD_PID=$(<"${GROUP_CHILD_PID_FILE}")
+[[ ${GROUP_CHILD_PID} =~ ^[1-9][0-9]*$ && -e /proc/${GROUP_CHILD_PID} ]] || \
+    fail 'process-group cleanup child identity is invalid'
+terminate_background_group "${GROUP_TEST_PID}"
+assert_background_group_gone "${GROUP_TEST_PID}"
+[[ ! -e /proc/${GROUP_CHILD_PID} ]] || \
+    fail 'process-group cleanup left its TERM-resistant descendant alive'
+untrack_background_pid "${GROUP_TEST_PID}"
+
+find_transaction_debris() {
+    local parent pattern found
+    local -a checks=(
+        "${TARGET}/usr/local/libexec|gentoo-optimization.partial.*"
+        "${TARGET}/usr/local/share|gentoo-optimization.partial.*"
+        "${TARGET}/etc|portage.partial.*"
+        "${TARGET}/usr/local/lib/install-qa-check.d|zz-gentoo-optimization-bolt.partial.*"
+        "${BASE}/state/project|phase-2-framework-install.manifest.partial.*"
+        "${BASE}|framework-current.partial.*"
+        "${BASE}|framework-*.partial.*"
+        "${BASE}|.framework-expected-manifest.*"
+        "${BASE}|.framework-source-snapshot.*"
+        "${BASE}|.source-git-contract.*"
+        "${BASE}|.extended-metadata-audit.*"
+        "${BASE}|.framework-rollback.*"
+        "${BASE}|.helper-bootstrap-check.*"
+        "${BASE}|.qa-bootstrap-check.*"
+        "${BASE}|.qa-bootstrap-compatibility.*"
+        "${BASE}|.portage-migration-guard-check.*"
+        "${BASE}|.framework-activation-expected.*"
+        "${BASE}|framework-activation.pending.partial.*"
+        "${BASE}|.candidate-inventory-check.*"
+        "${BASE}|.framework-check-manifest.*"
+    )
+    TRANSACTION_DEBRIS=
+    for found in "${checks[@]}"; do
+        parent=${found%%|*}
+        pattern=${found#*|}
+        [[ -d ${parent} && ! -L ${parent} ]] || continue
+        if IFS= read -r -d '' TRANSACTION_DEBRIS < <(
+            find "${parent}" -mindepth 1 -maxdepth 1 -name "${pattern}" -print0 -quit
+        ); then
+            return 0
+        fi
+    done
+    return 1
+}
+
 assert_no_transaction_debris() {
-    ! find "${TARGET}" -name '*.partial.*' -o -name '.framework-rollback.*' \
-        -o -name '.framework-source-snapshot.*' | grep -q . || \
-        fail 'installer left partial, rollback, or source-snapshot debris'
+    if find_transaction_debris; then
+        fail "installer left transaction debris: ${TRANSACTION_DEBRIS}"
+    fi
+}
+
+assert_transaction_debris_present() {
+    find_transaction_debris || fail 'fixture did not create fixed-parent transaction debris'
 }
 
 mkdir -p -- "${REPOSITORY}/scripts/optimization" "${TARGET}"
+mkdir -p -- "${REPOSITORY}/tests/optimization"
 cp -a -- "${SOURCE_ROOT}/portage" "${REPOSITORY}/portage"
 cp -a -- "${SOURCE_ROOT}/local-overlay" "${REPOSITORY}/local-overlay"
 cp -a -- "${SOURCE_ROOT}/scripts/optimization/bolt" \
@@ -176,12 +310,30 @@ mkdir -p -- "${REPOSITORY}/optimization"
 cp -a -- "${SOURCE_ROOT}/optimization/schema" "${REPOSITORY}/optimization/schema"
 install -m 0755 -T -- "${SOURCE_ROOT}/scripts/optimization/install-framework.sh" \
     "${REPOSITORY}/scripts/optimization/install-framework.sh"
+install -m 0755 -T -- \
+    "${SOURCE_ROOT}/tests/optimization/production_profile_lock_transaction.py" \
+    "${REPOSITORY}/tests/optimization/production_profile_lock_transaction.py"
+install -m 0755 -T -- \
+    "${SOURCE_ROOT}/tests/optimization/authorization_token_scan.py" \
+    "${REPOSITORY}/tests/optimization/authorization_token_scan.py"
+
+# Git cannot represent empty directories.  The production installer rejects
+# them in behavior-affecting input trees, so normalize any harmless checkout
+# residue before constructing the fixture's exact Git snapshot.
+find "${REPOSITORY}/portage" "${REPOSITORY}/local-overlay" -depth -type d \
+    -empty -delete
+find "${REPOSITORY}/portage" "${REPOSITORY}/local-overlay" -type d \
+    -exec chmod 0755 -- {} +
 
 # Exercise NUL-delimited discovery with names that are awkward but safe in a
 # line-oriented canonical manifest.  Control characters are deliberately
 # rejected by the installer.
 printf 'unusual-name-fixture\n' >"${REPOSITORY}/local-overlay/metadata/a file with spaces"
 printf 'leading-dash-fixture\n' >"${REPOSITORY}/local-overlay/metadata/--leading-dash"
+printf 'legitimate similarly named input\n' \
+    >"${REPOSITORY}/local-overlay/metadata/.source-git-contract.fixture-input"
+printf 'legitimate similarly named input\n' \
+    >"${REPOSITORY}/local-overlay/metadata/.extended-metadata-audit.fixture-input"
 
 git -C "${REPOSITORY}" init -q
 git -C "${REPOSITORY}" config user.name 'Framework Installer Fixture'
@@ -209,8 +361,8 @@ expect_failure \
 [[ ! -e ${TARGET}/run/gentoo-optimization && \
     ! -e ${TARGET}/var/lib/gentoo-optimization ]] || \
     fail 'atomic-exchange rejection occurred after durable installer mutation'
-! find "${TARGET}" -name '.gentoo-optimization-rename-exchange.*' \
-    -print -quit | grep -q . || fail 'atomic-exchange rejection left probe debris'
+[[ -z $(find "${TARGET}" -name '.gentoo-optimization-rename-exchange.*' \
+    -print -quit) ]] || fail 'atomic-exchange rejection left probe debris'
 
 # The canonical root-owned 01777 /var/tmp boundary is required and accepted;
 # removing its sticky bit must make the same ancestor fail closed.
@@ -259,6 +411,47 @@ ln -s -- /unmanaged/portage "${TARGET}/etc/portage"
 expect_failure '/etc/portage points to an unmanaged migration source' run_installer
 rm -f -- "${TARGET}/etc/portage"
 
+# Existing lock paths are validated before opening or metadata repair.  A
+# symlink must not truncate its referent, and a hardlinked project lock must
+# not be chowned, chmodded, or accepted as a stable transaction inode.
+LOCK_DIRECTORY=${TARGET}/run/gentoo-optimization
+FRAMEWORK_LOCK=${LOCK_DIRECTORY}/framework-install.lock
+PROJECT_LOCK=${LOCK_DIRECTORY}/project.lock
+mkdir -p -- "${LOCK_DIRECTORY}"
+chmod 0700 -- "${LOCK_DIRECTORY}"
+for preflight_lock in framework-install project generation; do
+    preflight_path=${LOCK_DIRECTORY}/${preflight_lock}.lock
+    if [[ -e ${preflight_path} || -L ${preflight_path} ]]; then
+        [[ -f ${preflight_path} && ! -L ${preflight_path} && \
+            ! -s ${preflight_path} && \
+            $(stat -c '%u:%g:%a:%h' -- "${preflight_path}") == \
+            "$(id -u):$(id -g):600:1" ]] || \
+            fail "pre-baseline installer left an unsafe lock: ${preflight_path}"
+        rm -f -- "${preflight_path}"
+    fi
+done
+LOCK_SYMLINK_VICTIM=${WORK}/framework-lock-symlink-victim
+printf 'framework-lock-sentinel\n' >"${LOCK_SYMLINK_VICTIM}"
+chmod 0644 -- "${LOCK_SYMLINK_VICTIM}"
+ln -s -- "${LOCK_SYMLINK_VICTIM}" "${FRAMEWORK_LOCK}"
+expect_failure 'expected a regular non-symlink lock file:' run_installer
+[[ $(<"${LOCK_SYMLINK_VICTIM}") == framework-lock-sentinel && \
+    $(stat -c '%a:%h' -- "${LOCK_SYMLINK_VICTIM}") == 644:1 ]] || \
+    fail 'installer mutated a framework-lock symlink referent before validation'
+rm -f -- "${FRAMEWORK_LOCK}"
+
+: >"${FRAMEWORK_LOCK}"
+chmod 0600 -- "${FRAMEWORK_LOCK}"
+LOCK_HARDLINK_VICTIM=${WORK}/project-lock-hardlink-victim
+printf 'project-lock-sentinel\n' >"${LOCK_HARDLINK_VICTIM}"
+chmod 0600 -- "${LOCK_HARDLINK_VICTIM}"
+ln -- "${LOCK_HARDLINK_VICTIM}" "${PROJECT_LOCK}"
+expect_failure 'lock ownership/mode/link-count differs from' run_installer
+[[ $(<"${LOCK_HARDLINK_VICTIM}") == project-lock-sentinel && \
+    $(stat -c '%a:%h' -- "${LOCK_HARDLINK_VICTIM}") == 600:2 ]] || \
+    fail 'installer mutated an unsafe hardlinked project lock before validation'
+rm -f -- "${PROJECT_LOCK}" "${LOCK_HARDLINK_VICTIM}"
+
 BASE=${TARGET}/var/lib/gentoo-optimization
 CURRENT=${BASE}/framework-current
 MANIFEST=${BASE}/state/project/phase-2-framework-install.manifest
@@ -277,15 +470,18 @@ ln -s -- "${REPOSITORY}/portage" "${TARGET}/etc/portage"
 PAUSE_FILE=${WORK}/kill-after-first-guard
 : >"${PAUSE_FILE}"
 : >"${LOG}"
-env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+/usr/bin/setsid --wait env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     GENTOO_OPT_INSTALLER_PAUSE_AT=after-first-migration-guard \
     GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
+track_background_pid "${INSTALL_PID}"
 wait_for_log 'PAUSE: after-first-migration-guard' "${INSTALL_PID}"
 kill -KILL "${INSTALL_PID}"
 if wait "${INSTALL_PID}" 2>/dev/null; then fail 'first-guard SIGKILL unexpectedly succeeded'; fi
+terminate_background_group "${INSTALL_PID}"
+untrack_background_pid "${INSTALL_PID}"
 wait_for_installer_lock_release
 rm -f -- "${PAUSE_FILE}"
 [[ ! -e ${CURRENT} && ! -L ${CURRENT} ]] || \
@@ -305,15 +501,18 @@ grep -Fq 'framework activation is incomplete' "${LOG}" || \
 PAUSE_FILE=${WORK}/kill-first-activation
 : >"${PAUSE_FILE}"
 : >"${LOG}"
-env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+/usr/bin/setsid --wait env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     GENTOO_OPT_INSTALLER_PAUSE_AT=after-bootstrap-activation \
     GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
+track_background_pid "${INSTALL_PID}"
 wait_for_log 'PAUSE: after-bootstrap-activation' "${INSTALL_PID}"
 kill -KILL "${INSTALL_PID}"
 if wait "${INSTALL_PID}" 2>/dev/null; then fail 'first-activation SIGKILL unexpectedly succeeded'; fi
+terminate_background_group "${INSTALL_PID}"
+untrack_background_pid "${INSTALL_PID}"
 wait_for_installer_lock_release
 rm -f -- "${PAUSE_FILE}"
 [[ -f ${ACTIVATION_JOURNAL} && ! -L ${ACTIVATION_JOURNAL} && \
@@ -338,6 +537,315 @@ grep -Fq 'PASS: root-owned Phase 2 framework check verified' "${LOG}" || \
 run_installer --check >"${LOG}" 2>&1 || { sed -n '1,260p' "${LOG}" >&2; fail 'strict check failed'; }
 [[ ! -e ${GIT_HELPER_MARKER} ]] || fail 'installer executed repository-local Git helper'
 git -C "${REPOSITORY}" config --unset core.fsmonitor
+
+# A pending production profile-lock transaction is accepted only when the real
+# coordinator has armed the exact installer locks, published its durable child
+# sidecar and seven-row authorization, and supplied the one-time token to the
+# supervised child.  No hand-forged reduced journal is sufficient evidence.
+PROFILE_TRANSACTION_JOURNAL=${BASE}/state/profile-transactions/phase-2-production-profile-locks.pending
+PROFILE_TRANSACTION_PARTIAL=${PROFILE_TRANSACTION_JOURNAL}.partial
+PROFILE_TRANSACTION_CHILD=${PROFILE_TRANSACTION_JOURNAL}.child.json
+PROFILE_TRANSACTION_GENERATION=fixture-production-profile-gate
+PROFILE_TRANSACTION_INVENTORY=fixture-production-profile-inventory
+PROFILE_TRANSACTION_INVENTORY_SHA=$(printf fixture-profile-inventory | sha256sum)
+PROFILE_TRANSACTION_INVENTORY_SHA=${PROFILE_TRANSACTION_INVENTORY_SHA%% *}
+PROFILE_TRANSACTION_RUN=fixture-run
+PROFILE_TRANSACTION_FIXTURE=${TARGET}/profile-transaction-fixture
+PROFILE_TRANSACTION_ARTIFACTS=${TARGET}/artifacts
+PROFILE_TRANSACTION_PROFILES=${TARGET}/profile-artifacts
+PROFILE_TRANSACTION_EVIDENCE=${TARGET}/evidence-output
+PROFILE_TRANSACTION_SCANNER=${PROFILE_TRANSACTION_FIXTURE}/authorization-token-scan.py
+PROFILE_TRANSACTION_CHILD_COMMAND=${PROFILE_TRANSACTION_FIXTURE}/installer-check-child.sh
+PROFILE_TRANSACTION_AUTHORIZATION=${TARGET}/generation-state/${PROFILE_TRANSACTION_GENERATION}/phase2-sample-gate-${PROFILE_TRANSACTION_RUN}/transaction.authorization
+PROFILE_TRANSACTION_SCAN=${PROFILE_TRANSACTION_AUTHORIZATION%/*}/coordinator-token-scan.tsv
+PROFILE_TRANSACTION_RECEIPT=${PROFILE_TRANSACTION_JOURNAL%/*}/phase-2-production-profile-locks-${PROFILE_TRANSACTION_GENERATION}.receipt.json
+mkdir -m 0700 -- "${PROFILE_TRANSACTION_FIXTURE}" \
+    "${PROFILE_TRANSACTION_ARTIFACTS}" "${PROFILE_TRANSACTION_PROFILES}" \
+    "${PROFILE_TRANSACTION_EVIDENCE}" "${TARGET}/generation-state"
+install -m 0700 -T -- \
+    "${REPOSITORY}/tests/optimization/authorization_token_scan.py" \
+    "${PROFILE_TRANSACTION_SCANNER}"
+cat >"${PROFILE_TRANSACTION_CHILD_COMMAND}" <<EOF
+#!/bin/bash
+set -euo pipefail
+token=\${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN}
+authorization=\${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION}
+unset GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN \
+    GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION
+run_check() {
+    local supplied_token=\$1 supplied_authorization=\$2
+    GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+    GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN=\${supplied_token} \
+    GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION=\${supplied_authorization} \
+    bash -- ${REPOSITORY@Q}/scripts/optimization/install-framework.sh \
+        --test-root ${TARGET@Q} --check
+}
+if run_check "\$(printf 'b%.0s' {1..64})" "\${authorization}" >/dev/null 2>&1; then
+    exit 41
+fi
+if run_check "\${token}" ${WORK@Q}/outside.authorization >/dev/null 2>&1; then
+    exit 42
+fi
+run_check "\${token}" "\${authorization}" >${PROFILE_TRANSACTION_ARTIFACTS@Q}/installer-check.log 2>&1
+printf 'authorized\n' >${PROFILE_TRANSACTION_ARTIFACTS@Q}/installer-check.marker
+EOF
+chmod 0700 -- "${PROFILE_TRANSACTION_CHILD_COMMAND}"
+
+/usr/bin/env -i HOME="${HOME}" USER="${USER:-fixture}" LOGNAME="${LOGNAME:-fixture}" \
+    SHELL=/bin/bash PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+    PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -I -B \
+    "${REPOSITORY}/tests/optimization/production_profile_lock_transaction.py" run \
+    --test-mode --test-root "${TARGET}" \
+    --test-framework-lock "${TARGET}/run/gentoo-optimization/framework-install.lock" \
+    --test-project-lock "${TARGET}/run/gentoo-optimization/project.lock" \
+    --test-generation-lock "${TARGET}/run/gentoo-optimization/generation.lock" \
+    --test-journal "${PROFILE_TRANSACTION_JOURNAL}" --lock-timeout-seconds 5 \
+    --generation-id "${PROFILE_TRANSACTION_GENERATION}" \
+    --inventory-id "${PROFILE_TRANSACTION_INVENTORY}" \
+    --inventory-sha256 "${PROFILE_TRANSACTION_INVENTORY_SHA}" \
+    --gate-run-id "${PROFILE_TRANSACTION_RUN}" --child-timeout-seconds 120 \
+    --kill-after-seconds 2 --token-scanner "${PROFILE_TRANSACTION_SCANNER}" \
+    --token-scan-root "${PROFILE_TRANSACTION_ARTIFACTS}" \
+    --token-scan-root "${PROFILE_TRANSACTION_PROFILES}" \
+    --token-scan-root "${PROFILE_TRANSACTION_AUTHORIZATION%/*}" \
+    --token-scan-root "${PROFILE_TRANSACTION_EVIDENCE}" \
+    --token-scan-output "${PROFILE_TRANSACTION_SCAN}" \
+    --evidence-output-root "${PROFILE_TRANSACTION_EVIDENCE}" -- \
+    "${PROFILE_TRANSACTION_CHILD_COMMAND}" >"${LOG}" 2>&1 || {
+        sed -n '1,260p' "${LOG}" >&2
+        fail 'coordinator-supervised installer check failed'
+    }
+[[ $(<"${PROFILE_TRANSACTION_ARTIFACTS}/installer-check.marker") == authorized && \
+    -f ${PROFILE_TRANSACTION_RECEIPT} && ! -e ${PROFILE_TRANSACTION_JOURNAL} && \
+    ! -e ${PROFILE_TRANSACTION_CHILD} ]] || \
+    fail 'coordinator did not publish a complete installer transaction result'
+jq -e '.status == "passed" and .child_exit_status == 0 and .token_scan.scanner_status == 0' \
+    "${PROFILE_TRANSACTION_RECEIPT}" >/dev/null || \
+    fail 'installer transaction receipt is not a strict pass'
+
+PROFILE_TRANSACTION_TOKEN=$(printf 'a%.0s' {1..64})
+GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN=${PROFILE_TRANSACTION_TOKEN} \
+GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION=${PROFILE_TRANSACTION_AUTHORIZATION} \
+    expect_failure 'stale production profile transaction authorization is present without a journal' \
+    run_installer --check
+: >"${PROFILE_TRANSACTION_PARTIAL}"
+chmod 0600 -- "${PROFILE_TRANSACTION_PARTIAL}"
+expect_failure 'production profile-lock transaction publication is incomplete' \
+    run_installer --check
+rm -f -- "${PROFILE_TRANSACTION_PARTIAL}"
+: >"${PROFILE_TRANSACTION_CHILD}"
+chmod 0600 -- "${PROFILE_TRANSACTION_CHILD}"
+expect_failure 'orphan production profile-lock child identity is pending' \
+    run_installer --check
+rm -f -- "${PROFILE_TRANSACTION_CHILD}"
+run_installer --check >/dev/null || fail 'profile-transaction guard damaged the framework'
+
+# A second independently materialized checkout of the same raw commit must
+# reproduce the exact source and framework identity.
+INDEPENDENT_REPOSITORY=${WORK}/independent-repository
+git clone -q --no-local --no-hardlinks "${REPOSITORY}" "${INDEPENDENT_REPOSITORY}"
+GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+    bash -- "${INDEPENDENT_REPOSITORY}/scripts/optimization/install-framework.sh" \
+    --test-root "${TARGET}" --check >/dev/null ||
+    fail 'independent clean clone did not reproduce the active framework identity'
+
+# Clean status alone is not a reproducible source identity: Git ignores files,
+# cannot track empty directories, and index/config flags can suppress ordinary
+# status changes.  Every class must fail while the active framework remains
+# unchanged.
+SOURCE_CONTRACT_BASELINE=$(readlink -- "${CURRENT}")
+assert_source_rejection_clean() {
+    [[ $(readlink -- "${CURRENT}") == "${SOURCE_CONTRACT_BASELINE}" ]] || \
+        fail 'source Git-contract rejection changed the active framework'
+    assert_no_transaction_debris
+}
+
+# The source identity must be one captured, peeled commit object.  Neither an
+# invalid HEAD nor a tree object masquerading as HEAD may reach raw-tree
+# enumeration or publication.
+HEAD_FILE=${REPOSITORY}/.git/HEAD
+HEAD_FILE_SAVED=${WORK}/HEAD.saved
+cp -- "${HEAD_FILE}" "${HEAD_FILE_SAVED}"
+printf 'not-a-valid-object-name\n' >"${HEAD_FILE}"
+expect_failure 'cannot determine the raw Git object format' run_installer --check
+assert_source_rejection_clean
+cp -- "${HEAD_FILE_SAVED}" "${HEAD_FILE}"
+
+NONCOMMIT_HEAD=$(git -C "${REPOSITORY}" rev-parse 'HEAD^{tree}')
+printf '%s\n' "${NONCOMMIT_HEAD}" >"${HEAD_FILE}"
+expect_failure 'raw HEAD does not resolve to a commit object' run_installer --check
+assert_source_rejection_clean
+cp -- "${HEAD_FILE_SAVED}" "${HEAD_FILE}"
+run_installer --check >/dev/null || fail 'raw-commit HEAD rejection damaged the framework'
+
+# A selected Git tree may contain only ordinary trees, regular blobs, and
+# symlink blobs.  A gitlink is never materializable as an exact framework
+# source entry and must fail before source status or copying is considered.
+GITLINK_BASE=$(git -C "${REPOSITORY}" rev-parse 'HEAD^{commit}')
+git -C "${REPOSITORY}" update-index --add --cacheinfo \
+    160000 "${GITLINK_BASE}" portage/raw-head-gitlink-fixture
+git -C "${REPOSITORY}" -c core.hooksPath=/dev/null -c commit.gpgSign=false commit -qm \
+    'fixture raw HEAD gitlink rejection'
+expect_failure \
+    'unsupported raw HEAD mode/type 160000:commit: portage/raw-head-gitlink-fixture' \
+    run_installer --check
+assert_source_rejection_clean
+git -C "${REPOSITORY}" reset --hard -q "${GITLINK_BASE}"
+run_installer --check >/dev/null || fail 'raw gitlink rejection damaged the framework'
+
+mkdir -- "${REPOSITORY}/portage/untracked-empty-directory"
+expect_failure 'source filesystem inventory differs from the raw HEAD commit tree' run_installer
+assert_source_rejection_clean
+expect_failure 'source filesystem inventory differs from the raw HEAD commit tree' \
+    run_installer --check
+assert_source_rejection_clean
+rmdir -- "${REPOSITORY}/portage/untracked-empty-directory"
+run_installer --check >/dev/null || fail 'empty-directory rejection damaged the framework'
+
+printf '*.ignored-source-fixture\n' >>"${REPOSITORY}/.git/info/exclude"
+printf 'ignored input\n' \
+    >"${REPOSITORY}/local-overlay/metadata/policy.ignored-source-fixture"
+git -C "${REPOSITORY}" check-ignore -q -- \
+    local-overlay/metadata/policy.ignored-source-fixture ||
+    fail 'ignored-source fixture is not actually ignored'
+expect_failure 'source filesystem inventory differs from the raw HEAD commit tree' run_installer
+assert_source_rejection_clean
+expect_failure 'source filesystem inventory differs from the raw HEAD commit tree' \
+    run_installer --check
+assert_source_rejection_clean
+rm -f -- "${REPOSITORY}/local-overlay/metadata/policy.ignored-source-fixture"
+run_installer --check >/dev/null || fail 'ignored-source rejection damaged the framework'
+
+ASSUME_UNCHANGED=${REPOSITORY}/portage/make.conf
+cp -- "${ASSUME_UNCHANGED}" "${WORK}/make.conf.saved"
+git -C "${REPOSITORY}" update-index --assume-unchanged -- portage/make.conf
+printf '\n# hidden assume-unchanged mutation\n' >>"${ASSUME_UNCHANGED}"
+[[ -z $(git -C "${REPOSITORY}" status --porcelain=v1 -- portage/make.conf) ]] ||
+    fail 'assume-unchanged fixture did not hide its worktree mutation'
+expect_failure 'source filesystem inventory differs from the raw HEAD commit tree' run_installer
+assert_source_rejection_clean
+cp -- "${WORK}/make.conf.saved" "${ASSUME_UNCHANGED}"
+git -C "${REPOSITORY}" update-index --no-assume-unchanged -- portage/make.conf
+run_installer --check >/dev/null || fail 'assume-unchanged rejection damaged the framework'
+
+git -C "${REPOSITORY}" update-index --skip-worktree -- portage/make.conf
+printf '\n# hidden skip-worktree mutation\n' >>"${ASSUME_UNCHANGED}"
+[[ -z $(git -C "${REPOSITORY}" status --porcelain=v1 -- portage/make.conf) ]] ||
+    fail 'skip-worktree fixture did not hide its worktree mutation'
+expect_failure 'source filesystem inventory differs from the raw HEAD commit tree' run_installer
+assert_source_rejection_clean
+cp -- "${WORK}/make.conf.saved" "${ASSUME_UNCHANGED}"
+git -C "${REPOSITORY}" update-index --no-skip-worktree -- portage/make.conf
+run_installer --check >/dev/null || fail 'skip-worktree rejection damaged the framework'
+
+# git archive would honor this untracked attributes file and omit the hidden
+# deletion.  Raw ls-tree/cat-file inventory must still see the committed blob.
+ATTRIBUTE_PATH=local-overlay/metadata/.source-git-contract.fixture-input
+printf '%s export-ignore\n' "${ATTRIBUTE_PATH}" >"${REPOSITORY}/.git/info/attributes"
+git -C "${REPOSITORY}" update-index --assume-unchanged -- "${ATTRIBUTE_PATH}"
+rm -f -- "${REPOSITORY}/${ATTRIBUTE_PATH}"
+[[ -z $(git -C "${REPOSITORY}" status --porcelain=v1 -- "${ATTRIBUTE_PATH}") ]] ||
+    fail 'export-ignore fixture did not hide its worktree deletion'
+expect_failure 'source filesystem inventory differs from the raw HEAD commit tree' run_installer
+assert_source_rejection_clean
+git -C "${REPOSITORY}" show "HEAD:${ATTRIBUTE_PATH}" >"${REPOSITORY}/${ATTRIBUTE_PATH}"
+chmod 0644 -- "${REPOSITORY}/${ATTRIBUTE_PATH}"
+git -C "${REPOSITORY}" update-index --no-assume-unchanged -- "${ATTRIBUTE_PATH}"
+rm -f -- "${REPOSITORY}/.git/info/attributes"
+run_installer --check >/dev/null || fail 'raw-object attribute rejection damaged the framework'
+
+git -C "${REPOSITORY}" config core.fileMode false
+chmod 0755 -- "${REPOSITORY}/portage/make.conf"
+[[ -z $(git -C "${REPOSITORY}" status --porcelain=v1 -- portage/make.conf) ]] ||
+    fail 'core.fileMode=false fixture did not hide its executable-mode mutation'
+expect_failure 'source filesystem inventory differs from the raw HEAD commit tree' run_installer
+assert_source_rejection_clean
+chmod 0644 -- "${REPOSITORY}/portage/make.conf"
+git -C "${REPOSITORY}" config --unset core.fileMode
+run_installer --check >/dev/null || fail 'fileMode rejection damaged the framework'
+
+chmod 0666 -- "${REPOSITORY}/portage/make.conf"
+expect_failure 'framework source input mode is unsafe:' run_installer
+assert_source_rejection_clean
+chmod 0644 -- "${REPOSITORY}/portage/make.conf"
+run_installer --check >/dev/null || fail 'unsafe-file-mode rejection damaged the framework'
+
+chmod 0777 -- "${REPOSITORY}/local-overlay/metadata"
+expect_failure 'framework source input mode is unsafe:' run_installer
+assert_source_rejection_clean
+chmod 0755 -- "${REPOSITORY}/local-overlay/metadata"
+run_installer --check >/dev/null || fail 'unsafe-directory-mode rejection damaged the framework'
+
+chmod 4644 -- "${REPOSITORY}/portage/make.conf"
+expect_failure 'framework source input mode is unsafe:' run_installer
+assert_source_rejection_clean
+chmod 0644 -- "${REPOSITORY}/portage/make.conf"
+run_installer --check >/dev/null || fail 'special-file-mode rejection damaged the framework'
+
+HARDLINK_PROBE=${WORK}/profile-locks-hardlink
+ln -- "${REPOSITORY}/scripts/optimization/pgo/profile_locks.py" "${HARDLINK_PROBE}"
+expect_failure 'framework source input is not a single-link regular file:' run_installer
+assert_source_rejection_clean
+rm -f -- "${HARDLINK_PROBE}"
+run_installer --check >/dev/null || fail 'hardlink rejection damaged the framework'
+
+setfattr -n user.gentoo_optimization_fixture -v present -- \
+    "${REPOSITORY}/portage/make.conf"
+expect_failure 'framework source input carries unbound extended metadata:' run_installer
+assert_source_rejection_clean
+setfattr -x user.gentoo_optimization_fixture -- "${REPOSITORY}/portage/make.conf"
+run_installer --check >/dev/null || fail 'recursive-file xattr rejection damaged the framework'
+
+EXPLICIT_XATTR=${REPOSITORY}/scripts/optimization/pgo/profile_locks.py
+setfattr -n user.gentoo_optimization_fixture -v present -- "${EXPLICIT_XATTR}"
+expect_failure 'framework source input carries unbound extended metadata:' run_installer
+assert_source_rejection_clean
+setfattr -x user.gentoo_optimization_fixture -- "${EXPLICIT_XATTR}"
+run_installer --check >/dev/null || fail 'explicit-input xattr rejection damaged the framework'
+
+DIRECTORY_XATTR=${REPOSITORY}/local-overlay/metadata
+setfattr -n user.gentoo_optimization_fixture -v present -- "${DIRECTORY_XATTR}"
+expect_failure 'framework source input carries unbound extended metadata:' run_installer
+assert_source_rejection_clean
+setfattr -x user.gentoo_optimization_fixture -- "${DIRECTORY_XATTR}"
+run_installer --check >/dev/null || fail 'source Git-contract rejection damaged the active framework'
+
+# Replacement refs may affect ordinary porcelain and object reads, but every
+# source_git invocation pins the literal raw object graph.
+REPLACEMENT_BASE=$(git -C "${REPOSITORY}" rev-parse HEAD)
+ORIGINAL_BLOB=$(GIT_NO_REPLACE_OBJECTS=1 git -C "${REPOSITORY}" \
+    rev-parse HEAD:portage/make.conf)
+REPLACEMENT_CONTENT=${WORK}/replacement-content
+GIT_NO_REPLACE_OBJECTS=1 git -C "${REPOSITORY}" cat-file blob "${ORIGINAL_BLOB}" \
+    >"${REPLACEMENT_CONTENT}"
+printf '\n# replacement-only mutation\n' >>"${REPLACEMENT_CONTENT}"
+ALTERNATE_BLOB=$(git -C "${REPOSITORY}" hash-object -w -- "${REPLACEMENT_CONTENT}")
+PRIVATE_INDEX=${WORK}/replacement.index
+GIT_INDEX_FILE=${PRIVATE_INDEX} GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "${REPOSITORY}" read-tree "${REPLACEMENT_BASE}^{tree}"
+GIT_INDEX_FILE=${PRIVATE_INDEX} GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "${REPOSITORY}" update-index --add --cacheinfo \
+    100644 "${ALTERNATE_BLOB}" portage/make.conf
+ALTERNATE_TREE=$(GIT_INDEX_FILE=${PRIVATE_INDEX} GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "${REPOSITORY}" write-tree)
+ALTERNATE_COMMIT=$(printf 'replacement regression\n' | GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "${REPOSITORY}" commit-tree "${ALTERNATE_TREE}" -p "${REPLACEMENT_BASE}")
+git -C "${REPOSITORY}" replace "${REPLACEMENT_BASE}" "${ALTERNATE_COMMIT}"
+[[ $(git -C "${REPOSITORY}" rev-parse 'HEAD^{tree}') != \
+    $(GIT_NO_REPLACE_OBJECTS=1 git -C "${REPOSITORY}" rev-parse 'HEAD^{tree}') ]] ||
+    fail 'commit replacement fixture did not affect ordinary Git object traversal'
+run_installer --check >/dev/null || fail 'commit replacement influenced raw HEAD identity'
+git -C "${REPOSITORY}" replace -d "${REPLACEMENT_BASE}" >/dev/null
+
+git -C "${REPOSITORY}" replace "${ORIGINAL_BLOB}" "${ALTERNATE_BLOB}"
+NORMAL_BLOB_HASH=$(git -C "${REPOSITORY}" cat-file blob "${ORIGINAL_BLOB}" | sha256sum)
+RAW_BLOB_HASH=$(GIT_NO_REPLACE_OBJECTS=1 git -C "${REPOSITORY}" \
+    cat-file blob "${ORIGINAL_BLOB}" | sha256sum)
+[[ ${NORMAL_BLOB_HASH%% *} != "${RAW_BLOB_HASH%% *}" ]] ||
+    fail 'blob replacement fixture did not affect ordinary Git object reads'
+run_installer --check >/dev/null || fail 'blob replacement influenced raw HEAD identity'
+git -C "${REPOSITORY}" replace -d "${ORIGINAL_BLOB}" >/dev/null
+assert_no_transaction_debris
 
 assert_coherent_indirections() {
     local active
@@ -414,6 +922,8 @@ BOOTSTRAP_BASELINE_CURRENT=$(readlink -- "${CURRENT}")
 BOOTSTRAP_BASELINE_HASH=$(sha256sum -- "${HELPER_BOOTSTRAP}" | awk '{print $1}')
 sed -i 's/Stable active-framework dispatcher/Changed active-framework dispatcher/' \
     "${REPOSITORY}/scripts/optimization/install-framework.sh"
+git -C "${REPOSITORY}" add -- scripts/optimization/install-framework.sh
+git -C "${REPOSITORY}" commit -qm 'fixture changed stable bootstrap'
 expect_failure 'stable-bootstrap migration required: installed helper bootstraps differ' \
     run_installer
 [[ $(readlink -- "${CURRENT}") == "${BOOTSTRAP_BASELINE_CURRENT}" ]] || \
@@ -421,7 +931,7 @@ expect_failure 'stable-bootstrap migration required: installed helper bootstraps
 [[ $(sha256sum -- "${HELPER_BOOTSTRAP}" | awk '{print $1}') == \
     "${BOOTSTRAP_BASELINE_HASH}" ]] || \
     fail 'stable-bootstrap incompatibility changed fixed helper bytes'
-git -C "${REPOSITORY}" checkout -q -- scripts/optimization/install-framework.sh
+git -C "${REPOSITORY}" revert --no-edit HEAD >/dev/null
 assert_no_transaction_debris
 
 OLD_BOUND=${ACTIVE}
@@ -431,32 +941,50 @@ RACE_LOG=${WORK}/generation-race.log
 RACE_HELPER_LOG=${WORK}/generation-race-helper.log
 RACE_SHELL_HELPER_LOG=${WORK}/generation-race-shell-helper.log
 RACE_RESOURCE_LOG=${WORK}/generation-race-resource.log
-(
-    set -euo pipefail
-    source "${OLD_BOUND}/portage/bashrc"
-    source "${OLD_BOUND}/portage/bashrc"
-    [[ ${GENTOO_OPT_FRAMEWORK_TARGET} == "${OLD_BOUND}" ]]
-    : >"${RACE_READY}"
-    while [[ ! -e ${RACE_GO} ]]; do sleep 0.05; done
-    GENTOO_OPT_TEST_GENERATION_PROBE=1 \
-        "${HELPER_BOOTSTRAP}" --help >"${RACE_HELPER_LOG}" 2>&1
-    if grep -Fq 'NEW-GENERATION-HELPER' "${RACE_HELPER_LOG}"; then exit 87; fi
-    grep -Fq 'usage:' "${RACE_HELPER_LOG}"
-    GENTOO_OPT_TEST_GENERATION_PROBE=1 \
-        "${TARGET}/usr/local/libexec/gentoo-optimization/bolt/capture-input.sh" \
-        --help >"${RACE_SHELL_HELPER_LOG}" 2>&1
-    if grep -Fq 'NEW-GENERATION-HELPER' "${RACE_SHELL_HELPER_LOG}"; then exit 86; fi
-    grep -Fq 'usage:' "${RACE_SHELL_HELPER_LOG}"
-    GENTOO_OPT_TEST_QA_GENERATION=old-bound
-    source "${TARGET}/usr/local/lib/install-qa-check.d/zz-gentoo-optimization-bolt"
-    [[ ${GENTOO_OPT_TEST_QA_GENERATION} == old-bound ]]
-    die() { return 98; }
-    if source "${TARGET}/etc/portage/bashrc" >"${RACE_RESOURCE_LOG}" 2>&1; then
-        exit 88
-    fi
-    grep -Fq 'attempted to cross framework generations' "${RACE_RESOURCE_LOG}"
-) >"${RACE_LOG}" 2>&1 &
+RACE_CHILD=${WORK}/generation-race-child.sh
+cat >"${RACE_CHILD}" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+old_bound=$1
+helper_bootstrap=$2
+capture_bootstrap=$3
+qa_bootstrap=$4
+portage_bashrc=$5
+ready=$6
+go=$7
+helper_log=$8
+shell_helper_log=$9
+resource_log=${10}
+source "${old_bound}/portage/bashrc"
+source "${old_bound}/portage/bashrc"
+[[ ${GENTOO_OPT_FRAMEWORK_TARGET} == "${old_bound}" ]]
+: >"${ready}"
+while [[ ! -e ${go} ]]; do sleep 0.05; done
+GENTOO_OPT_TEST_GENERATION_PROBE=1 \
+    "${helper_bootstrap}" --help >"${helper_log}" 2>&1
+if grep -Fq 'NEW-GENERATION-HELPER' "${helper_log}"; then exit 87; fi
+grep -Fq 'usage:' "${helper_log}"
+GENTOO_OPT_TEST_GENERATION_PROBE=1 \
+    "${capture_bootstrap}" --help >"${shell_helper_log}" 2>&1
+if grep -Fq 'NEW-GENERATION-HELPER' "${shell_helper_log}"; then exit 86; fi
+grep -Fq 'usage:' "${shell_helper_log}"
+GENTOO_OPT_TEST_QA_GENERATION=old-bound
+source "${qa_bootstrap}"
+[[ ${GENTOO_OPT_TEST_QA_GENERATION} == old-bound ]]
+die() { return 98; }
+if source "${portage_bashrc}" >"${resource_log}" 2>&1; then exit 88; fi
+grep -Fq 'attempted to cross framework generations' "${resource_log}"
+EOF
+chmod 0700 -- "${RACE_CHILD}"
+/usr/bin/setsid --wait bash -- "${RACE_CHILD}" \
+    "${OLD_BOUND}" "${HELPER_BOOTSTRAP}" \
+    "${TARGET}/usr/local/libexec/gentoo-optimization/bolt/capture-input.sh" \
+    "${TARGET}/usr/local/lib/install-qa-check.d/zz-gentoo-optimization-bolt" \
+    "${TARGET}/etc/portage/bashrc" "${RACE_READY}" "${RACE_GO}" \
+    "${RACE_HELPER_LOG}" "${RACE_SHELL_HELPER_LOG}" "${RACE_RESOURCE_LOG}" \
+    >"${RACE_LOG}" 2>&1 &
 RACE_PID=$!
+track_background_pid "${RACE_PID}"
 for _ in $(seq 1 100); do
     [[ -e ${RACE_READY} ]] && break
     sleep 0.05
@@ -466,6 +994,10 @@ sed -i '/^import os$/a if os.environ.get("GENTOO_OPT_TEST_GENERATION_PROBE") == 
     "${REPOSITORY}/scripts/optimization/bolt/artifact_tool.py"
 sed -i '5i GENTOO_OPT_TEST_QA_GENERATION=new-generation' \
     "${REPOSITORY}/portage/install-qa-check.d/zz-gentoo-optimization-bolt"
+git -C "${REPOSITORY}" add -- \
+    scripts/optimization/bolt/artifact_tool.py \
+    portage/install-qa-check.d/zz-gentoo-optimization-bolt
+git -C "${REPOSITORY}" commit -qm 'fixture new framework generation'
 run_installer >/dev/null
 RACE_NEW_ACTIVE=$(readlink -- "${CURRENT}")
 [[ ${RACE_NEW_ACTIVE} != "${OLD_BOUND}" ]] || fail 'generation-race fixture did not activate new content'
@@ -474,9 +1006,9 @@ if ! wait "${RACE_PID}"; then
     sed -n '1,240p' "${RACE_LOG}" >&2 || true
     fail 'old-bound process crossed or lost its pinned generation during upgrade'
 fi
-git -C "${REPOSITORY}" checkout -q -- \
-    scripts/optimization/bolt/artifact_tool.py \
-    portage/install-qa-check.d/zz-gentoo-optimization-bolt
+assert_background_group_gone "${RACE_PID}"
+untrack_background_pid "${RACE_PID}"
+git -C "${REPOSITORY}" revert --no-edit HEAD >/dev/null
 run_installer >/dev/null
 ACTIVE=$(readlink -- "${CURRENT}")
 assert_coherent_indirections
@@ -504,13 +1036,15 @@ for lock in framework-install project generation; do
 done
 for lock in project generation; do
     ready=${WORK}/${lock}-lock-ready
-    (
-        exec 9<>"${TARGET}/run/gentoo-optimization/${lock}.lock"
+    # shellcheck disable=SC2016  # Positional parameters expand in the child shell.
+    /usr/bin/setsid --wait bash -Eeuo pipefail -c '
+        exec 9<>"$1"
         flock -x 9
-        : >"${ready}"
+        : >"$2"
         sleep 20
-    ) &
+    ' bash "${TARGET}/run/gentoo-optimization/${lock}.lock" "${ready}" &
     holder=$!
+    track_background_pid "${holder}"
     for _ in $(seq 1 100); do
         [[ -e ${ready} ]] && break
         sleep 0.05
@@ -520,6 +1054,8 @@ for lock in project generation; do
         run_installer --check
     kill "${holder}" 2>/dev/null || true
     wait "${holder}" 2>/dev/null || true
+    terminate_background_group "${holder}"
+    untrack_background_pid "${holder}"
 done
 mapfile -t GENERATED_ENTRIES < <(find "${ACTIVE}/generated-policy" -mindepth 1 \
     -maxdepth 1 -printf '%f\n' | sort)
@@ -550,17 +1086,84 @@ git -C "${REPOSITORY}" show HEAD:portage/make.conf >"${ACTIVE}/portage/make.conf
 chmod 0644 -- "${ACTIVE}/portage/make.conf"
 run_installer --check >/dev/null
 
+# A canonical-manifest mismatch occurs after the check-only temporary is
+# created.  Its failure path must remove that temporary so the restored
+# generation can pass another check immediately.
+ACTIVE_MANIFEST_SAVED=${WORK}/active-install.manifest.saved
+cp -- "${ACTIVE}/install.manifest" "${ACTIVE_MANIFEST_SAVED}"
+sed -i 's/^qa_hook_basename=.*/qa_hook_basename=fixture-mismatch/' \
+    "${ACTIVE}/install.manifest"
+expect_failure 'active generation manifest is not the strict canonical manifest' \
+    run_installer --check
+assert_no_transaction_debris
+install -m 0600 -T -- "${ACTIVE_MANIFEST_SAVED}" "${ACTIVE}/install.manifest"
+run_installer --check >/dev/null || \
+    fail 'canonical-manifest failure cleanup poisoned the following strict check'
+
+# Candidate ownership and inode topology are exact invariants, not merely
+# content checks.  An external hardlink changes the candidate inode group and
+# must fail even though the bytes and mode remain unchanged.
+CANDIDATE_HARDLINK=${WORK}/candidate-make-conf-hardlink
+ln -- "${ACTIVE}/portage/make.conf" "${CANDIDATE_HARDLINK}"
+expect_failure 'candidate regular file is not single-link:' run_installer --check
+rm -f -- "${CANDIDATE_HARDLINK}"
+
+mapfile -t FIXTURE_MEMBER_GIDS < <(id -G | tr ' ' '\n')
+ALTERNATE_FIXTURE_GID=
+for candidate_gid in "${FIXTURE_MEMBER_GIDS[@]}"; do
+    if [[ ${candidate_gid} != "$(id -g)" ]]; then
+        ALTERNATE_FIXTURE_GID=${candidate_gid}
+        break
+    fi
+done
+if [[ -n ${ALTERNATE_FIXTURE_GID} ]]; then
+    chgrp "${ALTERNATE_FIXTURE_GID}" -- "${ACTIVE}/portage/make.conf"
+    expect_failure 'candidate entry has the wrong owner/group:' run_installer --check
+    chgrp "$(id -g)" -- "${ACTIVE}/portage/make.conf"
+fi
+
+# Command substitution strips trailing newlines from readlink output.  The
+# verifier must consume a NUL-terminated target so this control-byte mutation
+# cannot serialize as the original generated-policy link.
+CANDIDATE_GENERATED_LINK=${ACTIVE}/portage/env/optimization/generated
+rm -f -- "${CANDIDATE_GENERATED_LINK}"
+ln -s -- $'../../../generated-policy/env\n' "${CANDIDATE_GENERATED_LINK}"
+expect_failure 'symlink target contains a control byte' run_installer --check
+rm -f -- "${CANDIDATE_GENERATED_LINK}"
+ln -s -- ../../../generated-policy/env "${CANDIDATE_GENERATED_LINK}"
+run_installer --check >/dev/null || \
+    fail 'candidate topology rejection damaged the framework'
+
+chmod 0666 -- "${ACTIVE}/portage/make.conf"
+expect_failure 'candidate entry is group/world-writable:' run_installer --check
+chmod 0644 -- "${ACTIVE}/portage/make.conf"
+chmod 0777 -- "${ACTIVE}/local-overlay/metadata"
+expect_failure 'candidate entry is group/world-writable:' run_installer --check
+chmod 0755 -- "${ACTIVE}/local-overlay/metadata"
+chmod 4644 -- "${ACTIVE}/portage/make.conf"
+expect_failure 'candidate entry has unsafe special mode bits:' run_installer --check
+chmod 0644 -- "${ACTIVE}/portage/make.conf"
+setfattr -n user.gentoo_optimization_fixture -v present -- \
+    "${ACTIVE}/share/schema/package-state.schema.json"
+expect_failure 'immutable framework candidate carries unbound extended metadata:' \
+    run_installer --check
+setfattr -x user.gentoo_optimization_fixture -- \
+    "${ACTIVE}/share/schema/package-state.schema.json"
+run_installer --check >/dev/null || fail 'candidate metadata rejection damaged the framework'
+
 # Every existing BOLT lock is held across publication.  A busy transaction
 # fails before any reviewed input snapshot is made.
 LOCK=${TARGET}/var/cache/gentoo-optimization/bolt/locks/busy.lock
 : >"${LOCK}"
-(
-    exec 9<>"${LOCK}"
+# shellcheck disable=SC2016  # Positional parameters expand in the child shell.
+/usr/bin/setsid --wait bash -Eeuo pipefail -c '
+    exec 9<>"$1"
     flock 9
-    printf ready >"${WORK}/bolt-lock-ready"
+    printf ready >"$2"
     sleep 20
-) &
+' bash "${LOCK}" "${WORK}/bolt-lock-ready" &
 LOCK_PID=$!
+track_background_pid "${LOCK_PID}"
 for _ in $(seq 1 100); do
     [[ -e ${WORK}/bolt-lock-ready ]] && break
     sleep 0.05
@@ -569,6 +1172,8 @@ done
 expect_failure 'an active BOLT transaction holds' run_installer --check
 kill "${LOCK_PID}" 2>/dev/null || true
 wait "${LOCK_PID}" 2>/dev/null || true
+terminate_background_group "${LOCK_PID}"
+untrack_background_pid "${LOCK_PID}"
 rm -f -- "${LOCK}"
 
 BASELINE_CURRENT=$(readlink -- "${CURRENT}")
@@ -601,15 +1206,18 @@ assert_no_transaction_debris
 PAUSE_FILE=${WORK}/pause
 : >"${PAUSE_FILE}"
 : >"${LOG}"
-env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+/usr/bin/setsid --wait env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     GENTOO_OPT_INSTALLER_PAUSE_AT=before-activation \
     GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
+track_background_pid "${INSTALL_PID}"
 wait_for_log 'PAUSE: before-activation' "${INSTALL_PID}"
 kill -TERM "${INSTALL_PID}"
 if wait "${INSTALL_PID}"; then fail 'signal-interrupted installer unexpectedly succeeded'; fi
+terminate_background_group "${INSTALL_PID}"
+untrack_background_pid "${INSTALL_PID}"
 rm -f -- "${PAUSE_FILE}"
 [[ $(readlink -- "${CURRENT}") == "${BASELINE_CURRENT}" ]] || fail 'signal interruption changed current'
 assert_coherent_indirections
@@ -621,22 +1229,33 @@ assert_no_transaction_debris
 PAUSE_FILE=${WORK}/kill-before-activation
 : >"${PAUSE_FILE}"
 : >"${LOG}"
-env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+/usr/bin/setsid --wait env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     GENTOO_OPT_INSTALLER_PAUSE_AT=before-activation \
     GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
+track_background_pid "${INSTALL_PID}"
 wait_for_log 'PAUSE: before-activation' "${INSTALL_PID}"
 kill -KILL "${INSTALL_PID}"
 if wait "${INSTALL_PID}" 2>/dev/null; then fail 'SIGKILLed installer unexpectedly succeeded'; fi
+terminate_background_group "${INSTALL_PID}"
+untrack_background_pid "${INSTALL_PID}"
 wait_for_installer_lock_release
 rm -f -- "${PAUSE_FILE}"
 [[ $(readlink -- "${CURRENT}") == "${BASELINE_CURRENT}" ]] || \
     fail 'pre-activation SIGKILL changed current'
 assert_coherent_indirections
-find "${TARGET}" \( -name '*.partial.*' -o -name '.framework-source-snapshot.*' \) \
-    -print -quit | grep -q . || fail 'SIGKILL fixture did not preserve realistic transaction debris'
+assert_transaction_debris_present
+mkdir -p -- "${BASE}/.source-git-contract.fixture-stale"
+printf 'stale audit\n' >"${BASE}/.extended-metadata-audit.fixture-stale"
+mkdir -p -- "${TARGET}/unmanaged-debris-decoys"
+printf 'must survive fixed-parent cleanup\n' \
+    >"${TARGET}/unmanaged-debris-decoys/.source-git-contract.fixture-decoy"
+printf 'must survive fixed-parent cleanup\n' \
+    >"${TARGET}/unmanaged-debris-decoys/.extended-metadata-audit.fixture-decoy"
+expect_failure 'stale framework publication debris remains:' run_installer --check
+assert_transaction_debris_present
 expect_failure 'injected installer failure at after-candidate' \
     env GENTOO_OPT_INSTALLER_TEST_MODE=1 GENTOO_OPT_INSTALLER_FAIL_AT=after-candidate \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" --test-root "${TARGET}"
@@ -644,23 +1263,29 @@ expect_failure 'injected installer failure at after-candidate' \
     fail 'debris recovery changed current before activation'
 assert_coherent_indirections
 assert_no_transaction_debris
+[[ -f ${TARGET}/unmanaged-debris-decoys/.source-git-contract.fixture-decoy && \
+    -f ${TARGET}/unmanaged-debris-decoys/.extended-metadata-audit.fixture-decoy ]] || \
+    fail 'fixed-parent stale cleanup removed an unmanaged decoy'
 
 # A source edit during the one-time snapshot is detected; no mixed candidate is
 # allowed to escape.  This runs only in the copied fixture repository.
 PAUSE_FILE=${WORK}/source-pause
 : >"${PAUSE_FILE}"
 : >"${LOG}"
-env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+/usr/bin/setsid --wait env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     GENTOO_OPT_INSTALLER_PAUSE_AT=before-source-copy \
     GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
+track_background_pid "${INSTALL_PID}"
 wait_for_log 'PAUSE: before-source-copy' "${INSTALL_PID}"
 printf '\n# concurrent fixture mutation\n' >>"${REPOSITORY}/portage/make.conf"
 rm -f -- "${PAUSE_FILE}"
 if wait "${INSTALL_PID}"; then fail 'mixed-source installer unexpectedly succeeded'; fi
-grep -Fq 'reviewed inputs changed while the immutable source snapshot was created' "${LOG}" || {
+assert_background_group_gone "${INSTALL_PID}"
+untrack_background_pid "${INSTALL_PID}"
+grep -Fq 'source filesystem inventory differs from the raw HEAD commit tree' "${LOG}" || {
     sed -n '1,240p' "${LOG}" >&2
     fail 'mixed-source failure lacks exact diagnostic'
 }
@@ -673,15 +1298,18 @@ assert_no_transaction_debris
 PAUSE_FILE=${WORK}/kill-after-activation
 : >"${PAUSE_FILE}"
 : >"${LOG}"
-env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+/usr/bin/setsid --wait env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     GENTOO_OPT_INSTALLER_PAUSE_AT=after-activation \
     GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
+track_background_pid "${INSTALL_PID}"
 wait_for_log 'PAUSE: after-activation' "${INSTALL_PID}"
 kill -KILL "${INSTALL_PID}"
 if wait "${INSTALL_PID}" 2>/dev/null; then fail 'post-activation SIGKILL unexpectedly succeeded'; fi
+terminate_background_group "${INSTALL_PID}"
+untrack_background_pid "${INSTALL_PID}"
 wait_for_installer_lock_release
 rm -f -- "${PAUSE_FILE}"
 NEW_ACTIVE=$(readlink -- "${CURRENT}")

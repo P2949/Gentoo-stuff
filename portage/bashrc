@@ -7,6 +7,36 @@
 # externally generated exact package fingerprint and explicit ABI/profile
 # identity.  It never guesses a profile from CATEGORY/PN.
 
+# Capture the one-shot production-gate authorization before any helper is
+# launched, then remove every bearer/test value from the exported environment.
+# These shell-only copies are cleared immediately after the coordinator has
+# verified the active transaction.  In particular, no compiler, configure
+# process, or framework helper inherits the raw bearer token.
+gentoo_opt_profile_transaction_token=${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN-}
+gentoo_opt_profile_transaction_authorization=${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION-}
+gentoo_opt_profile_transaction_test_root=${GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_ROOT-}
+gentoo_opt_profile_transaction_test_framework_lock=${GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_FRAMEWORK_LOCK-}
+gentoo_opt_profile_transaction_test_project_lock=${GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_PROJECT_LOCK-}
+gentoo_opt_profile_transaction_test_generation_lock=${GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_GENERATION_LOCK-}
+gentoo_opt_profile_transaction_test_journal=${GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_JOURNAL-}
+gentoo_opt_profile_transaction_test_helper=${GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_HELPER-}
+export -n gentoo_opt_profile_transaction_token \
+    gentoo_opt_profile_transaction_authorization \
+    gentoo_opt_profile_transaction_test_root \
+    gentoo_opt_profile_transaction_test_framework_lock \
+    gentoo_opt_profile_transaction_test_project_lock \
+    gentoo_opt_profile_transaction_test_generation_lock \
+    gentoo_opt_profile_transaction_test_journal \
+    gentoo_opt_profile_transaction_test_helper
+unset GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN \
+    GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_ROOT \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_FRAMEWORK_LOCK \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_PROJECT_LOCK \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_GENERATION_LOCK \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_JOURNAL \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_HELPER
+
 gentoo_opt_error() {
     printf 'gentoo-optimization: ERROR: %s\n' "$*" >&2
     return 1
@@ -149,6 +179,125 @@ gentoo_opt_safe_absolute_path() {
         ${path} != */.. && ${path} != *'/./'* && ${path} != */. &&
         ${path} != *[$'\n\r\t ']* ]]
 }
+
+# A root-only Phase 2 integration gate temporarily writes one exact generation
+# payload into the stable project/generation lock inodes.  Its durable journal
+# is a hard stop after SIGKILL or reboot.  The candidate-bound coordinator is
+# the sole parser for its journal, child sidecar, authorization, framework, and
+# lock identities; this Portage wrapper only selects the fixed production
+# namespace or an explicit private fixture namespace.
+gentoo_opt_validate_profile_transaction_guard() {
+    local production_journal=/var/lib/gentoo-optimization/state/profile-transactions/phase-2-production-profile-locks.pending
+    local journal=${production_journal}
+    local token=${gentoo_opt_profile_transaction_token-}
+    local authorization=${gentoo_opt_profile_transaction_authorization-}
+    local test_root=${gentoo_opt_profile_transaction_test_root-}
+    local test_framework=${gentoo_opt_profile_transaction_test_framework_lock-}
+    local test_project=${gentoo_opt_profile_transaction_test_project_lock-}
+    local test_generation=${gentoo_opt_profile_transaction_test_generation_lock-}
+    local test_journal=${gentoo_opt_profile_transaction_test_journal-}
+    local helper=/usr/local/libexec/gentoo-optimization/pgo/production-profile-lock-transaction.py
+    local test_helper=${gentoo_opt_profile_transaction_test_helper-}
+    local test_mode=0
+    local -a helper_arguments=(verify-active)
+
+    unset gentoo_opt_profile_transaction_token \
+        gentoo_opt_profile_transaction_authorization \
+        gentoo_opt_profile_transaction_test_root \
+        gentoo_opt_profile_transaction_test_framework_lock \
+        gentoo_opt_profile_transaction_test_project_lock \
+        gentoo_opt_profile_transaction_test_generation_lock \
+        gentoo_opt_profile_transaction_test_journal \
+        gentoo_opt_profile_transaction_test_helper
+
+    # These fixed production markers are never suppressible by fixture paths.
+    if [[ -e ${production_journal}.partial || -L ${production_journal}.partial ||
+        -e ${production_journal}.child.json.partial ||
+        -L ${production_journal}.child.json.partial ]]; then
+        gentoo_opt_error 'production profile-lock transaction publication is incomplete'
+        return 1
+    fi
+
+    if [[ -n ${test_root}${test_framework}${test_project}${test_generation}${test_journal}${test_helper} ]]; then
+        if [[ ${GENTOO_OPT_DISPATCHER_TEST_MODE:-0} != 1 || -n ${EBUILD_PHASE-} ||
+            -z ${test_root} || -z ${test_framework} || -z ${test_project} ||
+            -z ${test_generation} || -z ${test_journal} || -z ${test_helper} ||
+            ${test_root} != /* || ${test_root} == / ||
+            ${test_framework} != "${test_root}"/* ||
+            ${test_project} != "${test_root}"/* ||
+            ${test_generation} != "${test_root}"/* ||
+            ${test_journal} != "${test_root}"/* ||
+            ${test_helper} != "${test_root}"/* ]]; then
+            gentoo_opt_error 'profile transaction test overrides are forbidden or incomplete'
+            return 1
+        fi
+        if [[ -e ${production_journal} || -L ${production_journal} ||
+            -e ${production_journal}.child.json ||
+            -L ${production_journal}.child.json ]]; then
+            gentoo_opt_error 'a test transaction cannot override production transaction state'
+            return 1
+        fi
+        journal=${test_journal}
+        helper=${test_helper}
+        test_mode=1
+        helper_arguments+=(
+            --test-mode
+            --test-root "${test_root}"
+            --test-framework-lock "${test_framework}"
+            --test-project-lock "${test_project}"
+            --test-generation-lock "${test_generation}"
+            --test-journal "${test_journal}"
+        )
+    fi
+
+    if [[ ! -e ${journal} && ! -L ${journal} ]]; then
+        if [[ -e ${journal}.partial || -L ${journal}.partial ||
+            -e ${journal}.child.json || -L ${journal}.child.json ||
+            -e ${journal}.child.json.partial || -L ${journal}.child.json.partial ||
+            -n ${token}${authorization} || ${test_mode} == 1 ]]; then
+            gentoo_opt_error 'stale or partial production profile transaction state lacks its journal'
+            return 1
+        fi
+        return 0
+    fi
+    [[ ${token} =~ ^[0-9a-f]{64}$ && -n ${authorization} ]] || {
+        gentoo_opt_error 'active profile-lock transaction lacks its coordinator authorization'
+        return 1
+    }
+    if ((test_mode)); then
+        [[ ${authorization} == "${test_root}"/* && -f ${helper} &&
+            ! -L ${helper} && -x ${helper} ]] || {
+            gentoo_opt_error 'test transaction authorization or verifier escapes its private root'
+            return 1
+        }
+    else
+        [[ -x ${helper} && -f ${helper} && ! -L ${helper} ]] || {
+            gentoo_opt_error 'candidate-bound production transaction verifier is unavailable'
+            return 1
+        }
+    fi
+    helper_arguments+=(--token-fd 0 --authorization "${authorization}")
+    if ! printf '%s\n' "${token}" | "${helper}" "${helper_arguments[@]}" >/dev/null; then
+        gentoo_opt_error 'coordinator rejected the active production profile transaction'
+        return 1
+    fi
+}
+
+gentoo_opt_validate_profile_transaction_guard || {
+    gentoo_opt_abort 'a production profile-lock transaction is incomplete or unauthorized' || {
+        if [[ ${BASH_SOURCE[0]} == "$0" ]]; then exit 1; fi
+        return 1
+    }
+}
+unset -f gentoo_opt_validate_profile_transaction_guard
+unset gentoo_opt_profile_transaction_token \
+    gentoo_opt_profile_transaction_authorization \
+    gentoo_opt_profile_transaction_test_root \
+    gentoo_opt_profile_transaction_test_framework_lock \
+    gentoo_opt_profile_transaction_test_project_lock \
+    gentoo_opt_profile_transaction_test_generation_lock \
+    gentoo_opt_profile_transaction_test_journal \
+    gentoo_opt_profile_transaction_test_helper
 
 gentoo_opt_append_flag_once() {
     local variable=$1 flag=$2 value

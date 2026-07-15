@@ -40,4 +40,33 @@ for atom in '=dev-util/pahole-9999*' '=media-libs/babl-9999*' \
         fail "reviewed wildcard mask is absent or duplicated: ${atom}"
 done
 
+# Keep accidental shell redirections and local bytecode out of the reviewed
+# repository surface.  The explicit development-directory exceptions are
+# directories only; an unexpected top-level file (such as the former `trap`
+# scratch output) is always fatal.
+declare -A allowed_root_entries=(
+    [.git]=1 [.gitignore]=1 [.mypy_cache]=1 [.vscode]=1
+    [LICENSE]=1 [README.md]=1 [bench]=1 [docs]=1 [local-overlay]=1
+    [optimization]=1 [plan.md]=1 [plans]=1 [portage]=1 [scripts]=1 [tests]=1
+)
+while IFS= read -r -d '' entry; do
+    name=${entry#"${ROOT}"/}
+    [[ -n ${allowed_root_entries[${name}]+x} ]] || \
+        fail "unexpected top-level repository residue: ${name}"
+    case ${name} in
+        .gitignore|LICENSE|README.md|plan.md)
+            [[ ! -d ${entry} ]] || fail "expected top-level file is a directory: ${name}"
+            ;;
+        *)
+            [[ -d ${entry} && ! -L ${entry} ]] || \
+                fail "expected top-level directory is not a real directory: ${name}"
+            ;;
+    esac
+done < <(find "${ROOT}" -mindepth 1 -maxdepth 1 -print0)
+if find "${ROOT}" -path "${ROOT}/.git" -prune -o \
+    \( -type d -name __pycache__ -o -type f -name '*.pyc' \) -print -quit | \
+    grep -q .; then
+    fail 'repository contains Python bytecode residue'
+fi
+
 printf 'PASS: package masks and shared O3 baseline match reviewed cleanup policy\n'

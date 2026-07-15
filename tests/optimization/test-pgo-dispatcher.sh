@@ -9,6 +9,40 @@ BASHRC=${ROOT}/portage/bashrc
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/gentoo-opt-dispatcher.XXXXXX")
 trap 'rm -rf -- "${TMP}"' EXIT HUP INT TERM
 
+# Lifecycle-phase tests must exercise the same embedded candidate binding as an
+# installed Portage policy.  An unbound checkout policy is deliberately
+# rejected once a live framework exists, so using BASHRC directly would make
+# the fatal-path cases pass for the wrong reason and the no-op cases fail
+# before reaching their phase dispatcher.  Keep this candidate entirely below
+# the fixture's private trust anchor so its result is independent of the live
+# framework-current state.
+FIXTURE_FRAMEWORK_ID=$(printf 'c%.0s' {1..64})
+FIXTURE_FRAMEWORK_BASE=${TMP}/framework-root
+FIXTURE_FRAMEWORK_TARGET=${FIXTURE_FRAMEWORK_BASE}/framework-${FIXTURE_FRAMEWORK_ID}
+BOUND_BASHRC=${FIXTURE_FRAMEWORK_TARGET}/portage/bashrc
+
+render_candidate_bound_bashrc() {
+    local line found=0
+    while IFS= read -r line || [[ -n ${line} ]]; do
+        if [[ ${line} == '# GENTOO_OPT_FRAMEWORK_BINDING_PLACEHOLDER' ]]; then
+            found=$((found + 1))
+            printf 'gentoo_opt_embedded_framework_target=%q\n' "${FIXTURE_FRAMEWORK_TARGET}"
+            printf 'gentoo_opt_embedded_framework_base=%q\n' "${FIXTURE_FRAMEWORK_BASE}"
+            printf 'gentoo_opt_embedded_framework_trust_anchor=%q\n' "${TMP}"
+            printf 'gentoo_opt_embedded_framework_expected_uid=%q\n' "${EUID}"
+        else
+            printf '%s\n' "${line}"
+        fi
+    done <"${BASHRC}"
+    ((found == 1))
+}
+
+mkdir -p -- "${FIXTURE_FRAMEWORK_TARGET}/portage"
+render_candidate_bound_bashrc >"${BOUND_BASHRC}"
+chmod 0755 -- "${FIXTURE_FRAMEWORK_BASE}" "${FIXTURE_FRAMEWORK_TARGET}" \
+    "${FIXTURE_FRAMEWORK_TARGET}/portage"
+chmod 0644 -- "${BOUND_BASHRC}"
+
 PASS=0
 FAIL=0
 
@@ -115,7 +149,8 @@ FINGERPRINT=$(printf 'a%.0s' {1..64})
 export GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT=1
 printf '%s\n' '{"fixture":"inventory-proof"}' > "${TMP}/bolt-inventory-proof.json"
 export GENTOO_OPT_BOLT_INVENTORY_PROOF="${TMP}/bolt-inventory-proof.json"
-unset CFLAGS CXXFLAGS FCFLAGS FFLAGS LDFLAGS RUSTFLAGS GOFLAGS FEATURES
+unset CFLAGS CXXFLAGS FCFLAGS FFLAGS LDFLAGS RUSTFLAGS GOFLAGS FEATURES \
+    GENTOO_OPT_FRAMEWORK_TARGET
 
 write_manifest_file() {
     local output=$1 backend=$2 family=$3 profile=$4 abi=${5:-amd64}
@@ -178,6 +213,121 @@ case_framework_activation_journal_fails_closed() (
         GENTOO_OPT_MODE=off source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${CFLAGS} == before && ${CXXFLAGS} == before && ${LDFLAGS} == before &&
         ${FCFLAGS} == before && ${FFLAGS} == before ]]
+)
+
+case_profile_transaction_journal_authorization_is_fail_closed() (
+    local root=${TMP}/profile-transaction journal authorization helper scanner child
+    local framework_lock project_lock generation_lock generation inventory inventory_sha run
+    local artifacts profiles evidence scan_output marker receipt stale_token
+    root+=-${BASHPID}
+    mkdir -m 0700 -- "${root}"
+    mkdir -m 0700 -- "${root}/run" "${root}/state" "${root}/artifacts" \
+        "${root}/profile-artifacts" "${root}/evidence-output" \
+        "${root}/generation-state"
+    framework_lock=${root}/run/framework-install.lock
+    project_lock=${root}/run/project.lock
+    generation_lock=${root}/run/generation.lock
+    journal=${root}/state/phase-2-production-profile-locks.pending
+    helper=${root}/production-profile-lock-transaction.py
+    scanner=${root}/authorization-token-scan.py
+    generation=dispatcher-transaction-test
+    inventory=dispatcher-transaction-inventory
+    inventory_sha=$(printf dispatcher-inventory | sha256sum); inventory_sha=${inventory_sha%% *}
+    run=dispatcher-transaction-run
+    authorization=${root}/generation-state/${generation}/phase2-sample-gate-${run}/transaction.authorization
+    artifacts=${root}/artifacts
+    profiles=${root}/profile-artifacts
+    evidence=${root}/evidence-output
+    scan_output=${authorization%/*}/coordinator-token-scan.tsv
+    marker=${artifacts}/dispatcher-authorized
+    receipt=${root}/state/phase-2-production-profile-locks-${generation}.receipt.json
+    child=${root}/authorized-child.sh
+    for lock in "${framework_lock}" "${project_lock}" "${generation_lock}"; do
+        : >"${lock}"
+        chmod 0600 -- "${lock}"
+    done
+    cp -- "${ROOT}/tests/optimization/production_profile_lock_transaction.py" "${helper}"
+    cp -- "${ROOT}/tests/optimization/authorization_token_scan.py" "${scanner}"
+    chmod 0700 -- "${helper}" "${scanner}"
+
+    cat >"${child}" <<EOF
+#!/bin/bash
+set -euo pipefail
+token=\${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN}
+authorization=\${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION}
+unset GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN \
+    GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION
+source_with() {
+    local supplied_token=\$1 supplied_authorization=\$2
+    GENTOO_OPT_DISPATCHER_TEST_MODE=1 \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_ROOT=${root@Q} \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_FRAMEWORK_LOCK=${framework_lock@Q} \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_PROJECT_LOCK=${project_lock@Q} \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_GENERATION_LOCK=${generation_lock@Q} \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_JOURNAL=${journal@Q} \
+    GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_HELPER=${helper@Q} \
+    GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN=\${supplied_token} \
+    GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION=\${supplied_authorization} \
+    GENTOO_OPT_MODE=off source ${BOUND_BASHRC@Q} >/dev/null 2>&1
+}
+( source_with "\$(printf '0%.0s' {1..64})" "\${authorization}" ) && exit 31
+( source_with "\${token}" ${TMP@Q}/outside.authorization ) && exit 32
+source_with "\${token}" "\${authorization}"
+[[ -z \${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN-} &&
+   -z \${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION-} &&
+   \${GENTOO_OPT_FRAMEWORK_TARGET-} == ${FIXTURE_FRAMEWORK_TARGET@Q} ]]
+/usr/bin/env | /usr/bin/grep -q '^GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_' && exit 33
+printf 'authorized\n' >${marker@Q}
+EOF
+    chmod 0700 -- "${child}"
+
+    /usr/bin/env -i HOME="${HOME}" USER="${USER:-fixture}" LOGNAME="${LOGNAME:-fixture}" \
+        SHELL=/bin/bash PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+        PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -I "${helper}" run \
+        --test-mode --test-root "${root}" \
+        --test-framework-lock "${framework_lock}" \
+        --test-project-lock "${project_lock}" \
+        --test-generation-lock "${generation_lock}" \
+        --test-journal "${journal}" --lock-timeout-seconds 2 \
+        --generation-id "${generation}" --inventory-id "${inventory}" \
+        --inventory-sha256 "${inventory_sha}" --gate-run-id "${run}" \
+        --child-timeout-seconds 20 --kill-after-seconds 1 \
+        --token-scanner "${scanner}" \
+        --token-scan-root "${artifacts}" --token-scan-root "${profiles}" \
+        --token-scan-root "${authorization%/*}" \
+        --token-scan-root "${evidence}" --token-scan-output "${scan_output}" \
+        --evidence-output-root "${evidence}" -- "${child}" >/dev/null || return 1
+    [[ $(<"${marker}") == authorized && -f ${receipt} && ! -e ${journal} &&
+        ! -s ${framework_lock} && ! -s ${project_lock} && ! -s ${generation_lock} ]] || \
+        return 1
+    /usr/bin/jq -e '.status == "passed" and .child_exit_status == 0' \
+        "${receipt}" >/dev/null || return 1
+
+    stale_token=$(printf 'b%.0s' {1..64})
+    (
+        GENTOO_OPT_DISPATCHER_TEST_MODE=1 \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_ROOT=${root} \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_FRAMEWORK_LOCK=${framework_lock} \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_PROJECT_LOCK=${project_lock} \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_GENERATION_LOCK=${generation_lock} \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_JOURNAL=${journal} \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_HELPER=${helper} \
+        GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN=${stale_token} \
+        GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION=${authorization} \
+        GENTOO_OPT_MODE=off source "${BOUND_BASHRC}" >/dev/null 2>&1
+    ) && return 1
+    : >"${journal}.partial"
+    (
+        GENTOO_OPT_DISPATCHER_TEST_MODE=1 \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_ROOT=${root} \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_FRAMEWORK_LOCK=${framework_lock} \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_PROJECT_LOCK=${project_lock} \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_GENERATION_LOCK=${generation_lock} \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_JOURNAL=${journal} \
+        GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_HELPER=${helper} \
+        GENTOO_OPT_MODE=off source "${BOUND_BASHRC}" >/dev/null 2>&1
+    ) && return 1
+    return 0
 )
 
 case_repository_ordinary_flags_are_stage_clean() (
@@ -798,18 +948,19 @@ case_depend_phase_is_external_command_free() (
     CFLAGS='depend-c'; CXXFLAGS='depend-cxx'; LDFLAGS='depend-ld'
     RUSTFLAGS='depend-rust'; GOFLAGS='depend-go'; FEATURES='ccache sandbox'
     SANDBOX_WRITE='/depend/write'
-    source "${BASHRC}" >/dev/null 2>&1 || return 1
+    source "${BOUND_BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${CFLAGS} == depend-c && ${CXXFLAGS} == depend-cxx && ${LDFLAGS} == depend-ld ]]
     [[ ${RUSTFLAGS} == depend-rust && ${GOFLAGS} == depend-go ]]
     [[ ${FEATURES} == 'ccache sandbox' && ${SANDBOX_WRITE} == /depend/write ]]
     [[ -z ${GENTOO_OPT_ACTIVE_FINGERPRINT-} && -z ${GENTOO_OPT_ACTIVE_BACKEND-} ]]
+    [[ ${GENTOO_OPT_FRAMEWORK_TARGET-} == "${FIXTURE_FRAMEWORK_TARGET}" ]]
 )
 
 case_depend_phase_invalid_mode_is_fatal() (
     set +e
     (
         die() { exit 95; }
-        EBUILD_PHASE=depend PATH=/dev/null GENTOO_OPT_MODE=invalid source "${BASHRC}"
+        EBUILD_PHASE=depend PATH=/dev/null GENTOO_OPT_MODE=invalid source "${BOUND_BASHRC}"
         exit 0
     ) >/dev/null 2>&1
     status=$?
@@ -823,7 +974,7 @@ case_depend_phase_invalid_readiness_is_fatal() (
     (
         die() { exit 94; }
         EBUILD_PHASE=depend PATH=/dev/null GENTOO_OPT_MODE=off \
-            GENTOO_OPT_PROFILE_MAP_READY=invalid source "${BASHRC}"
+            GENTOO_OPT_PROFILE_MAP_READY=invalid source "${BOUND_BASHRC}"
         exit 0
     ) >/dev/null 2>&1
     status=$?
@@ -834,7 +985,7 @@ case_depend_phase_invalid_readiness_is_fatal() (
     (
         die() { exit 93; }
         EBUILD_PHASE=depend PATH=/dev/null GENTOO_OPT_MODE=gcc-generate \
-            GENTOO_OPT_BOLT_GCC_READY=1 source "${BASHRC}"
+            GENTOO_OPT_BOLT_GCC_READY=1 source "${BOUND_BASHRC}"
         exit 0
     ) >/dev/null 2>&1
     status=$?
@@ -855,11 +1006,12 @@ case_nonbuild_phase_matrix_is_noop() (
             CFLAGS='phase-c'; CXXFLAGS='phase-cxx'; LDFLAGS='phase-ld'
             RUSTFLAGS='phase-rust'; GOFLAGS='phase-go'; FEATURES='ccache sandbox'
             SANDBOX_WRITE='/phase/write'
-            source "${BASHRC}" >/dev/null 2>&1 || return 1
+            source "${BOUND_BASHRC}" >/dev/null 2>&1 || return 1
             [[ ${CFLAGS} == phase-c && ${CXXFLAGS} == phase-cxx && ${LDFLAGS} == phase-ld ]]
             [[ ${RUSTFLAGS} == phase-rust && ${GOFLAGS} == phase-go ]]
             [[ ${FEATURES} == 'ccache sandbox' && ${SANDBOX_WRITE} == /phase/write ]]
             [[ -z ${GENTOO_OPT_ACTIVE_FINGERPRINT-} && -z ${GENTOO_OPT_ACTIVE_BACKEND-} ]]
+            [[ ${GENTOO_OPT_FRAMEWORK_TARGET-} == "${FIXTURE_FRAMEWORK_TARGET}" ]]
             ! declare -F post_src_install >/dev/null
         ) || return 1
     done
@@ -867,6 +1019,7 @@ case_nonbuild_phase_matrix_is_noop() (
 
 run_case 'off/unset leaves all flags unchanged' case_off_is_noop
 run_case 'durable framework activation journal blocks Portage' case_framework_activation_journal_fails_closed
+run_case 'durable profile transaction journal requires exact coordinator authorization' case_profile_transaction_journal_authorization_is_fail_closed
 run_case 'ordinary repository policy contains no stage readiness' case_repository_ordinary_flags_are_stage_clean
 run_case 'profile-map readiness owns its complete exact stage set' case_profile_map_stage_is_exact
 run_case 'stage build-ID policy rejects conflicts and duplicates' case_stage_build_id_policy_fails_closed
