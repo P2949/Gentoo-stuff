@@ -30,6 +30,10 @@ TOOL = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = TOOL
 SPEC.loader.exec_module(TOOL)
 
+PROFILE_LOCKS = sys.modules.get("profile_locks")
+if PROFILE_LOCKS is None:
+    raise RuntimeError("profile lock module was not loaded with the identity tool")
+
 
 class Fixture:
     def __init__(self, root: Path) -> None:
@@ -144,6 +148,24 @@ class Fixture:
         self.debug_binary.write_bytes(b"DWARF fixture data\n")
         self.perf_data = self.root / "perf.data"
         self.perf_data.write_text("SUCCESS\n", encoding="ascii")
+        self.generation = {
+            "generation_id": "generation-20260713-a",
+            "inventory_id": "inventory-20260713-a",
+            "inventory_sha256": "9" * 64,
+        }
+        self.framework_lock = self.root / "framework.lock"
+        self.project_lock = self.root / "project.lock"
+        self.generation_lock = self.root / "generation.lock"
+        self.framework_lock.write_bytes(b"")
+        payload = PROFILE_LOCKS.canonical_generation_payload(self.generation)
+        self.project_lock.write_bytes(payload)
+        self.generation_lock.write_bytes(payload)
+        for lock in (
+            self.framework_lock,
+            self.project_lock,
+            self.generation_lock,
+        ):
+            lock.chmod(0o600)
 
     def write_executable(self, name: str, content: str) -> Path:
         path = self.root / name
@@ -231,10 +253,21 @@ class Fixture:
             "--text-sha256",
             "d" * 64,
             "--optimization-generation-id", "generation-20260713-a",
+            "--inventory-id", "inventory-20260713-a",
+            "--inventory-sha256", "9" * 64,
             "--workload-revision", "workloads-sha256-a1",
             "--source-identity-sha256", "e" * 64,
             "--production-host", "gentoo-fixture",
             "--production-date", "2026-07-13",
+            *self.lock_arguments(),
+        ]
+
+    def lock_arguments(self) -> list[str]:
+        return [
+            "--test-mode",
+            "--test-framework-lock", os.fspath(self.framework_lock),
+            "--test-project-lock", os.fspath(self.project_lock),
+            "--test-generation-lock", os.fspath(self.generation_lock),
         ]
 
     def conversion_arguments(
@@ -256,14 +289,85 @@ class Fixture:
             "--abi", "amd64",
             "--clang-major", "22",
             "--optimization-generation-id", "generation-20260713-a",
+            "--inventory-id", "inventory-20260713-a",
+            "--inventory-sha256", "9" * 64,
             "--workload-revision", "workloads-sha256-a1",
             "--source-identity-sha256", "e" * 64,
             "--production-host", "gentoo-fixture",
             "--production-date", "2026-07-13",
+            *self.lock_arguments(),
         ]
         if include_debug:
             arguments.extend(["--debug-binary", os.fspath(self.debug_binary)])
         return arguments
+
+
+class ProfileLockTests(unittest.TestCase):
+    def test_production_lock_policy_resolves_exact_portage_group(self) -> None:
+        entry = type("GroupEntry", (), {"gr_gid": 250})()
+        with mock.patch.object(PROFILE_LOCKS.grp, "getgrnam", return_value=entry) as lookup:
+            self.assertEqual(PROFILE_LOCKS.production_portage_gid(), 250)
+        lookup.assert_called_once_with("portage")
+        self.assertEqual(PROFILE_LOCKS.PRODUCTION_LOCK_MODE, 0o640)
+        self.assertEqual(PROFILE_LOCKS.PRODUCTION_LOCK_DIRECTORY_MODE, 0o750)
+        with mock.patch.object(PROFILE_LOCKS.grp, "getgrnam", side_effect=KeyError):
+            with self.assertRaisesRegex(
+                PROFILE_LOCKS.ProfileLockError, "required production group"
+            ):
+                PROFILE_LOCKS.production_portage_gid()
+
+    def test_writer_reader_hierarchy_and_exact_payload_are_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            paths = (
+                fixture.framework_lock,
+                fixture.project_lock,
+                fixture.generation_lock,
+            )
+            with PROFILE_LOCKS.profile_lock_hierarchy(
+                exclusive=True,
+                expected_generation=fixture.generation,
+                expected_generation_id=None,
+                timeout_seconds=1,
+                test_mode=True,
+                test_paths=paths,
+            ) as observed:
+                self.assertEqual(observed, fixture.generation)
+                for lock in paths:
+                    blocked = subprocess.run(
+                        ["flock", "-n", os.fspath(lock), "-c", "true"],
+                        check=False,
+                    )
+                    self.assertNotEqual(blocked.returncode, 0)
+            with PROFILE_LOCKS.profile_lock_hierarchy(
+                exclusive=False,
+                expected_generation=None,
+                expected_generation_id=fixture.generation["generation_id"],
+                timeout_seconds=1,
+                test_mode=True,
+                test_paths=paths,
+            ):
+                for lock in paths:
+                    shared = subprocess.run(
+                        ["flock", "-n", "-s", os.fspath(lock), "-c", "true"],
+                        check=False,
+                    )
+                    self.assertEqual(shared.returncode, 0)
+            fixture.project_lock.write_text(
+                json.dumps(fixture.generation, sort_keys=True), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(
+                PROFILE_LOCKS.ProfileLockError, "canonical generation payload"
+            ):
+                with PROFILE_LOCKS.profile_lock_hierarchy(
+                    exclusive=True,
+                    expected_generation=fixture.generation,
+                    expected_generation_id=None,
+                    timeout_seconds=1,
+                    test_mode=True,
+                    test_paths=paths,
+                ):
+                    self.fail("noncanonical lock payload was accepted")
 
 
 class FingerprintTest(unittest.TestCase):
@@ -632,6 +736,14 @@ class DisabledExternalSampleRecorderTest(unittest.TestCase):
 
 
 class SampleConversionTest(unittest.TestCase):
+    def test_profile_payload_is_explicitly_fsynced_before_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "sample.prof.partial"
+            path.write_text("SAMPLE\n", encoding="ascii")
+            with mock.patch.object(TOOL.os, "fsync", wraps=os.fsync) as fsync:
+                TOOL.fsync_regular_file(path, "sample profile")
+            fsync.assert_called_once()
+
     def test_transactional_conversion_records_exact_inputs_and_validates(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = Fixture(Path(directory))
@@ -678,7 +790,7 @@ class SampleConversionTest(unittest.TestCase):
                 binary_xattrs_before,
             )
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            self.assertEqual(metadata["schema_version"], 3)
+            self.assertEqual(metadata["schema_version"], 4)
             source = metadata["source"]
             self.assertEqual(source["kind"], "llvm-profgen")
             self.assertEqual(source["binary_path"], os.fspath(fixture.binary))
@@ -708,7 +820,12 @@ class SampleConversionTest(unittest.TestCase):
                 source["conversion_log_sha256"],
                 hashlib.sha256(conversion_log.read_bytes()).hexdigest(),
             )
-            self.assertEqual(conversion_log.stat().st_mode & 0o777, 0o444)
+            self.assertEqual(output.stat().st_mode & 0o777, 0o640)
+            self.assertEqual(metadata_path.stat().st_mode & 0o777, 0o640)
+            self.assertEqual(conversion_log.stat().st_mode & 0o777, 0o440)
+            self.assertEqual(output.stat().st_gid, output.parent.stat().st_gid)
+            self.assertEqual(metadata_path.stat().st_gid, output.parent.stat().st_gid)
+            self.assertEqual(conversion_log.stat().st_gid, output.parent.stat().st_gid)
             conversion_record = json.loads(conversion_log.read_text(encoding="utf-8"))
             self.assertEqual(conversion_record["stdout"], "conversion complete\n")
             self.assertEqual(conversion_record["stderr"], "")
@@ -730,6 +847,8 @@ class SampleConversionTest(unittest.TestCase):
                 metadata["reproducibility"],
                 {
                     "optimization_generation_id": "generation-20260713-a",
+                    "inventory_id": "inventory-20260713-a",
+                    "inventory_sha256": "9" * 64,
                     "production_date": "2026-07-13",
                     "production_host": "gentoo-fixture",
                     "source_identity_sha256": "e" * 64,
@@ -870,10 +989,10 @@ class SampleConversionTest(unittest.TestCase):
             conversion_log = output.parent / "llvm-profgen-conversion-log.json"
             original = conversion_log.read_bytes()
             original_hash = hashlib.sha256(original).hexdigest()
-            conversion_log.chmod(0o644)
+            conversion_log.chmod(0o640)
             conversion_log.write_bytes(b"temporary hostile replacement\n")
             conversion_log.write_bytes(original)
-            conversion_log.chmod(0o444)
+            conversion_log.chmod(0o440)
             self.assertEqual(hashlib.sha256(conversion_log.read_bytes()).hexdigest(), original_hash)
 
             validation_arguments = fixture.sample_arguments(output)

@@ -23,6 +23,7 @@ RESULTS_FILE=
 PREFLIGHT_REASON=
 RESOLVED_TOOL=
 TEMP_ROOT_CREATED=0
+PRESERVE_RUN_ROOT_FOR_EXTERNAL_AUTHORITY=0
 TIMEOUT_BIN=
 SETSID_BIN=
 SLEEP_BIN=
@@ -58,8 +59,9 @@ Options:
                         gcc, rust, go, bolt, or all. An explicit filter narrows
                         --mode capabilities as well.
   --output-dir DIR      Keep logs/evidence in a new absolute directory below
-                        /tmp or /var/tmp/gentoo-optimization. Its canonical
-                        path may contain only letters, digits, /, ., _, and -.
+                        /tmp or /var/tmp/gentoo-optimization. Root runs require
+                        the latter trusted tree. Its canonical path may contain
+                        only letters, digits, /, ., _, and -.
   --keep-temp           Keep the automatically allocated temporary directory.
   --list                List suites and capability names without running them.
   -h, --help            Show this help.
@@ -100,7 +102,10 @@ quick suites:
   pgo-dispatcher (strict backend/ABI/fingerprint and stage-hook fixture)
   portage-qa-hook-state (lost/mismatched active state and marker invalidation)
   portage-pre-strip-integration (real disposable ebuild; root-only)
+  portage-phase-identity (live userpriv/install/QA privilege boundary; root-only)
   portage-pgo-use-integration (real Clang generation/use/sidecar gate; root-only)
+  portage-sample-pgo-integration (real mapping/perf/sample/package.env gate;
+                                  root-only and opt-in with clang-sample)
   bolt-command-policy (exact static layout policy in both BOLT command producers)
   bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
   bolt-pre-strip-hooks (hermetic capture/register/deploy and rollback fixture)
@@ -114,7 +119,7 @@ opt-in capability fixtures:
   gcc            GCC gcov PGO executable/DSO
   rust           Rust LLVM instrumentation PGO
   go             Go CPU-pprof PGO
-  bolt           BOLT ET_EXEC, PIE, and DSO classes
+  bolt           BOLT ET_EXEC, dynamic PIE, static PIE, and DSO classes
 EOF
 }
 
@@ -291,25 +296,79 @@ require_commands() {
 }
 
 create_run_root() {
-    local canonical
+    local canonical parent relative component current mode
+    local trusted_root=/var/tmp/gentoo-optimization
     if [[ -n ${OUTPUT_DIR} ]]; then
         [[ ${OUTPUT_DIR} == /* && ${OUTPUT_DIR} != / ]] || \
             fail_usage '--output-dir must be an absolute non-root path'
         resolve_executable realpath || fail_usage 'realpath is required for --output-dir'
         canonical=$(${RESOLVED_TOOL} -m -- "${OUTPUT_DIR}")
-        case ${canonical} in
-            /tmp/*|/var/tmp/gentoo-optimization/*) ;;
-            *) fail_usage '--output-dir must remain below /tmp or /var/tmp/gentoo-optimization' ;;
-        esac
+        if ((EUID == 0)); then
+            [[ ${canonical} == "${trusted_root}"/* ]] || \
+                fail_usage 'root --output-dir must remain below /var/tmp/gentoo-optimization'
+            [[ -d /var/tmp && ! -L /var/tmp && \
+                $(realpath -e -- /var/tmp) == /var/tmp && \
+                $(stat -c %u -- /var/tmp) == 0 ]] || \
+                fail_usage '/var/tmp is not the canonical root-owned output boundary'
+            mode=$(stat -c %a -- /var/tmp)
+            (( (8#${mode} & 8#1000) != 0 )) || \
+                fail_usage '/var/tmp output boundary lacks the sticky bit'
+            parent=${canonical%/*}
+            current=${trusted_root}
+            relative=${parent#"${trusted_root}"}
+            relative=${relative#/}
+            IFS=/ read -r -a output_ancestor_components <<< "${relative}"
+            for component in '' "${output_ancestor_components[@]}"; do
+                [[ -z ${component} ]] || current+=/${component}
+                [[ -d ${current} && ! -L ${current} && \
+                    $(realpath -e -- "${current}") == "${current}" && \
+                    $(stat -c %u -- "${current}") == "${EUID}" ]] || \
+                    fail_usage "untrusted root output ancestor: ${current}"
+                mode=$(stat -c %a -- "${current}")
+                (( (8#${mode} & 8#022) == 0 )) || \
+                    fail_usage "group/world-writable root output ancestor: ${current}"
+            done
+        else
+            case ${canonical} in
+                /tmp/*|/var/tmp/gentoo-optimization/*) ;;
+                *) fail_usage '--output-dir must remain below /tmp or /var/tmp/gentoo-optimization' ;;
+            esac
+            parent=${canonical%/*}
+            [[ -d ${parent} && ! -L ${parent} ]] || \
+                fail_usage '--output-dir parent must already exist as a real directory'
+        fi
         [[ ${canonical} =~ ^/[A-Za-z0-9_./-]+$ ]] || \
             fail_usage '--output-dir canonical path contains characters unsafe for capability workloads'
         [[ ! -e ${canonical} ]] || fail_usage "--output-dir already exists: ${canonical}"
-        mkdir -p -- "${canonical}"
+        mkdir -m 0700 -- "${canonical}"
         RUN_ROOT=${canonical}
     else
-        RUN_ROOT=$(mktemp -d /tmp/gentoo-optimization-tests.XXXXXXXX)
+        if ((EUID == 0)); then
+            [[ -d /var/tmp && ! -L /var/tmp && \
+                $(realpath -e -- /var/tmp) == /var/tmp && \
+                $(stat -c %u -- /var/tmp) == 0 ]] || \
+                fail_usage '/var/tmp is not the canonical root-owned output boundary'
+            mode=$(stat -c %a -- /var/tmp)
+            (( (8#${mode} & 8#1000) != 0 )) || \
+                fail_usage '/var/tmp output boundary lacks the sticky bit'
+            [[ -d ${trusted_root} && ! -L ${trusted_root} && \
+                $(realpath -e -- "${trusted_root}") == "${trusted_root}" && \
+                $(stat -c %u -- "${trusted_root}") == "${EUID}" ]] || \
+                fail_usage "trusted root output tree is unavailable: ${trusted_root}"
+            mode=$(stat -c %a -- "${trusted_root}")
+            (( (8#${mode} & 8#022) == 0 )) || \
+                fail_usage "trusted root output tree is group/world-writable: ${trusted_root}"
+            RUN_ROOT=$(mktemp -d \
+                "${trusted_root}/optimization-tests.XXXXXXXX")
+        else
+            RUN_ROOT=$(mktemp -d /tmp/gentoo-optimization-tests.XXXXXXXX)
+        fi
         TEMP_ROOT_CREATED=1
     fi
+    [[ -d ${RUN_ROOT} && ! -L ${RUN_ROOT} && \
+        $(realpath -e -- "${RUN_ROOT}") == "${RUN_ROOT}" && \
+        $(stat -c '%u:%a' -- "${RUN_ROOT}") == "${EUID}:700" ]] || \
+        fail_usage "created test root has the wrong identity: ${RUN_ROOT}"
     printf 'gentoo-optimization-test-root-v1\n' >"${RUN_ROOT}/.optimization-test-root"
     LOG_ROOT=${RUN_ROOT}/logs
     RESULTS_FILE=${RUN_ROOT}/results.tsv
@@ -334,9 +393,10 @@ cleanup() {
         ACTIVE_CASE_NAME=
         ACTIVE_CASE_KILL_AFTER_SECONDS=
     fi
-    if ((TEMP_ROOT_CREATED)) && ((KEEP_TEMP == 0)) && ((FAIL_COUNT == 0)); then
+    if ((TEMP_ROOT_CREATED)) && ((KEEP_TEMP == 0)) && ((FAIL_COUNT == 0)) && \
+        ((PRESERVE_RUN_ROOT_FOR_EXTERNAL_AUTHORITY == 0)); then
         case ${RUN_ROOT} in
-            /tmp/gentoo-optimization-tests.*)
+            /tmp/gentoo-optimization-tests.*|/var/tmp/gentoo-optimization/optimization-tests.*)
                 if [[ -f ${RUN_ROOT}/.optimization-test-root ]] && \
                     grep -Fxq 'gentoo-optimization-test-root-v1' \
                         "${RUN_ROOT}/.optimization-test-root"; then
@@ -658,6 +718,22 @@ else
     run_case portage-pre-strip-integration bash -- "${PORTAGE_PHASE_FIXTURE}"
 fi
 
+PORTAGE_PHASE_IDENTITY_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-phase-identity.sh
+if [[ ! -f ${PORTAGE_PHASE_IDENTITY_FIXTURE} ]]; then
+    skip_case portage-phase-identity \
+        "fixture is absent: ${PORTAGE_PHASE_IDENTITY_FIXTURE}"
+elif ((EUID != 0)); then
+    skip_case portage-phase-identity \
+        'live Portage userpriv/install identity proof requires a root driver invocation'
+elif ! require_commands awk b2sum bash cat chmod cp cut ebuild find getent grep \
+    head mkdir mktemp mv portageq python3 readlink realpath rm sha256sum \
+    sha512sum sort stat sync tail xargs; then
+    skip_case portage-phase-identity "${PREFLIGHT_REASON}"
+else
+    run_case portage-phase-identity bash -- "${PORTAGE_PHASE_IDENTITY_FIXTURE}" \
+        --output-dir "${RUN_ROOT}/portage-phase-identity"
+fi
+
 PORTAGE_PGO_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-pgo-use-integration.sh
 if [[ ! -f ${PORTAGE_PGO_FIXTURE} ]]; then
     skip_case portage-pgo-use-integration "fixture is absent: ${PORTAGE_PGO_FIXTURE}"
@@ -669,6 +745,30 @@ elif ! require_commands awk b2sum bash cp ebuild find grep mv python3 rm sed \
     skip_case portage-pgo-use-integration "${PREFLIGHT_REASON}"
 else
     run_case portage-pgo-use-integration bash -- "${PORTAGE_PGO_FIXTURE}"
+fi
+
+PORTAGE_SAMPLE_PGO_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-sample-pgo-integration.sh
+if [[ ! -f ${PORTAGE_SAMPLE_PGO_FIXTURE} ]]; then
+    skip_case portage-sample-pgo-integration \
+        "fixture is absent: ${PORTAGE_SAMPLE_PGO_FIXTURE}"
+elif [[ ! -v 'SELECTED_CAPABILITIES[clang-sample]' ]]; then
+    skip_case portage-sample-pgo-integration \
+        'requires the explicitly selected clang-sample capability because it runs perf and a training workload'
+elif ((EUID != 0)); then
+    skip_case portage-sample-pgo-integration \
+        'real disposable Portage sample-PGO integration requires a root driver invocation'
+elif ! require_commands awk b2sum bash chmod chown cp cmp cut date ebuild find \
+    getent grep hostname id ln mkdir mktemp mv perf portageq python3 readelf \
+    readlink realpath rm runuser sed sha256sum sha512sum sort stat sync tail \
+    timeout xargs; then
+    skip_case portage-sample-pgo-integration "${PREFLIGHT_REASON}"
+else
+    # The sample fixture's validator sidecars deliberately remain bound to its
+    # separately fsynced authoritative Work tree.  Preserve this run root so
+    # its log and publication-context.tsv remain a durable index to that tree.
+    PRESERVE_RUN_ROOT_FOR_EXTERNAL_AUTHORITY=1
+    run_case portage-sample-pgo-integration bash -- "${PORTAGE_SAMPLE_PGO_FIXTURE}" \
+        --output-dir "${RUN_ROOT}/portage-sample-pgo"
 fi
 
 BOLT_COMMAND_POLICY_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-command-policy.sh
@@ -1086,6 +1186,8 @@ EXIT_STATUS=0
     printf 'pass=%d\nfail=%d\nskip=%d\ntotal=%d\n' \
         "${PASS_COUNT}" "${FAIL_COUNT}" "${SKIP_COUNT}" "${TOTAL_COUNT}"
     printf 'exit_status=%d\n' "${EXIT_STATUS}"
+    printf 'external_authority_index_preserved=%d\n' \
+        "${PRESERVE_RUN_ROOT_FOR_EXTERNAL_AUTHORITY}"
     printf 'results=%s\n' "${RESULTS_FILE}"
 } | tee "${RUN_ROOT}/summary.txt"
 

@@ -23,9 +23,18 @@ from datetime import date
 from pathlib import Path
 from typing import Any, NoReturn
 
+_PGO_MODULE_ROOT = Path(__file__).resolve().parent
+if os.fspath(_PGO_MODULE_ROOT) not in sys.path:
+    sys.path.insert(0, os.fspath(_PGO_MODULE_ROOT))
+
+from profile_locks import (  # noqa: E402
+    ProfileLockError,
+    profile_lock_hierarchy,
+)
+
 
 SCHEMA_VERSION = 2
-SAMPLE_SCHEMA_VERSION = 3
+SAMPLE_SCHEMA_VERSION = 4
 CONVERSION_LOG_SCHEMA_VERSION = 1
 BUFFER_SIZE = 1024 * 1024
 MAX_INPUT_SIZE = 4 * 1024 * 1024
@@ -148,6 +157,8 @@ FILE_OBSERVATION_FIELDS = {
 }
 REPRODUCIBILITY_FIELDS = {
     "optimization_generation_id",
+    "inventory_id",
+    "inventory_sha256",
     "workload_revision",
     "source_identity_sha256",
     "production_host",
@@ -306,7 +317,13 @@ def validate_output_destination(path: Path) -> None:
         fail(f"output path exists and is not a regular file: {path}")
 
 
-def atomic_write(path: Path, data: bytes, mode: int = 0o644) -> None:
+def atomic_write(
+    path: Path,
+    data: bytes,
+    mode: int = 0o644,
+    *,
+    inherit_parent_group: bool = False,
+) -> None:
     validate_output_destination(path)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -315,6 +332,12 @@ def atomic_write(path: Path, data: bytes, mode: int = 0o644) -> None:
         )
         temporary_path = Path(temporary_name)
         try:
+            if inherit_parent_group:
+                parent_gid = path.parent.stat().st_gid
+                if os.geteuid() == 0:
+                    os.fchown(descriptor, 0, parent_gid)
+                elif os.fstat(descriptor).st_gid != parent_gid:
+                    fail("cannot publish output with the trusted parent group")
             os.fchmod(descriptor, mode)
             with os.fdopen(descriptor, "wb") as output:
                 output.write(data)
@@ -337,6 +360,38 @@ def atomic_write(path: Path, data: bytes, mode: int = 0o644) -> None:
         raise
     except OSError as exc:
         fail(f"cannot atomically write {path}: {exc}")
+
+
+def set_transaction_metadata(path: Path, mode: int, label: str) -> None:
+    """Make a profile transaction immutable but readable by its parent group."""
+    try:
+        parent_stat = path.parent.stat()
+        if os.geteuid() == 0:
+            os.chown(path, 0, parent_stat.st_gid, follow_symlinks=False)
+        elif path.stat().st_gid != parent_stat.st_gid:
+            fail(f"cannot publish {label} with the trusted parent group")
+        os.chmod(path, mode, follow_symlinks=False)
+    except IdentityError:
+        raise
+    except OSError as exc:
+        fail(f"cannot set final metadata on {label} {path}: {exc}")
+
+
+def fsync_regular_file(path: Path, label: str) -> None:
+    flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, flags)
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            fail(f"cannot fsync non-regular {label}: {path}")
+        os.fsync(descriptor)
+    except IdentityError:
+        raise
+    except OSError as exc:
+        fail(f"cannot fsync {label} {path}: {exc}")
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def run_tool(path: Path, arguments: list[str], label: str) -> tuple[str, str]:
@@ -899,6 +954,10 @@ def build_reproducibility(arguments: argparse.Namespace) -> dict[str, object]:
         "optimization_generation_id": require_component(
             arguments.optimization_generation_id, "optimization_generation_id"
         ),
+        "inventory_id": require_component(arguments.inventory_id, "inventory_id"),
+        "inventory_sha256": require_hex64(
+            arguments.inventory_sha256, "inventory_sha256"
+        ),
         "production_date": production_date,
         "production_host": require_component(
             arguments.production_host, "production_host"
@@ -1113,8 +1172,8 @@ def validate_conversion_log(
     command_output_sha256: str,
 ) -> dict[str, object]:
     path_stat = path.stat()
-    if stat.S_IMODE(path_stat.st_mode) != 0o444 or path_stat.st_nlink != 1:
-        fail("conversion log must be a link-count-one, mode-0444 regular file")
+    if stat.S_IMODE(path_stat.st_mode) != 0o440 or path_stat.st_nlink != 1:
+        fail("conversion log must be a link-count-one, mode-0440 regular file")
     if sha256_file(path) != expected_sha256:
         fail("conversion log no longer matches its recorded SHA-256")
     recorded = load_json_object(path, "conversion log")
@@ -1254,7 +1313,22 @@ def ensure_new_regular_destination(path: Path, label: str) -> None:
     fail(f"{label} already exists: {path}")
 
 
-def sample_convert_command(arguments: argparse.Namespace) -> int:
+def fixture_lock_paths(
+    arguments: argparse.Namespace,
+) -> tuple[Path, Path, Path] | None:
+    values = (
+        arguments.test_framework_lock,
+        arguments.test_project_lock,
+        arguments.test_generation_lock,
+    )
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        fail("test mode requires framework, project, and generation lock paths")
+    return (values[0], values[1], values[2])
+
+
+def _sample_convert_command_locked(arguments: argparse.Namespace) -> int:
     profile = arguments.profile_out
     metadata_out = arguments.metadata_out
     conversion_log = arguments.conversion_log_out
@@ -1417,8 +1491,11 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
             (json.dumps(conversion_log_data, indent=2, sort_keys=True) + "\n").encode(
                 "utf-8"
             ),
-            mode=0o444,
+            mode=0o440,
+            inherit_parent_group=True,
         )
+        set_transaction_metadata(partial, 0o640, "sample profile")
+        fsync_regular_file(partial, "sample profile")
         os.replace(partial, profile)
         os.replace(conversion_log_partial, conversion_log)
         directory_descriptor = os.open(profile.parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -1447,6 +1524,8 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
         atomic_write(
             metadata_out,
             (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+            mode=0o640,
+            inherit_parent_group=True,
         )
         require_unchanged_file(
             conversion_log, conversion_log_observation, "conversion log"
@@ -1465,7 +1544,25 @@ def sample_convert_command(arguments: argparse.Namespace) -> int:
             signal.signal(signum, old_handler)
 
 
-def sample_validate_command(arguments: argparse.Namespace) -> int:
+def sample_convert_command(arguments: argparse.Namespace) -> int:
+    reproducibility = build_reproducibility(arguments)
+    generation = {
+        "generation_id": str(reproducibility["optimization_generation_id"]),
+        "inventory_id": str(reproducibility["inventory_id"]),
+        "inventory_sha256": str(reproducibility["inventory_sha256"]),
+    }
+    with profile_lock_hierarchy(
+        exclusive=True,
+        expected_generation=generation,
+        expected_generation_id=None,
+        timeout_seconds=arguments.lock_timeout_seconds,
+        test_mode=arguments.test_mode,
+        test_paths=fixture_lock_paths(arguments),
+    ):
+        return _sample_convert_command_locked(arguments)
+
+
+def _sample_validate_command_locked(arguments: argparse.Namespace) -> int:
     recorded = load_json_object(arguments.metadata, "sample profile metadata")
     require_exact_fields(recorded, SAMPLE_METADATA_FIELDS, "sample profile metadata")
     source = validate_sample_source(
@@ -1480,6 +1577,24 @@ def sample_validate_command(arguments: argparse.Namespace) -> int:
         fail(f"sample profile metadata mismatch in: {', '.join(differing)}")
     print(expected["profile_sha256"])
     return 0
+
+
+def sample_validate_command(arguments: argparse.Namespace) -> int:
+    reproducibility = build_reproducibility(arguments)
+    generation = {
+        "generation_id": str(reproducibility["optimization_generation_id"]),
+        "inventory_id": str(reproducibility["inventory_id"]),
+        "inventory_sha256": str(reproducibility["inventory_sha256"]),
+    }
+    with profile_lock_hierarchy(
+        exclusive=False,
+        expected_generation=generation,
+        expected_generation_id=None,
+        timeout_seconds=arguments.lock_timeout_seconds,
+        test_mode=arguments.test_mode,
+        test_paths=fixture_lock_paths(arguments),
+    ):
+        return _sample_validate_command_locked(arguments)
 
 
 def sample_record_disabled(_arguments: argparse.Namespace) -> int:
@@ -1510,10 +1625,20 @@ def add_sample_package_arguments(parser: argparse.ArgumentParser) -> None:
 
 def add_reproducibility_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--optimization-generation-id", required=True)
+    parser.add_argument("--inventory-id", required=True)
+    parser.add_argument("--inventory-sha256", required=True)
     parser.add_argument("--workload-revision", required=True)
     parser.add_argument("--source-identity-sha256", required=True)
     parser.add_argument("--production-host", required=True)
     parser.add_argument("--production-date", required=True)
+
+
+def add_profile_lock_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--lock-timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--test-mode", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--test-framework-lock", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--test-project-lock", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--test-generation-lock", type=Path, help=argparse.SUPPRESS)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -1562,6 +1687,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     add_sample_identity_arguments(sample_validate_parser)
     add_reproducibility_arguments(sample_validate_parser)
+    add_profile_lock_arguments(sample_validate_parser)
     sample_validate_parser.add_argument("--metadata", type=Path, required=True)
     sample_validate_parser.set_defaults(func=sample_validate_command)
 
@@ -1571,6 +1697,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     add_sample_package_arguments(sample_convert_parser)
     add_reproducibility_arguments(sample_convert_parser)
+    add_profile_lock_arguments(sample_convert_parser)
     sample_convert_parser.add_argument("--llvm-profgen", type=Path, required=True)
     sample_convert_parser.add_argument("--llvm-profdata", type=Path, required=True)
     sample_convert_parser.add_argument("--readelf", type=Path, required=True)
@@ -1598,7 +1725,7 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     try:
         return int(arguments.func(arguments))
-    except IdentityError as exc:
+    except (IdentityError, ProfileLockError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 

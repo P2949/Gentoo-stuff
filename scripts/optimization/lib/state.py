@@ -1596,8 +1596,13 @@ def _special_content_sha256(file_type: str, device_major: int | None, device_min
     return hashlib.sha256(canonical_bytes({"file_type": file_type, "device_major": device_major, "device_minor": device_minor})).hexdigest()
 
 
-def _get_file_capabilities(path: Path) -> list[str]:
-    command = PRODUCTION_GETCAP
+def _get_file_capabilities(path: Path, command: Path) -> list[str]:
+    """Read capabilities with the exact caller-selected getcap implementation.
+
+    Production callers are pinned to ``PRODUCTION_GETCAP``.  Hermetic callers
+    must explicitly provide a fixture-owned executable, so portable tests do
+    not silently depend on the host's filesystem layout.
+    """
     if not command.is_file():
         raise StateValidationError(f"exact getcap is required: {command}")
     try:
@@ -1619,7 +1624,9 @@ def _get_file_capabilities(path: Path) -> list[str]:
     return [line[len(prefix):]]
 
 
-def verify_installed_artifacts(artifacts: Sequence[Mapping[str, Any]], installed_root: Path) -> None:
+def verify_installed_artifacts(
+    artifacts: Sequence[Mapping[str, Any]], installed_root: Path, *, getcap: Path,
+) -> None:
     """Verify every recorded path and exact post-strip installed metadata."""
     if not installed_root.is_absolute() or not installed_root.is_dir():
         _error("collection.installed_root", "must be an existing absolute directory")
@@ -1699,7 +1706,7 @@ def verify_installed_artifacts(artifacts: Sequence[Mapping[str, Any]], installed
             raise StateValidationError(f"collection.installed[{artifact_id}].xattrs: {error}") from error
         if metadata["xattrs"] != actual_xattrs:
             _error(f"collection.installed[{artifact_id}].xattrs", "exact xattr set/hash mismatch")
-        capabilities = _get_file_capabilities(canonical)
+        capabilities = _get_file_capabilities(canonical, getcap)
         if metadata["file_capabilities"] != capabilities:
             _error(f"collection.installed[{artifact_id}].file_capabilities", "capability mismatch")
         selinux_raw = None
@@ -2371,7 +2378,7 @@ def _verify_boot(final_state: Mapping[str, Any], validators: Mapping[str, Path],
     return boot_id_before
 
 
-def verify_authoritative_state(
+def _verify_authoritative_state_locked(
     packages: Sequence[Mapping[str, Any]],
     artifacts: Sequence[Mapping[str, Any]],
     inventory: Mapping[str, Any],
@@ -2383,6 +2390,7 @@ def verify_authoritative_state(
     vdb_root: Path,
     installed_root: Path,
     fixture_mode: bool,
+    lock_descriptors: list[int],
 ) -> dict[str, Any]:
     """Reopen and independently revalidate every proof used for completion."""
     final = validate_final_system_state(final_state)
@@ -2409,7 +2417,6 @@ def verify_authoritative_state(
     _assert_trusted_path(inventory_path, regular=True, fixture_mode=fixture_mode)
     allowed_proof_roots = [roots["generation_root"], roots["profiles_root"], roots["bolt_root"], roots["binpkg_snapshot"], Path("/efi")]
     lock_payloads: dict[str, bytes] = {}
-    lock_descriptors: list[int] = []
     for key in ("framework", "project", "generation"):
         evidence = final["locks"][key]
         if not fixture_mode and Path(evidence["path"]) != AUTHORITATIVE_LOCKS[key]:
@@ -2574,17 +2581,56 @@ def verify_authoritative_state(
         environment_sha = hashlib.sha256(secure_read(environment, fixture_mode=fixture_mode, allowed_roots=[vdb_root])).hexdigest() if environment.exists() else None
         if environment_sha != live["environment_bz2_sha256"]:
             _error(f"collection.vdb[{package['identity']['cpv']}].environment.bz2", "changed during reconciliation")
-    verify_installed_artifacts(artifacts, installed_root)
+    fixture_getcap = validators["getcap"] if fixture_mode else PRODUCTION_GETCAP
+    verify_installed_artifacts(artifacts, installed_root, getcap=fixture_getcap)
     for key in ("framework", "project", "generation"):
         evidence = final["locks"][key]
         if secure_read(Path(evidence["path"]), evidence["sha256"], fixture_mode=fixture_mode) != lock_payloads[key]:
             _error(f"collection.locks.{key}", "changed during reconciliation")
     if not fixture_mode and Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip() != boot_id:
         _error("collection.boot.boot_id", "boot changed during reconciliation")
-    for descriptor in reversed(lock_descriptors):
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
-        os.close(descriptor)
     return {"authoritative": not fixture_mode, "strict_verified": True, "boot_id": boot_id}
+
+
+def verify_authoritative_state(
+    packages: Sequence[Mapping[str, Any]],
+    artifacts: Sequence[Mapping[str, Any]],
+    inventory: Mapping[str, Any],
+    final_state: Mapping[str, Any],
+    *,
+    packages_dir: Path,
+    artifacts_dir: Path,
+    inventory_path: Path,
+    vdb_root: Path,
+    installed_root: Path,
+    fixture_mode: bool,
+) -> dict[str, Any]:
+    """Reopen every proof while always releasing the stable reader locks."""
+    lock_descriptors: list[int] = []
+    try:
+        return _verify_authoritative_state_locked(
+            packages,
+            artifacts,
+            inventory,
+            final_state,
+            packages_dir=packages_dir,
+            artifacts_dir=artifacts_dir,
+            inventory_path=inventory_path,
+            vdb_root=vdb_root,
+            installed_root=installed_root,
+            fixture_mode=fixture_mode,
+            lock_descriptors=lock_descriptors,
+        )
+    finally:
+        for descriptor in reversed(lock_descriptors):
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
 
 def reconcile_collection(
@@ -2601,8 +2647,24 @@ def reconcile_collection(
     inventory_path: Path | None = None,
     strict: bool = False,
     fixture_mode: bool = False,
+    fixture_getcap: Path | None = None,
 ) -> dict[str, Any]:
     """Validate links and derive authoritative completion totals for a generation."""
+    if fixture_getcap is not None and not fixture_mode:
+        _error("collection.fixture_getcap", "is accepted only with fixture_mode")
+    getcap = PRODUCTION_GETCAP
+    if fixture_mode:
+        if fixture_getcap is not None:
+            getcap = fixture_getcap
+        elif strict and final_system_state is not None:
+            # The strict fixture authority already binds this path and hash;
+            # verify_authoritative_state reopens it before accepting the run.
+            getcap = Path(validate_final_system_state(final_system_state)["validators"]["getcap"]["path"])
+        elif installed_root is not None:
+            _error("collection.fixture_getcap", "an explicit fixture tool is required with a fixture installed root")
+        _assert_trusted_path(getcap, regular=True, fixture_mode=True)
+        if not os.access(getcap, os.X_OK):
+            _error("collection.fixture_getcap", "must be executable")
     validated_packages = [validate_package(package) for package in packages]
     validated_artifacts = [validate_artifact(artifact) for artifact in artifacts]
     package_by_cpv: dict[str, dict[str, Any]] = {}
@@ -2781,7 +2843,7 @@ def reconcile_collection(
             if entry_type == "dev" and artifact["metadata"]["file_type"] not in {"char-device", "block-device"}:
                 _error("collection.vdb.contents", f"device type mismatch for {installed}")
     if installed_root is not None:
-        verify_installed_artifacts(validated_artifacts, installed_root)
+        verify_installed_artifacts(validated_artifacts, installed_root, getcap=getcap)
 
     authoritative_result = {"authoritative": False, "strict_verified": False, "boot_id": None}
     if strict:

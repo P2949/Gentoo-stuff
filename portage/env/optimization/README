@@ -6,3 +6,18 @@ PGO mode files may be layered with bolt-capture-ready.conf or bolt-deploy.conf.
 GCC BOLT lanes must additionally include bolt-gcc-ready.conf.  Active modes fail
 unless the global bashrc receives an exact fingerprint, ABI, compiler lane, and
 all profile identity inputs required by that mode.
+
+The ordinary make.conf and fallback environments contain no sample-profile or
+BOLT readiness metadata.  The dispatcher is the sole owner of these stage sets:
+
+* profile-map-ready: Clang line tables, profiling debug identity, unique
+  internal linkage names, pseudo probes, and exactly one SHA-1 GNU build ID;
+* BOLT capture/deploy for Clang: line tables, emitted relocations, and exactly
+  one SHA-1 GNU build ID;
+* BOLT capture/deploy for GCC: minimal line information, emitted relocations,
+  exactly one SHA-1 GNU build ID, and disabled block partitioning;
+* BOLT capture/deploy for Rust: target-only line information, emitted
+  relocations, and exactly one SHA-1 GNU build ID.
+
+Go readiness does not receive C/C++ or Rust flags; the exact package-produced
+ELF remains subject to the fail-closed artifact classifier.

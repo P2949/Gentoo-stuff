@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The fixture intentionally writes literal ${...} expressions into fake tools
 # and isolates every environment mutation inside a case subshell.
-# shellcheck disable=SC1090,SC2016,SC2030,SC2031,SC2329
+# shellcheck disable=SC1090,SC1091,SC2016,SC2030,SC2031,SC2034,SC2329
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -30,6 +30,25 @@ count_token() {
         [[ ${word} == "${token}" ]] && count=$((count + 1))
     done
     printf '%s\n' "${count}"
+}
+
+assert_stage_readiness_absent() {
+    local variable value flag
+    for variable in CFLAGS CXXFLAGS FCFLAGS FFLAGS; do
+        value=${!variable-}
+        for flag in -gline-tables-only -g1 -fdebug-info-for-profiling \
+            -funique-internal-linkage-names -fpseudo-probe-for-profiling \
+            -ffunction-sections -fdata-sections \
+            -fno-reorder-blocks-and-partition; do
+            [[ $(count_token "${value}" "${flag}") == 0 ]] || return 1
+        done
+        [[ ${value} != *--emit-relocs* && ${value} != *--build-id* ]] || return 1
+    done
+    value=${LDFLAGS-}
+    [[ ${value} != *--emit-relocs* && ${value} != *--build-id* ]] || return 1
+    value=${RUSTFLAGS-}
+    [[ ${value} != *debuginfo=1* && ${value} != *--emit-relocs* &&
+        ${value} != *--build-id* ]] || return 1
 }
 
 mkdir -p "${TMP}/bin" "${TMP}/profiles/raw-clang" "${TMP}/profiles/raw-gcc" \
@@ -96,6 +115,7 @@ FINGERPRINT=$(printf 'a%.0s' {1..64})
 export GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT=1
 printf '%s\n' '{"fixture":"inventory-proof"}' > "${TMP}/bolt-inventory-proof.json"
 export GENTOO_OPT_BOLT_INVENTORY_PROOF="${TMP}/bolt-inventory-proof.json"
+unset CFLAGS CXXFLAGS FCFLAGS FFLAGS LDFLAGS RUSTFLAGS GOFLAGS FEATURES
 
 write_manifest_file() {
     local output=$1 backend=$2 family=$3 profile=$4 abi=${5:-amd64}
@@ -142,6 +162,65 @@ case_off_is_noop() (
     [[ ${CFLAGS} == c-before && ${CXXFLAGS} == cxx-before &&
         ${LDFLAGS} == ld-before && ${FCFLAGS} == fc-before &&
         ${FFLAGS} == ff-before && ${FEATURES} == 'ccache sandbox' ]]
+    assert_stage_readiness_absent
+)
+
+case_framework_activation_journal_fails_closed() (
+    local journal=${TMP}/framework-activation.pending
+    : >"${journal}"
+    CFLAGS=before CXXFLAGS=before LDFLAGS=before FCFLAGS=before FFLAGS=before
+    GENTOO_OPT_DISPATCHER_TEST_MODE=1 \
+        GENTOO_OPT_TEST_FRAMEWORK_ACTIVATION_JOURNAL=${journal} \
+        source "${BASHRC}" >/dev/null 2>&1 && return 1
+    rm -f -- "${journal}"
+    GENTOO_OPT_DISPATCHER_TEST_MODE=1 \
+        GENTOO_OPT_TEST_FRAMEWORK_ACTIVATION_JOURNAL=${journal} \
+        GENTOO_OPT_MODE=off source "${BASHRC}" >/dev/null 2>&1 || return 1
+    [[ ${CFLAGS} == before && ${CXXFLAGS} == before && ${LDFLAGS} == before &&
+        ${FCFLAGS} == before && ${FFLAGS} == before ]]
+)
+
+case_repository_ordinary_flags_are_stage_clean() (
+    LDFLAGS='' RUSTFLAGS='' FEATURES=''
+    # make.conf is shell assignment syntax; source the repository policy to
+    # test the effective ordinary C, C++, Fortran, linker, and Rust lanes.
+    source "${ROOT}/portage/make.conf"
+    GENTOO_OPT_MODE=off source "${BASHRC}" >/dev/null 2>&1 || return 1
+    assert_stage_readiness_absent
+    [[ -z ${BOLT_READY_FLAGS+x} && -z ${PROFILE_MAPPING_FLAGS+x} &&
+        -z ${SECTION_FLAGS+x} && -z ${BOLT_READY_LD_FLAGS+x} ]]
+)
+
+case_profile_map_stage_is_exact() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang CXX=clang++ ABI=amd64
+    export GENTOO_OPT_MODE=off GENTOO_OPT_COMPILER_FAMILY=clang
+    export GENTOO_OPT_PROFILE_MAP_READY=1 GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
+    RUSTFLAGS='rust'; GOFLAGS='go'
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
+    for flag in -gline-tables-only -fdebug-info-for-profiling \
+        -funique-internal-linkage-names -fpseudo-probe-for-profiling; do
+        [[ $(count_token "${CFLAGS}" "${flag}") == 1 ]] || return 1
+        [[ $(count_token "${CXXFLAGS}" "${flag}") == 1 ]] || return 1
+    done
+    [[ $(count_token "${LDFLAGS}" -Wl,--build-id=sha1) == 1 ]]
+    [[ ${LDFLAGS} != *--emit-relocs* && ${CFLAGS} != *-mllvm=* ]]
+    [[ ${FCFLAGS} == fc && ${FFLAGS} == ff &&
+        ${RUSTFLAGS} == rust && ${GOFLAGS} == go ]]
+)
+
+case_stage_build_id_policy_fails_closed() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang CXX=clang++ ABI=amd64
+    export GENTOO_OPT_MODE=off GENTOO_OPT_COMPILER_FAMILY=clang
+    export GENTOO_OPT_PROFILE_MAP_READY=1 GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='-Wl,--build-id'
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+
+    CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='-Wl,--build-id=sha1 -Wl,--build-id=sha1'
+    source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
 )
 
 case_legacy_rejected() (
@@ -215,6 +294,7 @@ case_ir_use_and_exact_once() (
     [[ $(count_token "${FEATURES}" -ccache) == 1 && ${CCACHE_DISABLE} == 1 ]]
     [[ ${FCFLAGS} == fortran-c && ${FFLAGS} == fortran-f ]]
     [[ ${SANDBOX_WRITE} == /existing/write ]]
+    assert_stage_readiness_absent
     grep -Fxq "verify --manifest ${GENTOO_OPT_PROFILE_MANIFEST} --metadata ${GENTOO_OPT_PROFILE_METADATA}" \
         "${VALIDATOR_LOG}"
 )
@@ -230,6 +310,7 @@ case_sample_use_and_format_separation() (
     [[ ${CFLAGS} == *"-fprofile-sample-use=${GENTOO_OPT_PROFILE_PATH}"* ]]
     [[ ${CFLAGS} != *'-fprofile-use='* && ${LDFLAGS} == ld ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+    assert_stage_readiness_absent
 
     # A correctly hashed sample payload cannot pass through the IR validator.
     sed 's/backend=clang-sample/backend=clang-ir/' \
@@ -285,6 +366,7 @@ case_clang_generate_exact_once() (
     [[ $(count_token "${LDFLAGS}" "${local_flag}") == 1 ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
     [[ ${SANDBOX_WRITE} == "/existing/write:${GENTOO_OPT_PROFILE_PATH}" ]]
+    assert_stage_readiness_absent
 )
 
 case_compiler_masquerades_are_bypassed() (
@@ -327,6 +409,7 @@ case_gcc_use_isolated_correction() (
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${CFLAGS} == *-fprofile-correction* && ${CXXFLAGS} == *-fprofile-correction* ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+    assert_stage_readiness_absent
 )
 
 case_rust_target_isolation() (
@@ -340,6 +423,7 @@ case_rust_target_isolation() (
     [[ ${RUSTFLAGS} == *"-Cprofile-generate=${GENTOO_OPT_PROFILE_PATH}"* ]]
     [[ ${CARGO_BUILD_TARGET} == x86_64-unknown-linux-gnu ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+    assert_stage_readiness_absent
 )
 
 printf '%s\n' GO > "${TMP}/profiles/cpu.pprof"
@@ -357,6 +441,7 @@ case_go_use_only_goflags() (
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${GOFLAGS} == *"-pgo=${GENTOO_OPT_PROFILE_PATH}"* ]]
     [[ ${CFLAGS} == c && ${CXXFLAGS} == cxx && ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
+    assert_stage_readiness_absent
 )
 
 case_rust_and_go_bolt_layering() (
@@ -417,13 +502,87 @@ case_bolt_layer_and_gcc_guard() (
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
     CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
     source "${BASHRC}" >/dev/null 2>&1 || return 1
-    [[ ${CFLAGS} == *-g1* && ${LDFLAGS} == *-Wl,--emit-relocs* ]]
+    [[ $(count_token "${CFLAGS}" -gline-tables-only) == 1 ]]
+    [[ $(count_token "${CXXFLAGS}" -gline-tables-only) == 1 ]]
+    [[ $(count_token "${LDFLAGS}" -Wl,--emit-relocs) == 1 ]]
+    [[ $(count_token "${LDFLAGS}" -Wl,--build-id=sha1) == 1 ]]
+    [[ ${CFLAGS} != *-fdebug-info-for-profiling* &&
+        ${CFLAGS} != *-funique-internal-linkage-names* &&
+        ${CFLAGS} != *-fpseudo-probe-for-profiling* ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
 
     export CC=gcc CXX=g++ GENTOO_OPT_MODE=gcc-generate
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-gcc"
     unset GENTOO_OPT_BOLT_GCC_READY
     source "${BASHRC}" >/dev/null 2>&1 && return 1
+    return 0
+)
+
+case_c_bolt_capture_and_deploy_sets_are_exact() (
+    local stage
+    for stage in capture deploy; do
+        (
+            export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang CXX=clang++ ABI=amd64
+            export GENTOO_OPT_MODE="bolt-${stage}" GENTOO_OPT_COMPILER_FAMILY=clang
+            export GENTOO_OPT_ABI=amd64 GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+            export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/bolt-cache"
+            unset GENTOO_OPT_BOLT_GCC_READY GENTOO_OPT_PROFILE_MAP_READY
+            CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
+            RUSTFLAGS='rust'; GOFLAGS='go'
+            source "${BASHRC}" >/dev/null 2>&1 || return 1
+            [[ $(count_token "${CFLAGS}" -gline-tables-only) == 1 ]]
+            [[ $(count_token "${CXXFLAGS}" -gline-tables-only) == 1 ]]
+            [[ $(count_token "${LDFLAGS}" -Wl,--emit-relocs) == 1 ]]
+            [[ $(count_token "${LDFLAGS}" -Wl,--build-id=sha1) == 1 ]]
+            [[ ${CFLAGS} != *-fdebug-info-for-profiling* &&
+                ${CFLAGS} != *-funique-internal-linkage-names* &&
+                ${CFLAGS} != *-fpseudo-probe-for-profiling* &&
+                ${CFLAGS} != *-ffunction-sections* &&
+                ${CFLAGS} != *-fdata-sections* ]]
+            [[ ${FCFLAGS} == fc && ${FFLAGS} == ff &&
+                ${RUSTFLAGS} == rust && ${GOFLAGS} == go ]]
+        ) || return 1
+
+        (
+            export PATH="${TMP}/bin:/usr/bin:/bin" CC=gcc CXX=g++ ABI=amd64
+            export GENTOO_OPT_MODE="bolt-${stage}" GENTOO_OPT_COMPILER_FAMILY=gcc
+            export GENTOO_OPT_BOLT_GCC_READY=1 GENTOO_OPT_ABI=amd64
+            export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+            export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/bolt-cache"
+            unset GENTOO_OPT_PROFILE_MAP_READY
+            CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'
+            RUSTFLAGS='rust'; GOFLAGS='go'
+            source "${BASHRC}" >/dev/null 2>&1 || return 1
+            [[ $(count_token "${CFLAGS}" -g1) == 1 ]]
+            [[ $(count_token "${CXXFLAGS}" -g1) == 1 ]]
+            [[ $(count_token "${CFLAGS}" -fno-reorder-blocks-and-partition) == 1 ]]
+            [[ $(count_token "${CXXFLAGS}" -fno-reorder-blocks-and-partition) == 1 ]]
+            [[ $(count_token "${LDFLAGS}" -Wl,--emit-relocs) == 1 ]]
+            [[ $(count_token "${LDFLAGS}" -Wl,--build-id=sha1) == 1 ]]
+            [[ ${CFLAGS} != *-gline-tables-only* &&
+                ${CFLAGS} != *-fdebug-info-for-profiling* &&
+                ${CFLAGS} != *-funique-internal-linkage-names* &&
+                ${CFLAGS} != *-fpseudo-probe-for-profiling* ]]
+            [[ ${FCFLAGS} == fc && ${FFLAGS} == ff &&
+                ${RUSTFLAGS} == rust && ${GOFLAGS} == go ]]
+        ) || return 1
+    done
+)
+
+case_readiness_markers_fail_closed() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=gcc CXX=g++ ABI=amd64
+    export GENTOO_OPT_MODE=gcc-generate GENTOO_OPT_ABI=amd64
+    export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
+    export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-gcc"
+    GENTOO_OPT_BOLT_STAGE=off GENTOO_OPT_BOLT_GCC_READY=1 \
+        source "${BASHRC}" >/dev/null 2>&1 && return 1
+    GENTOO_OPT_BOLT_GCC_READY=2 source "${BASHRC}" >/dev/null 2>&1 && return 1
+    GENTOO_OPT_PROFILE_MAP_READY=enabled source "${BASHRC}" >/dev/null 2>&1 && return 1
+
+    export CC=clang CXX=clang++ GENTOO_OPT_MODE=bolt-capture
+    export GENTOO_OPT_COMPILER_FAMILY=clang
+    export GENTOO_OPT_BOLT_CACHE_ROOT="${TMP}/bolt-cache"
+    GENTOO_OPT_BOLT_GCC_READY=1 source "${BASHRC}" >/dev/null 2>&1 && return 1
     return 0
 )
 
@@ -535,6 +694,8 @@ case_portage_fixture_override_is_exactly_bounded() (
     PN=phase2-pgo-use-fixture
     EBUILD_PHASE=compile
     EBUILD=/var/tmp/gentoo-phase2-pgo-portage.ABC123/app-test/phase2-pgo-use-fixture/phase2-pgo-use-fixture-1.ebuild
+    gentoo_opt_fixture_override_allowed && return 1
+    GENTOO_OPT_PORTAGE_FIXTURE_MODE=1
     gentoo_opt_fixture_override_allowed || return 1
     EBUILD=/var/tmp/unreviewed/app-test/phase2-pgo-use-fixture/phase2-pgo-use-fixture-1.ebuild
     gentoo_opt_fixture_override_allowed && return 1
@@ -656,6 +817,31 @@ case_depend_phase_invalid_mode_is_fatal() (
     [[ ${status} -eq 95 ]]
 )
 
+case_depend_phase_invalid_readiness_is_fatal() (
+    local status
+    set +e
+    (
+        die() { exit 94; }
+        EBUILD_PHASE=depend PATH=/dev/null GENTOO_OPT_MODE=off \
+            GENTOO_OPT_PROFILE_MAP_READY=invalid source "${BASHRC}"
+        exit 0
+    ) >/dev/null 2>&1
+    status=$?
+    set -e
+    [[ ${status} -eq 94 ]] || return 1
+
+    set +e
+    (
+        die() { exit 93; }
+        EBUILD_PHASE=depend PATH=/dev/null GENTOO_OPT_MODE=gcc-generate \
+            GENTOO_OPT_BOLT_GCC_READY=1 source "${BASHRC}"
+        exit 0
+    ) >/dev/null 2>&1
+    status=$?
+    set -e
+    [[ ${status} -eq 93 ]]
+)
+
 case_nonbuild_phase_matrix_is_noop() (
     local phase
     for phase in depend clean cleanrm nofetch pretend prerm postrm preinst postinst config info; do
@@ -680,6 +866,10 @@ case_nonbuild_phase_matrix_is_noop() (
 )
 
 run_case 'off/unset leaves all flags unchanged' case_off_is_noop
+run_case 'durable framework activation journal blocks Portage' case_framework_activation_journal_fails_closed
+run_case 'ordinary repository policy contains no stage readiness' case_repository_ordinary_flags_are_stage_clean
+run_case 'profile-map readiness owns its complete exact stage set' case_profile_map_stage_is_exact
+run_case 'stage build-ID policy rejects conflicts and duplicates' case_stage_build_id_policy_fails_closed
 run_case 'legacy marker paths fail closed' case_legacy_rejected
 run_case 'unknown modes fail closed' case_unknown_mode_rejected
 run_case 'Clang mode rejects a GCC compiler' case_compiler_lane_rejected
@@ -699,6 +889,8 @@ run_case 'generic Go PGO rejects multi-main or unclassified packages' case_go_mu
 run_case 'Rust and Go BOLT stages remain language-lane specific' case_rust_and_go_bolt_layering
 run_case 'Rust BOLT readiness requires an explicit target' case_rust_bolt_readiness_requires_target
 run_case 'BOLT readiness layers and guards the GCC lane' case_bolt_layer_and_gcc_guard
+run_case 'C/C++ BOLT capture and deploy sets are exact' case_c_bolt_capture_and_deploy_sets_are_exact
+run_case 'stage readiness markers fail closed outside their lane' case_readiness_markers_fail_closed
 run_case 'BOLT stages require an exact sandbox cache scope' case_bolt_cache_scope_is_required
 run_case 'BOLT stages require an exact inventory proof path' case_bolt_inventory_proof_is_required
 run_case 'strict fingerprint.env loading works' case_fingerprint_file_strict
@@ -715,6 +907,7 @@ run_case 'Portage cannot swallow a BOLT transaction failure' case_portage_phase_
 run_case 'Portage cannot swallow dispatcher failure while sourcing' case_portage_source_dispatch_failure_is_fatal
 run_case 'depend phase performs no external command or flag/path mutation' case_depend_phase_is_external_command_free
 run_case 'depend phase rejects invalid modes through Portage fatal path' case_depend_phase_invalid_mode_is_fatal
+run_case 'depend phase rejects invalid readiness through Portage fatal path' case_depend_phase_invalid_readiness_is_fatal
 run_case 'all non-build lifecycle phases leave policy and hooks inactive' case_nonbuild_phase_matrix_is_noop
 
 printf 'SUMMARY: pass=%d fail=%d total=%d\n' "${PASS}" "${FAIL}" "$((PASS + FAIL))"

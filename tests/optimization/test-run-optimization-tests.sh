@@ -6,7 +6,12 @@ IFS=$'\n\t'
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 REPOSITORY_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd -P)
 DRIVER=${REPOSITORY_ROOT}/tests/run-optimization-tests.sh
-FIXTURE=$(mktemp -d /tmp/gentoo-optimization-driver-self-test.XXXXXXXX)
+if ((EUID == 0)); then
+    FIXTURE=$(mktemp -d \
+        /var/tmp/gentoo-optimization/optimization-driver-self-test.XXXXXXXX)
+else
+    FIXTURE=$(mktemp -d /tmp/gentoo-optimization-driver-self-test.XXXXXXXX)
+fi
 trap 'rm -rf -- "${FIXTURE}"' EXIT
 
 fail() {
@@ -48,6 +53,10 @@ grep -Fq 'portage-pre-strip-integration' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the real Portage pre-strip integration fixture'
 grep -Fq 'portage-pgo-use-integration' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the real Portage PGO-use integration fixture'
+grep -Fq 'portage-sample-pgo-integration' "${FIXTURE}/list.txt" || \
+    fail 'suite list omits the real Portage sample-PGO integration fixture'
+grep -Fq 'root-only and opt-in with clang-sample' "${FIXTURE}/list.txt" || \
+    fail 'suite list does not declare the sample-PGO perf workload opt-in'
 grep -Fq 'bolt-command-policy' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the exact BOLT command-policy gate'
 grep -Fq 'bolt-transaction-fixture' "${FIXTURE}/list.txt" || \
@@ -110,19 +119,27 @@ HERMETIC_ROOT=${FIXTURE}/hermetic-repository
 HERMETIC_BIN=${FIXTURE}/hermetic-bin
 HERMETIC_DRIVER=${HERMETIC_ROOT}/tests/run-optimization-tests.sh
 HERMETIC_BOLT_RUNNER=${HERMETIC_ROOT}/optimization/fixtures/bolt/run.sh
+HERMETIC_SAMPLE_RUNNER=${HERMETIC_ROOT}/tests/optimization/test-portage-sample-pgo-integration.sh
 HERMETIC_OUTPUT=${FIXTURE}/hermetic-preflight-output
 HERMETIC_RUNNER_MARKER=${FIXTURE}/bolt-runner-was-invoked
+HERMETIC_SAMPLE_MARKER=${FIXTURE}/sample-runner-was-invoked
 mkdir -p -- "${HERMETIC_ROOT}/bench" \
     "${HERMETIC_ROOT}/optimization/fixtures/bolt" \
-    "${HERMETIC_ROOT}/scripts" "${HERMETIC_ROOT}/tests" "${HERMETIC_BIN}"
+    "${HERMETIC_ROOT}/scripts" "${HERMETIC_ROOT}/tests/optimization" \
+    "${HERMETIC_BIN}"
 cp -- "${DRIVER}" "${HERMETIC_DRIVER}"
 printf '%s\n' \
     '#!/usr/bin/env bash' \
     "printf '%s\\n' invoked >'${HERMETIC_RUNNER_MARKER}'" \
     'exit 97' >"${HERMETIC_BOLT_RUNNER}"
-chmod 0755 -- "${HERMETIC_DRIVER}" "${HERMETIC_BOLT_RUNNER}"
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    "printf '%s\\n' invoked >'${HERMETIC_SAMPLE_MARKER}'" \
+    'exit 96' >"${HERMETIC_SAMPLE_RUNNER}"
+chmod 0755 -- "${HERMETIC_DRIVER}" "${HERMETIC_BOLT_RUNNER}" \
+    "${HERMETIC_SAMPLE_RUNNER}"
 for required_driver_tool in bash dirname env find mkdir realpath setsid sleep sort \
-    tee timeout; do
+    stat tee timeout; do
     required_driver_path=$(command -v -- "${required_driver_tool}") || \
         fail "self-test prerequisite is unavailable: ${required_driver_tool}"
     ln -s -- "${required_driver_path}" \
@@ -137,6 +154,8 @@ PATH=${HERMETIC_BIN} bash -- "${HERMETIC_DRIVER}" \
 }
 [[ ! -e ${HERMETIC_RUNNER_MARKER} ]] || \
     fail 'BOLT runner executed despite a failed dependency preflight'
+[[ ! -e ${HERMETIC_SAMPLE_MARKER} ]] || \
+    fail 'sample Portage runner executed without selecting clang-sample'
 
 BOLT_SKIP_ROWS=0
 BOLT_SKIP_DETAIL=
@@ -150,10 +169,24 @@ done <"${HERMETIC_OUTPUT}/results.tsv"
     fail "expected one explicit BOLT SKIP row, found ${BOLT_SKIP_ROWS}"
 [[ ${BOLT_SKIP_DETAIL} == 'missing required command(s): '* ]] || \
     fail "BOLT SKIP lacks a dependency-preflight reason: ${BOLT_SKIP_DETAIL}"
+SAMPLE_SKIP_ROWS=0
+SAMPLE_SKIP_DETAIL=
+while IFS=$'\t' read -r result_status result_name result_detail; do
+    if [[ ${result_status} == SKIP && \
+        ${result_name} == portage-sample-pgo-integration ]]; then
+        ((SAMPLE_SKIP_ROWS += 1))
+        SAMPLE_SKIP_DETAIL=${result_detail}
+    fi
+done <"${HERMETIC_OUTPUT}/results.tsv"
+[[ ${SAMPLE_SKIP_ROWS} -eq 1 ]] || \
+    fail "expected one sample Portage opt-in SKIP row, found ${SAMPLE_SKIP_ROWS}"
+[[ ${SAMPLE_SKIP_DETAIL} == \
+    'requires the explicitly selected clang-sample capability because it runs perf and a training workload' ]] || \
+    fail "sample Portage SKIP lacks the exact opt-in reason: ${SAMPLE_SKIP_DETAIL}"
 MISSING_COMMANDS=${BOLT_SKIP_DETAIL#missing required command(s): }
 for expected_missing_command in awk chmod clang cmp cp file getcap getfattr \
     grep head lddtree llvm-bolt merge-fdata nm objcopy perf perf2bolt readelf \
-    readlink rm sed setfattr sha256sum stat strip tail tr mv xargs; do
+    readlink rm sed setfattr sha256sum strip tail tr mv xargs; do
     case ,${MISSING_COMMANDS}, in
         *,${expected_missing_command},*) ;;
         *) fail "BOLT dependency preflight did not report missing ${expected_missing_command}" ;;
@@ -205,7 +238,7 @@ printf '%s\n' \
     >"${TIMEOUT_FAKE_GO}"
 chmod 0755 -- "${TIMEOUT_DRIVER}" "${TIMEOUT_RUNNER}" "${TIMEOUT_FAKE_GO}"
 for required_timeout_tool in bash dirname env find mkdir readelf realpath rg setsid \
-    sha256sum sleep sort tail tee timeout; do
+    sha256sum sleep sort stat tail tee timeout; do
     [[ ${required_timeout_tool} == go ]] && continue
     required_timeout_path=$(command -v -- "${required_timeout_tool}") || \
         fail "self-test prerequisite is unavailable: ${required_timeout_tool}"
@@ -295,7 +328,7 @@ printf '%s\n' \
     "        Path('${PYTHON_ENV_MARKER}').write_text('dontwrite=1\\npycacheprefix=unset\\n', encoding='utf-8')" \
     >"${PYTHON_TEST_DIR}/test_environment.py"
 for required_python_tool in bash dirname env find mkdir realpath setsid sleep \
-    sort tail tee timeout; do
+    sort stat tail tee timeout; do
     required_python_path=$(command -v -- "${required_python_tool}") || \
         fail "self-test prerequisite is unavailable: ${required_python_tool}"
     ln -s -- "${required_python_path}" \

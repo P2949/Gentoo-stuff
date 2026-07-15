@@ -75,6 +75,8 @@ scripts/optimization/pgo/profile-identity.py sample-convert \
     --cpv dev-util/example-1.2.3-r1 --fingerprint "${fingerprint}" \
     --abi amd64 --clang-major 22 \
     --optimization-generation-id generation-20260713-a \
+    --inventory-id inventory-20260713-a \
+    --inventory-sha256 "${inventory_sha256}" \
     --workload-revision workloads-sha256-a1 \
     --source-identity-sha256 "${source_identity_sha256}" \
     --production-host "$(hostname)" --production-date 2026-07-13
@@ -85,9 +87,9 @@ producer invokes LLVM tools of the requested major, derives the GNU build ID
 and `.text` SHA-256 from the binary, and records hashes plus exact inode/stat
 observations of the binary, optional debug binary and perf data, as well as
 tool, command, profile and validation identities. Sample producer metadata is
-schema version 3. It also records the canonical path, SHA-256, and complete
+schema version 4. It also records the canonical path, SHA-256, and complete
 inode/stat observation of the required sibling
-`llvm-profgen-conversion-log.json`. That mode-0444, link-count-one JSON record
+`llvm-profgen-conversion-log.json`. That mode-0440, link-count-one JSON record
 preserves the exact converter stdout and stderr, their individual hashes, the
 combined command-output hash, exact argv, exit status, and exact producer
 path/hash. Validation reopens the record and proves all of those bindings;
@@ -115,16 +117,17 @@ only as an unconditional error for callers that have not migrated; it never
 writes metadata. Only this transactional `sample-convert` command can create
 sample provenance.
 
-Production metadata is required, not inferred: optimization generation ID,
-workload revision, a SHA-256 identity for the source/distfile set, production
-host, and a valid `YYYY-MM-DD` production date. These reproducibility fields
+Production metadata is required, not inferred: the exact optimization
+generation/inventory/inventory-SHA-256 triple, workload revision, a SHA-256
+identity for the source/distfile set, production host, and a valid
+`YYYY-MM-DD` production date. These reproducibility fields
 are deliberately outside the canonical package fingerprint, so recording a
 production date cannot make an otherwise identical build identity unstable.
 
 `sample-convert` and later `sample-validate` both run the sample-aware command
 `llvm-profdata show --sample`. Validation requires the same profile SHA-256,
-size, absolute path, tool identity, package fingerprint, ABI, Clang major,
-build ID, `.text` SHA-256, exact source observations, and reproducibility
+size, absolute path, tool identity, mapping-input fingerprint, ABI, Clang
+major, build ID, `.text` SHA-256, exact source observations, and reproducibility
 metadata. An IR instrumentation profile, a profile named
 `merged.profdata`, a missing profile, an LLVM-major mismatch, or changed
 metadata is rejected. The dispatcher consumes this family only with
@@ -135,6 +138,20 @@ strict sidecar. `validate-profile.py` is the sole authority for that atomic
 manifest/sidecar transaction after it independently verifies this producer
 metadata. This prevents a second, weaker manifest implementation from drifting
 away from the dispatcher's validation contract.
+
+Every producer takes the stable framework lock shared, then the project and
+generation locks exclusively. Every validator takes the same hierarchy
+shared. Both generation locks must contain the same canonical full generation
+triple before work begins and must retain the same inode and payload until it
+ends. In production `/run/gentoo-optimization` is root:`portage` mode `0750`
+and these three stable locks are root:`portage` mode `0640`: Portage readers
+can open and share-lock them, while only root can publish or mutate state.
+Profile-use manifests distinguish the mapping/training input fingerprint
+(`--sample-input-fingerprint`) from the consumer-build fingerprint
+(`--fingerprint`); both identities are retained in the strict sidecar. Profile,
+metadata, manifest, and sidecar outputs are mode `0640` with the trusted parent
+group, while the immutable conversion log is mode `0440`, so Portage can read
+them without making the cache world-readable.
 
 The obsolete `scripts/pgo/make-sample-prof.sh` entry point is retained only as
 an unconditional error explaining the migration. It cannot create a weak

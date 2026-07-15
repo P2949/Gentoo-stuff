@@ -23,6 +23,17 @@ from datetime import date
 from pathlib import Path
 from typing import Any, NoReturn
 
+_PGO_MODULE_ROOT = Path(__file__).resolve().parent
+if os.fspath(_PGO_MODULE_ROOT) not in sys.path:
+    sys.path.insert(0, os.fspath(_PGO_MODULE_ROOT))
+
+from profile_locks import (  # noqa: E402
+    ProfileLockError,
+    generation_from_fields,
+    profile_lock_hierarchy,
+    validate_generation,
+)
+
 
 BUFFER_SIZE = 1024 * 1024
 MAX_JSON_SIZE = 4 * 1024 * 1024
@@ -44,6 +55,7 @@ BACKEND_FAMILY = {
 }
 VALIDATION_METADATA_FIELDS = {
     "schema_version",
+    "generation",
     "manifest",
     "profile",
     "compiler",
@@ -105,6 +117,7 @@ BACKEND_PROOF_FIELDS = {
         "source_kind",
         "input_build_id",
         "input_text_sha256",
+        "sample_input_fingerprint",
         "reproducibility",
         "recorded_validation_output_sha256",
         "detailed_validation_arguments",
@@ -206,6 +219,8 @@ FILE_OBSERVATION_FIELDS = {
 }
 REPRODUCIBILITY_FIELDS = {
     "optimization_generation_id",
+    "inventory_id",
+    "inventory_sha256",
     "workload_revision",
     "source_identity_sha256",
     "production_host",
@@ -336,6 +351,12 @@ def validate_reproducibility(value: object) -> dict[str, object]:
         "optimization_generation_id": require_safe_reproducibility_component(
             reproducibility["optimization_generation_id"],
             "optimization generation ID",
+        ),
+        "inventory_id": require_safe_reproducibility_component(
+            reproducibility["inventory_id"], "sample inventory ID"
+        ),
+        "inventory_sha256": require_hex64(
+            reproducibility["inventory_sha256"], "sample inventory SHA-256"
         ),
         "production_date": production_date,
         "production_host": require_safe_reproducibility_component(
@@ -767,8 +788,8 @@ def validate_conversion_log(
     command_output_sha256: str,
 ) -> dict[str, object]:
     path_stat = path.stat()
-    if stat.S_IMODE(path_stat.st_mode) != 0o444 or path_stat.st_nlink != 1:
-        fail("conversion log must be a link-count-one, mode-0444 regular file")
+    if stat.S_IMODE(path_stat.st_mode) != 0o440 or path_stat.st_nlink != 1:
+        fail("conversion log must be a link-count-one, mode-0440 regular file")
     if sha256_file(path) != expected_sha256:
         fail("conversion log no longer matches its recorded SHA-256")
     log = load_json(path, "conversion log")
@@ -812,7 +833,7 @@ def validate_sample_metadata(
     metadata_path: Path,
     profile: Path,
     profile_sha256: str,
-    fingerprint: str,
+    sample_input_fingerprint: str,
     abi: str,
     compiler_major: int,
     tool_identity: dict[str, object],
@@ -823,8 +844,8 @@ def validate_sample_metadata(
         fail("sample metadata is not the exact required sibling of sample.prof")
     metadata = load_json(metadata_path, "sample metadata")
     require_exact_fields(metadata, SAMPLE_METADATA_FIELDS, "sample metadata")
-    if metadata["schema_version"] != 3:
-        fail("sample metadata schema_version must be 3")
+    if metadata["schema_version"] != 4:
+        fail("sample metadata schema_version must be 4")
     if metadata["profile_family"] != "clang-sample" or metadata["profile_format"] != "llvm-sample":
         fail("sample metadata has the wrong family or format")
     if metadata["profile_path"] != os.fspath(profile):
@@ -836,8 +857,8 @@ def validate_sample_metadata(
 
     package = require_object(metadata["package"], "sample package")
     require_exact_fields(package, SAMPLE_PACKAGE_FIELDS, "sample package")
-    if package["fingerprint"] != fingerprint or package["abi"] != abi:
-        fail("sample metadata package fingerprint or ABI mismatch")
+    if package["fingerprint"] != sample_input_fingerprint or package["abi"] != abi:
+        fail("sample metadata input fingerprint or ABI mismatch")
     require_string(package["cpv"], "sample package CPV")
 
     compiler = require_object(metadata["compiler"], "sample compiler")
@@ -897,7 +918,7 @@ def validate_sample_profile(
     tool: Path,
     metadata_path: Path,
     profile_sha256: str,
-    fingerprint: str,
+    sample_input_fingerprint: str,
     abi: str,
     compiler_major: int,
     tool_identity: dict[str, object],
@@ -925,7 +946,7 @@ def validate_sample_profile(
         metadata_path,
         profile,
         profile_sha256,
-        fingerprint,
+        sample_input_fingerprint,
         abi,
         compiler_major,
         tool_identity,
@@ -945,6 +966,7 @@ def validate_sample_profile(
         "source_kind": "llvm-profgen",
         "input_build_id": input_identity["build_id"],
         "input_text_sha256": input_identity["text_sha256"],
+        "sample_input_fingerprint": sample_input_fingerprint,
         "reproducibility": metadata["reproducibility"],
         "recorded_validation_output_sha256": hashlib.sha256(
             (recorded_stdout + "\0" + recorded_stderr).encode("utf-8")
@@ -1251,6 +1273,11 @@ def stage_output(path: Path, payload: bytes, mode: int) -> str:
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{path.name}.partial.", dir=path.parent
         )
+        parent_gid = path.parent.stat().st_gid
+        if os.geteuid() == 0:
+            os.fchown(descriptor, 0, parent_gid)
+        elif os.fstat(descriptor).st_gid != parent_gid:
+            fail("cannot publish validation output with the trusted parent group")
         os.fchmod(descriptor, mode)
         with os.fdopen(descriptor, "wb", closefd=True) as output:
             output.write(payload)
@@ -1298,8 +1325,8 @@ def atomic_publish_pair(
     metadata_published = False
     transaction_complete = False
     try:
-        manifest_temporary = stage_output(manifest_path, manifest_payload, 0o644)
-        metadata_temporary = stage_output(metadata_path, metadata_payload, 0o600)
+        manifest_temporary = stage_output(manifest_path, manifest_payload, 0o640)
+        metadata_temporary = stage_output(metadata_path, metadata_payload, 0o640)
         # Metadata is renamed first.  The manifest is the authoritative commit
         # marker, so interruption can never expose an unbound passed manifest.
         os.replace(metadata_temporary, metadata_path)
@@ -1338,6 +1365,11 @@ def atomic_publish_pair(
 
 
 def validate_arguments(arguments: argparse.Namespace) -> None:
+    generation_from_fields(
+        arguments.generation_id,
+        arguments.inventory_id,
+        arguments.inventory_sha256,
+    )
     expected_family = BACKEND_FAMILY[arguments.backend]
     if arguments.compiler_family != expected_family:
         fail(
@@ -1359,8 +1391,17 @@ def validate_arguments(arguments: argparse.Namespace) -> None:
     if arguments.backend == "clang-sample":
         if arguments.sample_metadata is None:
             fail("Clang sample validation requires --sample-metadata")
-    elif arguments.sample_metadata is not None:
-        fail("--sample-metadata is valid only for the Clang sample backend")
+        require_hex64(
+            arguments.sample_input_fingerprint, "sample input fingerprint"
+        )
+    elif (
+        arguments.sample_metadata is not None
+        or arguments.sample_input_fingerprint is not None
+    ):
+        fail(
+            "--sample-metadata and --sample-input-fingerprint are valid only "
+            "for the Clang sample backend"
+        )
 
     go_values = (
         arguments.go_binary,
@@ -1446,11 +1487,29 @@ def perform_validation(
                 Path(str(profile_tool["path"])),
                 arguments.sample_metadata,
                 profile_sha256,
-                arguments.fingerprint,
+                arguments.sample_input_fingerprint,
                 arguments.abi,
                 arguments.compiler_major,
                 profile_tool,
             )
+            sample_reproducibility = require_object(
+                backend_proof["reproducibility"], "sample reproducibility"
+            )
+            sample_generation = generation_from_fields(
+                sample_reproducibility["optimization_generation_id"],
+                sample_reproducibility["inventory_id"],
+                sample_reproducibility["inventory_sha256"],
+            )
+            requested_generation = generation_from_fields(
+                arguments.generation_id,
+                arguments.inventory_id,
+                arguments.inventory_sha256,
+            )
+            if sample_generation != requested_generation:
+                fail(
+                    "sample mapping input generation differs from the consumer "
+                    "manifest generation"
+                )
         else:
             backend_proof = validate_go_profile(
                 profile,
@@ -1496,6 +1555,11 @@ def perform_validation(
     )
     metadata: dict[str, object] = {
         "schema_version": 1,
+        "generation": generation_from_fields(
+            arguments.generation_id,
+            arguments.inventory_id,
+            arguments.inventory_sha256,
+        ),
         "manifest": {
             "path": os.fspath(manifest_path),
             "sha256": hashlib.sha256(payload).hexdigest(),
@@ -1519,7 +1583,39 @@ def metadata_bytes(metadata: dict[str, object]) -> bytes:
     return (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
+def fixture_lock_paths(
+    arguments: argparse.Namespace,
+) -> tuple[Path, Path, Path] | None:
+    values = (
+        arguments.test_framework_lock,
+        arguments.test_project_lock,
+        arguments.test_generation_lock,
+    )
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        fail("test mode requires framework, project, and generation lock paths")
+    return (values[0], values[1], values[2])
+
+
 def command_produce(arguments: argparse.Namespace) -> int:
+    generation = generation_from_fields(
+        arguments.generation_id,
+        arguments.inventory_id,
+        arguments.inventory_sha256,
+    )
+    with profile_lock_hierarchy(
+        exclusive=True,
+        expected_generation=generation,
+        expected_generation_id=None,
+        timeout_seconds=arguments.lock_timeout_seconds,
+        test_mode=arguments.test_mode,
+        test_paths=fixture_lock_paths(arguments),
+    ):
+        return _command_produce_locked(arguments)
+
+
+def _command_produce_locked(arguments: argparse.Namespace) -> int:
     manifest_path = safe_absolute_path(
         arguments.manifest_out, "manifest output", must_exist=False
     )
@@ -1549,6 +1645,7 @@ def arguments_from_metadata(
     require_exact_fields(metadata, VALIDATION_METADATA_FIELDS, "validation metadata")
     if metadata["schema_version"] != 1:
         fail("validation metadata schema_version must be 1")
+    generation = validate_generation(metadata["generation"], "validation generation")
     manifest = require_object(metadata["manifest"], "manifest identity")
     require_exact_fields(manifest, MANIFEST_IDENTITY_FIELDS, "manifest identity")
     if manifest["path"] != os.fspath(manifest_path):
@@ -1629,6 +1726,7 @@ def arguments_from_metadata(
         profile_tool_major=profile_tool_major,
         rust_llvm_major=rust_llvm_major,
         sample_metadata=None,
+        sample_input_fingerprint=None,
         go_binary=None,
         go_binary_sha256=None,
         go_build_id=None,
@@ -1636,12 +1734,18 @@ def arguments_from_metadata(
         go_target_symbol=[],
         readelf=None,
         readelf_sha256=None,
+        generation_id=generation["generation_id"],
+        inventory_id=generation["inventory_id"],
+        inventory_sha256=generation["inventory_sha256"],
     )
     if backend == "clang-sample":
         namespace.sample_metadata = Path(
             require_string(proof["sample_metadata_path"], "sample metadata path")
         )
         require_hex64(proof["sample_metadata_sha256"], "sample metadata SHA-256")
+        namespace.sample_input_fingerprint = require_hex64(
+            proof["sample_input_fingerprint"], "sample input fingerprint"
+        )
         validate_reproducibility(proof["reproducibility"])
     elif backend == "go":
         namespace.go_binary = Path(
@@ -1670,7 +1774,9 @@ def arguments_from_metadata(
     return namespace
 
 
-def command_verify(arguments: argparse.Namespace) -> int:
+def _command_verify_locked(
+    arguments: argparse.Namespace, locked_generation: dict[str, str]
+) -> int:
     manifest_path = regular_input(arguments.manifest, "dispatcher manifest")
     expected_metadata_path = Path(os.fspath(manifest_path) + ".metadata.json")
     if arguments.metadata != expected_metadata_path:
@@ -1680,6 +1786,12 @@ def command_verify(arguments: argparse.Namespace) -> int:
         )
     metadata = load_json(arguments.metadata, "validation metadata")
     namespace = arguments_from_metadata(metadata, manifest_path)
+    if generation_from_fields(
+        namespace.generation_id,
+        namespace.inventory_id,
+        namespace.inventory_sha256,
+    ) != locked_generation:
+        fail("validation metadata generation differs from the stable lock identity")
     manifest_payload = manifest_path.read_bytes()
     manifest_identity = require_object(metadata["manifest"], "manifest identity")
     if hashlib.sha256(manifest_payload).hexdigest() != manifest_identity["sha256"]:
@@ -1690,6 +1802,18 @@ def command_verify(arguments: argparse.Namespace) -> int:
     if metadata != observed_metadata:
         fail("validation metadata no longer matches current complete identities and proof")
     return 0
+
+
+def command_verify(arguments: argparse.Namespace) -> int:
+    with profile_lock_hierarchy(
+        exclusive=False,
+        expected_generation=None,
+        expected_generation_id=None,
+        timeout_seconds=arguments.lock_timeout_seconds,
+        test_mode=arguments.test_mode,
+        test_paths=fixture_lock_paths(arguments),
+    ) as locked_generation:
+        return _command_verify_locked(arguments, locked_generation)
 
 
 def add_produce_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1706,8 +1830,12 @@ def add_produce_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--profile-tool-major", type=int, required=True)
     parser.add_argument("--manifest-out", type=Path, required=True)
     parser.add_argument("--metadata-out", type=Path, required=True)
+    parser.add_argument("--generation-id", required=True)
+    parser.add_argument("--inventory-id", required=True)
+    parser.add_argument("--inventory-sha256", required=True)
     parser.add_argument("--rust-llvm-major", type=int)
     parser.add_argument("--sample-metadata", type=Path)
+    parser.add_argument("--sample-input-fingerprint")
     parser.add_argument("--go-binary", type=Path)
     parser.add_argument("--go-binary-sha256")
     parser.add_argument("--go-build-id")
@@ -1717,6 +1845,14 @@ def add_produce_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--readelf-sha256")
 
 
+def add_profile_lock_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--lock-timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--test-mode", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--test-framework-lock", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--test-project-lock", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--test-generation-lock", type=Path, help=argparse.SUPPRESS)
+
+
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1724,12 +1860,14 @@ def create_parser() -> argparse.ArgumentParser:
         "produce", help="prove a profile and atomically publish manifest plus metadata"
     )
     add_produce_arguments(produce)
+    add_profile_lock_arguments(produce)
     produce.set_defaults(function=command_produce)
     verify = subparsers.add_parser(
         "verify", help="revalidate a manifest, sidecar, payload, and complete tool tuple"
     )
     verify.add_argument("--manifest", type=Path, required=True)
     verify.add_argument("--metadata", type=Path, required=True)
+    add_profile_lock_arguments(verify)
     verify.set_defaults(function=command_verify)
     return parser
 
@@ -1747,7 +1885,7 @@ def main(argv: list[str] | None = None) -> int:
         signal.signal(item, interrupted)
     try:
         return int(arguments.function(arguments))
-    except ProfileValidationError as error:
+    except (ProfileValidationError, ProfileLockError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
     finally:

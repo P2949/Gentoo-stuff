@@ -177,6 +177,13 @@ assert_input_shape() {
             "${READELF}" -dW -- "${input}" | grep -E '[(]FLAGS_1[)].*Flags:.*PIE' >/dev/null || \
                 fail "${label}: ET_DYN executable lacks DF_1_PIE"
             ;;
+        static-pie)
+            grep -Eq 'Type:[[:space:]]+DYN ' "${header}" || fail "${label}: static PIE is not ET_DYN"
+            [[ -z ${interpreter} ]] || fail "${label}: static PIE unexpectedly carries PT_INTERP"
+            [[ -z ${soname} ]] || fail "${label}: static PIE unexpectedly carries a SONAME"
+            "${READELF}" -dW -- "${input}" | grep -E '[(]FLAGS_1[)].*Flags:.*PIE' >/dev/null || \
+                fail "${label}: static ET_DYN executable lacks DF_1_PIE"
+            ;;
         dso)
             grep -Eq 'Type:[[:space:]]+DYN ' "${header}" || fail "${label}: DSO is not ET_DYN"
             [[ -z ${interpreter} ]] || fail "${label}: DSO unexpectedly carries PT_INTERP"
@@ -547,6 +554,7 @@ bolt_transaction_write_stage_registry "${EXPECTED_TIMED_STAGES_FILE}"
     "${SCRIPT_DIR}/transaction.sh" \
     "${SCRIPT_DIR}/fixture.h" \
     "${SCRIPT_DIR}/fixture.c" \
+    "${SCRIPT_DIR}/static-main.c" \
     "${SCRIPT_DIR}/main.c" >"${OUTPUT_ROOT}/source-files.sha256"
 
 TRAIN_ITERATIONS=${BOLT_FIXTURE_TRAIN_ITERATIONS:-120000000}
@@ -585,6 +593,13 @@ run "${CLANG}" "${common_flags[@]}" -fPIE -pie \
     "${SCRIPT_DIR}/main.c" "${SCRIPT_DIR}/fixture.c" \
     -o "${OUTPUT_ROOT}/build/fixture-pie"
 run chmod 0755 "${OUTPUT_ROOT}/build/fixture-pie"
+
+run "${CLANG}" "${common_flags[@]}" -fPIE -fno-stack-protector \
+    -nostdlib -static-pie \
+    -Wl,-e,_start \
+    "${SCRIPT_DIR}/static-main.c" "${SCRIPT_DIR}/fixture.c" \
+    -o "${OUTPUT_ROOT}/build/fixture-static-pie"
+run chmod 0755 "${OUTPUT_ROOT}/build/fixture-static-pie"
 
 run "${CLANG}" "${common_flags[@]}" -fPIC -shared \
     -Wl,-soname,libboltfixture.so \
@@ -628,6 +643,8 @@ run_capture "${OUTPUT_ROOT}/executable-expected.txt" \
     "${OUTPUT_ROOT}/build/fixture-exec" "${VERIFY_ITERATIONS}" 1
 run_capture "${OUTPUT_ROOT}/pie-expected.txt" \
     "${OUTPUT_ROOT}/build/fixture-pie" "${VERIFY_ITERATIONS}" 1
+run_capture "${OUTPUT_ROOT}/static-pie-expected.txt" \
+    "${OUTPUT_ROOT}/build/fixture-static-pie" "${VERIFY_ITERATIONS}" 1
 run_capture "${OUTPUT_ROOT}/dso-expected.txt" \
     "${OUTPUT_ROOT}/build/fixture-dso-driver" "${VERIFY_ITERATIONS}" 1
 
@@ -644,6 +661,13 @@ profile_and_bolt pie \
     "${OUTPUT_ROOT}/build/fixture-pie ${TRAIN_ITERATIONS} 2" \
     "${OUTPUT_ROOT}/pie/output.bolt ${VERIFY_ITERATIONS} 1" \
     "${OUTPUT_ROOT}/pie-expected.txt"
+
+profile_and_bolt static-pie \
+    "${OUTPUT_ROOT}/build/fixture-static-pie" \
+    "${OUTPUT_ROOT}/build/fixture-static-pie ${TRAIN_ITERATIONS} 1" \
+    "${OUTPUT_ROOT}/build/fixture-static-pie ${TRAIN_ITERATIONS} 2" \
+    "${OUTPUT_ROOT}/static-pie/output.bolt ${VERIFY_ITERATIONS} 1" \
+    "${OUTPUT_ROOT}/static-pie-expected.txt"
 
 profile_and_bolt dso \
     "${OUTPUT_ROOT}/build/libboltfixture.so" \
@@ -668,7 +692,7 @@ fi
 
 {
     printf 'result=PASS\n'
-    printf 'fixture_classes=executable,pie,dso\n'
+    printf 'fixture_classes=executable,pie,static-pie,dso\n'
     printf 'training_iterations_per_mode=%s\n' "${TRAIN_ITERATIONS}"
     printf 'profiles_per_class=2\n'
     printf 'tool_llvm_bolt=%s\n' "${LLVM_BOLT}"
@@ -692,4 +716,4 @@ find "${OUTPUT_ROOT}" -type f ! -name evidence.sha256 -print0 |
     LC_ALL=C sort -z |
     xargs -0 "${SHA256SUM}" >"${OUTPUT_ROOT}/evidence.sha256"
 "${SHA256SUM}" -c "${OUTPUT_ROOT}/evidence.sha256" >"${OUTPUT_ROOT}/evidence-verification.txt"
-printf 'PASS: BOLT executable, PIE, and DSO fixture suite (%s)\n' "${OUTPUT_ROOT}"
+printf 'PASS: BOLT executable, dynamic PIE, static PIE, and DSO fixture suite (%s)\n' "${OUTPUT_ROOT}"

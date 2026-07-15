@@ -8,7 +8,7 @@ readonly ROOT
 TEMPLATE=${ROOT}/optimization/fixtures/portage/phase2-portage-fixture-1.ebuild.in
 PROXY_TEMPLATE=${ROOT}/optimization/fixtures/portage/capture-proxy.sh.in
 CAPTURE_TOOL=${ROOT}/scripts/optimization/bolt/capture-input.sh
-FRAMEWORK_INSTALLER=${ROOT}/scripts/optimization/install-framework.sh
+FRAMEWORK_INSTALLER=/var/lib/gentoo-optimization/bootstrap/install-framework.sh
 REGISTER_TOOL=/usr/local/libexec/gentoo-optimization/bolt/register-output.sh
 DEPLOY_TOOL=/usr/local/libexec/gentoo-optimization/bolt/deploy-output.sh
 LLVM_BOLT=/usr/lib/llvm/22/bin/llvm-bolt
@@ -29,7 +29,7 @@ done
 [[ -f ${TEMPLATE} && -f ${PROXY_TEMPLATE} && -x ${CAPTURE_TOOL} ]] || \
     fail 'fixture template, proxy template, or capture tool is absent'
 [[ -x ${FRAMEWORK_INSTALLER} ]] || fail 'root-owned framework installer is absent'
-"${FRAMEWORK_INSTALLER}" --check >/dev/null || \
+"${FRAMEWORK_INSTALLER}" --source-root "${ROOT}" --check >/dev/null || \
     fail 'live root-owned framework does not match the reviewed repository source'
 [[ -x ${REGISTER_TOOL} ]] || fail 'installed production BOLT output registrar is absent'
 [[ -x ${LLVM_BOLT} ]] || fail 'package-managed llvm-bolt 22 is absent'
@@ -47,19 +47,18 @@ cleanup() {
             tail -n 120 "${log}" >&2 || :
         done
     fi
-    for fingerprint in "${SUCCESS_FINGERPRINT}"; do
-        [[ ${fingerprint} =~ ^[0-9a-f]{64}$ ]] || continue
-        rm -rf -- "${CACHE_ROOT}/inputs/${fingerprint}" \
-            "${CACHE_ROOT}/perf/${fingerprint}" \
-            "${CACHE_ROOT}/fdata/${fingerprint}" \
-            "${CACHE_ROOT}/outputs/${fingerprint}" \
-            "${CACHE_ROOT}/diagnostics/${fingerprint}"
-        rm -f -- "${CACHE_ROOT}/locks/${fingerprint}.lock"
+    if [[ ${SUCCESS_FINGERPRINT} =~ ^[0-9a-f]{64}$ ]]; then
+        rm -rf -- "${CACHE_ROOT}/inputs/${SUCCESS_FINGERPRINT}" \
+            "${CACHE_ROOT}/perf/${SUCCESS_FINGERPRINT}" \
+            "${CACHE_ROOT}/fdata/${SUCCESS_FINGERPRINT}" \
+            "${CACHE_ROOT}/outputs/${SUCCESS_FINGERPRINT}" \
+            "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}"
+        rm -f -- "${CACHE_ROOT}/locks/${SUCCESS_FINGERPRINT}.lock"
         if [[ -d ${CACHE_ROOT}/quarantine/capture-mismatch ]]; then
             find "${CACHE_ROOT}/quarantine/capture-mismatch" -mindepth 1 -maxdepth 1 \
-                -name "${fingerprint}.*" -exec rm -rf -- {} +
+                -name "${SUCCESS_FINGERPRINT}.*" -exec rm -rf -- {} +
         fi
-    done
+    fi
     rm -rf -- "${WORK}"
     return "${status}"
 }

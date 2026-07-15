@@ -10,7 +10,7 @@ BOLT_TRANSACTION_ACTIVE_ARTIFACT=
 BOLT_TRANSACTION_ACTIVE_PARTIAL=
 BOLT_TRANSACTION_ACTIVE_PID=
 BOLT_TRANSACTION_LAST_STATUS=
-readonly -a BOLT_FIXTURE_CLASSES=(executable pie dso)
+readonly -a BOLT_FIXTURE_CLASSES=(executable pie static-pie dso)
 readonly -a BOLT_TIMED_STAGE_SUFFIXES=(
     perf-record-mode1
     perf-record-mode2

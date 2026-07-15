@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1090,SC1091,SC2031,SC2329
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
@@ -42,6 +43,17 @@ wait_for_log() {
     done
     sed -n '1,240p' "${LOG}" >&2 || true
     fail "timed out waiting for installer marker: ${needle}"
+}
+
+wait_for_installer_lock_release() {
+    local lock=${TARGET}/run/gentoo-optimization/framework-install.lock
+    for _ in $(seq 1 100); do
+        if (exec 9<>"${lock}"; flock -n 9); then
+            return 0
+        fi
+        sleep 0.05
+    done
+    fail 'SIGKILLed installer did not release the publication lock'
 }
 
 assert_no_transaction_debris() {
@@ -123,6 +135,11 @@ ln -s -- /unmanaged/portage "${TARGET}/etc/portage"
 expect_failure '/etc/portage points to an unmanaged migration source' run_installer
 rm -f -- "${TARGET}/etc/portage"
 
+BASE=${TARGET}/var/lib/gentoo-optimization
+CURRENT=${BASE}/framework-current
+MANIFEST=${BASE}/state/project/phase-2-framework-install.manifest
+ACTIVATION_JOURNAL=${BASE}/framework-activation.pending
+
 # Repository-local Git configuration is controlled by the checkout owner.  The
 # installer must override executable fsmonitor hooks, and production executes
 # all Git inspection as that non-root owner rather than as root.
@@ -131,16 +148,103 @@ GIT_HELPER=${WORK}/malicious-fsmonitor
 printf '#!/bin/sh\n: >%s\nexit 0\n' "${GIT_HELPER_MARKER}" >"${GIT_HELPER}"
 chmod 0755 -- "${GIT_HELPER}"
 git -C "${REPOSITORY}" config core.fsmonitor "${GIT_HELPER}"
-run_installer >"${LOG}" 2>&1 || { sed -n '1,260p' "${LOG}" >&2; fail 'initial install failed'; }
-grep -Fq 'PASS: root-owned Phase 2 framework install verified' "${LOG}" || \
-    fail 'initial install lacks PASS evidence'
+# Model the real first migration from the reviewed but user-owned checkout.
+ln -s -- "${REPOSITORY}/portage" "${TARGET}/etc/portage"
+PAUSE_FILE=${WORK}/kill-after-first-guard
+: >"${PAUSE_FILE}"
+: >"${LOG}"
+env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+    GENTOO_OPT_INSTALLER_PAUSE_AT=after-first-migration-guard \
+    GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
+    bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+    --test-root "${TARGET}" >"${LOG}" 2>&1 &
+INSTALL_PID=$!
+wait_for_log 'PAUSE: after-first-migration-guard'
+kill -KILL "${INSTALL_PID}"
+if wait "${INSTALL_PID}" 2>/dev/null; then fail 'first-guard SIGKILL unexpectedly succeeded'; fi
+wait_for_installer_lock_release
+rm -f -- "${PAUSE_FILE}"
+[[ ! -e ${CURRENT} && ! -L ${CURRENT} ]] || \
+    fail 'first-guard SIGKILL exposed a framework generation prematurely'
+[[ ! -e ${ACTIVATION_JOURNAL} && ! -L ${ACTIVATION_JOURNAL} ]] || \
+    fail 'first-guard SIGKILL published the journal out of order'
+[[ -d ${TARGET}/etc/portage && ! -L ${TARGET}/etc/portage ]] || \
+    fail 'first-guard SIGKILL did not preserve the root-owned Portage guard'
+# Dynamic guard and mock Portage die.
+# shellcheck disable=SC1090,SC1091,SC2329
+if (die() { return 96; }; source "${TARGET}/etc/portage/bashrc") >"${LOG}" 2>&1; then
+    fail 'root-owned first-migration guard allowed a build shell to continue'
+fi
+grep -Fq 'framework activation is incomplete' "${LOG}" || \
+    fail 'root-owned first-migration guard omitted its diagnostic'
+
+PAUSE_FILE=${WORK}/kill-first-activation
+: >"${PAUSE_FILE}"
+: >"${LOG}"
+env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+    GENTOO_OPT_INSTALLER_PAUSE_AT=after-bootstrap-activation \
+    GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
+    bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+    --test-root "${TARGET}" >"${LOG}" 2>&1 &
+INSTALL_PID=$!
+wait_for_log 'PAUSE: after-bootstrap-activation'
+kill -KILL "${INSTALL_PID}"
+if wait "${INSTALL_PID}" 2>/dev/null; then fail 'first-activation SIGKILL unexpectedly succeeded'; fi
+wait_for_installer_lock_release
+rm -f -- "${PAUSE_FILE}"
+[[ -f ${ACTIVATION_JOURNAL} && ! -L ${ACTIVATION_JOURNAL} && \
+    $(stat -c %a -- "${ACTIVATION_JOURNAL}") == 600 ]] || \
+    fail 'first-activation SIGKILL did not preserve the durable trusted journal'
+[[ -L ${CURRENT} && -d $(readlink -- "${CURRENT}") ]] || \
+    fail 'first-activation SIGKILL did not reach the current-link crash point'
+[[ -d ${TARGET}/etc/portage && ! -L ${TARGET}/etc/portage ]] || \
+    fail 'first-activation SIGKILL did not leave the root-owned Portage guard active'
+# Dynamic guard and mock Portage die.
+# shellcheck disable=SC1090,SC1091,SC2329
+if (die() { return 97; }; source "${TARGET}/etc/portage/bashrc") >"${LOG}" 2>&1; then
+    fail 'first-activation Portage guard allowed a build shell to continue'
+fi
+grep -Fq 'framework activation is incomplete' "${LOG}" || \
+    fail 'first-activation Portage guard omitted its fail-closed diagnostic'
+run_installer >"${LOG}" 2>&1 || { sed -n '1,260p' "${LOG}" >&2; fail 'initial crash recovery failed'; }
+[[ ! -e ${ACTIVATION_JOURNAL} && ! -L ${ACTIVATION_JOURNAL} ]] || \
+    fail 'initial crash recovery left the activation journal pending'
+grep -Fq 'PASS: root-owned Phase 2 framework check verified' "${LOG}" || \
+    fail 'initial crash recovery lacks strict-check PASS evidence'
 run_installer --check >"${LOG}" 2>&1 || { sed -n '1,260p' "${LOG}" >&2; fail 'strict check failed'; }
 [[ ! -e ${GIT_HELPER_MARKER} ]] || fail 'installer executed repository-local Git helper'
 git -C "${REPOSITORY}" config --unset core.fsmonitor
 
-BASE=${TARGET}/var/lib/gentoo-optimization
-CURRENT=${BASE}/framework-current
-MANIFEST=${BASE}/state/project/phase-2-framework-install.manifest
+assert_coherent_indirections() {
+    local active
+    [[ -L ${CURRENT} ]] || fail 'framework-current is not a symlink'
+    active=$(readlink -- "${CURRENT}")
+    [[ -d ${active} && ! -L ${active} ]] || fail 'framework-current target is unavailable'
+    [[ -L ${TARGET}/etc/portage && $(readlink -- "${TARGET}/etc/portage") == \
+        "${CURRENT}/portage" ]] || fail '/etc/portage bypasses framework-current'
+    [[ -L ${TARGET}/usr/local/share/gentoo-optimization && \
+        $(readlink -- "${TARGET}/usr/local/share/gentoo-optimization") == \
+            "${CURRENT}/share" ]] || fail 'schema namespace bypasses framework-current'
+    [[ -L ${MANIFEST} && $(readlink -- "${MANIFEST}") == \
+        "${CURRENT}/install.manifest" ]] || fail 'manifest bypasses framework-current'
+    cmp -s -- "${active}/install.manifest" "${MANIFEST}" || \
+        fail 'manifest indirection exposes a mixed generation'
+    cmp -s -- "${active}/share/schema/package-state.schema.json" \
+        "${TARGET}/usr/local/share/gentoo-optimization/schema/package-state.schema.json" || \
+        fail 'schema indirection exposes a mixed generation'
+    grep -Fq -- "${CURRENT}" \
+        "${TARGET}/usr/local/libexec/gentoo-optimization/bolt/artifact_tool.py" || \
+        fail 'helper bootstrap does not dispatch through framework-current'
+    grep -Fq -- "gentoo_opt_framework_current=${CURRENT}" \
+        "${TARGET}/usr/local/lib/install-qa-check.d/zz-gentoo-optimization-bolt" || \
+        fail 'QA bootstrap does not dispatch through framework-current'
+    "${TARGET}/usr/local/libexec/gentoo-optimization/bolt/artifact_tool.py" --help \
+        >/dev/null || fail 'Python-named helper bootstrap is not directly executable'
+    /usr/bin/python3 -I \
+        "${TARGET}/usr/local/libexec/gentoo-optimization/bolt/artifact_tool.py" --help \
+        >/dev/null || fail 'Python-named helper bootstrap cannot be invoked by the pinned interpreter'
+}
+
 ACTIVE=$(readlink -- "${CURRENT}")
 [[ ${ACTIVE} == "${BASE}"/framework-[0-9a-f]* ]] || fail 'current target is not content-addressed'
 [[ $(readlink -- "${TARGET}/etc/portage") == "${CURRENT}/portage" ]] || \
@@ -161,6 +265,109 @@ grep -Eq '^jq_sha256=[0-9a-f]{64}$' "${MANIFEST}" || fail 'manifest jq hash is i
     fail 'installed state reconciliation entry point is absent'
 [[ -f ${TARGET}/usr/local/share/gentoo-optimization/schema/package-state.schema.json ]] || \
     fail 'installed package state schema is absent'
+[[ -L ${TARGET}/usr/local/share/gentoo-optimization ]] || \
+    fail 'schema namespace is not a stable current-generation indirection'
+[[ -L ${MANIFEST} ]] || fail 'external manifest is not a stable current-generation indirection'
+! cmp -s -- "${ACTIVE}/libexec/bolt/artifact_tool.py" \
+    "${TARGET}/usr/local/libexec/gentoo-optimization/bolt/artifact_tool.py" || \
+    fail 'fixed helper path still contains a mutable generation implementation'
+assert_coherent_indirections
+HELPER_BOOTSTRAP=${TARGET}/usr/local/libexec/gentoo-optimization/bolt/artifact_tool.py
+
+# An installed policy binds the process to its literal candidate. Re-sourcing
+# the same candidate is harmless, but an upgrade must not make an old-bound
+# process dispatch a new helper or QA implementation.
+(
+    source "${ACTIVE}/portage/bashrc"
+    [[ ${GENTOO_OPT_FRAMEWORK_TARGET} == "${ACTIVE}" ]]
+    source "${ACTIVE}/portage/bashrc"
+    [[ ${GENTOO_OPT_FRAMEWORK_TARGET} == "${ACTIVE}" ]]
+) || fail 'same-generation Portage policy re-source did not preserve its exact binding'
+
+# Fixed bootstrap bytes are an invariant upgrade ABI. A changed renderer must
+# stop before it can publish new fixed code under the old current generation.
+BOOTSTRAP_BASELINE_CURRENT=$(readlink -- "${CURRENT}")
+BOOTSTRAP_BASELINE_HASH=$(sha256sum -- "${HELPER_BOOTSTRAP}" | awk '{print $1}')
+sed -i 's/Stable active-framework dispatcher/Changed active-framework dispatcher/' \
+    "${REPOSITORY}/scripts/optimization/install-framework.sh"
+expect_failure 'stable-bootstrap migration required: installed helper bootstraps differ' \
+    run_installer
+[[ $(readlink -- "${CURRENT}") == "${BOOTSTRAP_BASELINE_CURRENT}" ]] || \
+    fail 'stable-bootstrap incompatibility changed framework-current'
+[[ $(sha256sum -- "${HELPER_BOOTSTRAP}" | awk '{print $1}') == \
+    "${BOOTSTRAP_BASELINE_HASH}" ]] || \
+    fail 'stable-bootstrap incompatibility changed fixed helper bytes'
+git -C "${REPOSITORY}" checkout -q -- scripts/optimization/install-framework.sh
+assert_no_transaction_debris
+
+OLD_BOUND=${ACTIVE}
+RACE_READY=${WORK}/generation-race.ready
+RACE_GO=${WORK}/generation-race.go
+RACE_LOG=${WORK}/generation-race.log
+RACE_HELPER_LOG=${WORK}/generation-race-helper.log
+RACE_SHELL_HELPER_LOG=${WORK}/generation-race-shell-helper.log
+RACE_RESOURCE_LOG=${WORK}/generation-race-resource.log
+(
+    set -euo pipefail
+    source "${OLD_BOUND}/portage/bashrc"
+    source "${OLD_BOUND}/portage/bashrc"
+    [[ ${GENTOO_OPT_FRAMEWORK_TARGET} == "${OLD_BOUND}" ]]
+    : >"${RACE_READY}"
+    while [[ ! -e ${RACE_GO} ]]; do sleep 0.05; done
+    GENTOO_OPT_TEST_GENERATION_PROBE=1 \
+        "${HELPER_BOOTSTRAP}" --help >"${RACE_HELPER_LOG}" 2>&1
+    if grep -Fq 'NEW-GENERATION-HELPER' "${RACE_HELPER_LOG}"; then exit 87; fi
+    grep -Fq 'usage:' "${RACE_HELPER_LOG}"
+    GENTOO_OPT_TEST_GENERATION_PROBE=1 \
+        "${TARGET}/usr/local/libexec/gentoo-optimization/bolt/capture-input.sh" \
+        --help >"${RACE_SHELL_HELPER_LOG}" 2>&1
+    if grep -Fq 'NEW-GENERATION-HELPER' "${RACE_SHELL_HELPER_LOG}"; then exit 86; fi
+    grep -Fq 'usage:' "${RACE_SHELL_HELPER_LOG}"
+    GENTOO_OPT_TEST_QA_GENERATION=old-bound
+    source "${TARGET}/usr/local/lib/install-qa-check.d/zz-gentoo-optimization-bolt"
+    [[ ${GENTOO_OPT_TEST_QA_GENERATION} == old-bound ]]
+    die() { return 98; }
+    if source "${TARGET}/etc/portage/bashrc" >"${RACE_RESOURCE_LOG}" 2>&1; then
+        exit 88
+    fi
+    grep -Fq 'attempted to cross framework generations' "${RACE_RESOURCE_LOG}"
+) >"${RACE_LOG}" 2>&1 &
+RACE_PID=$!
+for _ in $(seq 1 100); do
+    [[ -e ${RACE_READY} ]] && break
+    sleep 0.05
+done
+[[ -e ${RACE_READY} ]] || fail 'old-generation bound process did not start'
+sed -i '/^import os$/a if os.environ.get("GENTOO_OPT_TEST_GENERATION_PROBE") == "1": print("NEW-GENERATION-HELPER"); raise SystemExit(0)' \
+    "${REPOSITORY}/scripts/optimization/bolt/artifact_tool.py"
+sed -i '5i GENTOO_OPT_TEST_QA_GENERATION=new-generation' \
+    "${REPOSITORY}/portage/install-qa-check.d/zz-gentoo-optimization-bolt"
+run_installer >/dev/null
+RACE_NEW_ACTIVE=$(readlink -- "${CURRENT}")
+[[ ${RACE_NEW_ACTIVE} != "${OLD_BOUND}" ]] || fail 'generation-race fixture did not activate new content'
+: >"${RACE_GO}"
+if ! wait "${RACE_PID}"; then
+    sed -n '1,240p' "${RACE_LOG}" >&2 || true
+    fail 'old-bound process crossed or lost its pinned generation during upgrade'
+fi
+git -C "${REPOSITORY}" checkout -q -- \
+    scripts/optimization/bolt/artifact_tool.py \
+    portage/install-qa-check.d/zz-gentoo-optimization-bolt
+run_installer >/dev/null
+ACTIVE=$(readlink -- "${CURRENT}")
+assert_coherent_indirections
+
+chmod 0777 -- "${BASE}"
+if "${HELPER_BOOTSTRAP}" --help >"${LOG}" 2>&1; then
+    fail 'helper bootstrap trusted a writable framework base'
+fi
+chmod 0755 -- "${BASE}"
+chmod 0777 -- "${ACTIVE}/libexec/bolt"
+if "${HELPER_BOOTSTRAP}" --help >"${LOG}" 2>&1; then
+    fail 'helper bootstrap trusted a writable candidate ancestor'
+fi
+chmod 0755 -- "${ACTIVE}/libexec/bolt"
+assert_coherent_indirections
 [[ $(stat -c '%g:%a' -- "${TARGET}/var/cache/gentoo-optimization/pgo") == "$(id -g):750" ]] || \
     fail 'validated PGO cache trust root mode differs'
 [[ $(stat -c '%g:%a' -- "${TARGET}/var/tmp/gentoo-optimization/pgo-raw") == "$(id -g):755" ]] || \
@@ -280,9 +487,38 @@ wait_for_log 'PAUSE: before-activation'
 kill -TERM "${INSTALL_PID}"
 if wait "${INSTALL_PID}"; then fail 'signal-interrupted installer unexpectedly succeeded'; fi
 rm -f -- "${PAUSE_FILE}"
-grep -Fq 'ROLLBACK: restoring the pre-install framework' "${LOG}" || \
-    fail 'signal interruption lacks explicit rollback evidence'
 [[ $(readlink -- "${CURRENT}") == "${BASELINE_CURRENT}" ]] || fail 'signal interruption changed current'
+assert_coherent_indirections
+assert_no_transaction_debris
+
+# SIGKILL cannot run shell cleanup.  Kill immediately before activation and
+# prove that every fixed entry point still exposes only the old generation;
+# the next installer pass must remove abandoned transaction files safely.
+PAUSE_FILE=${WORK}/kill-before-activation
+: >"${PAUSE_FILE}"
+: >"${LOG}"
+env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+    GENTOO_OPT_INSTALLER_PAUSE_AT=before-activation \
+    GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
+    bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+    --test-root "${TARGET}" >"${LOG}" 2>&1 &
+INSTALL_PID=$!
+wait_for_log 'PAUSE: before-activation'
+kill -KILL "${INSTALL_PID}"
+if wait "${INSTALL_PID}" 2>/dev/null; then fail 'SIGKILLed installer unexpectedly succeeded'; fi
+wait_for_installer_lock_release
+rm -f -- "${PAUSE_FILE}"
+[[ $(readlink -- "${CURRENT}") == "${BASELINE_CURRENT}" ]] || \
+    fail 'pre-activation SIGKILL changed current'
+assert_coherent_indirections
+find "${TARGET}" \( -name '*.partial.*' -o -name '.framework-source-snapshot.*' \) \
+    -print -quit | grep -q . || fail 'SIGKILL fixture did not preserve realistic transaction debris'
+expect_failure 'injected installer failure at after-candidate' \
+    env GENTOO_OPT_INSTALLER_TEST_MODE=1 GENTOO_OPT_INSTALLER_FAIL_AT=after-candidate \
+    bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" --test-root "${TARGET}"
+[[ $(readlink -- "${CURRENT}") == "${BASELINE_CURRENT}" ]] || \
+    fail 'debris recovery changed current before activation'
+assert_coherent_indirections
 assert_no_transaction_debris
 
 # A source edit during the one-time snapshot is detected; no mixed candidate is
@@ -307,13 +543,31 @@ grep -Fq 'reviewed inputs changed while the immutable source snapshot was create
 git -C "${REPOSITORY}" checkout -q -- portage/make.conf
 assert_no_transaction_debris
 
-# Finally publish the dirty worktree identity successfully and prove its
-# rollback link, then run the canonical byte-for-byte --check.
-run_installer >/dev/null
+# Finally kill the installer immediately after its single activation rename.
+# All consumers must already expose the new generation coherently, and a retry
+# must recover abandoned transaction files without reverting the committed link.
+PAUSE_FILE=${WORK}/kill-after-activation
+: >"${PAUSE_FILE}"
+: >"${LOG}"
+env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+    GENTOO_OPT_INSTALLER_PAUSE_AT=after-activation \
+    GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
+    bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+    --test-root "${TARGET}" >"${LOG}" 2>&1 &
+INSTALL_PID=$!
+wait_for_log 'PAUSE: after-activation'
+kill -KILL "${INSTALL_PID}"
+if wait "${INSTALL_PID}" 2>/dev/null; then fail 'post-activation SIGKILL unexpectedly succeeded'; fi
+wait_for_installer_lock_release
+rm -f -- "${PAUSE_FILE}"
 NEW_ACTIVE=$(readlink -- "${CURRENT}")
 [[ ${NEW_ACTIVE} != "${BASELINE_CURRENT}" ]] || fail 'changed worktree identity reused old generation'
+assert_coherent_indirections
 grep -Fxq "previous_generation=${BASELINE_CURRENT}" "${MANIFEST}" || \
     fail 'new manifest omits exact rollback generation'
+run_installer >/dev/null
+[[ $(readlink -- "${CURRENT}") == "${NEW_ACTIVE}" ]] || \
+    fail 'post-SIGKILL recovery changed the committed generation'
 run_installer --check >/dev/null
 assert_no_transaction_debris
 

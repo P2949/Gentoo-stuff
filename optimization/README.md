@@ -13,8 +13,8 @@ generation exists yet.
 
 The exact Phase 1 BOLT default uses `ext-tsp` block ordering and `cdsort`
 function ordering. A policy change to either algorithm requires the complete
-fixed `ET_EXEC`, PIE, and DSO fixture gate before it can be used for package
-deployment.
+fixed `ET_EXEC`, dynamic PIE, static PIE, and DSO fixture gate before it can be
+used for package deployment.
 
 `exclusions.yaml` and `package-overrides.yaml` start empty. Entries may be
 added only with exact package/artifact identity, a reviewed reason, and durable
@@ -61,19 +61,53 @@ The installer builds one content-addressed, root-owned candidate below
 exact Portage configuration, `codex-local` overlay, BOLT/PGO/state runtime,
 state schemas, generated-policy generation, source inventory, candidate
 inventory, and canonical manifest. It verifies the candidate completely before
-publishing regular root-owned entry points. It acquires the stable mode-0600
+publication. Fixed paths outside the candidate contain only invariant,
+root-owned helper and QA dispatch bootstraps, or symlinks to
+`framework-current`; no mutable helper, schema, QA policy, or manifest is copied
+there per generation. Both directly executed helpers and Python-invoked helpers
+capture the exact managed current target and reject untrusted owners, writable
+ancestors, symlink traversal, or malformed generation identities before
+dispatching. The installer acquires the stable production lock files as
+root:`portage` mode `0640` below a root:`portage` mode `0750` runtime directory
+(the hermetic fixture uses its single owner and `0600`/`0700`). It uses the
 locks in the global order `framework-install -> project -> generation`, then
 holds all extant BOLT transaction locks and a Portage-process quiescence gate. It
-changes `/var/lib/gentoo-optimization/framework-current` last. Both
-`/etc/portage` and `codex-local` resolve through that one current link. Error,
-timeout, and signal paths restore the previous helper, hook, manifest,
-`/etc/portage`, and current-generation target and remove unpublished partials.
+prepares and verifies every stable indirection while it still resolves the old
+candidate, so the one atomic rename of
+`/var/lib/gentoo-optimization/framework-current` is the sole
+behavior-changing upgrade operation. `/etc/portage`, `codex-local`, schemas,
+the external manifest, helpers, and the final QA implementation all resolve
+through that link.
 
-The canonical manifest at
+Each installed `portage/bashrc` carries its candidate's literal trusted
+framework target and exports that target for the lifetime of the Portage
+process. Helper and QA bootstraps honor the pin instead of re-reading
+`framework-current`. Re-sourcing the same candidate is accepted; trying to
+source another candidate in an already bound process fails closed. A process
+which overlaps activation therefore remains entirely on its old candidate or
+aborts rather than combining old policy with new helpers. The fixed bootstrap
+bytes are also an explicit upgrade ABI: an ordinary upgrade requires the
+installed helper and QA bootstraps to be byte-identical to the new renderer
+before publication. Changing those invariant bytes requires a separate guarded
+bootstrap migration.
+
+The first migration has no old current target. It first atomically replaces the
+legacy `/etc/portage` checkout link with a minimal root-owned guard that rejects
+every package build, then fsyncs a root-owned activation journal before exposing
+the first current target. It removes the journal only after the current target and
+all stable indirections have been verified and fsynced; the candidate Portage
+bashrc independently rejects a surviving journal. A retry repairs an interrupted
+migration. Hermetic fixtures use uncatchable `SIGKILL` immediately before and
+after activation (including the first-install boundary) and prove that every
+observable state is either fail-closed or exposes one complete generation.
+Handled error and signal rollback changes only the current link; invariant
+bootstraps continue to dispatch to whichever complete candidate it selects.
+
+The canonical manifest, exposed through the stable symlink at
 `/var/lib/gentoo-optimization/state/project/phase-2-framework-install.manifest`
 records the installer, source, candidate and framework hashes; exact current and
 previous generation targets; Git commit and clean/dirty identity; `jq` identity;
-and every installed code/schema entry point. `--check` regenerates this
+and every bootstrap/code/schema entry point. `--check` regenerates this
 manifest byte for byte, verifies exact tree entry sets, checks the selected
 profile as the `portage` user, confirms the global QA hook really sorts last,
 and asks Portage to resolve the active `codex-local` repository.
@@ -112,6 +146,8 @@ root:root mode `0755` (traversable but not writable by build or desktop users).
 The workload framework must provision each exact generation/package job leaf
 separately as a root-owned sticky mode `1733` directory, or with an equally
 exact reviewed ACL covering both the Portage build identity and runtime training
-identity; the installer deliberately creates no writable leaf. An active optimization lane fails if an
-installed helper is absent, symlinked, incorrectly owned, writable by
-group/other, or different from the reviewed candidate.
+identity; the installer deliberately creates no writable leaf. An active
+optimization lane fails if a bootstrap is absent, symlinked, incorrectly owned,
+writable by group/other, or
+different from its invariant reviewed form, or if its resolved implementation
+differs from the active candidate.

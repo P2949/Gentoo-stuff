@@ -47,6 +47,15 @@ def evidence(name: str, kind: str = "log") -> dict[str, str]:
     }
 
 
+def fixture_getcap(root: Path) -> Path:
+    """Create a fixture-owned capability reader with deterministic no-cap output."""
+    path = root / "fixture-tools/getcap"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
 def resolution(code: str = "not-machine-code") -> dict[str, Any]:
     return {
         "registry_version": "1",
@@ -327,7 +336,11 @@ def strict_fixture(root: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str
     for directory in (evidence_root, profiles_root, bolt_root, binpkg_root, packages_dir, artifacts_dir):
         directory.mkdir(parents=True, exist_ok=True)
     installed_root = root / "installed"; installed = installed_root / "usr/bin/example"
-    installed.parent.mkdir(parents=True); installed.write_bytes(b"artifact"); installed.chmod(0o755)
+    installed.parent.mkdir(parents=True)
+    # Make the directory-metadata negative case independent of the caller's
+    # umask (the top-level driver intentionally uses 077).
+    installed.parent.chmod(0o755)
+    installed.write_bytes(b"artifact"); installed.chmod(0o755)
     vdb_root = root / "vdb"; instance = vdb_root / "app-test/example-suite-1.0-r2"; instance.mkdir(parents=True)
     contents = "dir /usr/bin\nobj /usr/bin/example deadbeef 1783904400\n"
     (instance / "CONTENTS").write_text(contents)
@@ -683,6 +696,7 @@ class CollectionTests(unittest.TestCase):
     def test_live_vdb_cpv_contents_owner_and_symlink_types_are_exact(self) -> None:
         with tempfile.TemporaryDirectory(prefix="state-vdb.") as temporary:
             root = Path(temporary); vdb_root = root / "vdb"; instance = vdb_root / "app-test/example-suite-1.0-r2"; instance.mkdir(parents=True)
+            getcap = fixture_getcap(root)
             installed_root = root / "installed"; installed_file = installed_root / "usr/bin/example"; installed_file.parent.mkdir(parents=True); installed_file.write_bytes(b"installed"); installed_file.chmod(0o755)
             os.setxattr(installed_file, "user.test", b"xattr")
             contents = "obj /usr/bin/example deadbeef 1783904400\n"
@@ -700,7 +714,7 @@ class CollectionTests(unittest.TestCase):
             artifact["size"] = installed_stat.st_size
             artifact["metadata"].update({"mode": stat.S_IMODE(installed_stat.st_mode), "uid": installed_stat.st_uid, "gid": installed_stat.st_gid, "mtime_ns": installed_stat.st_mtime_ns})
             artifact["topology"].update({"device": installed_stat.st_dev, "inode": installed_stat.st_ino, "link_count": installed_stat.st_nlink})
-            summary = STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=vdb_root, installed_root=installed_root)
+            summary = STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=vdb_root, installed_root=installed_root, fixture_mode=True, fixture_getcap=getcap)
             self.assertFalse(summary["coverage_complete"])
             self.assertTrue(summary["vdb_verified"])
             self.assertTrue(summary["installed_artifacts_verified"])
@@ -708,11 +722,11 @@ class CollectionTests(unittest.TestCase):
             inventory_path = root / "inventory.json"; inventory_path.write_bytes(payload)
             (packages_dir / "package.json").write_bytes(STATE.canonical_bytes(package)); (artifacts_dir / "artifact.json").write_bytes(STATE.canonical_bytes(artifact))
             report = root / "report.json"
-            cli = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(packages_dir), "--artifacts-dir", str(artifacts_dir), "--inventory", str(inventory_path), "--vdb-root", str(vdb_root), "--installed-root", str(installed_root), "--output", str(report)], text=True, capture_output=True, check=False)
+            cli = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(packages_dir), "--artifacts-dir", str(artifacts_dir), "--inventory", str(inventory_path), "--vdb-root", str(vdb_root), "--installed-root", str(installed_root), "--fixture-roots", "--fixture-getcap", str(getcap), "--output", str(report)], text=True, capture_output=True, check=False)
             self.assertEqual(cli.returncode, 0, cli.stderr)
             installed_file.write_bytes(b"tamperedd"); os.utime(installed_file, ns=(installed_stat.st_atime_ns, installed_stat.st_mtime_ns))
             with self.assertRaisesRegex(STATE.StateValidationError, "live content hash mismatch"):
-                STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=vdb_root, installed_root=installed_root)
+                STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=vdb_root, installed_root=installed_root, fixture_mode=True, fixture_getcap=getcap)
             installed_file.write_bytes(b"installed"); os.utime(installed_file, ns=(installed_stat.st_atime_ns, installed_stat.st_mtime_ns))
             (instance / "CONTENTS").write_text("sym /usr/bin/example -> example.real 1783904400\n", encoding="utf-8")
             package["live_instance"]["contents_sha256"] = hashlib.sha256((instance / "CONTENTS").read_bytes()).hexdigest()
@@ -720,7 +734,25 @@ class CollectionTests(unittest.TestCase):
             package["live_instance"]["identity_sha256"] = STATE.vdb_identity_sha256(package["live_instance"])
             package["source_rebuild"]["proof"]["installed_vdb_identity_sha256"] = package["live_instance"]["identity_sha256"]
             with self.assertRaisesRegex(STATE.StateValidationError, "topology type mismatch"):
-                STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=vdb_root, installed_root=installed_root)
+                STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest(), vdb_root=vdb_root, installed_root=installed_root, fixture_mode=True, fixture_getcap=getcap)
+
+    def test_fixture_getcap_is_explicit_and_cannot_override_production(self) -> None:
+        package, artifact, inventory, payload = self.collection()
+        with tempfile.TemporaryDirectory(prefix="state-getcap.") as temporary:
+            root = Path(temporary)
+            getcap = fixture_getcap(root)
+            with self.assertRaisesRegex(STATE.StateValidationError, "accepted only with fixture_mode"):
+                STATE.reconcile_collection(
+                    [package], [artifact], inventory=inventory,
+                    inventory_sha256=hashlib.sha256(payload).hexdigest(),
+                    fixture_getcap=getcap,
+                )
+            with self.assertRaisesRegex(STATE.StateValidationError, "explicit fixture tool"):
+                STATE.reconcile_collection(
+                    [package], [artifact], inventory=inventory,
+                    inventory_sha256=hashlib.sha256(payload).hexdigest(),
+                    installed_root=root, fixture_mode=True,
+                )
 
     def test_cli_atomically_publishes_summary_and_require_complete(self) -> None:
         package, artifact, inventory, payload = self.collection()
@@ -779,6 +811,31 @@ class CollectionTests(unittest.TestCase):
                         strict=True, fixture_mode=True,
                     )
 
+    def test_strict_failure_releases_every_stable_reader_lock(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="state-lock-release.") as temporary:
+            root = Path(temporary)
+            package, artifact, inventory, payload, final_state, paths = strict_fixture(root)
+            Path(package["source"]["ebuild"]["path"]).unlink()
+            with self.assertRaises(STATE.StateValidationError):
+                STATE.reconcile_collection(
+                    [package], [artifact], inventory=inventory,
+                    inventory_sha256=hashlib.sha256(payload).hexdigest(),
+                    vdb_root=paths["vdb"], installed_root=paths["installed"],
+                    final_system_state=final_state, packages_dir=paths["packages"],
+                    artifacts_dir=paths["artifacts"], inventory_path=paths["inventory"],
+                    strict=True, fixture_mode=True,
+                )
+            for key in ("framework", "project", "generation"):
+                available = subprocess.run(
+                    ["flock", "-n", final_state["locks"][key]["path"], "-c", "true"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                self.assertEqual(
+                    available.returncode, 0, f"{key} reader lock leaked after failure"
+                )
+
     def test_strict_fixture_rejects_magic_terminal_graph_directory_and_validator_lies(self) -> None:
         mutations: tuple[tuple[str, Callable[[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Path]], Any], str], ...] = (
             ("magic", lambda p, a, i, f, paths: mutate_live_magic(a, paths), "ELF"),
@@ -821,6 +878,10 @@ class CollectionTests(unittest.TestCase):
             guarded = subprocess.run([sys.executable, str(RECONCILE_PATH), "--packages-dir", str(paths["packages"]), "--artifacts-dir", str(paths["artifacts"]), "--inventory", str(paths["inventory"]), "--output", str(root / "report"), "--require-complete", "--fixture-roots"], text=True, capture_output=True, check=False)
             self.assertEqual(guarded.returncode, 2)
             self.assertIn("can never", guarded.stderr)
+            getcap = fixture_getcap(root)
+            mixed = subprocess.run([sys.executable, str(RECONCILE_PATH), "--validate-inventory-only", "--inventory", str(paths["inventory"]), "--fixture-roots", "--fixture-getcap", str(getcap)], text=True, capture_output=True, check=False)
+            self.assertEqual(mixed.returncode, 2)
+            self.assertIn("accepts only", mixed.stderr)
 
 
 class PublicationAndSchemaTests(unittest.TestCase):

@@ -8,6 +8,7 @@ import base64
 import contextlib
 import errno
 import fcntl
+import grp
 import hashlib
 import json
 import os
@@ -101,6 +102,10 @@ PRODUCTION_INVENTORY_VALIDATOR = (
 FRAMEWORK_LOCK = Path("/run/gentoo-optimization/framework-install.lock")
 PROJECT_LOCK = Path("/run/gentoo-optimization/project.lock")
 GENERATION_LOCK = Path("/run/gentoo-optimization/generation.lock")
+PRODUCTION_LOCK_DIRECTORY = Path("/run/gentoo-optimization")
+PRODUCTION_LOCK_GROUP = "portage"
+PRODUCTION_LOCK_DIRECTORY_MODE = 0o750
+PRODUCTION_STABLE_LOCK_MODE = 0o640
 PRODUCTION_CACHE_ROOT = Path("/var/cache/gentoo-optimization/bolt")
 PRODUCTION_EVIDENCE_ROOTS = (
     Path("/var/cache/gentoo-optimization"),
@@ -282,6 +287,52 @@ def validate_existing_root_owned_chain(path: Path, label: str) -> None:
             fail(f"{label} has an untrusted ancestor: {current}")
 
 
+def production_lock_group_gid() -> int:
+    try:
+        group_gid = grp.getgrnam(PRODUCTION_LOCK_GROUP).gr_gid
+    except KeyError:
+        fail(f"required production lock group is absent: {PRODUCTION_LOCK_GROUP}")
+    if group_gid < 1:
+        fail(f"production lock group has an unsafe GID: {PRODUCTION_LOCK_GROUP}")
+    return group_gid
+
+
+def validate_production_portage_lock(path: Path, label: str) -> os.stat_result:
+    """Require the stable root:portage lock contract used by userpriv readers."""
+    group_gid = production_lock_group_gid()
+    directory = path.parent
+    if path in (FRAMEWORK_LOCK, PROJECT_LOCK, GENERATION_LOCK) and (
+        directory != PRODUCTION_LOCK_DIRECTORY
+    ):
+        fail(f"production lock escaped its exact runtime directory: {path}")
+    try:
+        directory_info = directory.lstat()
+    except OSError as error:
+        fail(f"cannot inspect production lock directory {directory}: {error}")
+    if (
+        not stat.S_ISDIR(directory_info.st_mode)
+        or directory_info.st_uid != 0
+        or directory_info.st_gid != group_gid
+        or stat.S_IMODE(directory_info.st_mode) != PRODUCTION_LOCK_DIRECTORY_MODE
+    ):
+        fail(
+            "production lock directory is not root:portage mode 0750: "
+            f"{directory}"
+        )
+    try:
+        lock_info = path.lstat()
+    except OSError as error:
+        fail(f"cannot inspect {label} {path}: {error}")
+    if (
+        not stat.S_ISREG(lock_info.st_mode)
+        or lock_info.st_uid != 0
+        or lock_info.st_gid != group_gid
+        or stat.S_IMODE(lock_info.st_mode) != PRODUCTION_STABLE_LOCK_MODE
+    ):
+        fail(f"{label} is not a root:portage mode-0640 regular file: {path}")
+    return lock_info
+
+
 def validate_production_evidence_path(path: Path, label: str) -> None:
     if not any(path == root or root in path.parents for root in PRODUCTION_EVIDENCE_ROOTS):
         fail(
@@ -312,6 +363,9 @@ def framework_publication_lock(test_mode: bool, timeout_seconds: float) -> Itera
         yield
         return
     validate_root_owned_nonwritable_chain(FRAMEWORK_LOCK, "framework installer lock")
+    before = validate_production_portage_lock(
+        FRAMEWORK_LOCK, "framework installer lock"
+    )
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
     try:
         descriptor = os.open(FRAMEWORK_LOCK, flags)
@@ -320,8 +374,12 @@ def framework_publication_lock(test_mode: bool, timeout_seconds: float) -> Itera
     acquired = False
     try:
         info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o600:
-            fail(f"framework installer lock is not a root-owned mode-0600 regular file: {FRAMEWORK_LOCK}")
+        after = FRAMEWORK_LOCK.lstat()
+        if not (
+            (info.st_dev, info.st_ino) == (before.st_dev, before.st_ino)
+            and (info.st_dev, info.st_ino) == (after.st_dev, after.st_ino)
+        ):
+            fail(f"framework installer lock inode changed while opening: {FRAMEWORK_LOCK}")
         deadline = time.monotonic() + timeout_seconds
         while True:
             try:
@@ -373,6 +431,11 @@ def generation_writer_locks(
         for label, path in zip(("project", "generation"), paths, strict=True):
             if not test_mode:
                 validate_root_owned_nonwritable_chain(path, f"{label} writer lock")
+                trusted_before = validate_production_portage_lock(
+                    path, f"{label} writer lock"
+                )
+            else:
+                trusted_before = None
             flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
             try:
                 descriptor = os.open(path, flags)
@@ -384,10 +447,17 @@ def generation_writer_locks(
             if (
                 not stat.S_ISREG(info.st_mode)
                 or info.st_uid != expected_uid
-                or stat.S_IMODE(info.st_mode) != 0o600
                 or (info.st_dev, info.st_ino) != (before.st_dev, before.st_ino)
             ):
-                fail(f"{label} writer lock is not a stable owner mode-0600 regular inode: {path}")
+                fail(f"{label} writer lock is not a stable expected-owner regular inode: {path}")
+            if test_mode:
+                if stat.S_IMODE(info.st_mode) != 0o600:
+                    fail(f"fixture {label} writer lock is not owner-private mode 0600: {path}")
+            elif trusted_before is None or (
+                info.st_dev,
+                info.st_ino,
+            ) != (trusted_before.st_dev, trusted_before.st_ino):
+                fail(f"production {label} writer lock changed while opening: {path}")
             deadline = time.monotonic() + timeout_seconds
             while True:
                 try:
@@ -809,6 +879,17 @@ def parse_dynamic_identity(output: str) -> dict[str, Any]:
     }
 
 
+def has_dynamic_flag(
+    dynamic_identity: dict[str, Any], tag: str, flag: str
+) -> bool:
+    """Return whether readelf reported an exact whitespace-delimited flag."""
+    return any(
+        item.get("tag") == tag and flag in item.get("value", "").split()
+        for item in dynamic_identity.get("dynamic_flags", [])
+        if isinstance(item, dict)
+    )
+
+
 def parse_dynamic_symbols(output: str) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for line in output.splitlines():
@@ -965,9 +1046,14 @@ def classify_elf(path: Path, readelf: str, objcopy: str, scratch: Path) -> dict[
         for value in re.findall(r"Properties:\s*([^\n]+)", notes)
         if value.strip()
     )
+    df_1_pie = has_dynamic_flag(dynamic_identity, "FLAGS_1", "PIE")
     if headers["Type"] == "EXEC":
         elf_role = "fixed-executable"
     elif headers["Type"] == "DYN" and program_identity["interpreter"] is not None:
+        elf_role = "pie-executable"
+    elif headers["Type"] == "DYN" and df_1_pie:
+        # Static PIE has no PT_INTERP.  DF_1_PIE is the executable identity
+        # that distinguishes it from an ET_DYN shared object.
         elf_role = "pie-executable"
     elif headers["Type"] == "DYN":
         elf_role = "shared-object"
@@ -2513,7 +2599,8 @@ def verify_metadata_matches(path: Path, expected: dict[str, Any]) -> None:
         fail(f"metadata mismatch for {path}: expected {expected}, got {actual}")
 
 
-def apply_metadata(path: Path, expected: dict[str, Any]) -> None:
+def apply_ownership(path: Path, expected: dict[str, Any]) -> None:
+    """Apply ownership before links, xattrs, capabilities, or privilege bits."""
     desired_uid = int(expected["uid"])
     desired_gid = int(expected["gid"])
     current = path.stat()
@@ -2522,7 +2609,10 @@ def apply_metadata(path: Path, expected: dict[str, Any]) -> None:
             os.chown(path, desired_uid, desired_gid)
         except OSError as error:
             fail(f"cannot preserve ownership for {path}: {error}")
-    os.chmod(path, int(expected["mode"], 8))
+
+
+def apply_xattrs(path: Path, expected: dict[str, Any]) -> None:
+    """Apply ordinary and capability xattrs after the inode group is linked."""
     desired_xattrs = expected.get("xattrs_base64", {})
     if not isinstance(desired_xattrs, dict):
         fail(f"invalid xattr metadata for {path}")
@@ -2540,22 +2630,69 @@ def apply_metadata(path: Path, expected: dict[str, Any]) -> None:
             fail(f"cannot preserve xattr {name!r} for {path}: {error}")
 
 
+def apply_final_mode(path: Path, expected: dict[str, Any]) -> None:
+    """Apply the complete mode last so setuid/setgid cannot be cleared later."""
+    try:
+        os.chmod(path, int(expected["mode"], 8))
+    except (ValueError, OSError) as error:
+        fail(f"cannot preserve final mode for {path}: {error}")
+
+
+def verify_staged_hardlink_group(
+    stages: list[tuple[Path, Path]], expected: dict[str, Any]
+) -> None:
+    """Prove the complete temporary inode group before any destination rename."""
+    if not stages:
+        fail("cannot verify an empty staged hardlink group")
+    stats = [partial.lstat() for partial, _ in stages]
+    if not all(stat.S_ISREG(item.st_mode) for item in stats):
+        fail("staged hardlink group contains a non-regular inode")
+    if len({(item.st_dev, item.st_ino) for item in stats}) != 1:
+        fail("staged hardlink group does not share one inode")
+    if any(item.st_nlink != len(stages) for item in stats):
+        fail(
+            "staged hardlink group link count differs from its complete path set"
+        )
+    for partial, _ in stages:
+        verify_metadata_matches(partial, expected)
+
+
 def stage_hardlink_group(
     source: Path, paths: list[Path], metadata_record: dict[str, Any], token: str
 ) -> list[tuple[Path, Path]]:
+    if not paths:
+        fail("cannot stage an empty hardlink path set")
     stages: list[tuple[Path, Path]] = []
     first = paths[0].with_name(f".{paths[0].name}.bolt-partial-{token}-0")
     try:
         with source.open("rb") as input_stream, first.open("xb") as output_stream:
+            # Do not expose replacement bytes through the caller's umask while
+            # the group is incomplete.  This is a temporary safety mode, not
+            # the captured final mode applied after links and xattrs.
+            os.fchmod(output_stream.fileno(), 0o600)
             shutil.copyfileobj(input_stream, output_stream, 1024 * 1024)
             output_stream.flush()
             os.fsync(output_stream.fileno())
-        apply_metadata(first, metadata_record)
+        # chown(2), link(2), and capability-xattr changes may clear privilege
+        # bits.  The only safe publication order is ownership, all links, all
+        # xattrs (including security.capability), then the final mode.
+        apply_ownership(first, metadata_record)
         stages.append((first, paths[0]))
         for index, path in enumerate(paths[1:], 1):
             partial = path.with_name(f".{path.name}.bolt-partial-{token}-{index}")
             os.link(first, partial, follow_symlinks=False)
             stages.append((partial, path))
+        apply_xattrs(first, metadata_record)
+        apply_final_mode(first, metadata_record)
+        verify_staged_hardlink_group(stages, metadata_record)
+        # The copy fsync precedes ownership/xattr/mode changes.  Flush the
+        # completed inode metadata too before callers may rename this group
+        # into the Portage staging tree.
+        descriptor = os.open(first, os.O_RDONLY | os.O_CLOEXEC)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
         return stages
     except BaseException:
         for partial, _ in stages:

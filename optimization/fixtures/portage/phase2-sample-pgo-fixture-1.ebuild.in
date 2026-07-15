@@ -1,0 +1,97 @@
+EAPI=8
+
+DESCRIPTION="Disposable real-Portage Clang sample-PGO integration fixture"
+HOMEPAGE="https://invalid.example/"
+LICENSE="CC0-1.0"
+SLOT="0"
+KEYWORDS="amd64"
+
+S="${WORKDIR}/${P}"
+
+src_unpack() {
+    mkdir -p -- "${S}" || die
+    cat > "${S}/fixture.h" <<'EOF' || die
+#ifndef PHASE2_SAMPLE_FIXTURE_H
+#define PHASE2_SAMPLE_FIXTURE_H
+#include <stdint.h>
+uint64_t fixture_workload(uint64_t iterations);
+#endif
+EOF
+    cat > "${S}/workload.c" <<'EOF' || die
+#include "fixture.h"
+
+__attribute__((noinline)) static uint64_t hot_mix(uint64_t value) {
+    value ^= value << 13;
+    value ^= value >> 7;
+    value ^= value << 17;
+    return value;
+}
+
+__attribute__((noinline)) static uint64_t cold_mix(uint64_t value) {
+    return (value * UINT64_C(0x9e3779b97f4a7c15)) ^ (value >> 11);
+}
+
+uint64_t fixture_workload(uint64_t iterations) {
+    uint64_t state = UINT64_C(0x123456789abcdef0);
+    for (uint64_t index = 0; index < iterations; ++index) {
+        if ((index & 1023U) == 0U)
+            state ^= cold_mix(index + state);
+        else if ((index & 7U) != 0U)
+            state += hot_mix(index ^ state);
+        else
+            state ^= hot_mix(state + index);
+    }
+    return state;
+}
+EOF
+    cat > "${S}/main.c" <<'EOF' || die
+#include "fixture.h"
+#include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(int argc, char **argv) {
+    char *end = NULL;
+    errno = 0;
+    uint64_t iterations = argc == 2 ? strtoull(argv[1], &end, 10) : 50000000U;
+    if (errno != 0 || iterations == 0 || (argc == 2 && (!end || *end != '\0')))
+        return 2;
+    printf("%" PRIu64 "\n", fixture_workload(iterations));
+    return 0;
+}
+EOF
+}
+
+src_compile() {
+    einfo "fixture-mode=${GENTOO_OPT_MODE:-unset}"
+    einfo "fixture-profile-map-ready=${GENTOO_OPT_PROFILE_MAP_READY:-0}"
+    einfo "fixture-CFLAGS=${CFLAGS}"
+    einfo "fixture-LDFLAGS=${LDFLAGS}"
+    {
+        printf 'mode\t%s\n' "${GENTOO_OPT_MODE:-unset}"
+        printf 'profile_map_ready\t%s\n' "${GENTOO_OPT_PROFILE_MAP_READY:-0}"
+        printf 'active_fingerprint\t%s\n' "${GENTOO_OPT_ACTIVE_FINGERPRINT:-unset}"
+        printf 'active_compiler\t%s\n' "${GENTOO_OPT_ACTIVE_COMPILER:-unset}"
+        printf 'phase_euid\t%s\n' "${EUID}"
+        printf 'phase_egid\t%s\n' "$(id -g)"
+        printf 'CFLAGS\t%s\n' "${CFLAGS}"
+        printf 'CXXFLAGS\t%s\n' "${CXXFLAGS}"
+        printf 'LDFLAGS\t%s\n' "${LDFLAGS}"
+        printf 'RUSTFLAGS\t%s\n' "${RUSTFLAGS}"
+        printf 'GOFLAGS\t%s\n' "${GOFLAGS}"
+        printf 'FEATURES\t%s\n' "${FEATURES}"
+        printf 'USE\t%s\n' "${USE}"
+        printf 'EXTRA_ECONF\t%s\n' "${EXTRA_ECONF}"
+        printf 'EXTRA_EMESON\t%s\n' "${EXTRA_EMESON}"
+        printf 'EXTRA_ECMAKE\t%s\n' "${EXTRA_ECMAKE}"
+    } > "${T}/effective-flags.tsv" || die
+    "${CC}" ${CFLAGS} -fPIE -c "${S}/workload.c" -o "${S}/workload.o" || die
+    "${CC}" ${CFLAGS} -fPIE -c "${S}/main.c" -o "${S}/main.o" || die
+    "${CC}" ${CFLAGS} "${S}/main.o" "${S}/workload.o" ${LDFLAGS} -pie \
+        -o "${S}/phase2-pgo-use-fixture" || die
+}
+
+src_install() {
+    dobin "${S}/phase2-pgo-use-fixture"
+}

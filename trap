@@ -1,6 +1,0 @@
-KEEPTMP=/tmp/gentoo-opt-dispatcher.EA6SMo
-KEEPTMP=rm -rf -- "${TMP}"
-KEEPTMP=EXIT
-KEEPTMP=HUP
-KEEPTMP=INT
-KEEPTMP=TERM2

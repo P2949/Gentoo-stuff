@@ -1,0 +1,10 @@
+# shellcheck shell=bash
+# Repository-local probe used only by the disposable phase-identity fixture.
+if [[ ${CATEGORY-}/${PF-} == app-test/phase2-phase-identity-1 ]]; then
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+		install_qa_check "${EUID}" "$(id -g)" "$(id -G)" \
+		"${EBUILD_PHASE-}" "${PORTAGE_BUILD_USER-}" \
+		"${PORTAGE_BUILD_GROUP-}" "${FEATURES-}" \
+		"${GENTOO_OPT_FRAMEWORK_TARGET-}" \
+		>> "${T}/phase-identity.tsv" || die
+fi

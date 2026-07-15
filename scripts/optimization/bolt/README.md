@@ -28,6 +28,9 @@ capture-input.sh --ed "${ED}" --cache-root "${GENTOO_OPT_BOLT_CACHE_ROOT}" \
 Eligibility requires ELF64, x86-64, `ET_EXEC` or `ET_DYN`, executable code, a
 full symbol table, relocation sections targeting executable sections (including
 `.rel[a].text.<function>`), a GNU build ID, and a nonempty `.text`. The manifest
+classifies `ET_DYN` with `PT_INTERP` as a dynamic PIE and `ET_DYN` without an
+interpreter but with `DF_1_PIE` as a static PIE; only an interpreter-free
+`ET_DYN` without `DF_1_PIE` is a shared object. The manifest
 also records every automatic readiness failure, hardlink group,
 symlink, mode, ownership intent, xattr/capability value, file hash, build ID,
 and `.text` hash. A portable full-`${ED}` identity additionally covers every
@@ -117,7 +120,10 @@ hermetic test mode.
 Deployment requires registered output for every eligible input. It validates
 the package fingerprint, full input hash, build ID, `.text` hash, hardlinks,
 symlinks, and metadata before any replacement. It stages same-inode hardlink
-groups next to their destinations, atomically replaces each directory entry,
+groups next to their destinations by applying ownership, creating every link,
+applying ordinary and capability xattrs, and applying the final mode last.
+The completed temporary inode group is metadata-verified before any rename.
+Rollback uses the identical order. Deployment then atomically replaces each directory entry,
 retains exact pre-deploy inputs under `diagnostics/`, and verifies the BOLT
 note, output hash, metadata, and topology afterward:
 
@@ -142,13 +148,17 @@ also refuses duplicate artifact IDs. A genuinely different build requires a
 new package fingerprint.
 
 Production capture, registration and deployment first take `LOCK_SH` on the
-exact root-owned mode-0600
+exact root:`portage` mode-0640
 `/run/gentoo-optimization/framework-install.lock`, then exclusive stable
-`project.lock` and `generation.lock` in that order, verifies both contain the
+root:`portage` mode-0640 `project.lock` and `generation.lock` in that order,
+verifies both contain the
 canonical generation/inventory/hash JSON from the strict inventory proof, and
 only then takes the private per-fingerprint lock. The installer takes
 framework `LOCK_EX` before enumerating those locks, closing the new-lock
-publication race. The default bounded wait is 30
+publication race. Their `/run/gentoo-optimization` parent is exactly
+root:`portage` mode 0750 so Portage userpriv profile readers can open the
+stable locks without making them writable. Per-fingerprint cache locks remain
+owner-private mode 0600. The default bounded wait is 30
 seconds. Production pins readelf/objcopy to the reviewed `/usr/bin` entry
 points and llvm-bolt to `/usr/lib/llvm/22/bin/llvm-bolt`. Every child receives
 only `LC_ALL=C`, `LANG=C` and fixed `PATH`, runs in a separate process group,

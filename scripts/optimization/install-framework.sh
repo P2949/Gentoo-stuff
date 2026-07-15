@@ -9,8 +9,10 @@ unset BASH_ENV CDPATH ENV GLOBIGNORE
 
 # This installer is the only reviewed bridge from the mutable checkout to the
 # live, root-owned Phase 2 framework.  It snapshots every input once, builds and
-# verifies one immutable candidate, publishes the regular helper entry points
-# while Portage is quiescent, and changes the single framework-current link last.
+# verifies one immutable candidate containing every mutable policy/helper/schema,
+# and activates that whole candidate with one framework-current rename.  Fixed
+# external entry points are generation-independent bootstraps or symlinks which
+# always resolve through framework-current; they are never per-generation copies.
 
 SELF_PATH=$(realpath -e -- "${BASH_SOURCE[0]}")
 DEFAULT_SOURCE_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -125,13 +127,20 @@ EXPECTED_UID=$EUID
 EXPECTED_GID=$(id -g)
 if [[ -n ${TEST_ROOT} ]]; then
     PORTAGE_GID=${EXPECTED_GID}
+    LOCK_GID=${EXPECTED_GID}
+    LOCK_DIRECTORY_MODE=0700
+    LOCK_FILE_MODE=0600
 else
     PORTAGE_GID=$(getent group portage | awk -F: 'NR == 1 { print $3 }')
-    [[ ${PORTAGE_GID} =~ ^[0-9]+$ ]] || {
-        printf 'ERROR: cannot resolve the Portage group identity\n' >&2
+    [[ ${PORTAGE_GID} =~ ^[1-9][0-9]*$ ]] || {
+        printf 'ERROR: cannot resolve a nonzero Portage group identity\n' >&2
         exit 1
     }
+    LOCK_GID=${PORTAGE_GID}
+    LOCK_DIRECTORY_MODE=0750
+    LOCK_FILE_MODE=0640
 fi
+readonly LOCK_GID LOCK_DIRECTORY_MODE LOCK_FILE_MODE
 
 physical() {
     local logical=$1
@@ -145,6 +154,7 @@ physical() {
 
 BASE=$(physical /var/lib/gentoo-optimization)
 FRAMEWORK_CURRENT=${BASE}/framework-current
+ACTIVATION_JOURNAL=${BASE}/framework-activation.pending
 STATE_ROOT=${BASE}/state/project
 MANIFEST=${STATE_ROOT}/phase-2-framework-install.manifest
 CACHE_ROOT=$(physical /var/cache/gentoo-optimization/bolt)
@@ -159,7 +169,7 @@ JQ_PATH=$(physical /usr/bin/jq)
 GENERATIONS_ROOT=${BASE}/generations
 PGO_CACHE=$(physical /var/cache/gentoo-optimization/pgo)
 PGO_RAW=$(physical /var/tmp/gentoo-optimization/pgo-raw)
-readonly BASE FRAMEWORK_CURRENT STATE_ROOT MANIFEST CACHE_ROOT INSTALL_QA_ROOT \
+readonly BASE FRAMEWORK_CURRENT ACTIVATION_JOURNAL STATE_ROOT MANIFEST CACHE_ROOT INSTALL_QA_ROOT \
     LIBEXEC_ROOT SHARE_ROOT ETC_PORTAGE LOCK_PATH PROJECT_LOCK_PATH \
     GENERATION_LOCK_PATH JQ_PATH GENERATIONS_ROOT \
     PGO_CACHE PGO_RAW PORTAGE_GID
@@ -174,6 +184,7 @@ declare -a INPUT_FILES=(
     scripts/optimization/bolt/deploy-output.sh
     scripts/optimization/bolt/register-output.sh
     scripts/optimization/pgo/profile-identity.py
+    scripts/optimization/pgo/profile_locks.py
     scripts/optimization/pgo/validate-profile.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
@@ -188,6 +199,7 @@ declare -a HELPER_RELATIVE=(
     bolt/deploy-output.sh
     bolt/register-output.sh
     pgo/profile-identity.py
+    pgo/profile_locks.py
     pgo/validate-profile.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
@@ -199,6 +211,7 @@ declare -a HELPER_SOURCE_RELATIVE=(
     scripts/optimization/bolt/deploy-output.sh
     scripts/optimization/bolt/register-output.sh
     scripts/optimization/pgo/profile-identity.py
+    scripts/optimization/pgo/profile_locks.py
     scripts/optimization/pgo/validate-profile.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
@@ -211,7 +224,6 @@ CANDIDATE_FINAL=
 CREATED_CANDIDATE=0
 COMMITTED=0
 ROLLBACK_REQUIRED=0
-ROLLBACK_ROOT=
 PREVIOUS_TARGET=none
 INSTALLER_LOCK_FD=
 declare -a HELD_BOLT_LOCK_FDS=()
@@ -314,12 +326,20 @@ verify_directory() {
         fail "directory ownership/mode differs from ${uid}:${gid}:${expected_mode}: ${path}"
 }
 
+verify_lock_file() {
+    local path=$1
+    [[ -f ${path} && ! -L ${path} ]] || fail "expected a regular non-symlink lock file: ${path}"
+    [[ $(stat -c '%u:%g:%a' -- "${path}") == \
+        "${EXPECTED_UID}:${LOCK_GID}:${LOCK_FILE_MODE#0}" ]] || \
+        fail "lock ownership/mode differs from ${EXPECTED_UID}:${LOCK_GID}:${LOCK_FILE_MODE}: ${path}"
+}
+
 verify_runtime_namespaces() {
     local directory
-    verify_directory "${LOCK_PATH%/*}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0700
-    verify_regular_trusted "${LOCK_PATH}" 0600
-    verify_regular_trusted "${PROJECT_LOCK_PATH}" 0600
-    verify_regular_trusted "${GENERATION_LOCK_PATH}" 0600
+    verify_directory "${LOCK_PATH%/*}" "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_DIRECTORY_MODE}"
+    verify_lock_file "${LOCK_PATH}"
+    verify_lock_file "${PROJECT_LOCK_PATH}"
+    verify_lock_file "${GENERATION_LOCK_PATH}"
     verify_directory "${GENERATIONS_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
     verify_directory "${CACHE_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0700
     for directory in inputs outputs perf fdata diagnostics locks; do
@@ -346,7 +366,7 @@ preflight_destination_ancestors() {
     for path in \
         "${BASE}" "${STATE_ROOT}" "${CACHE_ROOT}" \
         "${INSTALL_QA_ROOT}" "${LIBEXEC_ROOT}" "${LOCK_PATH%/*}" \
-        "${SHARE_ROOT}" "${ETC_PORTAGE%/*}" "${GENERATIONS_ROOT}" \
+        "${SHARE_ROOT%/*}" "${ETC_PORTAGE%/*}" "${GENERATIONS_ROOT}" \
         "${PGO_CACHE}" "${PGO_RAW}" "${JQ_PATH%/*}" "${BASE}/bootstrap"; do
         verify_existing_ancestor_chain "${path}"
     done
@@ -356,9 +376,10 @@ open_project_lock() {
     local path=$1 mode=$2
     if [[ ${MODE} == install ]]; then
         [[ -e ${path} || -L ${path} ]] || : >"${path}"
-        chmod 0600 -- "${path}"
+        chown "${EXPECTED_UID}:${LOCK_GID}" -- "${path}"
+        chmod "${LOCK_FILE_MODE}" -- "${path}"
     fi
-    verify_regular_trusted "${path}" 0600
+    verify_lock_file "${path}"
     local descriptor
     exec {descriptor}<>"${path}"
     if [[ ${mode} == exclusive ]]; then
@@ -761,9 +782,295 @@ normalize_tree() {
     chown -R "${EXPECTED_UID}:${EXPECTED_GID}" -- "${tree}"
 }
 
+render_bound_portage_bashrc() {
+    local target=$1 line found=0
+    while IFS= read -r line || [[ -n ${line} ]]; do
+        if [[ ${line} == '# GENTOO_OPT_FRAMEWORK_BINDING_PLACEHOLDER' ]]; then
+            found=$((found + 1))
+            printf 'gentoo_opt_embedded_framework_target=%q\n' "${target}"
+            printf 'gentoo_opt_embedded_framework_base=%q\n' "${BASE}"
+            printf 'gentoo_opt_embedded_framework_trust_anchor=%q\n' "${TEST_ROOT:-/}"
+            printf 'gentoo_opt_embedded_framework_expected_uid=%q\n' "${EXPECTED_UID}"
+        else
+            printf '%s\n' "${line}"
+        fi
+    done <"${SNAPSHOT}/portage/bashrc"
+    ((found == 1)) || fail 'Portage bashrc does not contain exactly one framework binding marker'
+}
+
+render_shell_helper_bootstrap() {
+    local relative=$1
+    # shellcheck disable=SC2016 # These are literal lines for the installed bootstrap.
+    printf '%s\n' \
+        '#!/bin/bash' \
+        'set -Eeuo pipefail' \
+        "FRAMEWORK_CURRENT=$(printf '%q' "${FRAMEWORK_CURRENT}")" \
+        "FRAMEWORK_BASE=$(printf '%q' "${BASE}")" \
+        "FRAMEWORK_TRUST_ANCHOR=$(printf '%q' "${TEST_ROOT:-/}")" \
+        "FRAMEWORK_RELATIVE=$(printf '%q' "${relative}")" \
+        "EXPECTED_UID=$(printf '%q' "${EXPECTED_UID}")" \
+        'FRAMEWORK_COMPONENT=${FRAMEWORK_BASE}' \
+        'while :; do' \
+        '    [[ -d ${FRAMEWORK_COMPONENT} && ! -L ${FRAMEWORK_COMPONENT} ]] || exit 125' \
+        '    FRAMEWORK_STAT=$(/usr/bin/stat -c '\''%u:%a'\'' -- "${FRAMEWORK_COMPONENT}") || exit 125' \
+        '    FRAMEWORK_OWNER=${FRAMEWORK_STAT%%:*}' \
+        '    FRAMEWORK_MODE=${FRAMEWORK_STAT#*:}' \
+        '    [[ ${FRAMEWORK_OWNER} == "${EXPECTED_UID}" && ${FRAMEWORK_MODE} =~ ^[0-7]{3,4}$ ]] || exit 125' \
+        '    (( (8#${FRAMEWORK_MODE} & 8#022) == 0 )) || { printf '\''gentoo-optimization: framework trust path is writable by an untrusted identity\n'\'' >&2; exit 125; }' \
+        '    [[ ${FRAMEWORK_COMPONENT} == "${FRAMEWORK_TRUST_ANCHOR}" ]] && break' \
+        '    if [[ ${FRAMEWORK_TRUST_ANCHOR} == / ]]; then [[ ${FRAMEWORK_COMPONENT} == /* ]] || exit 125; else [[ ${FRAMEWORK_COMPONENT} == "${FRAMEWORK_TRUST_ANCHOR}"/* ]] || exit 125; fi' \
+        '    FRAMEWORK_COMPONENT=${FRAMEWORK_COMPONENT%/*}' \
+        '    [[ -n ${FRAMEWORK_COMPONENT} ]] || FRAMEWORK_COMPONENT=/' \
+        'done' \
+        'if [[ -n ${GENTOO_OPT_FRAMEWORK_TARGET-} ]]; then' \
+        '    FRAMEWORK_TARGET=${GENTOO_OPT_FRAMEWORK_TARGET}' \
+        'else' \
+        '    [[ -L ${FRAMEWORK_CURRENT} ]] || { printf '\''gentoo-optimization: active framework link is unavailable\n'\'' >&2; exit 125; }' \
+        '    FRAMEWORK_LINK_STAT=$(/usr/bin/stat -c '\''%F:%u'\'' -- "${FRAMEWORK_CURRENT}") || exit 125' \
+        '    [[ ${FRAMEWORK_LINK_STAT} == "symbolic link:${EXPECTED_UID}" ]] || { printf '\''gentoo-optimization: active framework link has an untrusted identity\n'\'' >&2; exit 125; }' \
+        '    FRAMEWORK_TARGET=$(/usr/bin/readlink -- "${FRAMEWORK_CURRENT}") || exit 125' \
+        'fi' \
+        'FRAMEWORK_ID=${FRAMEWORK_TARGET#"${FRAMEWORK_BASE}"/framework-}' \
+        '[[ ${FRAMEWORK_TARGET} == "${FRAMEWORK_BASE}/framework-${FRAMEWORK_ID}" && ${FRAMEWORK_ID} =~ ^[0-9a-f]{64}$ ]] || { printf '\''gentoo-optimization: selected framework target is unmanaged\n'\'' >&2; exit 125; }' \
+        '[[ -d ${FRAMEWORK_TARGET} && ! -L ${FRAMEWORK_TARGET} ]] || { printf '\''gentoo-optimization: active framework target is unavailable\n'\'' >&2; exit 125; }' \
+        'FRAMEWORK_TOOL=${FRAMEWORK_TARGET}/libexec/${FRAMEWORK_RELATIVE}' \
+        '[[ -f ${FRAMEWORK_TOOL} && ! -L ${FRAMEWORK_TOOL} && -x ${FRAMEWORK_TOOL} ]] || { printf '\''gentoo-optimization: active framework helper is unavailable\n'\'' >&2; exit 125; }' \
+        'FRAMEWORK_COMPONENT=${FRAMEWORK_TOOL}' \
+        'while :; do' \
+        '    FRAMEWORK_STAT=$(/usr/bin/stat -c '\''%u:%a'\'' -- "${FRAMEWORK_COMPONENT}") || exit 125' \
+        '    FRAMEWORK_OWNER=${FRAMEWORK_STAT%%:*}' \
+        '    FRAMEWORK_MODE=${FRAMEWORK_STAT#*:}' \
+        '    [[ ${FRAMEWORK_OWNER} == "${EXPECTED_UID}" && ${FRAMEWORK_MODE} =~ ^[0-7]{3,4}$ ]] || exit 125' \
+        '    (( (8#${FRAMEWORK_MODE} & 8#022) == 0 )) || { printf '\''gentoo-optimization: active framework helper path is writable by an untrusted identity\n'\'' >&2; exit 125; }' \
+        '    [[ ${FRAMEWORK_COMPONENT} == "${FRAMEWORK_TARGET}" ]] && break' \
+        '    FRAMEWORK_COMPONENT=${FRAMEWORK_COMPONENT%/*}' \
+        'done' \
+        'exec /bin/bash -- "${FRAMEWORK_TOOL}" "$@"'
+}
+
+python_literal() {
+    /usr/bin/python3 -I -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$1"
+}
+
+render_python_helper_bootstrap() {
+    local relative=$1
+    printf '%s\n' \
+        '#!/usr/bin/python3 -I' \
+        '"""Stable active-framework dispatcher; contains no mutable implementation."""' \
+        'import os' \
+        'import re' \
+        'import stat' \
+        'import sys' \
+        "FRAMEWORK_CURRENT = $(python_literal "${FRAMEWORK_CURRENT}")" \
+        "FRAMEWORK_BASE = $(python_literal "${BASE}")" \
+        "FRAMEWORK_TRUST_ANCHOR = $(python_literal "${TEST_ROOT:-/}")" \
+        "FRAMEWORK_RELATIVE = $(python_literal "${relative}")" \
+        "EXPECTED_UID = ${EXPECTED_UID}" \
+        'def abort(message):' \
+        '    print(f"gentoo-optimization: {message}", file=sys.stderr)' \
+        '    raise SystemExit(125)' \
+        'def trusted(path):' \
+        '    try:' \
+        '        metadata = os.lstat(path)' \
+        '    except OSError as error:' \
+        '        abort(f"cannot stat active framework path: {error}")' \
+        '    if stat.S_ISLNK(metadata.st_mode) or metadata.st_uid != EXPECTED_UID or stat.S_IMODE(metadata.st_mode) & 0o022:' \
+        '        abort("active framework path has an untrusted identity")' \
+        '    return metadata' \
+        'component = FRAMEWORK_BASE' \
+        'while True:' \
+        '    if not stat.S_ISDIR(trusted(component).st_mode):' \
+        '        abort("framework trust path is not a directory")' \
+        '    if component == FRAMEWORK_TRUST_ANCHOR:' \
+        '        break' \
+        '    if os.path.commonpath((component, FRAMEWORK_TRUST_ANCHOR)) != FRAMEWORK_TRUST_ANCHOR:' \
+        '        abort("framework trust path escapes its anchor")' \
+        '    component = os.path.dirname(component) or "/"' \
+        'framework_target = os.environ.get("GENTOO_OPT_FRAMEWORK_TARGET", "")' \
+        'if not framework_target:' \
+        '    try:' \
+        '        link_metadata = os.lstat(FRAMEWORK_CURRENT)' \
+        '    except OSError as error:' \
+        '        abort(f"active framework link is unavailable: {error}")' \
+        '    if not stat.S_ISLNK(link_metadata.st_mode) or link_metadata.st_uid != EXPECTED_UID:' \
+        '        abort("active framework link has an untrusted identity")' \
+        '    try:' \
+        '        framework_target = os.readlink(FRAMEWORK_CURRENT)' \
+        '    except OSError as error:' \
+        '        abort(f"cannot resolve active framework link: {error}")' \
+        'prefix = FRAMEWORK_BASE + "/framework-"' \
+        'identity = framework_target[len(prefix):] if framework_target.startswith(prefix) else ""' \
+        'if re.fullmatch(r"[0-9a-f]{64}", identity) is None or framework_target != prefix + identity:' \
+        '    abort("selected framework target is unmanaged")' \
+        'framework_tool = framework_target + "/libexec/" + FRAMEWORK_RELATIVE' \
+        'component = framework_tool' \
+        'while True:' \
+        '    metadata = trusted(component)' \
+        '    if component == framework_tool and (not stat.S_ISREG(metadata.st_mode) or not metadata.st_mode & stat.S_IXUSR):' \
+        '        abort("active framework helper is not executable")' \
+        '    if component == framework_target:' \
+        '        break' \
+        '    component = os.path.dirname(component)' \
+        'os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", framework_tool, *sys.argv[1:]])'
+}
+
+render_helper_bootstrap() {
+    case $1 in
+        *.py) render_python_helper_bootstrap "$1" ;;
+        *) render_shell_helper_bootstrap "$1" ;;
+    esac
+}
+
+render_qa_bootstrap() {
+    # shellcheck disable=SC2016 # These are literal lines for the installed bootstrap.
+    printf '%s\n' \
+        '# shellcheck shell=bash' \
+        '# Stable bootstrap: all mutable QA logic comes from framework-current.' \
+        "gentoo_opt_framework_current=$(printf '%q' "${FRAMEWORK_CURRENT}")" \
+        "gentoo_opt_framework_base=$(printf '%q' "${BASE}")" \
+        "gentoo_opt_framework_trust_anchor=$(printf '%q' "${TEST_ROOT:-/}")" \
+        "gentoo_opt_framework_expected_uid=$(printf '%q' "${EXPECTED_UID}")" \
+        'gentoo_opt_framework_component=${gentoo_opt_framework_base}' \
+        'while :; do' \
+        '    [[ -d ${gentoo_opt_framework_component} && ! -L ${gentoo_opt_framework_component} ]] || die '\''gentoo-optimization: framework trust path is unavailable'\''' \
+        '    gentoo_opt_framework_component_stat=$(/usr/bin/stat -c '\''%u:%a'\'' -- "${gentoo_opt_framework_component}") || die '\''gentoo-optimization: cannot stat framework trust path'\''' \
+        '    gentoo_opt_framework_component_owner=${gentoo_opt_framework_component_stat%%:*}' \
+        '    gentoo_opt_framework_component_mode=${gentoo_opt_framework_component_stat#*:}' \
+        '    [[ ${gentoo_opt_framework_component_owner} == "${gentoo_opt_framework_expected_uid}" && ${gentoo_opt_framework_component_mode} =~ ^[0-7]{3,4}$ ]] || die '\''gentoo-optimization: framework trust path has an untrusted identity'\''' \
+        '    (( (8#${gentoo_opt_framework_component_mode} & 8#022) == 0 )) || die '\''gentoo-optimization: framework trust path is writable by an untrusted identity'\''' \
+        '    [[ ${gentoo_opt_framework_component} == "${gentoo_opt_framework_trust_anchor}" ]] && break' \
+        '    if [[ ${gentoo_opt_framework_trust_anchor} == / ]]; then [[ ${gentoo_opt_framework_component} == /* ]] || die '\''gentoo-optimization: framework trust path escapes its anchor'\''; else [[ ${gentoo_opt_framework_component} == "${gentoo_opt_framework_trust_anchor}"/* ]] || die '\''gentoo-optimization: framework trust path escapes its anchor'\''; fi' \
+        '    gentoo_opt_framework_component=${gentoo_opt_framework_component%/*}' \
+        '    [[ -n ${gentoo_opt_framework_component} ]] || gentoo_opt_framework_component=/' \
+        'done' \
+        'if [[ -n ${GENTOO_OPT_FRAMEWORK_TARGET-} ]]; then' \
+        '    gentoo_opt_framework_target=${GENTOO_OPT_FRAMEWORK_TARGET}' \
+        'else' \
+        '    [[ -L ${gentoo_opt_framework_current} ]] || die '\''gentoo-optimization: active framework link is unavailable at the QA boundary'\''' \
+        '    gentoo_opt_framework_link_stat=$(/usr/bin/stat -c '\''%F:%u'\'' -- "${gentoo_opt_framework_current}") || die '\''gentoo-optimization: cannot stat active framework link'\''' \
+        '    [[ ${gentoo_opt_framework_link_stat} == "symbolic link:${gentoo_opt_framework_expected_uid}" ]] || die '\''gentoo-optimization: active framework link has an untrusted identity'\''' \
+        '    gentoo_opt_framework_target=$(/usr/bin/readlink -- "${gentoo_opt_framework_current}") || die '\''gentoo-optimization: cannot resolve the active framework at the QA boundary'\''' \
+        'fi' \
+        'gentoo_opt_framework_id=${gentoo_opt_framework_target#"${gentoo_opt_framework_base}"/framework-}' \
+        '[[ ${gentoo_opt_framework_target} == "${gentoo_opt_framework_base}/framework-${gentoo_opt_framework_id}" && ${gentoo_opt_framework_id} =~ ^[0-9a-f]{64}$ ]] || die '\''gentoo-optimization: unmanaged selected framework at the QA boundary'\''' \
+        'gentoo_opt_framework_qa=${gentoo_opt_framework_target}/qa/zz-gentoo-optimization-bolt' \
+        '[[ -d ${gentoo_opt_framework_target} && ! -L ${gentoo_opt_framework_target} && -f ${gentoo_opt_framework_qa} && ! -L ${gentoo_opt_framework_qa} ]] || die '\''gentoo-optimization: active QA implementation is unavailable'\''' \
+        'gentoo_opt_framework_component=${gentoo_opt_framework_qa}' \
+        'while :; do' \
+        '    [[ ! -L ${gentoo_opt_framework_component} ]] || die '\''gentoo-optimization: active QA implementation traverses a symlink'\''' \
+        '    gentoo_opt_framework_component_stat=$(/usr/bin/stat -c '\''%u:%a'\'' -- "${gentoo_opt_framework_component}") || die '\''gentoo-optimization: cannot stat active QA implementation path'\''' \
+        '    gentoo_opt_framework_component_owner=${gentoo_opt_framework_component_stat%%:*}' \
+        '    gentoo_opt_framework_component_mode=${gentoo_opt_framework_component_stat#*:}' \
+        '    [[ ${gentoo_opt_framework_component_owner} == "${gentoo_opt_framework_expected_uid}" && ${gentoo_opt_framework_component_mode} =~ ^[0-7]{3,4}$ ]] || die '\''gentoo-optimization: active QA implementation has an untrusted identity'\''' \
+        '    (( (8#${gentoo_opt_framework_component_mode} & 8#022) == 0 )) || die '\''gentoo-optimization: active QA implementation is writable by an untrusted identity'\''' \
+        '    [[ ${gentoo_opt_framework_component} == "${gentoo_opt_framework_target}" ]] && break' \
+        '    gentoo_opt_framework_component=${gentoo_opt_framework_component%/*}' \
+        'done' \
+        '# shellcheck disable=SC1090 -- the exact root-owned generation was validated above.' \
+        'source "${gentoo_opt_framework_qa}"' \
+        'unset gentoo_opt_framework_current gentoo_opt_framework_base gentoo_opt_framework_trust_anchor gentoo_opt_framework_expected_uid gentoo_opt_framework_component gentoo_opt_framework_component_stat gentoo_opt_framework_component_owner gentoo_opt_framework_component_mode gentoo_opt_framework_link_stat gentoo_opt_framework_target gentoo_opt_framework_id gentoo_opt_framework_qa'
+}
+
+render_portage_migration_guard() {
+    # shellcheck disable=SC2016 # These are literal lines for the installed guard.
+    printf '%s\n' \
+        '# shellcheck shell=bash' \
+        '# Root-owned first-activation guard. No package build may cross it.' \
+        "gentoo_opt_framework_activation_journal=$(printf '%q' "${ACTIVATION_JOURNAL}")" \
+        'printf '\''gentoo-optimization: ERROR: framework activation is incomplete (%s)\n'\'' "${gentoo_opt_framework_activation_journal}" >&2' \
+        'if declare -F die >/dev/null; then' \
+        '    die "gentoo-optimization: framework activation is incomplete"' \
+        'fi' \
+        'return 1'
+}
+
+portage_migration_guard_matches() {
+    local root=$1 temporary
+    local -a actual=()
+    [[ -d ${root} && ! -L ${root} ]] || return 1
+    mapfile -t actual < <(find "${root}" -mindepth 1 -printf '%y\t%P\n' | sort)
+    [[ ${actual[*]} == $'f\tbashrc' ]] || return 1
+    temporary=$(mktemp "${BASE}/.portage-migration-guard-check.XXXXXXXX")
+    render_portage_migration_guard >"${temporary}"
+    if ! cmp -s -- "${temporary}" "${root}/bashrc"; then
+        rm -f -- "${temporary}"
+        return 1
+    fi
+    rm -f -- "${temporary}"
+}
+
+render_activation_journal() {
+    local candidate=$1
+    printf 'schema=gentoo-optimization-framework-activation-v1\n'
+    printf 'state=pending\n'
+    printf 'candidate=%s\n' "${candidate}"
+    printf 'previous=none\n'
+    printf 'source_aggregate_sha256=%s\n' "${SOURCE_AGGREGATE}"
+    printf 'installer_sha256=%s\n' "${INSTALLER_SHA256}"
+}
+
+begin_first_activation_journal() {
+    local candidate=$1 expected temporary
+    expected=$(mktemp "${BASE}/.framework-activation-expected.XXXXXXXX")
+    render_activation_journal "${candidate}" >"${expected}"
+    if [[ -e ${ACTIVATION_JOURNAL} || -L ${ACTIVATION_JOURNAL} ]]; then
+        verify_regular_trusted "${ACTIVATION_JOURNAL}" 0600
+        cmp -s -- "${expected}" "${ACTIVATION_JOURNAL}" || {
+            rm -f -- "${expected}"
+            fail 'pending framework activation journal differs from the reviewed retry'
+        }
+        rm -f -- "${expected}"
+        return 0
+    fi
+    temporary=${ACTIVATION_JOURNAL}.partial.$$
+    install -o "${EXPECTED_UID}" -g "${EXPECTED_GID}" -m 0600 -T -- \
+        "${expected}" "${temporary}"
+    rm -f -- "${expected}"
+    sync_path "${temporary}"
+    mv -T -- "${temporary}" "${ACTIVATION_JOURNAL}"
+    sync_path "${BASE}"
+}
+
+install_portage_migration_guard() {
+    local stage=${ETC_PORTAGE}.partial.$$
+    rm -rf -- "${stage}"
+    mkdir -p -- "${stage}"
+    render_portage_migration_guard >"${stage}/bashrc"
+    chown -R "${EXPECTED_UID}:${EXPECTED_GID}" -- "${stage}"
+    chmod 0755 -- "${stage}"
+    chmod 0644 -- "${stage}/bashrc"
+    sync_tree "${stage}"
+    atomic_publish_entry "${stage}" "${ETC_PORTAGE}"
+    portage_migration_guard_matches "${ETC_PORTAGE}" || \
+        fail 'first-activation Portage guard publication differs'
+}
+
+finish_first_activation_journal() {
+    local candidate=$1
+    if [[ ! -e ${ACTIVATION_JOURNAL} && ! -L ${ACTIVATION_JOURNAL} ]]; then
+        return 0
+    fi
+    verify_regular_trusted "${ACTIVATION_JOURNAL}" 0600
+    cmp -s -- <(render_activation_journal "${candidate}") "${ACTIVATION_JOURNAL}" || \
+        fail 'cannot finish a mismatched framework activation journal'
+    [[ -L ${FRAMEWORK_CURRENT} && $(readlink -- "${FRAMEWORK_CURRENT}") == "${candidate}" ]] || \
+        fail 'cannot finish framework activation before current selects the journal candidate'
+    verify_external_indirections
+    rm -f -- "${ACTIVATION_JOURNAL}"
+    sync_path "${BASE}"
+}
+
+helper_bootstrap_sha256() {
+    render_helper_bootstrap "$1" | sha256sum | awk '{print $1}'
+}
+
+qa_bootstrap_sha256() {
+    render_qa_bootstrap | sha256sum | awk '{print $1}'
+}
+
 render_manifest() {
     local candidate_inventory_sha=$1 current_target=$2 previous_target=$3 index source hash
-    printf 'schema=gentoo-optimization-framework-install-v3\n'
+    printf 'schema=gentoo-optimization-framework-install-v4\n'
     printf 'installer_sha256=%s\n' "${INSTALLER_SHA256}"
     printf 'source_aggregate_sha256=%s\n' "${SOURCE_AGGREGATE}"
     printf 'framework_aggregate_sha256=%s\n' "${FRAMEWORK_AGGREGATE}"
@@ -778,18 +1085,22 @@ render_manifest() {
     printf 'qa_hook_basename=%s\n' "${HOOK_BASENAME}"
     printf 'jq_sha256=%s\n' "${JQ_SHA256}"
     printf 'jq_version=%s\n' "${JQ_VERSION}"
+    printf 'lock_directory=%s\t%s:%s\t%s\n' "${LOCK_PATH%/*}" \
+        "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_DIRECTORY_MODE}"
+    printf 'lock_files=%s,%s,%s\t%s:%s\t%s\n' "${LOCK_PATH}" \
+        "${PROJECT_LOCK_PATH}" "${GENERATION_LOCK_PATH}" \
+        "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_FILE_MODE}"
     printf 'path\tsha256\tmode\towner\n'
     printf '%s\t%s\t0644\t%s:%s\n' \
         "${ETC_PORTAGE}/bashrc" \
-        "$(sha256sum -- "${SNAPSHOT}/portage/bashrc" | awk '{print $1}')" \
+        "$(render_bound_portage_bashrc "${current_target}" | sha256sum | awk '{print $1}')" \
         "${EXPECTED_UID}" "${EXPECTED_GID}"
     printf '%s\t%s\t0644\t%s:%s\n' \
         "${INSTALL_QA_ROOT}/${HOOK_BASENAME}" \
-        "$(sha256sum -- "${SNAPSHOT}/portage/install-qa-check.d/${HOOK_BASENAME}" | awk '{print $1}')" \
+        "$(qa_bootstrap_sha256)" \
         "${EXPECTED_UID}" "${EXPECTED_GID}"
     for index in "${!HELPER_RELATIVE[@]}"; do
-        source=${SNAPSHOT}/${HELPER_SOURCE_RELATIVE[index]}
-        hash=$(sha256sum -- "${source}"); hash=${hash%% *}
+        hash=$(helper_bootstrap_sha256 "${HELPER_RELATIVE[index]}")
         printf '%s/%s\t%s\t0755\t%s:%s\n' \
             "${LIBEXEC_ROOT}" "${HELPER_RELATIVE[index]}" "${hash}" \
             "${EXPECTED_UID}" "${EXPECTED_GID}"
@@ -934,10 +1245,14 @@ verify_live_overlay_resolution() {
 }
 
 get_previous_target() {
-    local target
+    local target identity
     if [[ -L ${FRAMEWORK_CURRENT} ]]; then
+        [[ $(stat -c '%u:%g' -- "${FRAMEWORK_CURRENT}") == \
+            "${EXPECTED_UID}:${EXPECTED_GID}" ]] || \
+            fail 'framework-current symlink has the wrong owner'
         target=$(readlink -- "${FRAMEWORK_CURRENT}")
-        [[ ${target} == "${BASE}"/framework-[0-9a-f]* ]] || \
+        identity=${target#"${BASE}"/framework-}
+        [[ ${target} == "${BASE}/framework-${identity}" && ${identity} =~ ^[0-9a-f]{64}$ ]] || \
             fail "framework-current has an unmanaged target: ${target}"
         [[ -d ${target} && ! -L ${target} ]] || fail 'framework-current target is absent or symlinked'
         PREVIOUS_TARGET=${target}
@@ -956,7 +1271,8 @@ validate_legacy_migration() {
             *) fail "/etc/portage points to an unmanaged migration source: ${target}" ;;
         esac
     elif [[ -e ${ETC_PORTAGE} ]]; then
-        fail '/etc/portage is not a symlink from the reviewed migration allowlist'
+        portage_migration_guard_matches "${ETC_PORTAGE}" || \
+            fail '/etc/portage is neither a reviewed symlink nor the exact first-activation guard'
     fi
     if [[ -e ${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt || \
           -L ${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt ]]; then
@@ -1034,63 +1350,318 @@ failure_point() {
     if [[ ${GENTOO_OPT_INSTALLER_PAUSE_AT:-} == "${point}" ]]; then
         printf 'PAUSE: %s\n' "${point}" >&2
         if [[ -n ${GENTOO_OPT_INSTALLER_PAUSE_FILE:-} ]]; then
-            while [[ -e ${GENTOO_OPT_INSTALLER_PAUSE_FILE} ]]; do sleep 0.1; done
+            while [[ -e ${GENTOO_OPT_INSTALLER_PAUSE_FILE} ]]; do
+                read -r -t 0.1 _ </dev/null || :
+            done
         else
-            while :; do sleep 1; done
+            while :; do read -r -t 1 _ </dev/null || :; done
         fi
     fi
     [[ ${GENTOO_OPT_INSTALLER_FAIL_AT:-} != "${point}" ]] || \
         fail "injected installer failure at ${point}"
 }
 
-publish_regular() {
-    local source=$1 destination=$2 mode=$3 directory temporary
-    directory=${destination%/*}
-    safe_mkdir 0755 "${directory}"
-    temporary=${destination}.partial.$$
-    rm -f -- "${temporary}"
-    install -o "${EXPECTED_UID}" -g "${EXPECTED_GID}" -m "${mode}" -T -- \
-        "${source}" "${temporary}"
-    sync_path "${temporary}"
-    mv -fT -- "${temporary}" "${destination}"
-    sync_path "${directory}"
+bootstrap_tree_matches() {
+    local root=$1 index temporary
+    local -a actual=()
+    [[ -d ${root} && ! -L ${root} ]] || return 1
+    mapfile -t actual < <(find "${root}" -mindepth 1 -printf '%y\t%P\n' | sort)
+    [[ ${actual[*]} == $'d\tbolt\nd\tpgo\nd\trecovery\nd\tscripts\nd\tscripts/optimization\nd\tscripts/optimization/lib\nd\tscripts/optimization/verify\nf\tbolt/artifact_tool.py\nf\tbolt/capture-input.sh\nf\tbolt/deploy-output.sh\nf\tbolt/register-output.sh\nf\tpgo/profile-identity.py\nf\tpgo/profile_locks.py\nf\tpgo/validate-profile.py\nf\trecovery/verify-binpkg-snapshot.py\nf\tscripts/optimization/lib/state.py\nf\tscripts/optimization/verify/reconcile-state.py' ]] || return 1
+    for index in "${!HELPER_RELATIVE[@]}"; do
+        temporary=$(mktemp "${BASE}/.helper-bootstrap-check.XXXXXXXX")
+        render_helper_bootstrap "${HELPER_RELATIVE[index]}" >"${temporary}"
+        if ! cmp -s -- "${temporary}" "${root}/${HELPER_RELATIVE[index]}"; then
+            rm -f -- "${temporary}"
+            return 1
+        fi
+        rm -f -- "${temporary}"
+    done
 }
 
-backup_path() {
-    local path=$1 label=$2
-    [[ -e ${path} || -L ${path} ]] || return 0
-    mkdir -p -- "${ROLLBACK_ROOT}"
-    mv -T -- "${path}" "${ROLLBACK_ROOT}/${label}"
-}
-
-restore_path() {
-    local path=$1 label=$2
-    rm -rf -- "${path}"
-    if [[ -e ${ROLLBACK_ROOT}/${label} || -L ${ROLLBACK_ROOT}/${label} ]]; then
-        mkdir -p -- "${path%/*}"
-        mv -T -- "${ROLLBACK_ROOT}/${label}" "${path}"
+require_stable_bootstrap_compatibility() {
+    local qa=${INSTALL_QA_ROOT}/${HOOK_BASENAME} temporary
+    [[ ${PREVIOUS_TARGET} != none ]] || return 0
+    # A surviving first-activation journal is already guarded by /etc/portage
+    # and may legitimately have only a prefix of the stable indirections.  Its
+    # exact candidate binding is checked before the journal can be completed.
+    if [[ -e ${ACTIVATION_JOURNAL} || -L ${ACTIVATION_JOURNAL} ]]; then
+        verify_regular_trusted "${ACTIVATION_JOURNAL}" 0600
+        cmp -s -- <(render_activation_journal "${PREVIOUS_TARGET}") \
+            "${ACTIVATION_JOURNAL}" || \
+            fail 'pending first-activation journal does not select the active framework'
+        return 0
     fi
+    bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+        fail 'stable-bootstrap migration required: installed helper bootstraps differ from the reviewed invariant bytes'
+    temporary=$(mktemp "${BASE}/.qa-bootstrap-compatibility.XXXXXXXX")
+    render_qa_bootstrap >"${temporary}"
+    if ! cmp -s -- "${temporary}" "${qa}"; then
+        rm -f -- "${temporary}"
+        fail 'stable-bootstrap migration required: installed QA bootstrap differs from the reviewed invariant bytes'
+    fi
+    rm -f -- "${temporary}"
+}
+
+legacy_helper_tree_matches() {
+    local root=$1 candidate=$2 index
+    local -a actual=()
+    [[ -d ${root} && ! -L ${root} ]] || return 1
+    mapfile -t actual < <(find "${root}" -mindepth 1 -printf '%y\t%P\n' | sort)
+    [[ ${actual[*]} == $'d\tbolt\nd\tpgo\nd\trecovery\nd\tscripts\nd\tscripts/optimization\nd\tscripts/optimization/lib\nd\tscripts/optimization/verify\nf\tbolt/artifact_tool.py\nf\tbolt/capture-input.sh\nf\tbolt/deploy-output.sh\nf\tbolt/register-output.sh\nf\tpgo/profile-identity.py\nf\tpgo/profile_locks.py\nf\tpgo/validate-profile.py\nf\trecovery/verify-binpkg-snapshot.py\nf\tscripts/optimization/lib/state.py\nf\tscripts/optimization/verify/reconcile-state.py' ]] || return 1
+    for index in "${!HELPER_RELATIVE[@]}"; do
+        cmp -s -- "${root}/${HELPER_RELATIVE[index]}" \
+            "${candidate}/libexec/${HELPER_RELATIVE[index]}" || return 1
+    done
+}
+
+legacy_schema_tree_matches() {
+    local root=$1 candidate=$2 schema
+    local -a actual=()
+    [[ -d ${root} && ! -L ${root} ]] || return 1
+    mapfile -t actual < <(find "${root}" -mindepth 1 -printf '%y\t%P\n' | sort)
+    [[ ${actual[*]} == $'d\tschema\nf\tschema/artifact-state.schema.json\nf\tschema/final-system-state.schema.json\nf\tschema/package-state.schema.json' ]] || return 1
+    for schema in artifact-state.schema.json final-system-state.schema.json \
+        package-state.schema.json; do
+        cmp -s -- "${root}/schema/${schema}" "${candidate}/share/schema/${schema}" || return 1
+    done
+}
+
+manifest_bootstrap_tree_matches() {
+    local root=$1 candidate=$2 relative path directory expected_hash expected_mode expected_owner
+    local actual_hash actual_mode actual_owner
+    local -a actual_files=() manifest_files=()
+    [[ -d ${root} && ! -L ${root} && -f ${candidate}/install.manifest ]] || return 1
+    [[ -z $(find "${root}" -mindepth 1 ! -type d ! -type f -print -quit) ]] || return 1
+    mapfile -t actual_files < <(find "${root}" -type f -printf '%P\n' | sort)
+    mapfile -t manifest_files < <(
+        awk -F '\t' -v prefix="${root}/" \
+            'index($1, prefix) == 1 { print substr($1, length(prefix) + 1) }' \
+            "${candidate}/install.manifest" | sort
+    )
+    [[ ${#actual_files[@]} -gt 0 && ${actual_files[*]} == "${manifest_files[*]}" ]] || return 1
+    while IFS= read -r -d '' directory; do
+        [[ $(stat -c '%u:%g' -- "${directory}") == "${EXPECTED_UID}:${EXPECTED_GID}" ]] || return 1
+        mode_is_trusted "$(stat -c %a -- "${directory}")" || return 1
+    done < <(find "${root}" -type d -print0)
+    for relative in "${actual_files[@]}"; do
+        path=${root}/${relative}
+        IFS=$'\t' read -r expected_hash expected_mode expected_owner < <(
+            awk -F '\t' -v exact="${path}" \
+                '$1 == exact { count++; hash=$2; mode=$3; owner=$4 } END { if (count == 1) print hash "\t" mode "\t" owner }' \
+                "${candidate}/install.manifest"
+        )
+        [[ ${expected_hash} =~ ^[0-9a-f]{64}$ && ${expected_mode} =~ ^0[0-7]{3}$ && \
+            ${expected_owner} == "${EXPECTED_UID}:${EXPECTED_GID}" ]] || return 1
+        actual_hash=$(sha256sum -- "${path}"); actual_hash=${actual_hash%% *}
+        actual_mode=0$(stat -c %a -- "${path}")
+        actual_owner=$(stat -c '%u:%g' -- "${path}")
+        [[ ${actual_hash} == "${expected_hash}" && ${actual_mode} == "${expected_mode}" && \
+            ${actual_owner} == "${expected_owner}" ]] || return 1
+    done
+}
+
+manifest_external_file_matches() {
+    local path=$1 candidate=$2 expected_hash expected_mode expected_owner
+    local actual_hash actual_mode actual_owner
+    [[ -f ${path} && ! -L ${path} && -f ${candidate}/install.manifest ]] || return 1
+    IFS=$'\t' read -r expected_hash expected_mode expected_owner < <(
+        awk -F '\t' -v exact="${path}" \
+            '$1 == exact { count++; hash=$2; mode=$3; owner=$4 } END { if (count == 1) print hash "\t" mode "\t" owner }' \
+            "${candidate}/install.manifest"
+    )
+    [[ ${expected_hash} =~ ^[0-9a-f]{64}$ && ${expected_mode} =~ ^0[0-7]{3}$ && \
+        ${expected_owner} == "${EXPECTED_UID}:${EXPECTED_GID}" ]] || return 1
+    actual_hash=$(sha256sum -- "${path}"); actual_hash=${actual_hash%% *}
+    actual_mode=0$(stat -c %a -- "${path}")
+    actual_owner=$(stat -c '%u:%g' -- "${path}")
+    [[ ${actual_hash} == "${expected_hash}" && ${actual_mode} == "${expected_mode}" && \
+        ${actual_owner} == "${expected_owner}" ]]
+}
+
+verify_external_migration_source() {
+    local candidate=$1 qa=${INSTALL_QA_ROOT}/${HOOK_BASENAME}
+    if [[ -e ${LIBEXEC_ROOT} || -L ${LIBEXEC_ROOT} ]]; then
+        bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+            manifest_bootstrap_tree_matches "${LIBEXEC_ROOT}" "${candidate}" || \
+            legacy_helper_tree_matches "${LIBEXEC_ROOT}" "${candidate}" || \
+            fail 'fixed libexec tree is neither the reviewed bootstrap nor the active generation implementation'
+    fi
+    if [[ -e ${SHARE_ROOT} || -L ${SHARE_ROOT} ]]; then
+        [[ -L ${SHARE_ROOT} && $(readlink -- "${SHARE_ROOT}") == "${FRAMEWORK_CURRENT}/share" ]] || \
+            legacy_schema_tree_matches "${SHARE_ROOT}" "${candidate}" || \
+            fail 'fixed share tree is neither the reviewed indirection nor the active generation schema tree'
+    fi
+    if [[ -e ${qa} || -L ${qa} ]]; then
+        if [[ -f ${qa} && ! -L ${qa} ]]; then
+            cmp -s -- <(render_qa_bootstrap) "${qa}" || \
+                manifest_external_file_matches "${qa}" "${candidate}" || \
+                cmp -s -- "${candidate}/qa/${HOOK_BASENAME}" "${qa}" || \
+                fail 'fixed QA hook is neither the reviewed bootstrap nor the active generation implementation'
+        else
+            fail 'fixed QA hook has an unmanaged filesystem type'
+        fi
+    fi
+    if [[ -e ${MANIFEST} || -L ${MANIFEST} ]]; then
+        [[ -L ${MANIFEST} && $(readlink -- "${MANIFEST}") == \
+            "${FRAMEWORK_CURRENT}/install.manifest" ]] || \
+            { [[ -f ${MANIFEST} && ! -L ${MANIFEST} ]] && \
+                cmp -s -- "${candidate}/install.manifest" "${MANIFEST}"; } || \
+            fail 'external manifest is neither the reviewed indirection nor the active generation manifest'
+    fi
+}
+
+atomic_publish_entry() {
+    local prepared=$1 destination=$2 parent
+    parent=${destination%/*}
+    [[ ${prepared%/*} == "${parent}" ]] || fail 'atomic publication staging entry is not in the destination directory'
+    if [[ -e ${destination} || -L ${destination} ]]; then
+        /usr/bin/mv --exchange --no-copy -T -- "${prepared}" "${destination}"
+    else
+        /usr/bin/mv --no-copy -T -- "${prepared}" "${destination}"
+    fi
+    sync_path "${parent}"
+    rm -rf -- "${prepared}"
+    sync_path "${parent}"
+}
+
+install_external_indirections() {
+    local index path stage
+    safe_mkdir 0755 "${LIBEXEC_ROOT%/*}"
+    stage=${LIBEXEC_ROOT}.partial.$$
+    rm -rf -- "${stage}"
+    mkdir -p -- "${stage}/bolt" "${stage}/pgo" "${stage}/recovery" \
+        "${stage}/scripts/optimization/lib" "${stage}/scripts/optimization/verify"
+    for index in "${!HELPER_RELATIVE[@]}"; do
+        path=${stage}/${HELPER_RELATIVE[index]}
+        render_helper_bootstrap "${HELPER_RELATIVE[index]}" >"${path}"
+        chmod 0755 -- "${path}"
+    done
+    normalize_tree "${stage}"
+    sync_tree "${stage}"
+    atomic_publish_entry "${stage}" "${LIBEXEC_ROOT}"
+
+    safe_mkdir 0755 "${SHARE_ROOT%/*}"
+    stage=${SHARE_ROOT}.partial.$$
+    rm -rf -- "${stage}"
+    ln -s -- "${FRAMEWORK_CURRENT}/share" "${stage}"
+    atomic_publish_entry "${stage}" "${SHARE_ROOT}"
+
+    safe_mkdir 0755 "${INSTALL_QA_ROOT}"
+    stage=${INSTALL_QA_ROOT}/${HOOK_BASENAME}.partial.$$
+    rm -rf -- "${stage}"
+    render_qa_bootstrap >"${stage}"
+    chown "${EXPECTED_UID}:${EXPECTED_GID}" -- "${stage}"
+    chmod 0644 -- "${stage}"
+    sync_path "${stage}"
+    atomic_publish_entry "${stage}" "${INSTALL_QA_ROOT}/${HOOK_BASENAME}"
+
+    safe_mkdir 0700 "${STATE_ROOT}"
+    stage=${MANIFEST}.partial.$$
+    rm -rf -- "${stage}"
+    ln -s -- "${FRAMEWORK_CURRENT}/install.manifest" "${stage}"
+    atomic_publish_entry "${stage}" "${MANIFEST}"
+
+    safe_mkdir 0755 "${ETC_PORTAGE%/*}"
+    stage=${ETC_PORTAGE}.partial.$$
+    rm -rf -- "${stage}"
+    ln -s -- "${FRAMEWORK_CURRENT}/portage" "${stage}"
+    atomic_publish_entry "${stage}" "${ETC_PORTAGE}"
+
+    rm -f -- "${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt"
+    sync_path "${INSTALL_QA_ROOT}"
+}
+
+verify_external_indirections() {
+    local index schema qa=${INSTALL_QA_ROOT}/${HOOK_BASENAME} temporary
+    [[ -L ${ETC_PORTAGE} && $(readlink -- "${ETC_PORTAGE}") == "${FRAMEWORK_CURRENT}/portage" && \
+        $(stat -c '%u:%g' -- "${ETC_PORTAGE}") == "${EXPECTED_UID}:${EXPECTED_GID}" ]] || \
+        fail '/etc/portage is not atomically bound to framework-current/portage'
+    [[ -L ${SHARE_ROOT} && $(readlink -- "${SHARE_ROOT}") == "${FRAMEWORK_CURRENT}/share" && \
+        $(stat -c '%u:%g' -- "${SHARE_ROOT}") == "${EXPECTED_UID}:${EXPECTED_GID}" ]] || \
+        fail 'fixed schema namespace is not bound to framework-current/share'
+    [[ -L ${MANIFEST} && $(readlink -- "${MANIFEST}") == \
+        "${FRAMEWORK_CURRENT}/install.manifest" && \
+        $(stat -c '%u:%g' -- "${MANIFEST}") == "${EXPECTED_UID}:${EXPECTED_GID}" ]] || \
+        fail 'external manifest is not bound to framework-current/install.manifest'
+    bootstrap_tree_matches "${LIBEXEC_ROOT}" || fail 'fixed helper bootstrap tree differs'
+    verify_regular_trusted "${qa}" 0644
+    temporary=$(mktemp "${BASE}/.qa-bootstrap-check.XXXXXXXX")
+    render_qa_bootstrap >"${temporary}"
+    cmp -s -- "${temporary}" "${qa}" || {
+        rm -f -- "${temporary}"
+        fail 'fixed QA bootstrap differs'
+    }
+    rm -f -- "${temporary}"
+    [[ ! -e ${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt && \
+        ! -L ${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt ]] || \
+        fail 'obsolete early BOLT QA hook remains installed'
+    for index in "${!HELPER_RELATIVE[@]}"; do
+        verify_regular_trusted "${LIBEXEC_ROOT}/${HELPER_RELATIVE[index]}" 0755
+    done
+    for schema in package-state.schema.json artifact-state.schema.json \
+        final-system-state.schema.json; do
+        [[ -f ${SHARE_ROOT}/schema/${schema} ]] || fail "active schema is absent: ${schema}"
+    done
+}
+
+activate_framework_target() {
+    local target=$1 temporary=${FRAMEWORK_CURRENT}.partial.$$
+    rm -f -- "${temporary}"
+    ln -s -- "${target}" "${temporary}"
+    mv -fT -- "${temporary}" "${FRAMEWORK_CURRENT}"
+    sync_path "${BASE}"
+}
+
+cleanup_stale_publication_debris() {
+    local pattern entry
+    local -a patterns=(
+        "${LIBEXEC_ROOT}.partial.*"
+        "${SHARE_ROOT}.partial.*"
+        "${ETC_PORTAGE}.partial.*"
+        "${MANIFEST}.partial.*"
+        "${INSTALL_QA_ROOT}/${HOOK_BASENAME}.partial.*"
+        "${FRAMEWORK_CURRENT}.partial.*"
+        "${BASE}/framework-*.partial.*"
+        "${BASE}/.framework-expected-manifest.*"
+        "${BASE}/.framework-source-snapshot.*"
+        "${BASE}/.framework-rollback.*"
+        "${BASE}/.helper-bootstrap-check.*"
+        "${BASE}/.qa-bootstrap-check.*"
+        "${BASE}/.qa-bootstrap-compatibility.*"
+        "${BASE}/.portage-migration-guard-check.*"
+        "${BASE}/.framework-activation-expected.*"
+        "${ACTIVATION_JOURNAL}.partial.*"
+    )
+    for pattern in "${patterns[@]}"; do
+        while IFS= read -r entry; do
+            rm -rf -- "${entry}"
+        done < <(compgen -G "${pattern}" || true)
+    done
+}
+
+release_locks_for_check_reexec() {
+    local fd_to_close
+    for fd_to_close in "${HELD_BOLT_LOCK_FDS[@]}" "${HELD_PROJECT_LOCK_FDS[@]}"; do
+        [[ ${fd_to_close} =~ ^[0-9]+$ ]] || fail 'internal lock descriptor identity is invalid'
+        exec {fd_to_close}>&-
+    done
+    if [[ -n ${INSTALLER_LOCK_FD} ]]; then
+        fd_to_close=${INSTALLER_LOCK_FD}
+        [[ ${fd_to_close} =~ ^[0-9]+$ ]] || fail 'internal installer lock descriptor identity is invalid'
+        exec {fd_to_close}>&-
+    fi
+    HELD_BOLT_LOCK_FDS=()
+    HELD_PROJECT_LOCK_FDS=()
+    INSTALLER_LOCK_FD=
 }
 
 rollback_install() {
     ((ROLLBACK_REQUIRED)) || return 0
     set +e
     printf 'ROLLBACK: restoring the pre-install framework after an error or signal\n' >&2
-    restore_path "${LIBEXEC_ROOT}/bolt" libexec-bolt
-    restore_path "${LIBEXEC_ROOT}/pgo" libexec-pgo
-    restore_path "${LIBEXEC_ROOT}/scripts" libexec-scripts
-    restore_path "${LIBEXEC_ROOT}/recovery" libexec-recovery
-    restore_path "${SHARE_ROOT}/schema" share-schema
-    restore_path "${INSTALL_QA_ROOT}/${HOOK_BASENAME}" qa-hook
-    restore_path "${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt" qa-hook-legacy
-    restore_path "${MANIFEST}" manifest
-    restore_path "${ETC_PORTAGE}" etc-portage
-    if [[ -L ${FRAMEWORK_CURRENT} || -e ${FRAMEWORK_CURRENT} ]]; then rm -rf -- "${FRAMEWORK_CURRENT}"; fi
     if [[ ${PREVIOUS_TARGET} != none ]]; then
-        ln -s -- "${PREVIOUS_TARGET}" "${FRAMEWORK_CURRENT}"
+        activate_framework_target "${PREVIOUS_TARGET}"
     fi
-    if ((CREATED_CANDIDATE)) && [[ -n ${CANDIDATE_FINAL} ]]; then rm -rf -- "${CANDIDATE_FINAL}"; fi
-    [[ -n ${CANDIDATE_STAGE} ]] && rm -rf -- "${CANDIDATE_STAGE}"
     ROLLBACK_REQUIRED=0
 }
 
@@ -1098,13 +1669,13 @@ cleanup() {
     local status=$?
     if ((status != 0 || ! COMMITTED)); then rollback_install; fi
     if ((status != 0 || ! COMMITTED)) && ((CREATED_CANDIDATE)) && \
-        [[ -n ${CANDIDATE_FINAL} ]]; then
+        [[ -n ${CANDIDATE_FINAL} && (! -L ${FRAMEWORK_CURRENT} || \
+            $(readlink -- "${FRAMEWORK_CURRENT}") != "${CANDIDATE_FINAL}") ]]; then
         rm -rf -- "${CANDIDATE_FINAL}"
     fi
     [[ -n ${SNAPSHOT} ]] && rm -rf -- "${SNAPSHOT}"
     [[ -n ${CANDIDATE_STAGE} ]] && rm -rf -- "${CANDIDATE_STAGE}"
     [[ -n ${EXPECTED_MANIFEST:-} ]] && rm -f -- "${EXPECTED_MANIFEST}"
-    [[ -n ${ROLLBACK_ROOT} ]] && rm -rf -- "${ROLLBACK_ROOT}"
     exit "${status}"
 }
 
@@ -1122,16 +1693,17 @@ preflight_destination_ancestors
 verify_bootstrap_identity
 verify_jq
 if [[ ${MODE} == install ]]; then
-    safe_mkdir 0700 "${LOCK_PATH%/*}"
+    safe_mkdir_owner "${LOCK_DIRECTORY_MODE}" "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_PATH%/*}"
     exec {INSTALLER_LOCK_FD}>"${LOCK_PATH}"
-    chmod 0600 -- "${LOCK_PATH}"
+    chown "${EXPECTED_UID}:${LOCK_GID}" -- "${LOCK_PATH}"
+    chmod "${LOCK_FILE_MODE}" -- "${LOCK_PATH}"
     flock -n -x "${INSTALLER_LOCK_FD}" || \
         fail 'another framework installer holds the publication lock'
     open_project_lock "${PROJECT_LOCK_PATH}" exclusive
     open_project_lock "${GENERATION_LOCK_PATH}" exclusive
 else
-    verify_directory "${LOCK_PATH%/*}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0700
-    verify_regular_trusted "${LOCK_PATH}" 0600
+    verify_directory "${LOCK_PATH%/*}" "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_DIRECTORY_MODE}"
+    verify_lock_file "${LOCK_PATH}"
     exec {INSTALLER_LOCK_FD}<>"${LOCK_PATH}"
     flock -n -s "${INSTALLER_LOCK_FD}" || \
         fail 'another framework installer holds the publication lock'
@@ -1140,15 +1712,17 @@ else
 fi
 portage_quiescent
 hold_bolt_locks
+[[ ${MODE} == check ]] || cleanup_stale_publication_debris
 validate_legacy_migration
 get_previous_target
 
 if [[ ${MODE} == check ]]; then
+    [[ ! -e ${ACTIVATION_JOURNAL} && ! -L ${ACTIVATION_JOURNAL} ]] || \
+        fail 'framework activation journal remains pending'
     [[ -L ${FRAMEWORK_CURRENT} ]] || fail 'framework-current is absent'
     ACTIVE_TARGET=$(readlink -- "${FRAMEWORK_CURRENT}")
     [[ ${ACTIVE_TARGET} == "${BASE}"/framework-[0-9a-f]* ]] || fail 'framework-current target is unmanaged'
-    [[ -L ${ETC_PORTAGE} && $(readlink -- "${ETC_PORTAGE}") == "${FRAMEWORK_CURRENT}/portage" ]] || \
-        fail '/etc/portage is not atomically bound to framework-current/portage'
+    verify_external_indirections
     snapshot_inputs
     verify_source_symlinks
     verify_candidate "${ACTIVE_TARGET}"
@@ -1157,7 +1731,7 @@ if [[ ${MODE} == check ]]; then
     [[ -n ${ACTIVE_PREVIOUS} && $(grep -c '^previous_generation=' \
         "${ACTIVE_TARGET}/install.manifest") == 1 ]] || fail 'active manifest previous generation is invalid'
     FRAMEWORK_AGGREGATE=$(printf '%s\n' \
-        'gentoo-optimization-framework-v3' \
+        'gentoo-optimization-framework-v4' \
         "installer=${INSTALLER_SHA256}" \
         "source=${SOURCE_AGGREGATE}" \
         "git_commit=${GIT_COMMIT}" \
@@ -1176,47 +1750,14 @@ if [[ ${MODE} == check ]]; then
     cmp -s -- "${EXPECTED_CHECK_MANIFEST}" "${ACTIVE_TARGET}/install.manifest" || \
         fail 'active generation manifest is not the strict canonical manifest for this checkout'
     cmp -s -- "${ACTIVE_TARGET}/install.manifest" "${MANIFEST}" || \
-        fail 'canonical external manifest differs from the active generation manifest'
+        fail 'active manifest indirection does not expose the active generation manifest'
     rm -f -- "${EXPECTED_CHECK_MANIFEST}"
     assert_global_qa_order
-    verify_regular_trusted "${INSTALL_QA_ROOT}/${HOOK_BASENAME}" 0644
-    cmp -s -- "${ACTIVE_TARGET}/qa/${HOOK_BASENAME}" "${INSTALL_QA_ROOT}/${HOOK_BASENAME}" || \
-        fail 'installed QA hook differs from the active generation'
-    for index in "${!HELPER_RELATIVE[@]}"; do
-        verify_regular_trusted "${LIBEXEC_ROOT}/${HELPER_RELATIVE[index]}" 0755
-        cmp -s -- "${ACTIVE_TARGET}/libexec/${HELPER_RELATIVE[index]}" \
-            "${LIBEXEC_ROOT}/${HELPER_RELATIVE[index]}" || \
-            fail "installed helper differs: ${HELPER_RELATIVE[index]}"
-    done
     for schema in package-state.schema.json artifact-state.schema.json \
         final-system-state.schema.json; do
-        verify_regular_trusted "${SHARE_ROOT}/schema/${schema}" 0644
         cmp -s -- "${ACTIVE_TARGET}/share/schema/${schema}" \
-            "${SHARE_ROOT}/schema/${schema}" || fail "installed schema differs: ${schema}"
+            "${SHARE_ROOT}/schema/${schema}" || fail "active schema differs: ${schema}"
     done
-    mapfile -t ACTUAL_BOLT_HELPERS < <(find "${LIBEXEC_ROOT}/bolt" -mindepth 1 -maxdepth 1 \
-        -printf '%f\n' | sort)
-    mapfile -t ACTUAL_PGO_HELPERS < <(find "${LIBEXEC_ROOT}/pgo" -mindepth 1 -maxdepth 1 \
-        -printf '%f\n' | sort)
-    [[ ${ACTUAL_BOLT_HELPERS[*]} == $'artifact_tool.py\ncapture-input.sh\ndeploy-output.sh\nregister-output.sh' ]] || \
-        fail 'installed BOLT helper entry set differs'
-    [[ ${ACTUAL_PGO_HELPERS[*]} == $'profile-identity.py\nvalidate-profile.py' ]] || \
-        fail 'installed PGO helper entry set differs'
-    mapfile -t ACTUAL_STATE_HELPERS < <(find "${LIBEXEC_ROOT}/scripts" -mindepth 1 \
-        -printf '%y\t%P\n' | sort)
-    [[ ${ACTUAL_STATE_HELPERS[*]} == $'d\toptimization\nd\toptimization/lib\nd\toptimization/verify\nf\toptimization/lib/state.py\nf\toptimization/verify/reconcile-state.py' ]] || \
-        fail 'installed state runtime entry set differs'
-    mapfile -t ACTUAL_RECOVERY_HELPERS < <(find "${LIBEXEC_ROOT}/recovery" -mindepth 1 \
-        -maxdepth 1 -printf '%f\n' | sort)
-    [[ ${ACTUAL_RECOVERY_HELPERS[*]} == verify-binpkg-snapshot.py ]] || \
-        fail 'installed recovery verifier entry set differs'
-    mapfile -t ACTUAL_SCHEMAS < <(find "${SHARE_ROOT}/schema" -mindepth 1 -maxdepth 1 \
-        -printf '%f\n' | sort)
-    [[ ${ACTUAL_SCHEMAS[*]} == $'artifact-state.schema.json\nfinal-system-state.schema.json\npackage-state.schema.json' ]] || \
-        fail 'installed schema entry set differs'
-    [[ ! -e ${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt && \
-        ! -L ${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt ]] || \
-        fail 'obsolete early BOLT QA hook remains installed'
     verify_runtime_namespaces
     verify_live_overlay_resolution
     COMMITTED=1
@@ -1241,7 +1782,7 @@ snapshot_inputs
 verify_source_symlinks
 
 FRAMEWORK_AGGREGATE=$(printf '%s\n' \
-    'gentoo-optimization-framework-v3' \
+    'gentoo-optimization-framework-v4' \
     "installer=${INSTALLER_SHA256}" \
     "source=${SOURCE_AGGREGATE}" \
     "git_commit=${GIT_COMMIT}" \
@@ -1265,10 +1806,16 @@ if [[ ${PREVIOUS_TARGET} != none && -f ${PREVIOUS_TARGET}/install.manifest ]] &&
     grep -Fxq "generated_policy=${GENERATED_POLICY_ID}" "${PREVIOUS_TARGET}/install.manifest" && \
     grep -Fxq "frozen_inventory_sha256=${FROZEN_INVENTORY_SHA256}" \
         "${PREVIOUS_TARGET}/install.manifest"; then
-    printf 'INFO: reviewed inputs already match the active generation; running strict check\n'
+    printf 'INFO: reviewed inputs already match the active generation; repairing stable indirections and running strict check\n'
+    require_stable_bootstrap_compatibility
+    verify_external_migration_source "${PREVIOUS_TARGET}"
+    install_external_indirections
+    verify_external_indirections
+    finish_first_activation_journal "${PREVIOUS_TARGET}"
     COMMITTED=1
     trap - EXIT INT TERM HUP
     rm -rf -- "${SNAPSHOT}"
+    release_locks_for_check_reexec
     REEXEC_ARGS=("${SELF_PATH}" --check --source-root "${ROOT}")
     [[ -z ${GENERATED_POLICY_INPUT} ]] || REEXEC_ARGS+=(
         --generated-policy-generation "${GENERATED_POLICY_INPUT}"
@@ -1293,6 +1840,7 @@ mkdir -p -- "${CANDIDATE_STAGE}/portage" "${CANDIDATE_STAGE}/local-overlay" \
     "${CANDIDATE_STAGE}/share/schema" "${CANDIDATE_STAGE}/qa"
 cp -a -- "${SNAPSHOT}/portage/." "${CANDIDATE_STAGE}/portage/"
 cp -a -- "${SNAPSHOT}/local-overlay/." "${CANDIDATE_STAGE}/local-overlay/"
+render_bound_portage_bashrc "${CANDIDATE_FINAL}" >"${CANDIDATE_STAGE}/portage/bashrc"
 rm -rf -- "${CANDIDATE_STAGE}/generated-policy"
 cp -a -- "${SNAPSHOT}/generated-policy" "${CANDIDATE_STAGE}/generated-policy"
 if [[ ${GENERATED_POLICY_ID} != empty-v1 ]]; then
@@ -1350,45 +1898,28 @@ sync_path "${BASE}"
 verify_candidate "${CANDIDATE_FINAL}" "${EXPECTED_MANIFEST}"
 failure_point after-candidate
 
-ROLLBACK_ROOT=$(mktemp -d "${BASE}/.framework-rollback.XXXXXXXX")
-ROLLBACK_REQUIRED=1
-backup_path "${LIBEXEC_ROOT}/bolt" libexec-bolt
-backup_path "${LIBEXEC_ROOT}/pgo" libexec-pgo
-backup_path "${LIBEXEC_ROOT}/scripts" libexec-scripts
-backup_path "${LIBEXEC_ROOT}/recovery" libexec-recovery
-backup_path "${SHARE_ROOT}/schema" share-schema
-backup_path "${INSTALL_QA_ROOT}/${HOOK_BASENAME}" qa-hook
-backup_path "${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt" qa-hook-legacy
-backup_path "${MANIFEST}" manifest
-backup_path "${ETC_PORTAGE}" etc-portage
-safe_mkdir 0755 "${ETC_PORTAGE%/*}"
-safe_mkdir 0755 "${LIBEXEC_ROOT}"
-cp -a -- "${CANDIDATE_FINAL}/libexec/bolt" "${LIBEXEC_ROOT}/bolt"
-cp -a -- "${CANDIDATE_FINAL}/libexec/pgo" "${LIBEXEC_ROOT}/pgo"
-cp -a -- "${CANDIDATE_FINAL}/libexec/scripts" "${LIBEXEC_ROOT}/scripts"
-cp -a -- "${CANDIDATE_FINAL}/libexec/recovery" "${LIBEXEC_ROOT}/recovery"
-safe_mkdir 0755 "${SHARE_ROOT}"
-cp -a -- "${CANDIDATE_FINAL}/share/schema" "${SHARE_ROOT}/schema"
-chown -R "${EXPECTED_UID}:${EXPECTED_GID}" -- "${LIBEXEC_ROOT}/bolt" "${LIBEXEC_ROOT}/pgo"
-chown -R "${EXPECTED_UID}:${EXPECTED_GID}" -- "${LIBEXEC_ROOT}/scripts" "${SHARE_ROOT}/schema"
-chown -R "${EXPECTED_UID}:${EXPECTED_GID}" -- "${LIBEXEC_ROOT}/recovery"
-find "${LIBEXEC_ROOT}/bolt" "${LIBEXEC_ROOT}/pgo" "${LIBEXEC_ROOT}/scripts" \
-    "${LIBEXEC_ROOT}/recovery" "${SHARE_ROOT}/schema" -type d -exec chmod 0755 -- {} +
-find "${LIBEXEC_ROOT}/bolt" "${LIBEXEC_ROOT}/pgo" "${LIBEXEC_ROOT}/scripts" \
-    "${LIBEXEC_ROOT}/recovery" -type f -exec chmod 0755 -- {} +
-find "${SHARE_ROOT}/schema" -type f -exec chmod 0644 -- {} +
-publish_regular "${CANDIDATE_FINAL}/qa/${HOOK_BASENAME}" \
-    "${INSTALL_QA_ROOT}/${HOOK_BASENAME}" 0644
-publish_regular "${CANDIDATE_FINAL}/install.manifest" "${MANIFEST}" 0600
-ln -s -- "${FRAMEWORK_CURRENT}/portage" "${ETC_PORTAGE}"
-sync_tree "${LIBEXEC_ROOT}/bolt"
-sync_tree "${LIBEXEC_ROOT}/pgo"
-sync_tree "${LIBEXEC_ROOT}/scripts"
-sync_tree "${LIBEXEC_ROOT}/recovery"
-sync_tree "${SHARE_ROOT}/schema"
-sync_path "${INSTALL_QA_ROOT}"
-sync_path "${STATE_ROOT}"
-sync_path "${ETC_PORTAGE%/*}"
+if [[ ${PREVIOUS_TARGET} == none ]]; then
+    # The first migration has no old framework-current to dispatch through.
+    # Atomically replace /etc/portage with a root-owned fail-closed guard first.
+    # Only then publish and fsync the durable journal, before making current
+    # visible. A power loss at any following instruction therefore cannot start
+    # a build through the mutable legacy checkout or a partial framework.
+    verify_external_migration_source "${CANDIDATE_FINAL}"
+    install_portage_migration_guard
+    failure_point after-first-migration-guard
+    begin_first_activation_journal "${CANDIDATE_FINAL}"
+    failure_point after-activation-journal
+    activate_framework_target "${CANDIDATE_FINAL}"
+    failure_point after-bootstrap-activation
+else
+    # On upgrades, publish only generation-independent indirections while they
+    # still dispatch to the old current generation.  The final rename below is
+    # therefore the sole behavior-changing operation.
+    require_stable_bootstrap_compatibility
+    verify_external_migration_source "${PREVIOUS_TARGET}"
+fi
+install_external_indirections
+verify_external_indirections
 failure_point after-helpers
 
 # Recheck quiescence immediately before the only activation point.  Existing
@@ -1396,19 +1927,19 @@ failure_point after-helpers
 portage_quiescent
 assert_global_qa_order
 failure_point before-activation
-CURRENT_TMP=${FRAMEWORK_CURRENT}.partial.$$
-ln -s -- "${CANDIDATE_FINAL}" "${CURRENT_TMP}"
-mv -fT -- "${CURRENT_TMP}" "${FRAMEWORK_CURRENT}"
-sync_path "${BASE}"
+if [[ ${PREVIOUS_TARGET} != none ]]; then
+    ROLLBACK_REQUIRED=1
+    activate_framework_target "${CANDIDATE_FINAL}"
+fi
 failure_point after-activation
 
 [[ $(readlink -- "${FRAMEWORK_CURRENT}") == "${CANDIDATE_FINAL}" ]] || \
     fail 'framework-current activation target differs'
+verify_external_indirections
 verify_candidate "${CANDIDATE_FINAL}" "${MANIFEST}"
 verify_live_overlay_resolution
+finish_first_activation_journal "${CANDIDATE_FINAL}"
 ROLLBACK_REQUIRED=0
 COMMITTED=1
-rm -rf -- "${ROLLBACK_ROOT}"
-ROLLBACK_ROOT=
 rm -f -- "${EXPECTED_MANIFEST}"
 printf 'PASS: root-owned Phase 2 framework install verified (%s)\n' "${MANIFEST}"

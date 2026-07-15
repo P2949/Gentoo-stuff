@@ -21,6 +21,128 @@ gentoo_opt_abort() {
     return 1
 }
 
+# GENTOO_OPT_FRAMEWORK_BINDING_PLACEHOLDER
+# The root-owned installer replaces the marker above with four literal
+# candidate-specific assignments.  A checkout-sourced bashrc is deliberately
+# unbound: it is accepted only by the hermetic dispatcher fixture or before the
+# first managed framework exists.  An installed bashrc pins every descendant
+# helper/QA dispatch to the exact candidate whose policy was sourced, even if
+# framework-current changes while a Portage process is still alive.
+gentoo_opt_bind_framework_target() {
+    local embedded=${gentoo_opt_embedded_framework_target-}
+    local base=${gentoo_opt_embedded_framework_base-}
+    local anchor=${gentoo_opt_embedded_framework_trust_anchor-}
+    local expected_uid=${gentoo_opt_embedded_framework_expected_uid-}
+    local existing=${GENTOO_OPT_FRAMEWORK_TARGET-}
+    local identity component owner mode
+
+    if [[ -z ${embedded} ]]; then
+        if [[ ${GENTOO_OPT_DISPATCHER_TEST_MODE:-0} == 1 && -z ${EBUILD_PHASE-} ]]; then
+            [[ -z ${existing} ]] || {
+                gentoo_opt_abort 'an unbound dispatcher fixture inherited a framework target' || return 1
+            }
+            return 0
+        fi
+        if [[ ! -e /var/lib/gentoo-optimization/framework-current &&
+            ! -L /var/lib/gentoo-optimization/framework-current ]]; then
+            [[ -z ${existing} ]] || {
+                gentoo_opt_abort 'legacy pre-activation policy inherited a framework target' || return 1
+            }
+            return 0
+        fi
+        gentoo_opt_abort 'unbound Portage policy is forbidden after framework activation' || return 1
+    fi
+
+    [[ ${base} == /* && ${base} != / && ${anchor} == /* &&
+        ${expected_uid} =~ ^[0-9]+$ ]] || {
+        gentoo_opt_abort 'installed framework binding metadata is malformed' || return 1
+    }
+    identity=${embedded#"${base}"/framework-}
+    [[ ${embedded} == "${base}/framework-${identity}" &&
+        ${identity} =~ ^[0-9a-f]{64}$ ]] || {
+        gentoo_opt_abort 'installed framework target identity is malformed' || return 1
+    }
+    component=${embedded}
+    while :; do
+        [[ -d ${component} && ! -L ${component} ]] || {
+            gentoo_opt_abort "installed framework trust path is unavailable: ${component}" || return 1
+        }
+        owner=$(/usr/bin/stat -c %u -- "${component}") || return 1
+        mode=$(/usr/bin/stat -c %a -- "${component}") || return 1
+        [[ ${owner} == "${expected_uid}" && ${mode} =~ ^[0-7]{3,4}$ ]] || {
+            gentoo_opt_abort "installed framework trust path has an invalid identity: ${component}" || return 1
+        }
+        (( (8#${mode} & 8#022) == 0 )) || {
+            gentoo_opt_abort "installed framework trust path is writable by an untrusted identity: ${component}" || return 1
+        }
+        [[ ${component} == "${anchor}" ]] && break
+        if [[ ${anchor} == / ]]; then
+            [[ ${component} == /* ]] || {
+                gentoo_opt_abort 'installed framework target escapes its trust anchor' || return 1
+            }
+        else
+            [[ ${component} == "${anchor}"/* ]] || {
+                gentoo_opt_abort 'installed framework target escapes its trust anchor' || return 1
+            }
+        fi
+        component=${component%/*}
+        [[ -n ${component} ]] || component=/
+    done
+    [[ -f ${embedded}/portage/bashrc && ! -L ${embedded}/portage/bashrc ]] || {
+        gentoo_opt_abort 'installed framework target lacks its regular Portage policy' || return 1
+    }
+    [[ -z ${existing} || ${existing} == "${embedded}" ]] || {
+        gentoo_opt_abort \
+            "Portage process attempted to cross framework generations (${existing} -> ${embedded})" || return 1
+    }
+    if [[ -z ${existing} ]]; then
+        GENTOO_OPT_FRAMEWORK_TARGET=${embedded}
+        export GENTOO_OPT_FRAMEWORK_TARGET
+        readonly GENTOO_OPT_FRAMEWORK_TARGET
+    fi
+}
+
+gentoo_opt_bind_framework_target || {
+    if [[ ${BASH_SOURCE[0]} == "$0" ]]; then exit 1; fi
+    return 1
+}
+unset -f gentoo_opt_bind_framework_target
+unset gentoo_opt_embedded_framework_target gentoo_opt_embedded_framework_base \
+    gentoo_opt_embedded_framework_trust_anchor gentoo_opt_embedded_framework_expected_uid
+
+# The root-owned framework installer fsyncs this durable marker before its
+# first publication mutation and removes it only after every current-generation
+# entry point has passed verification.  Any filesystem object at the exact
+# path is therefore a hard stop: after interruption, Portage must not start a
+# build against a mixed framework while recovery is still pending.
+gentoo_opt_framework_journal=/var/lib/gentoo-optimization/framework-activation.pending
+gentoo_opt_framework_journals=("${gentoo_opt_framework_journal}")
+if [[ -n ${GENTOO_OPT_TEST_FRAMEWORK_ACTIVATION_JOURNAL-} ]]; then
+    if [[ ${GENTOO_OPT_DISPATCHER_TEST_MODE:-0} == 1 && -z ${EBUILD_PHASE-} &&
+        ${GENTOO_OPT_TEST_FRAMEWORK_ACTIVATION_JOURNAL} == /* ]]; then
+        # This is an additional hermetic marker; it can never replace or
+        # suppress the exact production marker checked above.
+        gentoo_opt_framework_journals+=(
+            "${GENTOO_OPT_TEST_FRAMEWORK_ACTIVATION_JOURNAL}"
+        )
+    else
+        gentoo_opt_abort 'framework activation journal overrides are forbidden' || {
+            if [[ ${BASH_SOURCE[0]} == "$0" ]]; then exit 1; fi
+            return 1
+        }
+    fi
+fi
+for gentoo_opt_framework_journal in "${gentoo_opt_framework_journals[@]}"; do
+    if [[ -e ${gentoo_opt_framework_journal} || -L ${gentoo_opt_framework_journal} ]]; then
+        gentoo_opt_abort \
+            'framework activation is incomplete; rerun the root-owned installer before using Portage' || {
+            if [[ ${BASH_SOURCE[0]} == "$0" ]]; then exit 1; fi
+            return 1
+        }
+    fi
+done
+unset gentoo_opt_framework_journal gentoo_opt_framework_journals
+
 gentoo_opt_safe_absolute_path() {
     local path=${1-}
     [[ ${path} == /* && ${path} != / && ${path} != *:* && ${path} != *//* && ${path} != *'/../'* &&
@@ -41,6 +163,38 @@ gentoo_opt_append_flag_once() {
     fi
     # shellcheck disable=SC2163  # The indirect variable name is intentional.
     export "${variable?}"
+}
+
+gentoo_opt_require_exact_build_id_policy() {
+    local variable=$1 expected=$2 value word count=0
+    local -a words=()
+    value=${!variable-}
+    read -r -a words <<< "${value}"
+    for word in "${words[@]}"; do
+        [[ ${word} == *--build-id* ]] || continue
+        [[ ${word} == "${expected}" ]] || {
+            gentoo_opt_error "${variable} contains a conflicting build-ID policy: ${word}"
+            return 1
+        }
+        count=$((count + 1))
+    done
+    ((count <= 1)) || {
+        gentoo_opt_error "${variable} contains the exact build-ID policy more than once"
+        return 1
+    }
+}
+
+gentoo_opt_require_no_build_id_policy() {
+    local variable=$1 value word
+    local -a words=()
+    value=${!variable-}
+    read -r -a words <<< "${value}"
+    for word in "${words[@]}"; do
+        [[ ${word} != *--build-id* ]] || {
+            gentoo_opt_error "${variable} must not carry the stage build-ID policy: ${word}"
+            return 1
+        }
+    done
 }
 
 gentoo_opt_append_colon_path_once() {
@@ -74,16 +228,15 @@ gentoo_opt_fixture_override_allowed() {
     if [[ ${GENTOO_OPT_DISPATCHER_TEST_MODE:-0} == 1 && -z ${EBUILD_PHASE-} ]]; then
         return 0
     fi
-    if [[ ${GENTOO_OPT_PORTAGE_FIXTURE_MODE:-0} == 1 &&
-        ${CATEGORY-} == app-test && ${PN-} == phase2-portage-fixture &&
-        ${EBUILD-} == /var/tmp/gentoo-phase2-portage-fixture.*/app-test/phase2-portage-fixture/phase2-portage-fixture-1.ebuild ]]; then
-        return 0
-    fi
-    # The real PGO integration fixture predates the marker variable, but its
-    # disposable repository, exact atom, exact ebuild name, and canonical
-    # mktemp prefix form an equally bounded test-only identity.
-    [[ ${CATEGORY-} == app-test && ${PN-} == phase2-pgo-use-fixture &&
-        ${EBUILD-} == /var/tmp/gentoo-phase2-pgo-portage.*/app-test/phase2-pgo-use-fixture/phase2-pgo-use-fixture-1.ebuild ]]
+    [[ ${GENTOO_OPT_PORTAGE_FIXTURE_MODE:-0} == 1 &&
+        ${CATEGORY-} == app-test ]] || return 1
+    case ${PN-}:${EBUILD-} in
+        phase2-portage-fixture:/var/tmp/gentoo-phase2-portage-fixture.*/app-test/phase2-portage-fixture/phase2-portage-fixture-1.ebuild | \
+        phase2-pgo-use-fixture:/var/tmp/gentoo-phase2-pgo-portage.*/app-test/phase2-pgo-use-fixture/phase2-pgo-use-fixture-1.ebuild)
+            return 0
+            ;;
+        *) return 1 ;;
+    esac
 }
 
 gentoo_opt_trusted_root_path() {
@@ -813,24 +966,44 @@ gentoo_opt_apply_primary_mode() {
 }
 
 gentoo_opt_apply_readiness_flags() {
-    local family=${GENTOO_OPT_ACTIVE_COMPILER_FAMILY-}
+    local family=${GENTOO_OPT_ACTIVE_COMPILER_FAMILY-} flag
+    if [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 && ${family} != gcc ]]; then
+        gentoo_opt_error 'bolt-gcc readiness cannot be applied outside the GCC lane'
+        return 1
+    fi
     if [[ ${GENTOO_OPT_PROFILE_MAP_READY:-0} == 1 ]]; then
         [[ ${family} == clang ]] || {
             gentoo_opt_error 'profile-map readiness is supported only in the Clang lane'; return 1;
         }
-        gentoo_opt_append_flag_once CFLAGS -gline-tables-only
-        gentoo_opt_append_flag_once CXXFLAGS -gline-tables-only
-        gentoo_opt_append_flag_once CFLAGS -fdebug-info-for-profiling
-        gentoo_opt_append_flag_once CXXFLAGS -fdebug-info-for-profiling
-        gentoo_opt_append_flag_once CFLAGS -mllvm=-enable-fs-discriminator=true
-        gentoo_opt_append_flag_once CXXFLAGS -mllvm=-enable-fs-discriminator=true
+        # sample-convert binds the mapped input to exactly one GNU build ID.
+        # Keep that identity stage-owned instead of relying on an ebuild or a
+        # global linker default.
+        gentoo_opt_require_no_build_id_policy CFLAGS || return 1
+        gentoo_opt_require_no_build_id_policy CXXFLAGS || return 1
+        gentoo_opt_require_exact_build_id_policy \
+            LDFLAGS -Wl,--build-id=sha1 || return 1
+        gentoo_opt_append_flag_once LDFLAGS -Wl,--build-id=sha1
+        for flag in -gline-tables-only -fdebug-info-for-profiling \
+            -funique-internal-linkage-names -fpseudo-probe-for-profiling; do
+            gentoo_opt_append_flag_once CFLAGS "${flag}"
+            gentoo_opt_append_flag_once CXXFLAGS "${flag}"
+        done
     fi
     if [[ ${GENTOO_OPT_ACTIVE_BOLT_STAGE} == capture ||
         ${GENTOO_OPT_ACTIVE_BOLT_STAGE} == deploy ]]; then
         case ${family} in
             clang|gcc)
-                gentoo_opt_append_flag_once CFLAGS -g1
-                gentoo_opt_append_flag_once CXXFLAGS -g1
+                gentoo_opt_require_no_build_id_policy CFLAGS || return 1
+                gentoo_opt_require_no_build_id_policy CXXFLAGS || return 1
+                gentoo_opt_require_exact_build_id_policy \
+                    LDFLAGS -Wl,--build-id=sha1 || return 1
+                if [[ ${family} == clang ]]; then
+                    gentoo_opt_append_flag_once CFLAGS -gline-tables-only
+                    gentoo_opt_append_flag_once CXXFLAGS -gline-tables-only
+                else
+                    gentoo_opt_append_flag_once CFLAGS -g1
+                    gentoo_opt_append_flag_once CXXFLAGS -g1
+                fi
                 gentoo_opt_append_flag_once LDFLAGS -Wl,--emit-relocs
                 gentoo_opt_append_flag_once LDFLAGS -Wl,--build-id=sha1
                 if [[ ${family} == gcc ]]; then
@@ -845,6 +1018,8 @@ gentoo_opt_apply_readiness_flags() {
                 # Require a target even in BOLT-only readiness so these flags
                 # cannot leak into host build scripts.
                 gentoo_opt_require_rust_target_isolation || return 1
+                gentoo_opt_require_exact_build_id_policy \
+                    RUSTFLAGS -Clink-arg=-Wl,--build-id=sha1 || return 1
                 gentoo_opt_append_flag_once RUSTFLAGS -Cdebuginfo=1
                 gentoo_opt_append_flag_once RUSTFLAGS -Clink-arg=-Wl,--emit-relocs
                 gentoo_opt_append_flag_once RUSTFLAGS -Clink-arg=-Wl,--build-id=sha1
@@ -858,11 +1033,8 @@ gentoo_opt_apply_readiness_flags() {
             *) gentoo_opt_error 'BOLT readiness has no supported compiler lane'; return 1 ;;
         esac
     elif [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 ]]; then
-        [[ ${family} == gcc ]] || {
-            gentoo_opt_error 'bolt-gcc readiness cannot be applied outside the GCC lane'; return 1;
-        }
-        gentoo_opt_append_flag_once CFLAGS -fno-reorder-blocks-and-partition
-        gentoo_opt_append_flag_once CXXFLAGS -fno-reorder-blocks-and-partition
+        gentoo_opt_error 'bolt-gcc readiness requires an active BOLT capture/deploy stage'
+        return 1
     fi
 }
 
@@ -910,6 +1082,14 @@ rust-generate|rust-use|go-use) ;;
         *) gentoo_opt_error "unknown GENTOO_OPT_MODE: ${mode}"; return 1 ;;
     esac
     case ${bolt_stage} in off|capture|deploy) ;; *) gentoo_opt_error "unknown GENTOO_OPT_BOLT_STAGE: ${bolt_stage}"; return 1 ;; esac
+    case ${GENTOO_OPT_PROFILE_MAP_READY:-0} in
+        0|1) ;;
+        *) gentoo_opt_error 'GENTOO_OPT_PROFILE_MAP_READY must be exactly 0 or 1'; return 1 ;;
+    esac
+    case ${GENTOO_OPT_BOLT_GCC_READY:-0} in
+        0|1) ;;
+        *) gentoo_opt_error 'GENTOO_OPT_BOLT_GCC_READY must be exactly 0 or 1'; return 1 ;;
+    esac
     # Preserve the requested selector (especially bolt-capture/bolt-deploy)
     # across Portage's saved environment and misc-functions subprocess.  The
     # normalized primary lane has its own variable.
@@ -919,6 +1099,11 @@ rust-generate|rust-use|go-use) ;;
         ${GENTOO_OPT_PROFILE_MAP_READY:-0} != 1 &&
         ${GENTOO_OPT_BOLT_GCC_READY:-0} != 1 ]]; then
         return 0
+    fi
+    if [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 &&
+        ${bolt_stage} != capture && ${bolt_stage} != deploy ]]; then
+        gentoo_opt_error 'bolt-gcc readiness requires an active BOLT capture/deploy stage'
+        return 1
     fi
     gentoo_opt_detect_abi || return 1
     gentoo_opt_load_fingerprint || return 1
@@ -956,6 +1141,7 @@ rust-generate|rust-use|go-use) ;;
 
 gentoo_opt_depend_phase_preflight() {
     local mode=${GENTOO_OPT_MODE:-off} bolt_stage=${GENTOO_OPT_BOLT_STAGE:-off}
+    local effective_bolt_stage=${bolt_stage}
     if [[ ${PGO_INSTRUMENT:-0} == 1 || ${PGO_USE_IF_AVAILABLE:-0} == 1 ]]; then
         gentoo_opt_error 'legacy PGO marker requested during dependency evaluation'
         return 1
@@ -972,6 +1158,21 @@ rust-generate|rust-use|go-use|bolt-capture|bolt-deploy) ;;
     if [[ ${mode} == bolt-capture && ${bolt_stage} == deploy ]] ||
         [[ ${mode} == bolt-deploy && ${bolt_stage} == capture ]]; then
         gentoo_opt_error 'conflicting BOLT mode/stage during dependency evaluation'
+        return 1
+    fi
+    [[ ${mode} != bolt-capture || ${bolt_stage} != off ]] || effective_bolt_stage=capture
+    [[ ${mode} != bolt-deploy || ${bolt_stage} != off ]] || effective_bolt_stage=deploy
+    case ${GENTOO_OPT_PROFILE_MAP_READY:-0} in
+        0|1) ;;
+        *) gentoo_opt_error 'invalid profile-map readiness marker during dependency evaluation'; return 1 ;;
+    esac
+    case ${GENTOO_OPT_BOLT_GCC_READY:-0} in
+        0|1) ;;
+        *) gentoo_opt_error 'invalid bolt-gcc readiness marker during dependency evaluation'; return 1 ;;
+    esac
+    if [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 &&
+        ${effective_bolt_stage} != capture && ${effective_bolt_stage} != deploy ]]; then
+        gentoo_opt_error 'bolt-gcc readiness has no active BOLT stage during dependency evaluation'
         return 1
     fi
 }

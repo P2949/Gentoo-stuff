@@ -82,6 +82,24 @@ SOURCE_IDENTITY_SHA256=$(
         "${SHA256SUM}" |
         "${CUT}" -d ' ' -f 1
 )
+GENERATION_ID=capability-clang-sample-v2
+INVENTORY_ID=capability-clang-sample-inventory-v2
+INVENTORY_SHA256=${SOURCE_IDENTITY_SHA256}
+FRAMEWORK_LOCK=${OUTPUT_ROOT}/framework.lock
+PROJECT_LOCK=${OUTPUT_ROOT}/project.lock
+GENERATION_LOCK=${OUTPUT_ROOT}/generation.lock
+env -i HOME=/nonexistent LANG=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
+    "${PYTHON}" - "${PROJECT_LOCK}" "${GENERATION_LOCK}" \
+    "${GENERATION_ID}" "${INVENTORY_ID}" "${INVENTORY_SHA256}" <<'PY'
+import json
+import pathlib
+import sys
+payload = json.dumps({"generation_id": sys.argv[3], "inventory_id": sys.argv[4], "inventory_sha256": sys.argv[5]}, indent=2, sort_keys=True) + "\n"
+for path in sys.argv[1:3]:
+    pathlib.Path(path).write_text(payload, encoding="utf-8")
+PY
+: >"${FRAMEWORK_LOCK}"
+chmod 0600 -- "${FRAMEWORK_LOCK}" "${PROJECT_LOCK}" "${GENERATION_LOCK}"
 
 COMMON_FLAGS=(
     -O3
@@ -188,13 +206,23 @@ PROFILE_SHA256=$(env -i HOME=/nonexistent LANG=C LANGUAGE=C LC_ALL=C PATH=/usr/b
     --fingerprint "${FINGERPRINT}" \
     --abi amd64 \
     --clang-major 22 \
-    --optimization-generation-id capability-clang-sample-v2 \
+    --optimization-generation-id "${GENERATION_ID}" \
+    --inventory-id "${INVENTORY_ID}" \
+    --inventory-sha256 "${INVENTORY_SHA256}" \
     --workload-revision clang-sample-fixture-v2 \
     --source-identity-sha256 "${SOURCE_IDENTITY_SHA256}" \
     --production-host "${PRODUCTION_HOST}" \
-    --production-date "${PRODUCTION_DATE}")
+    --production-date "${PRODUCTION_DATE}" \
+    --test-mode \
+    --test-framework-lock "${FRAMEWORK_LOCK}" \
+    --test-project-lock "${PROJECT_LOCK}" \
+    --test-generation-lock "${GENERATION_LOCK}")
 [[ ${PROFILE_SHA256} == "$("${SHA256SUM}" "${OUTPUT_ROOT}/sample.prof" | "${CUT}" -d ' ' -f 1)" ]] || \
     fail 'sample producer returned a mismatching profile SHA-256'
+[[ $(stat -c '%a' -- "${OUTPUT_ROOT}/sample.prof") == 640 && \
+    $(stat -c '%a' -- "${OUTPUT_ROOT}/sample-metadata.json") == 640 && \
+    $(stat -c '%a' -- "${OUTPUT_ROOT}/llvm-profgen-conversion-log.json") == 440 ]] || \
+    fail 'sample transaction modes are not the reviewed group-readable immutable policy'
 
 "${PROFDATA}" show --sample --all-functions --counts \
     "${OUTPUT_ROOT}/sample.prof" >"${OUTPUT_ROOT}/sample-profile.show"
@@ -206,6 +234,7 @@ env -i HOME=/nonexistent LANG=C LANGUAGE=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
     --backend clang-sample \
     --profile "${OUTPUT_ROOT}/sample.prof" \
     --fingerprint "${FINGERPRINT}" \
+    --sample-input-fingerprint "${FINGERPRINT}" \
     --abi amd64 \
     --compiler-family clang \
     --compiler "${CLANG_REAL}" \
@@ -217,12 +246,23 @@ env -i HOME=/nonexistent LANG=C LANGUAGE=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
     --sample-metadata "${OUTPUT_ROOT}/sample-metadata.json" \
     --manifest-out "${OUTPUT_ROOT}/profile.manifest" \
     --metadata-out "${OUTPUT_ROOT}/profile.manifest.metadata.json" \
+    --generation-id "${GENERATION_ID}" \
+    --inventory-id "${INVENTORY_ID}" \
+    --inventory-sha256 "${INVENTORY_SHA256}" \
+    --test-mode \
+    --test-framework-lock "${FRAMEWORK_LOCK}" \
+    --test-project-lock "${PROJECT_LOCK}" \
+    --test-generation-lock "${GENERATION_LOCK}" \
     >"${OUTPUT_ROOT}/profile-produce.stdout" \
     2>"${OUTPUT_ROOT}/profile-produce.stderr"
 env -i HOME=/nonexistent LANG=C LANGUAGE=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
     "${PROFILE_VALIDATOR}" verify \
     --manifest "${OUTPUT_ROOT}/profile.manifest" \
     --metadata "${OUTPUT_ROOT}/profile.manifest.metadata.json" \
+    --test-mode \
+    --test-framework-lock "${FRAMEWORK_LOCK}" \
+    --test-project-lock "${PROJECT_LOCK}" \
+    --test-generation-lock "${GENERATION_LOCK}" \
     >"${OUTPUT_ROOT}/profile-verify.stdout" \
     2>"${OUTPUT_ROOT}/profile-verify.stderr"
 
@@ -300,6 +340,9 @@ fi
     printf 'sample_profile=%s\n' "${OUTPUT_ROOT}/sample.prof"
     printf 'sample_profile_sha256=%s\n' "${PROFILE_SHA256}"
     printf 'package_fingerprint=%s\n' "${FINGERPRINT}"
+    printf 'optimization_generation_id=%s\n' "${GENERATION_ID}"
+    printf 'inventory_id=%s\n' "${INVENTORY_ID}"
+    printf 'inventory_sha256=%s\n' "${INVENTORY_SHA256}"
     printf 'producer_metadata=%s\n' "${OUTPUT_ROOT}/sample-metadata.json"
     printf 'conversion_log=%s\n' "${OUTPUT_ROOT}/llvm-profgen-conversion-log.json"
     printf 'dispatcher_manifest=%s\n' "${OUTPUT_ROOT}/profile.manifest"

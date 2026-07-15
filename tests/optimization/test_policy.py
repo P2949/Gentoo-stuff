@@ -44,6 +44,16 @@ class OptimizationPolicyTests(unittest.TestCase):
         self.assertEqual(exclusions, {"schema_version": 1, "exclusions": []})
         self.assertEqual(overrides, {"schema_version": 1, "overrides": []})
 
+    def test_repository_root_contains_only_reviewed_files(self) -> None:
+        """Reject accidental shell-redirection and fixture residue at repo root."""
+        allowed = {".gitignore", "LICENSE", "README.md", "plan.md"}
+        root_files = {
+            path.name
+            for path in REPOSITORY_ROOT.iterdir()
+            if path.is_file() or path.is_symlink()
+        }
+        self.assertEqual(root_files, allowed)
+
 
 if __name__ == "__main__":
     unittest.main()

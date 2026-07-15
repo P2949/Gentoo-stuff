@@ -7,7 +7,7 @@ the exact binary and capture to the production
 `profile-identity.py sample-convert` transaction. The transaction derives the GNU build ID and
 `.text` SHA-256, runs the exact canonical LLVM 22 tools in an allowlisted
 environment, validates the real `sample.prof` with
-`llvm-profdata show --sample`, and publishes producer metadata plus a mode-0444 conversion log
+`llvm-profdata show --sample`, and publishes producer metadata plus a mode-0440 conversion log
 containing the exact `llvm-profgen` stdout and stderr.
 
 The fixture then calls the production `validate-profile.py produce` and

@@ -11,34 +11,15 @@ Default policy:
     libc++, -Bsymbolic, or bleeding-edge language targets merely because
     they are risky. They are the experiment.
 
-Global performance expansion policy:
-    This repository applies new performance experiments globally first.
+Stage-readiness policy:
+    BOLT and sample-PGO readiness are not global pressure axes.  Ordinary and
+    GENTOO_OPT_MODE=off builds receive no line-mapping, pseudo-probe,
+    relocation, exact build-ID, function-section, or data-section flags from
+    this repository.  Only assignment-only files below env/optimization may
+    select a stage; the strict Portage dispatcher owns the resulting flags.
 
-    This repository is global-first by design.
-    Profiles are not promoted after proving safe.
-    Profiles are global until a package proves unsafe.
-
-    BOLT readiness metadata, sample-PGO mapping metadata, section splitting,
-    linker GC/ICF, hidden visibility, optimization remarks, Rust panic=abort,
-    and Rust layout linker flags are default pressure axes.
-
-    Packages that fail are demoted narrowly. Do not remove these axes globally
-    merely because they are risky. They are now part of the experiment.
-
-New global axes:
-    BOLT/profile-layout readiness
-        -gline-tables-only
-        -Wl,--emit-relocs
-        -Wl,--build-id
-
-    Sample-PGO mapping readiness
-        -fdebug-info-for-profiling
-        -funique-internal-linkage-names
-        -fpseudo-probe-for-profiling
-
-    Code-size / i-cache pressure
-        -ffunction-sections
-        -fdata-sections
+Ordinary global axes:
+    Linker cleanup/folding
         -Wl,--gc-sections
         -Wl,--icf=safe
 
@@ -52,11 +33,13 @@ New global axes:
 
     Rust expansion
         -C panic=abort
-        -C debuginfo=1
-        -Clink-arg=-Wl,--emit-relocs
-        -Clink-arg=-Wl,--build-id
         -Clink-arg=-Wl,--gc-sections
         -Clink-arg=-Wl,--icf=safe
+
+Stage-only axes:
+    See env/optimization/README for the exact Clang sample-map, Clang/GCC
+    BOLT, and Rust BOLT flag sets.  Generated package policy must select those
+    markers explicitly; package fallback files must not reproduce them.
 
 Demotion rule:
     Prefer the narrowest fallback that explains the failure.
@@ -74,19 +57,19 @@ Fallback ladder, least to most conservative:
         vtable optimization + libc++ runtime selection + link-only forced
         runtime libraries.
 
-    New global-performance demotions, least to most broad:
+    Ordinary global-performance demotions, least to most broad:
         no-opt-remarks.conf
             Removes only optimization record output. Try first when packages
             produce excessive .opt.yaml noise, install unexpected YAML files,
             or fail because build systems scan generated files.
 
         no-profile-mapping.conf
-            Removes sample-PGO mapping metadata while keeping BOLT readiness,
-            section splitting, visibility, LTO, Polly, and aggressive defaults.
+            Historical compatibility tier. Sample-PGO mapping is now absent
+            unless env/optimization/profile-map-ready.conf selects it.
 
         no-bolt-ready.conf
-            Removes BOLT readiness compile/link metadata while keeping the
-            rest of the new global performance expansion.
+            Historical compatibility tier. BOLT readiness is now absent
+            unless a capture/deploy stage selects it.
 
         no-hidden-visibility.conf
             Removes hidden visibility. Use for shared libraries, plugin hosts,
@@ -97,7 +80,8 @@ Fallback ladder, least to most conservative:
             Removes linker section GC and identical code folding.
 
         no-section-splitting.conf
-            Removes function/data section splitting.
+            Historical compatibility tier. Function/data section splitting is
+            no longer part of the ordinary global baseline.
 
         no-global-perf-extras.conf
             Removes every new global performance-expansion axis while keeping

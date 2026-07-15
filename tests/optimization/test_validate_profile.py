@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import fcntl
 import json
 import os
 import subprocess
@@ -14,6 +15,7 @@ from typing import Any, Callable
 ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = ROOT / "scripts/optimization/pgo/validate-profile.py"
 FINGERPRINT = "a" * 64
+SAMPLE_INPUT_FINGERPRINT = "b" * 64
 
 
 def sha256(path: Path) -> str:
@@ -29,6 +31,26 @@ class ProfileValidatorTests(unittest.TestCase):
         self.bin.mkdir()
         self.profiles.mkdir()
         self._write_tools()
+        self.generation = {
+            "generation_id": "generation-profile-test",
+            "inventory_id": "inventory-profile-test",
+            "inventory_sha256": "9" * 64,
+        }
+        self.framework_lock = self.root / "framework.lock"
+        self.project_lock = self.root / "project.lock"
+        self.generation_lock = self.root / "generation.lock"
+        self.framework_lock.write_bytes(b"")
+        lock_payload = json.dumps(
+            self.generation, indent=2, sort_keys=True
+        ).encode("utf-8") + b"\n"
+        self.project_lock.write_bytes(lock_payload)
+        self.generation_lock.write_bytes(lock_payload)
+        for lock in (
+            self.framework_lock,
+            self.project_lock,
+            self.generation_lock,
+        ):
+            lock.chmod(0o600)
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -242,7 +264,7 @@ class ProfileValidatorTests(unittest.TestCase):
         metadata: Path | None = None,
     ) -> list[str]:
         manifest_path = manifest or (self.root / f"{backend}.manifest")
-        return [
+        arguments = [
             os.fspath(VALIDATOR),
             "produce",
             "--backend",
@@ -271,9 +293,36 @@ class ProfileValidatorTests(unittest.TestCase):
             os.fspath(manifest_path),
             "--metadata-out",
             os.fspath(metadata or Path(os.fspath(manifest_path) + ".metadata.json")),
+            "--generation-id",
+            self.generation["generation_id"],
+            "--inventory-id",
+            self.generation["inventory_id"],
+            "--inventory-sha256",
+            self.generation["inventory_sha256"],
+        ]
+        if backend == "clang-sample":
+            arguments.extend(
+                ["--sample-input-fingerprint", SAMPLE_INPUT_FINGERPRINT]
+            )
+        return arguments
+
+    def _lock_arguments(self) -> list[str]:
+        return [
+            "--test-mode",
+            "--test-framework-lock", os.fspath(self.framework_lock),
+            "--test-project-lock", os.fspath(self.project_lock),
+            "--test-generation-lock", os.fspath(self.generation_lock),
         ]
 
     def _run(self, arguments: list[str], success: bool) -> subprocess.CompletedProcess[str]:
+        arguments = list(arguments)
+        if (
+            len(arguments) >= 2
+            and arguments[0] == os.fspath(VALIDATOR)
+            and arguments[1] in {"produce", "verify"}
+            and "--test-mode" not in arguments
+        ):
+            arguments.extend(self._lock_arguments())
         environment = os.environ.copy()
         environment.update(
             {
@@ -312,9 +361,15 @@ class ProfileValidatorTests(unittest.TestCase):
         )
         self.assertEqual(path.read_text(encoding="ascii"), expected)
         self.assertEqual(len(expected.splitlines()), 8)
-        self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o640)
         metadata = Path(os.fspath(path) + ".metadata.json")
-        self.assertEqual(metadata.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(metadata.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(path.stat().st_gid, path.parent.stat().st_gid)
+        self.assertEqual(metadata.stat().st_gid, path.parent.stat().st_gid)
+        self.assertEqual(
+            json.loads(metadata.read_text(encoding="utf-8"))["generation"],
+            self.generation,
+        )
         self._run(
             [
                 os.fspath(VALIDATOR),
@@ -358,6 +413,77 @@ class ProfileValidatorTests(unittest.TestCase):
             success=False,
         )
         self.assertIn("compiler binary SHA-256", completed.stderr)
+
+    def test_producer_and_verifier_obey_exact_generation_lock_hierarchy(self) -> None:
+        profile = self.profiles / "locked.profdata"
+        profile.write_text("IR\n", encoding="utf-8")
+        blocked_manifest = self.root / "blocked.manifest"
+        blocked_arguments = self._common(
+            "clang-ir",
+            profile,
+            "clang",
+            self.clang,
+            22,
+            self.llvm22,
+            22,
+            blocked_manifest,
+        ) + ["--lock-timeout-seconds", "0.1"]
+        with self.project_lock.open("rb") as held_project:
+            fcntl.flock(held_project.fileno(), fcntl.LOCK_SH)
+            completed = self._run(blocked_arguments, success=False)
+            self.assertIn("waiting for project lock", completed.stderr)
+        self.assertFalse(blocked_manifest.exists())
+
+        manifest = self.root / "locked-success.manifest"
+        self._run(
+            self._common(
+                "clang-ir",
+                profile,
+                "clang",
+                self.clang,
+                22,
+                self.llvm22,
+                22,
+                manifest,
+            ),
+            success=True,
+        )
+        metadata = Path(os.fspath(manifest) + ".metadata.json")
+        with self.generation_lock.open("rb") as held_generation:
+            fcntl.flock(held_generation.fileno(), fcntl.LOCK_EX)
+            completed = self._run(
+                [
+                    os.fspath(VALIDATOR),
+                    "verify",
+                    "--manifest",
+                    os.fspath(manifest),
+                    "--metadata",
+                    os.fspath(metadata),
+                    "--lock-timeout-seconds",
+                    "0.1",
+                ],
+                success=False,
+            )
+            self.assertIn("waiting for generation lock", completed.stderr)
+
+        other_generation = dict(self.generation)
+        other_generation["inventory_sha256"] = "8" * 64
+        self.generation_lock.write_text(
+            json.dumps(other_generation, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        completed = self._run(
+            [
+                os.fspath(VALIDATOR),
+                "verify",
+                "--manifest",
+                os.fspath(manifest),
+                "--metadata",
+                os.fspath(metadata),
+            ],
+            success=False,
+        )
+        self.assertIn("one exact identity", completed.stderr)
 
     def test_cross_family_compiler_is_rejected_without_manifest(self) -> None:
         profile = self.profiles / "cross.profdata"
@@ -475,7 +601,7 @@ class ProfileValidatorTests(unittest.TestCase):
         ]
         conversion_log = self.profiles / "llvm-profgen-conversion-log.json"
         if conversion_log.exists():
-            conversion_log.chmod(0o644)
+            conversion_log.chmod(0o640)
         conversion_log.write_text(
             json.dumps(
                 {
@@ -498,7 +624,7 @@ class ProfileValidatorTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
-        conversion_log.chmod(0o444)
+        conversion_log.chmod(0o440)
         conversion_output_sha256 = hashlib.sha256(
             (conversion_stdout + "\0" + conversion_stderr).encode("utf-8")
         ).hexdigest()
@@ -512,7 +638,7 @@ class ProfileValidatorTests(unittest.TestCase):
             "package": {
                 "abi": "amd64",
                 "cpv": "dev-util/example-1.0",
-                "fingerprint": FINGERPRINT,
+                "fingerprint": SAMPLE_INPUT_FINGERPRINT,
             },
             "profile_family": "clang-sample",
             "profile_format": "llvm-sample",
@@ -520,13 +646,15 @@ class ProfileValidatorTests(unittest.TestCase):
             "profile_sha256": sha256(profile),
             "profile_size": profile.stat().st_size,
             "reproducibility": {
-                "optimization_generation_id": "generation-20260713-a",
+                "optimization_generation_id": self.generation["generation_id"],
+                "inventory_id": self.generation["inventory_id"],
+                "inventory_sha256": self.generation["inventory_sha256"],
                 "production_date": "2026-07-13",
                 "production_host": "gentoo-fixture",
                 "source_identity_sha256": "e" * 64,
                 "workload_revision": "workloads-sha256-a1",
             },
-            "schema_version": 3,
+            "schema_version": 4,
             "source": {
                 "kind": "llvm-profgen",
                 "binary_path": os.fspath(profiled_binary),
@@ -579,10 +707,34 @@ class ProfileValidatorTests(unittest.TestCase):
         sidecar_path = Path(os.fspath(manifest) + ".metadata.json")
         sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
         sample_metadata = json.loads(metadata.read_text(encoding="utf-8"))
+        self.assertEqual(sidecar["profile"]["fingerprint"], FINGERPRINT)
+        self.assertEqual(
+            sidecar["backend_proof"]["sample_input_fingerprint"],
+            SAMPLE_INPUT_FINGERPRINT,
+        )
+        self.assertEqual(
+            sample_metadata["package"]["fingerprint"], SAMPLE_INPUT_FINGERPRINT
+        )
         self.assertEqual(
             sidecar["backend_proof"]["reproducibility"],
             sample_metadata["reproducibility"],
         )
+
+        wrong_input_manifest = self.root / "sample-wrong-input.manifest"
+        wrong_input = self._common(
+            "clang-sample",
+            profile,
+            "clang",
+            self.clang,
+            22,
+            self.llvm22,
+            22,
+            wrong_input_manifest,
+        ) + ["--sample-metadata", os.fspath(metadata)]
+        wrong_input[wrong_input.index("--sample-input-fingerprint") + 1] = "c" * 64
+        completed = self._run(wrong_input, success=False)
+        self.assertIn("input fingerprint", completed.stderr)
+        self.assertFalse(wrong_input_manifest.exists())
 
         unknown_manifest = self.root / "sample-unknown.manifest"
         unknown_arguments = self._common(
@@ -657,12 +809,12 @@ class ProfileValidatorTests(unittest.TestCase):
         )
         self.assertIn("no longer matches", completed.stderr)
 
-    def test_sample_metadata_v3_rejects_downgrade_missing_unknown_and_tampering(self) -> None:
+    def test_sample_metadata_v4_rejects_downgrade_missing_unknown_and_tampering(self) -> None:
         profile = self.profiles / "sample.prof"
         profile.write_text("SAMPLE\n", encoding="utf-8")
 
         mutations: dict[str, Callable[[dict[str, Any]], object]] = {
-            "schema-v2": lambda data: data.__setitem__("schema_version", 2),
+            "schema-v3": lambda data: data.__setitem__("schema_version", 3),
             "missing-reproducibility": lambda data: data.pop("reproducibility"),
             "unknown-reproducibility": lambda data: data["reproducibility"].__setitem__(
                 "unreviewed", "value"
@@ -670,6 +822,12 @@ class ProfileValidatorTests(unittest.TestCase):
             "tampered-generation": lambda data: data["reproducibility"].__setitem__(
                 "optimization_generation_id", "../wrong-generation"
             ),
+            "tampered-inventory-id": lambda data: data["reproducibility"].__setitem__(
+                "inventory_id", "../wrong-inventory"
+            ),
+            "tampered-inventory-sha256": lambda data: data[
+                "reproducibility"
+            ].__setitem__("inventory_sha256", "f" * 64),
             "tampered-workload": lambda data: data["reproducibility"].__setitem__(
                 "workload_revision", "wrong/workload"
             ),
@@ -765,10 +923,10 @@ class ProfileValidatorTests(unittest.TestCase):
         conversion_log = Path(metadata["source"]["conversion_log_path"])
         original = conversion_log.read_bytes()
         original_sha256 = sha256(conversion_log)
-        conversion_log.chmod(0o644)
+        conversion_log.chmod(0o640)
         conversion_log.write_bytes(b"temporary hostile conversion log\n")
         conversion_log.write_bytes(original)
-        conversion_log.chmod(0o444)
+        conversion_log.chmod(0o440)
         self.assertEqual(sha256(conversion_log), original_sha256)
 
         manifest = self.root / "sample-restored-conversion-log.manifest"

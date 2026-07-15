@@ -50,6 +50,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--installed-root", type=Path)
     parser.add_argument("--strict", action="store_true", help="reopen and semantically verify every completion proof")
     parser.add_argument("--fixture-roots", action="store_true", help="allow non-live roots for hermetic tests; can never authorize completion")
+    parser.add_argument("--fixture-getcap", type=Path, help="fixture-owned getcap implementation; valid only with --fixture-roots")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--require-complete", action="store_true")
     return parser.parse_args(argv)
@@ -58,7 +59,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     if args.validate_inventory_only:
-        if any(value is not None for value in (args.packages_dir, args.artifacts_dir, args.output, args.final_system_state, args.vdb_root, args.installed_root)) or args.require_complete or args.strict:
+        if any(value is not None for value in (
+            args.packages_dir, args.artifacts_dir, args.output,
+            args.final_system_state, args.vdb_root, args.installed_root,
+            args.fixture_getcap,
+        )) or args.require_complete or args.strict:
             print("ERROR: --validate-inventory-only accepts only --inventory and optional --fixture-roots", file=sys.stderr)
             return 2
         try:
@@ -82,6 +87,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.require_complete and args.fixture_roots:
         print("ERROR: --fixture-roots can never be used with --require-complete", file=sys.stderr)
+        return 2
+    if args.fixture_getcap is not None and not args.fixture_roots:
+        print("ERROR: --fixture-getcap requires --fixture-roots", file=sys.stderr)
         return 2
     if args.require_complete and args.final_system_state is None:
         print("ERROR: --require-complete requires --final-system-state", file=sys.stderr)
@@ -127,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
             inventory_path=args.inventory,
             strict=args.strict,
             fixture_mode=args.fixture_roots,
+            fixture_getcap=args.fixture_getcap,
         )
         digest = STATE.atomic_publish(summary, args.output)
     except (OSError, json.JSONDecodeError, STATE.StateValidationError) as error:
