@@ -10,12 +10,50 @@ WORK=$(mktemp -d /tmp/gentoo-optimization-framework-installer.XXXXXXXX)
 REPOSITORY=${WORK}/repository
 TARGET=${WORK}/target
 LOG=${WORK}/installer.log
+OUTER_CASE_TIMEOUT_SECONDS=${TEST_CASE_TIMEOUT_SECONDS:-1800}
+[[ ${OUTER_CASE_TIMEOUT_SECONDS} =~ ^[1-9][0-9]*$ ]] || {
+    printf 'FAIL: TEST_CASE_TIMEOUT_SECONDS must be a positive integer\n' >&2
+    exit 2
+}
+if [[ -n ${INSTALLER_MARKER_TIMEOUT_SECONDS:-} ]]; then
+    [[ ${INSTALLER_MARKER_TIMEOUT_SECONDS} =~ ^[1-9][0-9]*$ ]] || {
+        printf 'FAIL: INSTALLER_MARKER_TIMEOUT_SECONDS must be a positive integer\n' >&2
+        exit 2
+    }
+else
+    INSTALLER_MARKER_TIMEOUT_SECONDS=$((OUTER_CASE_TIMEOUT_SECONDS / 20))
+fi
+((INSTALLER_MARKER_TIMEOUT_SECONDS >= 10)) || INSTALLER_MARKER_TIMEOUT_SECONDS=10
+((INSTALLER_MARKER_TIMEOUT_SECONDS <= 120)) || INSTALLER_MARKER_TIMEOUT_SECONDS=120
+LOCK_BASELINE_IDENTITY=
+LOCK_BASELINE_SHA256=
 trap 'rm -rf -- "${WORK}"' EXIT
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
     exit 1
 }
+
+probe_fixture_atomic_exchange() {
+    local probe=${WORK}/atomic-exchange-probe reason
+    mkdir -- "${probe}" "${probe}/left" "${probe}/right"
+    printf 'left\n' >"${probe}/left/identity"
+    printf 'right\n' >"${probe}/right/identity"
+    if ! /usr/bin/mv --exchange --no-copy -T -- \
+        "${probe}/left" "${probe}/right" 2>"${probe}/error"; then
+        reason=$(tr '\n' ' ' <"${probe}/error" 2>/dev/null || true)
+        rm -rf -- "${probe}"
+        printf 'SKIP: fixture filesystem lacks required atomic exchange%s\n' \
+            "${reason:+ (${reason})}"
+        exit 77
+    fi
+    [[ $(<"${probe}/left/identity") == right && \
+        $(<"${probe}/right/identity") == left ]] || \
+        fail 'fixture filesystem returned invalid atomic-exchange semantics'
+    rm -rf -- "${probe}"
+}
+
+probe_fixture_atomic_exchange
 
 run_installer() {
     GENTOO_OPT_INSTALLER_TEST_MODE=1 \
@@ -36,24 +74,83 @@ expect_failure() {
 }
 
 wait_for_log() {
-    local needle=$1
-    for _ in $(seq 1 100); do
+    local needle=$1 installer_pid=$2 deadline child_status
+    [[ ${installer_pid} =~ ^[1-9][0-9]*$ ]] || fail 'invalid installer PID'
+    deadline=$((SECONDS + INSTALLER_MARKER_TIMEOUT_SECONDS))
+    while ((SECONDS < deadline)); do
         grep -Fq -- "${needle}" "${LOG}" 2>/dev/null && return 0
+        if ! jobs -pr | grep -Fxq -- "${installer_pid}"; then
+            set +e
+            wait "${installer_pid}"
+            child_status=$?
+            set -e
+            sed -n '1,240p' "${LOG}" >&2 || true
+            fail "installer exited with status ${child_status} before marker: ${needle}"
+        fi
         sleep 0.1
     done
     sed -n '1,240p' "${LOG}" >&2 || true
-    fail "timed out waiting for installer marker: ${needle}"
+    fail "timed out after ${INSTALLER_MARKER_TIMEOUT_SECONDS}s waiting for installer marker: ${needle}"
 }
 
 wait_for_installer_lock_release() {
     local lock=${TARGET}/run/gentoo-optimization/framework-install.lock
+    local directory=${lock%/*} identity payload opened_identity
+    [[ -d ${directory} && ! -L ${directory} && \
+        $(stat -c '%u:%g:%a' -- "${directory}") == \
+        "$(id -u):$(id -g):700" ]] || \
+        fail 'installer publication lock directory is not trusted'
+    [[ -f ${lock} && ! -L ${lock} ]] || \
+        fail 'installer publication lock is absent or not a trusted regular file'
+    identity=$(stat -c '%d:%i:%u:%g:%a:%h:%s' -- "${lock}")
+    [[ ${identity} == *":$(id -u):$(id -g):600:1:0" ]] || \
+        fail "installer publication lock metadata is unsafe: ${identity}"
+    payload=$(sha256sum -- "${lock}"); payload=${payload%% *}
+    if [[ -z ${LOCK_BASELINE_IDENTITY} ]]; then
+        LOCK_BASELINE_IDENTITY=${identity}
+        LOCK_BASELINE_SHA256=${payload}
+    elif [[ ${identity} != "${LOCK_BASELINE_IDENTITY}" || \
+        ${payload} != "${LOCK_BASELINE_SHA256}" ]]; then
+        fail 'installer publication lock inode, metadata, or payload changed'
+    fi
     for _ in $(seq 1 100); do
-        if (exec 9<>"${lock}"; flock -n 9); then
+        if (
+            exec 9<"${lock}" || exit 2
+            opened_identity=$(stat -Lc '%d:%i:%u:%g:%a:%h:%s' -- \
+                "/proc/${BASHPID}/fd/9") || exit 2
+            [[ ${opened_identity} == "${LOCK_BASELINE_IDENTITY}" ]] || exit 2
+            flock -n 9
+        ); then
             return 0
         fi
         sleep 0.05
     done
     fail 'SIGKILLed installer did not release the publication lock'
+}
+
+# A child that exits before a pause marker must report its real status/log
+# immediately instead of consuming the complete marker deadline.
+EARLY_EXIT_LOG=${WORK}/early-installer-exit.log
+EARLY_EXIT_DIAGNOSTIC=${WORK}/early-installer-diagnostic.log
+SAVED_INSTALLER_LOG=${LOG}
+LOG=${EARLY_EXIT_LOG}
+if (
+    bash -c 'printf "fixture child failed before marker\\n" >&2; exit 42' \
+        >"${LOG}" 2>&1 &
+    early_pid=$!
+    wait_for_log 'marker-that-will-never-appear' "${early_pid}"
+) >"${EARLY_EXIT_DIAGNOSTIC}" 2>&1; then
+    fail 'early installer child failure unexpectedly reached its marker'
+fi
+LOG=${SAVED_INSTALLER_LOG}
+grep -Fq 'installer exited with status 42 before marker:' \
+    "${EARLY_EXIT_DIAGNOSTIC}" || {
+    sed -n '1,160p' "${EARLY_EXIT_DIAGNOSTIC}" >&2 || true
+    fail 'early installer child failure lost its exact status'
+}
+grep -Fq 'fixture child failed before marker' "${EARLY_EXIT_DIAGNOSTIC}" || {
+    sed -n '1,160p' "${EARLY_EXIT_DIAGNOSTIC}" >&2 || true
+    fail 'early installer child failure lost its underlying log'
 }
 
 assert_no_transaction_debris() {
@@ -94,10 +191,36 @@ git -C "${REPOSITORY}" commit -qm 'fixture baseline'
 
 PROFILE=${TARGET}/var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm
 mkdir -p -- "${PROFILE}"
-printf 'ARCH="amd64"\n' >"${PROFILE}/make.defaults"
+printf '%s\n' '..' '../../../../../features/llvm' >"${PROFILE}/parent"
 mkdir -p -- "${TARGET}/usr/bin"
 cp -- "$(command -v jq)" "${TARGET}/usr/bin/jq"
 chmod 0755 -- "${TARGET}/usr/bin/jq"
+mkdir -p -- "${TARGET}/var/tmp"
+chmod 1777 -- "${TARGET}/var/tmp"
+
+# Atomic exchange is a declared publication prerequisite and must fail before
+# the installer creates locks, framework state, or any durable destination.
+expect_failure \
+    "destination filesystem does not support atomic exchange: ${TARGET}/etc" \
+    env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+    GENTOO_OPT_INSTALLER_FORCE_EXCHANGE_UNSUPPORTED=1 \
+    bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+    --test-root "${TARGET}"
+[[ ! -e ${TARGET}/run/gentoo-optimization && \
+    ! -e ${TARGET}/var/lib/gentoo-optimization ]] || \
+    fail 'atomic-exchange rejection occurred after durable installer mutation'
+! find "${TARGET}" -name '.gentoo-optimization-rename-exchange.*' \
+    -print -quit | grep -q . || fail 'atomic-exchange rejection left probe debris'
+
+# The canonical root-owned 01777 /var/tmp boundary is required and accepted;
+# removing its sticky bit must make the same ancestor fail closed.
+chmod 0777 -- "${TARGET}/var/tmp"
+expect_failure "trusted ancestor is group/world-writable: ${TARGET}/var/tmp" \
+    run_installer
+[[ ! -e ${TARGET}/run/gentoo-optimization && \
+    ! -e ${TARGET}/var/lib/gentoo-optimization ]] || \
+    fail 'unsafe /var/tmp rejection occurred after durable installer mutation'
+chmod 1777 -- "${TARGET}/var/tmp"
 
 # Unsafe destination ancestors must fail before the lock or framework base is
 # created.  The fixture root itself is the hermetic trust boundary.
@@ -116,7 +239,8 @@ UNSAFE=${WORK}/unsafe-target
 mkdir -p -- "${UNSAFE}/usr"
 chmod 0777 -- "${UNSAFE}/usr"
 mkdir -p -- "${UNSAFE}/var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm"
-printf 'ARCH="amd64"\n' >"${UNSAFE}/var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm/make.defaults"
+printf '%s\n' '..' '../../../../../features/llvm' \
+    >"${UNSAFE}/var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm/parent"
 mkdir -p -- "${UNSAFE}/usr/bin"
 cp -- "$(command -v jq)" "${UNSAFE}/usr/bin/jq"
 chmod 0755 -- "${UNSAFE}/usr/bin/jq"
@@ -159,7 +283,7 @@ env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
-wait_for_log 'PAUSE: after-first-migration-guard'
+wait_for_log 'PAUSE: after-first-migration-guard' "${INSTALL_PID}"
 kill -KILL "${INSTALL_PID}"
 if wait "${INSTALL_PID}" 2>/dev/null; then fail 'first-guard SIGKILL unexpectedly succeeded'; fi
 wait_for_installer_lock_release
@@ -187,7 +311,7 @@ env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
-wait_for_log 'PAUSE: after-bootstrap-activation'
+wait_for_log 'PAUSE: after-bootstrap-activation' "${INSTALL_PID}"
 kill -KILL "${INSTALL_PID}"
 if wait "${INSTALL_PID}" 2>/dev/null; then fail 'first-activation SIGKILL unexpectedly succeeded'; fi
 wait_for_installer_lock_release
@@ -483,7 +607,7 @@ env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
-wait_for_log 'PAUSE: before-activation'
+wait_for_log 'PAUSE: before-activation' "${INSTALL_PID}"
 kill -TERM "${INSTALL_PID}"
 if wait "${INSTALL_PID}"; then fail 'signal-interrupted installer unexpectedly succeeded'; fi
 rm -f -- "${PAUSE_FILE}"
@@ -503,7 +627,7 @@ env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
-wait_for_log 'PAUSE: before-activation'
+wait_for_log 'PAUSE: before-activation' "${INSTALL_PID}"
 kill -KILL "${INSTALL_PID}"
 if wait "${INSTALL_PID}" 2>/dev/null; then fail 'SIGKILLed installer unexpectedly succeeded'; fi
 wait_for_installer_lock_release
@@ -532,7 +656,7 @@ env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
-wait_for_log 'PAUSE: before-source-copy'
+wait_for_log 'PAUSE: before-source-copy' "${INSTALL_PID}"
 printf '\n# concurrent fixture mutation\n' >>"${REPOSITORY}/portage/make.conf"
 rm -f -- "${PAUSE_FILE}"
 if wait "${INSTALL_PID}"; then fail 'mixed-source installer unexpectedly succeeded'; fi
@@ -555,7 +679,7 @@ env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
     --test-root "${TARGET}" >"${LOG}" 2>&1 &
 INSTALL_PID=$!
-wait_for_log 'PAUSE: after-activation'
+wait_for_log 'PAUSE: after-activation' "${INSTALL_PID}"
 kill -KILL "${INSTALL_PID}"
 if wait "${INSTALL_PID}" 2>/dev/null; then fail 'post-activation SIGKILL unexpectedly succeeded'; fi
 wait_for_installer_lock_release

@@ -85,7 +85,7 @@ else
         printf 'ERROR: framework installation/check requires root\n' >&2
         exit 1
     }
-    [[ -z ${GENTOO_OPT_INSTALLER_FAIL_AT:-}${GENTOO_OPT_INSTALLER_PAUSE_AT:-} ]] || {
+    [[ -z ${GENTOO_OPT_INSTALLER_FAIL_AT:-}${GENTOO_OPT_INSTALLER_PAUSE_AT:-}${GENTOO_OPT_INSTALLER_FORCE_EXCHANGE_UNSUPPORTED:-} ]] || {
         printf 'ERROR: failure injection is forbidden outside --test-root\n' >&2
         exit 2
     }
@@ -169,10 +169,11 @@ JQ_PATH=$(physical /usr/bin/jq)
 GENERATIONS_ROOT=${BASE}/generations
 PGO_CACHE=$(physical /var/cache/gentoo-optimization/pgo)
 PGO_RAW=$(physical /var/tmp/gentoo-optimization/pgo-raw)
+VAR_TMP_BOUNDARY=$(physical /var/tmp)
 readonly BASE FRAMEWORK_CURRENT ACTIVATION_JOURNAL STATE_ROOT MANIFEST CACHE_ROOT INSTALL_QA_ROOT \
     LIBEXEC_ROOT SHARE_ROOT ETC_PORTAGE LOCK_PATH PROJECT_LOCK_PATH \
     GENERATION_LOCK_PATH JQ_PATH GENERATIONS_ROOT \
-    PGO_CACHE PGO_RAW PORTAGE_GID
+    PGO_CACHE PGO_RAW VAR_TMP_BOUNDARY PORTAGE_GID
 
 HOOK_BASENAME=zz-gentoo-optimization-bolt
 readonly HOOK_BASENAME
@@ -228,6 +229,7 @@ PREVIOUS_TARGET=none
 INSTALLER_LOCK_FD=
 declare -a HELD_BOLT_LOCK_FDS=()
 declare -a HELD_PROJECT_LOCK_FDS=()
+declare -a EXCHANGE_PROBE_ROOTS=()
 declare -A FROZEN_CPVS=()
 FROZEN_INVENTORY_SHA256=none
 
@@ -302,6 +304,9 @@ verify_existing_ancestor_chain() {
         uid=$(stat -c %u -- "${current}")
         mode=$(stat -c %a -- "${current}")
         [[ ${uid} == "${EXPECTED_UID}" ]] || fail "trusted ancestor has the wrong owner: ${current}"
+        if [[ ${current} == "${VAR_TMP_BOUNDARY}" && ${mode} == 1777 ]]; then
+            continue
+        fi
         mode_is_trusted "${mode}" || fail "trusted ancestor is group/world-writable: ${current}"
     done < <(tr '/' '\n' <<<"${remainder}")
 }
@@ -370,6 +375,64 @@ preflight_destination_ancestors() {
         "${PGO_CACHE}" "${PGO_RAW}" "${JQ_PATH%/*}" "${BASE}/bootstrap"; do
         verify_existing_ancestor_chain "${path}"
     done
+}
+
+nearest_existing_destination_ancestor() {
+    local path=$1
+    while [[ ! -e ${path} && ! -L ${path} ]]; do
+        [[ ${path} != / ]] || break
+        path=${path%/*}
+        [[ -n ${path} ]] || path=/
+    done
+    [[ -d ${path} && ! -L ${path} ]] || \
+        fail "atomic-exchange destination ancestor is not a real directory: ${path}"
+    printf '%s\n' "${path}"
+}
+
+preflight_atomic_exchange_destinations() {
+    local destination_parent existing probe error detail exchange_failed
+    local -a destination_parents=(
+        "${ETC_PORTAGE%/*}"
+        "${LIBEXEC_ROOT%/*}"
+        "${SHARE_ROOT%/*}"
+        "${INSTALL_QA_ROOT}"
+        "${MANIFEST%/*}"
+    )
+    [[ -x /usr/bin/mv ]] || fail 'required atomic-exchange tool is absent: /usr/bin/mv'
+    for destination_parent in "${destination_parents[@]}"; do
+        existing=$(nearest_existing_destination_ancestor "${destination_parent}")
+        probe=$(mktemp -d \
+            "${existing}/.gentoo-optimization-rename-exchange.XXXXXXXX") || \
+            fail "cannot create atomic-exchange probe for destination parent: ${destination_parent}"
+        EXCHANGE_PROBE_ROOTS+=("${probe}")
+        mkdir -- "${probe}/left" "${probe}/right"
+        printf 'left\n' >"${probe}/left/identity"
+        printf 'right\n' >"${probe}/right/identity"
+        error=${probe}/exchange.stderr
+        exchange_failed=0
+        if [[ -n ${TEST_ROOT} && \
+            ${GENTOO_OPT_INSTALLER_FORCE_EXCHANGE_UNSUPPORTED:-0} == 1 ]]; then
+            printf 'forced unsupported exchange for fixture validation\n' >"${error}"
+            exchange_failed=1
+        elif ! /usr/bin/mv --exchange --no-copy -T -- \
+            "${probe}/left" "${probe}/right" 2>"${error}"; then
+            exchange_failed=1
+        fi
+        if ((exchange_failed)); then
+            detail=$(tr '\n' ' ' <"${error}" 2>/dev/null || true)
+            rm -rf -- "${probe}"
+            fail "destination filesystem does not support atomic exchange: ${destination_parent}${detail:+ (${detail})}"
+        fi
+        [[ $(<"${probe}/left/identity") == right && \
+            $(<"${probe}/right/identity") == left ]] || {
+            rm -rf -- "${probe}"
+            fail "destination filesystem returned invalid atomic-exchange semantics: ${destination_parent}"
+        }
+        rm -rf -- "${probe}"
+        printf 'PREFLIGHT: atomic exchange destination_parent=%s probe_ancestor=%s device=%s\n' \
+            "${destination_parent}" "${existing}" "$(stat -c %d -- "${existing}")"
+    done
+    EXCHANGE_PROBE_ROOTS=()
 }
 
 open_project_lock() {
@@ -1161,9 +1224,16 @@ verify_make_profile() {
     expected=$(physical /var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm)
     actual=$(realpath -e -- "${profile}") || fail 'candidate make.profile target cannot be resolved'
     [[ ${actual} == "${expected}" ]] || fail "candidate make.profile resolves to ${actual}, expected ${expected}"
-    probe=${actual}/make.defaults
-    [[ -r ${probe} ]] || fail "profile make.defaults is not readable: ${probe}"
+    # Gentoo leaf profiles commonly inherit all make.defaults values from
+    # parents and therefore have no leaf make.defaults of their own.  Require
+    # the exact reviewed leaf's parent descriptor here; the live Portage query
+    # below proves that the complete inheritance chain resolves ARCH/CHOST.
+    probe=${actual}/parent
+    [[ -f ${probe} && ! -L ${probe} && -r ${probe} ]] || \
+        fail "profile parent descriptor is not readable: ${probe}"
     if [[ -z ${TEST_ROOT} ]] && id -u portage >/dev/null 2>&1; then
+        runuser -u portage -- test -x "${actual}" || \
+            fail 'Portage user cannot traverse the selected profile'
         runuser -u portage -- test -r "${probe}" || \
             fail 'Portage user cannot read the selected profile'
         runuser -u portage -- test -r "${candidate}/portage/make.conf" || \
@@ -1234,7 +1304,8 @@ verify_candidate() {
 }
 
 verify_live_overlay_resolution() {
-    local resolved
+    local resolved actual_profile expected_profile
+    local -a effective_identity=()
     [[ $(<"${FRAMEWORK_CURRENT}/local-overlay/profiles/repo_name") == codex-local ]] || \
         fail 'active local overlay repo_name differs'
     [[ -n ${TEST_ROOT} ]] && return 0
@@ -1242,6 +1313,18 @@ verify_live_overlay_resolution() {
     [[ ${resolved} == "${FRAMEWORK_CURRENT}/local-overlay" || \
         ${resolved} == "$(readlink -e -- "${FRAMEWORK_CURRENT}")/local-overlay" ]] || \
         fail "Portage resolves codex-local to ${resolved}, not the active framework overlay"
+    expected_profile=$(physical /var/db/repos/gentoo/profiles/default/linux/amd64/23.0/llvm)
+    actual_profile=$(realpath -e -- "${ETC_PORTAGE}/make.profile") || \
+        fail 'active Portage profile cannot be resolved'
+    [[ ${actual_profile} == "${expected_profile}" ]] || \
+        fail "active Portage profile resolves to ${actual_profile}, expected ${expected_profile}"
+    mapfile -t effective_identity < <(
+        /usr/bin/runuser -u portage -- /usr/bin/portageq envvar ARCH CHOST
+    )
+    [[ ${#effective_identity[@]} == 2 && \
+        ${effective_identity[0]} == amd64 && \
+        ${effective_identity[1]} == x86_64-pc-linux-gnu ]] || \
+        fail "Portage profile inheritance resolved unexpected ARCH/CHOST: ${effective_identity[*]}"
 }
 
 get_previous_target() {
@@ -1667,6 +1750,7 @@ rollback_install() {
 
 cleanup() {
     local status=$?
+    local exchange_probe
     if ((status != 0 || ! COMMITTED)); then rollback_install; fi
     if ((status != 0 || ! COMMITTED)) && ((CREATED_CANDIDATE)) && \
         [[ -n ${CANDIDATE_FINAL} && (! -L ${FRAMEWORK_CURRENT} || \
@@ -1676,6 +1760,9 @@ cleanup() {
     [[ -n ${SNAPSHOT} ]] && rm -rf -- "${SNAPSHOT}"
     [[ -n ${CANDIDATE_STAGE} ]] && rm -rf -- "${CANDIDATE_STAGE}"
     [[ -n ${EXPECTED_MANIFEST:-} ]] && rm -f -- "${EXPECTED_MANIFEST}"
+    for exchange_probe in "${EXCHANGE_PROBE_ROOTS[@]}"; do
+        [[ -n ${exchange_probe} ]] && rm -rf -- "${exchange_probe}"
+    done
     exit "${status}"
 }
 
@@ -1690,6 +1777,7 @@ trap 'signal_exit TERM' TERM
 trap 'signal_exit HUP' HUP
 
 preflight_destination_ancestors
+preflight_atomic_exchange_destinations
 verify_bootstrap_identity
 verify_jq
 if [[ ${MODE} == install ]]; then

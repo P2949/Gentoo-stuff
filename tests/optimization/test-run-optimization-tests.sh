@@ -237,8 +237,8 @@ printf '%s\n' \
     'esac' \
     >"${TIMEOUT_FAKE_GO}"
 chmod 0755 -- "${TIMEOUT_DRIVER}" "${TIMEOUT_RUNNER}" "${TIMEOUT_FAKE_GO}"
-for required_timeout_tool in bash dirname env find mkdir readelf realpath rg setsid \
-    sha256sum sleep sort stat tail tee timeout; do
+for required_timeout_tool in bash dirname env find mkdir readelf realpath rg sed \
+    setsid sha256sum sleep sort stat tail tee timeout; do
     [[ ${required_timeout_tool} == go ]] && continue
     required_timeout_path=$(command -v -- "${required_timeout_tool}") || \
         fail "self-test prerequisite is unavailable: ${required_timeout_tool}"
@@ -304,6 +304,37 @@ assert_process_gone() {
 [[ -s ${TIMEOUT_CHILD_PID_FILE} ]] || fail 'timed-out runner did not record its child PID'
 assert_process_gone 'capability runner' "$(<"${TIMEOUT_PARENT_PID_FILE}")"
 assert_process_gone 'capability child' "$(<"${TIMEOUT_CHILD_PID_FILE}")"
+
+# Exit 77 is the conventional explicit fixture skip.  It must remain a SKIP
+# with its reason and must not make the aggregate driver fail.
+SKIP_OUTPUT=${FIXTURE}/explicit-fixture-skip-output
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf "SKIP: deliberate hermetic capability limitation\\n"' \
+    'exit 77' >"${TIMEOUT_RUNNER}"
+chmod 0755 -- "${TIMEOUT_RUNNER}"
+PATH=${TIMEOUT_BIN_ROOT} \
+    bash -- "${TIMEOUT_DRIVER}" --mode quick --capability go \
+    --output-dir "${SKIP_OUTPUT}" \
+    >"${FIXTURE}/explicit-fixture-skip-driver.log" 2>&1 || \
+    fail 'reason-bearing fixture exit 77 made the driver fail'
+SKIP_RESULT_ROWS=0
+SKIP_RESULT_DETAIL=
+while IFS=$'\t' read -r result_status result_name result_detail; do
+    if [[ ${result_name} == capability:go:* ]]; then
+        ((SKIP_RESULT_ROWS += 1))
+        [[ ${result_status} == SKIP ]] || \
+            fail "fixture exit 77 was not recorded as SKIP: ${result_status}"
+        SKIP_RESULT_DETAIL=${result_detail}
+    fi
+done <"${SKIP_OUTPUT}/results.tsv"
+[[ ${SKIP_RESULT_ROWS} -eq 1 ]] || \
+    fail "expected one explicit fixture SKIP row, found ${SKIP_RESULT_ROWS}"
+[[ ${SKIP_RESULT_DETAIL} == 'deliberate hermetic capability limitation '* && \
+    ${SKIP_RESULT_DETAIL} == *'exit_status=77 '* ]] || \
+    fail "fixture exit 77 lost its reason/status: ${SKIP_RESULT_DETAIL}"
+grep -Fxq 'fail=0' "${SKIP_OUTPUT}/summary.txt" || \
+    fail 'fixture exit 77 was counted as a failure'
 
 # Prove that the one-shot py_compile suite gets an isolated cache while
 # subprocess-heavy unittest discovery clears even an inherited cache prefix.

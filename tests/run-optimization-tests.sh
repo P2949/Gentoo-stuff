@@ -84,6 +84,8 @@ GO_PGO_ITERATIONS, and BOLT_FIXTURE_TRAIN_ITERATIONS) are passed through.
 The default quick mode never invokes perf or a PGO/BOLT training workload.
 All writes stay in a private test directory. Recovery tests use fake roots and
 mocked package/EFI tools; capability fixtures only build/profile local fixtures.
+An individual fixture exit status of 77 is recorded as an explicit reason-bearing
+SKIP rather than as a pass or failure.
 EOF
 }
 
@@ -473,7 +475,7 @@ run_case_with_deadline() {
     shift 3
     local slug=${name//[^[:alnum:]_.-]/_}
     local log=${LOG_ROOT}/${slug}.log
-    local status case_pgid started_at elapsed_seconds
+    local status case_pgid started_at elapsed_seconds skip_detail
     local deadline_state=within-limit process_group_cleanup=clean
 
     printf 'RUN:  %s\n' "${name}"
@@ -522,6 +524,13 @@ run_case_with_deadline() {
         record_result PASS "${name}" \
             "exit_status=0 log=${log} timeout_seconds=${timeout_seconds} kill_after_seconds=${kill_after_seconds} elapsed_seconds=${elapsed_seconds} deadline=${deadline_state} process_group_cleanup=${process_group_cleanup}"
         printf 'PASS: %s\n' "${name}"
+    elif ((status == 77)); then
+        ((SKIP_COUNT += 1))
+        skip_detail=$(sed -n 's/^SKIP: //p' "${log}" | tail -n 1)
+        [[ -n ${skip_detail} ]] || skip_detail='fixture exited with the conventional skip status 77'
+        record_result SKIP "${name}" \
+            "$(safe_detail "${skip_detail}") exit_status=77 log=${log} timeout_seconds=${timeout_seconds} kill_after_seconds=${kill_after_seconds} elapsed_seconds=${elapsed_seconds} deadline=${deadline_state} process_group_cleanup=${process_group_cleanup}"
+        printf 'SKIP: %s — %s\n' "${name}" "${skip_detail}"
     else
         ((FAIL_COUNT += 1))
         KEEP_TEMP=1
@@ -595,7 +604,8 @@ fi
 
 if resolve_executable "${SHELLCHECK:-shellcheck}"; then
     SHELLCHECK_BIN=${RESOLVED_TOOL}
-    run_case shellcheck "${SHELLCHECK_BIN}" -- "${SHELL_SOURCES[@]}"
+    run_case_in_repository shellcheck \
+        "${SHELLCHECK_BIN}" -- "${SHELL_SOURCES[@]}"
 else
     skip_case shellcheck \
         "${SHELLCHECK:-shellcheck} is not an executable in PATH; set SHELLCHECK=/absolute/path"
@@ -673,7 +683,9 @@ elif ! require_commands awk bash chmod cmp cp find flock git grep install jq ln 
     stat sync tr; then
     skip_case framework-installer "${PREFLIGHT_REASON}"
 else
-    run_case framework-installer bash -- "${FRAMEWORK_INSTALLER_FIXTURE}"
+    run_case framework-installer env \
+        TEST_CASE_TIMEOUT_SECONDS="${TEST_CASE_TIMEOUT_SECONDS}" \
+        bash -- "${FRAMEWORK_INSTALLER_FIXTURE}"
 fi
 
 NO_LEGACY_PGO_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-no-legacy-pgo.sh

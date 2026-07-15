@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import grp
 import importlib.util
 import os
 import shutil
@@ -78,6 +79,12 @@ class ProductionTrustTests(unittest.TestCase):
     def test_root_portage_lock_metadata_is_enforced(self) -> None:
         if os.geteuid() != 0:
             self.skipTest("root is required to construct exact root:portage metadata")
+        try:
+            grp.getgrnam(TOOL.PRODUCTION_LOCK_GROUP)
+        except KeyError:
+            self.skipTest(
+                "portable root environment has no production Portage group"
+            )
         portage_gid = TOOL.production_lock_group_gid()
         with tempfile.TemporaryDirectory(prefix="bolt-portage-lock.") as temporary:
             directory = Path(temporary)

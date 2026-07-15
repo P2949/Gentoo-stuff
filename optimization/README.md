@@ -79,6 +79,17 @@ behavior-changing upgrade operation. `/etc/portage`, `codex-local`, schemas,
 the external manifest, helpers, and the final QA implementation all resolve
 through that link.
 
+Replacing a pre-existing stable entry uses the kernel's same-filesystem
+`RENAME_EXCHANGE` operation through `/usr/bin/mv --exchange --no-copy`. Before
+creating the installer lock or any durable framework state, the installer
+performs a real directory exchange in every effective destination parent (or
+its nearest existing ancestor when the parent has not been created yet),
+checks the swapped payloads, removes the probes, and records the parent and
+device. An unsupported destination fails with an exact
+`destination filesystem does not support atomic exchange` diagnostic. The
+portable fixture emits an explicit exit-77 skip when its temporary filesystem
+lacks this kernel/filesystem capability; production never bypasses the gate.
+
 Each installed `portage/bashrc` carries its candidate's literal trusted
 framework target and exports that target for the lifetime of the Portage
 process. Helper and QA bootstraps honor the pin instead of re-reading
@@ -143,6 +154,9 @@ Code/configuration ancestors and immutable generation roots are root-owned and
 non-writable by group/other. Validated profiles use root:`portage` mode `0750`,
 BOLT caches remain root-only mode `0700`, and the raw-PGO top-level spool is
 root:root mode `0755` (traversable but not writable by build or desktop users).
+The only writable ancestor exception is the exact canonical root-owned
+`01777 /var/tmp` boundary; a non-sticky `0777` directory or any other writable
+ancestor is rejected.
 The workload framework must provision each exact generation/package job leaf
 separately as a root-owned sticky mode `1733` directory, or with an equally
 exact reviewed ACL covering both the Portage build identity and runtime training
