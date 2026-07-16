@@ -97,6 +97,8 @@ quick suites:
   shellcheck (same shell source set; skipped when unavailable)
   python-source-compilation (temporary pycache only)
   python-unit-tests
+  phase2-evidence-contract (clean-tree, plan-marker, tool, state, and detached-index binding)
+  production-profile-lock-crash-stress (300 crash/recovery cycles under load)
   package-env-duplicate-policy (portable checks plus required live Portage semantics on Gentoo)
   package-env-portage-semantic (explicit SKIP when the live Portage universe is unavailable)
   portage-config-cleanup (reviewed package.mask and shared O3 baseline)
@@ -107,8 +109,11 @@ quick suites:
   portage-pre-strip-integration (real disposable ebuild; root-only)
   portage-phase-identity (live userpriv/install/QA privilege boundary; root-only)
   portage-pgo-use-integration (real Clang generation/use/sidecar gate; root-only)
-  portage-sample-pgo-integration (real mapping/perf/sample/package.env gate;
+  portage-sample-pgo-integration (isolated diagnostic mapping/perf/sample lane;
                                   root-only and opt-in with clang-sample)
+  portage-sample-pgo-live-policy-integration (the same complete pipeline with
+                                  resolved live sandbox/userpriv/PID/network/IPC
+                                  policy; root-only and opt-in with clang-sample)
   bolt-command-policy (exact static layout policy in both BOLT command producers)
   bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
   bolt-pre-strip-hooks (hermetic capture/register/deploy and rollback fixture)
@@ -566,6 +571,34 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
+PHASE2_EVIDENCE_TOOL=${REPOSITORY_ROOT}/scripts/optimization/verify/phase2-evidence.py
+TEST_RUN_PROVENANCE_PENDING=${RUN_ROOT}/test-run-provenance.pending.json
+TEST_RUN_PROVENANCE=${RUN_ROOT}/test-run-provenance.json
+PROVENANCE_PYTHON=$(command -v python3 2>/dev/null || true)
+PROVENANCE_ACTIVE=0
+if [[ ! -f ${PHASE2_EVIDENCE_TOOL} || -L ${PHASE2_EVIDENCE_TOOL} ]]; then
+    skip_case phase2-run-provenance-start \
+        "evidence tool is absent or symlinked: ${PHASE2_EVIDENCE_TOOL}"
+elif [[ -z ${PROVENANCE_PYTHON} ]] || ! command -v git >/dev/null 2>&1; then
+    skip_case phase2-run-provenance-start \
+        'python3 or git is unavailable for exact test-run provenance'
+elif [[ -n $(git -C "${REPOSITORY_ROOT}" status --porcelain=v1 \
+    --untracked-files=all 2>/dev/null) ]]; then
+    skip_case phase2-run-provenance-start \
+        'repository is dirty or has untracked files; authoritative provenance requires a clean commit'
+else
+    run_case_in_repository phase2-run-provenance-start \
+        env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+        "${PROVENANCE_PYTHON}" "${PHASE2_EVIDENCE_TOOL}" \
+        run-provenance-start --repository-root "${REPOSITORY_ROOT}" \
+        --driver "${REPOSITORY_ROOT}/tests/run-optimization-tests.sh" \
+        --output "${TEST_RUN_PROVENANCE_PENDING}"
+    if [[ -f ${TEST_RUN_PROVENANCE_PENDING} && \
+        ! -L ${TEST_RUN_PROVENANCE_PENDING} ]]; then
+        PROVENANCE_ACTIVE=1
+    fi
+fi
+
 declare -a SHELL_SOURCES=()
 declare -a PYTHON_SOURCES=()
 declare -a PYTHON_TEST_DIRECTORIES=()
@@ -613,9 +646,11 @@ else
 fi
 
 PYTHON_BIN=
+PRODUCTION_PROFILE_LOCK_TEST=${REPOSITORY_ROOT}/tests/optimization/test_production_profile_lock_transaction.py
 if ! resolve_executable python3; then
     skip_case python-source-compilation 'python3 is unavailable'
     skip_case python-unit-tests 'python3 is unavailable'
+    skip_case production-profile-lock-crash-stress 'python3 is unavailable'
 else
     PYTHON_BIN=${RESOLVED_TOOL}
     if ((${#PYTHON_SOURCES[@]} == 0)); then
@@ -629,6 +664,8 @@ else
     fi
     if ((${#PYTHON_TEST_DIRECTORIES[@]} == 0)); then
         skip_case python-unit-tests 'no test_*.py source was discovered below tests/'
+        skip_case production-profile-lock-crash-stress \
+            'production profile-lock transaction test module is unavailable'
     else
         if ! resolve_executable zstd; then
             skip_case python-gpkg-zstd-subtests \
@@ -642,7 +679,32 @@ else
                 "${PYTHON_BIN}" -m unittest discover \
                 -s "${test_directory}" -p 'test_*.py' -v
         done
+        if [[ -f ${PRODUCTION_PROFILE_LOCK_TEST} &&
+              ! -L ${PRODUCTION_PROFILE_LOCK_TEST} ]]; then
+            run_case_in_repository production-profile-lock-crash-stress \
+                env -u PYTHONPYCACHEPREFIX \
+                GENTOO_OPT_COORDINATOR_CRASH_STRESS=1 \
+                PYTHONDONTWRITEBYTECODE=1 \
+                "${PYTHON_BIN}" -m unittest -v \
+                tests.optimization.test_production_profile_lock_transaction.ProductionProfileLockTransactionTests.test_child_barrier_crash_recovery_stress
+        else
+            skip_case production-profile-lock-crash-stress \
+                'production profile-lock transaction test module is unavailable'
+        fi
     fi
+fi
+
+PHASE2_EVIDENCE_TEST=${REPOSITORY_ROOT}/tests/optimization/test_phase2_evidence.py
+if [[ -z ${PYTHON_BIN} ]]; then
+    skip_case phase2-evidence-contract 'python3 is unavailable'
+elif [[ ! -f ${PHASE2_EVIDENCE_TEST} ]]; then
+    skip_case phase2-evidence-contract \
+        "fixture is absent: ${PHASE2_EVIDENCE_TEST}"
+else
+    run_case_in_repository phase2-evidence-contract \
+        env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+        "${PYTHON_BIN}" -m unittest discover \
+        -s tests/optimization -p test_phase2_evidence.py -v
 fi
 
 PACKAGE_ENV_DUPLICATE_CHECKER=${REPOSITORY_ROOT}/scripts/optimization/check-package-env-duplicates.py
@@ -771,27 +833,43 @@ else
     run_case portage-sample-production-env bash -- "${PORTAGE_SAMPLE_ENV_FIXTURE}"
 fi
 
+PORTAGE_SAMPLE_CASES=(
+    portage-sample-pgo-integration
+    portage-sample-pgo-live-policy-integration
+)
 if [[ ! -f ${PORTAGE_SAMPLE_PGO_FIXTURE} ]]; then
-    skip_case portage-sample-pgo-integration \
-        "fixture is absent: ${PORTAGE_SAMPLE_PGO_FIXTURE}"
+    for sample_case in "${PORTAGE_SAMPLE_CASES[@]}"; do
+        skip_case "${sample_case}" \
+            "fixture is absent: ${PORTAGE_SAMPLE_PGO_FIXTURE}"
+    done
 elif [[ ! -v 'SELECTED_CAPABILITIES[clang-sample]' ]]; then
-    skip_case portage-sample-pgo-integration \
-        'requires the explicitly selected clang-sample capability because it runs perf and a training workload'
+    for sample_case in "${PORTAGE_SAMPLE_CASES[@]}"; do
+        skip_case "${sample_case}" \
+            'requires the explicitly selected clang-sample capability because it runs perf and a training workload'
+    done
 elif ((EUID != 0)); then
-    skip_case portage-sample-pgo-integration \
-        'real disposable Portage sample-PGO integration requires a root driver invocation'
+    for sample_case in "${PORTAGE_SAMPLE_CASES[@]}"; do
+        skip_case "${sample_case}" \
+            'real disposable Portage sample-PGO integration requires a root driver invocation'
+    done
 elif ! require_commands awk b2sum bash chmod chown cp cmp cut date ebuild find \
     getent grep hostname id ln mkdir mktemp mv perf portageq python3 readelf \
     readlink realpath rm runuser sed sha256sum sha512sum sort stat sync tail \
-    timeout xargs; then
-    skip_case portage-sample-pgo-integration "${PREFLIGHT_REASON}"
+    timeout touch xargs; then
+    for sample_case in "${PORTAGE_SAMPLE_CASES[@]}"; do
+        skip_case "${sample_case}" "${PREFLIGHT_REASON}"
+    done
 else
     # The sample fixture's validator sidecars deliberately remain bound to its
     # separately fsynced authoritative Work tree.  Preserve this run root so
     # its log and publication-context.tsv remain a durable index to that tree.
     PRESERVE_RUN_ROOT_FOR_EXTERNAL_AUTHORITY=1
     run_case portage-sample-pgo-integration bash -- "${PORTAGE_SAMPLE_PGO_FIXTURE}" \
+        --portage-policy isolated-diagnostic \
         --output-dir "${RUN_ROOT}/portage-sample-pgo"
+    run_case portage-sample-pgo-live-policy-integration bash -- \
+        "${PORTAGE_SAMPLE_PGO_FIXTURE}" --portage-policy live \
+        --output-dir "${RUN_ROOT}/portage-sample-pgo-live-policy"
 fi
 
 BOLT_COMMAND_POLICY_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-command-policy.sh
@@ -1213,6 +1291,30 @@ EXIT_STATUS=0
         "${PRESERVE_RUN_ROOT_FOR_EXTERNAL_AUTHORITY}"
     printf 'results=%s\n' "${RESULTS_FILE}"
 } | tee "${RUN_ROOT}/summary.txt"
+
+if ((PROVENANCE_ACTIVE)); then
+    set +e
+    env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+        "${PROVENANCE_PYTHON}" "${PHASE2_EVIDENCE_TOOL}" \
+        run-provenance-finish \
+        --pending "${TEST_RUN_PROVENANCE_PENDING}" \
+        --results "${RESULTS_FILE}" --summary "${RUN_ROOT}/summary.txt" \
+        --output "${TEST_RUN_PROVENANCE}" \
+        >"${RUN_ROOT}/test-run-provenance-finalize.log" 2>&1
+    provenance_status=$?
+    set -e
+    if ((provenance_status != 0)); then
+        EXIT_STATUS=1
+        KEEP_TEMP=1
+        sed -i 's/^exit_status=.*/exit_status=1/' "${RUN_ROOT}/summary.txt"
+        printf 'FAIL: test-run provenance finalization (exit %d; log: %s)\n' \
+            "${provenance_status}" \
+            "${RUN_ROOT}/test-run-provenance-finalize.log" >&2
+        tail -n 80 -- "${RUN_ROOT}/test-run-provenance-finalize.log" >&2 || true
+    else
+        printf 'PROVENANCE: %s\n' "${TEST_RUN_PROVENANCE}"
+    fi
+fi
 
 printf 'SUMMARY: PASS=%d FAIL=%d SKIP=%d TOTAL=%d EXIT=%d\n' \
     "${PASS_COUNT}" "${FAIL_COUNT}" "${SKIP_COUNT}" "${TOTAL_COUNT}" \

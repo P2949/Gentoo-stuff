@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 import errno
+import importlib.util
 import os
 import pathlib
+import sys
 import tempfile
 import unittest
 
-from tests.optimization import authorization_token_scan as scanner
+
+SCANNER_PATH = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "scripts/optimization/pgo/authorization-token-scan.py"
+)
+SCANNER_SPEC = importlib.util.spec_from_file_location(
+    "gentoo_optimization_authorization_token_scan", SCANNER_PATH
+)
+if SCANNER_SPEC is None or SCANNER_SPEC.loader is None:
+    raise RuntimeError(f"cannot load authorization token scanner: {SCANNER_PATH}")
+scanner = importlib.util.module_from_spec(SCANNER_SPEC)
+sys.modules[SCANNER_SPEC.name] = scanner
+SCANNER_SPEC.loader.exec_module(scanner)
 
 
 TOKEN = b"a" * 64

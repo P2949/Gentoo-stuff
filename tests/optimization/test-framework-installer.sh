@@ -311,11 +311,11 @@ cp -a -- "${SOURCE_ROOT}/optimization/schema" "${REPOSITORY}/optimization/schema
 install -m 0755 -T -- "${SOURCE_ROOT}/scripts/optimization/install-framework.sh" \
     "${REPOSITORY}/scripts/optimization/install-framework.sh"
 install -m 0755 -T -- \
-    "${SOURCE_ROOT}/tests/optimization/production_profile_lock_transaction.py" \
-    "${REPOSITORY}/tests/optimization/production_profile_lock_transaction.py"
+    "${SOURCE_ROOT}/scripts/optimization/pgo/production-profile-lock-transaction.py" \
+    "${REPOSITORY}/scripts/optimization/pgo/production-profile-lock-transaction.py"
 install -m 0755 -T -- \
-    "${SOURCE_ROOT}/tests/optimization/authorization_token_scan.py" \
-    "${REPOSITORY}/tests/optimization/authorization_token_scan.py"
+    "${SOURCE_ROOT}/scripts/optimization/pgo/authorization-token-scan.py" \
+    "${REPOSITORY}/scripts/optimization/pgo/authorization-token-scan.py"
 
 # Git cannot represent empty directories.  The production installer rejects
 # them in behavior-affecting input trees, so normalize any harmless checkout
@@ -563,7 +563,7 @@ mkdir -m 0700 -- "${PROFILE_TRANSACTION_FIXTURE}" \
     "${PROFILE_TRANSACTION_ARTIFACTS}" "${PROFILE_TRANSACTION_PROFILES}" \
     "${PROFILE_TRANSACTION_EVIDENCE}" "${TARGET}/generation-state"
 install -m 0700 -T -- \
-    "${REPOSITORY}/tests/optimization/authorization_token_scan.py" \
+    "${REPOSITORY}/scripts/optimization/pgo/authorization-token-scan.py" \
     "${PROFILE_TRANSACTION_SCANNER}"
 cat >"${PROFILE_TRANSACTION_CHILD_COMMAND}" <<EOF
 #!/bin/bash
@@ -594,7 +594,7 @@ chmod 0700 -- "${PROFILE_TRANSACTION_CHILD_COMMAND}"
 /usr/bin/env -i HOME="${HOME}" USER="${USER:-fixture}" LOGNAME="${LOGNAME:-fixture}" \
     SHELL=/bin/bash PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
     PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -I -B \
-    "${REPOSITORY}/tests/optimization/production_profile_lock_transaction.py" run \
+    "${REPOSITORY}/scripts/optimization/pgo/production-profile-lock-transaction.py" run \
     --test-mode --test-root "${TARGET}" \
     --test-framework-lock "${TARGET}/run/gentoo-optimization/framework-install.lock" \
     --test-project-lock "${TARGET}/run/gentoo-optimization/project.lock" \
@@ -904,7 +904,94 @@ grep -Eq '^jq_sha256=[0-9a-f]{64}$' "${MANIFEST}" || fail 'manifest jq hash is i
     "${TARGET}/usr/local/libexec/gentoo-optimization/bolt/artifact_tool.py" || \
     fail 'fixed helper path still contains a mutable generation implementation'
 assert_coherent_indirections
+
+# Every Python implementation in the immutable candidate must be reached only
+# through the stable bootstrap, which pins isolated mode and disables bytecode
+# publication.  Exercise every discovered Python helper without relying on a
+# caller-supplied PYTHONDONTWRITEBYTECODE setting, then prove that neither the
+# candidate namespace nor its canonical inventory changed and that the strict
+# installer check remains clean.
+CANDIDATE_HELPER_TREE_BEFORE=${WORK}/candidate-helper-tree.before
+CANDIDATE_HELPER_TREE_AFTER=${WORK}/candidate-helper-tree.after
+CANDIDATE_HELPER_CHECK_LOG=${WORK}/candidate-helper-check.log
+find "${ACTIVE}" -mindepth 1 \
+    -printf '%y\t%P\t%m\t%U\t%G\t%s\t%l\n' | sort \
+    >"${CANDIDATE_HELPER_TREE_BEFORE}"
+CANDIDATE_INVENTORY_SHA256_BEFORE=$(sha256sum -- \
+    "${ACTIVE}/.candidate-inventory")
+CANDIDATE_INVENTORY_SHA256_BEFORE=${CANDIDATE_INVENTORY_SHA256_BEFORE%% *}
+[[ -z $(find "${ACTIVE}" \( -type d -name __pycache__ -o \
+    -type f \( -name '*.pyc' -o -name '*.pyo' \) \) -print -quit) ]] || \
+    fail 'immutable candidate already contains Python bytecode residue'
+mapfile -d '' -t CANDIDATE_PYTHON_HELPERS < <(
+    find "${ACTIVE}/libexec" -type f -name '*.py' -print0 | sort -z
+)
+(( ${#CANDIDATE_PYTHON_HELPERS[@]} > 0 )) || \
+    fail 'immutable candidate contains no Python helper implementations'
+for candidate_helper in "${CANDIDATE_PYTHON_HELPERS[@]}"; do
+    candidate_helper_relative=${candidate_helper#"${ACTIVE}/libexec/"}
+    [[ ${candidate_helper_relative} != "${candidate_helper}" ]] || \
+        fail "candidate Python helper escaped libexec: ${candidate_helper}"
+    candidate_helper_bootstrap=${TARGET}/usr/local/libexec/gentoo-optimization/${candidate_helper_relative}
+    [[ -x ${candidate_helper_bootstrap} ]] || \
+        fail "candidate Python helper lacks an executable stable bootstrap: ${candidate_helper_relative}"
+    grep -Fxq \
+        'os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", "-B", framework_tool, *sys.argv[1:]])' \
+        "${candidate_helper_bootstrap}" || \
+        fail "candidate Python bootstrap does not pin /usr/bin/python3 -I -B: ${candidate_helper_relative}"
+    env -u PYTHONDONTWRITEBYTECODE -u PYTHONPYCACHEPREFIX \
+        "${candidate_helper_bootstrap}" --help >/dev/null || \
+        fail "candidate Python helper bootstrap did not execute cleanly: ${candidate_helper_relative}"
+done
+[[ -z $(find "${ACTIVE}" \( -type d -name __pycache__ -o \
+    -type f \( -name '*.pyc' -o -name '*.pyo' \) \) -print -quit) ]] || \
+    fail 'stable Python helper dispatch wrote bytecode into the immutable candidate'
+find "${ACTIVE}" -mindepth 1 \
+    -printf '%y\t%P\t%m\t%U\t%G\t%s\t%l\n' | sort \
+    >"${CANDIDATE_HELPER_TREE_AFTER}"
+cmp -- "${CANDIDATE_HELPER_TREE_BEFORE}" "${CANDIDATE_HELPER_TREE_AFTER}" || \
+    fail 'stable Python helper execution changed the immutable candidate namespace'
+[[ ${CANDIDATE_INVENTORY_SHA256_BEFORE} == "$(sha256sum -- \
+    "${ACTIVE}/.candidate-inventory" | awk '{print $1}')" ]] || \
+    fail 'stable Python helper execution changed the candidate inventory'
+run_installer --check >"${CANDIDATE_HELPER_CHECK_LOG}" 2>&1 || {
+    sed -n '1,260p' "${CANDIDATE_HELPER_CHECK_LOG}" >&2
+    fail 'strict check failed after executing every candidate Python helper'
+}
+grep -Fq 'PASS: root-owned Phase 2 framework check verified' \
+    "${CANDIDATE_HELPER_CHECK_LOG}" || \
+    fail 'post-helper strict check omitted its PASS evidence'
+find "${ACTIVE}" -mindepth 1 \
+    -printf '%y\t%P\t%m\t%U\t%G\t%s\t%l\n' | sort \
+    >"${CANDIDATE_HELPER_TREE_AFTER}"
+cmp -- "${CANDIDATE_HELPER_TREE_BEFORE}" "${CANDIDATE_HELPER_TREE_AFTER}" || \
+    fail 'post-helper strict check changed the immutable candidate namespace'
 HELPER_BOOTSTRAP=${TARGET}/usr/local/libexec/gentoo-optimization/bolt/artifact_tool.py
+
+# The immediately preceding schema installed ten stable helper bootstraps.  A
+# same-source repair must recognize that exact reviewed tree and publish the two
+# new production transaction helpers atomically, without changing the selected
+# immutable candidate or requiring an unsafe manual migration.
+LEGACY_CURRENT=$(readlink -- "${CURRENT}")
+LEGACY_LIBEXEC=${TARGET}/usr/local/libexec/gentoo-optimization
+rm -f -- \
+    "${LEGACY_LIBEXEC}/pgo/production-profile-lock-transaction.py" \
+    "${LEGACY_LIBEXEC}/pgo/authorization-token-scan.py"
+[[ $(find "${LEGACY_LIBEXEC}" -type f | wc -l) -eq 10 ]] || \
+    fail 'legacy stable-bootstrap fixture does not contain exactly ten helpers'
+run_installer >"${LOG}" 2>&1 || {
+    sed -n '1,260p' "${LOG}" >&2
+    fail 'reviewed ten-helper stable-bootstrap migration failed'
+}
+[[ $(readlink -- "${CURRENT}") == "${LEGACY_CURRENT}" ]] || \
+    fail 'additive stable-bootstrap repair changed the active candidate'
+for added_helper in production-profile-lock-transaction.py authorization-token-scan.py; do
+    [[ -x ${LEGACY_LIBEXEC}/pgo/${added_helper} ]] || \
+        fail "additive stable-bootstrap repair omitted ${added_helper}"
+done
+run_installer --check >/dev/null || \
+    fail 'additive stable-bootstrap repair failed strict verification'
+assert_coherent_indirections
 
 # An installed policy binds the process to its literal candidate. Re-sourcing
 # the same candidate is harmless, but an upgrade must not make an old-bound
@@ -1110,16 +1197,28 @@ rm -f -- "${CANDIDATE_HARDLINK}"
 
 mapfile -t FIXTURE_MEMBER_GIDS < <(id -G | tr ' ' '\n')
 ALTERNATE_FIXTURE_GID=
+ALTERNATE_GID_PROBE=${WORK}/alternate-gid-capability-probe
+: >"${ALTERNATE_GID_PROBE}"
+chmod 0600 -- "${ALTERNATE_GID_PROBE}"
 for candidate_gid in "${FIXTURE_MEMBER_GIDS[@]}"; do
-    if [[ ${candidate_gid} != "$(id -g)" ]]; then
+    if [[ ${candidate_gid} != "$(id -g)" ]] &&
+       chgrp "${candidate_gid}" -- "${ALTERNATE_GID_PROBE}" 2>/dev/null &&
+       [[ $(stat -c %g -- "${ALTERNATE_GID_PROBE}") == "${candidate_gid}" ]] &&
+       chgrp "$(id -g)" -- "${ALTERNATE_GID_PROBE}" 2>/dev/null &&
+       [[ $(stat -c %g -- "${ALTERNATE_GID_PROBE}") == "$(id -g)" ]]; then
         ALTERNATE_FIXTURE_GID=${candidate_gid}
         break
     fi
+    chgrp "$(id -g)" -- "${ALTERNATE_GID_PROBE}" 2>/dev/null || \
+        fail 'alternate-GID capability probe could not restore its private inode'
 done
+rm -f -- "${ALTERNATE_GID_PROBE}"
 if [[ -n ${ALTERNATE_FIXTURE_GID} ]]; then
     chgrp "${ALTERNATE_FIXTURE_GID}" -- "${ACTIVE}/portage/make.conf"
     expect_failure 'candidate entry has the wrong owner/group:' run_installer --check
     chgrp "$(id -g)" -- "${ACTIVE}/portage/make.conf"
+else
+    printf 'SKIP-SUBTEST: no mapped supplementary GID can exercise candidate ownership mismatch\n'
 fi
 
 # Command substitution strips trailing newlines from readlink output.  The

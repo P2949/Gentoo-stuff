@@ -246,8 +246,8 @@ case_profile_transaction_journal_authorization_is_fail_closed() (
         : >"${lock}"
         chmod 0600 -- "${lock}"
     done
-    cp -- "${ROOT}/tests/optimization/production_profile_lock_transaction.py" "${helper}"
-    cp -- "${ROOT}/tests/optimization/authorization_token_scan.py" "${scanner}"
+    cp -- "${ROOT}/scripts/optimization/pgo/production-profile-lock-transaction.py" "${helper}"
+    cp -- "${ROOT}/scripts/optimization/pgo/authorization-token-scan.py" "${scanner}"
     chmod 0700 -- "${helper}" "${scanner}"
 
     cat >"${child}" <<EOF

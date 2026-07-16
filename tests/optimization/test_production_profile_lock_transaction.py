@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import importlib.util
 import json
 import os
 import pathlib
@@ -13,13 +15,24 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
+from unittest import mock
 
 
 HERE = pathlib.Path(__file__).resolve().parent
-TOOL = HERE / "production_profile_lock_transaction.py"
-TOKEN_SCANNER = HERE / "authorization_token_scan.py"
+REPOSITORY = HERE.parents[1]
+TOOL = REPOSITORY / "scripts/optimization/pgo/production-profile-lock-transaction.py"
+TOKEN_SCANNER = REPOSITORY / "scripts/optimization/pgo/authorization-token-scan.py"
+COORDINATOR_SPEC = importlib.util.spec_from_file_location(
+    "gentoo_optimization_production_profile_lock_transaction", TOOL
+)
+if COORDINATOR_SPEC is None or COORDINATOR_SPEC.loader is None:
+    raise RuntimeError(f"cannot load production profile-lock coordinator: {TOOL}")
+coordinator = importlib.util.module_from_spec(COORDINATOR_SPEC)
+sys.modules[COORDINATOR_SPEC.name] = coordinator
+COORDINATOR_SPEC.loader.exec_module(coordinator)
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 GENERATION = {
     "generation_id": "phase2-production-lock-test",
@@ -29,12 +42,58 @@ GENERATION = {
 GATE_RUN_ID = "phase2-production-lock-test-run"
 
 
+def pid_namespace_capability() -> tuple[bool, str]:
+    """Probe the exact containment primitive instead of inferring availability."""
+
+    unshare = pathlib.Path("/usr/bin/unshare")
+    if os.geteuid() != 0:
+        return False, "PID-namespace containment probe requires root"
+    if not unshare.is_file():
+        return False, "PID-namespace containment probe lacks /usr/bin/unshare"
+    try:
+        completed = subprocess.run(
+            [
+                os.fspath(unshare),
+                "--pid",
+                "--fork",
+                "--kill-child=KILL",
+                "--mount-proc",
+                "--",
+                "/bin/true",
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return False, f"PID-namespace containment probe failed: {error}"
+    if completed.returncode != 0:
+        diagnostic = completed.stderr.strip() or "no diagnostic"
+        return (
+            False,
+            "PID-namespace containment probe was denied: " + diagnostic,
+        )
+    return True, "PID-namespace containment probe passed"
+
+
+PID_NAMESPACE_AVAILABLE, PID_NAMESPACE_REASON = pid_namespace_capability()
+CRASH_STRESS_REPETITIONS = 100
+
+
 class Fixture:
     def __init__(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(
             prefix="gentoo-production-profile-locks."
         )
         self.root = pathlib.Path(self.temporary.name)
+        self.python_path = self.root / "fixture-python"
+        shutil.copyfile(
+            pathlib.Path(sys.executable).resolve(strict=True), self.python_path
+        )
+        self.python_path.chmod(0o700)
+        self.python = os.fspath(self.python_path)
         self.run = self.root / "run"
         self.state = self.root / "state"
         self.run.mkdir(mode=0o700)
@@ -114,6 +173,16 @@ class Fixture:
             "2",
         ]
 
+    def coordinator_paths(self) -> object:
+        return coordinator.Paths(
+            framework=self.framework,
+            project=self.project,
+            generation=self.generation,
+            journal=self.journal,
+            test_mode=True,
+            test_root=self.root,
+        )
+
     def run_arguments(
         self,
         command: list[str] | None = None,
@@ -124,7 +193,7 @@ class Fixture:
         test_pid_namespace: bool = False,
     ) -> list[str]:
         arguments = [
-            sys.executable,
+            self.python,
             os.fspath(TOOL),
             "run",
             *self.path_arguments(),
@@ -162,12 +231,17 @@ class Fixture:
         if test_pid_namespace:
             arguments.append("--test-pid-namespace")
         arguments.append("--")
-        arguments.extend(command or [sys.executable, "-c", "raise SystemExit(0)"])
+        child_command = list(
+            command or [self.python, "-c", "raise SystemExit(0)"]
+        )
+        if child_command[0] == sys.executable:
+            child_command[0] = self.python
+        arguments.extend(child_command)
         return arguments
 
     def recover_arguments(self, failpoint: str | None = None) -> list[str]:
         arguments = [
-            sys.executable,
+            self.python,
             os.fspath(TOOL),
             "recover",
             *self.path_arguments(),
@@ -266,13 +340,17 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         self.fixture.cleanup()
 
     def completed(self, arguments: list[str]) -> subprocess.CompletedProcess[str]:
+        environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        # This selector belongs to the unittest runner, never to the exact
+        # coordinator environment whose GENTOO_OPT_* rejection is under test.
+        environment.pop("GENTOO_OPT_COORDINATOR_CRASH_STRESS", None)
         return subprocess.run(
             arguments,
             check=False,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            env=environment,
         )
 
     def assert_processes_gone(self, pids: list[int]) -> None:
@@ -291,6 +369,123 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 break
             time.sleep(0.02)
         self.assertFalse(live, f"child process group survived: {live}")
+
+    def test_fixture_owned_python_executes_from_its_exact_trusted_path(self) -> None:
+        metadata = self.fixture.python_path.lstat()
+        self.assertTrue(stat.S_ISREG(metadata.st_mode))
+        self.assertEqual(metadata.st_uid, os.geteuid())
+        self.assertEqual(metadata.st_gid, os.getegid())
+        self.assertEqual(stat.S_IMODE(metadata.st_mode), 0o700)
+        self.assertEqual(metadata.st_nlink, 1)
+        completed = self.completed(
+            [
+                self.fixture.python,
+                "-c",
+                "import os,sys; print(os.path.realpath(sys.executable))",
+            ]
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            completed.stdout.strip(), os.path.realpath(self.fixture.python)
+        )
+
+    def test_proc_stat_parser_accepts_non_ascii_and_delimiter_in_comm(self) -> None:
+        fields = [b"R", b"1", b"778"] + [b"0"] * 16 + [b"987654"]
+        payload = b"777 (worker ) \xff name) " + b" ".join(fields) + b"\n"
+        identity = coordinator.parse_process_stat_identity(payload, 777)
+        self.assertEqual(identity.process_group, 778)
+        self.assertEqual(identity.start_ticks, "987654")
+
+    def test_proc_stat_parser_rejects_non_ascii_identity_field_cleanly(self) -> None:
+        fields = [b"R", b"1", b"\xff"] + [b"0"] * 16 + [b"987654"]
+        payload = b"777 (worker) " + b" ".join(fields) + b"\n"
+        with self.assertRaisesRegex(
+            coordinator.TransactionError,
+            "cannot parse transaction process identity",
+        ):
+            coordinator.parse_process_stat_identity(payload, 777)
+
+    def test_leaderless_live_numeric_group_is_never_signalled(self) -> None:
+        document = {
+            "boot_id": "fixture-boot",
+            "child": {
+                "pid": 424242,
+                "process_group": 424242,
+                "start_ticks": "123456",
+            },
+        }
+        with (
+            mock.patch.object(coordinator, "boot_id", return_value="fixture-boot"),
+            mock.patch.object(
+                coordinator, "process_stat_identity", return_value=None
+            ),
+            mock.patch.object(coordinator, "process_group_exists", return_value=True),
+            mock.patch.object(coordinator.os, "getpgrp", return_value=31337),
+            mock.patch.object(coordinator.os, "killpg") as killpg,
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError,
+                "refusing ambiguous/reused group",
+            ):
+                coordinator.quiesce_recorded_process_group(document, 0.0)
+        killpg.assert_not_called()
+
+    def test_live_exact_leader_process_group_is_quiesced(self) -> None:
+        child = subprocess.Popen(
+            [self.fixture.python, "-c", "import time; time.sleep(60)"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            identity = coordinator.process_stat_identity(child.pid)
+            self.assertIsNotNone(identity)
+            assert identity is not None
+            document = {
+                "boot_id": coordinator.boot_id(),
+                "child": {
+                    "pid": child.pid,
+                    "process_group": identity.process_group,
+                    "start_ticks": identity.start_ticks,
+                },
+            }
+            reaper = threading.Thread(target=child.wait, daemon=True)
+            reaper.start()
+            coordinator.quiesce_recorded_process_group(document, 1.0)
+            reaper.join(timeout=3)
+            self.assertFalse(reaper.is_alive())
+            self.assertNotEqual(child.returncode, 0)
+            self.assertFalse(coordinator.process_group_exists(child.pid))
+        finally:
+            if child.poll() is None:
+                os.killpg(child.pid, signal.SIGKILL)
+                child.wait(timeout=3)
+
+    def test_executable_identity_rejects_setid_and_file_capability(self) -> None:
+        executable = self.fixture.root / "privileged-executable"
+        shutil.copyfile(self.fixture.python_path, executable)
+        executable.chmod(0o4700)
+        with self.assertRaisesRegex(
+            coordinator.TransactionError, "not a trusted executable"
+        ):
+            coordinator.inspect_executable_identity(
+                executable,
+                self.fixture.coordinator_paths(),
+                "fixture privileged executable",
+            )
+        executable.chmod(0o700)
+        with mock.patch.object(
+            coordinator.os, "getxattr", return_value=b"fixture-capability"
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError,
+                "forbidden security.capability",
+            ):
+                coordinator.inspect_executable_identity(
+                    executable,
+                    self.fixture.coordinator_paths(),
+                    "fixture capability executable",
+                )
 
     def test_success_and_child_failure_restore_exact_empty_inodes(self) -> None:
         marker = self.fixture.root / "child-marker"
@@ -959,19 +1154,17 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         self.assertIn("test root must be an owner-private real directory", linked.stderr)
         self.fixture.assert_restored(self)
 
-    def test_signal_terminates_complete_child_process_group_and_restores(self) -> None:
-        pid_file = self.fixture.root / "child-pids"
+    def test_signal_terminates_exact_child_supervisor_and_restores(self) -> None:
+        pid_file = self.fixture.root / "child-pid"
         child_code = "\n".join(
             (
-                "import os, pathlib, subprocess, time",
-                "grandchild = subprocess.Popen([%r, '-c', 'import time; time.sleep(60)'])"
-                % sys.executable,
-                "pathlib.Path(%r).write_text(f'{os.getpid()} {grandchild.pid}')"
+                "import os, pathlib, time",
+                "pathlib.Path(%r).write_text(str(os.getpid()))"
                 % os.fspath(pid_file),
                 "time.sleep(60)",
             )
         )
-        coordinator = subprocess.Popen(
+        coordinator_process = subprocess.Popen(
             self.fixture.run_arguments([sys.executable, "-c", child_code]),
             text=True,
             stdout=subprocess.PIPE,
@@ -982,17 +1175,34 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         while not pid_file.exists() and time.monotonic() < deadline:
             time.sleep(0.02)
         self.assertTrue(pid_file.exists())
-        child_pid, grandchild_pid = map(int, pid_file.read_text().split())
-        coordinator.send_signal(signal.SIGTERM)
-        stdout, stderr = coordinator.communicate(timeout=5)
-        self.assertEqual(coordinator.returncode, 143, f"{stdout}\n{stderr}")
+        child_pid = int(pid_file.read_text())
+        coordinator_process.send_signal(signal.SIGTERM)
+        stdout, stderr = coordinator_process.communicate(timeout=5)
+        self.assertEqual(
+            coordinator_process.returncode, 143, f"{stdout}\n{stderr}"
+        )
         self.fixture.assert_restored(self)
-        self.assert_processes_gone([child_pid, grandchild_pid])
+        self.assert_processes_gone([child_pid])
 
-    @unittest.skipUnless(
-        os.geteuid() == 0 and pathlib.Path("/usr/bin/unshare").is_file(),
-        "requires root and util-linux unshare",
-    )
+    def test_timeout_path_never_signals_reused_numeric_process_group(self) -> None:
+        process = mock.Mock()
+        process.pid = 424242
+        process.wait.return_value = 0
+        with (
+            mock.patch.object(
+                coordinator.os, "pidfd_open", side_effect=ProcessLookupError
+            ),
+            mock.patch.object(coordinator, "process_group_exists", return_value=True),
+            mock.patch.object(coordinator.os, "killpg") as killpg,
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError,
+                "refusing an ambiguous/reused group signal",
+            ):
+                coordinator.terminate_process_group(process, 0.0)
+        killpg.assert_not_called()
+
+    @unittest.skipUnless(PID_NAMESPACE_AVAILABLE, PID_NAMESPACE_REASON)
     def test_pid_namespace_kills_escaped_setsid_descendant_before_scan(self) -> None:
         escaped_marker = self.fixture.artifacts / "escaped-descendant-ran"
         grandchild_code = (
@@ -1021,7 +1231,7 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         )
         self.fixture.assert_restored(self)
 
-    def test_sigkill_coordinator_recovery_terminates_recorded_process_group(self) -> None:
+    def test_sigkill_direct_child_with_leaderless_group_fails_ambiguous(self) -> None:
         pid_file = self.fixture.root / "orphan-child-pids"
         child_code = "\n".join(
             (
@@ -1033,7 +1243,7 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 "time.sleep(60)",
             )
         )
-        coordinator = subprocess.Popen(
+        coordinator_process = subprocess.Popen(
             self.fixture.run_arguments([sys.executable, "-c", child_code]),
             text=True,
             stdout=subprocess.PIPE,
@@ -1049,25 +1259,42 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         self.assertTrue(self.fixture.child_identity.is_file())
         child_pid, grandchild_pid = map(int, pid_file.read_text().split())
         try:
-            coordinator.kill()
-            coordinator.wait(timeout=5)
-            self.assertEqual(coordinator.returncode, -signal.SIGKILL)
+            coordinator_process.kill()
+            coordinator_process.wait(timeout=5)
+            self.assertEqual(coordinator_process.returncode, -signal.SIGKILL)
 
+            rejected = self.completed(self.fixture.recover_arguments())
+            self.assertEqual(rejected.returncode, 1, rejected.stderr)
+            self.assertIn("refusing ambiguous/reused group", rejected.stderr)
+            self.assertTrue(self.fixture.journal.is_file())
+            self.assertTrue(pathlib.Path(f"/proc/{grandchild_pid}").exists())
+
+            # The fixture owns this known direct-test group, so it can remove
+            # it explicitly. Production recovery itself must never make this
+            # unprovable kill based only on a recycled numeric PGID.
+            os.killpg(child_pid, signal.SIGKILL)
+            self.assert_processes_gone([child_pid, grandchild_pid])
+            group_deadline = time.monotonic() + 3
+            while (
+                coordinator.process_group_exists(child_pid)
+                and time.monotonic() < group_deadline
+            ):
+                time.sleep(0.02)
+            self.assertFalse(coordinator.process_group_exists(child_pid))
             recovered = self.completed(self.fixture.recover_arguments())
             self.assertEqual(recovered.returncode, 0, recovered.stderr)
             self.assertIn("RECOVERED", recovered.stdout)
-            self.assert_processes_gone([child_pid, grandchild_pid])
             receipt = json.loads(self.fixture.receipt.read_text(encoding="utf-8"))
             self.assertEqual(receipt["status"], "recovered-interrupted")
             self.assertIsNone(receipt["child_exit_status"])
             self.fixture.assert_restored(self)
         finally:
-            with self.assertRaises((ProcessLookupError, PermissionError)):
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(child_pid, signal.SIGKILL)
-            if coordinator.stdout is not None:
-                coordinator.stdout.close()
-            if coordinator.stderr is not None:
-                coordinator.stderr.close()
+            if coordinator_process.stdout is not None:
+                coordinator_process.stdout.close()
+            if coordinator_process.stderr is not None:
+                coordinator_process.stderr.close()
 
     def test_child_barrier_crash_windows_never_run_unrecorded_workload(self) -> None:
         for failpoint, expected_status, expects_sidecar, expects_partial in (
@@ -1095,6 +1322,68 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 self.assertEqual(recovered.returncode, 0, recovered.stderr)
                 self.assertFalse(marker.exists())
                 self.fixture.assert_restored(self)
+
+    @unittest.skipUnless(
+        os.environ.get("GENTOO_OPT_COORDINATOR_CRASH_STRESS") == "1",
+        "dedicated coordinator crash-stress case is not selected",
+    )
+    def test_child_barrier_crash_recovery_stress(self) -> None:
+        """Exercise each barrier crash window 100 times during process churn."""
+
+        churn_code = "\n".join(
+            (
+                "import subprocess",
+                "while True:",
+                "    subprocess.run(['/bin/true'], check=True)",
+            )
+        )
+        churn = subprocess.Popen(
+            [self.fixture.python, "-c", churn_code],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            for failpoint, expected_status in (
+                ("child-after-spawn", 93),
+                ("child-sidecar-after-partial-fsync", 99),
+                ("child-after-sidecar", 94),
+            ):
+                for repetition in range(CRASH_STRESS_REPETITIONS):
+                    with self.subTest(
+                        failpoint=failpoint, repetition=repetition
+                    ):
+                        marker = self.fixture.root / (
+                            f"stress-workload-{failpoint}-{repetition}"
+                        )
+                        crashed = self.completed(
+                            self.fixture.run_arguments(
+                                [
+                                    self.fixture.python,
+                                    "-c",
+                                    "import pathlib; "
+                                    f"pathlib.Path({os.fspath(marker)!r}).touch()",
+                                ],
+                                failpoint=failpoint,
+                            )
+                        )
+                        self.assertEqual(
+                            crashed.returncode, expected_status, crashed.stderr
+                        )
+                        self.assertFalse(marker.exists())
+                        recovered = self.completed(self.fixture.recover_arguments())
+                        self.assertEqual(
+                            recovered.returncode, 0, recovered.stderr
+                        )
+                        self.assertFalse(marker.exists())
+                        self.fixture.assert_restored(self)
+        finally:
+            churn.terminate()
+            try:
+                churn.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                os.killpg(churn.pid, signal.SIGKILL)
+                churn.wait(timeout=3)
 
     def test_child_sidecar_is_bound_to_exact_journal_bytes(self) -> None:
         crashed = self.completed(

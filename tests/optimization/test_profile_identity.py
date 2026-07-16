@@ -175,7 +175,7 @@ class Fixture:
 
     def manifest(self) -> dict[str, Any]:
         return {
-            "schema_version": 2,
+            "schema_version": 3,
             "category": "dev-util",
             "pf": "example-1.2.3-r1",
             "slot": "0",
@@ -410,6 +410,36 @@ class FingerprintTest(unittest.TestCase):
             self.assertEqual(alias_stdout.strip(), fingerprint)
             self.assertFalse(list(fixture.root.glob("*.partial")))
 
+    def test_features_preserve_portage_last_token_wins_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Fixture(Path(directory))
+            disabled = fixture.manifest()
+            disabled["features"] = ["sandbox", "ccache", "-ccache"]
+            enabled = fixture.manifest()
+            enabled["features"] = ["sandbox", "-ccache", "ccache"]
+
+            disabled_status, disabled_stdout, disabled_stderr = fixture.fingerprint(
+                disabled
+            )
+            enabled_status, enabled_stdout, enabled_stderr = fixture.fingerprint(enabled)
+            self.assertEqual(disabled_status, 0, disabled_stderr)
+            self.assertEqual(enabled_status, 0, enabled_stderr)
+            self.assertNotEqual(disabled_stdout.strip(), enabled_stdout.strip())
+
+            repeated = copy.deepcopy(disabled)
+            repeated["features"] = ["ccache", "sandbox", "ccache", "-ccache"]
+            repeated_status, repeated_stdout, repeated_stderr = fixture.fingerprint(
+                repeated
+            )
+            self.assertEqual(repeated_status, 0, repeated_stderr)
+            self.assertEqual(repeated_stdout.strip(), disabled_stdout.strip())
+
+            reordered_use = copy.deepcopy(disabled)
+            reordered_use["use_flags"].reverse()
+            use_status, use_stdout, use_stderr = fixture.fingerprint(reordered_use)
+            self.assertEqual(use_status, 0, use_stderr)
+            self.assertEqual(use_stdout.strip(), disabled_stdout.strip())
+
     def test_every_build_axis_and_ordered_environment_stack_affect_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = Fixture(Path(directory))
@@ -538,6 +568,32 @@ class FingerprintTest(unittest.TestCase):
             module["kernel_release"] = None
             status, _stdout, _stderr = fixture.fingerprint(module)
             self.assertEqual(status, 1)
+
+            legacy = fixture.manifest()
+            legacy["schema_version"] = 2
+            status, _stdout, stderr = fixture.fingerprint(legacy)
+            self.assertEqual(status, 1)
+            self.assertIn("unsupported fingerprint schema_version", stderr)
+
+    def test_repository_has_no_legacy_package_fingerprint_producer(self) -> None:
+        legacy_schema = '"schema_version"' + ": 2"
+        candidates = []
+        for relative_root in ("optimization", "scripts", "tests"):
+            for path in (REPOSITORY_ROOT / relative_root).rglob("*"):
+                if not path.is_file() or path.suffix not in {".py", ".sh"}:
+                    continue
+                source = path.read_text(encoding="utf-8")
+                if '"package_env_files"' in source and '"ebuild_sha256"' in source:
+                    candidates.append(path)
+        self.assertGreaterEqual(len(candidates), 3)
+        for path in candidates:
+            with self.subTest(path=path.relative_to(REPOSITORY_ROOT)):
+                source = path.read_text(encoding="utf-8")
+                self.assertNotIn(legacy_schema, source)
+                if path == TOOL_PATH:
+                    self.assertIn("SCHEMA_VERSION = 3", source)
+                else:
+                    self.assertIn('"schema_version": 3', source)
 
     def test_only_amd64_and_x86_abi_lanes_are_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

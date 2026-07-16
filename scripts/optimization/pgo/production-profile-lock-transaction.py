@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test-only coordinator for exercising the real PGO lock hierarchy safely.
+"""Crash-safe coordinator for the live sample-PGO profile-lock transaction.
 
 The production defaults are intentionally fixed.  Alternate paths are accepted
 only with an explicit private test root, so this helper cannot be used to make
@@ -1028,18 +1028,59 @@ def boot_id() -> str:
     return value
 
 
-def process_start_ticks(pid: int) -> str | None:
+@dataclass(frozen=True)
+class ProcessStatIdentity:
+    """The identity fields read from one indivisible /proc/PID/stat snapshot."""
+
+    process_group: int
+    start_ticks: str
+
+
+def parse_process_stat_identity(value: bytes, pid: int) -> ProcessStatIdentity:
+    """Parse one raw procfs stat payload without decoding its arbitrary comm."""
+
+    prefix, separator, suffix = value.rpartition(b") ")
+    fields = suffix.split() if separator else []
+    recorded_pid, pid_separator, _command = prefix.partition(b" (")
+    expected_pid = str(pid).encode("ascii")
+    if (
+        not pid_separator
+        or recorded_pid != expected_pid
+        or len(fields) <= 19
+        or not fields[2].isdigit()
+        or int(fields[2]) <= 0
+        or not fields[19].isdigit()
+    ):
+        fail(f"cannot parse transaction process identity for PID {pid}")
+    return ProcessStatIdentity(
+        process_group=int(fields[2]),
+        start_ticks=fields[19].decode("ascii"),
+    )
+
+
+def process_stat_identity(pid: int) -> ProcessStatIdentity | None:
+    """Read process-group and start identity from the same procfs payload.
+
+    Reading these fields separately creates an ESRCH race when a recorded
+    barrier exits between the start-time read and ``getpgid(2)``.  A single
+    stat payload is either a coherent identity snapshot or the process is
+    already gone; PID reuse is detected by the caller from ``start_ticks``.
+    """
+
     try:
-        value = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+        value = Path(f"/proc/{pid}/stat").read_bytes()
     except (FileNotFoundError, ProcessLookupError):
         return None
     except OSError as error:
+        if error.errno in {errno.ENOENT, errno.ESRCH}:
+            return None
         fail(f"cannot inspect transaction owner PID {pid}: {error}")
-    _prefix, separator, suffix = value.rpartition(") ")
-    fields = suffix.split() if separator else []
-    if len(fields) <= 19 or not fields[19].isdigit():
-        fail(f"cannot parse transaction owner start time for PID {pid}")
-    return fields[19]
+    return parse_process_stat_identity(value, pid)
+
+
+def process_start_ticks(pid: int) -> str | None:
+    identity = process_stat_identity(pid)
+    return None if identity is None else identity.start_ticks
 
 
 def current_start_ticks() -> str:
@@ -1127,6 +1168,19 @@ def inspect_executable_identity(
     try:
         if FileIdentity.from_stat(os.fstat(descriptor)) != before:
             fail(f"{label} changed while it was opened")
+        try:
+            os.getxattr(descriptor, "security.capability")
+        except OSError as error:
+            absent_errors = {
+                errno.ENODATA,
+                errno.ENOTSUP,
+                getattr(errno, "ENOATTR", errno.ENODATA),
+                getattr(errno, "EOPNOTSUPP", errno.ENOTSUP),
+            }
+            if error.errno not in absent_errors:
+                fail(f"cannot inspect {label} file capabilities: {error}")
+        else:
+            fail(f"{label} carries a forbidden security.capability xattr")
         digest = hashlib.sha256()
         while True:
             chunk = os.read(descriptor, 1024 * 1024)
@@ -3047,25 +3101,41 @@ def terminate_process_group(
     process: subprocess.Popen[bytes], kill_after: float
 ) -> None:
     process_group = process.pid
-    if not process_group_exists(process_group):
+    try:
+        pidfd = os.pidfd_open(process.pid, 0)
+    except ProcessLookupError:
         with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=0.1)
+        if process_group_exists(process_group):
+            fail(
+                "child supervisor is absent while its numeric process group "
+                "remains live; refusing an ambiguous/reused group signal"
+            )
         return
-    with contextlib.suppress(ProcessLookupError):
-        os.killpg(process_group, signal.SIGTERM)
+    except OSError as error:
+        fail(f"cannot open a pidfd for the child supervisor: {error}")
+    try:
+        with contextlib.suppress(ProcessLookupError):
+            signal.pidfd_send_signal(pidfd, signal.SIGTERM)
+        try:
+            process.wait(timeout=kill_after)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError):
+                signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                process.wait(timeout=kill_after)
+    finally:
+        os.close(pidfd)
+    if process.poll() is None:
+        fail(f"child supervisor survived pidfd SIGKILL: {process.pid}")
     deadline = time.monotonic() + kill_after
     while process_group_exists(process_group) and time.monotonic() < deadline:
         time.sleep(0.02)
     if process_group_exists(process_group):
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(process_group, signal.SIGKILL)
-        deadline = time.monotonic() + kill_after
-        while process_group_exists(process_group) and time.monotonic() < deadline:
-            time.sleep(0.02)
-    with contextlib.suppress(subprocess.TimeoutExpired):
-        process.wait(timeout=kill_after)
-    if process_group_exists(process_group):
-        fail(f"child process group survived SIGKILL: {process_group}")
+        fail(
+            "child supervisor exited but its numeric process group remains live; "
+            "refusing an ambiguous/reused group signal"
+        )
 
 
 def quiesce_recorded_process_group(
@@ -3084,52 +3154,72 @@ def quiesce_recorded_process_group(
         fail("internal error: recorded child identity has invalid types")
     if document["boot_id"] != boot_id():
         return
-    observed_start = process_start_ticks(child_pid)
-    if observed_start is None:
-        if process_group_exists(process_group):
+
+    def wait_for_group_teardown() -> bool:
+        deadline = time.monotonic() + kill_after
+        while process_group_exists(process_group) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        return not process_group_exists(process_group)
+
+    def refuse_leaderless_group() -> None:
+        if process_group_exists(process_group) and not wait_for_group_teardown():
             if process_group == os.getpgrp():
                 fail("recorded orphan process group aliases the recovery coordinator")
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(process_group, signal.SIGTERM)
-            deadline = time.monotonic() + kill_after
-            while process_group_exists(process_group) and time.monotonic() < deadline:
-                time.sleep(0.02)
-            if process_group_exists(process_group):
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(process_group, signal.SIGKILL)
-                deadline = time.monotonic() + kill_after
-                while (
-                    process_group_exists(process_group)
-                    and time.monotonic() < deadline
-                ):
-                    time.sleep(0.02)
-            if process_group_exists(process_group):
-                fail(f"recorded orphan process group survived SIGKILL: {process_group}")
+            fail(
+                "recorded child leader is absent while its numeric process "
+                f"group remains live; refusing ambiguous/reused group: {process_group}"
+            )
+
+    observed = process_stat_identity(child_pid)
+    if observed is None:
+        # A numeric PGID can be reused once the original leader and members are
+        # gone. Required --kill-child containment must tear down genuine
+        # descendants; never signal a leaderless numeric group from recovery.
+        refuse_leaderless_group()
         return
-    if observed_start != start_ticks:
+    if observed.start_ticks != start_ticks:
         fail("recorded child PID was reused by a different process")
-    try:
-        observed_group = os.getpgid(child_pid)
-    except ProcessLookupError:
-        observed_group = -1
-    if observed_group != process_group:
+    if observed.process_group != process_group:
         fail("recorded child process-group identity changed")
     if child_pid == os.getpid() or process_group == os.getpgrp():
         fail("recorded child identity aliases the recovery coordinator")
 
-    with contextlib.suppress(ProcessLookupError):
-        os.killpg(process_group, signal.SIGTERM)
-    deadline = time.monotonic() + kill_after
-    while process_group_exists(process_group) and time.monotonic() < deadline:
-        time.sleep(0.02)
-    if process_group_exists(process_group):
+    # Bind signals to this process instance, never to a reusable numeric PID or
+    # PGID. Revalidate the durable start/group identity after pidfd_open; if the
+    # leader vanishes at any point, only bounded --kill-child teardown is
+    # accepted and no numeric signal is sent.
+    try:
+        pidfd = os.pidfd_open(child_pid, 0)
+    except ProcessLookupError:
+        refuse_leaderless_group()
+        return
+    except OSError as error:
+        fail(f"cannot open a pidfd for the recorded child supervisor: {error}")
+    try:
+        repeated = process_stat_identity(child_pid)
+        if repeated is None:
+            refuse_leaderless_group()
+            return
+        if repeated.start_ticks != start_ticks:
+            fail("recorded child PID was reused while opening its pidfd")
+        if repeated.process_group != process_group:
+            fail("recorded child process group changed while opening its pidfd")
+        try:
+            signal.pidfd_send_signal(pidfd, signal.SIGTERM)
+        except ProcessLookupError:
+            refuse_leaderless_group()
+            return
+        if wait_for_group_teardown():
+            return
         with contextlib.suppress(ProcessLookupError):
-            os.killpg(process_group, signal.SIGKILL)
-        deadline = time.monotonic() + kill_after
-        while process_group_exists(process_group) and time.monotonic() < deadline:
-            time.sleep(0.02)
-    if process_group_exists(process_group):
-        fail(f"recorded orphan process group survived SIGKILL: {process_group}")
+            signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+        if not wait_for_group_teardown():
+            fail(
+                "recorded child supervisor group did not tear down through its "
+                "verified pidfd; refusing a numeric process-group signal"
+            )
+    finally:
+        os.close(pidfd)
 
 
 def normalize_child_status(returncode: int) -> int:
@@ -3456,14 +3546,10 @@ def run_child(
         )
         os.close(read_descriptor_fd)
         read_descriptor_fd = -1
-        child_start_ticks = process_start_ticks(process.pid)
-        try:
-            child_process_group = os.getpgid(process.pid)
-        except ProcessLookupError:
-            child_process_group = -1
+        child_identity = process_stat_identity(process.pid)
         if (
-            child_start_ticks is None
-            or child_process_group != process.pid
+            child_identity is None
+            or child_identity.process_group != process.pid
             or process.poll() is not None
         ):
             fail("child barrier exited before its identity could be recorded")
@@ -3473,8 +3559,8 @@ def run_child(
             journal,
             {
                 "pid": process.pid,
-                "process_group": child_process_group,
-                "start_ticks": child_start_ticks,
+                "process_group": child_identity.process_group,
+                "start_ticks": child_identity.start_ticks,
             },
             arguments.failpoint,
         )

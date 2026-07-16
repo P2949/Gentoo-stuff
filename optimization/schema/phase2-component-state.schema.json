@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gentoo-optimization.invalid/schema/phase2-component-state-v1.json",
+  "title": "Gentoo optimization generated Phase 2 component state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "component",
+    "run_id",
+    "status",
+    "repository",
+    "test_run_provenance",
+    "test_results",
+    "test_summary",
+    "test_rows",
+    "external_evidence",
+    "pending_total",
+    "unknown_total",
+    "failed_total"
+  ],
+  "properties": {
+    "schema": {"const": "gentoo-optimization-phase2-component-state-v1"},
+    "component": {"$ref": "#/$defs/safe_name"},
+    "run_id": {"$ref": "#/$defs/safe_id"},
+    "status": {"const": "validated"},
+    "repository": {"$ref": "#/$defs/repository"},
+    "test_run_provenance": {"$ref": "#/$defs/file_identity"},
+    "test_results": {"$ref": "#/$defs/file_identity"},
+    "test_summary": {"$ref": "#/$defs/file_identity"},
+    "test_rows": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "detail", "log"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "status": {"const": "PASS"},
+          "detail": {"type": "string", "minLength": 1},
+          "log": {"$ref": "#/$defs/file_identity"}
+        }
+      }
+    },
+    "external_evidence": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "identity"],
+        "properties": {
+          "label": {"$ref": "#/$defs/safe_name"},
+          "identity": {"$ref": "#/$defs/file_identity"}
+        }
+      }
+    },
+    "pending_total": {"const": 0},
+    "unknown_total": {"const": 0},
+    "failed_total": {"const": 0}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "git_oid": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+    "safe_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "safe_name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+    "stat_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device", "inode", "uid", "gid", "mode", "nlink", "size", "mtime_ns", "ctime_ns"],
+      "properties": {
+        "device": {"type": "integer", "minimum": 0},
+        "inode": {"type": "integer", "minimum": 1},
+        "uid": {"type": "integer", "minimum": 0},
+        "gid": {"type": "integer", "minimum": 0},
+        "mode": {"type": "integer", "minimum": 0, "maximum": 4095},
+        "nlink": {"type": "integer", "minimum": 1},
+        "size": {"type": "integer", "minimum": 0},
+        "mtime_ns": {"type": "integer", "minimum": 0},
+        "ctime_ns": {"type": "integer", "minimum": 0}
+      }
+    },
+    "file_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "stat"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^/"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "stat": {"$ref": "#/$defs/stat_identity"}
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "commit", "tree", "source_tree_listing_sha256", "head_ref", "clean"],
+      "properties": {
+        "root": {"type": "string", "pattern": "^/"},
+        "commit": {"$ref": "#/$defs/git_oid"},
+        "tree": {"$ref": "#/$defs/git_oid"},
+        "source_tree_listing_sha256": {"$ref": "#/$defs/sha256"},
+        "head_ref": {"type": ["string", "null"]},
+        "clean": {"const": true}
+      }
+    }
+  }
+}

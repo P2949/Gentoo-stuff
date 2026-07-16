@@ -66,6 +66,8 @@ EOF
 src_compile() {
     einfo "fixture-mode=${GENTOO_OPT_MODE:-unset}"
     einfo "fixture-profile-map-ready=${GENTOO_OPT_PROFILE_MAP_READY:-0}"
+    einfo "fixture-CC=${CC}"
+    einfo "fixture-ccache-recache=${CCACHE_RECACHE:-unset}"
     einfo "fixture-CFLAGS=${CFLAGS}"
     einfo "fixture-LDFLAGS=${LDFLAGS}"
     {
@@ -73,9 +75,22 @@ src_compile() {
         printf 'profile_map_ready\t%s\n' "${GENTOO_OPT_PROFILE_MAP_READY:-0}"
         printf 'active_fingerprint\t%s\n' "${GENTOO_OPT_ACTIVE_FINGERPRINT:-unset}"
         printf 'active_compiler\t%s\n' "${GENTOO_OPT_ACTIVE_COMPILER:-unset}"
+        printf 'CC\t%s\n' "${CC}"
+        printf 'CXX\t%s\n' "${CXX}"
+        printf 'cc_realpath\t%s\n' "$(readlink -f -- "${CC}")"
+        printf 'cxx_realpath\t%s\n' "$(readlink -f -- "${CXX}")"
         printf 'framework_target\t%s\n' "${GENTOO_OPT_FRAMEWORK_TARGET:-unset}"
         printf 'phase_euid\t%s\n' "${EUID}"
         printf 'phase_egid\t%s\n' "$(id -g)"
+        printf 'sandbox_on\t%s\n' "${SANDBOX_ON:-unset}"
+        printf 'sandbox_write\t%s\n' "${SANDBOX_WRITE:-unset}"
+        printf 'ccache_recache\t%s\n' "${CCACHE_RECACHE:-unset}"
+        printf 'ccache_disable\t%s\n' "${CCACHE_DISABLE:-unset}"
+        printf 'sccache_disable\t%s\n' "${SCCACHE_DISABLE:-unset}"
+        printf 'pid_namespace\t%s\n' "$(readlink -- /proc/self/ns/pid)"
+        printf 'network_namespace\t%s\n' "$(readlink -- /proc/self/ns/net)"
+        printf 'ipc_namespace\t%s\n' "$(readlink -- /proc/self/ns/ipc)"
+        printf 'mount_namespace\t%s\n' "$(readlink -- /proc/self/ns/mnt)"
         printf 'CFLAGS\t%s\n' "${CFLAGS}"
         printf 'CXXFLAGS\t%s\n' "${CXXFLAGS}"
         printf 'LDFLAGS\t%s\n' "${LDFLAGS}"
@@ -87,10 +102,22 @@ src_compile() {
         printf 'EXTRA_EMESON\t%s\n' "${EXTRA_EMESON}"
         printf 'EXTRA_ECMAKE\t%s\n' "${EXTRA_ECMAKE}"
     } > "${T}/effective-flags.tsv" || die
+    if [[ ${GENTOO_OPT_SAMPLE_POLICY_PROBE:-0} == 1 ]]; then
+        [[ ${GENTOO_OPT_SAMPLE_SANDBOX_DENY_PATH:-} == /* ]] ||
+            die "sample sandbox policy probe lacks an absolute deny path"
+        if printf 'sandbox-write-unexpectedly-succeeded\n' \
+            > "${GENTOO_OPT_SAMPLE_SANDBOX_DENY_PATH}"; then
+            die "sample sandbox policy probe unexpectedly wrote outside the Portage sandbox"
+        fi
+        die "sample sandbox policy probe observed the expected write denial"
+    fi
     "${CC}" ${CFLAGS} -fPIE -c "${S}/workload.c" -o "${S}/workload.o" || die
+    einfo "fixture-compiler-execution=workload.c:completed"
     "${CC}" ${CFLAGS} -fPIE -c "${S}/main.c" -o "${S}/main.o" || die
+    einfo "fixture-compiler-execution=main.c:completed"
     "${CC}" ${CFLAGS} "${S}/main.o" "${S}/workload.o" ${LDFLAGS} -pie \
         -o "${S}/phase2-pgo-use-fixture" || die
+    einfo "fixture-compiler-execution=link:completed"
 }
 
 src_install() {

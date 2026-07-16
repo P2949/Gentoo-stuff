@@ -150,7 +150,7 @@ from pathlib import Path
 
 output, compiler, source_identity = sys.argv[1:]
 manifest = {
-    "schema_version": 2,
+    "schema_version": 3,
     "category": "dev-util",
     "pf": "clang-sample-capability-fixture-2",
     "slot": "0",

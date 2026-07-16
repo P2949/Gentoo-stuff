@@ -48,6 +48,10 @@ class ProductionTrustTests(unittest.TestCase):
                 TOOL.file_record(str(alias / evidence.name), "fixture evidence")
 
     def test_non_root_or_writable_ancestor_is_rejected(self) -> None:
+        if Path("/").stat().st_uid != 0:
+            self.skipTest(
+                "filesystem root is not root-owned in this managed namespace"
+            )
         with tempfile.TemporaryDirectory(prefix="bolt-writable-evidence.") as temporary:
             root = Path(temporary)
             original_mode = stat.S_IMODE(root.stat().st_mode)

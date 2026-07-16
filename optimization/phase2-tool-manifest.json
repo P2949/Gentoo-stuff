@@ -1,0 +1,22 @@
+{
+  "schema": "gentoo-optimization-phase2-tool-manifest-v1",
+  "tools": [
+    {"name": "bash", "path": "/usr/bin/bash", "version_args": ["--version"]},
+    {"name": "clang", "path": "/usr/lib/llvm/22/bin/clang", "version_args": ["--version"]},
+    {"name": "ebuild", "path": "/usr/bin/ebuild", "version_args": ["--version"]},
+    {"name": "gcc", "path": "/usr/bin/gcc", "version_args": ["--version"]},
+    {"name": "git", "path": "/usr/bin/git", "version_args": ["--version"]},
+    {"name": "go", "path": "/usr/bin/go", "version_args": ["version"]},
+    {"name": "jq", "path": "/usr/bin/jq", "version_args": ["--version"]},
+    {"name": "llvm-bolt", "path": "/usr/lib/llvm/22/bin/llvm-bolt", "version_args": ["--version"]},
+    {"name": "llvm-profdata", "path": "/usr/lib/llvm/22/bin/llvm-profdata", "version_args": ["--version"]},
+    {"name": "llvm-profgen", "path": "/usr/lib/llvm/22/bin/llvm-profgen", "version_args": ["--version"]},
+    {"name": "merge-fdata", "path": "/usr/lib/llvm/22/bin/merge-fdata", "version_args": ["--version"]},
+    {"name": "perf", "path": "/usr/bin/perf", "version_args": ["version"]},
+    {"name": "perf2bolt", "path": "/usr/lib/llvm/22/bin/perf2bolt", "version_args": ["--help"]},
+    {"name": "portageq", "path": "/usr/bin/portageq", "version_args": ["--help"]},
+    {"name": "python3", "path": "/usr/bin/python3", "version_args": ["--version"]},
+    {"name": "rustc", "path": "/usr/bin/rustc", "version_args": ["-vV"]},
+    {"name": "shellcheck", "path": "/var/lib/gentoo-optimization/test-tools/shellcheck-0.11.0", "version_args": ["--version"]}
+  ]
+}

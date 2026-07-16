@@ -55,6 +55,10 @@ grep -Fq 'portage-pgo-use-integration' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the real Portage PGO-use integration fixture'
 grep -Fq 'portage-sample-pgo-integration' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the real Portage sample-PGO integration fixture'
+grep -Fq 'portage-sample-pgo-live-policy-integration' "${FIXTURE}/list.txt" || \
+    fail 'suite list omits the live-policy Portage sample-PGO integration fixture'
+grep -Fq 'resolved live sandbox/userpriv/PID/network/IPC' "${FIXTURE}/list.txt" || \
+    fail 'suite list does not declare the normal live Portage policy lane'
 grep -Fq 'root-only and opt-in with clang-sample' "${FIXTURE}/list.txt" || \
     fail 'suite list does not declare the sample-PGO perf workload opt-in'
 grep -Fq 'bolt-command-policy' "${FIXTURE}/list.txt" || \
@@ -169,20 +173,33 @@ done <"${HERMETIC_OUTPUT}/results.tsv"
     fail "expected one explicit BOLT SKIP row, found ${BOLT_SKIP_ROWS}"
 [[ ${BOLT_SKIP_DETAIL} == 'missing required command(s): '* ]] || \
     fail "BOLT SKIP lacks a dependency-preflight reason: ${BOLT_SKIP_DETAIL}"
-SAMPLE_SKIP_ROWS=0
-SAMPLE_SKIP_DETAIL=
+SAMPLE_DIAGNOSTIC_SKIP_ROWS=0
+SAMPLE_LIVE_SKIP_ROWS=0
+SAMPLE_DIAGNOSTIC_SKIP_DETAIL=
+SAMPLE_LIVE_SKIP_DETAIL=
 while IFS=$'\t' read -r result_status result_name result_detail; do
-    if [[ ${result_status} == SKIP && \
-        ${result_name} == portage-sample-pgo-integration ]]; then
-        ((SAMPLE_SKIP_ROWS += 1))
-        SAMPLE_SKIP_DETAIL=${result_detail}
-    fi
+    [[ ${result_status} == SKIP ]] || continue
+    case ${result_name} in
+        portage-sample-pgo-integration)
+            ((SAMPLE_DIAGNOSTIC_SKIP_ROWS += 1))
+            SAMPLE_DIAGNOSTIC_SKIP_DETAIL=${result_detail}
+            ;;
+        portage-sample-pgo-live-policy-integration)
+            ((SAMPLE_LIVE_SKIP_ROWS += 1))
+            SAMPLE_LIVE_SKIP_DETAIL=${result_detail}
+            ;;
+    esac
 done <"${HERMETIC_OUTPUT}/results.tsv"
-[[ ${SAMPLE_SKIP_ROWS} -eq 1 ]] || \
-    fail "expected one sample Portage opt-in SKIP row, found ${SAMPLE_SKIP_ROWS}"
-[[ ${SAMPLE_SKIP_DETAIL} == \
+[[ ${SAMPLE_DIAGNOSTIC_SKIP_ROWS} -eq 1 ]] || \
+    fail "expected one diagnostic sample Portage opt-in SKIP row, found ${SAMPLE_DIAGNOSTIC_SKIP_ROWS}"
+[[ ${SAMPLE_LIVE_SKIP_ROWS} -eq 1 ]] || \
+    fail "expected one live-policy sample Portage opt-in SKIP row, found ${SAMPLE_LIVE_SKIP_ROWS}"
+[[ ${SAMPLE_DIAGNOSTIC_SKIP_DETAIL} == \
     'requires the explicitly selected clang-sample capability because it runs perf and a training workload' ]] || \
-    fail "sample Portage SKIP lacks the exact opt-in reason: ${SAMPLE_SKIP_DETAIL}"
+    fail "diagnostic sample Portage SKIP lacks the exact opt-in reason: ${SAMPLE_DIAGNOSTIC_SKIP_DETAIL}"
+[[ ${SAMPLE_LIVE_SKIP_DETAIL} == \
+    'requires the explicitly selected clang-sample capability because it runs perf and a training workload' ]] || \
+    fail "live-policy sample Portage SKIP lacks the exact opt-in reason: ${SAMPLE_LIVE_SKIP_DETAIL}"
 MISSING_COMMANDS=${BOLT_SKIP_DETAIL#missing required command(s): }
 for expected_missing_command in awk chmod clang cmp cp file getcap getfattr \
     grep head lddtree llvm-bolt merge-fdata nm objcopy perf perf2bolt readelf \
@@ -371,8 +388,10 @@ ln -s -- "${python3_path}" "${PYTHON_BIN_ROOT}/python3"
 PATH=${PYTHON_BIN_ROOT} \
 PYTHONPYCACHEPREFIX=/inherited-prefix-that-must-not-reach-unittest \
     bash -- "${PYTHON_DRIVER}" --mode quick --output-dir "${PYTHON_OUTPUT}" \
-    >"${FIXTURE}/python-driver.log" 2>&1 || \
+    >"${FIXTURE}/python-driver.log" 2>&1 || {
+    sed -n '1,240p' "${FIXTURE}/python-driver.log" >&2
     fail 'hermetic Python-environment driver invocation failed'
+}
 grep -Fxq 'dontwrite=1' "${PYTHON_ENV_MARKER}" || \
     fail 'unittest did not receive PYTHONDONTWRITEBYTECODE=1'
 grep -Fxq 'pycacheprefix=unset' "${PYTHON_ENV_MARKER}" || \
@@ -383,6 +402,20 @@ find "${PYTHON_OUTPUT}/python-cache/compile" -type f -name '*.pyc' -print -quit 
     fail 'the driver recreated the removed unittest cache prefix'
 grep -Fxq 'fail=0' "${PYTHON_OUTPUT}/summary.txt" || \
     fail 'Python-environment self-test produced a driver failure'
+PROFILE_STRESS_SKIP_ROWS=0
+PROFILE_STRESS_SKIP_DETAIL=
+while IFS=$'\t' read -r result_status result_name result_detail; do
+    if [[ ${result_status} == SKIP &&
+          ${result_name} == production-profile-lock-crash-stress ]]; then
+        ((PROFILE_STRESS_SKIP_ROWS += 1))
+        PROFILE_STRESS_SKIP_DETAIL=${result_detail}
+    fi
+done <"${PYTHON_OUTPUT}/results.tsv"
+[[ ${PROFILE_STRESS_SKIP_ROWS} -eq 1 ]] || \
+    fail "expected one profile-lock stress SKIP row, found ${PROFILE_STRESS_SKIP_ROWS}"
+[[ ${PROFILE_STRESS_SKIP_DETAIL} == \
+    'production profile-lock transaction test module is unavailable' ]] || \
+    fail "profile-lock stress SKIP lacks its exact module preflight reason: ${PROFILE_STRESS_SKIP_DETAIL}"
 
 # Exercise both reason-bearing recovery ABI preflight failures while keeping
 # the rollback fixture itself hermetic and provably unexecuted.

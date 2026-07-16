@@ -1,0 +1,158 @@
+{
+  "aggregate_requires_zero": true,
+  "component_state_path_template": "/var/lib/gentoo-optimization/state/project/phase-2-components/{run_id}/{name}.json",
+  "index_path_template": "/var/lib/gentoo-optimization/state/project/phase2-evidence/{run_id}/index.json",
+  "phase": 2,
+  "plan_claims": [
+    {
+      "claim_id": "phase2-automation",
+      "source_paths": [
+        "tests/optimization/test-portage-sample-pgo-integration.sh",
+        "tests/optimization/test_production_profile_lock_transaction.py",
+        "tests/run-optimization-tests.sh"
+      ]
+    },
+    {
+      "claim_id": "phase2-bolt-hooks",
+      "source_paths": [
+        "portage/install-qa-check.d/zz-gentoo-optimization-bolt",
+        "scripts/optimization/bolt/artifact_tool.py",
+        "scripts/optimization/bolt/capture-input.sh",
+        "scripts/optimization/bolt/deploy-output.sh",
+        "scripts/optimization/bolt/register-output.sh",
+        "tests/optimization/test-bolt-hooks.sh"
+      ]
+    },
+    {
+      "claim_id": "phase2-dispatcher",
+      "source_paths": [
+        "portage/bashrc",
+        "scripts/optimization/pgo/profile-identity.py",
+        "scripts/optimization/pgo/validate-profile.py",
+        "tests/optimization/test-pgo-dispatcher.sh"
+      ]
+    },
+    {
+      "claim_id": "phase2-evidence-index",
+      "source_paths": [
+        "optimization/phase2-evidence-policy.json",
+        "optimization/phase2-tool-manifest.json",
+        "optimization/schema/phase2-component-state.schema.json",
+        "optimization/schema/phase2-evidence-index.schema.json",
+        "scripts/optimization/verify/phase2-evidence.py",
+        "tests/optimization/test_phase2_evidence.py"
+      ]
+    },
+    {
+      "claim_id": "phase2-framework",
+      "source_paths": [
+        "scripts/optimization/install-framework.sh",
+        "scripts/optimization/pgo/authorization-token-scan.py",
+        "scripts/optimization/pgo/production-profile-lock-transaction.py",
+        "tests/optimization/test-framework-installer.sh"
+      ]
+    },
+    {
+      "claim_id": "phase2-sample-pgo",
+      "source_paths": [
+        "scripts/optimization/pgo/authorization-token-scan.py",
+        "scripts/optimization/pgo/production-profile-lock-transaction.py",
+        "scripts/optimization/pgo/profile-identity.py",
+        "scripts/optimization/pgo/validate-profile.py",
+        "tests/optimization/test-portage-sample-pgo-integration.sh",
+        "tests/optimization/test_production_profile_lock_transaction.py"
+      ]
+    }
+  ],
+  "phase_heading": "# 11. Phase 2 — Refactor the repository framework",
+  "phase_next_heading": "# 12. Phase 3 — Inventory every installed package and artifact",
+  "plan_path": "plans/system-wide-pgo-bolt.md",
+  "prior_evidence_banner": "<!-- gentoo-optimization-phase2-prior-evidence: superseded-by-detached-index -->",
+  "require_all_phase_checkboxes_checked": true,
+  "required_component_states": [
+    {"external_evidence_labels": [], "name": "automation", "required_test_names": ["phase2-evidence-contract", "phase2-run-provenance-start", "shellcheck"], "required_test_prefixes": []},
+    {"external_evidence_labels": [], "name": "bolt-hooks", "required_test_names": ["bolt-command-policy", "bolt-pre-strip-hooks", "bolt-transaction-fixture"], "required_test_prefixes": []},
+    {"external_evidence_labels": [], "name": "capability-bolt", "required_test_names": [], "required_test_prefixes": ["capability:bolt:"]},
+    {"external_evidence_labels": [], "name": "capability-clang-ir", "required_test_names": [], "required_test_prefixes": ["capability:clang-ir:"]},
+    {"external_evidence_labels": [], "name": "capability-clang-sample", "required_test_names": [], "required_test_prefixes": ["capability:clang-sample:"]},
+    {"external_evidence_labels": [], "name": "capability-gcc", "required_test_names": [], "required_test_prefixes": ["capability:gcc:"]},
+    {"external_evidence_labels": [], "name": "capability-go", "required_test_names": [], "required_test_prefixes": ["capability:go:"]},
+    {"external_evidence_labels": [], "name": "capability-rust", "required_test_names": [], "required_test_prefixes": ["capability:rust:"]},
+    {"external_evidence_labels": [], "name": "dispatcher", "required_test_names": ["pgo-dispatcher", "portage-pgo-use-integration", "portage-phase-identity", "portage-pre-strip-integration"], "required_test_prefixes": []},
+    {"external_evidence_labels": ["framework-install-manifest"], "name": "framework-installer", "required_test_names": ["framework-installer"], "required_test_prefixes": []},
+    {"external_evidence_labels": ["production-child-identity", "production-publication-context", "production-token-scan", "production-transaction-receipt", "production-validation-input"], "name": "sample-pgo", "required_test_names": ["portage-sample-pgo-integration", "portage-sample-pgo-live-policy-integration", "portage-sample-production-env"], "required_test_prefixes": []}
+  ],
+  "required_passing_test_names": [
+    "bolt-command-policy",
+    "bolt-pre-strip-hooks",
+    "bolt-transaction-fixture",
+    "framework-installer",
+    "package-env-duplicate-policy",
+    "pgo-dispatcher",
+    "phase2-evidence-contract",
+    "phase2-run-provenance-start",
+    "portage-pgo-use-integration",
+    "portage-phase-identity",
+    "portage-pre-strip-integration",
+    "portage-sample-pgo-integration",
+    "portage-sample-pgo-live-policy-integration",
+    "portage-sample-production-env",
+    "shellcheck"
+  ],
+  "required_passing_test_prefixes": [
+    "capability:bolt:",
+    "capability:clang-ir:",
+    "capability:clang-sample:",
+    "capability:gcc:",
+    "capability:go:",
+    "capability:rust:"
+  ],
+  "required_sources": [
+    "docs/phase2-production-profile-transaction.md",
+    "optimization/phase2-evidence-policy.json",
+    "optimization/phase2-tool-manifest.json",
+    "optimization/schema/phase2-component-state.schema.json",
+    "optimization/schema/phase2-evidence-index.schema.json",
+    "plans/system-wide-pgo-bolt.md",
+    "portage/bashrc",
+    "scripts/optimization/install-framework.sh",
+    "scripts/optimization/pgo/authorization-token-scan.py",
+    "scripts/optimization/pgo/production-profile-lock-transaction.py",
+    "scripts/optimization/verify/phase2-evidence.py",
+    "tests/optimization/test_phase2_evidence.py",
+    "tests/run-optimization-tests.sh"
+  ],
+  "required_test_mode": "capabilities",
+  "required_tools": [
+    "bash",
+    "clang",
+    "ebuild",
+    "gcc",
+    "git",
+    "go",
+    "jq",
+    "llvm-bolt",
+    "llvm-profdata",
+    "llvm-profgen",
+    "merge-fdata",
+    "perf",
+    "perf2bolt",
+    "portageq",
+    "python3",
+    "rustc",
+    "shellcheck"
+  ],
+  "schema": "gentoo-optimization-phase2-evidence-policy-v1",
+  "source_scopes": [
+    "docs/phase2-production-profile-transaction.md",
+    "local-overlay",
+    "optimization",
+    "plans/system-wide-pgo-bolt.md",
+    "portage",
+    "scripts/optimization",
+    "tests/optimization",
+    "tests/run-optimization-tests.sh"
+  ],
+  "test_driver_path": "tests/run-optimization-tests.sh",
+  "tool_manifest_template_path": "optimization/phase2-tool-manifest.json"
+}

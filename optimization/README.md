@@ -11,6 +11,11 @@ recovery environments can parse it with the Python standard library. An
 `active_generation` value of `null` is authoritative: no live optimization
 generation exists yet.
 
+The exact operator workflow for the supervised production sample-PGO gate,
+transaction recovery, evidence retention, generated component states, and the
+detached Phase 2 authorization index is
+[`docs/phase2-production-profile-transaction.md`](../docs/phase2-production-profile-transaction.md).
+
 The exact Phase 1 BOLT default uses `ext-tsp` block ordering and `cdsort`
 function ordering. A policy change to either algorithm requires the complete
 fixed `ET_EXEC`, dynamic PIE, static PIE, and DSO fixture gate before it can be

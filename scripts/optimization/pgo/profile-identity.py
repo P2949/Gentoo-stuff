@@ -33,7 +33,7 @@ from profile_locks import (  # noqa: E402
 )
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SAMPLE_SCHEMA_VERSION = 4
 CONVERSION_LOG_SCHEMA_VERSION = 1
 BUFFER_SIZE = 1024 * 1024
@@ -52,6 +52,7 @@ TOOL_ENVIRONMENT = {
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 BUILD_ID_RE = re.compile(r"^[0-9a-f]{8,128}$")
 COMPONENT_RE = re.compile(r"^[A-Za-z0-9+_.@-]+$")
+FEATURE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+_.-]*$")
 CPV_RE = re.compile(
     r"^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*(?:-r[0-9]+)?$"
 )
@@ -249,6 +250,27 @@ def require_string_list(
     if sort_values:
         result.sort()
     return result
+
+
+def canonical_effective_features(value: object) -> list[str]:
+    """Return Portage FEATURES as a canonical last-token-wins state.
+
+    FEATURES is not a mathematical set: ``ccache -ccache`` and
+    ``-ccache ccache`` have opposite effective meanings.  Canonicalize the
+    final state by feature name so unrelated token ordering is immaterial
+    without discarding the polarity selected by the last occurrence.
+    """
+    if not isinstance(value, list):
+        fail("features must be a JSON array")
+    effective: dict[str, bool] = {}
+    for index, item in enumerate(value):
+        token = require_string(item, f"features[{index}]")
+        enabled = not token.startswith("-")
+        name = token if enabled else token[1:]
+        if not FEATURE_NAME_RE.fullmatch(name):
+            fail(f"features[{index}] is not a valid Portage feature token: {token!r}")
+        effective[name] = enabled
+    return [name if effective[name] else f"-{name}" for name in sorted(effective)]
 
 
 def load_json_object(path: Path, label: str) -> dict[str, Any]:
@@ -708,9 +730,7 @@ def build_fingerprint_identity(input_data: dict[str, Any]) -> dict[str, object]:
         "extra_emeson": require_string(
             input_data["extra_emeson"], "extra_emeson", allow_empty=True
         ),
-        "features": require_string_list(
-            input_data["features"], "features", sort_values=True
-        ),
+        "features": canonical_effective_features(input_data["features"]),
         "flags": {
             "cflags": require_string(input_data["cflags"], "cflags", allow_empty=True),
             "cxxflags": require_string(

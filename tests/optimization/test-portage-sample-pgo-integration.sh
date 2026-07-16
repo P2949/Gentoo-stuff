@@ -2,10 +2,11 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 TEMPLATE=${ROOT}/optimization/fixtures/portage/phase2-sample-pgo-fixture-1.ebuild.in
-AUTHORIZATION_TOKEN_SCANNER=${ROOT}/tests/optimization/authorization_token_scan.py
+AUTHORIZATION_TOKEN_SCANNER=${ROOT}/scripts/optimization/pgo/authorization-token-scan.py
 INSTALLER=/var/lib/gentoo-optimization/bootstrap/install-framework.sh
 PROFILE_IDENTITY=/usr/local/libexec/gentoo-optimization/pgo/profile-identity.py
 VALIDATOR=/usr/local/libexec/gentoo-optimization/pgo/validate-profile.py
@@ -26,6 +27,58 @@ CANONICAL_OUTPUT_DIR=
 EXPLICIT_OUTPUT_DIR=0
 TRUSTED_OUTPUT_BASE=/var/tmp/gentoo-optimization
 PRODUCTION_LOCKS=0
+PORTAGE_POLICY_MODE=
+LIVE_POLICY_PREFLIGHT_ONLY=0
+LIVE_PORTAGE_FEATURES=
+LIVE_MAKE_CONF=
+LIVE_MAKE_CONF_SHA256=
+LIVE_POLICY_IDENTITY_SHA256=
+LIVE_PORTAGE_TMPDIR=
+LIVE_PORTAGE_TMPDIR_RAW=
+LIVE_PORTAGE_TMPDIR_EFFECTIVE=
+LIVE_PORTAGE_TMPDIR_SOURCE=
+LIVE_PORTAGE_TMPDIR_PORTAGE=
+LIVE_PORTAGE_TMPDIR_PORTAGE_EFFECTIVE=
+LIVE_PORTAGE_DEPCACHEDIR=
+LIVE_PORTAGE_DEPCACHEDIR_RAW=
+LIVE_PORTAGE_DEPCACHEDIR_EFFECTIVE=
+LIVE_PORTAGE_DEPCACHEDIR_SOURCE=
+LIVE_PORTAGE_LOGDIR=
+LIVE_PORTAGE_LOGDIR_RAW=
+LIVE_PORTAGE_LOGDIR_EFFECTIVE=
+LIVE_PORTAGE_LOGDIR_SOURCE=
+LIVE_DISTDIR=
+LIVE_DISTDIR_RAW=
+LIVE_DISTDIR_EFFECTIVE=
+LIVE_DISTDIR_SOURCE=
+LIVE_PKGDIR=
+LIVE_PKGDIR_RAW=
+LIVE_PKGDIR_EFFECTIVE=
+LIVE_PKGDIR_SOURCE=
+LIVE_CCACHE_DIR=
+LIVE_CCACHE_DIR_RAW=
+LIVE_CCACHE_DIR_EFFECTIVE=
+LIVE_CCACHE_DIR_SOURCE=
+LIVE_CCACHE_TEMPDIR=
+LIVE_CCACHE_TEMPDIR_RAW=
+LIVE_CCACHE_TEMPDIR_EFFECTIVE=
+LIVE_CCACHE_TEMPDIR_SOURCE=
+LIVE_SCCACHE_DIR=
+LIVE_SCCACHE_DIR_RAW=
+LIVE_SCCACHE_DIR_EFFECTIVE=
+LIVE_SCCACHE_DIR_SOURCE=
+WRITABLE_ROOT_RESOLVER_TEST=
+WRITABLE_ROOT_RECEIPT_TEST=
+WRITABLE_ROOT_RECEIPT_EXPECTED=
+declare -a PORTAGE_WRITABLE_ROOT_NAMES=(
+    PORTAGE_TMPDIR PORTAGE_LOGDIR PORTAGE_DEPCACHEDIR DISTDIR PKGDIR
+    CCACHE_DIR CCACHE_TEMPDIR SCCACHE_DIR
+)
+declare -A PORTAGE_WRITABLE_RAW=()
+declare -A PORTAGE_WRITABLE_EFFECTIVE=()
+declare -A PORTAGE_WRITABLE_CANONICAL=()
+declare -A PORTAGE_WRITABLE_SOURCE=()
+declare -A PORTAGE_WRITABLE_QUERY_STATUS=()
 PRODUCTION_ROOTS_CREATED=0
 PRODUCTION_GATE_COMPLETE=0
 PRODUCTION_STATUS_FINALIZED=0
@@ -56,13 +109,28 @@ unset GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN \
 usage() {
     cat <<'EOF'
 Usage: test-portage-sample-pgo-integration.sh [--output-dir ABSOLUTE_PATH]
-       [--keep-temp] [--production-locks]
+       [--keep-temp] --portage-policy isolated-diagnostic|live
+       [--production-locks]
+       test-portage-sample-pgo-integration.sh --live-policy-preflight
+       test-portage-sample-pgo-integration.sh --writable-root-resolver-test PATH
+       test-portage-sample-pgo-integration.sh --writable-root-receipt-test RECEIPT EXPECTED
 
 The optional output directory must be a new path below the trusted
 /var/tmp/gentoo-optimization tree. Explicit output directories are always preserved.
 --production-locks is a root-only Phase 2 gate driven by the reviewed production
 lock coordinator. It uses canonical live lock paths and root-owned namespaces;
 it never passes a test-mode or substituted-lock argument to an installed helper.
+The isolated-diagnostic policy retains the historical sandbox-disabled lane for
+fault localization only. The live policy copies the host's resolved FEATURES
+as its baseline, permits only the dispatcher's recorded compiler-wrapper
+exception in optimization stages, and proves sandbox, usersandbox/userpriv,
+PID, network, IPC, and mount isolation. Production mode requires live policy.
+--live-policy-preflight is a read-only, non-root TSV probe used to prove that
+an inherited FEATURES variable cannot override the authoritative live policy.
+--writable-root-resolver-test runs only the hermetic resolver contract against
+the supplied fixture-owned portageq executable and performs no Portage build.
+--writable-root-receipt-test verifies a synthetic phase receipt against an
+expected writable-root TSV and performs no Portage build.
 EOF
 }
 
@@ -81,6 +149,26 @@ while (($#)); do
             PRODUCTION_LOCKS=1
             shift
             ;;
+        --portage-policy)
+            (($# >= 2)) || { usage >&2; exit 2; }
+            PORTAGE_POLICY_MODE=$2
+            shift 2
+            ;;
+        --live-policy-preflight)
+            LIVE_POLICY_PREFLIGHT_ONLY=1
+            shift
+            ;;
+        --writable-root-resolver-test)
+            (($# >= 2)) || { usage >&2; exit 2; }
+            WRITABLE_ROOT_RESOLVER_TEST=$2
+            shift 2
+            ;;
+        --writable-root-receipt-test)
+            (($# >= 3)) || { usage >&2; exit 2; }
+            WRITABLE_ROOT_RECEIPT_TEST=$2
+            WRITABLE_ROOT_RECEIPT_EXPECTED=$3
+            shift 3
+            ;;
         -h|--help)
             usage
             exit 0
@@ -96,6 +184,668 @@ fail() {
     printf 'FAIL: %s\n' "$*" >&2
     exit 1
 }
+
+checked_portageq_envvar() {
+    local portageq_tool=$1 variable=$2 destination=$3 status_destination=$4
+    local output status=0
+    output=$(/usr/bin/env -i \
+        HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
+        PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
+        PORTAGE_CONFIGROOT=/ "${portageq_tool}" envvar "${variable}") || \
+        status=$?
+    if ((status > 1)); then
+        printf 'FAIL: portageq envvar %s failed with status %s\n' \
+            "${variable}" "${status}" >&2
+        return 1
+    fi
+    [[ ${output} != *$'\n'* ]] || {
+        printf 'FAIL: portageq envvar %s returned multiple lines\n' \
+            "${variable}" >&2
+        return 1
+    }
+    if ((status == 0)) && [[ -z ${output} ]]; then
+        printf 'FAIL: portageq envvar %s returned empty with success status\n' \
+            "${variable}" >&2
+        return 1
+    fi
+    if ((status == 1)) && [[ -n ${output} ]]; then
+        printf 'FAIL: portageq envvar %s returned data with unset status\n' \
+            "${variable}" >&2
+        return 1
+    fi
+    printf -v "${destination}" '%s' "${output}"
+    printf -v "${status_destination}" '%s' "${status}"
+}
+
+resolve_portage_writable_roots() {
+    local portageq_tool=$1 forbidden_prefix=${2-} name value canonical
+    local protected
+    local xdg_cache_home= cache_home= query_status=
+    local -A canonical_owners=()
+    local -a forbidden_live_aliases=(
+        /etc/portage /var/db/pkg /var/lib/gentoo-optimization "${ROOT}"
+    )
+
+    PORTAGE_WRITABLE_RAW=()
+    PORTAGE_WRITABLE_EFFECTIVE=()
+    PORTAGE_WRITABLE_CANONICAL=()
+    PORTAGE_WRITABLE_SOURCE=()
+    PORTAGE_WRITABLE_QUERY_STATUS=()
+    for name in "${PORTAGE_WRITABLE_ROOT_NAMES[@]}"; do
+        value=
+        query_status=
+        checked_portageq_envvar "${portageq_tool}" "${name}" value \
+            query_status || return 1
+        PORTAGE_WRITABLE_RAW[${name}]=${value}
+        PORTAGE_WRITABLE_QUERY_STATUS[${name}]=${query_status}
+    done
+    checked_portageq_envvar "${portageq_tool}" XDG_CACHE_HOME \
+        xdg_cache_home query_status || return 1
+    checked_portageq_envvar "${portageq_tool}" HOME cache_home \
+        query_status || return 1
+
+    if [[ -n ${PORTAGE_WRITABLE_RAW[PORTAGE_TMPDIR]} ]]; then
+        PORTAGE_WRITABLE_EFFECTIVE[PORTAGE_TMPDIR]=${PORTAGE_WRITABLE_RAW[PORTAGE_TMPDIR]}
+        PORTAGE_WRITABLE_SOURCE[PORTAGE_TMPDIR]=configured
+    else
+        PORTAGE_WRITABLE_EFFECTIVE[PORTAGE_TMPDIR]=/var/tmp
+        PORTAGE_WRITABLE_SOURCE[PORTAGE_TMPDIR]=portage-default
+    fi
+    if [[ -n ${PORTAGE_WRITABLE_RAW[PORTAGE_LOGDIR]} ]]; then
+        PORTAGE_WRITABLE_EFFECTIVE[PORTAGE_LOGDIR]=${PORTAGE_WRITABLE_RAW[PORTAGE_LOGDIR]}
+        PORTAGE_WRITABLE_SOURCE[PORTAGE_LOGDIR]=configured
+    else
+        # PORTAGE_LOGDIR is optional.  With PORTAGE_ELOG_SYSTEM=save, Portage's
+        # live fallback is /var/log/portage; build-temporary logs are covered
+        # separately by the derived PORTAGE_TMPDIR/portage root below.
+        PORTAGE_WRITABLE_EFFECTIVE[PORTAGE_LOGDIR]=/var/log/portage
+        PORTAGE_WRITABLE_SOURCE[PORTAGE_LOGDIR]=portage-elog-default
+    fi
+    if [[ -n ${PORTAGE_WRITABLE_RAW[PORTAGE_DEPCACHEDIR]} ]]; then
+        PORTAGE_WRITABLE_EFFECTIVE[PORTAGE_DEPCACHEDIR]=${PORTAGE_WRITABLE_RAW[PORTAGE_DEPCACHEDIR]}
+        PORTAGE_WRITABLE_SOURCE[PORTAGE_DEPCACHEDIR]=configured
+    else
+        PORTAGE_WRITABLE_EFFECTIVE[PORTAGE_DEPCACHEDIR]=/var/cache/edb/dep
+        PORTAGE_WRITABLE_SOURCE[PORTAGE_DEPCACHEDIR]=portage-default
+    fi
+    if [[ -n ${PORTAGE_WRITABLE_RAW[DISTDIR]} ]]; then
+        PORTAGE_WRITABLE_EFFECTIVE[DISTDIR]=${PORTAGE_WRITABLE_RAW[DISTDIR]}
+        PORTAGE_WRITABLE_SOURCE[DISTDIR]=configured
+    else
+        PORTAGE_WRITABLE_EFFECTIVE[DISTDIR]=/var/cache/distfiles
+        PORTAGE_WRITABLE_SOURCE[DISTDIR]=portage-default
+    fi
+    if [[ -n ${PORTAGE_WRITABLE_RAW[PKGDIR]} ]]; then
+        PORTAGE_WRITABLE_EFFECTIVE[PKGDIR]=${PORTAGE_WRITABLE_RAW[PKGDIR]}
+        PORTAGE_WRITABLE_SOURCE[PKGDIR]=configured
+    else
+        PORTAGE_WRITABLE_EFFECTIVE[PKGDIR]=/var/cache/binpkgs
+        PORTAGE_WRITABLE_SOURCE[PKGDIR]=portage-default
+    fi
+    if [[ -n ${PORTAGE_WRITABLE_RAW[CCACHE_DIR]} ]]; then
+        PORTAGE_WRITABLE_EFFECTIVE[CCACHE_DIR]=${PORTAGE_WRITABLE_RAW[CCACHE_DIR]}
+        PORTAGE_WRITABLE_SOURCE[CCACHE_DIR]=configured
+    else
+        PORTAGE_WRITABLE_EFFECTIVE[CCACHE_DIR]=${PORTAGE_WRITABLE_EFFECTIVE[PORTAGE_TMPDIR]%/}/ccache
+        PORTAGE_WRITABLE_SOURCE[CCACHE_DIR]=portage-default-below-tmpdir
+    fi
+    if [[ -n ${PORTAGE_WRITABLE_RAW[CCACHE_TEMPDIR]} ]]; then
+        PORTAGE_WRITABLE_EFFECTIVE[CCACHE_TEMPDIR]=${PORTAGE_WRITABLE_RAW[CCACHE_TEMPDIR]}
+        PORTAGE_WRITABLE_SOURCE[CCACHE_TEMPDIR]=configured
+    else
+        PORTAGE_WRITABLE_EFFECTIVE[CCACHE_TEMPDIR]=${PORTAGE_WRITABLE_EFFECTIVE[CCACHE_DIR]%/}/tmp
+        PORTAGE_WRITABLE_SOURCE[CCACHE_TEMPDIR]=ccache-default-below-cache-dir
+    fi
+    if [[ -n ${PORTAGE_WRITABLE_RAW[SCCACHE_DIR]} ]]; then
+        PORTAGE_WRITABLE_EFFECTIVE[SCCACHE_DIR]=${PORTAGE_WRITABLE_RAW[SCCACHE_DIR]}
+        PORTAGE_WRITABLE_SOURCE[SCCACHE_DIR]=configured
+    elif [[ -n ${xdg_cache_home} ]]; then
+        PORTAGE_WRITABLE_EFFECTIVE[SCCACHE_DIR]=${xdg_cache_home%/}/sccache
+        PORTAGE_WRITABLE_SOURCE[SCCACHE_DIR]=xdg-cache-home-default
+    elif [[ -n ${cache_home} ]]; then
+        PORTAGE_WRITABLE_EFFECTIVE[SCCACHE_DIR]=${cache_home%/}/.cache/sccache
+        PORTAGE_WRITABLE_SOURCE[SCCACHE_DIR]=home-cache-default
+    else
+        PORTAGE_WRITABLE_EFFECTIVE[SCCACHE_DIR]=/root/.cache/sccache
+        PORTAGE_WRITABLE_SOURCE[SCCACHE_DIR]=root-home-default
+    fi
+
+    for name in "${PORTAGE_WRITABLE_ROOT_NAMES[@]}"; do
+        value=${PORTAGE_WRITABLE_EFFECTIVE[${name}]}
+        [[ ${value} == /* && ${value} != / && ${value} != *$'\n'* ]] || {
+            printf 'FAIL: effective %s is not one absolute non-root path: %s\n' \
+                "${name}" "${value}" >&2
+            return 1
+        }
+        if ! canonical=$(/usr/bin/realpath -m -- "${value}"); then
+            printf 'FAIL: cannot canonicalize effective %s: %s\n' \
+                "${name}" "${value}" >&2
+            return 1
+        fi
+        if [[ -L ${value} ]] && ! /usr/bin/realpath -e -- "${value}" >/dev/null; then
+            printf 'FAIL: effective %s is a dangling symlink: %s\n' \
+                "${name}" "${value}" >&2
+            return 1
+        fi
+        [[ ${canonical} == /* && ${canonical} != / ]] || {
+            printf 'FAIL: canonical %s is unsafe: %s\n' \
+                "${name}" "${canonical}" >&2
+            return 1
+        }
+        for protected in "${forbidden_live_aliases[@]}"; do
+            if [[ ${canonical} == "${protected}" || \
+                ${canonical} == "${protected}"/* || \
+                ${protected} == "${canonical}"/* ]]; then
+                printf 'FAIL: writable root %s unsafely overlaps %s: %s\n' \
+                    "${name}" "${protected}" "${canonical}" >&2
+                return 1
+            fi
+        done
+        if [[ -n ${forbidden_prefix} && \
+            ( ${canonical} == "${forbidden_prefix}" || \
+              ${canonical} == "${forbidden_prefix}"/* ) ]]; then
+            printf 'FAIL: live %s aliases the disposable work root: %s\n' \
+                "${name}" "${canonical}" >&2
+            return 1
+        fi
+        if [[ -n ${canonical_owners[${canonical}]-} ]]; then
+            printf 'FAIL: writable roots %s and %s alias canonical path %s\n' \
+                "${canonical_owners[${canonical}]}" "${name}" \
+                "${canonical}" >&2
+            return 1
+        fi
+        canonical_owners[${canonical}]=${name}
+        PORTAGE_WRITABLE_CANONICAL[${name}]=${canonical}
+    done
+}
+
+emit_portage_writable_roots() {
+    local name
+    printf 'schema\tgentoo-optimization-portage-writable-roots-v1\n'
+    for name in "${PORTAGE_WRITABLE_ROOT_NAMES[@]}"; do
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${name}" \
+            "${PORTAGE_WRITABLE_RAW[${name}]}" \
+            "${PORTAGE_WRITABLE_EFFECTIVE[${name}]}" \
+            "${PORTAGE_WRITABLE_CANONICAL[${name}]}" \
+            "${PORTAGE_WRITABLE_SOURCE[${name}]}" \
+            "${PORTAGE_WRITABLE_QUERY_STATUS[${name}]}"
+    done
+}
+
+verify_writable_root_receipt() {
+    local receipt=$1 expected=$2 label=$3
+    /usr/bin/python3 -I - "${receipt}" "${expected}" "${label}" <<'PY'
+import pathlib
+import sys
+
+receipt_path, expected_path, label = sys.argv[1:]
+names = (
+    "PORTAGE_TMPDIR",
+    "PORTAGE_LOGDIR",
+    "PORTAGE_DEPCACHEDIR",
+    "DISTDIR",
+    "PKGDIR",
+    "CCACHE_DIR",
+    "CCACHE_TEMPDIR",
+    "SCCACHE_DIR",
+)
+
+def unique_rows(path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("\t")
+        if not separator or key in values:
+            raise SystemExit(f"{label}: invalid or duplicate receipt row: {line!r}")
+        values[key] = value
+    return values
+
+observed = unique_rows(receipt_path)
+expected_lines = pathlib.Path(expected_path).read_text(encoding="utf-8").splitlines()
+if not expected_lines or expected_lines[0] != (
+    "schema\tgentoo-optimization-portage-writable-roots-v1"
+):
+    raise SystemExit(f"{label}: invalid expected writable-root schema")
+expected: dict[str, tuple[str, str]] = {}
+for line in expected_lines[1:]:
+    fields = line.split("\t")
+    if len(fields) != 6 or fields[0] in expected:
+        raise SystemExit(f"{label}: invalid expected writable-root row: {line!r}")
+    name, _query_raw, effective, canonical, _source, _status = fields
+    expected[name] = (effective, canonical)
+if set(expected) != set(names):
+    raise SystemExit(f"{label}: expected writable-root names are incomplete")
+
+failures: list[str] = []
+for name in names:
+    expected_raw, expected_canonical = expected[name]
+    raw_key = f"{name}_raw"
+    canonical_key = f"{name}_canonical"
+    if observed.get(raw_key) != expected_raw:
+        failures.append(
+            f"{raw_key}: expected={expected_raw!r} observed={observed.get(raw_key)!r}"
+        )
+    if observed.get(canonical_key) != expected_canonical:
+        failures.append(
+            f"{canonical_key}: expected={expected_canonical!r} "
+            f"observed={observed.get(canonical_key)!r}"
+        )
+if failures:
+    raise SystemExit(f"{label}: writable-root receipt mismatch: {'; '.join(failures)}")
+PY
+}
+
+if [[ -n ${WRITABLE_ROOT_RESOLVER_TEST} ]]; then
+    [[ -z ${OUTPUT_DIR}${PORTAGE_POLICY_MODE}${WRITABLE_ROOT_RECEIPT_TEST} && \
+        ${LIVE_POLICY_PREFLIGHT_ONLY} == 0 && ${PRODUCTION_LOCKS} == 0 ]] || \
+        fail '--writable-root-resolver-test cannot be combined with other modes'
+    [[ ${WRITABLE_ROOT_RESOLVER_TEST} == /* && \
+        -f ${WRITABLE_ROOT_RESOLVER_TEST} && \
+        -x ${WRITABLE_ROOT_RESOLVER_TEST} ]] || \
+        fail '--writable-root-resolver-test requires an absolute executable'
+    resolve_portage_writable_roots "${WRITABLE_ROOT_RESOLVER_TEST}" || \
+        fail 'hermetic writable-root resolution failed'
+    emit_portage_writable_roots
+    exit 0
+fi
+
+if [[ -n ${WRITABLE_ROOT_RECEIPT_TEST} ]]; then
+    [[ -z ${OUTPUT_DIR}${PORTAGE_POLICY_MODE}${WRITABLE_ROOT_RESOLVER_TEST} && \
+        ${LIVE_POLICY_PREFLIGHT_ONLY} == 0 && ${PRODUCTION_LOCKS} == 0 ]] || \
+        fail '--writable-root-receipt-test cannot be combined with other modes'
+    verify_writable_root_receipt "${WRITABLE_ROOT_RECEIPT_TEST}" \
+        "${WRITABLE_ROOT_RECEIPT_EXPECTED}" hermetic-receipt
+    printf 'PASS: hermetic writable-root receipt matches\n'
+    exit 0
+fi
+
+require_root_trusted_canonical_path() {
+    local logical=$1 kind=$2 resolved current metadata mode
+    [[ ${logical} == /* && ( -e ${logical} || -L ${logical} ) ]] || return 1
+    [[ $(/usr/bin/stat -c %u -- "${logical}") == 0 ]] || return 1
+    resolved=$(/usr/bin/realpath -e -- "${logical}") || return 1
+    [[ ${resolved} == /* && ! -L ${resolved} ]] || return 1
+    case ${kind} in
+        executable) [[ -f ${resolved} && -x ${resolved} ]] || return 1 ;;
+        regular) [[ -f ${resolved} ]] || return 1 ;;
+        directory) [[ -d ${resolved} ]] || return 1 ;;
+        *) return 1 ;;
+    esac
+    metadata=$(/usr/bin/stat -c '%u:%a' -- "${resolved}") || return 1
+    mode=${metadata#*:}
+    [[ ${metadata%%:*} == 0 ]] || return 1
+    (( (8#${mode} & 8#022) == 0 )) || return 1
+    current=${resolved}
+    [[ -d ${current} ]] || current=${current%/*}
+    [[ -n ${current} ]] || current=/
+    while :; do
+        [[ -d ${current} && ! -L ${current} && \
+            $(/usr/bin/realpath -e -- "${current}") == "${current}" ]] || return 1
+        metadata=$(/usr/bin/stat -c '%u:%a' -- "${current}") || return 1
+        mode=${metadata#*:}
+        [[ ${metadata%%:*} == 0 ]] || return 1
+        (( (8#${mode} & 8#022) == 0 )) || return 1
+        [[ ${current} == / ]] && break
+        current=${current%/*}
+        [[ -n ${current} ]] || current=/
+    done
+}
+
+resolve_live_portage_policy() {
+    local output=$1 tool feature writable_roots_tsv
+    local -a live_feature_tokens=()
+    local -A live_feature_state=()
+    for tool in /usr/bin/env /usr/bin/portageq /usr/bin/python3 \
+        /usr/bin/realpath /usr/bin/sha256sum /usr/bin/stat /usr/bin/mktemp \
+        /usr/bin/rm; do
+        require_root_trusted_canonical_path "${tool}" executable || \
+            fail "live-policy tool or canonical ancestry is not root-trusted: ${tool}"
+    done
+    LIVE_MAKE_CONF=$(/usr/bin/realpath -e -- /etc/portage/make.conf)
+    require_root_trusted_canonical_path "${LIVE_MAKE_CONF}" regular || \
+        fail 'live make.conf or canonical ancestry is not root-trusted'
+    [[ $(/usr/bin/stat -c %h -- "${LIVE_MAKE_CONF}") == 1 ]] || \
+        fail 'live make.conf is not single-link'
+    LIVE_MAKE_CONF_SHA256=$(/usr/bin/sha256sum -- "${LIVE_MAKE_CONF}")
+    LIVE_MAKE_CONF_SHA256=${LIVE_MAKE_CONF_SHA256%% *}
+    LIVE_PORTAGE_FEATURES=$(/usr/bin/env -i \
+        HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
+        PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
+        PORTAGE_CONFIGROOT=/ /usr/bin/portageq envvar FEATURES)
+    resolve_portage_writable_roots /usr/bin/portageq "${WORK-}" || \
+        fail 'cannot resolve the complete live Portage writable-root set'
+    LIVE_PORTAGE_TMPDIR_RAW=${PORTAGE_WRITABLE_RAW[PORTAGE_TMPDIR]}
+    LIVE_PORTAGE_TMPDIR_EFFECTIVE=${PORTAGE_WRITABLE_EFFECTIVE[PORTAGE_TMPDIR]}
+    LIVE_PORTAGE_TMPDIR=${PORTAGE_WRITABLE_CANONICAL[PORTAGE_TMPDIR]}
+    LIVE_PORTAGE_TMPDIR_SOURCE=${PORTAGE_WRITABLE_SOURCE[PORTAGE_TMPDIR]}
+    LIVE_PORTAGE_TMPDIR_PORTAGE_EFFECTIVE=${LIVE_PORTAGE_TMPDIR_EFFECTIVE%/}/portage
+    LIVE_PORTAGE_TMPDIR_PORTAGE=$(/usr/bin/realpath -m -- \
+        "${LIVE_PORTAGE_TMPDIR_PORTAGE_EFFECTIVE}") || \
+        fail 'cannot canonicalize the live PORTAGE_TMPDIR/portage tree'
+    LIVE_PORTAGE_LOGDIR_RAW=${PORTAGE_WRITABLE_RAW[PORTAGE_LOGDIR]}
+    LIVE_PORTAGE_LOGDIR_EFFECTIVE=${PORTAGE_WRITABLE_EFFECTIVE[PORTAGE_LOGDIR]}
+    LIVE_PORTAGE_LOGDIR=${PORTAGE_WRITABLE_CANONICAL[PORTAGE_LOGDIR]}
+    LIVE_PORTAGE_LOGDIR_SOURCE=${PORTAGE_WRITABLE_SOURCE[PORTAGE_LOGDIR]}
+    LIVE_PORTAGE_DEPCACHEDIR_RAW=${PORTAGE_WRITABLE_RAW[PORTAGE_DEPCACHEDIR]}
+    LIVE_PORTAGE_DEPCACHEDIR_EFFECTIVE=${PORTAGE_WRITABLE_EFFECTIVE[PORTAGE_DEPCACHEDIR]}
+    LIVE_PORTAGE_DEPCACHEDIR=${PORTAGE_WRITABLE_CANONICAL[PORTAGE_DEPCACHEDIR]}
+    LIVE_PORTAGE_DEPCACHEDIR_SOURCE=${PORTAGE_WRITABLE_SOURCE[PORTAGE_DEPCACHEDIR]}
+    LIVE_DISTDIR_RAW=${PORTAGE_WRITABLE_RAW[DISTDIR]}
+    LIVE_DISTDIR_EFFECTIVE=${PORTAGE_WRITABLE_EFFECTIVE[DISTDIR]}
+    LIVE_DISTDIR=${PORTAGE_WRITABLE_CANONICAL[DISTDIR]}
+    LIVE_DISTDIR_SOURCE=${PORTAGE_WRITABLE_SOURCE[DISTDIR]}
+    LIVE_PKGDIR_RAW=${PORTAGE_WRITABLE_RAW[PKGDIR]}
+    LIVE_PKGDIR_EFFECTIVE=${PORTAGE_WRITABLE_EFFECTIVE[PKGDIR]}
+    LIVE_PKGDIR=${PORTAGE_WRITABLE_CANONICAL[PKGDIR]}
+    LIVE_PKGDIR_SOURCE=${PORTAGE_WRITABLE_SOURCE[PKGDIR]}
+    LIVE_CCACHE_DIR_RAW=${PORTAGE_WRITABLE_RAW[CCACHE_DIR]}
+    LIVE_CCACHE_DIR_EFFECTIVE=${PORTAGE_WRITABLE_EFFECTIVE[CCACHE_DIR]}
+    LIVE_CCACHE_DIR=${PORTAGE_WRITABLE_CANONICAL[CCACHE_DIR]}
+    LIVE_CCACHE_DIR_SOURCE=${PORTAGE_WRITABLE_SOURCE[CCACHE_DIR]}
+    LIVE_CCACHE_TEMPDIR_RAW=${PORTAGE_WRITABLE_RAW[CCACHE_TEMPDIR]}
+    LIVE_CCACHE_TEMPDIR_EFFECTIVE=${PORTAGE_WRITABLE_EFFECTIVE[CCACHE_TEMPDIR]}
+    LIVE_CCACHE_TEMPDIR=${PORTAGE_WRITABLE_CANONICAL[CCACHE_TEMPDIR]}
+    LIVE_CCACHE_TEMPDIR_SOURCE=${PORTAGE_WRITABLE_SOURCE[CCACHE_TEMPDIR]}
+    LIVE_SCCACHE_DIR_RAW=${PORTAGE_WRITABLE_RAW[SCCACHE_DIR]}
+    LIVE_SCCACHE_DIR_EFFECTIVE=${PORTAGE_WRITABLE_EFFECTIVE[SCCACHE_DIR]}
+    LIVE_SCCACHE_DIR=${PORTAGE_WRITABLE_CANONICAL[SCCACHE_DIR]}
+    LIVE_SCCACHE_DIR_SOURCE=${PORTAGE_WRITABLE_SOURCE[SCCACHE_DIR]}
+    [[ -n ${LIVE_PORTAGE_FEATURES} && ${LIVE_PORTAGE_FEATURES} != *$'\n'* ]] || \
+        fail 'live Portage FEATURES did not resolve to one nonempty line'
+    IFS=' ' read -r -a live_feature_tokens <<< "${LIVE_PORTAGE_FEATURES}"
+    ((${#live_feature_tokens[@]} > 0)) || fail 'live Portage FEATURES is empty'
+    for feature in "${live_feature_tokens[@]}"; do
+        [[ ${feature} =~ ^-?[A-Za-z0-9][A-Za-z0-9+_.-]*$ ]] || \
+            fail "live Portage FEATURES contains an unsafe token: ${feature}"
+        if [[ ${feature} == -* ]]; then
+            live_feature_state[${feature#-}]=0
+        else
+            live_feature_state[${feature}]=1
+        fi
+    done
+    for feature in ccache sandbox usersandbox userpriv mount-sandbox pid-sandbox \
+        ipc-sandbox network-sandbox; do
+        [[ ${live_feature_state[${feature}]:-0} == 1 ]] || \
+            fail "live Portage policy does not effectively enable ${feature}"
+    done
+    writable_roots_tsv=$(emit_portage_writable_roots)
+    /usr/bin/env -i \
+        HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
+        PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
+        PORTAGE_CONFIGROOT=/ LIVE_FEATURES="${LIVE_PORTAGE_FEATURES}" \
+        LIVE_WRITABLE_ROOTS_TSV="${writable_roots_tsv}" \
+        LIVE_PORTAGE_TMPDIR_PORTAGE_EFFECTIVE="${LIVE_PORTAGE_TMPDIR_PORTAGE_EFFECTIVE}" \
+        LIVE_PORTAGE_TMPDIR_PORTAGE="${LIVE_PORTAGE_TMPDIR_PORTAGE}" \
+        /usr/bin/python3 -I - "${output}" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import pwd
+import stat
+import sys
+
+import portage
+
+destination = pathlib.Path(sys.argv[1])
+
+def digest(path: pathlib.Path) -> str:
+    value = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            value.update(block)
+    return value.hexdigest()
+
+def metadata(path: pathlib.Path, *, follow: bool = False) -> dict[str, object]:
+    info = path.stat() if follow else path.lstat()
+    return {
+        "device": info.st_dev,
+        "gid": info.st_gid,
+        "inode": info.st_ino,
+        "mode": stat.S_IMODE(info.st_mode),
+        "mtime_ns": info.st_mtime_ns,
+        "nlink": info.st_nlink,
+        "size": info.st_size,
+        "uid": info.st_uid,
+    }
+
+def require_trusted_canonical(
+    path: pathlib.Path, kind: str, allowed_uids: frozenset[int] = frozenset({0})
+) -> pathlib.Path:
+    resolved = path.resolve(strict=True)
+    info = resolved.lstat()
+    if info.st_uid not in allowed_uids or stat.S_IMODE(info.st_mode) & 0o022:
+        raise SystemExit(f"untrusted {kind}: {resolved}")
+    if kind == "regular" and not stat.S_ISREG(info.st_mode):
+        raise SystemExit(f"not a regular file: {resolved}")
+    if kind == "directory" and not stat.S_ISDIR(info.st_mode):
+        raise SystemExit(f"not a directory: {resolved}")
+    current = resolved if resolved.is_dir() else resolved.parent
+    while True:
+        current_info = current.lstat()
+        if (
+            not stat.S_ISDIR(current_info.st_mode)
+            or current_info.st_uid not in allowed_uids
+            or stat.S_IMODE(current_info.st_mode) & 0o022
+            or current.is_symlink()
+        ):
+            raise SystemExit(f"untrusted canonical ancestor: {current}")
+        if current == current.parent:
+            break
+        current = current.parent
+    return resolved
+
+def tree_identity(
+    path: pathlib.Path,
+    allowed_uids: frozenset[int] = frozenset({0}),
+    symlink_target_uids: frozenset[int] | None = None,
+) -> list[dict[str, object]]:
+    if symlink_target_uids is None:
+        symlink_target_uids = allowed_uids
+    root = require_trusted_canonical(path, "directory", allowed_uids)
+    entries: list[dict[str, object]] = []
+    for node in [root, *sorted(root.rglob("*"), key=lambda item: item.as_posix())]:
+        info = node.lstat()
+        if info.st_uid not in allowed_uids or (
+            not stat.S_ISLNK(info.st_mode) and stat.S_IMODE(info.st_mode) & 0o022
+        ):
+            raise SystemExit(f"untrusted policy node: {node}")
+        if stat.S_ISREG(info.st_mode):
+            kind, content, target = "regular", digest(node), None
+        elif stat.S_ISDIR(info.st_mode):
+            kind, content, target = "directory", None, None
+        elif stat.S_ISLNK(info.st_mode):
+            target_path = node.resolve(strict=True)
+            target_info = target_path.lstat()
+            if stat.S_ISREG(target_info.st_mode):
+                require_trusted_canonical(node, "regular", symlink_target_uids)
+                content = digest(target_path)
+            elif stat.S_ISDIR(target_info.st_mode):
+                require_trusted_canonical(node, "directory", symlink_target_uids)
+                content = None
+            else:
+                raise SystemExit(f"unsupported policy symlink target: {node}")
+            kind, target = "symlink", os.readlink(node)
+        else:
+            raise SystemExit(f"unsupported policy node: {node}")
+        entries.append({
+            "content_sha256": content,
+            "kind": kind,
+            "metadata": metadata(node),
+            "path": node.as_posix(),
+            "symlink_target": target,
+        })
+    return entries
+
+make_conf = require_trusted_canonical(pathlib.Path("/etc/portage/make.conf"), "regular")
+make_globals = require_trusted_canonical(
+    pathlib.Path("/usr/share/portage/config/make.globals"), "regular"
+)
+portage_uid = pwd.getpwnam("portage").pw_uid
+policy_uids = frozenset({0, portage_uid})
+profile_selector = pathlib.Path("/etc/portage/make.profile")
+selector_info = profile_selector.lstat()
+if not stat.S_ISLNK(selector_info.st_mode) or selector_info.st_uid != 0:
+    raise SystemExit("live profile selector is not a root-owned symlink")
+
+profiles = []
+seen_profiles: set[str] = set()
+for raw_profile in portage.settings.profiles:
+    profile = require_trusted_canonical(
+        pathlib.Path(raw_profile), "directory", policy_uids
+    )
+    if profile.as_posix() in seen_profiles:
+        raise SystemExit(f"duplicate resolved profile in chain: {profile}")
+    seen_profiles.add(profile.as_posix())
+    profiles.append({
+        "path": profile.as_posix(),
+        "tree": tree_identity(profile, policy_uids),
+    })
+
+repositories = []
+for repo in portage.settings.repositories:
+    location = require_trusted_canonical(
+        pathlib.Path(repo.location), "directory", policy_uids
+    )
+    markers = []
+    for relative in ("metadata/layout.conf", "profiles/repo_name"):
+        marker = location / relative
+        if marker.exists():
+            trusted = require_trusted_canonical(marker, "regular", policy_uids)
+            markers.append({
+                "path": trusted.as_posix(),
+                "sha256": digest(trusted),
+                "metadata": metadata(trusted),
+            })
+    repositories.append({
+        "location": location.as_posix(),
+        "markers": markers,
+        "masters": [getattr(master, "name", str(master)) for master in repo.masters],
+        "name": repo.name,
+    })
+
+tools = []
+for raw_tool in (
+    "/usr/bin/env",
+    "/usr/bin/portageq",
+    "/usr/bin/python3",
+    "/usr/bin/realpath",
+    "/usr/bin/sha256sum",
+    "/usr/bin/stat",
+):
+    logical = pathlib.Path(raw_tool)
+    resolved_tool = require_trusted_canonical(logical, "regular")
+    tools.append({
+        "logical_path": logical.as_posix(),
+        "metadata": metadata(resolved_tool),
+        "path": resolved_tool.as_posix(),
+        "sha256": digest(resolved_tool),
+    })
+
+repos_conf = pathlib.Path("/etc/portage/repos.conf")
+portage_config_selector = pathlib.Path("/etc/portage")
+portage_config_info = portage_config_selector.lstat()
+if portage_config_info.st_uid != 0:
+    raise SystemExit("live Portage config selector is not root-owned")
+portage_config = require_trusted_canonical(portage_config_selector, "directory")
+writable_root_lines = os.environ["LIVE_WRITABLE_ROOTS_TSV"].splitlines()
+if not writable_root_lines or writable_root_lines[0] != (
+    "schema\tgentoo-optimization-portage-writable-roots-v1"
+):
+    raise SystemExit("live writable-root identity has the wrong schema")
+writable_roots = {}
+for line in writable_root_lines[1:]:
+    fields = line.split("\t")
+    if len(fields) != 6 or fields[0] in writable_roots:
+        raise SystemExit(f"invalid live writable-root row: {line!r}")
+    name, raw, effective, canonical, source, query_status = fields
+    writable_roots[name.lower()] = {
+        "canonical": canonical,
+        "effective": effective,
+        "query_raw": raw,
+        "query_status": int(query_status),
+        "source": source,
+    }
+document = {
+    "features_effective": {
+        token.removeprefix("-"): not token.startswith("-")
+        for token in os.environ["LIVE_FEATURES"].split()
+    },
+    "features_raw": os.environ["LIVE_FEATURES"],
+    "make_conf": {
+        "metadata": metadata(make_conf),
+        "path": make_conf.as_posix(),
+        "sha256": digest(make_conf),
+    },
+    "make_globals": {
+        "metadata": metadata(make_globals),
+        "path": make_globals.as_posix(),
+        "sha256": digest(make_globals),
+    },
+    "profile_selector": {
+        "metadata": metadata(profile_selector),
+        "path": profile_selector.as_posix(),
+        "resolved": profile_selector.resolve(strict=True).as_posix(),
+        "target": os.readlink(profile_selector),
+    },
+    "profiles": profiles,
+    "portage_config": tree_identity(
+        portage_config, symlink_target_uids=policy_uids
+    ),
+    "portage_config_selector": {
+        "kind": "symlink" if stat.S_ISLNK(portage_config_info.st_mode) else "directory",
+        "metadata": metadata(portage_config_selector),
+        "path": portage_config_selector.as_posix(),
+        "resolved": portage_config.as_posix(),
+        "target": os.readlink(portage_config_selector)
+        if stat.S_ISLNK(portage_config_info.st_mode)
+        else None,
+    },
+    "repositories": sorted(repositories, key=lambda item: item["name"]),
+    "repositories_config": tree_identity(repos_conf),
+    "schema": "gentoo-optimization-live-portage-policy-identity-v2",
+    "tools": tools,
+    "writable_roots": writable_roots,
+    "writable_roots_derived": {
+        "portage_tmpdir_portage": {
+            "canonical": os.environ["LIVE_PORTAGE_TMPDIR_PORTAGE"],
+            "effective": os.environ["LIVE_PORTAGE_TMPDIR_PORTAGE_EFFECTIVE"],
+            "source": "below-portage-tmpdir",
+        },
+    },
+}
+destination.write_text(
+    json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+PY
+    LIVE_POLICY_IDENTITY_SHA256=$(/usr/bin/sha256sum -- "${output}")
+    LIVE_POLICY_IDENTITY_SHA256=${LIVE_POLICY_IDENTITY_SHA256%% *}
+}
+
+if ((LIVE_POLICY_PREFLIGHT_ONLY)); then
+    [[ -z ${OUTPUT_DIR}${PORTAGE_POLICY_MODE} && ${PRODUCTION_LOCKS} == 0 ]] || \
+        fail '--live-policy-preflight cannot be combined with build or production options'
+    PREFLIGHT_IDENTITY=$(/usr/bin/mktemp \
+        /tmp/gentoo-optimization-live-policy.XXXXXXXX)
+    trap '/usr/bin/rm -f -- "${PREFLIGHT_IDENTITY}"' EXIT
+    resolve_live_portage_policy "${PREFLIGHT_IDENTITY}"
+    printf 'schema\tgentoo-optimization-sample-live-policy-preflight-v2\n'
+    printf 'live_make_conf\t%s\n' "${LIVE_MAKE_CONF}"
+    printf 'live_make_conf_sha256\t%s\n' "${LIVE_MAKE_CONF_SHA256}"
+    printf 'live_resolved_features\t%s\n' "${LIVE_PORTAGE_FEATURES}"
+    printf 'live_policy_identity_sha256\t%s\n' "${LIVE_POLICY_IDENTITY_SHA256}"
+    printf 'live_portage_depcachedir\t%s\n' "${LIVE_PORTAGE_DEPCACHEDIR}"
+    printf 'live_portage_logdir\t%s\n' "${LIVE_PORTAGE_LOGDIR}"
+    printf 'live_distdir\t%s\n' "${LIVE_DISTDIR}"
+    printf 'live_pkgdir\t%s\n' "${LIVE_PKGDIR}"
+    printf 'live_ccache_dir\t%s\n' "${LIVE_CCACHE_DIR}"
+    printf 'live_ccache_tempdir\t%s\n' "${LIVE_CCACHE_TEMPDIR}"
+    printf 'live_ccache_tempdir_source\t%s\n' "${LIVE_CCACHE_TEMPDIR_SOURCE}"
+    printf 'live_sccache_dir\t%s\n' "${LIVE_SCCACHE_DIR}"
+    printf 'live_sccache_dir_source\t%s\n' "${LIVE_SCCACHE_DIR_SOURCE}"
+    /usr/bin/rm -f -- "${PREFLIGHT_IDENTITY}"
+    trap - EXIT
+    exit 0
+fi
 
 production_authorized_command() {
     ((PRODUCTION_LOCKS)) || fail 'internal production command used outside production mode'
@@ -127,7 +877,14 @@ fi
 [[ ${KEEP_TEMP} == 0 || ${KEEP_TEMP} == 1 ]] || fail 'KEEP_TEMP must be 0 or 1'
 [[ ${PRODUCTION_LOCKS} == 0 || ${PRODUCTION_LOCKS} == 1 ]] || \
     fail 'PRODUCTION_LOCKS must be 0 or 1'
+case ${PORTAGE_POLICY_MODE} in
+    isolated-diagnostic|live) ;;
+    '') fail '--portage-policy is required' ;;
+    *) fail '--portage-policy must be isolated-diagnostic or live' ;;
+esac
 if ((PRODUCTION_LOCKS)); then
+    [[ ${PORTAGE_POLICY_MODE} == live ]] || \
+        fail '--production-locks requires --portage-policy live'
     AUTHORIZATION_TOKEN_SCANNER=/usr/local/libexec/gentoo-optimization/pgo/authorization-token-scan.py
     [[ -n ${OUTPUT_DIR} ]] || fail '--production-locks requires an explicit output directory'
     [[ -z ${PORTAGE_SAMPLE_ITERATIONS_WAS_SET}${KEEP_TEMP_WAS_SET} ]] || \
@@ -172,7 +929,7 @@ fi
 }
 for command in awk b2sum bash chmod chown cp cmp cut date ebuild env find getent grep \
     hostname id install jq ln mkdir mktemp mv perf portageq python3 readelf readlink rm runuser sed \
-    realpath sha256sum sha512sum sort stat sync tail timeout xargs; do
+    realpath sha256sum sha512sum sort stat sync tail timeout touch xargs; do
     command -v "${command}" >/dev/null 2>&1 || fail "missing command: ${command}"
 done
 if ((PRODUCTION_LOCKS)); then
@@ -694,6 +1451,16 @@ EBUILD=${PACKAGE_ROOT}/phase2-pgo-use-fixture-1.ebuild
 CONFIG_ROOT=${WORK}/config-root
 PORTAGE_ROOT=${CONFIG_ROOT}/etc/portage
 PORTAGE_TMP=${WORK}/portage-tmp
+PORTAGE_LOG_DIR=${WORK}/portage-logs
+PORTAGE_DEPCACHE_DIR=${WORK}/portage-depcache
+CCACHE_CACHE_DIR=${WORK}/ccache
+CCACHE_TEMP_DIR=${WORK}/ccache-tmp
+SCCACHE_CACHE_DIR=${WORK}/sccache
+DRIVER_HOME=${WORK}/driver-home
+DRIVER_TMP=${WORK}/driver-tmp
+XDG_CACHE_DIR=${WORK}/xdg-cache
+XDG_CONFIG_DIR=${WORK}/xdg-config
+XDG_STATE_DIR=${WORK}/xdg-state
 BUILD_ROOT=${PORTAGE_TMP}/portage/app-test/phase2-pgo-use-fixture-1
 FLAGS_FILE=${BUILD_ROOT}/temp/effective-flags.tsv
 PROFILE_ROOT=${WORK}/profile
@@ -727,6 +1494,13 @@ TRANSACTION_EXPECTED_PAYLOAD_SHA256=
 TRANSACTION_FRAMEWORK_AGGREGATE_SHA256=
 PROFILE_LOCK_ARGS=()
 VALIDATOR_COMMAND=${VALIDATOR_PROXY}
+HOST_PID_NAMESPACE=$(readlink -- /proc/self/ns/pid)
+HOST_NETWORK_NAMESPACE=$(readlink -- /proc/self/ns/net)
+HOST_IPC_NAMESPACE=$(readlink -- /proc/self/ns/ipc)
+HOST_MOUNT_NAMESPACE=$(readlink -- /proc/self/ns/mnt)
+POLICY_PROBE_ENV=${PORTAGE_ROOT}/env/sample-live-policy-probe.conf
+SANDBOX_DENY_DIRECTORY=${PACKAGE_ROOT}/sandbox-policy-deny
+SANDBOX_DENY_PATH=${SANDBOX_DENY_DIRECTORY}/forbidden-write
 if ((PRODUCTION_LOCKS)); then
     GENERATION_ID=${PRODUCTION_GATE_GENERATION_ID}
     INVENTORY_ID=${PRODUCTION_GATE_INVENTORY_ID}
@@ -747,7 +1521,9 @@ if ((PRODUCTION_LOCKS)); then
     TRANSACTION_CHILD_IDENTITY=${TRANSACTION_JOURNAL}.child.json
     VALIDATOR_COMMAND=${VALIDATOR}
 fi
-GENTOO_REPO=$(portageq get_repo_path / gentoo)
+GENTOO_REPO=$(/usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
+    PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
+    PORTAGE_CONFIGROOT=/ /usr/bin/portageq get_repo_path / gentoo)
 PROFILE_LINK=$(readlink -f -- /etc/portage/make.profile)
 PORTAGE_GID=$(getent group portage | awk -F: '$1 == "portage" {print $3; exit}')
 PORTAGE_UID=$(getent passwd portage | awk -F: '$1 == "portage" {print $3; exit}')
@@ -757,15 +1533,32 @@ for value in "${GENTOO_REPO}" "${PROFILE_LINK}"; do
 done
 [[ ${PORTAGE_GID} =~ ^[1-9][0-9]*$ && ${PORTAGE_UID} =~ ^[1-9][0-9]*$ ]] || \
     fail 'cannot resolve the nonzero Portage user/group'
+if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+    resolve_live_portage_policy "${WORK}/live-policy-before.json"
+fi
 mkdir -p -- "${PACKAGE_ROOT}" "${WORK}/metadata" "${WORK}/profiles" \
     "${PORTAGE_ROOT}/env" "${PORTAGE_ROOT}/package.env" \
     "${PORTAGE_ROOT}/repos.conf" "${PORTAGE_TMP}" "${WORK}/distfiles" \
-    "${WORK}/binpkgs"
+    "${WORK}/binpkgs" "${PORTAGE_LOG_DIR}" "${PORTAGE_DEPCACHE_DIR}" \
+    "${CCACHE_CACHE_DIR}" "${CCACHE_TEMP_DIR}" "${SCCACHE_CACHE_DIR}" \
+    "${DRIVER_HOME}" "${DRIVER_TMP}" "${XDG_CACHE_DIR}" \
+    "${XDG_CONFIG_DIR}" "${XDG_STATE_DIR}"
 chmod 0755 -- "${WORK}" "${WORK}/app-test" "${PACKAGE_ROOT}" \
     "${WORK}/metadata" "${WORK}/profiles" "${CONFIG_ROOT}" \
     "${CONFIG_ROOT}/etc" "${PORTAGE_ROOT}" "${PORTAGE_ROOT}/env" \
     "${PORTAGE_ROOT}/package.env" "${PORTAGE_ROOT}/repos.conf" \
-    "${PORTAGE_TMP}" "${WORK}/distfiles" "${WORK}/binpkgs"
+    "${PORTAGE_TMP}" "${WORK}/distfiles" "${WORK}/binpkgs" \
+    "${PORTAGE_LOG_DIR}" "${PORTAGE_DEPCACHE_DIR}" "${CCACHE_CACHE_DIR}" \
+    "${CCACHE_TEMP_DIR}" "${SCCACHE_CACHE_DIR}" "${DRIVER_HOME}" \
+    "${DRIVER_TMP}" "${XDG_CACHE_DIR}" "${XDG_CONFIG_DIR}" "${XDG_STATE_DIR}"
+chown "0:${PORTAGE_GID}" -- "${PORTAGE_LOG_DIR}" "${PORTAGE_DEPCACHE_DIR}" \
+    "${CCACHE_CACHE_DIR}" "${CCACHE_TEMP_DIR}" "${SCCACHE_CACHE_DIR}" \
+    "${DRIVER_HOME}" "${DRIVER_TMP}" "${XDG_CACHE_DIR}" \
+    "${XDG_CONFIG_DIR}" "${XDG_STATE_DIR}"
+chmod 0770 -- "${PORTAGE_LOG_DIR}" "${PORTAGE_DEPCACHE_DIR}" \
+    "${CCACHE_CACHE_DIR}" "${CCACHE_TEMP_DIR}" "${SCCACHE_CACHE_DIR}" \
+    "${DRIVER_HOME}" "${DRIVER_TMP}" "${XDG_CACHE_DIR}" \
+    "${XDG_CONFIG_DIR}" "${XDG_STATE_DIR}"
 if ((PRODUCTION_LOCKS)); then
     [[ ${PRODUCTION_TRANSACTION_AUTHORIZATION} == "${TRANSACTION_AUTHORIZATION}" ]] || \
         fail 'coordinator authorization path differs from the exact gate namespace'
@@ -910,6 +1703,12 @@ ln -s -- "${PROFILE_LINK}" "${PORTAGE_ROOT}/make.profile"
 printf '%s\n' 'masters = gentoo' > "${WORK}/metadata/layout.conf"
 printf '%s\n' phase2-sample-pgo-fixture > "${WORK}/profiles/repo_name"
 printf '%s\n' app-test > "${WORK}/profiles/categories"
+PORTAGE_FEATURES_ASSIGNMENT='userpriv -ccache -distcc -icecream -sandbox -usersandbox -network-sandbox -pid-sandbox -ipc-sandbox nostrip'
+PORTAGE_FRESHNESS_ASSIGNMENTS=()
+if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+    PORTAGE_FEATURES_ASSIGNMENT=${LIVE_PORTAGE_FEATURES}
+    PORTAGE_FRESHNESS_ASSIGNMENTS+=('CCACHE_RECACHE="1"')
+fi
 printf '%s\n' \
     '[gentoo]' \
     "location = ${GENTOO_REPO}" \
@@ -942,13 +1741,68 @@ printf '%s\n' \
     'FFLAGS="-O2 -pipe"' \
     'LDFLAGS="-fuse-ld=lld"' \
     'RUSTFLAGS=""' \
-    'FEATURES="userpriv -ccache -distcc -icecream -sandbox -usersandbox -network-sandbox -pid-sandbox -ipc-sandbox nostrip"' \
+    "FEATURES=\"${PORTAGE_FEATURES_ASSIGNMENT}\"" \
+    "${PORTAGE_FRESHNESS_ASSIGNMENTS[@]}" \
     'ACCEPT_KEYWORDS="**"' \
     'MAKEOPTS="-j2"' \
     "PORTAGE_TMPDIR=\"${PORTAGE_TMP}\"" \
+    "PORTAGE_LOGDIR=\"${PORTAGE_LOG_DIR}\"" \
+    "PORTAGE_DEPCACHEDIR=\"${PORTAGE_DEPCACHE_DIR}\"" \
     "DISTDIR=\"${WORK}/distfiles\"" \
     "PKGDIR=\"${WORK}/binpkgs\"" \
+    "CCACHE_DIR=\"${CCACHE_CACHE_DIR}\"" \
+    "CCACHE_TEMPDIR=\"${CCACHE_TEMP_DIR}\"" \
+    "SCCACHE_DIR=\"${SCCACHE_CACHE_DIR}\"" \
+    "XDG_CACHE_HOME=\"${XDG_CACHE_DIR}\"" \
+    "XDG_CONFIG_HOME=\"${XDG_CONFIG_DIR}\"" \
+    "XDG_STATE_HOME=\"${XDG_STATE_DIR}\"" \
+    'PORTAGE_ELOG_CLASSES="log warn error qa"' \
+    'PORTAGE_ELOG_SYSTEM="save"' \
+    'PORTAGE_ELOG_MAILURI=""' \
     > "${PORTAGE_ROOT}/make.conf"
+
+{
+    printf 'schema\tgentoo-optimization-sample-portage-policy-v1\n'
+    printf 'selected_policy\t%s\n' "${PORTAGE_POLICY_MODE}"
+    printf 'configured_features\t%s\n' "${PORTAGE_FEATURES_ASSIGNMENT}"
+    printf 'host_pid_namespace\t%s\n' "${HOST_PID_NAMESPACE}"
+    printf 'host_network_namespace\t%s\n' "${HOST_NETWORK_NAMESPACE}"
+    printf 'host_ipc_namespace\t%s\n' "${HOST_IPC_NAMESPACE}"
+    printf 'host_mount_namespace\t%s\n' "${HOST_MOUNT_NAMESPACE}"
+    if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+        printf 'live_make_conf\t%s\n' "${LIVE_MAKE_CONF}"
+        printf 'live_make_conf_sha256\t%s\n' "${LIVE_MAKE_CONF_SHA256}"
+        printf 'live_resolved_features\t%s\n' "${LIVE_PORTAGE_FEATURES}"
+        printf 'live_policy_identity_sha256\t%s\n' \
+            "${LIVE_POLICY_IDENTITY_SHA256}"
+        printf 'disposable_portage_logdir\t%s\n' "${PORTAGE_LOG_DIR}"
+        printf 'disposable_portage_depcachedir\t%s\n' "${PORTAGE_DEPCACHE_DIR}"
+        printf 'disposable_ccache_dir\t%s\n' "${CCACHE_CACHE_DIR}"
+        printf 'disposable_sccache_dir\t%s\n' "${SCCACHE_CACHE_DIR}"
+        printf 'disposable_xdg_cache_home\t%s\n' "${XDG_CACHE_DIR}"
+        printf 'disposable_xdg_config_home\t%s\n' "${XDG_CONFIG_DIR}"
+        printf 'disposable_xdg_state_home\t%s\n' "${XDG_STATE_DIR}"
+        printf 'protected_live_ccache_dir\t%s\n' "${LIVE_CCACHE_DIR}"
+        printf 'protected_live_ccache_tempdir\t%s\n' "${LIVE_CCACHE_TEMPDIR}"
+        printf 'protected_live_ccache_tempdir_source\t%s\n' \
+            "${LIVE_CCACHE_TEMPDIR_SOURCE}"
+        printf 'protected_live_sccache_dir\t%s\n' "${LIVE_SCCACHE_DIR}"
+        printf 'protected_live_sccache_dir_source\t%s\n' \
+            "${LIVE_SCCACHE_DIR_SOURCE}"
+        printf 'sandbox_exceptions\tnone\n'
+        printf 'stage_feature_exception\t-ccache,-distcc,-icecream-only-during-profile-map-and-sample-use-by-reviewed-dispatcher\n'
+        printf 'fresh_compile_policy\tabsolute-clang-plus-CCACHE_RECACHE=1\n'
+        printf 'diagnostic_lane\tseparate;not-authoritative-for-live-policy\n'
+    else
+        printf 'live_make_conf\tnot-applicable\n'
+        printf 'live_make_conf_sha256\tnot-applicable\n'
+        printf 'live_resolved_features\tnot-applicable\n'
+        printf 'sandbox_exceptions\tdiagnostic-lane-disables-sandbox-usersandbox-network-pid-ipc\n'
+        printf 'stage_feature_exception\tnot-applicable\n'
+        printf 'fresh_compile_policy\tabsolute-clang\n'
+        printf 'diagnostic_lane\tfault-localization-only\n'
+    fi
+} > "${WORK}/portage-policy.tsv"
 chmod 0644 -- "${EBUILD}" "${PORTAGE_ROOT}/bashrc" \
     "${PORTAGE_ROOT}/make.conf" "${PORTAGE_ROOT}/repos.conf/repos.conf" \
     "${WORK}/metadata/layout.conf" "${WORK}/profiles/repo_name" \
@@ -1039,7 +1893,9 @@ publish_production_fingerprint() {
 
 write_map_environment() {
     local fingerprint=$1 fingerprint_file=${2:-} output=${MAP_ENV}.partial
-    local -a identity_lines=()
+    local -a identity_lines=() freshness_lines=()
+    [[ ${PORTAGE_POLICY_MODE} == live ]] && \
+        freshness_lines+=('CCACHE_RECACHE="1"')
     if ((PRODUCTION_LOCKS)); then
         [[ ${fingerprint_file} == "${PRODUCTION_STATE_ROOT}"/* ]] || \
             fail 'production map environment lacks its root-owned fingerprint file'
@@ -1056,6 +1912,7 @@ write_map_environment() {
         'GENTOO_OPT_PROFILE_MAP_READY="1"' \
         'GENTOO_OPT_COMPILER_FAMILY="clang"' \
         'GENTOO_OPT_ABI="amd64"' \
+        "${freshness_lines[@]}" \
         > "${output}"
     chmod 0644 -- "${output}"
     mv -- "${output}" "${MAP_ENV}"
@@ -1067,7 +1924,9 @@ write_map_environment() {
 
 write_use_environment() {
     local fingerprint=$1 fingerprint_file=${2:-} output=${USE_ENV}.partial
-    local -a identity_lines=() validator_lines=()
+    local -a identity_lines=() validator_lines=() freshness_lines=()
+    [[ ${PORTAGE_POLICY_MODE} == live ]] && \
+        freshness_lines+=('CCACHE_RECACHE="1"')
     if ((PRODUCTION_LOCKS)); then
         [[ ${fingerprint_file} == "${PRODUCTION_STATE_ROOT}"/* ]] || \
             fail 'production use environment lacks its root-owned fingerprint file'
@@ -1089,6 +1948,7 @@ write_use_environment() {
         "GENTOO_OPT_PROFILE_MANIFEST=\"${MANIFEST}\"" \
         "GENTOO_OPT_PROFILE_METADATA=\"${SIDECAR}\"" \
         "${validator_lines[@]}" \
+        "${freshness_lines[@]}" \
         > "${output}"
     chmod 0644 -- "${output}"
     mv -- "${output}" "${USE_ENV}"
@@ -1100,14 +1960,17 @@ write_use_environment() {
 
 write_use_probe_environment() {
     local output=${USE_ENV}.partial
-    local -a fixture_lines=()
+    local -a fixture_lines=() freshness_lines=()
     ((PRODUCTION_LOCKS)) || fixture_lines+=('GENTOO_OPT_PORTAGE_FIXTURE_MODE="1"')
+    [[ ${PORTAGE_POLICY_MODE} == live ]] && \
+        freshness_lines+=('CCACHE_RECACHE="1"')
     printf '%s\n' \
         "${fixture_lines[@]}" \
         'GENTOO_OPT_MODE="off"' \
         'GENTOO_OPT_PROFILE_MAP_READY="0"' \
         'GENTOO_OPT_COMPILER_FAMILY="clang"' \
         'GENTOO_OPT_ABI="amd64"' \
+        "${freshness_lines[@]}" \
         > "${output}"
     chmod 0644 -- "${output}"
     mv -- "${output}" "${USE_ENV}"
@@ -1122,11 +1985,20 @@ run_ebuild() {
     shift
     if ((PRODUCTION_LOCKS)); then
         production_authorized_command \
+            "HOME=${DRIVER_HOME}" "TMPDIR=${DRIVER_TMP}" \
+            "XDG_CACHE_HOME=${XDG_CACHE_DIR}" \
+            "XDG_CONFIG_HOME=${XDG_CONFIG_DIR}" \
+            "XDG_STATE_HOME=${XDG_STATE_DIR}" \
             "PORTAGE_CONFIGROOT=${CONFIG_ROOT}" NOCOLOR=true \
             /usr/bin/ebuild --color n "${EBUILD}" "$@" > "${log}" 2>&1
     else
-        PORTAGE_CONFIGROOT=${CONFIG_ROOT} NOCOLOR=true \
-            ebuild --color n "${EBUILD}" "$@" > "${log}" 2>&1
+        /usr/bin/env -i "HOME=${DRIVER_HOME}" USER=root LOGNAME=root SHELL=/bin/bash \
+            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            LANG=C LC_ALL=C TZ=UTC "TMPDIR=${DRIVER_TMP}" \
+            "XDG_CACHE_HOME=${XDG_CACHE_DIR}" "XDG_CONFIG_HOME=${XDG_CONFIG_DIR}" \
+            "XDG_STATE_HOME=${XDG_STATE_DIR}" PORTAGE_CONFIGROOT="${CONFIG_ROOT}" \
+            NOCOLOR=true /usr/bin/ebuild --color n "${EBUILD}" "$@" \
+            > "${log}" 2>&1
     fi
 }
 
@@ -1140,6 +2012,10 @@ run_ebuild_with_private_sidecar_bind() {
     ebuild_tool=$(command -v ebuild) || return 1
     # shellcheck disable=SC2016  # Positional parameters expand in the child shell.
     production_authorized_command \
+        "HOME=${DRIVER_HOME}" "TMPDIR=${DRIVER_TMP}" \
+        "XDG_CACHE_HOME=${XDG_CACHE_DIR}" \
+        "XDG_CONFIG_HOME=${XDG_CONFIG_DIR}" \
+        "XDG_STATE_HOME=${XDG_STATE_DIR}" \
         "${unshare_tool}" --mount --propagation private -- \
         "${bash_tool}" -Eeuo pipefail -c '
             substitute=$1
@@ -1189,6 +2065,298 @@ publish_mapping_input() {
 field() {
     local key=$1 path=$2
     awk -F '\t' -v key="${key}" '$1 == key {sub($1 FS, ""); print; exit}' "${path}"
+}
+
+capture_protected_live_state() {
+    local output=$1
+    [[ ${PORTAGE_POLICY_MODE} == live ]] || return 0
+    /usr/bin/python3 -I - "${output}" /var/db/pkg /var/cache/edb \
+        /var/log/portage "${LIVE_PORTAGE_DEPCACHEDIR}" \
+        "${LIVE_PORTAGE_LOGDIR}" "${LIVE_DISTDIR}" "${LIVE_PKGDIR}" \
+        "${LIVE_CCACHE_DIR}" "${LIVE_CCACHE_TEMPDIR}" \
+        "${LIVE_SCCACHE_DIR}" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import stat
+import sys
+
+output = pathlib.Path(sys.argv[1])
+requested = [pathlib.Path(raw) for raw in sys.argv[2:] if raw]
+roots: list[pathlib.Path] = []
+for requested_root in requested:
+    normalized = pathlib.Path(os.path.normpath(requested_root.as_posix()))
+    if not normalized.is_absolute():
+        raise SystemExit(f"protected Portage root is not absolute: {normalized}")
+    if any(root == normalized or root in normalized.parents for root in roots):
+        continue
+    roots = [root for root in roots if normalized not in root.parents]
+    roots.append(normalized)
+
+def metadata(info: os.stat_result) -> dict[str, int]:
+    return {
+        "ctime_ns": info.st_ctime_ns,
+        "device": info.st_dev,
+        "gid": info.st_gid,
+        "inode": info.st_ino,
+        "mode": stat.S_IMODE(info.st_mode),
+        "mtime_ns": info.st_mtime_ns,
+        "nlink": info.st_nlink,
+        "size": info.st_size,
+        "uid": info.st_uid,
+    }
+
+records = []
+for root in sorted(roots, key=lambda item: item.as_posix()):
+    if not root.exists() and not root.is_symlink():
+        records.append({
+            "aggregate_sha256": None,
+            "kind": "absent",
+            "node_count": 0,
+            "path": root.as_posix(),
+        })
+        continue
+    root_info = root.lstat()
+    root_device = root_info.st_dev
+    aggregate = hashlib.sha256()
+    node_count = 0
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        info = node.lstat()
+        if stat.S_ISREG(info.st_mode):
+            kind, target = "regular", None
+        elif stat.S_ISDIR(info.st_mode):
+            kind, target = "directory", None
+        elif stat.S_ISLNK(info.st_mode):
+            kind, target = "symlink", os.readlink(node)
+        else:
+            kind, target = "special", None
+        relative = "." if node == root else node.relative_to(root).as_posix()
+        identity = {
+            "kind": kind,
+            "metadata": metadata(info),
+            "path": relative,
+            "symlink_target": target,
+        }
+        aggregate.update(
+            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        )
+        aggregate.update(b"\n")
+        node_count += 1
+        if kind == "directory" and info.st_dev == root_device:
+            children = sorted(
+                (pathlib.Path(entry.path) for entry in os.scandir(node)),
+                key=lambda item: item.name,
+                reverse=True,
+            )
+            pending.extend(children)
+    records.append({
+        "aggregate_sha256": aggregate.hexdigest(),
+        "kind": "tree",
+        "node_count": node_count,
+        "path": root.as_posix(),
+    })
+output.write_text(json.dumps(records, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
+assert_production_write_allowlist() {
+    local actual expected
+    ((PRODUCTION_LOCKS)) || return 0
+    expected=$'gate-status.tsv\nllvm-profgen-conversion-log.json\nmapping-input\nperf.data\nprofile.manifest\nprofile.manifest.metadata.json\nsample-metadata.json\nsample.prof'
+    actual=$(find "${PROFILE_ROOT}" -mindepth 1 -maxdepth 1 -type f \
+        -printf '%f\n' | LC_ALL=C sort)
+    [[ ${actual} == "${expected}" ]] || \
+        fail 'production profile root differs from its exact write allowlist'
+    [[ -z $(find "${PROFILE_ROOT}" -mindepth 1 -maxdepth 1 ! -type f -print -quit) ]] || \
+        fail 'production profile root contains a non-file outside its allowlist'
+    expected=$'consumer.fingerprint\ngate-status.tsv\nmapping.fingerprint\nseed.fingerprint\ntransaction.authorization'
+    actual=$(find "${PRODUCTION_STATE_ROOT}" -mindepth 1 -maxdepth 1 -type f \
+        -printf '%f\n' | LC_ALL=C sort)
+    [[ ${actual} == "${expected}" ]] || \
+        fail 'production generation-state root differs from its exact write allowlist'
+    [[ -z $(find "${PRODUCTION_STATE_ROOT}" -mindepth 1 -maxdepth 1 \
+        ! -type f -print -quit) ]] || \
+        fail 'production generation-state root contains a non-file outside its allowlist'
+}
+
+assert_live_policy_receipt() {
+    local receipt=$1 label=$2 expected_policy=${3:-baseline}
+    python3 - "${receipt}" "${label}" "${PORTAGE_UID}" "${PORTAGE_GID}" \
+        "${HOST_PID_NAMESPACE}" "${HOST_NETWORK_NAMESPACE}" \
+        "${HOST_IPC_NAMESPACE}" "${HOST_MOUNT_NAMESPACE}" \
+        "${CLANG}" "${CLANGXX}" "${LIVE_PORTAGE_FEATURES}" \
+        "${expected_policy}" <<'PY'
+import pathlib
+import sys
+
+(
+    receipt_path,
+    label,
+    expected_uid,
+    expected_gid,
+    host_pid,
+    host_network,
+    host_ipc,
+    host_mount,
+    expected_compiler,
+    expected_cxx,
+    baseline_features,
+    expected_policy,
+) = sys.argv[1:]
+values: dict[str, str] = {}
+for line in pathlib.Path(receipt_path).read_text(encoding="utf-8").splitlines():
+    key, separator, value = line.partition("\t")
+    if not separator or key in values:
+        raise SystemExit(f"{label}: invalid or duplicate receipt row: {line!r}")
+    values[key] = value
+
+required_features = {
+    "sandbox",
+    "usersandbox",
+    "userpriv",
+    "mount-sandbox",
+    "pid-sandbox",
+    "ipc-sandbox",
+    "network-sandbox",
+}
+def effective_features(raw: str) -> dict[str, bool]:
+    state: dict[str, bool] = {}
+    for token in raw.split():
+        if token.startswith("-"):
+            state[token[1:]] = False
+        else:
+            state[token] = True
+    return state
+
+feature_state = effective_features(values.get("FEATURES", ""))
+expected_state = effective_features(baseline_features)
+if expected_policy == "profile-stage":
+    expected_state.update({"ccache": False, "distcc": False, "icecream": False})
+elif expected_policy != "baseline":
+    raise SystemExit(f"{label}: unknown expected policy {expected_policy!r}")
+if feature_state != expected_state:
+    raise SystemExit(
+        f"{label}: effective FEATURES drifted: expected={expected_state!r} "
+        f"observed={feature_state!r}"
+    )
+missing = sorted(name for name in required_features if feature_state.get(name) is not True)
+if missing:
+    raise SystemExit(f"{label}: normal Portage policy is inactive: {missing}")
+if values.get("phase_euid") != expected_uid or values.get("phase_egid") != expected_gid:
+    raise SystemExit(f"{label}: userpriv did not select the live portage identity")
+if values.get("sandbox_on") != "1":
+    raise SystemExit(f"{label}: SANDBOX_ON is not active")
+if values.get("CC") != expected_compiler or values.get("cc_realpath") != expected_compiler:
+    raise SystemExit(f"{label}: CC is not the exact absolute reviewed Clang executable")
+if values.get("CXX") != expected_cxx or values.get("cxx_realpath") != expected_cxx:
+    raise SystemExit(f"{label}: CXX is not the exact absolute reviewed Clang++ executable")
+if values.get("ccache_recache") != "1":
+    raise SystemExit(f"{label}: CCACHE_RECACHE=1 fresh-compile defense is absent")
+if expected_policy == "profile-stage":
+    if values.get("ccache_disable") != "1" or values.get("sccache_disable") != "1":
+        raise SystemExit(f"{label}: profile stage lacks both cache-disable controls")
+else:
+    if values.get("ccache_disable") not in {"0", "unset"}:
+        raise SystemExit(f"{label}: ordinary phase unexpectedly disables ccache")
+    if values.get("sccache_disable") not in {"0", "unset"}:
+        raise SystemExit(f"{label}: ordinary phase unexpectedly disables sccache")
+for key, host_identity in (
+    ("pid_namespace", host_pid),
+    ("network_namespace", host_network),
+    ("ipc_namespace", host_ipc),
+    ("mount_namespace", host_mount),
+):
+    phase_identity = values.get(key)
+    if not phase_identity or phase_identity == host_identity:
+        raise SystemExit(
+            f"{label}: {key} is absent or identical to the driver namespace"
+        )
+PY
+}
+
+assert_isolated_policy_receipt() {
+    local receipt=$1 label=$2
+    python3 - "${receipt}" "${label}" <<'PY'
+import pathlib
+import sys
+
+path, label = sys.argv[1:]
+values: dict[str, str] = {}
+for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines():
+    key, separator, value = line.partition("\t")
+    if not separator or key in values:
+        raise SystemExit(f"{label}: invalid or duplicate receipt row: {line!r}")
+    values[key] = value
+state: dict[str, bool] = {}
+for token in values.get("FEATURES", "").split():
+    if token.startswith("-"):
+        state[token[1:]] = False
+    else:
+        state[token] = True
+unexpected = sorted(
+    name
+    for name in (
+        "sandbox",
+        "usersandbox",
+        "mount-sandbox",
+        "network-sandbox",
+        "pid-sandbox",
+        "ipc-sandbox",
+    )
+    if state.get(name) is True
+)
+if unexpected:
+    raise SystemExit(f"{label}: diagnostic lane unexpectedly enabled {unexpected}")
+if values.get("sandbox_on") != "0":
+    raise SystemExit(f"{label}: diagnostic lane did not retain SANDBOX_ON=0")
+PY
+}
+
+assert_selected_policy_receipt() {
+    local receipt=$1 label=$2 expected_policy=${3:-baseline}
+    if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+        assert_live_policy_receipt "${receipt}" "${label}" "${expected_policy}"
+    else
+        assert_isolated_policy_receipt "${receipt}" "${label}"
+    fi
+}
+
+assert_fresh_compiler_execution() {
+    local log=$1 label=$2 marker
+    for marker in workload.c main.c link; do
+        [[ $(grep -Fc \
+            "fixture-compiler-execution=${marker}:completed" "${log}") == 1 ]] || \
+            fail "${label} lacks one exact completed ${marker} compiler marker"
+    done
+    grep -Fq "fixture-CC=${CLANG}" "${log}" || \
+        fail "${label} did not invoke the exact absolute reviewed Clang"
+    if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+        grep -Fq 'fixture-ccache-recache=1' "${log}" || \
+            fail "${label} lacks CCACHE_RECACHE=1 evidence"
+    fi
+}
+
+write_live_policy_probe_environment() {
+    local output=${POLICY_PROBE_ENV}.partial
+    [[ ${PORTAGE_POLICY_MODE} == live ]] || return 1
+    printf '%s\n' \
+        'GENTOO_OPT_MODE="off"' \
+        'GENTOO_OPT_PROFILE_MAP_READY="0"' \
+        'GENTOO_OPT_COMPILER_FAMILY="clang"' \
+        'GENTOO_OPT_ABI="amd64"' \
+        'GENTOO_OPT_SAMPLE_POLICY_PROBE="1"' \
+        "GENTOO_OPT_SAMPLE_SANDBOX_DENY_PATH=\"${SANDBOX_DENY_PATH}\"" \
+        'CCACHE_RECACHE="1"' \
+        > "${output}"
+    chmod 0644 -- "${output}"
+    mv -- "${output}" "${POLICY_PROBE_ENV}"
+    printf '%s\n' '=app-test/phase2-pgo-use-fixture-1 sample-live-policy-probe.conf' \
+        > "${GENERATED_ASSIGNMENT}.partial"
+    chmod 0644 -- "${GENERATED_ASSIGNMENT}.partial"
+    mv -- "${GENERATED_ASSIGNMENT}.partial" "${GENERATED_ASSIGNMENT}"
 }
 
 assert_framework_target_receipt() {
@@ -1241,7 +2409,7 @@ def exact_tokens(value: str) -> list[str]:
     return sorted(set(value.split()))
 
 document = {
-    "schema_version": 2,
+    "schema_version": 3,
     "category": "app-test",
     "pf": "phase2-pgo-use-fixture-1",
     "slot": "0",
@@ -1263,7 +2431,7 @@ document = {
     "ldflags": resolved["LDFLAGS"],
     "rustflags": resolved["RUSTFLAGS"],
     "goflags": resolved["GOFLAGS"],
-    "features": exact_tokens(resolved["FEATURES"]),
+    "features": resolved["FEATURES"].split(),
     "package_env_files": [environment_name],
     "extra_econf": resolved["EXTRA_ECONF"],
     "extra_emeson": resolved["EXTRA_EMESON"],
@@ -1308,6 +2476,93 @@ if failures:
 PY
 }
 
+if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+    capture_protected_live_state "${WORK}/protected-live-state.before.json"
+fi
+if ((PRODUCTION_LOCKS)); then
+    {
+        printf 'schema\tgentoo-optimization-production-sample-write-allowlist-v1\n'
+        for name in gate-status.tsv llvm-profgen-conversion-log.json mapping-input \
+            perf.data profile.manifest profile.manifest.metadata.json \
+            sample-metadata.json sample.prof; do
+            printf 'allowed_file\t%s/%s\n' "${PROFILE_ROOT}" "${name}"
+        done
+        for name in consumer.fingerprint gate-status.tsv mapping.fingerprint \
+            seed.fingerprint transaction.authorization; do
+            printf 'allowed_file\t%s/%s\n' "${PRODUCTION_STATE_ROOT}" "${name}"
+        done
+        printf 'must_remain_exact\t%s\n' "${TRANSACTION_JOURNAL}"
+        printf 'must_remain_exact\t%s\n' "${TRANSACTION_CHILD_IDENTITY}"
+    } > "${WORK}/production-write-allowlist.tsv"
+fi
+
+# The live-policy lane first proves actual enforcement, independently of the
+# feature-string and namespace evidence collected by every successful phase.
+# The repository-owned probe directory is intentionally DAC-writable by the
+# portage user yet outside Portage's permitted build roots.  A write that
+# succeeds outside sandbox would be a hard failure; a normal diagnostic build
+# never executes this expected-failure phase.
+if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+    mkdir -- "${SANDBOX_DENY_DIRECTORY}"
+    chown "0:${PORTAGE_GID}" -- "${SANDBOX_DENY_DIRECTORY}"
+    chmod 0770 -- "${SANDBOX_DENY_DIRECTORY}"
+    runuser -u portage -- /usr/bin/touch "${SANDBOX_DENY_PATH}" || \
+        fail 'sandbox probe path is not DAC-writable by the live portage user'
+    [[ -f ${SANDBOX_DENY_PATH} && ! -L ${SANDBOX_DENY_PATH} && \
+        $(stat -c %u -- "${SANDBOX_DENY_PATH}") == "${PORTAGE_UID}" ]] || \
+        fail 'sandbox DAC preflight did not create the expected portage-owned file'
+    rm -f -- "${SANDBOX_DENY_PATH}"
+    printf '%s\n' \
+        $'schema\tgentoo-optimization-sample-sandbox-enforcement-v1' \
+        $'dac_write_as_portage\tpassed' \
+        "deny_path\t${SANDBOX_DENY_PATH}" \
+        > "${WORK}/sandbox-enforcement.tsv"
+    write_live_policy_probe_environment
+    run_ebuild "${WORK}/sandbox-probe-clean.log" clean
+    if run_ebuild "${WORK}/sandbox-probe-build.log" compile; then
+        fail 'live Portage sandbox allowed its DAC-permitted external write probe'
+    fi
+    [[ -s ${FLAGS_FILE} ]] || \
+        fail 'live sandbox policy probe emitted no phase receipt'
+    cp -- "${FLAGS_FILE}" "${WORK}/sandbox-probe-effective-flags.tsv"
+    assert_live_policy_receipt "${WORK}/sandbox-probe-effective-flags.tsv" \
+        'live sandbox enforcement probe' baseline
+    python3 - "${WORK}/sandbox-probe-effective-flags.tsv" \
+        "${SANDBOX_DENY_PATH}" <<'PY'
+import pathlib
+import sys
+
+receipt, deny_path = sys.argv[1:]
+values = {}
+for line in pathlib.Path(receipt).read_text(encoding="utf-8").splitlines():
+    key, separator, value = line.partition("\t")
+    if not separator or key in values:
+        raise SystemExit(f"invalid or duplicate sandbox probe receipt row: {line!r}")
+    values[key] = value
+allowlist = values.get("sandbox_write", "")
+if not allowlist or allowlist == "unset":
+    raise SystemExit("sandbox probe receipt lacks SANDBOX_WRITE")
+deny = pathlib.PurePosixPath(deny_path)
+for raw_entry in allowlist.split(":"):
+    entry = raw_entry.rstrip("/") or "/"
+    if not entry.startswith("/"):
+        continue
+    allowed = pathlib.PurePosixPath(entry)
+    if deny == allowed or allowed in deny.parents:
+        raise SystemExit(
+            f"sandbox deny path is covered by SANDBOX_WRITE entry {raw_entry!r}"
+        )
+PY
+    grep -Fq 'sample sandbox policy probe observed the expected write denial' \
+        "${WORK}/sandbox-probe-build.log" || \
+        fail 'live sandbox denial lacked the fixture expected-denial diagnostic'
+    [[ ! -e ${SANDBOX_DENY_PATH} && ! -L ${SANDBOX_DENY_PATH} ]] || \
+        fail 'live sandbox policy probe created the forbidden external file'
+    printf 'sandbox_write_denied\tpassed\n' >> "${WORK}/sandbox-enforcement.tsv"
+    chmod 0750 -- "${SANDBOX_DENY_DIRECTORY}"
+    run_ebuild "${WORK}/sandbox-probe-final-clean.log" clean
+fi
+
 # Resolve the exact dispatcher-expanded mapping axes once, then bind an
 # authoritative rebuild to their canonical package fingerprint.
 SEED_FINGERPRINT=$(printf 'a%.0s' {1..64})
@@ -1320,6 +2575,10 @@ run_ebuild "${WORK}/preliminary-map-build.log" compile
 [[ -s ${FLAGS_FILE} ]] || fail 'preliminary mapping build emitted no exact flag receipt'
 cp -- "${FLAGS_FILE}" "${WORK}/preliminary-effective-flags.tsv"
 assert_framework_target_receipt "${WORK}/preliminary-effective-flags.tsv" \
+    'preliminary mapping build'
+assert_selected_policy_receipt "${WORK}/preliminary-effective-flags.tsv" \
+    'preliminary mapping build' profile-stage
+assert_fresh_compiler_execution "${WORK}/preliminary-map-build.log" \
     'preliminary mapping build'
 MAPPING_CFLAGS=$(field CFLAGS "${FLAGS_FILE}")
 MAPPING_LDFLAGS=$(field LDFLAGS "${FLAGS_FILE}")
@@ -1360,6 +2619,10 @@ run_ebuild "${WORK}/map-build.log" compile
 cp -- "${FLAGS_FILE}" "${WORK}/map-effective-flags.tsv"
 assert_framework_target_receipt "${WORK}/map-effective-flags.tsv" \
     'authoritative mapping build'
+assert_selected_policy_receipt "${WORK}/map-effective-flags.tsv" \
+    'authoritative mapping build' profile-stage
+assert_fresh_compiler_execution "${WORK}/map-build.log" \
+    'authoritative mapping build'
 [[ $(field active_fingerprint "${FLAGS_FILE}") == "${MAP_FINGERPRINT}" ]] || \
     fail 'mapping build did not load the generated fingerprint assignment'
 [[ $(field phase_euid "${FLAGS_FILE}") == "${PORTAGE_UID}" && \
@@ -1390,6 +2653,10 @@ run_ebuild "${WORK}/use-probe-build.log" compile
 [[ -s ${FLAGS_FILE} ]] || fail 'ordinary consumer probe emitted no exact flag receipt'
 cp -- "${FLAGS_FILE}" "${WORK}/use-probe-effective-flags.tsv"
 assert_framework_target_receipt "${WORK}/use-probe-effective-flags.tsv" \
+    'ordinary consumer probe'
+assert_selected_policy_receipt "${WORK}/use-probe-effective-flags.tsv" \
+    'ordinary consumer probe' baseline
+assert_fresh_compiler_execution "${WORK}/use-probe-build.log" \
     'ordinary consumer probe'
 [[ $(field mode "${FLAGS_FILE}") == off ]] || fail 'consumer probe was not ordinary/off'
 for forbidden in -fprofile-sample-use= -fsample-profile-use-profi \
@@ -1577,6 +2844,10 @@ run_ebuild "${WORK}/sample-use-build.log" install
 cp -- "${FLAGS_FILE}" "${WORK}/sample-use-effective-flags.tsv"
 assert_framework_target_receipt "${WORK}/sample-use-effective-flags.tsv" \
     'authoritative sample-use build'
+assert_selected_policy_receipt "${WORK}/sample-use-effective-flags.tsv" \
+    'authoritative sample-use build' profile-stage
+assert_fresh_compiler_execution "${WORK}/sample-use-build.log" \
+    'authoritative sample-use build'
 USE_CFLAGS=$(field CFLAGS "${FLAGS_FILE}")
 [[ $(field mode "${FLAGS_FILE}") == clang-sample-use ]] || \
     fail 'generated package.env assignment did not activate sample use'
@@ -1661,6 +2932,17 @@ fi
     2> "${WORK}/profile-verify-restored.stderr"
 run_ebuild "${WORK}/final-clean.log" clean
 
+if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+    resolve_live_portage_policy "${WORK}/live-policy-after.json"
+    cmp -- "${WORK}/live-policy-before.json" "${WORK}/live-policy-after.json" || \
+        fail 'authoritative live Portage policy changed during the sample-PGO pipeline'
+    capture_protected_live_state "${WORK}/protected-live-state.after.json"
+    cmp -- "${WORK}/protected-live-state.before.json" \
+        "${WORK}/protected-live-state.after.json" || \
+        fail 'sample-PGO pipeline changed a protected live Portage state root'
+fi
+assert_production_write_allowlist
+
 if ((PRODUCTION_LOCKS)); then
     [[ ! -e ${VALIDATOR_PROXY} && ! -e ${FRAMEWORK_LOCK} && \
         ! -e ${PROJECT_LOCK} && ! -e ${GENERATION_LOCK} ]] || \
@@ -1717,6 +2999,7 @@ fi
     printf '%s\t%s\n' \
         'authoritative_work_root' "${WORK}" \
         'published_copy' "${CANONICAL_OUTPUT_DIR:-none}" \
+        'portage_policy_mode' "${PORTAGE_POLICY_MODE}" \
         'published_copy_semantics' \
         'historical-byte-evidence; validator sidecars remain bound to authoritative paths' \
         'authoritative_work_final_identity' 'root:portage:0750'
@@ -1735,11 +3018,21 @@ fi
         profile/profile.manifest.metadata.json profile/mapping-input \
         map-fingerprint-input.json map-fingerprint-metadata.json \
         use-fingerprint-input.json use-fingerprint-metadata.json \
-        validator-identity.tsv map-effective-flags.tsv \
-        sample-use-effective-flags.tsv publication-context.tsv
+        validator-identity.tsv preliminary-effective-flags.tsv \
+        map-effective-flags.tsv use-probe-effective-flags.tsv \
+        sample-use-effective-flags.tsv preliminary-map-build.log \
+        map-build.log use-probe-build.log sample-use-build.log \
+        publication-context.tsv portage-policy.tsv
+    if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+        sha256sum -- sandbox-enforcement.tsv \
+            sandbox-probe-effective-flags.tsv sandbox-probe-build.log \
+            live-policy-before.json live-policy-after.json \
+            protected-live-state.before.json protected-live-state.after.json
+    fi
     sha256sum -- "${AUTHORIZATION_TOKEN_SCANNER}"
     if ((PRODUCTION_LOCKS)); then
         sha256sum -- production-artifacts.tsv production-live-roots.tsv \
+            production-write-allowlist.tsv \
             authorization-token-persistence-scan.tsv \
             transaction-journal.json transaction-child-identity.json \
             canonical-sidecar.before canonical-sidecar.after \
@@ -1750,7 +3043,9 @@ fi
     fi
 ) > "${WORK}/evidence.sha256"
 if ((PRODUCTION_LOCKS)); then
-    printf 'PASS: production-lock Portage exact mapping fingerprint, perf training, sample conversion, distinct consumer fingerprint, immutable validation, generated package.env use, runtime proof, and tamper rejection\n'
+    printf 'PASS: production-lock Portage live sandbox policy, exact mapping fingerprint, perf training, sample conversion, distinct consumer fingerprint, immutable validation, generated package.env use, runtime proof, and tamper rejection\n'
+elif [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+    printf 'PASS: real Portage live sandbox/userpriv/namespace policy, exact mapping fingerprint, perf training, sample conversion, distinct consumer fingerprint, immutable validation, generated package.env use, runtime proof, and tamper rejection\n'
 else
-    printf 'PASS: real Portage exact mapping fingerprint, perf training, sample conversion, distinct consumer fingerprint, immutable validation, generated package.env use, runtime proof, and tamper rejection\n'
+    printf 'PASS: isolated-diagnostic Portage exact mapping fingerprint, perf training, sample conversion, distinct consumer fingerprint, immutable validation, generated package.env use, runtime proof, and tamper rejection\n'
 fi

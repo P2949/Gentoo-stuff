@@ -203,8 +203,8 @@ declare -a INPUT_FILES=(
     scripts/optimization/pgo/profile-identity.py
     scripts/optimization/pgo/profile_locks.py
     scripts/optimization/pgo/validate-profile.py
-    tests/optimization/production_profile_lock_transaction.py
-    tests/optimization/authorization_token_scan.py
+    scripts/optimization/pgo/production-profile-lock-transaction.py
+    scripts/optimization/pgo/authorization-token-scan.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
     scripts/optimization/recovery/verify-binpkg-snapshot.py
@@ -234,8 +234,8 @@ declare -a HELPER_SOURCE_RELATIVE=(
     scripts/optimization/pgo/profile-identity.py
     scripts/optimization/pgo/profile_locks.py
     scripts/optimization/pgo/validate-profile.py
-    tests/optimization/production_profile_lock_transaction.py
-    tests/optimization/authorization_token_scan.py
+    scripts/optimization/pgo/production-profile-lock-transaction.py
+    scripts/optimization/pgo/authorization-token-scan.py
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
     scripts/optimization/recovery/verify-binpkg-snapshot.py
@@ -260,6 +260,7 @@ declare -ar LEGACY_BOOTSTRAP_HELPER_RELATIVE=(
 SNAPSHOT=
 SOURCE_CONTRACT_TEMP=
 METADATA_AUDIT_TEMP=
+CANDIDATE_INVENTORY_TEMP=
 RAW_HEAD_OID_LENGTH=
 EXPECTED_CHECK_MANIFEST=
 CANDIDATE_STAGE=
@@ -1259,7 +1260,7 @@ verify_no_extended_metadata() {
     local label=$1 entry quoted
     shift
     METADATA_AUDIT_TEMP=$(mktemp "${BASE}/.extended-metadata-audit.XXXXXXXX")
-    if ! /usr/bin/getfattr -R -P -d -m - --absolute-names -- "$@" \
+    if ! /usr/bin/getfattr -R -P -h -d -m - --absolute-names -- "$@" \
         >"${METADATA_AUDIT_TEMP}" 2>"${METADATA_AUDIT_TEMP}.stderr"; then
         fail "cannot audit extended metadata on ${label}"
         return 1
@@ -1403,7 +1404,7 @@ render_python_helper_bootstrap() {
         '    if component == framework_target:' \
         '        break' \
         '    component = os.path.dirname(component)' \
-        'os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", framework_tool, *sys.argv[1:]])'
+        'os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", "-B", framework_tool, *sys.argv[1:]])'
 }
 
 render_helper_bootstrap() {
@@ -1632,16 +1633,18 @@ candidate_inventory() {
 }
 
 verify_inventory_exact() {
-    local candidate=$1 expected actual
+    local candidate=$1 expected
     expected=${candidate}/.candidate-inventory
     verify_regular_trusted "${expected}" 0600
-    actual=$(mktemp "${BASE}/.candidate-inventory-check.XXXXXXXX")
-    candidate_inventory "${candidate}" >"${actual}"
-    cmp -s -- "${actual}" "${expected}" || {
-        rm -f -- "${actual}"
+    CANDIDATE_INVENTORY_TEMP=$(mktemp "${BASE}/.candidate-inventory-check.XXXXXXXX")
+    candidate_inventory "${candidate}" >"${CANDIDATE_INVENTORY_TEMP}"
+    cmp -s -- "${CANDIDATE_INVENTORY_TEMP}" "${expected}" || {
+        rm -f -- "${CANDIDATE_INVENTORY_TEMP}"
+        CANDIDATE_INVENTORY_TEMP=
         fail "immutable candidate entry set or content differs: ${candidate}"
     }
-    rm -f -- "${actual}"
+    rm -f -- "${CANDIDATE_INVENTORY_TEMP}"
+    CANDIDATE_INVENTORY_TEMP=
 }
 
 verify_make_profile() {
@@ -2276,6 +2279,8 @@ cleanup() {
     [[ -n ${SOURCE_CONTRACT_TEMP} ]] && rm -rf -- "${SOURCE_CONTRACT_TEMP}"
     [[ -n ${METADATA_AUDIT_TEMP} ]] && \
         rm -f -- "${METADATA_AUDIT_TEMP}" "${METADATA_AUDIT_TEMP}.stderr"
+    [[ -n ${CANDIDATE_INVENTORY_TEMP} ]] && \
+        rm -f -- "${CANDIDATE_INVENTORY_TEMP}"
     [[ -n ${CANDIDATE_STAGE} ]] && rm -rf -- "${CANDIDATE_STAGE}"
     [[ -n ${EXPECTED_MANIFEST:-} ]] && rm -f -- "${EXPECTED_MANIFEST}"
     [[ -n ${EXPECTED_CHECK_MANIFEST} ]] && rm -f -- "${EXPECTED_CHECK_MANIFEST}"
