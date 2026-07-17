@@ -968,10 +968,10 @@ cmp -- "${CANDIDATE_HELPER_TREE_BEFORE}" "${CANDIDATE_HELPER_TREE_AFTER}" || \
     fail 'post-helper strict check changed the immutable candidate namespace'
 HELPER_BOOTSTRAP=${TARGET}/usr/local/libexec/gentoo-optimization/bolt/artifact_tool.py
 
-# The immediately preceding schema installed ten stable helper bootstraps.  A
-# same-source repair must recognize that exact reviewed tree and publish the two
-# new production transaction helpers atomically, without changing the selected
-# immutable candidate or requiring an unsafe manual migration.
+# The immediately preceding schema installed ten stable helper bootstraps.  It
+# also used Python `-I` without `-B`, so reproduce its *exact* reviewed bytes
+# here.  The only accepted repair is a complete atomic fixed-tree exchange to
+# the v2 `-IB` / `-I -B` renderer; arbitrary nearby bytes must remain fatal.
 LEGACY_CURRENT=$(readlink -- "${CURRENT}")
 LEGACY_LIBEXEC=${TARGET}/usr/local/libexec/gentoo-optimization
 rm -f -- \
@@ -979,18 +979,104 @@ rm -f -- \
     "${LEGACY_LIBEXEC}/pgo/authorization-token-scan.py"
 [[ $(find "${LEGACY_LIBEXEC}" -type f | wc -l) -eq 10 ]] || \
     fail 'legacy stable-bootstrap fixture does not contain exactly ten helpers'
+while IFS= read -r -d '' legacy_python_bootstrap; do
+    sed -i \
+        -e 's|^#!/usr/bin/python3 -IB$|#!/usr/bin/python3 -I|' \
+        -e 's|^os.execv("/usr/bin/python3", \["/usr/bin/python3", "-I", "-B", framework_tool, \*sys.argv\[1:\]\])$|os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", framework_tool, *sys.argv[1:]])|' \
+        -- "${legacy_python_bootstrap}"
+    grep -Fxq '#!/usr/bin/python3 -I' "${legacy_python_bootstrap}" || \
+        fail "legacy Python bootstrap shebang rewrite failed: ${legacy_python_bootstrap}"
+    grep -Fxq \
+        'os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", framework_tool, *sys.argv[1:]])' \
+        "${legacy_python_bootstrap}" || \
+        fail "legacy Python bootstrap exec rewrite failed: ${legacy_python_bootstrap}"
+done < <(find "${LEGACY_LIBEXEC}" -type f -name '*.py' -print0 | sort -z)
+LEGACY_PYTHON_BOOTSTRAP=${LEGACY_LIBEXEC}/pgo/profile-identity.py
+LEGACY_PYTHON_BOOTSTRAP_COPY=${WORK}/legacy-python-bootstrap-v1
+cp -- "${LEGACY_PYTHON_BOOTSTRAP}" "${LEGACY_PYTHON_BOOTSTRAP_COPY}"
+
+# An unrecognized fixed bootstrap must fail before publication rather than being
+# treated as a compatible old version.
+printf '# unrecognized-fixture-byte\n' >>"${LEGACY_PYTHON_BOOTSTRAP}"
+expect_failure 'stable-bootstrap migration required: installed helper bootstraps differ' \
+    run_installer
+[[ $(readlink -- "${CURRENT}") == "${LEGACY_CURRENT}" ]] || \
+    fail 'unrecognized bootstrap rejection changed framework-current'
+cmp -- "${LEGACY_PYTHON_BOOTSTRAP_COPY}" "${LEGACY_PYTHON_BOOTSTRAP}" 2>/dev/null && \
+    fail 'unrecognized bootstrap fixture did not mutate its exact byte stream'
+cp -- "${LEGACY_PYTHON_BOOTSTRAP_COPY}" "${LEGACY_PYTHON_BOOTSTRAP}"
+
+# SIGKILL before the directory exchange preserves every v1 bootstrap exactly.
+PAUSE_FILE=${WORK}/legacy-bootstrap-before-exchange
+: >"${PAUSE_FILE}"
+: >"${LOG}"
+/usr/bin/setsid --wait env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+    GENTOO_OPT_INSTALLER_PAUSE_AT=before-helper-bootstrap-exchange \
+    GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
+    bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+    --test-root "${TARGET}" >"${LOG}" 2>&1 &
+INSTALL_PID=$!
+track_background_pid "${INSTALL_PID}"
+wait_for_log 'PAUSE: before-helper-bootstrap-exchange' "${INSTALL_PID}"
+kill -KILL "${INSTALL_PID}"
+if wait "${INSTALL_PID}" 2>/dev/null; then
+    fail 'pre-exchange legacy-bootstrap SIGKILL unexpectedly succeeded'
+fi
+terminate_background_group "${INSTALL_PID}"
+untrack_background_pid "${INSTALL_PID}"
+wait_for_installer_lock_release
+rm -f -- "${PAUSE_FILE}"
+[[ $(readlink -- "${CURRENT}") == "${LEGACY_CURRENT}" ]] || \
+    fail 'pre-exchange legacy-bootstrap SIGKILL changed framework-current'
+cmp -- "${LEGACY_PYTHON_BOOTSTRAP_COPY}" "${LEGACY_PYTHON_BOOTSTRAP}" || \
+    fail 'pre-exchange legacy-bootstrap SIGKILL changed a v1 bootstrap'
+
+# SIGKILL immediately after the exchange cannot expose a partial bootstrap
+# tree.  The old candidate remains selected, but the new no-bytecode
+# dispatcher is compatible with it and the following strict check must pass.
+PAUSE_FILE=${WORK}/legacy-bootstrap-after-exchange
+: >"${PAUSE_FILE}"
+: >"${LOG}"
+/usr/bin/setsid --wait env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+    GENTOO_OPT_INSTALLER_PAUSE_AT=after-helper-bootstrap-exchange \
+    GENTOO_OPT_INSTALLER_PAUSE_FILE="${PAUSE_FILE}" \
+    bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+    --test-root "${TARGET}" >"${LOG}" 2>&1 &
+INSTALL_PID=$!
+track_background_pid "${INSTALL_PID}"
+wait_for_log 'PAUSE: after-helper-bootstrap-exchange' "${INSTALL_PID}"
+kill -KILL "${INSTALL_PID}"
+if wait "${INSTALL_PID}" 2>/dev/null; then
+    fail 'post-exchange legacy-bootstrap SIGKILL unexpectedly succeeded'
+fi
+terminate_background_group "${INSTALL_PID}"
+untrack_background_pid "${INSTALL_PID}"
+wait_for_installer_lock_release
+rm -f -- "${PAUSE_FILE}"
+[[ $(readlink -- "${CURRENT}") == "${LEGACY_CURRENT}" ]] || \
+    fail 'post-exchange legacy-bootstrap SIGKILL changed framework-current'
+grep -Fxq '#!/usr/bin/python3 -IB' "${LEGACY_PYTHON_BOOTSTRAP}" || \
+    fail 'post-exchange legacy-bootstrap SIGKILL did not publish the v2 Python bootstrap'
+grep -Fxq \
+    'os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", "-B", framework_tool, *sys.argv[1:]])' \
+    "${LEGACY_PYTHON_BOOTSTRAP}" || \
+    fail 'post-exchange legacy-bootstrap SIGKILL published a partial Python bootstrap'
+[[ $(find "${LEGACY_LIBEXEC}" -type f | wc -l) -eq 12 ]] || \
+    fail 'post-exchange legacy-bootstrap SIGKILL published a partial helper tree'
 run_installer >"${LOG}" 2>&1 || {
     sed -n '1,260p' "${LOG}" >&2
-    fail 'reviewed ten-helper stable-bootstrap migration failed'
+    fail 'reviewed v1-to-v2 stable-bootstrap migration failed'
 }
+run_installer --check >/dev/null || \
+    fail 'post-exchange legacy-bootstrap SIGKILL did not leave a coherent framework'
 [[ $(readlink -- "${CURRENT}") == "${LEGACY_CURRENT}" ]] || \
-    fail 'additive stable-bootstrap repair changed the active candidate'
+    fail 'v1-to-v2 stable-bootstrap repair changed the active candidate'
 for added_helper in production-profile-lock-transaction.py authorization-token-scan.py; do
     [[ -x ${LEGACY_LIBEXEC}/pgo/${added_helper} ]] || \
-        fail "additive stable-bootstrap repair omitted ${added_helper}"
+        fail "v1-to-v2 stable-bootstrap repair omitted ${added_helper}"
 done
 run_installer --check >/dev/null || \
-    fail 'additive stable-bootstrap repair failed strict verification'
+    fail 'v1-to-v2 stable-bootstrap repair failed strict verification'
 assert_coherent_indirections
 
 # An installed policy binds the process to its literal candidate. Re-sourcing

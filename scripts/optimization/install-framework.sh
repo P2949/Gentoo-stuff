@@ -1342,13 +1342,32 @@ render_shell_helper_bootstrap() {
 }
 
 python_literal() {
-    /usr/bin/python3 -I -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$1"
+    /usr/bin/python3 -I -B -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$1"
 }
 
-render_python_helper_bootstrap() {
-    local relative=$1
+render_python_helper_bootstrap_version() {
+    local relative=$1 version=$2 shebang exec_line
+    case ${version} in
+        current-v2)
+            # `-IB` is one shebang argument and disables bytecode before this
+            # dispatcher imports any standard-library module.  The executable
+            # candidate helper receives the same no-bytecode guarantee below.
+            shebang='#!/usr/bin/python3 -IB'
+            exec_line='os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", "-B", framework_tool, *sys.argv[1:]])'
+            ;;
+        legacy-v1)
+            # Exact bytes accepted solely to migrate the reviewed preceding
+            # ten-helper bootstrap schema.  Do not broaden this compatibility
+            # path: an unrecognized fixed bootstrap remains a hard stop.
+            shebang='#!/usr/bin/python3 -I'
+            exec_line='os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", framework_tool, *sys.argv[1:]])'
+            ;;
+        *)
+            fail "unknown Python bootstrap renderer version: ${version}"
+            ;;
+    esac
     printf '%s\n' \
-        '#!/usr/bin/python3 -I' \
+        "${shebang}" \
         '"""Stable active-framework dispatcher; contains no mutable implementation."""' \
         'import os' \
         'import re' \
@@ -1404,7 +1423,15 @@ render_python_helper_bootstrap() {
         '    if component == framework_target:' \
         '        break' \
         '    component = os.path.dirname(component)' \
-        'os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", "-B", framework_tool, *sys.argv[1:]])'
+        "${exec_line}"
+}
+
+render_python_helper_bootstrap() {
+    render_python_helper_bootstrap_version "$1" current-v2
+}
+
+render_legacy_python_helper_bootstrap() {
+    render_python_helper_bootstrap_version "$1" legacy-v1
 }
 
 render_helper_bootstrap() {
@@ -1940,6 +1967,26 @@ legacy_bootstrap_tree_matches() {
     done
 }
 
+legacy_python_bootstrap_tree_matches() {
+    local root=$1 relative temporary
+    local -a actual=()
+    [[ -d ${root} && ! -L ${root} ]] || return 1
+    mapfile -t actual < <(find "${root}" -mindepth 1 -printf '%y\t%P\n' | sort)
+    [[ ${actual[*]} == $'d\tbolt\nd\tpgo\nd\trecovery\nd\tscripts\nd\tscripts/optimization\nd\tscripts/optimization/lib\nd\tscripts/optimization/verify\nf\tbolt/artifact_tool.py\nf\tbolt/capture-input.sh\nf\tbolt/deploy-output.sh\nf\tbolt/register-output.sh\nf\tpgo/profile-identity.py\nf\tpgo/profile_locks.py\nf\tpgo/validate-profile.py\nf\trecovery/verify-binpkg-snapshot.py\nf\tscripts/optimization/lib/state.py\nf\tscripts/optimization/verify/reconcile-state.py' ]] || return 1
+    for relative in "${LEGACY_BOOTSTRAP_HELPER_RELATIVE[@]}"; do
+        temporary=$(mktemp "${BASE}/.helper-bootstrap-check.XXXXXXXX")
+        case ${relative} in
+            *.py) render_legacy_python_helper_bootstrap "${relative}" >"${temporary}" ;;
+            *) render_shell_helper_bootstrap "${relative}" >"${temporary}" ;;
+        esac
+        if ! cmp -s -- "${temporary}" "${root}/${relative}"; then
+            rm -f -- "${temporary}"
+            return 1
+        fi
+        rm -f -- "${temporary}"
+    done
+}
+
 require_stable_bootstrap_compatibility() {
     local qa=${INSTALL_QA_ROOT}/${HOOK_BASENAME} temporary
     [[ ${PREVIOUS_TARGET} != none ]] || return 0
@@ -1955,6 +2002,7 @@ require_stable_bootstrap_compatibility() {
     fi
     bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         legacy_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+        legacy_python_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         fail 'stable-bootstrap migration required: installed helper bootstraps differ from the reviewed invariant bytes'
     temporary=$(mktemp "${BASE}/.qa-bootstrap-compatibility.XXXXXXXX")
     render_qa_bootstrap >"${temporary}"
@@ -2046,6 +2094,7 @@ verify_external_migration_source() {
     if [[ -e ${LIBEXEC_ROOT} || -L ${LIBEXEC_ROOT} ]]; then
         bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
             legacy_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+            legacy_python_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
             manifest_bootstrap_tree_matches "${LIBEXEC_ROOT}" "${candidate}" || \
             legacy_helper_tree_matches "${LIBEXEC_ROOT}" "${candidate}" || \
             fail 'fixed libexec tree is neither the reviewed bootstrap nor the active generation implementation'
@@ -2090,6 +2139,11 @@ atomic_publish_entry() {
 
 install_external_indirections() {
     local index path stage
+    # The next operation exchanges the complete fixed helper directory.  A
+    # recognized v1 Python bootstrap is therefore upgraded atomically, never
+    # one helper at a time; Portage quiescence and project/generation locks are
+    # held by the caller throughout this boundary.
+    failure_point before-helper-bootstrap-exchange
     safe_mkdir 0755 "${LIBEXEC_ROOT%/*}"
     stage=${LIBEXEC_ROOT}.partial.$$
     rm -rf -- "${stage}"
@@ -2103,6 +2157,7 @@ install_external_indirections() {
     normalize_tree "${stage}"
     sync_tree "${stage}"
     atomic_publish_entry "${stage}" "${LIBEXEC_ROOT}"
+    failure_point after-helper-bootstrap-exchange
 
     safe_mkdir 0755 "${SHARE_ROOT%/*}"
     stage=${SHARE_ROOT}.partial.$$
