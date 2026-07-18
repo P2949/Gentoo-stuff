@@ -12,6 +12,7 @@
     "repository",
     "test_run_provenance",
     "test_results",
+    "test_subtests",
     "test_summary",
     "test_rows",
     "external_evidence",
@@ -27,6 +28,7 @@
     "repository": {"$ref": "#/$defs/repository"},
     "test_run_provenance": {"$ref": "#/$defs/file_identity"},
     "test_results": {"$ref": "#/$defs/file_identity"},
+    "test_subtests": {"$ref": "#/$defs/file_identity"},
     "test_summary": {"$ref": "#/$defs/file_identity"},
     "test_rows": {
       "type": "array",

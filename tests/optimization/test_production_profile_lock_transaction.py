@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -18,6 +20,7 @@ import tempfile
 import threading
 import time
 import unittest
+from collections.abc import Callable, Iterator
 from unittest import mock
 
 
@@ -42,8 +45,34 @@ GENERATION = {
 GATE_RUN_ID = "phase2-production-lock-test-run"
 
 
+def pidfd_capability() -> tuple[bool, str]:
+    """Probe the functional pidfd primitive used by production recovery."""
+
+    with tempfile.TemporaryDirectory(prefix="gentoo-pidfd-probe.") as root_value:
+        root = pathlib.Path(root_value)
+        executable = root / "trusted-python"
+        shutil.copyfile(pathlib.Path(sys.executable).resolve(strict=True), executable)
+        executable.chmod(0o700)
+        paths = coordinator.Paths(
+            framework=root / "framework.lock",
+            project=root / "project.lock",
+            generation=root / "generation.lock",
+            journal=root / "journal",
+            test_mode=True,
+            test_root=root,
+        )
+        try:
+            with mock.patch.object(
+                coordinator.sys, "executable", os.fspath(executable)
+            ):
+                coordinator.preflight_pidfd_termination(paths)
+        except coordinator.TransactionError as error:
+            return False, f"functional pidfd containment probe failed: {error}"
+    return True, "functional pidfd containment probe passed"
+
+
 def pid_namespace_capability() -> tuple[bool, str]:
-    """Probe the exact containment primitive instead of inferring availability."""
+    """Probe the exact namespace primitive instead of inferring availability."""
 
     unshare = pathlib.Path("/usr/bin/unshare")
     if os.geteuid() != 0:
@@ -78,8 +107,54 @@ def pid_namespace_capability() -> tuple[bool, str]:
     return True, "PID-namespace containment probe passed"
 
 
+PIDFD_AVAILABLE, PIDFD_REASON = pidfd_capability()
 PID_NAMESPACE_AVAILABLE, PID_NAMESPACE_REASON = pid_namespace_capability()
+FULL_CONTAINMENT_AVAILABLE = PIDFD_AVAILABLE and PID_NAMESPACE_AVAILABLE
+FULL_CONTAINMENT_REASON = (
+    "functional pidfd and PID-namespace containment probes passed"
+    if FULL_CONTAINMENT_AVAILABLE
+    else PIDFD_REASON if not PIDFD_AVAILABLE else PID_NAMESPACE_REASON
+)
 CRASH_STRESS_REPETITIONS = 100
+
+
+@contextlib.contextmanager
+def emulated_pidfds(
+    signal_hook: Callable[[int, int], None] | None = None,
+) -> Iterator[list[int]]:
+    """Give hermetic containment tests pidfd semantics backed by exact PIDs."""
+
+    descriptors: dict[int, int] = {}
+
+    def pidfd_open(pid: int, flags: int = 0) -> int:
+        if flags != 0:
+            raise OSError(errno.EINVAL, "unsupported fixture pidfd flags")
+        descriptor = os.open("/dev/null", os.O_RDONLY | os.O_CLOEXEC)
+        descriptors[descriptor] = pid
+        return descriptor
+
+    def pidfd_send_signal(
+        descriptor: int,
+        signum: int,
+        siginfo: object | None = None,
+        flags: int = 0,
+    ) -> None:
+        if siginfo is not None or flags != 0:
+            raise OSError(errno.EINVAL, "unsupported fixture pidfd signal arguments")
+        pid = descriptors[descriptor]
+        if signal_hook is not None:
+            signal_hook(pid, signum)
+        os.kill(pid, signum)
+
+    with (
+        mock.patch.object(coordinator.os, "pidfd_open", side_effect=pidfd_open),
+        mock.patch.object(
+            coordinator.signal,
+            "pidfd_send_signal",
+            side_effect=pidfd_send_signal,
+        ),
+    ):
+        yield list(descriptors)
 
 
 class Fixture:
@@ -182,6 +257,54 @@ class Fixture:
             test_mode=True,
             test_root=self.root,
         )
+
+    def fake_unshare(self, mode: str) -> tuple[pathlib.Path, pathlib.Path]:
+        """Create a trusted unshare analogue with selectable kill-child behavior."""
+
+        if mode not in {"pass", "denied", "survivor"}:
+            raise ValueError(f"invalid fake-unshare mode: {mode}")
+        executable = self.root / f"fake-unshare-{mode}"
+        child_pid_file = self.root / f"fake-unshare-{mode}.child-pid"
+        program = f"""#!{self.python}
+import os
+import signal
+import subprocess
+import sys
+
+MODE = {mode!r}
+CHILD_PID_FILE = {os.fspath(child_pid_file)!r}
+if MODE == "denied":
+    os.write(2, b"fixture namespace creation denied: Operation not permitted\\n")
+    raise SystemExit(1)
+try:
+    separator = sys.argv.index("--")
+except ValueError:
+    raise SystemExit("missing unshare command separator")
+child = subprocess.Popen(sys.argv[separator + 1:])
+with open(CHILD_PID_FILE, "w", encoding="ascii") as output:
+    output.write(str(child.pid) + "\\n")
+    output.flush()
+    os.fsync(output.fileno())
+
+def terminate(signum, _frame):
+    if MODE == "pass":
+        try:
+            os.kill(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            child.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+signal.signal(signal.SIGTERM, terminate)
+raise SystemExit(child.wait())
+"""
+        executable.write_text(program, encoding="utf-8")
+        executable.chmod(0o700)
+        return executable, child_pid_file
 
     def run_arguments(
         self,
@@ -370,6 +493,200 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
             time.sleep(0.02)
         self.assertFalse(live, f"child process group survived: {live}")
 
+    def replace_with_distinct_inode(
+        self, path: pathlib.Path, payload: bytes, mode: int
+    ) -> tuple[os.stat_result, os.stat_result]:
+        """Atomically replace ``path`` with a provably different inode."""
+
+        original = path.lstat()
+        replacement = path.with_name(f".{path.name}.replacement")
+        self.assertFalse(replacement.exists())
+        descriptor = os.open(
+            replacement,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC,
+            0o600,
+        )
+        try:
+            self.assertEqual(os.write(descriptor, payload), len(payload))
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        if os.geteuid() == 0:
+            os.chown(replacement, original.st_uid, original.st_gid)
+        replacement.chmod(mode)
+        prepared = replacement.lstat()
+        self.assertTrue(stat.S_ISREG(prepared.st_mode))
+        self.assertEqual(prepared.st_uid, original.st_uid)
+        self.assertEqual(prepared.st_gid, original.st_gid)
+        self.assertEqual(stat.S_IMODE(prepared.st_mode), mode)
+        self.assertEqual(prepared.st_dev, original.st_dev)
+        self.assertNotEqual(prepared.st_ino, original.st_ino)
+
+        os.replace(replacement, path)
+        installed = path.lstat()
+        self.assertEqual(installed.st_dev, prepared.st_dev)
+        self.assertEqual(installed.st_ino, prepared.st_ino)
+        self.assertEqual(installed.st_uid, prepared.st_uid)
+        self.assertEqual(installed.st_gid, prepared.st_gid)
+        self.assertEqual(
+            stat.S_IMODE(installed.st_mode), stat.S_IMODE(prepared.st_mode)
+        )
+        self.assertNotEqual(
+            (installed.st_dev, installed.st_ino),
+            (original.st_dev, original.st_ino),
+        )
+        return original, installed
+
+    @unittest.skipUnless(PIDFD_AVAILABLE, PIDFD_REASON)
+    def test_functional_pidfd_preflight_terminates_exact_private_child(self) -> None:
+        real_pidfd_open = coordinator.os.pidfd_open
+        descriptors: list[int] = []
+
+        def capture_pidfd(pid: int, flags: int = 0) -> int:
+            descriptor = int(real_pidfd_open(pid, flags))
+            descriptors.append(descriptor)
+            return descriptor
+
+        with mock.patch.object(
+            coordinator.os, "pidfd_open", side_effect=capture_pidfd
+        ), mock.patch.object(
+            coordinator.sys, "executable", self.fixture.python
+        ):
+            coordinator.preflight_pidfd_termination(
+                self.fixture.coordinator_paths()
+            )
+        self.assertEqual(len(descriptors), 1)
+        with self.assertRaises(OSError) as closed:
+            os.fstat(descriptors[0])
+        self.assertEqual(closed.exception.errno, errno.EBADF)
+
+    def test_pidfd_preflight_fails_closed_when_syscall_is_unavailable(self) -> None:
+        with (
+            mock.patch.object(
+                coordinator.os,
+                "pidfd_open",
+                side_effect=OSError(errno.ENOSYS, "Function not implemented"),
+            ),
+            mock.patch.object(
+                coordinator.sys, "executable", self.fixture.python
+            ),
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError,
+                "pidfd containment preflight cannot open pidfd",
+            ):
+                coordinator.preflight_pidfd_termination(
+                    self.fixture.coordinator_paths()
+                )
+
+    def test_pidfd_preflight_rejects_untrusted_interpreter_before_spawn(self) -> None:
+        with (
+            mock.patch.object(
+                coordinator,
+                "inspect_executable_identity",
+                side_effect=coordinator.TransactionError(
+                    "pidfd preflight Python executable is not trusted"
+                ),
+            ),
+            mock.patch.object(coordinator.subprocess, "Popen") as spawn,
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError,
+                "pidfd preflight Python executable is not trusted",
+            ):
+                coordinator.preflight_pidfd_termination(
+                    self.fixture.coordinator_paths()
+                )
+        spawn.assert_not_called()
+
+    def test_containment_preflight_rejects_untrusted_unshare_before_exec(self) -> None:
+        with (
+            mock.patch.object(coordinator.os, "geteuid", return_value=0),
+            mock.patch.object(
+                coordinator,
+                "inspect_executable_identity",
+                side_effect=coordinator.TransactionError(
+                    "PID-namespace executable is not trusted"
+                ),
+            ),
+            mock.patch.object(coordinator.subprocess, "run") as run,
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError,
+                "PID-namespace executable is not trusted",
+            ):
+                coordinator.preflight_containment_primitives(
+                    self.fixture.coordinator_paths()
+                )
+        run.assert_not_called()
+
+    def test_namespace_preflight_cannot_bypass_functional_pidfd_probe(self) -> None:
+        containment_identity: dict[str, object] = {"identity": "fixture"}
+        contract: dict[str, object] = {
+            "containment": "pid-namespace-v1",
+            "containment_executable": containment_identity,
+        }
+        paths = self.fixture.coordinator_paths()
+        with (
+            mock.patch.object(coordinator, "revalidate_child_contract"),
+            mock.patch.object(
+                coordinator,
+                "validate_executable_identity",
+                return_value=containment_identity,
+            ),
+            mock.patch.object(
+                coordinator,
+                "preflight_containment_primitives",
+                side_effect=coordinator.TransactionError("functional pidfd denied"),
+            ) as containment_probe,
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError, "functional pidfd denied"
+            ):
+                coordinator.preflight_child_containment(contract, paths, 1.5)
+        containment_probe.assert_called_once_with(
+            paths,
+            1.5,
+            expected_unshare_identity=containment_identity,
+        )
+
+    def test_preflight_containment_cli_uses_shared_gate_and_prints_pass(self) -> None:
+        arguments = [
+            "preflight-containment",
+            *self.fixture.path_arguments(),
+            "--kill-after-seconds",
+            "1.5",
+        ]
+        output = io.StringIO()
+        with (
+            mock.patch.object(
+                coordinator, "preflight_containment_primitives"
+            ) as containment_probe,
+            contextlib.redirect_stdout(output),
+        ):
+            status = coordinator.main(arguments)
+        self.assertEqual(status, 0)
+        self.assertEqual(output.getvalue(), "PREFLIGHT-PASS\n")
+        containment_probe.assert_called_once()
+        called_paths, called_timeout = containment_probe.call_args.args
+        self.assertTrue(called_paths.test_mode)
+        self.assertEqual(called_paths.test_root, self.fixture.root)
+        self.assertEqual(called_timeout, 1.5)
+
+    def test_preflight_containment_cli_production_requires_root(self) -> None:
+        errors = io.StringIO()
+        with (
+            mock.patch.object(coordinator.os, "geteuid", return_value=1234),
+            mock.patch.object(
+                coordinator, "preflight_containment_primitives"
+            ) as containment_probe,
+            contextlib.redirect_stderr(errors),
+        ):
+            status = coordinator.main(["preflight-containment"])
+        self.assertEqual(status, 1)
+        self.assertIn("production lock transaction requires root", errors.getvalue())
+        containment_probe.assert_not_called()
+
     def test_fixture_owned_python_executes_from_its_exact_trusted_path(self) -> None:
         metadata = self.fixture.python_path.lstat()
         self.assertTrue(stat.S_ISREG(metadata.st_mode))
@@ -430,6 +747,7 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.quiesce_recorded_process_group(document, 0.0)
         killpg.assert_not_called()
 
+    @unittest.skipUnless(PIDFD_AVAILABLE, PIDFD_REASON)
     def test_live_exact_leader_process_group_is_quiesced(self) -> None:
         child = subprocess.Popen(
             [self.fixture.python, "-c", "import time; time.sleep(60)"],
@@ -995,9 +1313,13 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
             json.dumps(document["generation"], indent=2, sort_keys=True) + "\n"
         ).encode("utf-8")
         self.fixture.generation.write_bytes(payload)
-        self.fixture.project.unlink()
-        self.fixture.project.write_bytes(payload)
-        self.fixture.project.chmod(0o600)
+        original, installed = self.replace_with_distinct_inode(
+            self.fixture.project, payload, 0o600
+        )
+        self.assertNotEqual(
+            (original.st_dev, original.st_ino),
+            (installed.st_dev, installed.st_ino),
+        )
         replaced = self.completed(self.fixture.recover_arguments())
         self.assertEqual(replaced.returncode, 1)
         self.assertIn("same-boot project lock inode or metadata changed", replaced.stderr)
@@ -1097,6 +1419,7 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         self.assertEqual(json.loads(marker.read_text(encoding="utf-8")), [True, True])
         self.fixture.assert_restored(self)
 
+    @unittest.skipUnless(PIDFD_AVAILABLE, PIDFD_REASON)
     def test_child_timeout_terminates_process_group_and_restores(self) -> None:
         completed = self.completed(
             self.fixture.run_arguments(
@@ -1112,9 +1435,13 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
             self.fixture.run_arguments(failpoint="arm-after-generation")
         )
         self.assertEqual(crashed.returncode, 91, crashed.stderr)
-        self.fixture.framework.unlink()
-        self.fixture.framework.touch(mode=0o600)
-        self.fixture.framework.chmod(0o600)
+        original, installed = self.replace_with_distinct_inode(
+            self.fixture.framework, b"", 0o600
+        )
+        self.assertNotEqual(
+            (original.st_dev, original.st_ino),
+            (installed.st_dev, installed.st_ino),
+        )
         recovered = self.completed(self.fixture.recover_arguments())
         self.assertEqual(recovered.returncode, 1)
         self.assertIn(
@@ -1154,6 +1481,7 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         self.assertIn("test root must be an owner-private real directory", linked.stderr)
         self.fixture.assert_restored(self)
 
+    @unittest.skipUnless(PIDFD_AVAILABLE, PIDFD_REASON)
     def test_signal_terminates_exact_child_supervisor_and_restores(self) -> None:
         pid_file = self.fixture.root / "child-pid"
         child_code = "\n".join(
@@ -1202,7 +1530,7 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.terminate_process_group(process, 0.0)
         killpg.assert_not_called()
 
-    @unittest.skipUnless(PID_NAMESPACE_AVAILABLE, PID_NAMESPACE_REASON)
+    @unittest.skipUnless(FULL_CONTAINMENT_AVAILABLE, FULL_CONTAINMENT_REASON)
     def test_pid_namespace_kills_escaped_setsid_descendant_before_scan(self) -> None:
         escaped_marker = self.fixture.artifacts / "escaped-descendant-ran"
         grandchild_code = (
@@ -1325,7 +1653,7 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
 
     @unittest.skipUnless(
         os.environ.get("GENTOO_OPT_COORDINATOR_CRASH_STRESS") == "1",
-        "dedicated coordinator crash-stress case is not selected",
+        "DIAGNOSTIC: dedicated coordinator crash-stress case is not selected",
     )
     def test_child_barrier_crash_recovery_stress(self) -> None:
         """Exercise each barrier crash window 100 times during process churn."""
@@ -1435,9 +1763,17 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
             (
                 "import os, pathlib",
                 "path = pathlib.Path(os.environ['GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION'])",
-                "path.unlink()",
-                "path.write_text('substituted\\n')",
-                "path.chmod(0o600)",
+                "original = path.lstat()",
+                "replacement = path.with_name(path.name + '.replacement')",
+                "replacement.write_text('substituted\\n')",
+                "replacement.chmod(0o600)",
+                "prepared = replacement.lstat()",
+                "assert (prepared.st_dev, prepared.st_ino) != (original.st_dev, original.st_ino)",
+                "assert (prepared.st_uid, prepared.st_gid) == (original.st_uid, original.st_gid)",
+                "os.replace(replacement, path)",
+                "installed = path.lstat()",
+                "assert (installed.st_dev, installed.st_ino) == (prepared.st_dev, prepared.st_ino)",
+                "assert (installed.st_dev, installed.st_ino) != (original.st_dev, original.st_ino)",
             )
         )
         rejected = self.completed(

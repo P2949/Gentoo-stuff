@@ -32,7 +32,9 @@ After reviewing a clean commit, publish the installer itself through trusted
 system tools, record its hash, and invoke only that root-owned copy:
 
 ```sh
-sha256sum scripts/optimization/install-framework.sh
+set -Eeuo pipefail
+REVIEWED_INSTALLER_SHA256=$(sha256sum \
+    scripts/optimization/install-framework.sh | awk '{print $1}')
 doas install -d -o root -g root -m 0755 \
     /var/lib/gentoo-optimization/bootstrap
 doas install -o root -g root -m 0755 -T \
@@ -42,14 +44,21 @@ doas mv -T \
     /var/lib/gentoo-optimization/bootstrap/install-framework.sh.partial \
     /var/lib/gentoo-optimization/bootstrap/install-framework.sh
 doas sync -f /var/lib/gentoo-optimization/bootstrap
-doas sha256sum \
-    /var/lib/gentoo-optimization/bootstrap/install-framework.sh
-# Compare this root-owned hash with the reviewed hash printed above.
+COPIED_INSTALLER_SHA256=$(doas sha256sum \
+    /var/lib/gentoo-optimization/bootstrap/install-framework.sh | awk '{print $1}')
+test "$COPIED_INSTALLER_SHA256" = "$REVIEWED_INSTALLER_SHA256"
 doas /var/lib/gentoo-optimization/bootstrap/install-framework.sh \
     --source-root "$PWD"
 doas /var/lib/gentoo-optimization/bootstrap/install-framework.sh \
     --source-root "$PWD" --check
 ```
+
+This abbreviated publication example is useful for ordinary reviewed
+development installs, but it is not an authorization procedure. Candidate A
+and Candidate B must use the root-owned immutable Git bundle and isolated root
+checkout procedure in `docs/phase2-production-profile-transaction.md`; an
+installer invoked against the mutable desktop checkout cannot produce binding
+Phase 2 evidence.
 
 The root-owned copy requires `--source-root`, rejects a dirty production
 worktree, checks that its own bytes equal the installer in the one-time source
@@ -106,6 +115,22 @@ bytes are also an explicit upgrade ABI: an ordinary upgrade requires the
 installed helper and QA bootstraps to be byte-identical to the new renderer
 before publication. Changing those invariant bytes requires a separate guarded
 bootstrap migration.
+
+The only historical helper-bootstrap ABI accepted by the Candidate-A
+migration is the currently deployed pre-Candidate-A ten-helper tree from Git
+commit `8a1200915d2693fd7486a421a9b232f638e9840c`. Its live framework manifest
+selects that commit, and the independent golden fixture under
+`tests/optimization/fixtures/framework-bootstrap/deployed-v1/` binds the exact
+SHA-256 of every production bootstrap. The later twelve-helper hybrid present
+in Git commit `19a46b78` was never installed on this host and is deliberately
+unsupported: encountering those or any other nearby bytes stops publication.
+The ten-helper migration exchanges the complete fixed helper directory. Before
+that exchange, the old tree remains byte- and metadata-exact; after it, the new
+twelve-helper tree is complete and immediately passes the read-only strict
+check without an installer recovery pass. The fixture executes both a
+pre-existing helper and a newly added helper in that raw post-`SIGKILL` state,
+then permits an idempotent repair run only after the entire tree manifest has
+been compared.
 
 The first migration has no old current target. It first atomically replaces the
 legacy `/etc/portage` checkout link with a minimal root-owned guard that rejects

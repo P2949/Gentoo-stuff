@@ -25,6 +25,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -3228,39 +3229,477 @@ def normalize_child_status(returncode: int) -> int:
     return min(255, returncode)
 
 
+def preflight_pidfd_termination(
+    paths: Paths,
+    kill_after: float = 2.0,
+) -> None:
+    """Prove that this kernel can terminate one exact process through a pidfd.
+
+    Merely finding ``os.pidfd_open`` and ``signal.pidfd_send_signal`` in the
+    Python runtime is insufficient: seccomp, an older host kernel, or a
+    partially implemented libc/kernel combination can still return ENOSYS or
+    EPERM.  The production transaction relies on both syscalls when recovering
+    a live child supervisor, so exercise the complete primitive with a private
+    disposable session before any workload is armed.
+    """
+
+    pidfd_open = getattr(os, "pidfd_open", None)
+    pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
+    if not callable(pidfd_open) or not callable(pidfd_send_signal):
+        fail("pidfd containment preflight is unavailable in the Python runtime")
+    if kill_after <= 0:
+        fail("pidfd containment preflight requires a positive teardown deadline")
+    raw_executable = Path(sys.executable)
+    if not raw_executable.is_absolute():
+        fail("pidfd containment preflight Python executable is not absolute")
+    try:
+        executable = raw_executable.resolve(strict=True)
+    except OSError as error:
+        fail(f"cannot resolve pidfd preflight Python executable: {error}")
+    executable_identity = inspect_executable_identity(
+        executable, paths, "pidfd preflight Python executable"
+    )
+    try:
+        process = subprocess.Popen(
+            [
+                os.fspath(executable),
+                "-I",
+                "-B",
+                "-c",
+                "import time; time.sleep(60)",
+            ],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=PRODUCTION_CHILD_ENVIRONMENT,
+        )
+    except OSError as error:
+        fail(f"pidfd containment preflight child could not start: {error}")
+
+    process_group = process.pid
+    descriptor = -1
+    observed_returncode: int | None = None
+    failure: str | None = None
+    try:
+        initial = process_stat_identity(process.pid)
+        if initial is None or process.poll() is not None:
+            failure = "pidfd containment preflight child exited before inspection"
+        elif initial.process_group != process_group:
+            failure = "pidfd containment preflight child is not in its private group"
+        else:
+            try:
+                descriptor = pidfd_open(process.pid, 0)
+            except (OSError, ProcessLookupError) as error:
+                failure = f"pidfd containment preflight cannot open pidfd: {error}"
+            if descriptor >= 0:
+                repeated = process_stat_identity(process.pid)
+                if repeated is None:
+                    failure = (
+                        "pidfd containment preflight child disappeared after pidfd_open"
+                    )
+                elif repeated != initial:
+                    failure = (
+                        "pidfd containment preflight child identity changed after "
+                        "pidfd_open"
+                    )
+                else:
+                    try:
+                        pidfd_send_signal(descriptor, signal.SIGTERM)
+                    except (OSError, ProcessLookupError) as error:
+                        failure = (
+                            "pidfd containment preflight cannot signal through pidfd: "
+                            f"{error}"
+                        )
+                    else:
+                        try:
+                            observed_returncode = process.wait(timeout=kill_after)
+                        except subprocess.TimeoutExpired:
+                            failure = (
+                                "pidfd containment preflight child survived pidfd "
+                                "SIGTERM"
+                            )
+    finally:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError as error:
+                if failure is None:
+                    failure = (
+                        "pidfd containment preflight could not close pidfd: "
+                        f"{error}"
+                    )
+        if process.poll() is None:
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+            try:
+                process.wait(timeout=kill_after)
+            except subprocess.TimeoutExpired:
+                if failure is None:
+                    failure = (
+                        "pidfd containment preflight could not reap its disposable child"
+                    )
+
+    deadline = time.monotonic() + kill_after
+    while process_group_exists(process_group) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    if process_group_exists(process_group):
+        fail(
+            "pidfd containment preflight left a live disposable process group: "
+            f"{process_group}"
+        )
+    if (
+        inspect_executable_identity(
+            executable, paths, "pidfd preflight Python executable"
+        )
+        != executable_identity
+    ):
+        fail("pidfd preflight Python executable changed during containment proof")
+    if failure is not None:
+        fail(failure)
+    if observed_returncode != -signal.SIGTERM:
+        fail(
+            "pidfd containment preflight did not observe the exact child exit "
+            f"from SIGTERM: {observed_returncode}"
+        )
+
+
+def process_children(pid: int) -> tuple[int, ...] | None:
+    """Read one process's direct outer-namespace children from procfs.
+
+    ``unshare --fork`` remains outside the new PID namespace and directly owns
+    the namespace init process.  Reading the kernel-maintained children file
+    lets the preflight bind that init process to its outer PID and coherent
+    start/process-group identity before terminating the supervisor.
+    """
+
+    try:
+        payload = Path(f"/proc/{pid}/task/{pid}/children").read_bytes()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    except OSError as error:
+        if error.errno in {errno.ENOENT, errno.ESRCH}:
+            return None
+        fail(f"cannot inspect PID-namespace supervisor children for PID {pid}: {error}")
+    fields = payload.split()
+    if any(not field.isdigit() or int(field) <= 0 for field in fields):
+        fail(f"cannot parse PID-namespace supervisor children for PID {pid}")
+    children = tuple(int(field) for field in fields)
+    if len(children) != len(set(children)):
+        fail(f"PID-namespace supervisor children are duplicated for PID {pid}")
+    return children
+
+
+def wait_for_namespace_child(
+    process: subprocess.Popen[bytes],
+    supervisor_identity: ProcessStatIdentity,
+    deadline_seconds: float,
+) -> tuple[int, ProcessStatIdentity]:
+    """Bind the sole namespace child while the exact supervisor stays live."""
+
+    deadline = time.monotonic() + deadline_seconds
+    while time.monotonic() < deadline:
+        observed = process_stat_identity(process.pid)
+        if observed is None or process.poll() is not None:
+            fail(
+                "PID-namespace containment supervisor exited before its "
+                "sleeping namespace child could be identified"
+            )
+        if observed != supervisor_identity:
+            fail("PID-namespace containment supervisor identity changed")
+        children = process_children(process.pid)
+        if children is None:
+            continue
+        if len(children) > 1:
+            fail("PID-namespace containment supervisor has unexpected extra children")
+        if len(children) == 1:
+            child_pid = children[0]
+            child_identity = process_stat_identity(child_pid)
+            repeated_supervisor = process_stat_identity(process.pid)
+            repeated_children = process_children(process.pid)
+            if child_identity is None:
+                continue
+            if repeated_supervisor != supervisor_identity:
+                fail(
+                    "PID-namespace containment supervisor changed while its child "
+                    "was identified"
+                )
+            if repeated_children != children:
+                continue
+            if child_identity.process_group != supervisor_identity.process_group:
+                fail(
+                    "PID-namespace containment child escaped the private process "
+                    "group"
+                )
+            return child_pid, child_identity
+        time.sleep(0.02)
+    fail("PID-namespace containment preflight timed out identifying its child")
+
+
+def exact_process_is_gone(pid: int, identity: ProcessStatIdentity) -> bool:
+    """Return true only when the process instance bound by ``identity`` is gone."""
+
+    observed = process_stat_identity(pid)
+    return observed is None or observed != identity
+
+
+def preflight_unshare_kill_child(
+    paths: Paths,
+    kill_after: float = 2.0,
+    expected_unshare_identity: dict[str, object] | None = None,
+) -> None:
+    """Functionally prove ``unshare --kill-child=KILL`` teardown semantics.
+
+    A successful ``/bin/true`` invocation proves namespace creation but says
+    nothing about the safety property used after a coordinator crash.  Keep a
+    namespace child asleep, bind both outer process identities, terminate the
+    exact unshare supervisor through a pidfd, and require the child and its
+    private process group to disappear.  Cleanup also uses only already-opened
+    pidfds; a recycled numeric PID or PGID is never signalled.
+    """
+
+    if os.geteuid() != 0:
+        fail("PID-namespace containment requires root")
+    if kill_after <= 0:
+        fail("PID-namespace containment requires a positive teardown deadline")
+    pidfd_open = getattr(os, "pidfd_open", None)
+    pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
+    if not callable(pidfd_open) or not callable(pidfd_send_signal):
+        fail("PID-namespace kill-child preflight requires functional pidfds")
+
+    unshare_identity = inspect_executable_identity(
+        UNSHARE, paths, "PID-namespace executable"
+    )
+    if expected_unshare_identity is not None:
+        expected = validate_executable_identity(
+            expected_unshare_identity, "PID-namespace executable"
+        )
+        if unshare_identity != expected:
+            fail("PID-namespace executable differs from the transaction contract")
+
+    raw_executable = Path(sys.executable)
+    if not raw_executable.is_absolute():
+        fail("PID-namespace preflight Python executable is not absolute")
+    try:
+        executable = raw_executable.resolve(strict=True)
+    except OSError as error:
+        fail(f"cannot resolve PID-namespace preflight Python executable: {error}")
+    executable_identity = inspect_executable_identity(
+        executable, paths, "PID-namespace preflight Python executable"
+    )
+
+    process: subprocess.Popen[bytes] | None = None
+    supervisor_pidfd = -1
+    child_pidfd = -1
+    child_pid: int | None = None
+    child_identity: ProcessStatIdentity | None = None
+    supervisor_identity: ProcessStatIdentity | None = None
+    observed_returncode: int | None = None
+    failure: str | None = None
+    with tempfile.TemporaryFile() as diagnostic:
+        try:
+            process = subprocess.Popen(
+                [
+                    os.fspath(UNSHARE),
+                    "--pid",
+                    "--fork",
+                    "--kill-child=KILL",
+                    "--mount-proc",
+                    "--",
+                    os.fspath(executable),
+                    "-I",
+                    "-B",
+                    "-c",
+                    "import time; time.sleep(60)",
+                ],
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=diagnostic,
+                env=PRODUCTION_CHILD_ENVIRONMENT,
+            )
+        except OSError as error:
+            fail(f"PID-namespace containment preflight could not start: {error}")
+
+        try:
+            supervisor_identity = process_stat_identity(process.pid)
+            if supervisor_identity is None or process.poll() is not None:
+                failure = "PID-namespace containment supervisor exited at startup"
+            elif supervisor_identity.process_group != process.pid:
+                failure = (
+                    "PID-namespace containment supervisor is not in its private "
+                    "process group"
+                )
+            else:
+                try:
+                    supervisor_pidfd = pidfd_open(process.pid, 0)
+                    if process_stat_identity(process.pid) != supervisor_identity:
+                        fail(
+                            "PID-namespace supervisor identity changed after "
+                            "pidfd_open"
+                        )
+                    child_pid, child_identity = wait_for_namespace_child(
+                        process, supervisor_identity, kill_after
+                    )
+                    child_pidfd = pidfd_open(child_pid, 0)
+                except (OSError, ProcessLookupError, TransactionError) as error:
+                    failure = f"PID-namespace containment preflight failed: {error}"
+
+            if (
+                failure is None
+                and supervisor_identity is not None
+                and child_pid is not None
+                and child_identity is not None
+            ):
+                repeated_supervisor = process_stat_identity(process.pid)
+                repeated_child = process_stat_identity(child_pid)
+                if repeated_supervisor != supervisor_identity:
+                    failure = (
+                        "PID-namespace supervisor identity changed after pidfd_open"
+                    )
+                elif repeated_child != child_identity:
+                    failure = "PID-namespace child identity changed after pidfd_open"
+                else:
+                    try:
+                        pidfd_send_signal(supervisor_pidfd, signal.SIGTERM)
+                    except (OSError, ProcessLookupError) as error:
+                        failure = (
+                            "PID-namespace supervisor cannot be signalled through "
+                            f"its pidfd: {error}"
+                        )
+                    else:
+                        try:
+                            observed_returncode = process.wait(timeout=kill_after)
+                        except subprocess.TimeoutExpired:
+                            failure = (
+                                "PID-namespace supervisor survived exact pidfd SIGTERM"
+                            )
+
+            if failure is None and child_pid is not None and child_identity is not None:
+                deadline = time.monotonic() + kill_after
+                while (
+                    not exact_process_is_gone(child_pid, child_identity)
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.02)
+                if not exact_process_is_gone(child_pid, child_identity):
+                    failure = (
+                        "unshare --kill-child=KILL left its exact namespace child alive"
+                    )
+                else:
+                    process_group = (
+                        supervisor_identity.process_group
+                        if supervisor_identity is not None
+                        else process.pid
+                    )
+                    deadline = time.monotonic() + kill_after
+                    while process_group_exists(process_group) and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                    if process_group_exists(process_group):
+                        failure = (
+                            "unshare --kill-child=KILL left its private process group "
+                            f"alive: {process_group}"
+                        )
+        finally:
+            # Failures must not leak the disposable namespace.  Signal only
+            # process instances already bound to open pidfds and coherent
+            # start identities; never fall back to a numeric process group.
+            if process.poll() is None and supervisor_pidfd >= 0:
+                with contextlib.suppress(OSError, ProcessLookupError):
+                    pidfd_send_signal(supervisor_pidfd, signal.SIGKILL)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=kill_after)
+            if (
+                child_pid is not None
+                and child_identity is not None
+                and not exact_process_is_gone(child_pid, child_identity)
+                and child_pidfd >= 0
+            ):
+                with contextlib.suppress(OSError, ProcessLookupError):
+                    pidfd_send_signal(child_pidfd, signal.SIGKILL)
+                deadline = time.monotonic() + kill_after
+                while (
+                    not exact_process_is_gone(child_pid, child_identity)
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.02)
+            for descriptor in (child_pidfd, supervisor_pidfd):
+                if descriptor >= 0:
+                    with contextlib.suppress(OSError):
+                        os.close(descriptor)
+            if process.poll() is None:
+                if failure is None:
+                    failure = "PID-namespace supervisor could not be reaped"
+            else:
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=0.1)
+
+            if supervisor_identity is not None:
+                process_group = supervisor_identity.process_group
+                deadline = time.monotonic() + kill_after
+                while process_group_exists(process_group) and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                if process_group_exists(process_group) and failure is None:
+                    failure = (
+                        "PID-namespace containment cleanup left its private process "
+                        f"group alive: {process_group}"
+                    )
+
+        diagnostic.seek(0)
+        diagnostic_text = diagnostic.read().decode("utf-8", errors="replace").strip()
+
+    if (
+        inspect_executable_identity(UNSHARE, paths, "PID-namespace executable")
+        != unshare_identity
+    ):
+        fail("PID-namespace executable changed during containment proof")
+    if (
+        inspect_executable_identity(
+            executable, paths, "PID-namespace preflight Python executable"
+        )
+        != executable_identity
+    ):
+        fail("PID-namespace preflight Python executable changed during proof")
+    if failure is not None:
+        fail(failure + (f": {diagnostic_text}" if diagnostic_text else ""))
+    if observed_returncode != -signal.SIGTERM:
+        fail(
+            "PID-namespace supervisor did not exit from exact pidfd SIGTERM: "
+            f"{observed_returncode}"
+        )
+
+
+def preflight_containment_primitives(
+    paths: Paths,
+    kill_after: float = 2.0,
+    expected_unshare_identity: dict[str, object] | None = None,
+) -> None:
+    """Prove the exact namespace and pidfd primitives used by production."""
+
+    # Retain an independent primitive proof so pidfd regressions are diagnosed
+    # separately from the namespace supervisor's kill-child contract.
+    preflight_pidfd_termination(paths, kill_after)
+    preflight_unshare_kill_child(
+        paths,
+        kill_after,
+        expected_unshare_identity=expected_unshare_identity,
+    )
+
+
 def preflight_child_containment(
-    contract: dict[str, object], paths: Paths
+    contract: dict[str, object], paths: Paths, kill_after: float = 2.0
 ) -> None:
     revalidate_child_contract(contract, paths)
     if contract["containment"] != "pid-namespace-v1":
         return
-    if os.geteuid() != 0:
-        fail("PID-namespace containment requires root")
-    try:
-        probe = subprocess.run(
-            [
-                os.fspath(UNSHARE),
-                "--pid",
-                "--fork",
-                "--kill-child=KILL",
-                "--mount-proc",
-                "--",
-                "/bin/true",
-            ],
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=PRODUCTION_CHILD_ENVIRONMENT,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        fail(f"PID-namespace containment preflight failed: {error}")
-    if probe.returncode != 0:
-        diagnostic = probe.stderr.decode("utf-8", errors="replace").strip()
-        fail(
-            "PID-namespace containment preflight failed"
-            + (f": {diagnostic}" if diagnostic else "")
-        )
+    containment_identity = validate_executable_identity(
+        contract["containment_executable"], "PID-namespace executable"
+    )
+    preflight_containment_primitives(
+        paths,
+        kill_after,
+        expected_unshare_identity=containment_identity,
+    )
     revalidate_child_contract(contract, paths)
 
 
@@ -3676,7 +4115,9 @@ def run_command(arguments: argparse.Namespace) -> int:
         authorization_token_sha256,
         authorization_path,
     )
-    preflight_child_containment(child_contract, paths)
+    preflight_child_containment(
+        child_contract, paths, arguments.kill_after_seconds
+    )
     receipt_path: Path | None = None
     child_status = 1
     child_identity_sha256: str | None = None
@@ -3777,6 +4218,14 @@ def run_command(arguments: argparse.Namespace) -> int:
     if receipt_path is not None:
         print(f"RECEIPT: {receipt_path}")
     return child_status
+
+
+def preflight_containment_command(arguments: argparse.Namespace) -> int:
+    validate_timeouts(arguments)
+    paths = resolve_paths(arguments)
+    preflight_containment_primitives(paths, arguments.kill_after_seconds)
+    print("PREFLIGHT-PASS")
+    return 0
 
 
 def recover_command(arguments: argparse.Namespace) -> int:
@@ -4002,6 +4451,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("command", nargs=argparse.REMAINDER)
     run.set_defaults(function=run_command)
+
+    preflight = subparsers.add_parser(
+        "preflight-containment",
+        help="prove the production PID-namespace and pidfd containment primitives",
+    )
+    add_path_arguments(preflight)
+    preflight.set_defaults(function=preflight_containment_command)
 
     recover = subparsers.add_parser(
         "recover", help="restore an interrupted transaction or prove locks empty"

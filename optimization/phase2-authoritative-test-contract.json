@@ -1,0 +1,238 @@
+{
+  "expected_diagnostic_subtests": [
+    {
+      "subtest": "python.test_production_profile_lock_transaction.ProductionProfileLockTransactionTests.test_child_barrier_crash_recovery_stress",
+      "test": "python-unit-tests:tests/optimization"
+    }
+  ],
+  "portable_allowed_required_skips": [
+    {
+      "subtest": "abi.elf32-mixed",
+      "test": "bolt-pre-strip-hooks"
+    },
+    {
+      "subtest": "framework-lock.shared-exclusive",
+      "test": "bolt-pre-strip-hooks"
+    },
+    {
+      "subtest": "metadata.file-capability",
+      "test": "bolt-pre-strip-hooks"
+    },
+    {
+      "subtest": "metadata.user-xattr",
+      "test": "bolt-pre-strip-hooks"
+    },
+    {
+      "subtest": "ownership.alternate-gid",
+      "test": "framework-installer"
+    },
+    {
+      "subtest": "live-portage.policy",
+      "test": "portage-sample-production-env"
+    },
+    {
+      "subtest": "python.test_bolt_artifact_tool.ElfRoleClassificationTests.test_static_pie_uses_df_1_pie_instead_of_dso_role",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_bolt_artifact_tool.HardlinkMetadataTransactionTests.test_security_capability_hardlink_group_rollback",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_bolt_artifact_tool.HardlinkMetadataTransactionTests.test_user_xattr_hardlink_group_rollback",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_bolt_artifact_tool.ProductionTrustTests.test_non_root_or_writable_ancestor_is_rejected",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_bolt_artifact_tool.ProductionTrustTests.test_root_portage_lock_metadata_is_enforced",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_bolt_artifact_tool.ProductionTrustTests.test_system_tool_chain_is_root_owned_and_nonwritable",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_production_profile_lock_transaction.ProductionProfileLockTransactionTests.test_child_timeout_terminates_process_group_and_restores",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_production_profile_lock_transaction.ProductionProfileLockTransactionTests.test_functional_pidfd_preflight_terminates_exact_private_child",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_production_profile_lock_transaction.ProductionProfileLockTransactionTests.test_live_exact_leader_process_group_is_quiesced",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_production_profile_lock_transaction.ProductionProfileLockTransactionTests.test_pid_namespace_kills_escaped_setsid_descendant_before_scan",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_production_profile_lock_transaction.ProductionProfileLockTransactionTests.test_signal_terminates_exact_child_supervisor_and_restores",
+      "test": "python-unit-tests:tests/optimization"
+    }
+  ],
+  "portable_allowed_top_level_skips": [
+    "capability:bolt",
+    "capability:clang-ir",
+    "capability:clang-sample",
+    "capability:gcc",
+    "capability:go",
+    "capability:rust",
+    "framework-installer",
+    "package-env-portage-semantic",
+    "portage-pgo-use-integration",
+    "portage-phase-identity",
+    "portage-pre-strip-integration",
+    "portage-sample-pgo-integration",
+    "portage-sample-pgo-live-policy-integration",
+    "production-profile-lock-crash-stress"
+  ],
+  "required_named_subtests": [
+    {
+      "subtest": "abi.elf32-mixed",
+      "test": "bolt-pre-strip-hooks"
+    },
+    {
+      "subtest": "framework-lock.shared-exclusive",
+      "test": "bolt-pre-strip-hooks"
+    },
+    {
+      "subtest": "metadata.file-capability",
+      "test": "bolt-pre-strip-hooks"
+    },
+    {
+      "subtest": "metadata.user-xattr",
+      "test": "bolt-pre-strip-hooks"
+    },
+    {
+      "subtest": "ownership.alternate-gid",
+      "test": "framework-installer"
+    },
+    {
+      "subtest": "live-portage.policy",
+      "test": "portage-sample-production-env"
+    }
+  ],
+  "schema": "gentoo-optimization-phase2-authoritative-test-contract-v1",
+  "top_level": {
+    "exact_names": [
+      "bolt-command-policy",
+      "bolt-pre-strip-hooks",
+      "bolt-transaction-fixture",
+      "capability:bolt",
+      "capability:clang-ir",
+      "capability:clang-sample",
+      "capability:gcc",
+      "capability:go",
+      "capability:rust",
+      "driver-cli-self-test",
+      "framework-installer",
+      "no-legacy-pgo",
+      "package-env-duplicate-policy",
+      "package-env-portage-semantic",
+      "pgo-dispatcher",
+      "phase2-evidence-contract",
+      "phase2-run-provenance-start",
+      "portage-config-cleanup",
+      "portage-pgo-use-integration",
+      "portage-phase-identity",
+      "portage-pre-strip-integration",
+      "portage-qa-hook-state",
+      "portage-sample-pgo-integration",
+      "portage-sample-pgo-live-policy-integration",
+      "portage-sample-production-env",
+      "production-profile-lock-crash-stress",
+      "python-source-compilation",
+      "python-unit-tests:tests/optimization",
+      "python-unit-tests:tests/optimization/recovery",
+      "recovery-boot-evidence-fixture",
+      "recovery-rollback-fixture",
+      "shellcheck"
+    ],
+    "prefix_groups": [
+      {
+        "expected_count": 51,
+        "expected_names": [
+          "bash-syntax:bench/compare-two-commands.sh",
+          "bash-syntax:bench/perf-stat.sh",
+          "bash-syntax:bench/run-command-benchmark.sh",
+          "bash-syntax:bench/size-report.sh",
+          "bash-syntax:optimization/fixtures/bolt/run.sh",
+          "bash-syntax:optimization/fixtures/bolt/transaction.sh",
+          "bash-syntax:optimization/fixtures/pgo/clang-ir/run.sh",
+          "bash-syntax:optimization/fixtures/pgo/clang-sample/run.sh",
+          "bash-syntax:optimization/fixtures/pgo/gcc/run.sh",
+          "bash-syntax:optimization/fixtures/pgo/go/run.sh",
+          "bash-syntax:optimization/fixtures/pgo/rust/run.sh",
+          "bash-syntax:optimization/fixtures/recovery/test-record-boot-evidence.sh",
+          "bash-syntax:optimization/fixtures/recovery/test-rollback.sh",
+          "bash-syntax:scripts/allocators/disable-user-allocator.sh",
+          "bash-syntax:scripts/allocators/enable-user-allocator.sh",
+          "bash-syntax:scripts/allocators/run-with-jemalloc.sh",
+          "bash-syntax:scripts/allocators/run-with-mimalloc.sh",
+          "bash-syntax:scripts/allocators/run-with-system-malloc.sh",
+          "bash-syntax:scripts/allocators/run-with-tcmalloc.sh",
+          "bash-syntax:scripts/bolt/bolt-package-binaries.sh",
+          "bash-syntax:scripts/bolt/collect-profile.sh",
+          "bash-syntax:scripts/bolt/list-package-binaries.sh",
+          "bash-syntax:scripts/bolt/optimize-binary.sh",
+          "bash-syntax:scripts/optimization/bolt/capture-input.sh",
+          "bash-syntax:scripts/optimization/bolt/deploy-output.sh",
+          "bash-syntax:scripts/optimization/bolt/register-output.sh",
+          "bash-syntax:scripts/optimization/install-framework.sh",
+          "bash-syntax:scripts/optimization/recovery/record-boot-evidence.sh",
+          "bash-syntax:scripts/optimization/recovery/rollback.sh",
+          "bash-syntax:scripts/pgo/collect-sample-profile.sh",
+          "bash-syntax:scripts/pgo/list-profiled-packages.sh",
+          "bash-syntax:scripts/pgo/make-sample-prof.sh",
+          "bash-syntax:scripts/pgo/merge-instr-profile.sh",
+          "bash-syntax:scripts/pgo/package-profile-path.sh",
+          "bash-syntax:scripts/pgo/pgo-path.sh",
+          "bash-syntax:tests/optimization/fixtures/framework-bootstrap/deployed-v1/render.sh",
+          "bash-syntax:tests/optimization/test-bolt-command-policy.sh",
+          "bash-syntax:tests/optimization/test-bolt-hooks.sh",
+          "bash-syntax:tests/optimization/test-bolt-transaction.sh",
+          "bash-syntax:tests/optimization/test-framework-installer.sh",
+          "bash-syntax:tests/optimization/test-no-legacy-pgo.sh",
+          "bash-syntax:tests/optimization/test-pgo-dispatcher.sh",
+          "bash-syntax:tests/optimization/test-portage-config-cleanup.sh",
+          "bash-syntax:tests/optimization/test-portage-pgo-use-integration.sh",
+          "bash-syntax:tests/optimization/test-portage-phase-identity.sh",
+          "bash-syntax:tests/optimization/test-portage-phase-integration.sh",
+          "bash-syntax:tests/optimization/test-portage-qa-hook.sh",
+          "bash-syntax:tests/optimization/test-portage-sample-pgo-integration.sh",
+          "bash-syntax:tests/optimization/test-portage-sample-production-env.sh",
+          "bash-syntax:tests/optimization/test-run-optimization-tests.sh",
+          "bash-syntax:tests/run-optimization-tests.sh"
+        ],
+        "prefix": "bash-syntax:"
+      }
+    ]
+  },
+  "unittest_suites": [
+    {
+      "expected_count": 30,
+      "subtest_names_sha256": "31e42cc8c8573d3dac2981b5d24f944b5cd3badc46e13972f6f475668e0c8b9c",
+      "test": "phase2-evidence-contract"
+    },
+    {
+      "expected_count": 1,
+      "subtest_names_sha256": "99dbe6b4806232fcb55e043b38a940d720b28775d387824f2cd98aeed4e65c84",
+      "test": "production-profile-lock-crash-stress"
+    },
+    {
+      "expected_count": 204,
+      "subtest_names_sha256": "2fe8712d4e2a49a42be111721926fab477148914f284a268329b7ab398a3d678",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "expected_count": 10,
+      "subtest_names_sha256": "41e10700bc3a88e4f6ac78857699a645f7581db9b9e019a05be89492855dff10",
+      "test": "python-unit-tests:tests/optimization/recovery"
+    }
+  ]
+}

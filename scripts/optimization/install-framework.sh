@@ -240,10 +240,14 @@ declare -a HELPER_SOURCE_RELATIVE=(
     scripts/optimization/verify/reconcile-state.py
     scripts/optimization/recovery/verify-binpkg-snapshot.py
 )
-# Exact stable-bootstrap layout installed by the preceding framework schema.
-# It is accepted only as the source of this reviewed additive migration; the
-# whole fixed tree is exchanged for the current layout while Portage is
-# quiescent and all framework/project/generation locks are held.
+# Exact stable-bootstrap layout installed by the currently deployed
+# pre-Candidate-A framework (Git commit
+# 8a1200915d2693fd7486a421a9b232f638e9840c).  Its live manifest and fixed
+# namespace contain these ten helpers.  It is accepted only as the source of
+# this reviewed additive migration; the whole fixed tree is exchanged for the
+# current layout while Portage is quiescent and all framework/project/
+# generation locks are held.  The later, never-deployed twelve-helper hybrid
+# from 19a46b78 is deliberately not an accepted migration source.
 declare -ar LEGACY_BOOTSTRAP_HELPER_RELATIVE=(
     bolt/artifact_tool.py
     bolt/capture-input.sh
@@ -390,7 +394,7 @@ verify_existing_ancestor_chain() {
             continue
         fi
         mode_is_trusted "${mode}" || fail "trusted ancestor is group/world-writable: ${current}"
-    done < <(tr '/' '\n' <<<"${remainder}")
+    done < <(/usr/bin/tr '/' '\n' <<<"${remainder}")
 }
 
 verify_regular_trusted() {
@@ -595,7 +599,7 @@ preflight_atomic_exchange_destinations() {
             exchange_failed=1
         fi
         if ((exchange_failed)); then
-            detail=$(tr '\n' ' ' <"${error}" 2>/dev/null || true)
+            detail=$(/usr/bin/tr '\n' ' ' <"${error}" 2>/dev/null || true)
             rm -rf -- "${probe}"
             fail "destination filesystem does not support atomic exchange: ${destination_parent}${detail:+ (${detail})}"
         fi
@@ -801,7 +805,7 @@ render_raw_head_entry() {
             source_git --no-replace-objects cat-file blob "${oid}" >"${blob}" || \
                 fail "cannot read raw HEAD symlink blob: ${path}"
             [[ -s ${blob} ]] || fail "raw HEAD symlink target is empty: ${path}"
-            LC_ALL=C tr -d '\000-\037\177' <"${blob}" >"${scrubbed}"
+            LC_ALL=C /usr/bin/tr -d '\000-\037\177' <"${blob}" >"${scrubbed}"
             cmp -s -- "${blob}" "${scrubbed}" || \
                 fail "raw HEAD symlink target contains a control byte: ${path}"
             target=$(<"${blob}")
@@ -1226,6 +1230,20 @@ snapshot_inputs() {
     chmod 0600 -- "${SNAPSHOT}/source.inventory"
 }
 
+discard_source_snapshot() {
+    # Once an already-active candidate has been proven to match every reviewed
+    # source identity, repair of its generation-independent bootstrap tree no
+    # longer consumes the mutable snapshot.  Remove and fsync it before the
+    # atomic helper exchange.  A SIGKILL after that exchange can therefore be
+    # subjected immediately to the strict read-only check without a surviving
+    # installer temporary masquerading as framework corruption.
+    if [[ -n ${SNAPSHOT} ]]; then
+        rm -rf -- "${SNAPSHOT}"
+        SNAPSHOT=
+        sync_path "${BASE}"
+    fi
+}
+
 verify_source_symlinks() {
     local entry relative target
     while IFS= read -r -d '' entry; do
@@ -1356,9 +1374,10 @@ render_python_helper_bootstrap_version() {
             exec_line='os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", "-B", framework_tool, *sys.argv[1:]])'
             ;;
         legacy-v1)
-            # Exact bytes accepted solely to migrate the reviewed preceding
-            # ten-helper bootstrap schema.  Do not broaden this compatibility
-            # path: an unrecognized fixed bootstrap remains a hard stop.
+            # Exact bytes accepted solely to migrate the reviewed, currently
+            # deployed pre-Candidate-A ten-helper bootstrap schema.  Do not
+            # broaden this compatibility path: an unrecognized fixed bootstrap
+            # remains a hard stop.
             shebang='#!/usr/bin/python3 -I'
             exec_line='os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", framework_tool, *sys.argv[1:]])'
             ;;
@@ -1896,7 +1915,7 @@ portage_quiescent() {
                 ;;
         esac
         [[ -r ${proc}/cmdline ]] || continue
-        cmdline=$(tr '\0' ' ' <"${proc}/cmdline" 2>/dev/null || true)
+        cmdline=$(/usr/bin/tr '\0' ' ' <"${proc}/cmdline" 2>/dev/null || true)
         case ${cmdline} in
             *'/usr/bin/emerge '*|*'/usr/bin/ebuild '*|*'/usr/bin/emaint '*|*'/usr/bin/quickpkg '*)
                 fail "Portage command is active (pid ${proc##*/})"
@@ -2092,6 +2111,7 @@ manifest_external_file_matches() {
 verify_external_migration_source() {
     local candidate=$1 qa=${INSTALL_QA_ROOT}/${HOOK_BASENAME}
     if [[ -e ${LIBEXEC_ROOT} || -L ${LIBEXEC_ROOT} ]]; then
+        verify_directory "${LIBEXEC_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
         bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
             legacy_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
             legacy_python_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
@@ -2202,6 +2222,7 @@ verify_external_indirections() {
         "${FRAMEWORK_CURRENT}/install.manifest" && \
         $(stat -c '%u:%g' -- "${MANIFEST}") == "${EXPECTED_UID}:${EXPECTED_GID}" ]] || \
         fail 'external manifest is not bound to framework-current/install.manifest'
+    verify_directory "${LIBEXEC_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
     bootstrap_tree_matches "${LIBEXEC_ROOT}" || fail 'fixed helper bootstrap tree differs'
     verify_regular_trusted "${qa}" 0644
     temporary=$(mktemp "${BASE}/.qa-bootstrap-check.XXXXXXXX")
@@ -2485,12 +2506,13 @@ if [[ ${PREVIOUS_TARGET} != none && -f ${PREVIOUS_TARGET}/install.manifest ]] &&
     printf 'INFO: reviewed inputs already match the active generation; repairing stable indirections and running strict check\n'
     require_stable_bootstrap_compatibility
     verify_external_migration_source "${PREVIOUS_TARGET}"
+    discard_source_snapshot
     install_external_indirections
     verify_external_indirections
     finish_first_activation_journal "${PREVIOUS_TARGET}"
     COMMITTED=1
     trap - EXIT INT TERM HUP
-    rm -rf -- "${SNAPSHOT}"
+    discard_source_snapshot
     release_locks_for_check_reexec
     REEXEC_ARGS=("${SELF_PATH}" --check --source-root "${ROOT}")
     [[ -z ${GENERATED_POLICY_INPUT} ]] || REEXEC_ARGS+=(

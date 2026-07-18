@@ -99,6 +99,13 @@ fail() {
     exit 1
 }
 
+record_required_subtest() {
+    local status=$1 name=$2 detail=$3
+    [[ -n ${GENTOO_OPT_SUBTEST_RESULTS:-} ]] || return 0
+    printf '%s\trequired\t%s\t%s\n' "${status}" "${name}" "${detail}" \
+        >>"${GENTOO_OPT_SUBTEST_RESULTS}"
+}
+
 probe_fixture_atomic_exchange() {
     local probe=${WORK}/atomic-exchange-probe reason
     mkdir -- "${probe}" "${probe}/left" "${probe}/right"
@@ -290,6 +297,49 @@ assert_no_transaction_debris() {
 
 assert_transaction_debris_present() {
     find_transaction_debris || fail 'fixture did not create fixed-parent transaction debris'
+}
+
+capture_helper_tree_manifest() {
+    local root=$1 output=$2 entry relative object_type mode uid gid digest target root_row
+    [[ -d ${root} && ! -L ${root} ]] || \
+        fail "helper-tree manifest root is not a real directory: ${root}"
+    printf 'object_type\trelative_path\tmode\tuid\tgid\tsha256\tsymlink_target\n' \
+        >"${output}"
+    while IFS= read -r -d '' entry; do
+        if [[ ${entry} == "${root}" ]]; then
+            relative=.
+        else
+            relative=${entry#"${root}"/}
+            [[ ${relative} != "${entry}" && -n ${relative} ]] || \
+                fail "helper-tree manifest entry escaped its root: ${entry}"
+        fi
+        mode=$(stat -c %a -- "${entry}")
+        uid=$(stat -c %u -- "${entry}")
+        gid=$(stat -c %g -- "${entry}")
+        digest=-
+        target=-
+        if [[ -L ${entry} ]]; then
+            object_type=symlink
+            target=$(readlink -- "${entry}")
+        elif [[ -f ${entry} ]]; then
+            object_type=regular
+            digest=$(sha256sum -- "${entry}")
+            digest=${digest%% *}
+        elif [[ -d ${entry} ]]; then
+            object_type=directory
+        else
+            fail "helper-tree manifest found an unsupported object: ${entry}"
+        fi
+        [[ ${relative} != *$'\t'* && ${relative} != *$'\n'* && \
+            ${target} != *$'\t'* && ${target} != *$'\n'* ]] || \
+            fail 'helper-tree manifest cannot encode a control character'
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "${object_type}" "${relative}" "${mode}" "${uid}" "${gid}" \
+            "${digest}" "${target}" >>"${output}"
+    done < <(find "${root}" -mindepth 0 -print0 | sort -z)
+    root_row=$(printf 'directory\t.\t755\t%s\t%s\t-\t-' "$(id -u)" "$(id -g)")
+    [[ $(grep -Fxc -- "${root_row}" "${output}") == 1 ]] || \
+        fail 'helper-tree manifest omits the exact 0755 owned root row'
 }
 
 mkdir -p -- "${REPOSITORY}/scripts/optimization" "${TARGET}"
@@ -905,6 +955,15 @@ grep -Eq '^jq_sha256=[0-9a-f]{64}$' "${MANIFEST}" || fail 'manifest jq hash is i
     fail 'fixed helper path still contains a mutable generation implementation'
 assert_coherent_indirections
 
+# The exchanged helper directory itself is part of the stable contract, not
+# merely a container for verified descendants. A trusted-but-wrong root mode
+# must fail strict verification before source snapshotting or repair.
+chmod 0700 -- "${TARGET}/usr/local/libexec/gentoo-optimization"
+expect_failure 'directory ownership/mode differs' run_installer --check
+chmod 0755 -- "${TARGET}/usr/local/libexec/gentoo-optimization"
+run_installer --check >/dev/null || \
+    fail 'restoring the exact external helper-root metadata did not restore strict verification'
+
 # Every Python implementation in the immutable candidate must be reached only
 # through the stable bootstrap, which pins isolated mode and disables bytecode
 # publication.  Exercise every discovered Python helper without relying on a
@@ -968,29 +1027,49 @@ cmp -- "${CANDIDATE_HELPER_TREE_BEFORE}" "${CANDIDATE_HELPER_TREE_AFTER}" || \
     fail 'post-helper strict check changed the immutable candidate namespace'
 HELPER_BOOTSTRAP=${TARGET}/usr/local/libexec/gentoo-optimization/bolt/artifact_tool.py
 
-# The immediately preceding schema installed ten stable helper bootstraps.  It
-# also used Python `-I` without `-B`, so reproduce its *exact* reviewed bytes
-# here.  The only accepted repair is a complete atomic fixed-tree exchange to
-# the v2 `-IB` / `-I -B` renderer; arbitrary nearby bytes must remain fatal.
+# The currently deployed pre-Candidate-A schema is the ten-helper tree from
+# commit 8a1200915d2693fd7486a421a9b232f638e9840c.  Materialize it through a
+# fixture-owned historical renderer, independent of the current installer,
+# and first prove that its production rendering matches every SHA-256 observed
+# in the deployed fixed namespace.  The later twelve-helper hybrid Git
+# predecessor was never installed on this host and is intentionally not an
+# accepted migration source.
 LEGACY_CURRENT=$(readlink -- "${CURRENT}")
 LEGACY_LIBEXEC=${TARGET}/usr/local/libexec/gentoo-optimization
-rm -f -- \
-    "${LEGACY_LIBEXEC}/pgo/production-profile-lock-transaction.py" \
-    "${LEGACY_LIBEXEC}/pgo/authorization-token-scan.py"
+GOLDEN_FIXTURE=${SOURCE_ROOT}/tests/optimization/fixtures/framework-bootstrap/deployed-v1
+GOLDEN_PRODUCTION_TREE=${WORK}/deployed-v1-production
+GOLDEN_TEST_TREE=${WORK}/deployed-v1-test-root
+CURRENT_V2_MANIFEST=${WORK}/current-v2-helper-tree.manifest
+LEGACY_BASELINE_MANIFEST=${WORK}/deployed-v1-helper-tree.manifest
+PRE_CRASH_MANIFEST=${WORK}/deployed-v1-after-pre-crash.manifest
+POST_CRASH_MANIFEST=${WORK}/current-v2-after-post-crash.manifest
+POST_CRASH_CHECK_LOG=${WORK}/post-exchange-strict-check.log
+[[ -x ${GOLDEN_FIXTURE}/render.sh && \
+    -f ${GOLDEN_FIXTURE}/production.sha256 ]] || \
+    fail 'deployed-v1 golden bootstrap fixture is incomplete'
+"${GOLDEN_FIXTURE}/render.sh" "${GOLDEN_PRODUCTION_TREE}" \
+    /var/lib/gentoo-optimization \
+    /var/lib/gentoo-optimization/framework-current / 0
+(
+    cd -- "${GOLDEN_PRODUCTION_TREE}"
+    sha256sum -c -- "${GOLDEN_FIXTURE}/production.sha256"
+) >/dev/null || fail 'deployed-v1 golden renderer differs from the live hash manifest'
+capture_helper_tree_manifest "${LEGACY_LIBEXEC}" "${CURRENT_V2_MANIFEST}"
+"${GOLDEN_FIXTURE}/render.sh" "${GOLDEN_TEST_TREE}" \
+    "${BASE}" "${CURRENT}" "${TARGET}" "$(id -u)"
+rm -rf -- "${LEGACY_LIBEXEC}"
+cp -a -- "${GOLDEN_TEST_TREE}" "${LEGACY_LIBEXEC}"
 [[ $(find "${LEGACY_LIBEXEC}" -type f | wc -l) -eq 10 ]] || \
     fail 'legacy stable-bootstrap fixture does not contain exactly ten helpers'
 while IFS= read -r -d '' legacy_python_bootstrap; do
-    sed -i \
-        -e 's|^#!/usr/bin/python3 -IB$|#!/usr/bin/python3 -I|' \
-        -e 's|^os.execv("/usr/bin/python3", \["/usr/bin/python3", "-I", "-B", framework_tool, \*sys.argv\[1:\]\])$|os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", framework_tool, *sys.argv[1:]])|' \
-        -- "${legacy_python_bootstrap}"
     grep -Fxq '#!/usr/bin/python3 -I' "${legacy_python_bootstrap}" || \
-        fail "legacy Python bootstrap shebang rewrite failed: ${legacy_python_bootstrap}"
+        fail "golden legacy Python bootstrap shebang differs: ${legacy_python_bootstrap}"
     grep -Fxq \
         'os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", framework_tool, *sys.argv[1:]])' \
         "${legacy_python_bootstrap}" || \
-        fail "legacy Python bootstrap exec rewrite failed: ${legacy_python_bootstrap}"
+        fail "golden legacy Python bootstrap exec differs: ${legacy_python_bootstrap}"
 done < <(find "${LEGACY_LIBEXEC}" -type f -name '*.py' -print0 | sort -z)
+capture_helper_tree_manifest "${LEGACY_LIBEXEC}" "${LEGACY_BASELINE_MANIFEST}"
 LEGACY_PYTHON_BOOTSTRAP=${LEGACY_LIBEXEC}/pgo/profile-identity.py
 LEGACY_PYTHON_BOOTSTRAP_COPY=${WORK}/legacy-python-bootstrap-v1
 cp -- "${LEGACY_PYTHON_BOOTSTRAP}" "${LEGACY_PYTHON_BOOTSTRAP_COPY}"
@@ -1028,8 +1107,9 @@ wait_for_installer_lock_release
 rm -f -- "${PAUSE_FILE}"
 [[ $(readlink -- "${CURRENT}") == "${LEGACY_CURRENT}" ]] || \
     fail 'pre-exchange legacy-bootstrap SIGKILL changed framework-current'
-cmp -- "${LEGACY_PYTHON_BOOTSTRAP_COPY}" "${LEGACY_PYTHON_BOOTSTRAP}" || \
-    fail 'pre-exchange legacy-bootstrap SIGKILL changed a v1 bootstrap'
+capture_helper_tree_manifest "${LEGACY_LIBEXEC}" "${PRE_CRASH_MANIFEST}"
+cmp -- "${LEGACY_BASELINE_MANIFEST}" "${PRE_CRASH_MANIFEST}" || \
+    fail 'pre-exchange legacy-bootstrap SIGKILL changed the complete v1 helper tree'
 
 # SIGKILL immediately after the exchange cannot expose a partial bootstrap
 # tree.  The old candidate remains selected, but the new no-bytecode
@@ -1055,20 +1135,36 @@ wait_for_installer_lock_release
 rm -f -- "${PAUSE_FILE}"
 [[ $(readlink -- "${CURRENT}") == "${LEGACY_CURRENT}" ]] || \
     fail 'post-exchange legacy-bootstrap SIGKILL changed framework-current'
-grep -Fxq '#!/usr/bin/python3 -IB' "${LEGACY_PYTHON_BOOTSTRAP}" || \
-    fail 'post-exchange legacy-bootstrap SIGKILL did not publish the v2 Python bootstrap'
-grep -Fxq \
-    'os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", "-B", framework_tool, *sys.argv[1:]])' \
-    "${LEGACY_PYTHON_BOOTSTRAP}" || \
-    fail 'post-exchange legacy-bootstrap SIGKILL published a partial Python bootstrap'
-[[ $(find "${LEGACY_LIBEXEC}" -type f | wc -l) -eq 12 ]] || \
-    fail 'post-exchange legacy-bootstrap SIGKILL published a partial helper tree'
+# Observe the crash state before any repairing install.  The read-only strict
+# check must accept it immediately, representative pre-existing and newly
+# added dispatchers must both execute, and the complete metadata/content
+# manifest must equal the previously captured v2 tree.
+run_installer --check >"${POST_CRASH_CHECK_LOG}" 2>&1 || {
+    sed -n '1,260p' "${POST_CRASH_CHECK_LOG}" >&2
+    fail 'strict check rejected the immediate post-exchange SIGKILL state'
+}
+grep -Fq 'PASS: root-owned Phase 2 framework check verified' \
+    "${POST_CRASH_CHECK_LOG}" || \
+    fail 'immediate post-exchange strict check omitted PASS evidence'
+"${LEGACY_LIBEXEC}/bolt/artifact_tool.py" --help >/dev/null || \
+    fail 'post-exchange pre-existing helper bootstrap did not execute'
+"${LEGACY_LIBEXEC}/pgo/authorization-token-scan.py" --help >/dev/null || \
+    fail 'post-exchange newly added helper bootstrap did not execute'
+capture_helper_tree_manifest "${LEGACY_LIBEXEC}" "${POST_CRASH_MANIFEST}"
+cmp -- "${CURRENT_V2_MANIFEST}" "${POST_CRASH_MANIFEST}" || \
+    fail 'post-exchange SIGKILL did not publish the complete exact v2 helper tree'
+
+# Only after direct crash-state verification may a normal installer retry run
+# its recovery/idempotence path.
 run_installer >"${LOG}" 2>&1 || {
     sed -n '1,260p' "${LOG}" >&2
     fail 'reviewed v1-to-v2 stable-bootstrap migration failed'
 }
 run_installer --check >/dev/null || \
     fail 'post-exchange legacy-bootstrap SIGKILL did not leave a coherent framework'
+capture_helper_tree_manifest "${LEGACY_LIBEXEC}" "${POST_CRASH_MANIFEST}"
+cmp -- "${CURRENT_V2_MANIFEST}" "${POST_CRASH_MANIFEST}" || \
+    fail 'v1-to-v2 recovery/idempotence changed the verified v2 helper tree'
 [[ $(readlink -- "${CURRENT}") == "${LEGACY_CURRENT}" ]] || \
     fail 'v1-to-v2 stable-bootstrap repair changed the active candidate'
 for added_helper in production-profile-lock-transaction.py authorization-token-scan.py; do
@@ -1282,6 +1378,14 @@ expect_failure 'candidate regular file is not single-link:' run_installer --chec
 rm -f -- "${CANDIDATE_HARDLINK}"
 
 mapfile -t FIXTURE_MEMBER_GIDS < <(id -G | tr ' ' '\n')
+if ((EUID == 0)) && [[ $(id -g) != 65534 ]]; then
+    # The authoritative host gate runs as real root, which may intentionally
+    # have no supplementary groups. Root can still construct the required
+    # wrong-group candidate deterministically without weakening production
+    # ownership checks. A restricted user namespace will fail this probe and
+    # retain the explicit required skip below.
+    FIXTURE_MEMBER_GIDS+=(65534)
+fi
 ALTERNATE_FIXTURE_GID=
 ALTERNATE_GID_PROBE=${WORK}/alternate-gid-capability-probe
 : >"${ALTERNATE_GID_PROBE}"
@@ -1303,8 +1407,12 @@ if [[ -n ${ALTERNATE_FIXTURE_GID} ]]; then
     chgrp "${ALTERNATE_FIXTURE_GID}" -- "${ACTIVE}/portage/make.conf"
     expect_failure 'candidate entry has the wrong owner/group:' run_installer --check
     chgrp "$(id -g)" -- "${ACTIVE}/portage/make.conf"
+    record_required_subtest PASS ownership.alternate-gid \
+        'strict candidate verification rejected an alternate group identity'
 else
-    printf 'SKIP-SUBTEST: no mapped supplementary GID can exercise candidate ownership mismatch\n'
+    record_required_subtest SKIP ownership.alternate-gid \
+        'no mapped alternate GID can exercise candidate ownership mismatch'
+    printf 'INFO: alternate GID unavailable; recorded required subtest SKIP\n'
 fi
 
 # Command substitution strips trailing newlines from readlink output.  The

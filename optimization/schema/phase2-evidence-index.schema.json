@@ -87,16 +87,29 @@
     "test_run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["driver", "results", "summary", "provenance", "boot_id", "mode", "totals", "required_passes"],
+      "required": ["authoritative", "contract", "contract_totals", "driver", "results", "subtests", "summary", "provenance", "boot_id", "mode", "totals", "subtest_totals", "mandatory_internal_skip", "diagnostic_internal_skip", "required_passes", "required_named_subtests"],
       "properties": {
+        "authoritative": {"const": true},
+        "contract": {"$ref": "#/$defs/file_identity"},
+        "contract_totals": {"$ref": "#/$defs/test_contract_totals"},
         "driver": {"$ref": "#/$defs/file_identity"},
         "results": {"$ref": "#/$defs/file_identity"},
+        "subtests": {"$ref": "#/$defs/file_identity"},
         "summary": {"$ref": "#/$defs/file_identity"},
         "provenance": {"$ref": "#/$defs/file_identity"},
         "boot_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
         "mode": {"type": "string", "minLength": 1},
         "totals": {"$ref": "#/$defs/test_totals"},
-        "required_passes": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        "subtest_totals": {"$ref": "#/$defs/subtest_totals"},
+        "mandatory_internal_skip": {"const": 0},
+        "diagnostic_internal_skip": {"type": "integer", "minimum": 0},
+        "required_passes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "required_named_subtests": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/required_named_subtest"}
+        }
       }
     },
     "evidence_manifest": {
@@ -171,6 +184,43 @@
         "total": {"type": "integer", "minimum": 1}
       }
     },
+    "subtest_totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_pass", "required_fail", "required_skip", "diagnostic_pass", "diagnostic_fail", "diagnostic_skip", "mandatory_internal_skip", "total"],
+      "properties": {
+        "required_pass": {"type": "integer", "minimum": 1},
+        "required_fail": {"const": 0},
+        "required_skip": {"const": 0},
+        "diagnostic_pass": {"type": "integer", "minimum": 0},
+        "diagnostic_fail": {"const": 0},
+        "diagnostic_skip": {"type": "integer", "minimum": 0},
+        "mandatory_internal_skip": {"const": 0},
+        "total": {"type": "integer", "minimum": 1}
+      }
+    },
+    "test_contract_totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_diagnostic_subtests", "required_named_subtests", "top_level_tests", "unittest_suites", "unittest_tests"],
+      "properties": {
+        "expected_diagnostic_subtests": {"type": "integer", "minimum": 0},
+        "required_named_subtests": {"type": "integer", "minimum": 1},
+        "top_level_tests": {"type": "integer", "minimum": 1},
+        "unittest_suites": {"type": "integer", "minimum": 1},
+        "unittest_tests": {"type": "integer", "minimum": 1}
+      }
+    },
+    "required_named_subtest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "subtest", "test"],
+      "properties": {
+        "status": {"const": "PASS"},
+        "subtest": {"type": "string", "minLength": 1},
+        "test": {"type": "string", "minLength": 1}
+      }
+    },
     "stat_identity": {
       "type": "object",
       "additionalProperties": false,
@@ -213,12 +263,18 @@
     "tool_identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "requested_path", "resolved_path", "binary", "shebang", "version_argv", "stdout", "stderr"],
+      "required": ["name", "requested_path", "resolved_path", "binary", "shebang", "python_distribution", "version_argv", "stdout", "stderr"],
       "properties": {
         "name": {"$ref": "#/$defs/safe_name"},
         "requested_path": {"type": "string", "pattern": "^/"},
         "resolved_path": {"type": "string", "pattern": "^/"},
         "binary": {"$ref": "#/$defs/file_identity"},
+        "python_distribution": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/python_distribution_identity"}
+          ]
+        },
         "shebang": {
           "type": ["object", "null"],
           "additionalProperties": false,
@@ -234,6 +290,30 @@
         "version_argv": {"type": "array", "minItems": 2, "items": {"type": "string"}},
         "stdout": {"type": "object", "additionalProperties": false, "required": ["text", "sha256"], "properties": {"text": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}}},
         "stderr": {"type": "object", "additionalProperties": false, "required": ["text", "sha256"], "properties": {"text": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}}}
+      }
+    },
+    "python_distribution_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["distribution", "entry_count", "entries", "entries_sha256", "import_roots", "metadata_name", "version"],
+      "properties": {
+        "distribution": {"$ref": "#/$defs/safe_name"},
+        "entry_count": {"type": "integer", "minimum": 1},
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/file_identity"}
+        },
+        "entries_sha256": {"$ref": "#/$defs/sha256"},
+        "import_roots": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/safe_name"}
+        },
+        "metadata_name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1}
       }
     },
     "tree_entry": {

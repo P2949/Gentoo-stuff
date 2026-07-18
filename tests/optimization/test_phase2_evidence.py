@@ -52,6 +52,22 @@ def validate_schema(value: object, schema: dict[str, object], root: dict[str, ob
             raise AssertionError(f"{path}: schema definition is not an object")
         validate_schema(value, target, root, path)
         return
+    if "oneOf" in schema:
+        choices = schema["oneOf"]
+        if not isinstance(choices, list):
+            raise AssertionError(f"{path}: oneOf is not an array")
+        matches = 0
+        for choice in choices:
+            if not isinstance(choice, dict):
+                raise AssertionError(f"{path}: oneOf choice is not an object")
+            try:
+                validate_schema(value, choice, root, path)
+            except AssertionError:
+                continue
+            matches += 1
+        if matches != 1:
+            raise AssertionError(f"{path}: oneOf matched {matches} choices")
+        return
     if "const" in schema and value != schema["const"]:
         raise AssertionError(f"{path}: value differs from const")
     if "enum" in schema:
@@ -188,6 +204,31 @@ class EvidenceFixture:
         driver = self.repository / "test-driver.sh"
         driver.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         driver.chmod(0o755)
+        contract = {
+            "expected_diagnostic_subtests": [
+                {"subtest": "optional-observation", "test": "core"}
+            ],
+            "portable_allowed_required_skips": [],
+            "portable_allowed_top_level_skips": [],
+            "required_named_subtests": [
+                {"subtest": "mandatory-branch", "test": "core"}
+            ],
+            "schema": "gentoo-optimization-phase2-authoritative-test-contract-v1",
+            "top_level": {
+                "exact_names": ["capability:fixture", "core"],
+                "prefix_groups": [],
+            },
+            "unittest_suites": [
+                {
+                    "expected_count": 1,
+                    "subtest_names_sha256": digest(b"python.fixture.test_core\n"),
+                    "test": "core",
+                }
+            ],
+        }
+        (self.repository / "test-contract.json").write_text(
+            json.dumps(contract, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         checkbox = "- [x] Exact fixture claim"
         marker = {
             "checkbox_sha256": [digest(checkbox.encode())],
@@ -205,6 +246,7 @@ class EvidenceFixture:
         )
         policy = {
             "aggregate_requires_zero": True,
+            "authoritative_test_contract_path": "test-contract.json",
             "component_state_path_template": (
                 f"{self.state_root}/{{run_id}}/{{name}}.json"
             ),
@@ -218,6 +260,7 @@ class EvidenceFixture:
             "plan_path": "plan.md",
             "prior_evidence_banner": "<!-- gentoo-optimization-phase2-prior-evidence: superseded-by-detached-index -->",
             "require_all_phase_checkboxes_checked": True,
+            "required_authoritative": True,
             "required_component_states": [
                 {
                     "external_evidence_labels": [],
@@ -228,11 +271,11 @@ class EvidenceFixture:
             ],
             "required_passing_test_names": ["core"],
             "required_passing_test_prefixes": ["capability:"],
-            "required_sources": ["plan.md", "policy.json", "src/code.py", "test-driver.sh"],
+            "required_sources": ["plan.md", "policy.json", "src/code.py", "test-contract.json", "test-driver.sh"],
             "required_test_mode": "capabilities",
             "required_tools": ["git", "script-tool"],
             "schema": POLICY_SCHEMA,
-            "source_scopes": ["plan.md", "policy.json", "src", "test-driver.sh"],
+            "source_scopes": ["plan.md", "policy.json", "src", "test-contract.json", "test-driver.sh"],
             "test_driver_path": "test-driver.sh",
             "tool_manifest_template_path": "tools-template.json",
         }
@@ -263,6 +306,14 @@ class EvidenceFixture:
         (self.repository / "policy.json").write_text(
             json.dumps(policy, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
+        for tracked_regular in (
+            source,
+            self.repository / "plan.md",
+            self.repository / "policy.json",
+            self.repository / "test-contract.json",
+            self.repository / "tools-template.json",
+        ):
+            tracked_regular.chmod(0o644)
 
     def write_external_evidence(self) -> None:
         for name in ("test-run-provenance.pending.json", "test-run-provenance.json"):
@@ -285,15 +336,35 @@ class EvidenceFixture:
             f"PASS\tcapability:fixture\texit_status=0 log={capability_log}\n",
             encoding="utf-8",
         )
+        subtests = self.evidence / "subtests.tsv"
+        subtests.write_text(
+            "status\trequirement\ttest\tsubtest\tdetail\n"
+            "PASS\trequired\tcore\tdriver.case-completion\tcase passed\n"
+            "PASS\trequired\tcore\tmandatory-branch\trequired branch passed\n"
+            "PASS\trequired\tcore\tpython.fixture.test_core\tunittest passed\n"
+            "PASS\trequired\tcapability:fixture\tdriver.case-completion\tcase passed\n"
+            "SKIP\tdiagnostic\tcore\toptional-observation\tdiagnostic tool unavailable\n",
+            encoding="utf-8",
+        )
         (self.evidence / "summary.txt").write_text(
             "mode=capabilities\n"
+            "authoritative=1\n"
             "pass=2\n"
             "fail=0\n"
             "skip=0\n"
             "total=2\n"
+            "required_subtest_pass=4\n"
+            "required_subtest_fail=0\n"
+            "required_subtest_skip=0\n"
+            "mandatory_internal_skip=0\n"
+            "diagnostic_subtest_pass=0\n"
+            "diagnostic_subtest_fail=0\n"
+            "diagnostic_internal_skip=1\n"
+            "subtest_total=5\n"
             "exit_status=0\n"
             "external_authority_index_preserved=0\n"
-            f"results={results}\n",
+            f"results={results}\n"
+            f"subtests={subtests}\n",
             encoding="utf-8",
         )
         subprocess.run(
@@ -324,6 +395,8 @@ class EvidenceFixture:
                 os.fspath(self.evidence / "test-run-provenance.pending.json"),
                 "--results",
                 os.fspath(results),
+                "--subtests",
+                os.fspath(subtests),
                 "--summary",
                 os.fspath(self.evidence / "summary.txt"),
                 "--output",
@@ -354,6 +427,8 @@ class EvidenceFixture:
                 os.fspath(self.evidence / "test-run-provenance.json"),
                 "--results",
                 os.fspath(results),
+                "--subtests",
+                os.fspath(subtests),
                 "--summary",
                 os.fspath(self.evidence / "summary.txt"),
                 "--git",
@@ -384,6 +459,8 @@ class EvidenceFixture:
             os.fspath(self.evidence / "tools.json"),
             "--test-results",
             os.fspath(self.evidence / "results.tsv"),
+            "--test-subtests",
+            os.fspath(self.evidence / "subtests.tsv"),
             "--test-summary",
             os.fspath(self.evidence / "summary.txt"),
             "--run-id",
@@ -424,6 +501,36 @@ class Phase2EvidenceTests(unittest.TestCase):
         self.assertTrue(script["shebang"]["resolved_path"].startswith("/"))
         self.assertEqual(len(script["shebang"]["binary"]["sha256"]), 64)
         self.assertEqual(document["aggregate"], {"pending_total": 0, "unknown_total": 0, "failed_total": 0})
+        self.assertIs(document["test_run"]["authoritative"], True)
+        self.assertEqual(document["test_run"]["mandatory_internal_skip"], 0)
+        self.assertEqual(document["test_run"]["diagnostic_internal_skip"], 1)
+        self.assertEqual(
+            document["test_run"]["contract_totals"],
+            {
+                "expected_diagnostic_subtests": 1,
+                "required_named_subtests": 1,
+                "top_level_tests": 2,
+                "unittest_suites": 1,
+                "unittest_tests": 1,
+            },
+        )
+        self.assertEqual(
+            document["test_run"]["required_named_subtests"],
+            [{"status": "PASS", "subtest": "mandatory-branch", "test": "core"}],
+        )
+        self.assertEqual(
+            document["test_run"]["subtest_totals"],
+            {
+                "diagnostic_fail": 0,
+                "diagnostic_pass": 0,
+                "diagnostic_skip": 1,
+                "mandatory_internal_skip": 0,
+                "required_fail": 0,
+                "required_pass": 4,
+                "required_skip": 0,
+                "total": 5,
+            },
+        )
         schema = json.loads(
             (REPOSITORY / "optimization/schema/phase2-evidence-index.schema.json").read_text(
                 encoding="utf-8"
@@ -438,6 +545,257 @@ class Phase2EvidenceTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         validate_schema(component_document, component_schema, component_schema)
+
+    def test_mandatory_internal_skip_cannot_authorize_capture(self) -> None:
+        subtests = self.fixture.evidence / "subtests.tsv"
+        with subtests.open("a", encoding="utf-8") as output:
+            output.write(
+                "SKIP\trequired\tcore\tprivileged-metadata\t"
+                "file capabilities were unavailable\n"
+            )
+        summary = self.fixture.evidence / "summary.txt"
+        text = summary.read_text(encoding="utf-8")
+        text = text.replace("required_subtest_skip=0", "required_subtest_skip=1")
+        text = text.replace("mandatory_internal_skip=0", "mandatory_internal_skip=1")
+        text = text.replace("subtest_total=5", "subtest_total=6")
+        summary.write_text(text, encoding="utf-8")
+        result = self.fixture.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mandatory internal failure or skip", result.stderr)
+        self.assertFalse(self.fixture.index.exists())
+
+    def test_subtest_ledger_tampering_invalidates_captured_index(self) -> None:
+        self.fixture.run(check=True)
+        subtests = self.fixture.evidence / "subtests.tsv"
+        with subtests.open("a", encoding="utf-8") as output:
+            output.write(
+                "PASS\tdiagnostic\tcore\tlate-row\t"
+                "unindexed diagnostic observation\n"
+            )
+        result = self.fixture.run("verify")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("subtests", result.stderr)
+
+    def test_forged_duplicate_and_missing_completion_subtests_are_rejected(self) -> None:
+        mutations = {
+            "duplicate": (
+                "PASS\trequired\tcore\tdriver.case-completion\tduplicate\n",
+                "duplicate structured subtest identity",
+            ),
+            "unknown-top-level": (
+                "PASS\trequired\tforged-test\tforged-row\tforged\n",
+                "unknown top-level test",
+            ),
+        }
+        for label, (row, diagnostic) in mutations.items():
+            with self.subTest(label=label):
+                self.fixture.write_external_evidence()
+                subtests = self.fixture.evidence / "subtests.tsv"
+                with subtests.open("a", encoding="utf-8") as output:
+                    output.write(row)
+                result = self.fixture.run()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(diagnostic, result.stderr)
+
+        self.fixture.write_external_evidence()
+        subtests = self.fixture.evidence / "subtests.tsv"
+        rows = [
+            line
+            for line in subtests.read_text(encoding="utf-8").splitlines()
+            if "\tcore\tdriver.case-completion\t" not in line
+        ]
+        subtests.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        result = self.fixture.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no structured completion subtest", result.stderr)
+
+    def test_exact_topology_rejects_deleted_and_unexpected_cases(self) -> None:
+        results = self.fixture.evidence / "results.tsv"
+        subtests = self.fixture.evidence / "subtests.tsv"
+        summary = self.fixture.evidence / "summary.txt"
+
+        results.write_text(
+            "status\ttest\tdetail\nPASS\tcore\tcase passed\n", encoding="utf-8"
+        )
+        subtests.write_text(
+            "\n".join(
+                line
+                for line in subtests.read_text(encoding="utf-8").splitlines()
+                if "\tcapability:fixture\t" not in line
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        text = summary.read_text(encoding="utf-8")
+        text = text.replace("pass=2", "pass=1").replace("total=2", "total=1")
+        text = text.replace("required_subtest_pass=4", "required_subtest_pass=3")
+        text = text.replace("subtest_total=5", "subtest_total=4")
+        summary.write_text(text, encoding="utf-8")
+        deleted = self.fixture.run()
+        self.assertNotEqual(deleted.returncode, 0)
+        self.assertIn("authoritative top-level test topology", deleted.stderr)
+        self.assertIn("capability:fixture", deleted.stderr)
+
+        self.fixture.write_external_evidence()
+        with (self.fixture.evidence / "results.tsv").open("a", encoding="utf-8") as output:
+            output.write("PASS\tforged-extra\tforged case\n")
+        with (self.fixture.evidence / "subtests.tsv").open("a", encoding="utf-8") as output:
+            output.write(
+                "PASS\trequired\tforged-extra\tdriver.case-completion\tcase passed\n"
+            )
+        summary = self.fixture.evidence / "summary.txt"
+        text = summary.read_text(encoding="utf-8")
+        text = text.replace("pass=2", "pass=3").replace("total=2", "total=3")
+        text = text.replace("required_subtest_pass=4", "required_subtest_pass=5")
+        text = text.replace("subtest_total=5", "subtest_total=6")
+        summary.write_text(text, encoding="utf-8")
+        unexpected = self.fixture.run()
+        self.assertNotEqual(unexpected.returncode, 0)
+        self.assertIn("unexpected=['forged-extra']", unexpected.stderr)
+
+    def test_named_and_unittest_contract_rows_cannot_be_deleted_or_substituted(self) -> None:
+        subtests = self.fixture.evidence / "subtests.tsv"
+        summary = self.fixture.evidence / "summary.txt"
+        rows = [
+            line
+            for line in subtests.read_text(encoding="utf-8").splitlines()
+            if "\tcore\tmandatory-branch\t" not in line
+        ]
+        subtests.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        text = summary.read_text(encoding="utf-8")
+        text = text.replace("required_subtest_pass=4", "required_subtest_pass=3")
+        text = text.replace("subtest_total=5", "subtest_total=4")
+        summary.write_text(text, encoding="utf-8")
+        missing = self.fixture.run()
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("required named subtest is absent", missing.stderr)
+
+        self.fixture.write_external_evidence()
+        subtests = self.fixture.evidence / "subtests.tsv"
+        subtests.write_text(
+            subtests.read_text(encoding="utf-8").replace(
+                "python.fixture.test_core", "python.fixture.test_substituted"
+            ),
+            encoding="utf-8",
+        )
+        substituted = self.fixture.run()
+        self.assertNotEqual(substituted.returncode, 0)
+        self.assertIn("unittest identity set differs", substituted.stderr)
+
+    def test_portable_allowed_top_level_skip_waives_only_its_nested_contract(self) -> None:
+        contract_path = self.fixture.root / "portable-contract.json"
+        contract = {
+            "expected_diagnostic_subtests": [],
+            "portable_allowed_required_skips": [],
+            "portable_allowed_top_level_skips": ["host-fixture"],
+            "required_named_subtests": [
+                {"subtest": "host-only-branch", "test": "host-fixture"}
+            ],
+            "schema": "gentoo-optimization-phase2-authoritative-test-contract-v1",
+            "top_level": {"exact_names": ["host-fixture"], "prefix_groups": []},
+            "unittest_suites": [
+                {
+                    "expected_count": 1,
+                    "subtest_names_sha256": digest(b"python.fixture.host_only\n"),
+                    "test": "host-fixture",
+                }
+            ],
+        }
+        contract_path.write_text(
+            json.dumps(contract, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        results = self.fixture.root / "portable-results.tsv"
+        results.write_text(
+            "status\ttest\tdetail\nSKIP\thost-fixture\thost primitive absent\n",
+            encoding="utf-8",
+        )
+        subtests = self.fixture.root / "portable-subtests.tsv"
+        subtests.write_text(
+            "status\trequirement\ttest\tsubtest\tdetail\n"
+            "SKIP\trequired\thost-fixture\tdriver.case-completion\t"
+            "host primitive absent\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.fspath(TOOL),
+                "test-contract",
+                "--contract",
+                os.fspath(contract_path),
+                "--results",
+                os.fspath(results),
+                "--subtests",
+                os.fspath(subtests),
+                "--mode",
+                "portable-complete",
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_python_distribution_inventory_binds_all_package_and_metadata_bytes(self) -> None:
+        namespace = runpy.run_path(os.fspath(TOOL))
+        observe = namespace["observe_python_distribution"]
+        with tempfile.TemporaryDirectory(prefix="python-distribution-identity.") as temporary:
+            root = Path(temporary)
+            package = root / "fixture_package"
+            metadata = root / "fixture-1.dist-info"
+            package.mkdir()
+            metadata.mkdir()
+            module = package / "__init__.py"
+            module.write_text("VALUE = 1\n", encoding="utf-8")
+            metadata_file = metadata / "METADATA"
+            metadata_file.write_text(
+                "Name: fixture\nVersion: 1\n", encoding="utf-8"
+            )
+            external_hardlink = root / "module-hardlink"
+            os.link(module, external_hardlink)
+            probe = {
+                "declared_files": [],
+                "import_locations": [os.fspath(package)],
+                "metadata_path": os.fspath(metadata),
+                "name": "fixture",
+                "version": "1",
+            }
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=canonical(probe).encode("utf-8"),
+                stderr=b"",
+            )
+            with mock.patch.object(namespace["subprocess"], "run", return_value=completed):
+                first = observe(
+                    Path(sys.executable),
+                    Path(sys.executable).resolve(),
+                    "fixture",
+                    ["fixture_package"],
+                    False,
+                )
+            self.assertEqual(first["entry_count"], 2)
+            self.assertEqual(first["import_roots"], ["fixture_package"])
+            self.assertEqual(
+                sorted(item["path"] for item in first["entries"]),
+                sorted([os.fspath(module), os.fspath(metadata_file)]),
+            )
+            self.assertEqual(
+                first["entries_sha256"],
+                digest(json.dumps(first["entries"], separators=(",", ":"), sort_keys=True).encode("utf-8")),
+            )
+            schema = json.loads(
+                (
+                    REPOSITORY
+                    / "optimization/schema/phase2-evidence-index.schema.json"
+                ).read_text(encoding="utf-8")
+            )
+            validate_schema(
+                first,
+                schema["$defs"]["python_distribution_identity"],
+                schema,
+            )
 
     def test_production_capture_rejects_external_policy_before_trust_checks(self) -> None:
         external_policy = self.fixture.root / "weak-policy.json"
@@ -1074,6 +1432,8 @@ class Phase2EvidenceTests(unittest.TestCase):
                 os.fspath(pending),
                 "--results",
                 os.fspath(self.fixture.evidence / "results.tsv"),
+                "--subtests",
+                os.fspath(self.fixture.evidence / "subtests.tsv"),
                 "--summary",
                 os.fspath(self.fixture.evidence / "summary.txt"),
                 "--output",
@@ -1272,7 +1632,43 @@ class Phase2EvidenceTests(unittest.TestCase):
         self.fixture.script_link.symlink_to(replacement.name)
         result = self.fixture.run("verify")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("tool identities changed", result.stderr)
+        self.assertIn("indexed tool topology", result.stderr)
+
+    def test_detached_index_cannot_choose_its_own_tool_topology_or_specification(self) -> None:
+        mutations = {
+            "deleted": lambda tools: tools[:-1],
+            "duplicated": lambda tools: [*tools, copy.deepcopy(tools[-1])],
+            "requested-path-substitution": lambda tools: [
+                {
+                    **item,
+                    "requested_path": os.fspath(self.fixture.real_script),
+                    "version_argv": [
+                        os.fspath(self.fixture.real_script),
+                        *item["version_argv"][1:],
+                    ],
+                }
+                if item["name"] == "script-tool"
+                else item
+                for item in tools
+            ],
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                if self.fixture.index.exists():
+                    self.fixture.index.unlink()
+                self.fixture.write_external_evidence()
+                self.fixture.run(check=True)
+                document = json.loads(
+                    self.fixture.index.read_text(encoding="utf-8")
+                )
+                document["tools"] = mutate(document["tools"])
+                self.fixture.index.write_text(
+                    json.dumps(document, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                result = self.fixture.run("verify")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("indexed tool topology", result.stderr)
 
     def test_unverifiable_timestamp_and_forged_driver_stat_are_rejected(self) -> None:
         self.fixture.run(check=True)

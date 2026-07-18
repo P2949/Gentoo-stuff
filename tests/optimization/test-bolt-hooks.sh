@@ -20,6 +20,13 @@ fail() {
     exit 1
 }
 
+record_required_subtest() {
+    local status=$1 name=$2 detail=$3
+    [[ -n ${GENTOO_OPT_SUBTEST_RESULTS:-} ]] || return 0
+    printf '%s\trequired\t%s\t%s\n' "${status}" "${name}" "${detail}" \
+        >>"${GENTOO_OPT_SUBTEST_RESULTS}"
+}
+
 for command in python3 readelf objcopy cc flock; do
     command -v "${command}" >/dev/null 2>&1 || fail "missing required command: ${command}"
 done
@@ -120,7 +127,9 @@ XATTR_SUPPORTED=false
 if setfattr -n user.gentoo-bolt-test -v preserved -- "${ED}/usr/bin/fixed" 2>/dev/null; then
     XATTR_SUPPORTED=true
 else
-    printf 'SKIP: user xattrs unavailable on fixture filesystem\n'
+    record_required_subtest SKIP metadata.user-xattr \
+        'user xattrs unavailable on fixture filesystem'
+    printf 'INFO: user xattrs unavailable; recorded required subtest SKIP\n'
 fi
 
 CAPABILITY_SUPPORTED=false
@@ -128,7 +137,9 @@ if command -v setcap >/dev/null 2>&1 && command -v getcap >/dev/null 2>&1 && \
         setcap cap_net_bind_service=ep "${ED}/usr/bin/fixed" 2>/dev/null; then
     CAPABILITY_SUPPORTED=true
 else
-    printf 'SKIP: file-capability setup unavailable to the current user/filesystem\n'
+    record_required_subtest SKIP metadata.file-capability \
+        'file-capability setup unavailable to the current user or filesystem'
+    printf 'INFO: file capabilities unavailable; recorded required subtest SKIP\n'
 fi
 
 # Hermetic writer-lock contract: framework (implicit in test mode), then exact
@@ -609,8 +620,12 @@ PY
         fail 'installer exclusive lock overlapped a production BOLT shared transaction'
     fi
     wait "${FRAMEWORK_SHARED_PID}" || fail 'production framework shared-lock fixture failed'
+    record_required_subtest PASS framework-lock.shared-exclusive \
+        'live root framework shared lock excluded an installer exclusive lock'
 else
-    printf 'SKIP: root-owned live framework lock unavailable for SH/EX exclusion fixture\n'
+    record_required_subtest SKIP framework-lock.shared-exclusive \
+        'root-owned live framework lock unavailable'
+    printf 'INFO: live framework lock unavailable; recorded required subtest SKIP\n'
 fi
 python3 - "${CONCURRENT_CACHE}/outputs/${FINGERPRINT}/manifest.json" <<'PY'
 import json
@@ -1109,10 +1124,14 @@ readelf -SW "${ED}/usr/lib64/libfixture.so.1" | grep -Fq '.note.bolt_info' || fa
 if [[ ${XATTR_SUPPORTED} == true ]]; then
     [[ $(getfattr --only-values -n user.gentoo-bolt-test "${ED}/usr/bin/fixed" 2>/dev/null) == preserved ]] || \
         fail 'deployment lost user xattr metadata'
+    record_required_subtest PASS metadata.user-xattr \
+        'deployment and rollback preserved the user xattr on the hardlink inode group'
 fi
 if [[ ${CAPABILITY_SUPPORTED} == true ]]; then
     getcap "${ED}/usr/bin/fixed" | grep -Fq 'cap_net_bind_service=ep' || \
         fail 'deployment lost file capabilities'
+    record_required_subtest PASS metadata.file-capability \
+        'deployment and rollback preserved the file capability on the hardlink inode group'
 fi
 
 # A package containing no ELF is a successful empty capture, while deployment
@@ -1337,8 +1356,12 @@ assert classes["ELF32"]["eligible"] is False
 assert "unsupported-elf-class" in classes["ELF32"]["readiness_failures"]
 assert "terminal_reasons" not in classes["ELF32"]
 PY
+    record_required_subtest PASS abi.elf32-mixed \
+        'mixed ELF64 and ELF32 capture classified the 32-bit artifact as ineligible'
 else
-    printf 'SKIP: compiler cannot link the hermetic ELF32 mixed-ABI fixture\n'
+    record_required_subtest SKIP abi.elf32-mixed \
+        'compiler cannot link the hermetic ELF32 mixed-ABI fixture'
+    printf 'INFO: ELF32 toolchain unavailable; recorded required subtest SKIP\n'
 fi
 
 printf 'PASS: BOLT capture/deployment classification, identity, topology, and metadata fixture\n'

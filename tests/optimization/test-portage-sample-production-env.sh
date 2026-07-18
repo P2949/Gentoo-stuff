@@ -17,6 +17,13 @@ fail() {
     exit 1
 }
 
+record_required_subtest() {
+    local status=$1 name=$2 detail=$3
+    [[ -n ${GENTOO_OPT_SUBTEST_RESULTS:-} ]] || return 0
+    printf '%s\trequired\t%s\t%s\n' "${status}" "${name}" "${detail}" \
+        >>"${GENTOO_OPT_SUBTEST_RESULTS}"
+}
+
 LIVE_POLICY_BASELINE_LOG=${WORK}/live-policy-preflight-baseline.tsv
 LIVE_POLICY_PREFLIGHT_LOG=${WORK}/live-policy-preflight-poisoned.tsv
 if [[ -x /usr/bin/portageq && -e /etc/portage/make.conf ]]; then
@@ -30,7 +37,9 @@ if [[ -x /usr/bin/portageq && -e /etc/portage/make.conf ]]; then
         > "${LIVE_POLICY_BASELINE_LOG}" 2> "${WORK}/live-policy-preflight.stderr"; then
         if grep -Fq 'canonical ancestry is not root-trusted' \
             "${WORK}/live-policy-preflight.stderr"; then
-            printf 'SKIP-SUBTEST: managed user namespace does not expose literal uid-0 live-policy trust metadata\n'
+            record_required_subtest SKIP live-portage.policy \
+                'managed user namespace does not expose literal uid-0 trust metadata'
+            printf 'INFO: live uid-0 trust metadata unavailable; recorded required subtest SKIP\n'
         else
             sed -n '1,120p' "${WORK}/live-policy-preflight.stderr" >&2
             fail 'live-policy baseline preflight failed unexpectedly'
@@ -77,9 +86,13 @@ if [[ -x /usr/bin/portageq && -e /etc/portage/make.conf ]]; then
     grep -Eq $'^live_policy_identity_sha256\t[0-9a-f]{64}$' \
         "${LIVE_POLICY_PREFLIGHT_LOG}" || \
         fail 'live-policy preflight lacks its complete trusted identity digest'
+    record_required_subtest PASS live-portage.policy \
+        'poisoned caller environment reproduced the exact trusted live Portage policy'
     fi
 else
-    printf 'SKIP-SUBTEST: live Portage FEATURES override test requires /usr/bin/portageq and /etc/portage/make.conf\n'
+    record_required_subtest SKIP live-portage.policy \
+        'live Portage policy tools or configuration are unavailable'
+    printf 'INFO: live Portage policy unavailable; recorded required subtest SKIP\n'
 fi
 
 for forbidden in \

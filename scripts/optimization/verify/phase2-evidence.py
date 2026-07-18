@@ -29,6 +29,9 @@ from typing import Any, Iterable, NoReturn, Sequence
 
 INDEX_SCHEMA = "gentoo-optimization-phase2-evidence-index-v1"
 POLICY_SCHEMA = "gentoo-optimization-phase2-evidence-policy-v1"
+AUTHORITATIVE_TEST_CONTRACT_SCHEMA = (
+    "gentoo-optimization-phase2-authoritative-test-contract-v1"
+)
 TOOL_SCHEMA = "gentoo-optimization-phase2-tool-manifest-v1"
 COMPONENT_SCHEMA = "gentoo-optimization-phase2-component-state-v1"
 POLICY_RELATIVE = Path("optimization/phase2-evidence-policy.json")
@@ -40,6 +43,8 @@ OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 CHECKED_RE = re.compile(r"^\s*-\s+\[[xX]\]\s+")
+TOP_TEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,1023}$")
+SUBTEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$")
 
 
 class EvidenceError(RuntimeError):
@@ -153,12 +158,16 @@ def stat_identity(metadata: os.stat_result) -> dict[str, int]:
     }
 
 
-def read_regular(path: Path, label: str) -> tuple[bytes, dict[str, int]]:
+def read_regular(
+    path: Path, label: str, *, allow_hardlinks: bool = False
+) -> tuple[bytes, dict[str, int]]:
     try:
         before = path.lstat()
     except OSError as error:
         fail(f"cannot inspect {label} {path}: {error}")
-    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink < 1:
+        fail(f"{label} must be a regular file: {path}")
+    if not allow_hardlinks and before.st_nlink != 1:
         fail(f"{label} must be a link-count-one regular file: {path}")
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -191,8 +200,12 @@ def read_regular(path: Path, label: str) -> tuple[bytes, dict[str, int]]:
     return payload, identity
 
 
-def file_identity(path: Path, label: str) -> dict[str, object]:
-    payload, identity = read_regular(path, label)
+def file_identity(
+    path: Path, label: str, *, allow_hardlinks: bool = False
+) -> dict[str, object]:
+    payload, identity = read_regular(
+        path, label, allow_hardlinks=allow_hardlinks
+    )
     return {"path": os.fspath(path), "sha256": sha256(payload), "stat": identity}
 
 
@@ -232,6 +245,226 @@ def validate_root_trust(path: Path, label: str, *, directory: bool = False) -> N
             fail(f"production {label} is not root-owned and non-writable: {current}")
 
 
+def load_authoritative_test_contract(path: Path) -> dict[str, Any]:
+    payload, _identity = read_regular(path, "authoritative test contract")
+    document = require_object(
+        parse_json_bytes(payload, "authoritative test contract"),
+        "authoritative test contract",
+        {
+            "expected_diagnostic_subtests",
+            "portable_allowed_required_skips",
+            "portable_allowed_top_level_skips",
+            "required_named_subtests",
+            "schema",
+            "top_level",
+            "unittest_suites",
+        },
+    )
+    if document["schema"] != AUTHORITATIVE_TEST_CONTRACT_SCHEMA:
+        fail("authoritative test contract has the wrong schema")
+
+    topology = require_object(
+        document["top_level"],
+        "authoritative top-level topology",
+        {"exact_names", "prefix_groups"},
+    )
+    exact_names = [
+        require_string(item, "authoritative exact test name", TOP_TEST_NAME_RE)
+        for item in require_list(
+            topology["exact_names"],
+            "authoritative exact test names",
+            nonempty=True,
+        )
+    ]
+    if exact_names != sorted(set(exact_names)):
+        fail("authoritative exact test names must be sorted and unique")
+
+    prefix_groups: list[dict[str, object]] = []
+    observed_group_names: set[str] = set()
+    observed_prefixes: list[str] = []
+    for index, raw_group in enumerate(
+        require_list(
+            topology["prefix_groups"],
+            "authoritative test prefix groups",
+        )
+    ):
+        group = require_object(
+            raw_group,
+            f"authoritative test prefix_groups[{index}]",
+            {"expected_count", "expected_names", "prefix"},
+        )
+        prefix = require_string(
+            group["prefix"], f"authoritative test prefix_groups[{index}].prefix"
+        )
+        expected_names = [
+            require_string(
+                item,
+                f"authoritative test prefix_groups[{index}] expected name",
+                TOP_TEST_NAME_RE,
+            )
+            for item in require_list(
+                group["expected_names"],
+                f"authoritative test prefix_groups[{index}].expected_names",
+                nonempty=True,
+            )
+        ]
+        expected_count = require_int(
+            group["expected_count"],
+            f"authoritative test prefix_groups[{index}].expected_count",
+            1,
+        )
+        if expected_names != sorted(set(expected_names)):
+            fail(f"authoritative test prefix group {prefix!r} is not sorted and unique")
+        if expected_count != len(expected_names):
+            fail(f"authoritative test prefix group {prefix!r} count is stale")
+        if any(not name.startswith(prefix) for name in expected_names):
+            fail(f"authoritative test prefix group {prefix!r} contains a foreign name")
+        overlap = observed_group_names.intersection(expected_names)
+        if overlap:
+            fail(f"authoritative test prefix groups overlap: {sorted(overlap)!r}")
+        observed_group_names.update(expected_names)
+        observed_prefixes.append(prefix)
+        prefix_groups.append(
+            {
+                "expected_count": expected_count,
+                "expected_names": expected_names,
+                "prefix": prefix,
+            }
+        )
+    if observed_prefixes != sorted(set(observed_prefixes)):
+        fail("authoritative test prefix groups must be sorted by unique prefix")
+    overlap = set(exact_names).intersection(observed_group_names)
+    if overlap:
+        fail(f"authoritative exact and prefix-group test names overlap: {sorted(overlap)!r}")
+    all_top_level_names = set(exact_names).union(observed_group_names)
+
+    portable_top_level_skips = [
+        require_string(
+            item, "portable allowed top-level skip", TOP_TEST_NAME_RE
+        )
+        for item in require_list(
+            document["portable_allowed_top_level_skips"],
+            "portable allowed top-level skips",
+        )
+    ]
+    if portable_top_level_skips != sorted(set(portable_top_level_skips)):
+        fail("portable allowed top-level skips must be sorted and unique")
+    unknown_portable_top = set(portable_top_level_skips) - all_top_level_names
+    if unknown_portable_top:
+        fail(
+            "portable allowed top-level skips name unknown tests: "
+            f"{sorted(unknown_portable_top)!r}"
+        )
+
+    def parse_subtest_identities(key: str) -> list[dict[str, str]]:
+        parsed: list[dict[str, str]] = []
+        identities: list[tuple[str, str]] = []
+        for index, raw in enumerate(require_list(document[key], key)):
+            item = require_object(raw, f"{key}[{index}]", {"subtest", "test"})
+            test_name = require_string(
+                item["test"], f"{key}[{index}].test", TOP_TEST_NAME_RE
+            )
+            subtest_name = require_string(
+                item["subtest"], f"{key}[{index}].subtest", SUBTEST_NAME_RE
+            )
+            if test_name not in all_top_level_names:
+                fail(f"{key} refers to unknown test: {test_name}")
+            parsed.append({"subtest": subtest_name, "test": test_name})
+            identities.append((test_name, subtest_name))
+        if identities != sorted(set(identities)):
+            fail(f"{key} must be sorted and unique")
+        return parsed
+
+    expected_diagnostic_subtests = parse_subtest_identities(
+        "expected_diagnostic_subtests"
+    )
+    portable_allowed_required_skips = parse_subtest_identities(
+        "portable_allowed_required_skips"
+    )
+
+    named_subtests: list[dict[str, str]] = []
+    named_identities: list[tuple[str, str]] = []
+    for index, raw_subtest in enumerate(
+        require_list(
+            document["required_named_subtests"],
+            "required named subtests",
+            nonempty=True,
+        )
+    ):
+        subtest = require_object(
+            raw_subtest,
+            f"required_named_subtests[{index}]",
+            {"subtest", "test"},
+        )
+        test_name = require_string(
+            subtest["test"],
+            f"required_named_subtests[{index}].test",
+            TOP_TEST_NAME_RE,
+        )
+        subtest_name = require_string(
+            subtest["subtest"],
+            f"required_named_subtests[{index}].subtest",
+            SUBTEST_NAME_RE,
+        )
+        if test_name not in all_top_level_names:
+            fail(f"required named subtest refers to unknown test: {test_name}")
+        named_subtests.append({"subtest": subtest_name, "test": test_name})
+        named_identities.append((test_name, subtest_name))
+    if named_identities != sorted(set(named_identities)):
+        fail("required named subtests must be sorted and unique")
+
+    unittest_suites: list[dict[str, object]] = []
+    unittest_names: list[str] = []
+    for index, raw_suite in enumerate(
+        require_list(
+            document["unittest_suites"],
+            "authoritative unittest suites",
+            nonempty=True,
+        )
+    ):
+        suite = require_object(
+            raw_suite,
+            f"unittest_suites[{index}]",
+            {"expected_count", "subtest_names_sha256", "test"},
+        )
+        test_name = require_string(
+            suite["test"], f"unittest_suites[{index}].test", TOP_TEST_NAME_RE
+        )
+        if test_name not in all_top_level_names:
+            fail(f"authoritative unittest suite refers to unknown test: {test_name}")
+        expected_count = require_int(
+            suite["expected_count"], f"unittest_suites[{index}].expected_count", 1
+        )
+        names_hash = require_string(
+            suite["subtest_names_sha256"],
+            f"unittest_suites[{index}].subtest_names_sha256",
+            SHA256_RE,
+        )
+        unittest_suites.append(
+            {
+                "expected_count": expected_count,
+                "subtest_names_sha256": names_hash,
+                "test": test_name,
+            }
+        )
+        unittest_names.append(test_name)
+    if unittest_names != sorted(set(unittest_names)):
+        fail("authoritative unittest suites must be sorted by unique test name")
+
+    return {
+        "expected_diagnostic_subtests": expected_diagnostic_subtests,
+        "portable_allowed_required_skips": portable_allowed_required_skips,
+        "portable_allowed_top_level_skips": portable_top_level_skips,
+        "required_named_subtests": named_subtests,
+        "schema": AUTHORITATIVE_TEST_CONTRACT_SCHEMA,
+        "top_level": {
+            "exact_names": exact_names,
+            "prefix_groups": prefix_groups,
+        },
+        "unittest_suites": unittest_suites,
+    }
+
+
 def load_policy(repository: Path, policy_path: Path) -> dict[str, Any]:
     payload, _identity = read_regular(policy_path, "Phase 2 evidence policy")
     policy = require_object(
@@ -239,6 +472,7 @@ def load_policy(repository: Path, policy_path: Path) -> dict[str, Any]:
         "Phase 2 evidence policy",
         {
             "aggregate_requires_zero",
+            "authoritative_test_contract_path",
             "component_state_path_template",
             "index_path_template",
             "phase",
@@ -248,6 +482,7 @@ def load_policy(repository: Path, policy_path: Path) -> dict[str, Any]:
             "plan_path",
             "prior_evidence_banner",
             "require_all_phase_checkboxes_checked",
+            "required_authoritative",
             "required_component_states",
             "required_passing_test_names",
             "required_passing_test_prefixes",
@@ -262,7 +497,11 @@ def load_policy(repository: Path, policy_path: Path) -> dict[str, Any]:
     )
     if policy["schema"] != POLICY_SCHEMA or policy["phase"] != 2:
         fail("Phase 2 evidence policy has the wrong schema or phase")
-    for key in ("aggregate_requires_zero", "require_all_phase_checkboxes_checked"):
+    for key in (
+        "aggregate_requires_zero",
+        "require_all_phase_checkboxes_checked",
+        "required_authoritative",
+    ):
         if not isinstance(policy[key], bool):
             fail(f"{key} must be boolean")
     for key in (
@@ -393,7 +632,12 @@ def load_policy(repository: Path, policy_path: Path) -> dict[str, Any]:
     if index_root == Path("/"):
         fail("evidence index root may not be /")
     policy["index_root"] = index_root
-    for key in ("plan_path", "test_driver_path", "tool_manifest_template_path"):
+    for key in (
+        "authoritative_test_contract_path",
+        "plan_path",
+        "test_driver_path",
+        "tool_manifest_template_path",
+    ):
         policy[key] = relative_path(policy[key], key)
     for key in ("phase_heading", "phase_next_heading", "prior_evidence_banner"):
         policy[key] = require_string(policy[key], key)
@@ -430,9 +674,15 @@ def load_policy(repository: Path, policy_path: Path) -> dict[str, Any]:
         fail("the test driver must be a required source")
     if policy["tool_manifest_template_path"] not in policy["required_sources"]:
         fail("the tool manifest template must be a required source")
+    if policy["authoritative_test_contract_path"] not in policy["required_sources"]:
+        fail("the authoritative test contract must be a required source")
     for required in policy["required_sources"]:
         if not (repository / required).exists():
             fail(f"required source is absent: {required}")
+    contract_path = repository / policy["authoritative_test_contract_path"]
+    policy["authoritative_test_contract"] = load_authoritative_test_contract(
+        contract_path
+    )
     return policy
 
 
@@ -459,15 +709,205 @@ def tool_manifest(path: Path, required_names: list[str]) -> list[dict[str, Any]]
     tools: list[dict[str, Any]] = []
     names: list[str] = []
     for index, raw in enumerate(require_list(document["tools"], "tools", nonempty=True)):
-        item = require_object(raw, f"tools[{index}]", {"name", "path", "version_args"})
+        item = require_object(raw, f"tools[{index}]")
+        if set(item) not in (
+            {"name", "path", "version_args"},
+            {
+                "name",
+                "path",
+                "python_distribution",
+                "python_import_roots",
+                "version_args",
+            },
+        ):
+            fail(f"tools[{index}] keys differ from the tool manifest contract")
         name = require_string(item["name"], f"tools[{index}].name", NAME_RE)
         path_value = absolute_path(item["path"], f"tools[{index}].path")
         args = [require_string(arg, f"tools[{index}].version_args item") for arg in require_list(item["version_args"], f"tools[{index}].version_args", nonempty=True)]
-        tools.append({"name": name, "path": path_value, "version_args": args})
+        python_distribution = item.get("python_distribution")
+        if python_distribution is not None:
+            python_distribution = require_string(
+                python_distribution,
+                f"tools[{index}].python_distribution",
+                NAME_RE,
+            )
+        python_import_roots = [
+            require_string(
+                root,
+                f"tools[{index}].python_import_roots item",
+                NAME_RE,
+            )
+            for root in require_list(
+                item.get("python_import_roots", []),
+                f"tools[{index}].python_import_roots",
+                nonempty=python_distribution is not None,
+            )
+        ]
+        if python_import_roots != sorted(set(python_import_roots)):
+            fail(f"tools[{index}].python_import_roots must be sorted and unique")
+        if python_distribution is None and python_import_roots:
+            fail(f"tools[{index}] has import roots without a Python distribution")
+        tools.append(
+            {
+                "name": name,
+                "path": path_value,
+                "python_distribution": python_distribution,
+                "python_import_roots": python_import_roots,
+                "version_args": args,
+            }
+        )
         names.append(name)
     if names != sorted(set(names)) or names != required_names:
         fail(f"tool manifest names must exactly equal policy names: {required_names!r}")
     return tools
+
+
+def observe_python_distribution(
+    requested: Path,
+    resolved: Path,
+    distribution_name: str,
+    import_roots: list[str],
+    production: bool,
+) -> dict[str, object]:
+    probe = """import importlib.metadata as m
+import importlib.util
+import json
+import os
+import sys
+d=m.distribution(sys.argv[1])
+names=json.loads(sys.argv[2])
+locations=[]
+for name in names:
+    spec=importlib.util.find_spec(name)
+    if spec is None:
+        raise SystemExit(f'missing import root: {name}')
+    if spec.submodule_search_locations is not None:
+        locations.extend(os.path.abspath(os.fspath(item)) for item in spec.submodule_search_locations)
+    elif spec.origin is not None:
+        locations.append(os.path.abspath(os.fspath(spec.origin)))
+files=[] if d.files is None else [os.path.abspath(os.fspath(d.locate_file(item))) for item in d.files]
+print(json.dumps({'declared_files':sorted(files),'import_locations':sorted(locations),'metadata_path':os.path.abspath(os.fspath(d._path)),'name':d.metadata['Name'],'version':d.version},sort_keys=True,separators=(',',':')))
+"""
+    environment = {
+        "HOME": "/nonexistent",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+        "TZ": "UTC",
+    }
+    try:
+        result = subprocess.run(
+            [
+                os.fspath(requested),
+                "-I",
+                "-B",
+                "-c",
+                probe,
+                distribution_name,
+                json.dumps(import_roots, separators=(",", ":")),
+            ],
+            executable=os.fspath(resolved),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=30,
+            env=environment,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        fail(f"cannot inventory Python distribution {distribution_name}: {error}")
+    if result.returncode != 0:
+        fail(
+            f"Python distribution inventory exited {result.returncode} for "
+            f"{distribution_name}"
+        )
+    document = require_object(
+        parse_json_bytes(result.stdout, f"Python distribution {distribution_name}"),
+        f"Python distribution {distribution_name}",
+        {"declared_files", "import_locations", "metadata_path", "name", "version"},
+    )
+    metadata_name = require_string(
+        document["name"], f"Python distribution {distribution_name} metadata name"
+    )
+    version = require_string(
+        document["version"], f"Python distribution {distribution_name} version"
+    )
+    declared_paths = [
+        absolute_path(item, f"Python distribution {distribution_name} declared file")
+        for item in require_list(
+            document["declared_files"],
+            f"Python distribution {distribution_name} declared files",
+        )
+    ]
+    declared_text = [os.fspath(path) for path in declared_paths]
+    if declared_text != sorted(set(declared_text)):
+        fail(f"Python distribution {distribution_name} declared files are not sorted and unique")
+    root_paths = [
+        absolute_path(item, f"Python distribution {distribution_name} import location")
+        for item in require_list(
+            document["import_locations"],
+            f"Python distribution {distribution_name} import locations",
+            nonempty=True,
+        )
+    ]
+    root_paths.append(
+        absolute_path(
+            document["metadata_path"],
+            f"Python distribution {distribution_name} metadata path",
+        )
+    )
+    root_text = [os.fspath(path) for path in root_paths]
+    if len(root_text) != len(set(root_text)):
+        fail(f"Python distribution {distribution_name} roots are not unique")
+    root_paths.sort(key=os.fspath)
+    candidate_paths = set(declared_paths)
+    for root in root_paths:
+        try:
+            root_metadata = root.lstat()
+        except OSError as error:
+            fail(f"cannot inspect Python distribution root {root}: {error}")
+        if stat.S_ISREG(root_metadata.st_mode):
+            candidate_paths.add(root)
+            continue
+        if not stat.S_ISDIR(root_metadata.st_mode) or stat.S_ISLNK(root_metadata.st_mode):
+            fail(f"Python distribution root is not a real directory or file: {root}")
+        for directory, directory_names, file_names in os.walk(
+            root, topdown=True, followlinks=False
+        ):
+            directory_names.sort()
+            file_names.sort()
+            for child_name in directory_names:
+                child = Path(directory) / child_name
+                child_metadata = child.lstat()
+                if not stat.S_ISDIR(child_metadata.st_mode) or stat.S_ISLNK(
+                    child_metadata.st_mode
+                ):
+                    fail(f"Python distribution tree contains a non-directory: {child}")
+            for child_name in file_names:
+                candidate_paths.add(Path(directory) / child_name)
+    raw_paths = sorted(candidate_paths, key=os.fspath)
+    if not raw_paths:
+        fail(f"Python distribution {distribution_name} inventory is empty")
+    entries: list[dict[str, object]] = []
+    for path in raw_paths:
+        if production:
+            validate_root_trust(path, f"Python distribution {distribution_name} file")
+        entries.append(
+            file_identity(
+                path,
+                f"Python distribution {distribution_name} file",
+                allow_hardlinks=True,
+            )
+        )
+    return {
+        "distribution": distribution_name,
+        "entry_count": len(entries),
+        "entries": entries,
+        "entries_sha256": sha256(canonical_json(entries)),
+        "import_roots": import_roots,
+        "metadata_name": metadata_name,
+        "version": version,
+    }
 
 
 def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, object]:
@@ -565,8 +1005,18 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
         fail(f"cannot re-resolve tool {name} after execution: {error}")
     if after_resolved != resolved:
         fail(f"tool {name} requested entry point changed during observation")
+    python_distribution = None
+    if specification.get("python_distribution") is not None:
+        python_distribution = observe_python_distribution(
+            requested,
+            resolved,
+            str(specification["python_distribution"]),
+            [str(item) for item in specification["python_import_roots"]],
+            production,
+        )
     return {
         "name": name,
+        "python_distribution": python_distribution,
         "requested_path": os.fspath(requested),
         "resolved_path": os.fspath(resolved),
         "binary": binary,
@@ -899,9 +1349,208 @@ def tree_manifest(root: Path, production: bool) -> dict[str, object]:
     }
 
 
-def parse_results(
-    results_path: Path, summary_path: Path, policy: dict[str, Any]
-) -> tuple[dict[str, int], list[str], str, dict[str, dict[str, str]]]:
+def parse_subtests(
+    subtests_path: Path,
+    result_rows: dict[str, dict[str, str]],
+    *,
+    enforce_authoritative: bool = True,
+) -> tuple[dict[str, int], dict[tuple[str, str], dict[str, str]]]:
+    payload, _identity = read_regular(subtests_path, "structured subtest results")
+    if not payload.endswith(b"\n"):
+        fail("structured subtest results must end with newline")
+    lines = payload.decode("utf-8").splitlines()
+    if not lines or lines[0] != "status\trequirement\ttest\tsubtest\tdetail":
+        fail("structured subtest results header is invalid")
+    counts = {
+        "required_pass": 0,
+        "required_fail": 0,
+        "required_skip": 0,
+        "diagnostic_pass": 0,
+        "diagnostic_fail": 0,
+        "diagnostic_skip": 0,
+        "mandatory_internal_skip": 0,
+        "total": 0,
+    }
+    rows: dict[tuple[str, str], dict[str, str]] = {}
+    for line_number, line in enumerate(lines[1:], 2):
+        fields = line.split("\t")
+        if (
+            len(fields) != 5
+            or fields[0] not in {"PASS", "FAIL", "SKIP"}
+            or fields[1] not in {"required", "diagnostic"}
+            or not fields[2]
+            or not fields[3]
+            or not fields[4]
+        ):
+            fail(f"invalid structured subtest row at line {line_number}")
+        status_value, requirement, test_name, subtest_name, detail = fields
+        if test_name not in result_rows:
+            fail(f"structured subtest names an unknown top-level test: {test_name}")
+        key = (test_name, subtest_name)
+        if key in rows:
+            fail(
+                "duplicate structured subtest identity: "
+                f"{test_name}/{subtest_name}"
+            )
+        rows[key] = {
+            "status": status_value,
+            "requirement": requirement,
+            "detail": detail,
+        }
+        counts[f"{requirement}_{status_value.lower()}"] += 1
+        if (
+            status_value == "SKIP"
+            and requirement == "required"
+            and subtest_name != "driver.case-completion"
+        ):
+            counts["mandatory_internal_skip"] += 1
+        counts["total"] += 1
+    for test_name, result in result_rows.items():
+        completion = rows.get((test_name, "driver.case-completion"))
+        if completion is None:
+            fail(
+                "top-level test has no structured completion subtest: "
+                f"{test_name}"
+            )
+        if (
+            completion["requirement"] != "required"
+            or completion["status"] != result["status"]
+        ):
+            fail(
+                "structured completion status differs from the top-level result: "
+                f"{test_name}"
+            )
+    if enforce_authoritative and (
+        counts["required_fail"] != 0 or counts["required_skip"] != 0
+    ):
+        fail(
+            "authoritative Phase 2 test run has a mandatory internal failure "
+            "or skip"
+        )
+    if enforce_authoritative and counts["diagnostic_fail"] != 0:
+        fail("authoritative Phase 2 test run has a diagnostic internal failure")
+    return counts, rows
+
+
+def contract_top_level_names(contract: dict[str, Any]) -> set[str]:
+    topology = require_object(contract["top_level"], "authoritative topology")
+    names = {str(item) for item in require_list(topology["exact_names"], "exact names")}
+    for raw_group in require_list(topology["prefix_groups"], "prefix groups"):
+        group = require_object(raw_group, "authoritative prefix group")
+        names.update(str(item) for item in require_list(group["expected_names"], "expected names"))
+    return names
+
+
+def validate_authoritative_topology(
+    contract: dict[str, Any], result_rows: dict[str, dict[str, str]]
+) -> None:
+    expected = contract_top_level_names(contract)
+    observed = set(result_rows)
+    missing = sorted(expected - observed)
+    unexpected = sorted(observed - expected)
+    if missing or unexpected:
+        fail(
+            "authoritative top-level test topology differs from its exact contract: "
+            f"missing={missing!r} unexpected={unexpected!r}"
+        )
+    topology = require_object(contract["top_level"], "authoritative topology")
+    for raw_group in require_list(topology["prefix_groups"], "prefix groups"):
+        group = require_object(raw_group, "authoritative prefix group")
+        prefix = str(group["prefix"])
+        matches = sorted(name for name in observed if name.startswith(prefix))
+        expected_names = [str(item) for item in require_list(group["expected_names"], "expected names")]
+        if len(matches) != int(group["expected_count"]) or matches != expected_names:
+            fail(f"authoritative top-level prefix group differs: {prefix}")
+
+
+def subtest_name_set_sha256(names: Iterable[str]) -> str:
+    ordered = sorted(names)
+    return sha256(("\n".join(ordered) + "\n").encode("utf-8"))
+
+
+def validate_authoritative_subtests(
+    contract: dict[str, Any],
+    subtest_rows: dict[tuple[str, str], dict[str, str]],
+) -> tuple[dict[str, int], list[dict[str, str]]]:
+    expected_diagnostic = {
+        (str(item["test"]), str(item["subtest"]))
+        for item in require_list(
+            contract["expected_diagnostic_subtests"],
+            "expected diagnostic subtests",
+        )
+    }
+    observed_diagnostic_skips = {
+        key
+        for key, row in subtest_rows.items()
+        if row["requirement"] == "diagnostic" and row["status"] == "SKIP"
+    }
+    if observed_diagnostic_skips != expected_diagnostic:
+        fail(
+            "authoritative diagnostic skip identities differ from the exact "
+            f"contract: expected={sorted(expected_diagnostic)!r} "
+            f"observed={sorted(observed_diagnostic_skips)!r}"
+        )
+    required_records: list[dict[str, str]] = []
+    for raw_expected in require_list(
+        contract["required_named_subtests"], "required named subtests"
+    ):
+        expected = require_object(raw_expected, "required named subtest")
+        test_name = str(expected["test"])
+        subtest_name = str(expected["subtest"])
+        observed = subtest_rows.get((test_name, subtest_name))
+        if observed is None:
+            fail(f"required named subtest is absent: {test_name}/{subtest_name}")
+        if observed["requirement"] != "required" or observed["status"] != "PASS":
+            fail(f"required named subtest is not required PASS: {test_name}/{subtest_name}")
+        required_records.append(
+            {"status": "PASS", "subtest": subtest_name, "test": test_name}
+        )
+
+    unittest_test_total = 0
+    for raw_suite in require_list(contract["unittest_suites"], "unittest suites"):
+        suite = require_object(raw_suite, "authoritative unittest suite")
+        test_name = str(suite["test"])
+        names = sorted(
+            subtest_name
+            for (row_test, subtest_name), row in subtest_rows.items()
+            if row_test == test_name and subtest_name.startswith("python.")
+        )
+        expected_count = int(suite["expected_count"])
+        if len(names) != expected_count:
+            fail(
+                f"authoritative unittest identity count differs for {test_name}: "
+                f"expected={expected_count} observed={len(names)}"
+            )
+        observed_hash = subtest_name_set_sha256(names)
+        if observed_hash != suite["subtest_names_sha256"]:
+            fail(f"authoritative unittest identity set differs for {test_name}")
+        for subtest_name in names:
+            row = subtest_rows[(test_name, subtest_name)]
+            identity = (test_name, subtest_name)
+            if identity in expected_diagnostic:
+                expected_row = {"requirement": "diagnostic", "status": "SKIP"}
+            else:
+                expected_row = {"requirement": "required", "status": "PASS"}
+            if any(row[key] != value for key, value in expected_row.items()):
+                fail(
+                    "authoritative unittest result differs from its exact contract: "
+                    f"{test_name}/{subtest_name}"
+                )
+        unittest_test_total += len(names)
+
+    totals = {
+        "required_named_subtests": len(required_records),
+        "expected_diagnostic_subtests": len(expected_diagnostic),
+        "top_level_tests": len(contract_top_level_names(contract)),
+        "unittest_suites": len(contract["unittest_suites"]),
+        "unittest_tests": unittest_test_total,
+    }
+    return totals, required_records
+
+
+def read_test_result_rows(
+    results_path: Path,
+) -> tuple[dict[str, int], dict[str, dict[str, str]]]:
     results_payload, _identity = read_regular(results_path, "test results")
     if not results_payload.endswith(b"\n"):
         fail("test results must end with newline")
@@ -919,6 +1568,143 @@ def parse_results(
             fail(f"duplicate test result name: {name}")
         rows[name] = {"status": status_value, "detail": detail}
         counts[status_value] += 1
+    return counts, rows
+
+
+def validate_test_contract_run(
+    contract: dict[str, Any],
+    results_path: Path,
+    subtests_path: Path,
+    mode: str,
+) -> tuple[dict[str, int], dict[str, int]]:
+    if mode not in {"authoritative", "portable-complete"}:
+        fail("test-contract validation supports authoritative or portable-complete")
+    counts, result_rows = read_test_result_rows(results_path)
+    validate_authoritative_topology(contract, result_rows)
+    subtest_counts, subtest_rows = parse_subtests(
+        subtests_path, result_rows, enforce_authoritative=False
+    )
+    if counts["FAIL"] != 0 or subtest_counts["required_fail"] != 0 or subtest_counts["diagnostic_fail"] != 0:
+        fail("contract-controlled test run contains a failure")
+
+    portable_top_skips = set(contract["portable_allowed_top_level_skips"])
+    for test_name, row in result_rows.items():
+        allowed = {"PASS"}
+        if mode == "portable-complete" and test_name in portable_top_skips:
+            allowed.add("SKIP")
+        if row["status"] not in allowed:
+            fail(
+                f"top-level test status is not allowed in {mode}: "
+                f"{test_name}={row['status']}"
+            )
+
+    expected_diagnostic = {
+        (str(item["test"]), str(item["subtest"]))
+        for item in contract["expected_diagnostic_subtests"]
+        if result_rows[str(item["test"])]["status"] != "SKIP"
+    }
+    observed_diagnostic_skips = {
+        identity
+        for identity, row in subtest_rows.items()
+        if row["requirement"] == "diagnostic" and row["status"] == "SKIP"
+    }
+    if observed_diagnostic_skips != expected_diagnostic:
+        fail(
+            "diagnostic skip identities differ from the exact test contract: "
+            f"expected={sorted(expected_diagnostic)!r} "
+            f"observed={sorted(observed_diagnostic_skips)!r}"
+        )
+
+    portable_required_skips = {
+        (str(item["test"]), str(item["subtest"]))
+        for item in contract["portable_allowed_required_skips"]
+    }
+    observed_required_skips = {
+        identity
+        for identity, row in subtest_rows.items()
+        if row["requirement"] == "required" and row["status"] == "SKIP"
+    }
+    allowed_required_skips: set[tuple[str, str]] = set()
+    if mode == "portable-complete":
+        allowed_required_skips.update(portable_required_skips)
+        allowed_required_skips.update(
+            (test_name, "driver.case-completion")
+            for test_name in portable_top_skips
+        )
+    unexpected_required_skips = observed_required_skips - allowed_required_skips
+    if unexpected_required_skips:
+        fail(
+            "required subtests skipped outside the portable host-only allowlist: "
+            f"{sorted(unexpected_required_skips)!r}"
+        )
+
+    named_required = {
+        (str(item["test"]), str(item["subtest"]))
+        for item in contract["required_named_subtests"]
+    }
+    for identity in sorted(named_required):
+        if result_rows[identity[0]]["status"] == "SKIP":
+            continue
+        named_row = subtest_rows.get(identity)
+        if named_row is None:
+            fail(f"required named subtest is absent: {identity[0]}/{identity[1]}")
+        allowed_statuses = {"PASS"}
+        if mode == "portable-complete" and identity in portable_required_skips:
+            allowed_statuses.add("SKIP")
+        if (
+            named_row["requirement"] != "required"
+            or named_row["status"] not in allowed_statuses
+        ):
+            fail(f"required named subtest has a forbidden result: {identity!r}")
+
+    for suite in contract["unittest_suites"]:
+        test_name = str(suite["test"])
+        if result_rows[test_name]["status"] == "SKIP":
+            continue
+        names = sorted(
+            subtest_name
+            for (row_test, subtest_name) in subtest_rows
+            if row_test == test_name and subtest_name.startswith("python.")
+        )
+        if len(names) != int(suite["expected_count"]):
+            fail(
+                f"authoritative unittest identity count differs for {test_name}: "
+                f"expected={suite['expected_count']} observed={len(names)}"
+            )
+        if subtest_name_set_sha256(names) != suite["subtest_names_sha256"]:
+            fail(f"authoritative unittest identity set differs for {test_name}")
+        for subtest_name in names:
+            identity = (test_name, subtest_name)
+            row = subtest_rows[identity]
+            if identity in expected_diagnostic:
+                allowed_pairs = {("diagnostic", "SKIP")}
+            else:
+                allowed_pairs = {("required", "PASS")}
+                if mode == "portable-complete" and identity in portable_required_skips:
+                    allowed_pairs.add(("required", "SKIP"))
+            if (row["requirement"], row["status"]) not in allowed_pairs:
+                fail(f"unittest result differs from its mode contract: {identity!r}")
+    return counts, subtest_counts
+
+
+def parse_results(
+    results_path: Path,
+    subtests_path: Path,
+    summary_path: Path,
+    policy: dict[str, Any],
+) -> tuple[
+    dict[str, int],
+    list[str],
+    str,
+    dict[str, dict[str, str]],
+    dict[str, int],
+    dict[tuple[str, str], dict[str, str]],
+]:
+    counts, rows = read_test_result_rows(results_path)
+    contract = require_object(
+        policy["authoritative_test_contract"], "authoritative test contract"
+    )
+    validate_authoritative_topology(contract, rows)
     required_passes: list[str] = []
     for name in policy["required_passing_test_names"]:
         if rows.get(name, {}).get("status") != "PASS":
@@ -933,6 +1719,8 @@ def parse_results(
         if len(matches) != 1:
             fail(f"required test prefix does not select exactly one PASS: {prefix}")
         required_passes.append(matches[0])
+    subtest_totals, subtest_rows = parse_subtests(subtests_path, rows)
+    validate_authoritative_subtests(contract, subtest_rows)
     summary_payload, _summary_identity = read_regular(summary_path, "test summary")
     if not summary_payload.endswith(b"\n"):
         fail("test summary must end with newline")
@@ -944,7 +1732,26 @@ def parse_results(
         if not key or key in summary:
             fail("test summary contains an empty or duplicate key")
         summary[key] = value
-    required_summary = {"mode", "pass", "fail", "skip", "total", "exit_status", "external_authority_index_preserved", "results"}
+    required_summary = {
+        "authoritative",
+        "diagnostic_internal_skip",
+        "diagnostic_subtest_fail",
+        "diagnostic_subtest_pass",
+        "exit_status",
+        "external_authority_index_preserved",
+        "fail",
+        "mandatory_internal_skip",
+        "mode",
+        "pass",
+        "required_subtest_fail",
+        "required_subtest_pass",
+        "required_subtest_skip",
+        "results",
+        "skip",
+        "subtest_total",
+        "subtests",
+        "total",
+    }
     if set(summary) != required_summary:
         fail("test summary keys differ from the driver contract")
     expected_counts = {
@@ -958,11 +1765,39 @@ def parse_results(
             fail(f"test summary {count_key} differs from results.tsv")
     if summary["exit_status"] != "0" or counts["FAIL"] != 0 or counts["SKIP"] != 0:
         fail("authoritative Phase 2 test run must have zero failures and zero skips")
+    if summary["authoritative"] not in {"0", "1"}:
+        fail("test summary authoritative must be exactly 0 or 1")
+    if policy["required_authoritative"] and summary["authoritative"] != "1":
+        fail("Phase 2 evidence requires an authoritative test-driver run")
+    expected_subtest_summary = {
+        "required_subtest_pass": subtest_totals["required_pass"],
+        "required_subtest_fail": subtest_totals["required_fail"],
+        "required_subtest_skip": subtest_totals["required_skip"],
+        "mandatory_internal_skip": subtest_totals["mandatory_internal_skip"],
+        "diagnostic_subtest_pass": subtest_totals["diagnostic_pass"],
+        "diagnostic_subtest_fail": subtest_totals["diagnostic_fail"],
+        "diagnostic_internal_skip": subtest_totals["diagnostic_skip"],
+        "subtest_total": subtest_totals["total"],
+    }
+    for count_key, count_value in expected_subtest_summary.items():
+        if summary[count_key] != str(count_value):
+            fail(f"test summary {count_key} differs from subtests.tsv")
+    if summary["mandatory_internal_skip"] != "0":
+        fail("authoritative Phase 2 test run must have mandatory_internal_skip=0")
     if summary["mode"] != policy["required_test_mode"]:
         fail("test summary mode differs from the evidence policy")
     if Path(summary["results"]) != results_path:
         fail("test summary results path differs from the indexed results path")
-    return expected_counts, sorted(required_passes), summary["mode"], rows
+    if Path(summary["subtests"]) != subtests_path:
+        fail("test summary subtests path differs from the indexed subtests path")
+    return (
+        expected_counts,
+        sorted(required_passes),
+        summary["mode"],
+        rows,
+        subtest_totals,
+        subtest_rows,
+    )
 
 
 def parse_named_paths(
@@ -1693,6 +2528,7 @@ def component_document(
     repository: dict[str, object],
     provenance_path: Path,
     results_path: Path,
+    subtests_path: Path,
     summary_path: Path,
     rows: dict[str, dict[str, str]],
     evidence_root: Path,
@@ -1777,6 +2613,7 @@ def component_document(
             provenance_path, "test-run provenance"
         ),
         "test_results": file_identity(results_path, "test results"),
+        "test_subtests": file_identity(subtests_path, "structured subtest results"),
         "test_summary": file_identity(summary_path, "test summary"),
         "test_rows": test_rows,
         "external_evidence": external,
@@ -1793,6 +2630,7 @@ def component_states(
     repository: dict[str, object],
     provenance_path: Path,
     results_path: Path,
+    subtests_path: Path,
     summary_path: Path,
     rows: dict[str, dict[str, str]],
     evidence_root: Path,
@@ -1859,6 +2697,7 @@ def component_states(
                 "schema",
                 "status",
                 "test_results",
+                "test_subtests",
                 "test_rows",
                 "test_run_provenance",
                 "test_summary",
@@ -1897,6 +2736,7 @@ def component_states(
             repository,
             provenance_path,
             results_path,
+            subtests_path,
             summary_path,
             rows,
             evidence_root,
@@ -2107,6 +2947,7 @@ def validate_run_provenance(
     repository: dict[str, object],
     driver_source: dict[str, object],
     results_path: Path,
+    subtests_path: Path,
     summary_path: Path,
     git_requested_path: Path,
     git_resolved_path: Path,
@@ -2129,6 +2970,7 @@ def validate_run_provenance(
             "results",
             "schema",
             "started_at",
+            "subtests",
             "summary",
         },
     )
@@ -2153,6 +2995,10 @@ def validate_run_provenance(
         fail("test-run provenance Git entry point differs from the indexed tool")
     if document["results"] != file_identity(results_path, "test results"):
         fail("test-run provenance results identity is stale")
+    if document["subtests"] != file_identity(
+        subtests_path, "structured subtest results"
+    ):
+        fail("test-run provenance subtest identity is stale")
     if document["summary"] != file_identity(summary_path, "test summary"):
         fail("test-run provenance summary identity is stale")
     return document
@@ -2193,6 +3039,7 @@ def run_provenance_finish(arguments: argparse.Namespace) -> None:
     if file_identity(driver_path, "test driver") != driver_record:
         fail("test driver changed during the test run")
     results = absolute_path(arguments.results, "test results")
+    subtests = absolute_path(arguments.subtests, "structured subtest results")
     summary = absolute_path(arguments.summary, "test summary")
     document = {
         "schema": "gentoo-optimization-phase2-test-run-provenance-v1",
@@ -2204,6 +3051,7 @@ def run_provenance_finish(arguments: argparse.Namespace) -> None:
         "git_requested_path": pending["git_requested_path"],
         "git_resolved_path": pending["git_resolved_path"],
         "results": file_identity(results, "test results"),
+        "subtests": file_identity(subtests, "structured subtest results"),
         "summary": file_identity(summary, "test summary"),
     }
     output = absolute_path(arguments.output, "test-run provenance output")
@@ -2283,10 +3131,12 @@ def component_state_command(arguments: argparse.Namespace) -> None:
     evidence_root = absolute_path(arguments.evidence_root, "evidence root")
     provenance_path = absolute_path(arguments.provenance, "test-run provenance")
     results_path = absolute_path(arguments.results, "test results")
+    subtests_path = absolute_path(arguments.subtests, "structured subtest results")
     summary_path = absolute_path(arguments.summary, "test summary")
     for path, label in (
         (provenance_path, "test-run provenance"),
         (results_path, "test results"),
+        (subtests_path, "structured subtest results"),
         (summary_path, "test summary"),
     ):
         if evidence_root not in path.parents:
@@ -2306,14 +3156,15 @@ def component_state_command(arguments: argparse.Namespace) -> None:
     sources = source_inventory(git_resolved, repository, policy)
     source_by_path = {str(item["path"]): item for item in sources}
     driver_source = source_by_path[policy["test_driver_path"]]
-    _totals, _required, _mode, rows = parse_results(
-        results_path, summary_path, policy
+    _totals, _required, _mode, rows, _subtest_totals, _subtest_rows = parse_results(
+        results_path, subtests_path, summary_path, policy
     )
     validate_run_provenance(
         provenance_path,
         repository_record,
         driver_source,
         results_path,
+        subtests_path,
         summary_path,
         git_requested,
         git_resolved,
@@ -2329,6 +3180,7 @@ def component_state_command(arguments: argparse.Namespace) -> None:
         repository_record,
         provenance_path,
         results_path,
+        subtests_path,
         summary_path,
         rows,
         evidence_root,
@@ -2393,8 +3245,16 @@ def build_capture(arguments: argparse.Namespace) -> dict[str, object]:
         fail("evidence index output must remain outside the evidence tree it binds")
     tools_path = absolute_path(arguments.tools, "tool manifest")
     test_results = absolute_path(arguments.test_results, "test results")
+    test_subtests = absolute_path(
+        arguments.test_subtests, "structured subtest results"
+    )
     test_summary = absolute_path(arguments.test_summary, "test summary")
-    for path, label in ((tools_path, "tool manifest"), (test_results, "test results"), (test_summary, "test summary")):
+    for path, label in (
+        (tools_path, "tool manifest"),
+        (test_results, "test results"),
+        (test_subtests, "structured subtest results"),
+        (test_summary, "test summary"),
+    ):
         if evidence_root not in path.parents:
             fail(f"{label} must be retained below the evidence root")
         if arguments.production:
@@ -2414,9 +3274,23 @@ def build_capture(arguments: argparse.Namespace) -> dict[str, object]:
     sources = source_inventory(git, repository, policy)
     hashes = source_hashes(sources)
     plan_hash, claims = plan_claims(repository / policy["plan_path"], policy, hashes)
-    totals, required_passes, mode, rows = parse_results(
-        test_results, test_summary, policy
+    (
+        totals,
+        required_passes,
+        mode,
+        rows,
+        subtest_totals,
+        subtest_rows,
+    ) = parse_results(
+        test_results, test_subtests, test_summary, policy
     )
+    contract = require_object(
+        policy["authoritative_test_contract"], "authoritative test contract"
+    )
+    contract_totals, required_named_subtests = validate_authoritative_subtests(
+        contract, subtest_rows
+    )
+    contract_path = repository / policy["authoritative_test_contract_path"]
     first_manifest = tree_manifest(evidence_root, arguments.production)
     second_manifest = tree_manifest(evidence_root, arguments.production)
     if first_manifest != second_manifest:
@@ -2434,6 +3308,7 @@ def build_capture(arguments: argparse.Namespace) -> dict[str, object]:
         before_repository,
         test_driver,
         test_results,
+        test_subtests,
         test_summary,
         Path(str(git_record["requested_path"])),
         git,
@@ -2447,6 +3322,7 @@ def build_capture(arguments: argparse.Namespace) -> dict[str, object]:
         before_repository,
         provenance_path,
         test_results,
+        test_subtests,
         test_summary,
         rows,
         evidence_root,
@@ -2467,18 +3343,30 @@ def build_capture(arguments: argparse.Namespace) -> dict[str, object]:
         "plan": {"path": policy["plan_path"], "sha256": plan_hash, "claims": claims},
         "tools": tools,
         "test_run": {
+            "authoritative": True,
+            "contract": file_identity(
+                contract_path, "authoritative test contract"
+            ),
+            "contract_totals": contract_totals,
             "driver": {
                 "path": policy["test_driver_path"],
                 "sha256": test_driver["sha256"],
                 "stat": stat_identity((repository / policy["test_driver_path"]).lstat()),
             },
             "results": file_identity(test_results, "test results"),
+            "subtests": file_identity(
+                test_subtests, "structured subtest results"
+            ),
             "summary": file_identity(test_summary, "test summary"),
             "provenance": file_identity(provenance_path, "test-run provenance"),
             "boot_id": provenance["boot_id"],
             "mode": mode,
             "totals": {"pass": totals["pass"], "fail": totals["fail"], "skip": totals["skip"], "total": totals["total"]},
+            "subtest_totals": subtest_totals,
+            "mandatory_internal_skip": subtest_totals["mandatory_internal_skip"],
+            "diagnostic_internal_skip": subtest_totals["diagnostic_skip"],
             "required_passes": required_passes,
+            "required_named_subtests": required_named_subtests,
         },
         "evidence_manifest": first_manifest,
         "component_states": states,
@@ -2553,27 +3441,6 @@ def verify_index(arguments: argparse.Namespace) -> None:
             )
         validate_root_trust(repository, "source repository", directory=True)
         validate_root_trust(expected_verifier, "evidence verifier executable")
-    tools_raw = require_list(document["tools"], "tools", nonempty=True)
-    tool_specs: list[dict[str, Any]] = []
-    for raw in tools_raw:
-        item = require_object(raw, "tool identity")
-        name = require_string(item.get("name"), "tool name", NAME_RE)
-        requested = absolute_path(item.get("requested_path"), f"tool {name} requested_path")
-        argv = require_list(item.get("version_argv"), f"tool {name} version_argv", nonempty=True)
-        if len(argv) < 2:
-            fail(f"tool {name} version argv is incomplete")
-        args = [require_string(value, f"tool {name} version argv") for value in argv[1:]]
-        tool_specs.append({"name": name, "path": requested, "version_args": args})
-    observed_tools = [observe_tool(item, production) for item in tool_specs]
-    if observed_tools != tools_raw:
-        fail("one or more tool identities changed after evidence capture")
-    git_record = next((item for item in observed_tools if item["name"] == "git"), None)
-    if git_record is None:
-        fail("evidence index has no Git tool identity")
-    git = Path(str(git_record["resolved_path"]))
-    repository_now = repository_identity(git, repository)
-    if repository_now != repository_record:
-        fail("repository commit, tree, reference, or clean status changed")
     policy_record = require_object(document["policy"], "policy identity")
     policy_path = absolute_path(policy_record.get("path"), "policy path")
     if production and policy_path != repository / POLICY_RELATIVE:
@@ -2581,6 +3448,29 @@ def verify_index(arguments: argparse.Namespace) -> None:
     if file_identity(policy_path, "Phase 2 evidence policy") != policy_record:
         fail("Phase 2 evidence policy changed")
     policy = load_policy(repository, policy_path)
+    reviewed_tool_manifest = repository / policy["tool_manifest_template_path"]
+    if production:
+        validate_root_trust(reviewed_tool_manifest, "reviewed tool manifest")
+    reviewed_tool_specs = tool_manifest(
+        reviewed_tool_manifest, policy["required_tools"]
+    )
+    tools_raw = require_list(document["tools"], "tools", nonempty=True)
+    observed_tools = [
+        observe_tool(specification, production)
+        for specification in reviewed_tool_specs
+    ]
+    if observed_tools != tools_raw:
+        fail(
+            "indexed tool topology, reviewed specification, or observed identity "
+            "differs from the tracked tool manifest"
+        )
+    git_record = next((item for item in observed_tools if item["name"] == "git"), None)
+    if git_record is None:
+        fail("evidence index has no Git tool identity")
+    git = Path(str(git_record["resolved_path"]))
+    repository_now = repository_identity(git, repository)
+    if repository_now != repository_record:
+        fail("repository commit, tree, reference, or clean status changed")
     run_id = require_string(document["run_id"], "evidence index run ID", SAFE_ID_RE)
     if index_path != evidence_index_path(policy, run_id):
         fail("detached evidence index is outside its policy-pinned run path")
@@ -2604,16 +3494,59 @@ def verify_index(arguments: argparse.Namespace) -> None:
         fail("project plan or its checked evidence markers changed")
     test_record = require_object(document["test_run"], "test run")
     results_record = require_object(test_record.get("results"), "test results identity")
+    subtests_record = require_object(
+        test_record.get("subtests"), "structured subtest results identity"
+    )
     summary_record = require_object(test_record.get("summary"), "test summary identity")
     results_path = absolute_path(results_record.get("path"), "test results path")
-    summary_path = absolute_path(summary_record.get("path"), "test summary path")
-    totals, required_passes, mode, rows = parse_results(
-        results_path, summary_path, policy
+    subtests_path = absolute_path(
+        subtests_record.get("path"), "structured subtest results path"
     )
-    if file_identity(results_path, "test results") != results_record or file_identity(summary_path, "test summary") != summary_record:
-        fail("test results or summary identity changed")
+    summary_path = absolute_path(summary_record.get("path"), "test summary path")
+    (
+        totals,
+        required_passes,
+        mode,
+        rows,
+        subtest_totals,
+        subtest_rows,
+    ) = parse_results(
+        results_path, subtests_path, summary_path, policy
+    )
+    if (
+        file_identity(results_path, "test results") != results_record
+        or file_identity(subtests_path, "structured subtest results")
+        != subtests_record
+        or file_identity(summary_path, "test summary") != summary_record
+    ):
+        fail("test results, subtests, or summary identity changed")
+    contract = require_object(
+        policy["authoritative_test_contract"], "authoritative test contract"
+    )
+    contract_totals, required_named_subtests = validate_authoritative_subtests(
+        contract, subtest_rows
+    )
+    contract_path = repository / policy["authoritative_test_contract_path"]
+    contract_record = require_object(
+        test_record.get("contract"), "authoritative test contract identity"
+    )
     expected_test_totals = {"pass": totals["pass"], "fail": totals["fail"], "skip": totals["skip"], "total": totals["total"]}
-    if test_record.get("mode") != mode or test_record.get("totals") != expected_test_totals or test_record.get("required_passes") != required_passes:
+    if (
+        test_record.get("authoritative") is not True
+        or contract_record
+        != file_identity(contract_path, "authoritative test contract")
+        or test_record.get("contract_totals") != contract_totals
+        or test_record.get("mode") != mode
+        or test_record.get("totals") != expected_test_totals
+        or test_record.get("subtest_totals") != subtest_totals
+        or test_record.get("mandatory_internal_skip")
+        != subtest_totals["mandatory_internal_skip"]
+        or test_record.get("diagnostic_internal_skip")
+        != subtest_totals["diagnostic_skip"]
+        or test_record.get("required_passes") != required_passes
+        or test_record.get("required_named_subtests")
+        != required_named_subtests
+    ):
         fail("test run summary fields changed")
     driver_source = next(item for item in sources_now if item["path"] == policy["test_driver_path"])
     driver_record = require_object(test_record.get("driver"), "test driver identity")
@@ -2639,6 +3572,7 @@ def verify_index(arguments: argparse.Namespace) -> None:
         repository_now,
         driver_source,
         results_path,
+        subtests_path,
         summary_path,
         Path(str(git_record["requested_path"])),
         git,
@@ -2673,6 +3607,7 @@ def verify_index(arguments: argparse.Namespace) -> None:
         repository_now,
         provenance_path,
         results_path,
+        subtests_path,
         summary_path,
         rows,
         evidence_root,
@@ -2730,6 +3665,21 @@ def marker_command(arguments: argparse.Namespace) -> None:
     print(f"{MARKER_PREFIX}{canonical_json(marker).decode('utf-8')}{MARKER_SUFFIX}")
 
 
+def test_contract_command(arguments: argparse.Namespace) -> None:
+    contract_path = absolute_path(arguments.contract, "authoritative test contract")
+    contract = load_authoritative_test_contract(contract_path)
+    results_path = absolute_path(arguments.results, "test results")
+    subtests_path = absolute_path(arguments.subtests, "structured subtest results")
+    counts, subtest_counts = validate_test_contract_run(
+        contract, results_path, subtests_path, arguments.mode
+    )
+    print(
+        "TEST-CONTRACT: "
+        f"mode={arguments.mode} tests={sum(counts.values())} "
+        f"subtests={subtest_counts['total']}"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="action", required=True)
@@ -2739,6 +3689,7 @@ def build_parser() -> argparse.ArgumentParser:
     capture.add_argument("--evidence-root", required=True)
     capture.add_argument("--tools", required=True)
     capture.add_argument("--test-results", required=True)
+    capture.add_argument("--test-subtests", required=True)
     capture.add_argument("--test-summary", required=True)
     capture.add_argument("--run-id", required=True)
     capture.add_argument("--component-state", action="append", default=[], required=True)
@@ -2770,6 +3721,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     provenance_finish.add_argument("--pending", required=True)
     provenance_finish.add_argument("--results", required=True)
+    provenance_finish.add_argument("--subtests", required=True)
     provenance_finish.add_argument("--summary", required=True)
     provenance_finish.add_argument("--output", required=True)
 
@@ -2786,11 +3738,23 @@ def build_parser() -> argparse.ArgumentParser:
     component.add_argument("--evidence-root", required=True)
     component.add_argument("--provenance", required=True)
     component.add_argument("--results", required=True)
+    component.add_argument("--subtests", required=True)
     component.add_argument("--summary", required=True)
     component.add_argument("--external-evidence", action="append", default=[])
     component.add_argument("--git", default="/usr/bin/git")
     component.add_argument("--output", required=True)
     component.add_argument("--production", action="store_true")
+
+    test_contract = subparsers.add_parser(
+        "test-contract",
+        help="validate exact top-level and internal test identities for one mode",
+    )
+    test_contract.add_argument("--contract", required=True)
+    test_contract.add_argument("--results", required=True)
+    test_contract.add_argument("--subtests", required=True)
+    test_contract.add_argument(
+        "--mode", choices=("portable-complete", "authoritative"), required=True
+    )
     return parser
 
 
@@ -2821,6 +3785,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.action == "component-state":
             component_state_command(arguments)
             print(f"COMPONENT: {arguments.output}")
+            return 0
+        if arguments.action == "test-contract":
+            test_contract_command(arguments)
             return 0
         marker_command(arguments)
         return 0

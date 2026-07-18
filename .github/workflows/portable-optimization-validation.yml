@@ -1,0 +1,52 @@
+name: Portable optimization validation
+
+"on":
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portable-optimization-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable-complete:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install portable validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            attr binutils clang file jq libc++-dev libc++abi-dev libcap2-bin \
+            pax-utils python3-jsonschema ripgrep shellcheck util-linux zstd
+
+      - name: Run the portable-complete gate
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -Eeuo pipefail
+          output=/tmp/gentoo-optimization-portable-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+          test ! -e "$output"
+          tests/run-optimization-tests.sh \
+            --mode portable-complete \
+            --output-dir "$output"
+          grep -Fx 'mode=portable-complete' "$output/summary.txt"
+          grep -Fx 'fail=0' "$output/summary.txt"
+
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-optimization-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/gentoo-optimization-portable-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 14

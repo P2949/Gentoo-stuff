@@ -78,6 +78,7 @@ as follows:
   markers. Generate each marker instead of typing it:
 
 ```sh
+set -Eeuo pipefail
 python3 scripts/optimization/verify/phase2-evidence.py plan-marker \
   --repository-root "$PWD" \
   --claim-id phase2-dispatcher \
@@ -90,17 +91,23 @@ The claim IDs are `phase2-automation`, `phase2-bolt-hooks`,
 rejects missing, duplicate, non-canonical, out-of-section, stale, or incomplete
 coverage.
 
-## Create candidate B's immutable source snapshot
+## Create the candidate's immutable source snapshot
 
-Make the working tree clean and commit the plan migration. The commit used below
-is candidate B; there must be no later plan-only commit.
+Use this complete materialization procedure for candidate A and repeat it with
+all-new paths for candidate B. For A, make the implementation working tree
+clean and commit it while the live Phase 2 boxes remain open. For B, first
+commit the truthful plan migration and canonical claim markers after A has
+passed. There must be no later plan-only commit for either recorded run.
 
 ```sh
+set -Eeuo pipefail
 git status --short
 git diff --check
 COMMIT=$(git rev-parse --verify 'HEAD^{commit}')
-test -z "$(git status --porcelain=v1 --untracked-files=all)"
-test -z "$(git ls-files -s | awk '$1 == 160000 { print }')"
+WORKTREE_STATUS=$(git status --porcelain=v1 --untracked-files=all)
+GITLINK_STATUS=$(git ls-files -s | awk '$1 == 160000 { print }')
+test -z "$WORKTREE_STATUS"
+test -z "$GITLINK_STATUS"
 printf '%s\n' "$COMMIT"
 ```
 
@@ -109,46 +116,71 @@ it. A bundle avoids executing root from the mutable checkout and preserves the
 exact original commit and Git metadata needed by the installer tests.
 
 ```sh
+set -Eeuo pipefail
 SHORT=$(printf '%s' "$COMMIT" | cut -c1-12)
 UTC_RUN_ID=$(date -u +%Y%m%dT%H%M%SZ)
 RUN_ID=phase2-${SHORT}-${UTC_RUN_ID}
 BUNDLE_USER=/var/tmp/gentoo-${RUN_ID}.bundle.user
 BUNDLE=/var/lib/gentoo-optimization/bootstrap/source-bundles/${RUN_ID}.bundle
 SOURCE=/var/lib/gentoo-optimization/bootstrap/source-checkouts/${RUN_ID}
+ROOT_GIT_HOME=/var/lib/gentoo-optimization/bootstrap/git-homes/${RUN_ID}
 
-test "$(git rev-parse --verify 'HEAD^{commit}')" = "$COMMIT"
+OBSERVED_COMMIT=$(git rev-parse --verify 'HEAD^{commit}')
+test "$OBSERVED_COMMIT" = "$COMMIT"
 test ! -e "$BUNDLE_USER"
 git bundle create "$BUNDLE_USER" HEAD
 BUNDLE_SHA256=$(sha256sum "$BUNDLE_USER" | awk '{print $1}')
 git bundle verify "$BUNDLE_USER"
-test "$(git bundle list-heads "$BUNDLE_USER" | awk '$2 == "HEAD" {print $1}')" = "$COMMIT"
+BUNDLE_HEAD=$(git bundle list-heads "$BUNDLE_USER" |
+  awk '$2 == "HEAD" {print $1}')
+test "$BUNDLE_HEAD" = "$COMMIT"
 
-doas install -d -o root -g root -m 0700 "${BUNDLE%/*}" "${SOURCE%/*}"
+doas install -d -o root -g root -m 0700 \
+  "${BUNDLE%/*}" "${SOURCE%/*}" "${ROOT_GIT_HOME%/*}"
+doas test ! -e "$ROOT_GIT_HOME"
+doas install -d -o root -g root -m 0700 "$ROOT_GIT_HOME"
 doas test ! -e "$BUNDLE"
 doas test ! -e "${BUNDLE}.partial"
 doas test ! -e "$SOURCE"
 doas test ! -e "${SOURCE}.partial"
 doas install -o root -g root -m 0600 -T "$BUNDLE_USER" "${BUNDLE}.partial"
-doas sha256sum "${BUNDLE}.partial"
-# The printed digest must equal BUNDLE_SHA256 before continuing.
+COPIED_BUNDLE_SHA256=$(doas sha256sum "${BUNDLE}.partial" | awk '{print $1}')
+test "$COPIED_BUNDLE_SHA256" = "$BUNDLE_SHA256"
 doas mv --no-clobber --no-copy -T "${BUNDLE}.partial" "$BUNDLE"
 doas test ! -e "${BUNDLE}.partial"
 doas sync -f "${BUNDLE%/*}"
-test "$(doas git bundle list-heads "$BUNDLE" | awk '$2 == "HEAD" {print $1}')" = "$COMMIT"
-doas git -c core.hooksPath=/dev/null -c core.fsmonitor=false \
-  clone --no-checkout "$BUNDLE" "${SOURCE}.partial"
-doas git -C "${SOURCE}.partial" -c core.hooksPath=/dev/null \
-  checkout --detach "$COMMIT"
-doas test -z "$(doas git -C "${SOURCE}.partial" status --porcelain=v1 --untracked-files=all)"
+
+root_git() {
+  doas /usr/bin/env -i \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 \
+    HOME="$ROOT_GIT_HOME" \
+    LANG=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
+    /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false \
+    -c core.attributesFile=/dev/null "$@"
+}
+
+ROOT_BUNDLE_HEAD=$(root_git bundle list-heads "$BUNDLE" |
+  awk '$2 == "HEAD" {print $1}')
+test "$ROOT_BUNDLE_HEAD" = "$COMMIT"
+root_git clone --no-checkout "$BUNDLE" "${SOURCE}.partial"
+root_git -C "${SOURCE}.partial" checkout --detach "$COMMIT"
+ROOT_WORKTREE_STATUS=$(root_git -C "${SOURCE}.partial" \
+  status --porcelain=v1 --untracked-files=all)
+doas test -z "$ROOT_WORKTREE_STATUS"
 doas mv --no-clobber --no-copy -T "${SOURCE}.partial" "$SOURCE"
 doas test ! -e "${SOURCE}.partial"
 doas sync -f "$SOURCE" "${SOURCE%/*}"
-doas test "$(doas git -C "$SOURCE" rev-parse --verify 'HEAD^{commit}')" = "$COMMIT"
-doas git -C "$SOURCE" bundle verify "$BUNDLE"
+ROOT_SOURCE_COMMIT=$(root_git -C "$SOURCE" rev-parse --verify 'HEAD^{commit}')
+test "$ROOT_SOURCE_COMMIT" = "$COMMIT"
+root_git -C "$SOURCE" bundle verify "$BUNDLE"
 ```
 
-Retain the bundle, its digest, and the root-owned checkout. Do not rebuild either
-in place. If any verification differs, allocate new paths.
+Retain each candidate's bundle, digest, private Git home, and root-owned
+checkout. Do not rebuild any of them in place. If any verification differs,
+allocate new paths. Candidate A stops after the complete host and supervised
+production transaction precheck; component-state and detached-index generation
+remain blocked by its deliberately open plan. Candidate B repeats every step
+with a new run ID and is the only pass that may continue into index capture.
 
 ## Install and preflight the exact candidate
 
@@ -156,59 +188,80 @@ Publish the installer from the immutable checkout and compare both hashes before
 executing it:
 
 ```sh
+set -Eeuo pipefail
 BOOTSTRAP=/var/lib/gentoo-optimization/bootstrap/install-framework.sh
+SOURCE_BOOTSTRAP_SHA256=$(doas sha256sum \
+  "$SOURCE/scripts/optimization/install-framework.sh" | awk '{print $1}')
 doas install -o root -g root -m 0755 -T \
   "$SOURCE/scripts/optimization/install-framework.sh" "${BOOTSTRAP}.partial"
-doas sha256sum "$SOURCE/scripts/optimization/install-framework.sh" "${BOOTSTRAP}.partial"
+COPIED_BOOTSTRAP_SHA256=$(doas sha256sum "${BOOTSTRAP}.partial" | awk '{print $1}')
+test "$COPIED_BOOTSTRAP_SHA256" = "$SOURCE_BOOTSTRAP_SHA256"
 doas mv -T "${BOOTSTRAP}.partial" "$BOOTSTRAP"
 doas sync -f "${BOOTSTRAP%/*}"
 
 doas "$BOOTSTRAP" --source-root "$SOURCE"
 doas "$BOOTSTRAP" --source-root "$SOURCE" --check
-readlink -e /var/lib/gentoo-optimization/framework-current
+doas readlink -e /var/lib/gentoo-optimization/framework-current
 ```
 
 Also prove containment and recover any earlier interrupted transaction before
 starting tests:
 
 ```sh
-doas /usr/bin/unshare --pid --fork --kill-child=KILL --mount-proc -- /bin/true
+set -Eeuo pipefail
 COORD=/usr/local/libexec/gentoo-optimization/pgo/production-profile-lock-transaction.py
 SCAN=/usr/local/libexec/gentoo-optimization/pgo/authorization-token-scan.py
+CONTAINMENT_PREFLIGHT=$(doas /usr/bin/env -i \
+  HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  LANG=C LC_ALL=C TZ=UTC "$COORD" preflight-containment)
+test "$CONTAINMENT_PREFLIGHT" = PREFLIGHT-PASS
 doas /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   LANG=C LC_ALL=C TZ=UTC "$COORD" recover
 ```
 
-`CLEAN` means no recovery was needed; `RECOVERED` means the coordinator safely
-restored an interrupted transaction. Any error is a hard stop. Recovery must
+The containment command must print exactly `PREFLIGHT-PASS`; it functionally
+proves both kill-child PID namespaces and exact pidfd open/signal/close/teardown
+using the same root-trusted primitives as the production transaction. `CLEAN`
+means no recovery was needed; `RECOVERED` means the coordinator safely restored
+an interrupted transaction. Any error is a hard stop. Recovery must
 leave the journal and its `.partial`/`.child.json` objects absent and the stable
 lock payloads empty. Preserve the generated recovery receipt.
 
 ## Run the complete host gate
 
 The authoritative runner is the root-owned checkout, not the desktop checkout.
-Use one new parent directory. The evidence policy requires capabilities mode,
-all required named cases, six PGO/BOLT capability passes, zero failures, and
-zero skips.
+Use one new parent directory. The evidence policy requires authoritative mode,
+all portable and stress cases, all required named cases, six PGO/BOLT
+capability passes, zero failures, zero top-level skips, and zero required
+internal skips.
 
 ```sh
+set -Eeuo pipefail
 EVIDENCE_ROOT=/var/tmp/gentoo-optimization/phase2-authoritative-${RUN_ID}
-test ! -e "$EVIDENCE_ROOT"
+doas test ! -e "$EVIDENCE_ROOT"
+doas /usr/bin/env -i HOME=/root LANG=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
+  /usr/bin/python3 -I -B -c \
+  'from jsonschema import Draft202012Validator; Draft202012Validator.check_schema({"$schema": "https://json-schema.org/draft/2020-12/schema"})'
 doas /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
   PATH=/usr/lib/llvm/22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   LANG=C LC_ALL=C TZ=UTC \
   SHELLCHECK=/var/lib/gentoo-optimization/test-tools/shellcheck-0.11.0 \
-  "$SOURCE/tests/run-optimization-tests.sh" --mode capabilities \
+  "$SOURCE/tests/run-optimization-tests.sh" --mode authoritative \
   --capability all --output-dir "$EVIDENCE_ROOT"
 
-awk -F '\t' 'NR > 1 { count[$1]++ } END {
+doas awk -F '\t' 'NR > 1 { count[$1]++ } END {
   printf "PASS=%d FAIL=%d SKIP=%d TOTAL=%d\n",
     count["PASS"], count["FAIL"], count["SKIP"], NR - 1
 }' "$EVIDENCE_ROOT/results.tsv"
-grep -Fx 'mode=capabilities' "$EVIDENCE_ROOT/summary.txt"
-grep -Fx 'fail=0' "$EVIDENCE_ROOT/summary.txt"
-grep -Fx 'skip=0' "$EVIDENCE_ROOT/summary.txt"
+doas grep -Fx 'mode=authoritative' "$EVIDENCE_ROOT/summary.txt"
+doas grep -Fx 'authoritative=1' "$EVIDENCE_ROOT/summary.txt"
+doas grep -Fx 'fail=0' "$EVIDENCE_ROOT/summary.txt"
+doas grep -Fx 'skip=0' "$EVIDENCE_ROOT/summary.txt"
+doas grep -Fx 'required_subtest_fail=0' "$EVIDENCE_ROOT/summary.txt"
+doas grep -Fx 'required_subtest_skip=0' "$EVIDENCE_ROOT/summary.txt"
+doas grep -Fx 'mandatory_internal_skip=0' "$EVIDENCE_ROOT/summary.txt"
 ```
 
 The isolated sample lane remains a diagnostic cross-check. The separately named
@@ -244,6 +297,7 @@ inventory and must never be assigned as the active optimization generation.
 Publish it root-owned, retain it, and use its exact digest:
 
 ```sh
+set -Eeuo pipefail
 GENERATION_ID=phase2-validation-${RUN_ID}
 INVENTORY_ID=phase2-validation-input-${RUN_ID}
 VALIDATION_INPUT=/var/lib/gentoo-optimization/state/project/${INVENTORY_ID}.json
@@ -272,8 +326,8 @@ PROFILE=/var/cache/gentoo-optimization/pgo/clang-sample/phase2-sample-gate-${RUN
 STATE=/var/lib/gentoo-optimization/generations/${GENERATION_ID}/phase2-sample-gate-${RUN_ID}
 PRODUCTION_EVIDENCE=${EVIDENCE_ROOT}/production-sample-pgo
 TOKEN_SCAN=${STATE}/coordinator-token-scan.tsv
-test ! -e "$WORK" && test ! -e "$PROFILE" && test ! -e "$STATE" && \
-  test ! -e "$PRODUCTION_EVIDENCE"
+doas test ! -e "$WORK" && doas test ! -e "$PROFILE" && \
+  doas test ! -e "$STATE" && doas test ! -e "$PRODUCTION_EVIDENCE"
 ```
 
 The coordinator creates a 256-bit bearer token internally, writes only its
@@ -282,6 +336,7 @@ environment, and passes it to the token scanner over an inherited file
 descriptor. Operators never generate, print, export, or store the raw token.
 
 ```sh
+set -Eeuo pipefail
 doas /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   LANG=C LC_ALL=C TZ=UTC \
@@ -313,6 +368,7 @@ descendants if the coordinator dies.
 On success, the coordinator prints the receipt path. Verify and retain:
 
 ```sh
+set -Eeuo pipefail
 JOURNAL=/var/lib/gentoo-optimization/state/profile-transactions/phase-2-production-profile-locks.pending
 RECEIPT=${JOURNAL%/*}/phase-2-production-profile-locks-${GENERATION_ID}.receipt.json
 doas test ! -e "$JOURNAL" && doas test ! -e "${JOURNAL}.partial" && \
@@ -368,6 +424,7 @@ symlinks or special files. Copy the reviewed tool manifest and source bundle
 into that evidence root so its manifest retains both:
 
 ```sh
+set -Eeuo pipefail
 doas install -o root -g root -m 0600 -T \
   "$SOURCE/optimization/phase2-tool-manifest.json" \
   "$EVIDENCE_ROOT/phase2-tools.json"
@@ -385,10 +442,12 @@ output is a hard stop: never overwrite a component projection from another
 evidence run.
 
 ```sh
+set -Eeuo pipefail
 EVIDENCE_TOOL=$SOURCE/scripts/optimization/verify/phase2-evidence.py
 EVIDENCE_PY=/usr/bin/python3
 PROVENANCE=$EVIDENCE_ROOT/test-run-provenance.json
 RESULTS=$EVIDENCE_ROOT/results.tsv
+SUBTESTS=$EVIDENCE_ROOT/subtests.tsv
 SUMMARY=$EVIDENCE_ROOT/summary.txt
 COMPONENT_PARENT=/var/lib/gentoo-optimization/state/project/phase-2-components
 COMPONENT_ROOT=${COMPONENT_PARENT}/${RUN_ID}
@@ -414,7 +473,8 @@ for component in automation bolt-hooks capability-bolt capability-clang-ir \
   phase2_evidence_tool component-state --production \
     --repository-root "$SOURCE" --component "$component" --run-id "$RUN_ID" \
     --evidence-root "$EVIDENCE_ROOT" --provenance "$PROVENANCE" \
-    --results "$RESULTS" --summary "$SUMMARY" --git /usr/bin/git \
+    --results "$RESULTS" --subtests "$SUBTESTS" --summary "$SUMMARY" \
+    --git /usr/bin/git \
     --output "$COMPONENT_ROOT/${component}.json"
 done
 
@@ -422,7 +482,8 @@ doas test ! -e "$COMPONENT_ROOT/framework-installer.json"
 phase2_evidence_tool component-state --production \
   --repository-root "$SOURCE" --component framework-installer --run-id "$RUN_ID" \
   --evidence-root "$EVIDENCE_ROOT" --provenance "$PROVENANCE" \
-  --results "$RESULTS" --summary "$SUMMARY" --git /usr/bin/git \
+  --results "$RESULTS" --subtests "$SUBTESTS" --summary "$SUMMARY" \
+  --git /usr/bin/git \
   --external-evidence framework-install-manifest="$FRAMEWORK_MANIFEST" \
   --output "$COMPONENT_ROOT/framework-installer.json"
 
@@ -430,7 +491,8 @@ doas test ! -e "$COMPONENT_ROOT/sample-pgo.json"
 phase2_evidence_tool component-state --production \
   --repository-root "$SOURCE" --component sample-pgo --run-id "$RUN_ID" \
   --evidence-root "$EVIDENCE_ROOT" --provenance "$PROVENANCE" \
-  --results "$RESULTS" --summary "$SUMMARY" --git /usr/bin/git \
+  --results "$RESULTS" --subtests "$SUBTESTS" --summary "$SUMMARY" \
+  --git /usr/bin/git \
   --external-evidence production-child-identity="$CHILD_IDENTITY" \
   --external-evidence production-publication-context="$PUBLICATION_CONTEXT" \
   --external-evidence production-token-scan="$TOKEN_SCAN" \
@@ -451,6 +513,7 @@ phase2_evidence_tool capture \
   --evidence-root "$EVIDENCE_ROOT" \
   --tools "$EVIDENCE_ROOT/phase2-tools.json" \
   --test-results "$EVIDENCE_ROOT/results.tsv" \
+  --test-subtests "$EVIDENCE_ROOT/subtests.tsv" \
   --test-summary "$EVIDENCE_ROOT/summary.txt" \
   --run-id "$RUN_ID" \
   --component-state automation="$COMPONENT_ROOT/automation.json" \
@@ -470,6 +533,10 @@ phase2_evidence_tool verify --production --index "$INDEX"
 doas jq -e '.aggregate == {
   "failed_total": 0, "pending_total": 0, "unknown_total": 0
 }' "$INDEX"
+doas jq -e '.test_run.totals.fail == 0 and .test_run.totals.skip == 0 and
+  .test_run.mandatory_internal_skip == 0 and
+  .test_run.subtest_totals.required_fail == 0 and
+  .test_run.subtest_totals.required_skip == 0' "$INDEX"
 ```
 
 Capture rejects a dirty or untracked worktree, wrong commit in any state,

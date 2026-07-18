@@ -2,15 +2,15 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 and Phase 1 are complete. Phase 2 is active. The repository now contains the strict dispatcher, stage-specific environments, candidate-complete publisher, production sample-PGO coordinator, BOLT capture/deployment hooks, and detached evidence contract. This Candidate-A working tree is not yet a clean commit, installed candidate, or live authorization; the current live revalidation and two-pass Phase 2 closure remain open. No generated package assignment is active.
+- **Project state:** active; Phase 0 and Phase 1 are complete. Phase 2 is active. The repository now contains the strict dispatcher, stage-specific environments, candidate-complete publisher, production sample-PGO coordinator, BOLT capture/deployment hooks, and detached evidence contract. Branch head `821dd3daa65253555f1dc5e8e0bf2f3ff249e10d` is the latest committed Candidate-A revision; the working tree contains the still-uncommitted Candidate-A closure corrections described in §11.7. Neither revision has been installed or accepted by the complete host and production gates. No generated package assignment is active.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
-- **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-07-16 `/var/db/pkg` refresh; this is live progress evidence, not the frozen Phase 3 inventory.
+- **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-07-18 `/var/db/pkg` refresh; this is live progress evidence, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-07-16; the complete plan and all binding prose gates were re-read while recording this non-authorizing Candidate-A checkpoint and the still-binding absence of a generation, frozen inventory, or installed-system coverage claim.
+- **Last plan review:** 2026-07-18; Candidate-A closure is in progress. The complete plan must be re-read again after the checkpoint fixture, prerequisite package installation, exact recovery checkpoint, and final repository gates complete. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -802,11 +802,13 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
 
 # 11. Phase 2 — Refactor the repository framework
 
-### 2026-07-16 Candidate-A pre-activation checkpoint
+### 2026-07-18 Candidate-A pre-activation checkpoint
 
-- Candidate A is repository/pre-activation implementation only. It has not yet
-  been committed as the exact clean revision, installed as the live candidate,
-  or accepted by the complete host and production sample-PGO gates.
+- Candidate A is repository/pre-activation implementation only. The current
+  branch head is the latest committed implementation revision, and the closure
+  corrections below remain uncommitted. No Candidate-A revision has been
+  installed as the live candidate or accepted by the complete host and
+  production sample-PGO gates.
 - No current detached Phase 2 evidence index exists. The four sample-profile
   items in §11.4, the combined automation gate, the framework live gate, and
   the evidence-index gate remain open.
@@ -881,7 +883,7 @@ The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the 
 
 ## 11.4 Fix sample-profile scripts
 
-### 2026-07-16 Candidate-A architecture checkpoint
+### 2026-07-18 Candidate-A architecture checkpoint
 
 - Production runtime helpers now live under `scripts/optimization/pgo/`, not
   `tests/`. The root-owned coordinator constructs an exact clean child
@@ -890,6 +892,14 @@ The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the 
   PID/process-group/start-time identity. It generates the bearer internally,
   supervises stable framework/project/generation locks, and scans retained
   roots after containment to prove that the raw token did not persist.
+- The containment preflight is now functional rather than attribute-based: it
+  creates a disposable child, opens a pidfd, signals that exact child through
+  `pidfd_send_signal`, verifies the expected signal exit and no process-group
+  residue, and combines that proof with a real kill-child PID-namespace probe.
+  Production Candidate A/B runs must pass; portable denial is a structured,
+  reason-bearing skip only. Recovery reads PID, process group, state, and start
+  identity from one `/proc/<pid>/stat` snapshot, and deterministic replacement
+  fixtures pre-create a distinct inode before `os.replace()`.
 - The integration has separate isolated-diagnostic and normal live-Portage
   policy lanes. Only the production coordinator lane can authorize Phase 2.
   The live lane binds the complete effective last-token-wins `FEATURES` state,
@@ -970,7 +980,53 @@ The current repository architecture retains the 2026-07-15 privilege-metadata re
 
 The framework publisher is candidate-complete and crash-consistent: Portage, overlay, helpers, schemas, QA logic, generated policy, and the manifest live inside one immutable candidate. First migration installs a fail-closed Portage guard before its fsynced activation journal; normal upgrades change behavior only through the atomic `framework-current` rename. Each installed bashrc embeds and exports its exact candidate target, and stable shell/Python/QA bootstraps honor that pin, so a build begun on generation A cannot call generation B after an upgrade; re-sourcing another generation fails closed. Candidate Python helpers run isolated with bytecode writes disabled, and a terminal inventory check must prove helper execution did not change the immutable candidate. Fixed bootstrap bytes are an invariant upgrade ABI and a changed renderer is rejected before external publication. Hermetic tests cover SIGKILL on both sides of activation, same-generation re-source, an old-bound process across activation, cross-generation rejection, and incompatible bootstrap migration. This remains a repository/framework claim until the clean live install and combined host gate pass.
 
+Python bootstrap schema v2 uses `#!/usr/bin/python3 -IB` and an exact
+`/usr/bin/python3 -I -B` handoff, so bytecode is disabled before standard-library
+imports. The only accepted migration source is the byte-exact ten-helper schema
+actually deployed by installed framework commit
+`8a1200915d2693fd7486a421a9b232f638e9840c`; an independent golden renderer and
+ten SHA-256 values bind it. The never-deployed twelve-helper hybrid Git
+predecessor is deliberately unsupported. Migration atomically exchanges the
+complete helper tree. At both injected `SIGKILL` boundaries the fixture compares
+type, relative path, mode, UID/GID, regular-file SHA-256, and symlink target for
+the entire tree. After the post-exchange crash it runs strict `--check` and old
+and newly added representative helpers before any repair/idempotence pass. The
+same exchange path still requires proof on the live XFS destinations.
+
 The detached evidence contract avoids self-referential plan hashes and stale prose authorization. Candidate A is a non-authorizing implementation/live precheck. After A passes, generated claim markers and truthful boxes are committed as Candidate B; the complete gate then reruns against B with no later plan edit. The sole accepted index path is `/var/lib/gentoo-optimization/state/project/phase2-evidence/<run-id>/index.json`. It binds one clean commit/tree, the current boot, active immutable candidate, exact production transaction receipt and validation input, required tool and test identities, eleven immutable run-scoped component states, exact directory membership, and aggregate `pending_total=0`, `unknown_total=0`, `failed_total=0`. Reboot, source drift, candidate drift, partial transaction debris, extra state entries, or any plan correction invalidates authorization and requires a new run ID and complete rerun.
+
+The test driver has distinct `smoke`, `portable-complete`, `stress`,
+`capabilities`, and `authoritative` modes. Every top-level case publishes a
+structured completion row; every conditional shell branch and every Python
+`unittest` method publishes its own required/diagnostic row. Atomic shell
+fixtures with no conditional branch are represented by their fail-closed
+completion row. Legacy `SKIP-SUBTEST`, `HOST-SKIP`, and Python `unittest` skips
+are surfaced rather than hidden by a top-level pass. The exact
+top-level topology, exact unittest identities/counts, structured ledger hash,
+and zero-discovery rule are reviewed inputs. Authoritative mode requires zero
+top-level skips and zero required internal skips; portable skips require an
+exact allowlist and cannot grow silently. The detached verifier reloads the
+tracked reviewed tool manifest and rejects deleted, duplicated, reordered, or
+substituted index tool specifications before re-observation. Its current
+63-entry host/tool boundary includes containment, atomic-publication, ELF,
+metadata, hashing, text-processing, Git/tar, compiler, Portage, and profiling
+primitives plus the reviewed core `jsonschema` schema-validation distribution
+closure (`attrs`, `referencing`, `jsonschema-specifications`, `rpds-py`, and the
+conditional `typing-extensions`). The boundary separately binds the stable
+bootstrap's requested `/bin/bash` path (in addition to `/usr/bin/bash`) and the
+installer's exact `/usr/bin/tr` text-processing primitive.
+The system Python does not yet contain that closure, so an exact 1,220-CPV
+recovery checkpoint must precede its source installation; the post-install CPV
+set then requires another exact checkpoint and an offline restoration proof.
+
+Repository authorization commands no longer use visual hash comparison.
+Immutable bundle and installer copies are compared programmatically, root Git
+materialization runs with no system configuration and a private empty HOME,
+and root-owned state/cache/evidence existence checks run through `doas`. A
+portable GitHub Actions gate runs the exact portable-complete contract; the
+300-cycle crash workload is confined to `stress` and `authoritative` modes.
+All of this remains non-authorizing until one clean Candidate A passes live and
+one frozen Candidate B reruns the complete gate into its detached index.
 
 Create fixture tests for:
 

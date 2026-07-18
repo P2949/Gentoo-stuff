@@ -22,8 +22,15 @@ fail() {
 [[ -f ${DRIVER} ]] || fail "driver is absent: ${DRIVER}"
 
 bash -- "${DRIVER}" --help >"${FIXTURE}/help.txt"
-grep -Fq -- '--mode quick' "${FIXTURE}/help.txt" || fail 'help omits quick mode'
+grep -Fq -- '--mode smoke' "${FIXTURE}/help.txt" || fail 'help omits smoke mode'
+grep -Fq -- '--mode portable-complete' "${FIXTURE}/help.txt" || \
+    fail 'help omits portable-complete mode'
+grep -Fq -- '--mode stress' "${FIXTURE}/help.txt" || fail 'help omits stress mode'
 grep -Fq -- '--mode capabilities' "${FIXTURE}/help.txt" || fail 'help omits capability mode'
+grep -Fq -- '--mode authoritative' "${FIXTURE}/help.txt" || \
+    fail 'help omits authoritative mode'
+grep -Fq -- '--mode quick' "${FIXTURE}/help.txt" || \
+    fail 'help omits the deprecated quick alias'
 grep -Fq -- '--capability NAME' "${FIXTURE}/help.txt" || fail 'help omits capability filter'
 grep -Fq 'TEST_CASE_TIMEOUT_SECONDS=1800' "${FIXTURE}/help.txt" || \
     fail 'help omits the global per-case timeout'
@@ -31,6 +38,8 @@ grep -Fq 'TEST_CASE_KILL_AFTER_SECONDS=10' "${FIXTURE}/help.txt" || \
     fail 'help omits the per-case forced-kill grace period'
 grep -Fq 'TEST_CASE_TIMEOUT_SECONDS_CLANG_IR' "${FIXTURE}/help.txt" || \
     fail 'help omits normalized per-capability deadline overrides'
+grep -Fq 'GENTOO_OPT_AUTHORITATIVE=0|1' "${FIXTURE}/help.txt" || \
+    fail 'help omits authoritative subtest accounting'
 
 bash -- "${DRIVER}" --list >"${FIXTURE}/list.txt"
 grep -Fq 'recovery-rollback-fixture' "${FIXTURE}/list.txt" || fail 'suite list omits rollback fixture'
@@ -71,6 +80,19 @@ for capability in clang-ir clang-sample gcc rust go bolt; do
     grep -Eq "^[[:space:]]+${capability}([[:space:]]|$)" \
         "${FIXTURE}/list.txt" || fail "suite list omits ${capability}"
 done
+bash -- "${DRIVER}" --mode quick --list \
+    >"${FIXTURE}/quick-list.txt" 2>"${FIXTURE}/quick-list.stderr"
+grep -Fq -- 'WARNING: --mode quick is deprecated; using portable-complete' \
+    "${FIXTURE}/quick-list.stderr" || \
+    fail 'deprecated quick alias did not visibly normalize to portable-complete'
+
+if GENTOO_OPT_AUTHORITATIVE=invalid bash -- "${DRIVER}" --mode smoke \
+    >"${FIXTURE}/bad-authoritative.log" 2>&1; then
+    fail 'invalid authoritative selector unexpectedly succeeded'
+fi
+grep -Fq 'GENTOO_OPT_AUTHORITATIVE must be exactly 0 or 1' \
+    "${FIXTURE}/bad-authoritative.log" || \
+    fail 'invalid authoritative selector lacks a visible diagnostic'
 
 if bash -- "${DRIVER}" --mode unsupported >"${FIXTURE}/bad-mode.log" 2>&1; then
     fail 'unsupported mode unexpectedly succeeded'
@@ -151,7 +173,7 @@ for required_driver_tool in bash dirname env find mkdir realpath setsid sleep so
 done
 
 PATH=${HERMETIC_BIN} bash -- "${HERMETIC_DRIVER}" \
-    --mode quick --capability bolt --output-dir "${HERMETIC_OUTPUT}" \
+    --mode capabilities --capability bolt --output-dir "${HERMETIC_OUTPUT}" \
     >"${FIXTURE}/hermetic-preflight.log" 2>&1 || {
     sed -n '1,240p' "${FIXTURE}/hermetic-preflight.log" >&2
     fail 'hermetic capability-preflight driver invocation failed'
@@ -213,6 +235,31 @@ grep -Fxq 'fail=0' "${HERMETIC_OUTPUT}/summary.txt" || \
     fail 'hermetic preflight SKIP was incorrectly counted as a failure'
 grep -Fxq 'exit_status=0' "${HERMETIC_OUTPUT}/summary.txt" || \
     fail 'hermetic preflight SKIP produced a nonzero driver status'
+grep -Fxq 'mode=capabilities' "${HERMETIC_OUTPUT}/summary.txt" || \
+    fail 'hermetic capability-preflight run lost its exact mode'
+
+AUTHORITATIVE_OUTPUT=${FIXTURE}/hermetic-authoritative-output
+set +e
+PATH=${HERMETIC_BIN} bash -- "${HERMETIC_DRIVER}" \
+    --mode authoritative --output-dir "${AUTHORITATIVE_OUTPUT}" \
+    >"${FIXTURE}/hermetic-authoritative.log" 2>&1
+AUTHORITATIVE_STATUS=$?
+set -e
+[[ ${AUTHORITATIVE_STATUS} -eq 1 ]] || \
+    fail "incomplete authoritative gate returned ${AUTHORITATIVE_STATUS}, expected 1"
+grep -Fxq 'mode=authoritative' "${AUTHORITATIVE_OUTPUT}/summary.txt" || \
+    fail 'authoritative summary lost its exact mode'
+grep -Fxq 'authoritative=1' "${AUTHORITATIVE_OUTPUT}/summary.txt" || \
+    fail 'authoritative mode did not enable fail-closed subtest accounting'
+for capability in clang-ir clang-sample gcc rust go bolt; do
+    grep -Eq $'^SKIP\tcapability:'"${capability}"$'(:|\t)' \
+        "${AUTHORITATIVE_OUTPUT}/results.tsv" || \
+        fail "authoritative mode did not select/preflight ${capability}"
+    if grep -Fq $'\tcapability:'"${capability}"$'\tnot selected' \
+        "${AUTHORITATIVE_OUTPUT}/results.tsv"; then
+        fail "authoritative mode left ${capability} unselected"
+    fi
+done
 
 # Exercise the real per-case deadline around a capability whose runner and
 # preflight are entirely fake.  Both the runner and its child ignore TERM, so
@@ -255,7 +302,7 @@ printf '%s\n' \
     >"${TIMEOUT_FAKE_GO}"
 chmod 0755 -- "${TIMEOUT_DRIVER}" "${TIMEOUT_RUNNER}" "${TIMEOUT_FAKE_GO}"
 for required_timeout_tool in bash dirname env find mkdir readelf realpath rg sed \
-    setsid sha256sum sleep sort stat tail tee timeout; do
+    mv setsid sha256sum sleep sort stat tail tee timeout; do
     [[ ${required_timeout_tool} == go ]] && continue
     required_timeout_path=$(command -v -- "${required_timeout_tool}") || \
         fail "self-test prerequisite is unavailable: ${required_timeout_tool}"
@@ -269,7 +316,7 @@ TEST_CASE_TIMEOUT_SECONDS=30 \
 TEST_CASE_KILL_AFTER_SECONDS=30 \
 TEST_CASE_TIMEOUT_SECONDS_GO=1 \
 TEST_CASE_KILL_AFTER_SECONDS_GO=1 \
-    bash -- "${TIMEOUT_DRIVER}" --mode quick --capability go \
+    bash -- "${TIMEOUT_DRIVER}" --mode smoke --capability go \
     --output-dir "${TIMEOUT_OUTPUT}" \
     >"${FIXTURE}/timeout-driver.log" 2>&1
 TIMEOUT_DRIVER_STATUS=$?
@@ -282,7 +329,7 @@ set -e
 TIMEOUT_RESULT_ROWS=0
 TIMEOUT_RESULT_DETAIL=
 while IFS=$'\t' read -r result_status result_name result_detail extra_field; do
-    if [[ ${result_name} == capability:go:* ]]; then
+    if [[ ${result_name} == capability:go ]]; then
         ((TIMEOUT_RESULT_ROWS += 1))
         [[ ${result_status} == FAIL ]] || \
             fail "timed-out capability status changed from compatible FAIL: ${result_status}"
@@ -331,14 +378,14 @@ printf '%s\n' \
     'exit 77' >"${TIMEOUT_RUNNER}"
 chmod 0755 -- "${TIMEOUT_RUNNER}"
 PATH=${TIMEOUT_BIN_ROOT} \
-    bash -- "${TIMEOUT_DRIVER}" --mode quick --capability go \
+    bash -- "${TIMEOUT_DRIVER}" --mode smoke --capability go \
     --output-dir "${SKIP_OUTPUT}" \
     >"${FIXTURE}/explicit-fixture-skip-driver.log" 2>&1 || \
     fail 'reason-bearing fixture exit 77 made the driver fail'
 SKIP_RESULT_ROWS=0
 SKIP_RESULT_DETAIL=
 while IFS=$'\t' read -r result_status result_name result_detail; do
-    if [[ ${result_name} == capability:go:* ]]; then
+    if [[ ${result_name} == capability:go ]]; then
         ((SKIP_RESULT_ROWS += 1))
         [[ ${result_status} == SKIP ]] || \
             fail "fixture exit 77 was not recorded as SKIP: ${result_status}"
@@ -353,19 +400,105 @@ done <"${SKIP_OUTPUT}/results.tsv"
 grep -Fxq 'fail=0' "${SKIP_OUTPUT}/summary.txt" || \
     fail 'fixture exit 77 was counted as a failure'
 
+run_fragment_contract_failure() {
+    local label=$1 body=$2 expected_detail=$3
+    local output=${FIXTURE}/fragment-${label}-output
+    printf '%s\n' '#!/usr/bin/env bash' "${body}" 'exit 0' >"${TIMEOUT_RUNNER}"
+    chmod 0755 -- "${TIMEOUT_RUNNER}"
+    set +e
+    PATH=${TIMEOUT_BIN_ROOT} \
+        bash -- "${TIMEOUT_DRIVER}" --mode smoke --capability go \
+        --output-dir "${output}" \
+        >"${FIXTURE}/fragment-${label}-driver.log" 2>&1
+    local driver_status=$?
+    set -e
+    [[ ${driver_status} -eq 1 ]] || \
+        fail "${label} subtest-fragment violation returned ${driver_status}, expected 1"
+    grep -Fq $'FAIL\tcapability:go\t' "${output}/results.tsv" || \
+        fail "${label} subtest-fragment violation remained a top-level PASS"
+    grep -Fq "${expected_detail}" "${output}/subtests.tsv" || \
+        fail "${label} subtest-fragment violation lacks its structured diagnostic"
+}
+
+# These fragments are emitted into generated runners and expand only when
+# those runners execute under the driver.
+# shellcheck disable=SC2016
+run_fragment_contract_failure truncation \
+    ': >"${GENTOO_OPT_SUBTEST_RESULTS}"' \
+    'fixture truncated its structured subtest fragment to zero bytes'
+# shellcheck disable=SC2016
+run_fragment_contract_failure replacement \
+    'replacement=${GENTOO_OPT_SUBTEST_RESULTS}.replacement; printf "gentoo-optimization-subtest-fragment-v1\\n" >"${replacement}"; mv -f -- "${replacement}" "${GENTOO_OPT_SUBTEST_RESULTS}"' \
+    'fixture replaced or removed its private structured subtest fragment'
+# shellcheck disable=SC2016
+run_fragment_contract_failure duplicate \
+    'printf "PASS\\trequired\\tduplicate-name\\tfirst\\nPASS\\trequired\\tduplicate-name\\tsecond\\n" >>"${GENTOO_OPT_SUBTEST_RESULTS}"' \
+    'fixture emitted a duplicate structured subtest name'
+# shellcheck disable=SC2016
+run_fragment_contract_failure forged-completion \
+    'printf "PASS\\trequired\\tdriver.case-completion\\tforged\\n" >>"${GENTOO_OPT_SUBTEST_RESULTS}"' \
+    'fixture emitted a malformed structured subtest row'
+
+DIAGNOSTIC_SKIP_OUTPUT=${FIXTURE}/diagnostic-subtest-output
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf "DIAGNOSTIC-SKIP-SUBTEST: optional observation unavailable\\n"' \
+    'exit 0' >"${TIMEOUT_RUNNER}"
+chmod 0755 -- "${TIMEOUT_RUNNER}"
+PATH=${TIMEOUT_BIN_ROOT} \
+    bash -- "${TIMEOUT_DRIVER}" --mode smoke --capability go \
+    --output-dir "${DIAGNOSTIC_SKIP_OUTPUT}" \
+    >"${FIXTURE}/diagnostic-subtest-driver.log" 2>&1 || \
+    fail 'explicit diagnostic subtest skip made the non-authoritative driver fail'
+grep -Fq $'PASS\tcapability:go\t' "${DIAGNOSTIC_SKIP_OUTPUT}/results.tsv" || \
+    fail 'explicit diagnostic subtest skip changed the enclosing case from PASS'
+grep -Fq $'SKIP\tdiagnostic\tcapability:go\t' \
+    "${DIAGNOSTIC_SKIP_OUTPUT}/subtests.tsv" || \
+    fail 'explicit diagnostic subtest skip was not classified as diagnostic'
+grep -Fxq 'mandatory_internal_skip=0' \
+    "${DIAGNOSTIC_SKIP_OUTPUT}/summary.txt" || \
+    fail 'diagnostic subtest skip polluted the mandatory internal skip count'
+
+HOST_SKIP_OUTPUT=${FIXTURE}/unstructured-host-skip-output
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf "HOST-SKIP: unstructured host branch unavailable\n"' \
+    'exit 0' >"${TIMEOUT_RUNNER}"
+chmod 0755 -- "${TIMEOUT_RUNNER}"
+set +e
+PATH=${TIMEOUT_BIN_ROOT} GENTOO_OPT_AUTHORITATIVE=1 \
+    bash -- "${TIMEOUT_DRIVER}" --mode smoke --capability go \
+    --output-dir "${HOST_SKIP_OUTPUT}" \
+    >"${FIXTURE}/unstructured-host-skip-driver.log" 2>&1
+HOST_SKIP_STATUS=$?
+set -e
+[[ ${HOST_SKIP_STATUS} -eq 1 ]] || \
+    fail "unstructured HOST-SKIP returned ${HOST_SKIP_STATUS}, expected 1"
+grep -Fq $'SKIP\trequired\tcapability:go\t' \
+    "${HOST_SKIP_OUTPUT}/subtests.tsv" || \
+    fail 'unstructured HOST-SKIP was not surfaced as a required skip'
+grep -Fxq 'mandatory_internal_skip=1' "${HOST_SKIP_OUTPUT}/summary.txt" || \
+    fail 'unstructured HOST-SKIP did not increment mandatory skip accounting'
+
 # Prove that the one-shot py_compile suite gets an isolated cache while
 # subprocess-heavy unittest discovery clears even an inherited cache prefix.
 PYTHON_ROOT=${FIXTURE}/python-repository
 PYTHON_BIN_ROOT=${FIXTURE}/python-bin
 PYTHON_DRIVER=${PYTHON_ROOT}/tests/run-optimization-tests.sh
+PYTHON_UNITTEST_RUNNER=${PYTHON_ROOT}/scripts/optimization/verify/run-unittest-suite.py
 PYTHON_TEST_DIR=${PYTHON_ROOT}/tests/unit
 PYTHON_OUTPUT=${FIXTURE}/python-output
 PYTHON_ENV_MARKER=${FIXTURE}/python-unittest-environment.txt
 mkdir -p -- "${PYTHON_ROOT}/bench" "${PYTHON_ROOT}/optimization" \
-    "${PYTHON_ROOT}/scripts" "${PYTHON_TEST_DIR}" "${PYTHON_BIN_ROOT}"
+    "${PYTHON_ROOT}/scripts/optimization/verify" "${PYTHON_TEST_DIR}" \
+    "${PYTHON_BIN_ROOT}"
 cp -- "${DRIVER}" "${PYTHON_DRIVER}"
+cp -- "${REPOSITORY_ROOT}/scripts/optimization/verify/run-unittest-suite.py" \
+    "${PYTHON_UNITTEST_RUNNER}"
 printf '%s\n' \
     'import os' \
+    'import subprocess' \
+    'import sys' \
     'from pathlib import Path' \
     'import unittest' \
     '' \
@@ -373,7 +506,14 @@ printf '%s\n' \
     '    def test_unittest_environment(self):' \
     '        self.assertEqual(os.environ.get("PYTHONDONTWRITEBYTECODE"), "1")' \
     '        self.assertNotIn("PYTHONPYCACHEPREFIX", os.environ)' \
+    '        for name in ("GENTOO_OPT_AUTHORITATIVE", "GENTOO_OPT_SUBTEST_RESULTS", "GENTOO_OPT_TEST_CASE"):' \
+    '            self.assertNotIn(name, os.environ)' \
+    '        subprocess.run([sys.executable, "-c", "import os; assert not any(name in os.environ for name in (\"GENTOO_OPT_AUTHORITATIVE\", \"GENTOO_OPT_SUBTEST_RESULTS\", \"GENTOO_OPT_TEST_CASE\"))"], check=True)' \
     "        Path('${PYTHON_ENV_MARKER}').write_text('dontwrite=1\\npycacheprefix=unset\\n', encoding='utf-8')" \
+    '' \
+    '    @unittest.skip("deliberate required unittest skip")' \
+    '    def test_required_internal_skip(self):' \
+    '        self.fail("skip decorator did not skip")' \
     >"${PYTHON_TEST_DIR}/test_environment.py"
 for required_python_tool in bash dirname env find mkdir realpath setsid sleep \
     sort stat tail tee timeout; do
@@ -385,9 +525,42 @@ done
 python3_path=$(command -v -- python3) || \
     fail 'self-test prerequisite is unavailable: python3'
 ln -s -- "${python3_path}" "${PYTHON_BIN_ROOT}/python3"
+PYTHON_DOTTED_FRAGMENT=${FIXTURE}/python-dotted-fragment.tsv
+printf 'gentoo-optimization-subtest-fragment-v1\n' >"${PYTHON_DOTTED_FRAGMENT}"
+GENTOO_OPT_AUTHORITATIVE=0 \
+GENTOO_OPT_SUBTEST_RESULTS=${PYTHON_DOTTED_FRAGMENT} \
+GENTOO_OPT_TEST_CASE=wrapper-dotted-import \
+PYTHONDONTWRITEBYTECODE=1 \
+    "${python3_path}" "${PYTHON_UNITTEST_RUNNER}" -v \
+    tests.unit.test_environment.DriverPythonEnvironmentTest.test_unittest_environment \
+    >"${FIXTURE}/python-dotted-wrapper.log" 2>&1 || {
+    sed -n '1,160p' "${FIXTURE}/python-dotted-wrapper.log" >&2
+    fail 'structured unittest runner could not import a real dotted test identity'
+}
+grep -Fq $'PASS\trequired\tpython.tests.unit.test_environment.DriverPythonEnvironmentTest.test_unittest_environment\t' \
+    "${PYTHON_DOTTED_FRAGMENT}" || \
+    fail 'dotted unittest invocation did not emit its exact structured identity'
+PYTHON_EMPTY_TEST_DIR=${PYTHON_ROOT}/tests/empty
+PYTHON_EMPTY_FRAGMENT=${FIXTURE}/python-empty-fragment.tsv
+mkdir -p -- "${PYTHON_EMPTY_TEST_DIR}"
+printf 'gentoo-optimization-subtest-fragment-v1\n' >"${PYTHON_EMPTY_FRAGMENT}"
+set +e
+GENTOO_OPT_AUTHORITATIVE=0 \
+GENTOO_OPT_SUBTEST_RESULTS=${PYTHON_EMPTY_FRAGMENT} \
+GENTOO_OPT_TEST_CASE=wrapper-zero-discovery \
+    "${python3_path}" "${PYTHON_UNITTEST_RUNNER}" discover \
+    -s "${PYTHON_EMPTY_TEST_DIR}" -p 'test_*.py' -v \
+    >"${FIXTURE}/python-empty-wrapper.log" 2>&1
+PYTHON_EMPTY_STATUS=$?
+set -e
+[[ ${PYTHON_EMPTY_STATUS} -eq 2 ]] || \
+    fail "zero-test discovery returned ${PYTHON_EMPTY_STATUS}, expected 2"
+grep -Fq 'ERROR: unittest discovery executed zero tests' \
+    "${FIXTURE}/python-empty-wrapper.log" || \
+    fail 'zero-test discovery failure omitted its exact diagnostic'
 PATH=${PYTHON_BIN_ROOT} \
 PYTHONPYCACHEPREFIX=/inherited-prefix-that-must-not-reach-unittest \
-    bash -- "${PYTHON_DRIVER}" --mode quick --output-dir "${PYTHON_OUTPUT}" \
+    bash -- "${PYTHON_DRIVER}" --mode stress --output-dir "${PYTHON_OUTPUT}" \
     >"${FIXTURE}/python-driver.log" 2>&1 || {
     sed -n '1,240p' "${FIXTURE}/python-driver.log" >&2
     fail 'hermetic Python-environment driver invocation failed'
@@ -402,6 +575,36 @@ find "${PYTHON_OUTPUT}/python-cache/compile" -type f -name '*.pyc' -print -quit 
     fail 'the driver recreated the removed unittest cache prefix'
 grep -Fxq 'fail=0' "${PYTHON_OUTPUT}/summary.txt" || \
     fail 'Python-environment self-test produced a driver failure'
+grep -Fxq 'mandatory_internal_skip=1' "${PYTHON_OUTPUT}/summary.txt" || \
+    fail 'Python unittest skip was not surfaced as one mandatory internal skip'
+PYTHON_SKIP_ROWS=0
+while IFS=$'\t' read -r subtest_status subtest_requirement subtest_test \
+    subtest_name subtest_detail; do
+    if [[ ${subtest_status}:${subtest_requirement} == SKIP:required &&
+          ${subtest_test} == python-unit-tests:tests/unit &&
+          ${subtest_name} == python.*test_required_internal_skip ]]; then
+        ((PYTHON_SKIP_ROWS += 1))
+        [[ ${subtest_detail} == 'deliberate required unittest skip' ]] || \
+            fail "structured unittest skip lost its reason: ${subtest_detail}"
+    fi
+done <"${PYTHON_OUTPUT}/subtests.tsv"
+[[ ${PYTHON_SKIP_ROWS} -eq 1 ]] || \
+    fail "expected one explicit structured unittest skip row, found ${PYTHON_SKIP_ROWS}"
+
+PYTHON_AUTHORITATIVE_OUTPUT=${FIXTURE}/python-authoritative-output
+set +e
+PATH=${PYTHON_BIN_ROOT} \
+GENTOO_OPT_AUTHORITATIVE=1 \
+    bash -- "${PYTHON_DRIVER}" --mode stress \
+    --output-dir "${PYTHON_AUTHORITATIVE_OUTPUT}" \
+    >"${FIXTURE}/python-authoritative-driver.log" 2>&1
+PYTHON_AUTHORITATIVE_STATUS=$?
+set -e
+[[ ${PYTHON_AUTHORITATIVE_STATUS} -eq 1 ]] || \
+    fail "authoritative unittest skip produced status ${PYTHON_AUTHORITATIVE_STATUS}, expected 1"
+grep -Fq $'FAIL\tpython-unit-tests:tests/unit\t' \
+    "${PYTHON_AUTHORITATIVE_OUTPUT}/results.tsv" || \
+    fail 'authoritative unittest skip remained hidden behind top-level PASS'
 PROFILE_STRESS_SKIP_ROWS=0
 PROFILE_STRESS_SKIP_DETAIL=
 while IFS=$'\t' read -r result_status result_name result_detail; do
@@ -492,7 +695,7 @@ PATH=${RECOVERY_BIN} \
 FAKE_CLANGXX_RESULT=fail FAKE_GXX_RESULT=success \
 FAKE_CLANGXX_LOG=${FIXTURE}/fake-clang-fail.log \
 FAKE_GXX_LOG=${FIXTURE}/fake-gxx-unused.log \
-    bash -- "${RECOVERY_DRIVER}" --mode quick --output-dir "${CLANG_FAIL_OUTPUT}" \
+    bash -- "${RECOVERY_DRIVER}" --mode stress --output-dir "${CLANG_FAIL_OUTPUT}" \
     >"${FIXTURE}/recovery-clang-fail-driver.log" 2>&1 || \
     fail 'Clang/libc++ preflight-failure driver invocation failed'
 assert_recovery_preflight_skip "${CLANG_FAIL_OUTPUT}" \
@@ -507,7 +710,7 @@ PATH=${RECOVERY_BIN} \
 FAKE_CLANGXX_RESULT=success FAKE_GXX_RESULT=fail \
 FAKE_CLANGXX_LOG=${FIXTURE}/fake-clang-success.log \
 FAKE_GXX_LOG=${FIXTURE}/fake-gxx-fail.log \
-    bash -- "${RECOVERY_DRIVER}" --mode quick --output-dir "${GCC_FAIL_OUTPUT}" \
+    bash -- "${RECOVERY_DRIVER}" --mode stress --output-dir "${GCC_FAIL_OUTPUT}" \
     >"${FIXTURE}/recovery-gcc-fail-driver.log" 2>&1 || \
     fail 'GCC/libstdc++ preflight-failure driver invocation failed'
 assert_recovery_preflight_skip "${GCC_FAIL_OUTPUT}" \

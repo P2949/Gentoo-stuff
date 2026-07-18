@@ -10,7 +10,7 @@ readonly SCRIPT_DIR
 REPOSITORY_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd -P)
 readonly REPOSITORY_ROOT
 
-MODE=${OPTIMIZATION_TEST_MODE:-quick}
+MODE=${OPTIMIZATION_TEST_MODE:-smoke}
 OUTPUT_DIR=
 KEEP_TEMP=0
 LIST_ONLY=0
@@ -36,6 +36,17 @@ RESOLVED_CASE_TIMEOUT_SECONDS=
 RESOLVED_CASE_KILL_AFTER_SECONDS=
 PROCESS_GROUP_WAS_ACTIVE=0
 PROCESS_GROUP_SURVIVED=0
+SUBTESTS_FILE=
+SUBTEST_FRAGMENT_ROOT=
+REQUIRED_SUBTEST_PASS_COUNT=0
+REQUIRED_SUBTEST_FAIL_COUNT=0
+REQUIRED_SUBTEST_SKIP_COUNT=0
+MANDATORY_INTERNAL_SKIP_COUNT=0
+DIAGNOSTIC_SUBTEST_PASS_COUNT=0
+DIAGNOSTIC_SUBTEST_FAIL_COUNT=0
+DIAGNOSTIC_SUBTEST_SKIP_COUNT=0
+
+AUTHORITATIVE=${GENTOO_OPT_AUTHORITATIVE:-0}
 
 TEST_CASE_TIMEOUT_SECONDS=${TEST_CASE_TIMEOUT_SECONDS:-1800}
 TEST_CASE_KILL_AFTER_SECONDS=${TEST_CASE_KILL_AFTER_SECONDS:-10}
@@ -50,15 +61,19 @@ Usage: tests/run-optimization-tests.sh [OPTIONS]
 Run the repository's non-mutating optimization validation suites.
 
 Modes:
-  --mode quick          Static, Python, and fake-root recovery tests only
-                        (default). Every capability fixture is an explicit SKIP.
-  --mode capabilities   Also run every supported PGO and BOLT capability fixture.
+  --mode smoke              Short static/core gate (default).
+  --mode portable-complete  All portable non-capability, non-stress fixtures.
+  --mode stress             Portable-complete plus the 300-cycle crash stress.
+  --mode capabilities       Portable-complete plus every capability fixture.
+  --mode authoritative      Complete host gate: portable, stress, all
+                            capabilities, and fail-closed subtest accounting.
+  --mode quick              Deprecated alias for portable-complete.
 
 Options:
-  --capability NAME     Run only this capability fixture in addition to the quick
+  --capability NAME     Run only this capability fixture in addition to the mode's
                         suites. Repeat as needed; NAME is clang-ir, clang-sample,
                         gcc, rust, go, bolt, or all. An explicit filter narrows
-                        --mode capabilities as well.
+                        capabilities and authoritative modes as well.
   --output-dir DIR      Keep logs/evidence in a new absolute directory below
                         /tmp or /var/tmp/gentoo-optimization. Root runs require
                         the latter trusted tree. Its canonical path may contain
@@ -68,11 +83,20 @@ Options:
   -h, --help            Show this help.
 
 Environment:
-  OPTIMIZATION_TEST_MODE=quick|capabilities
+  OPTIMIZATION_TEST_MODE=smoke|portable-complete|stress|capabilities|authoritative
   OPTIMIZATION_TEST_CAPABILITIES=comma,separated,names
   SHELLCHECK=/path/to/shellcheck
   TEST_CASE_TIMEOUT_SECONDS=1800
   TEST_CASE_KILL_AFTER_SECONDS=10
+  GENTOO_OPT_AUTHORITATIVE=0|1
+
+Each case receives a private GENTOO_OPT_SUBTEST_RESULTS fragment path.  A
+fixture may append four tab-separated fields: status (PASS|FAIL|SKIP),
+requirement (required|diagnostic), subtest name, and a one-line detail.  The
+driver converts legacy shell SKIP-SUBTEST markers into required rows, while the
+structured unittest runner publishes every Python test outcome directly.
+Authoritative mode fails on every required internal skip and every internal
+failure.
 
 Per-capability deadlines override the global values by appending the normalized
 capability name, for example TEST_CASE_TIMEOUT_SECONDS_CLANG_IR or
@@ -82,7 +106,7 @@ Fixture-specific tool and iteration overrides (for example CLANGXX,
 LLVM_PROFDATA, CLANG_SAMPLE_ITERATIONS, RUST_PGO_ITERATIONS,
 GO_PGO_ITERATIONS, and BOLT_FIXTURE_TRAIN_ITERATIONS) are passed through.
 
-The default quick mode never invokes perf or a PGO/BOLT training workload.
+The default smoke mode never invokes perf or a PGO/BOLT training workload.
 All writes stay in a private test directory. Recovery tests use fake roots and
 mocked package/EFI tools; capability fixtures only build/profile local fixtures.
 An individual fixture exit status of 77 is recorded as an explicit reason-bearing
@@ -92,13 +116,13 @@ EOF
 
 list_suites() {
     cat <<'EOF'
-quick suites:
+portable suites (smoke runs only the initial static/core subset):
   bash-syntax (every .sh below bench/, optimization/, scripts/, and tests/)
   shellcheck (same shell source set; skipped when unavailable)
   python-source-compilation (temporary pycache only)
   python-unit-tests
   phase2-evidence-contract (clean-tree, plan-marker, tool, state, and detached-index binding)
-  production-profile-lock-crash-stress (300 crash/recovery cycles under load)
+  production-profile-lock-crash-stress (stress/authoritative only; 300 cycles)
   package-env-duplicate-policy (portable checks plus required live Portage semantics on Gentoo)
   package-env-portage-semantic (explicit SKIP when the live Portage universe is unavailable)
   portage-config-cleanup (reviewed package.mask and shared O3 baseline)
@@ -174,6 +198,8 @@ parse_capability_list() {
 }
 
 parse_capability_list "${OPTIMIZATION_TEST_CAPABILITIES:-}"
+[[ ${AUTHORITATIVE} == 0 || ${AUTHORITATIVE} == 1 ]] || \
+    fail_usage 'GENTOO_OPT_AUTHORITATIVE must be exactly 0 or 1'
 while (($#)); do
     case $1 in
         --mode)
@@ -214,9 +240,18 @@ while (($#)); do
 done
 
 case ${MODE} in
-    quick|capabilities) ;;
+    quick)
+        printf '%s\n' \
+            'WARNING: --mode quick is deprecated; using portable-complete' >&2
+        MODE=portable-complete
+        ;;
+    smoke|portable-complete|stress|capabilities|authoritative) ;;
     *) fail_usage "unknown mode: ${MODE}" ;;
 esac
+
+if [[ ${MODE} == authoritative ]]; then
+    AUTHORITATIVE=1
+fi
 
 if ((LIST_ONLY)); then
     list_suites
@@ -246,7 +281,8 @@ for capability in "${ALL_CAPABILITIES[@]}"; do
     fi
 done
 
-if [[ ${MODE} == capabilities && ${EXPLICIT_CAPABILITIES} -eq 0 ]]; then
+if [[ ( ${MODE} == capabilities || ${MODE} == authoritative ) &&
+      ${EXPLICIT_CAPABILITIES} -eq 0 ]]; then
     for capability in "${ALL_CAPABILITIES[@]}"; do
         SELECTED_CAPABILITIES["${capability}"]=1
     done
@@ -380,9 +416,13 @@ create_run_root() {
     printf 'gentoo-optimization-test-root-v1\n' >"${RUN_ROOT}/.optimization-test-root"
     LOG_ROOT=${RUN_ROOT}/logs
     RESULTS_FILE=${RUN_ROOT}/results.tsv
+    SUBTESTS_FILE=${RUN_ROOT}/subtests.tsv
+    SUBTEST_FRAGMENT_ROOT=${RUN_ROOT}/subtest-fragments
     mkdir -p -- "${LOG_ROOT}" "${RUN_ROOT}/capabilities" \
-        "${RUN_ROOT}/python-cache" "${RUN_ROOT}/preflight"
+        "${RUN_ROOT}/python-cache" "${RUN_ROOT}/preflight" \
+        "${SUBTEST_FRAGMENT_ROOT}"
     printf 'status\ttest\tdetail\n' >"${RESULTS_FILE}"
+    printf 'status\trequirement\ttest\tsubtest\tdetail\n' >"${SUBTESTS_FILE}"
 }
 
 # The EXIT/signal traps invoke this function indirectly.
@@ -438,11 +478,149 @@ record_result() {
         >>"${RESULTS_FILE}"
 }
 
+record_subtest() {
+    local status=$1 requirement=$2 test_name=$3 subtest_name=$4 detail=$5
+    case ${status}:${requirement} in
+        PASS:required) ((REQUIRED_SUBTEST_PASS_COUNT += 1)) ;;
+        FAIL:required) ((REQUIRED_SUBTEST_FAIL_COUNT += 1)) ;;
+        SKIP:required)
+            ((REQUIRED_SUBTEST_SKIP_COUNT += 1))
+            if [[ ${subtest_name} != driver.case-completion ]]; then
+                ((MANDATORY_INTERNAL_SKIP_COUNT += 1))
+            fi
+            ;;
+        PASS:diagnostic) ((DIAGNOSTIC_SUBTEST_PASS_COUNT += 1)) ;;
+        FAIL:diagnostic) ((DIAGNOSTIC_SUBTEST_FAIL_COUNT += 1)) ;;
+        SKIP:diagnostic) ((DIAGNOSTIC_SUBTEST_SKIP_COUNT += 1)) ;;
+        *)
+            printf 'ERROR: invalid structured subtest status/requirement: %s/%s\n' \
+                "${status}" "${requirement}" >&2
+            return 1
+            ;;
+    esac
+    printf '%s\t%s\t%s\t%s\t%s\n' \
+        "${status}" "${requirement}" "$(safe_detail "${test_name}")" \
+        "$(safe_detail "${subtest_name}")" "$(safe_detail "${detail}")" \
+        >>"${SUBTESTS_FILE}"
+}
+
 skip_case() {
     local name=$1 reason=$2
     ((SKIP_COUNT += 1))
     record_result SKIP "${name}" "${reason}"
+    record_subtest SKIP required "${name}" driver.case-completion "${reason}"
     printf 'SKIP: %s — %s\n' "${name}" "${reason}"
+}
+
+collect_case_subtests() {
+    local name=$1 log=$2 fragment=$3 expected_fragment_identity=$4 child_status=$5
+    local row_status row_requirement row_name row_detail extra line marker
+    local legacy_skip_index=0
+    local line_number=0
+    local observed_fragment_identity=
+    local -A observed_subtest_names=()
+    CASE_REQUIRED_SUBTEST_BLOCKER=0
+    CASE_ANY_SUBTEST_FAILURE=0
+
+    if [[ -f ${fragment} && ! -L ${fragment} ]]; then
+        observed_fragment_identity=$(stat -c '%d:%i:%u:%g:%a:%h' -- "${fragment}")
+    fi
+    if [[ ! -f ${fragment} || -L ${fragment} ||
+          ${observed_fragment_identity} != "${expected_fragment_identity}" ]]; then
+        record_subtest FAIL required "${name}" driver.fragment-contract \
+            'fixture replaced or removed its private structured subtest fragment'
+        CASE_REQUIRED_SUBTEST_BLOCKER=1
+        CASE_ANY_SUBTEST_FAILURE=1
+    else
+        while IFS=$'\t' read -r row_status row_requirement row_name row_detail extra || \
+            [[ -n ${row_status}${row_requirement}${row_name}${row_detail}${extra} ]]; do
+            ((line_number += 1))
+            if ((line_number == 1)); then
+                marker=${row_status}
+                if [[ ${marker} != gentoo-optimization-subtest-fragment-v1 ||
+                      -n ${row_requirement}${row_name}${row_detail}${extra} ]]; then
+                    record_subtest FAIL required "${name}" driver.fragment-contract \
+                        'fixture truncated or rewrote its structured subtest fragment marker'
+                    CASE_REQUIRED_SUBTEST_BLOCKER=1
+                    CASE_ANY_SUBTEST_FAILURE=1
+                    break
+                fi
+                continue
+            fi
+            if [[ -n ${extra} || -z ${row_status} || -z ${row_requirement} || \
+                  -z ${row_name} || -z ${row_detail} || ${row_name} == driver.* ||
+                  ! ${row_name} =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$ ]]; then
+                record_subtest FAIL required "${name}" driver.fragment-contract \
+                    'fixture emitted a malformed structured subtest row'
+                CASE_REQUIRED_SUBTEST_BLOCKER=1
+                CASE_ANY_SUBTEST_FAILURE=1
+                break
+            fi
+            if [[ -n ${observed_subtest_names["${row_name}"]:-} ]]; then
+                record_subtest FAIL required "${name}" driver.fragment-contract \
+                    'fixture emitted a duplicate structured subtest name'
+                CASE_REQUIRED_SUBTEST_BLOCKER=1
+                CASE_ANY_SUBTEST_FAILURE=1
+                break
+            fi
+            if ! record_subtest "${row_status}" "${row_requirement}" "${name}" \
+                "${row_name}" "${row_detail}"; then
+                record_subtest FAIL required "${name}" driver.fragment-contract \
+                    'fixture emitted a malformed structured subtest row'
+                CASE_REQUIRED_SUBTEST_BLOCKER=1
+                CASE_ANY_SUBTEST_FAILURE=1
+                break
+            fi
+            observed_subtest_names["${row_name}"]=1
+            if [[ ${row_status} == FAIL ]]; then
+                CASE_ANY_SUBTEST_FAILURE=1
+            elif [[ ${row_status}:${row_requirement} == SKIP:required ]]; then
+                CASE_REQUIRED_SUBTEST_BLOCKER=1
+            fi
+        done <"${fragment}"
+        if ((line_number == 0)); then
+            record_subtest FAIL required "${name}" driver.fragment-contract \
+                'fixture truncated its structured subtest fragment to zero bytes'
+            CASE_REQUIRED_SUBTEST_BLOCKER=1
+            CASE_ANY_SUBTEST_FAILURE=1
+        fi
+    fi
+
+    # Legacy shell fixtures cannot silently hide optional branches behind a
+    # successful child exit.  Python unittest uses the structured runner above.
+    # Explicit diagnostic skips use their own marker; every other discovered
+    # shell skip is mandatory until a fixture deliberately classifies it.
+    while IFS= read -r line || [[ -n ${line} ]]; do
+        row_requirement=
+        row_detail=
+        case ${line} in
+            DIAGNOSTIC-SKIP-SUBTEST:\ *)
+                row_requirement=diagnostic
+                row_detail=${line#DIAGNOSTIC-SKIP-SUBTEST: }
+                ;;
+            SKIP-SUBTEST:\ *)
+                row_requirement=required
+                row_detail=${line#SKIP-SUBTEST: }
+                ;;
+            HOST-SKIP:\ *)
+                row_requirement=required
+                row_detail=${line#HOST-SKIP: }
+                ;;
+            SKIP:\ *)
+                if ((child_status == 0)); then
+                    row_requirement=required
+                    row_detail=${line#SKIP: }
+                fi
+                ;;
+        esac
+        [[ -n ${row_requirement} ]] || continue
+        ((legacy_skip_index += 1))
+        record_subtest SKIP "${row_requirement}" "${name}" \
+            "driver.discovered-skip-${legacy_skip_index}" "${row_detail}"
+        if [[ ${row_requirement} == required ]]; then
+            CASE_REQUIRED_SUBTEST_BLOCKER=1
+        fi
+    done <"${log}"
 }
 
 process_group_exists() {
@@ -482,6 +660,8 @@ run_case_with_deadline() {
     local slug=${name//[^[:alnum:]_.-]/_}
     local log=${LOG_ROOT}/${slug}.log
     local status case_pgid started_at elapsed_seconds skip_detail
+    local fragment=${SUBTEST_FRAGMENT_ROOT}/${slug}.tsv
+    local fragment_identity=
     local deadline_state=within-limit process_group_cleanup=clean
 
     printf 'RUN:  %s\n' "${name}"
@@ -492,6 +672,8 @@ run_case_with_deadline() {
         printf 'DEADLINE timeout_seconds=%s kill_after_seconds=%s\n' \
             "${timeout_seconds}" "${kill_after_seconds}"
     } >"${log}"
+    printf 'gentoo-optimization-subtest-fragment-v1\n' >"${fragment}"
+    fragment_identity=$(stat -c '%d:%i:%u:%g:%a:%h' -- "${fragment}")
     started_at=${SECONDS}
     set +e
     "${SETSID_BIN}" --wait \
@@ -499,6 +681,9 @@ run_case_with_deadline() {
         --kill-after="${kill_after_seconds}s" "${timeout_seconds}s" \
         "${ENV_BIN}" --default-signal=HUP --default-signal=INT \
         --default-signal=QUIT --default-signal=TERM -- \
+        GENTOO_OPT_AUTHORITATIVE="${AUTHORITATIVE}" \
+        GENTOO_OPT_SUBTEST_RESULTS="${fragment}" \
+        GENTOO_OPT_TEST_CASE="${name}" \
         "$@" >>"${log}" 2>&1 &
     case_pgid=$!
     ACTIVE_CASE_PGID=${case_pgid}
@@ -525,12 +710,27 @@ run_case_with_deadline() {
     if ((status == 124 || status == 137)); then
         deadline_state=exceeded
     fi
+    collect_case_subtests "${name}" "${log}" "${fragment}" \
+        "${fragment_identity}" "${status}"
+    if ((CASE_ANY_SUBTEST_FAILURE)) || \
+        ((AUTHORITATIVE == 1 && CASE_REQUIRED_SUBTEST_BLOCKER)); then
+        if ((status == 0)); then
+            status=86
+            printf '%s\n' \
+                'AUTHORITATIVE-SUBTEST-FAIL: required internal subtest did not pass' \
+                >>"${log}"
+        fi
+    fi
     if ((status == 0)); then
+        record_subtest PASS required "${name}" driver.case-completion \
+            'top-level case completed successfully'
         ((PASS_COUNT += 1))
         record_result PASS "${name}" \
             "exit_status=0 log=${log} timeout_seconds=${timeout_seconds} kill_after_seconds=${kill_after_seconds} elapsed_seconds=${elapsed_seconds} deadline=${deadline_state} process_group_cleanup=${process_group_cleanup}"
         printf 'PASS: %s\n' "${name}"
     elif ((status == 77)); then
+        record_subtest SKIP required "${name}" driver.case-completion \
+            'top-level fixture exited with skip status 77'
         ((SKIP_COUNT += 1))
         skip_detail=$(sed -n 's/^SKIP: //p' "${log}" | tail -n 1)
         [[ -n ${skip_detail} ]] || skip_detail='fixture exited with the conventional skip status 77'
@@ -538,6 +738,8 @@ run_case_with_deadline() {
             "$(safe_detail "${skip_detail}") exit_status=77 log=${log} timeout_seconds=${timeout_seconds} kill_after_seconds=${kill_after_seconds} elapsed_seconds=${elapsed_seconds} deadline=${deadline_state} process_group_cleanup=${process_group_cleanup}"
         printf 'SKIP: %s — %s\n' "${name}" "${skip_detail}"
     else
+        record_subtest FAIL required "${name}" driver.case-completion \
+            "top-level case failed with exit status ${status}"
         ((FAIL_COUNT += 1))
         KEEP_TEMP=1
         record_result FAIL "${name}" \
@@ -647,6 +849,7 @@ fi
 
 PYTHON_BIN=
 PRODUCTION_PROFILE_LOCK_TEST=${REPOSITORY_ROOT}/tests/optimization/test_production_profile_lock_transaction.py
+STRUCTURED_UNITTEST_RUNNER=${REPOSITORY_ROOT}/scripts/optimization/verify/run-unittest-suite.py
 if ! resolve_executable python3; then
     skip_case python-source-compilation 'python3 is unavailable'
     skip_case python-unit-tests 'python3 is unavailable'
@@ -662,31 +865,42 @@ else
             PYTHONPYCACHEPREFIX="${RUN_ROOT}/python-cache/compile" \
             "${PYTHON_BIN}" -m py_compile "${PYTHON_SOURCES[@]}"
     fi
-    if ((${#PYTHON_TEST_DIRECTORIES[@]} == 0)); then
+    if [[ ${MODE} == smoke ]]; then
+        skip_case python-unit-tests \
+            'smoke mode excludes full Python unittest discovery; use portable-complete'
+        skip_case production-profile-lock-crash-stress \
+            'smoke mode excludes the 300-cycle crash stress; use stress or authoritative'
+    elif [[ ! -f ${STRUCTURED_UNITTEST_RUNNER} || -L ${STRUCTURED_UNITTEST_RUNNER} ]]; then
+        skip_case python-unit-tests \
+            'structured unittest runner is absent or symlinked'
+        skip_case production-profile-lock-crash-stress \
+            'structured unittest runner is absent or symlinked'
+    elif ((${#PYTHON_TEST_DIRECTORIES[@]} == 0)); then
         skip_case python-unit-tests 'no test_*.py source was discovered below tests/'
         skip_case production-profile-lock-crash-stress \
             'production profile-lock transaction test module is unavailable'
     else
-        if ! resolve_executable zstd; then
-            skip_case python-gpkg-zstd-subtests \
-                'zstd is unavailable; GPKG stream unittest cases declare their own skip'
-        fi
         for test_directory in "${PYTHON_TEST_DIRECTORIES[@]}"; do
             relative_directory=${test_directory#"${REPOSITORY_ROOT}/"}
             run_case_in_repository "python-unit-tests:${relative_directory}" \
                 env -u PYTHONPYCACHEPREFIX \
                 PYTHONDONTWRITEBYTECODE=1 \
-                "${PYTHON_BIN}" -m unittest discover \
+                "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" discover \
                 -s "${test_directory}" -p 'test_*.py' -v
         done
-        if [[ -f ${PRODUCTION_PROFILE_LOCK_TEST} &&
-              ! -L ${PRODUCTION_PROFILE_LOCK_TEST} ]]; then
+        if [[ ${MODE} != stress && ${MODE} != authoritative ]]; then
+            skip_case production-profile-lock-crash-stress \
+                'this 300-cycle workload runs only in stress or authoritative mode'
+        elif [[ -f ${PRODUCTION_PROFILE_LOCK_TEST} &&
+                ! -L ${PRODUCTION_PROFILE_LOCK_TEST} ]]; then
             run_case_in_repository production-profile-lock-crash-stress \
                 env -u PYTHONPYCACHEPREFIX \
                 GENTOO_OPT_COORDINATOR_CRASH_STRESS=1 \
                 PYTHONDONTWRITEBYTECODE=1 \
-                "${PYTHON_BIN}" -m unittest -v \
-                tests.optimization.test_production_profile_lock_transaction.ProductionProfileLockTransactionTests.test_child_barrier_crash_recovery_stress
+                "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" discover \
+                -s tests/optimization \
+                -p test_production_profile_lock_transaction.py \
+                -k test_child_barrier_crash_recovery_stress -v
         else
             skip_case production-profile-lock-crash-stress \
                 'production profile-lock transaction test module is unavailable'
@@ -697,15 +911,19 @@ fi
 PHASE2_EVIDENCE_TEST=${REPOSITORY_ROOT}/tests/optimization/test_phase2_evidence.py
 if [[ -z ${PYTHON_BIN} ]]; then
     skip_case phase2-evidence-contract 'python3 is unavailable'
+elif [[ ! -f ${STRUCTURED_UNITTEST_RUNNER} || -L ${STRUCTURED_UNITTEST_RUNNER} ]]; then
+    skip_case phase2-evidence-contract 'structured unittest runner is absent or symlinked'
 elif [[ ! -f ${PHASE2_EVIDENCE_TEST} ]]; then
     skip_case phase2-evidence-contract \
         "fixture is absent: ${PHASE2_EVIDENCE_TEST}"
 else
     run_case_in_repository phase2-evidence-contract \
         env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
-        "${PYTHON_BIN}" -m unittest discover \
+        "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" discover \
         -s tests/optimization -p test_phase2_evidence.py -v
 fi
+
+if [[ ${MODE} != smoke ]]; then
 
 PACKAGE_ENV_DUPLICATE_CHECKER=${REPOSITORY_ROOT}/scripts/optimization/check-package-env-duplicates.py
 if [[ -z ${PYTHON_BIN} ]]; then
@@ -714,16 +932,16 @@ elif [[ ! -f ${PACKAGE_ENV_DUPLICATE_CHECKER} ]]; then
     skip_case package-env-duplicate-policy \
         "checker is absent: ${PACKAGE_ENV_DUPLICATE_CHECKER}"
 else
+    run_case_in_repository package-env-duplicate-policy \
+        "${PYTHON_BIN}" \
+        "${PACKAGE_ENV_DUPLICATE_CHECKER}" --skip-portage-universe
     if [[ -d /var/db/pkg && -d /var/db/repos ]] && \
         PYTHONDONTWRITEBYTECODE=1 "${PYTHON_BIN}" -c 'import portage' \
             >/dev/null 2>&1; then
-        run_case_in_repository package-env-duplicate-policy \
+        run_case_in_repository package-env-portage-semantic \
             "${PYTHON_BIN}" \
             "${PACKAGE_ENV_DUPLICATE_CHECKER}" --require-portage-universe
     else
-        run_case_in_repository package-env-duplicate-policy \
-            "${PYTHON_BIN}" \
-            "${PACKAGE_ENV_DUPLICATE_CHECKER}" --skip-portage-universe
         skip_case package-env-portage-semantic \
             'Portage Python API and live /var/db/pkg plus /var/db/repos are unavailable; portable policy checks ran, live atom/overlap semantics did not'
     fi
@@ -1022,6 +1240,8 @@ else
     run_case recovery-rollback-fixture bash -- "${ROLLBACK_FIXTURE}"
 fi
 
+fi
+
 preflight_perf_branch_stack() {
     local perf_binary=$1
     local label=$2
@@ -1198,11 +1418,12 @@ resolve_capability_deadlines() {
 
 run_capability() {
     local capability=$1
-    local runner output description
+    local runner output
     if [[ -z ${SELECTED_CAPABILITIES[${capability}]:-} ]]; then
-        if [[ ${MODE} == quick && ${EXPLICIT_CAPABILITIES} -eq 0 ]]; then
+        if [[ ${MODE} != capabilities && ${MODE} != authoritative &&
+              ${EXPLICIT_CAPABILITIES} -eq 0 ]]; then
             skip_case "capability:${capability}" \
-                'quick mode excludes profiling/training; use --mode capabilities or --capability'
+                'selected mode excludes profiling/training; use --mode capabilities, --mode authoritative, or --capability'
         else
             skip_case "capability:${capability}" 'not selected by the explicit capability filter'
         fi
@@ -1213,7 +1434,6 @@ run_capability() {
     case ${capability} in
         clang-ir)
             runner=${REPOSITORY_ROOT}/optimization/fixtures/pgo/clang-ir/run.sh
-            description='Clang IR instrumentation PGO executable/DSO'
             if ! preflight_clang_ir; then
                 skip_case "capability:${capability}" "${PREFLIGHT_REASON}"
                 return 0
@@ -1221,7 +1441,6 @@ run_capability() {
             ;;
         clang-sample)
             runner=${REPOSITORY_ROOT}/optimization/fixtures/pgo/clang-sample/run.sh
-            description='Clang sample PGO with perf branch stacks'
             if ! preflight_clang_sample; then
                 skip_case "capability:${capability}" "${PREFLIGHT_REASON}"
                 return 0
@@ -1229,7 +1448,6 @@ run_capability() {
             ;;
         gcc)
             runner=${REPOSITORY_ROOT}/optimization/fixtures/pgo/gcc/run.sh
-            description='GCC gcov PGO executable/DSO'
             if ! preflight_gcc; then
                 skip_case "capability:${capability}" "${PREFLIGHT_REASON}"
                 return 0
@@ -1237,7 +1455,6 @@ run_capability() {
             ;;
         rust)
             runner=${REPOSITORY_ROOT}/optimization/fixtures/pgo/rust/run.sh
-            description='Rust LLVM instrumentation PGO'
             if ! preflight_rust; then
                 skip_case "capability:${capability}" "${PREFLIGHT_REASON}"
                 return 0
@@ -1245,7 +1462,6 @@ run_capability() {
             ;;
         go)
             runner=${REPOSITORY_ROOT}/optimization/fixtures/pgo/go/run.sh
-            description='Go CPU-pprof PGO'
             if ! preflight_go; then
                 skip_case "capability:${capability}" "${PREFLIGHT_REASON}"
                 return 0
@@ -1253,7 +1469,6 @@ run_capability() {
             ;;
         bolt)
             runner=${REPOSITORY_ROOT}/optimization/fixtures/bolt/run.sh
-            description='BOLT ET_EXEC, PIE, and DSO classes'
             if ! preflight_bolt; then
                 skip_case "capability:${capability}" "${PREFLIGHT_REASON}"
                 return 0
@@ -1269,7 +1484,7 @@ run_capability() {
         return 0
     fi
     resolve_capability_deadlines "${capability}"
-    run_case_with_deadline "capability:${capability}:${description}" \
+    run_case_with_deadline "capability:${capability}" \
         "${RESOLVED_CASE_TIMEOUT_SECONDS}" \
         "${RESOLVED_CASE_KILL_AFTER_SECONDS}" \
         bash -- "${runner}" "${output}"
@@ -1280,16 +1495,66 @@ for capability in "${ALL_CAPABILITIES[@]}"; do
 done
 
 TOTAL_COUNT=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
+SUBTEST_TOTAL_COUNT=$((
+    REQUIRED_SUBTEST_PASS_COUNT + REQUIRED_SUBTEST_FAIL_COUNT +
+    REQUIRED_SUBTEST_SKIP_COUNT + DIAGNOSTIC_SUBTEST_PASS_COUNT +
+    DIAGNOSTIC_SUBTEST_FAIL_COUNT + DIAGNOSTIC_SUBTEST_SKIP_COUNT
+))
 EXIT_STATUS=0
 ((FAIL_COUNT == 0)) || EXIT_STATUS=1
+if ((AUTHORITATIVE == 1)) && ((SKIP_COUNT != 0 || REQUIRED_SUBTEST_SKIP_COUNT != 0)); then
+    EXIT_STATUS=1
+    KEEP_TEMP=1
+fi
+AUTHORITATIVE_TEST_CONTRACT=${REPOSITORY_ROOT}/optimization/phase2-authoritative-test-contract.json
+if [[ ${MODE} == portable-complete || ${MODE} == authoritative ]]; then
+    set +e
+    if [[ -n ${PYTHON_BIN} && -f ${PHASE2_EVIDENCE_TOOL} && \
+          ! -L ${PHASE2_EVIDENCE_TOOL} && \
+          -f ${AUTHORITATIVE_TEST_CONTRACT} && \
+          ! -L ${AUTHORITATIVE_TEST_CONTRACT} ]]; then
+        env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+            "${PYTHON_BIN}" "${PHASE2_EVIDENCE_TOOL}" test-contract \
+            --contract "${AUTHORITATIVE_TEST_CONTRACT}" \
+            --results "${RESULTS_FILE}" --subtests "${SUBTESTS_FILE}" \
+            --mode "${MODE}" \
+            >"${RUN_ROOT}/test-contract.log" 2>&1
+        contract_status=$?
+    else
+        printf '%s\n' \
+            'ERROR: exact test-contract validator, Python, or contract is unavailable' \
+            >"${RUN_ROOT}/test-contract.log"
+        contract_status=1
+    fi
+    set -e
+    if ((contract_status != 0)); then
+        EXIT_STATUS=1
+        KEEP_TEMP=1
+        printf 'FAIL: exact %s test topology/identity contract (log: %s)\n' \
+            "${MODE}" "${RUN_ROOT}/test-contract.log" >&2
+        tail -n 120 -- "${RUN_ROOT}/test-contract.log" >&2 || true
+    else
+        printf 'TEST-CONTRACT: %s\n' "${RUN_ROOT}/test-contract.log"
+    fi
+fi
 {
     printf 'mode=%s\n' "${MODE}"
+    printf 'authoritative=%d\n' "${AUTHORITATIVE}"
     printf 'pass=%d\nfail=%d\nskip=%d\ntotal=%d\n' \
         "${PASS_COUNT}" "${FAIL_COUNT}" "${SKIP_COUNT}" "${TOTAL_COUNT}"
+    printf 'required_subtest_pass=%d\nrequired_subtest_fail=%d\n' \
+        "${REQUIRED_SUBTEST_PASS_COUNT}" "${REQUIRED_SUBTEST_FAIL_COUNT}"
+    printf 'required_subtest_skip=%d\n' "${REQUIRED_SUBTEST_SKIP_COUNT}"
+    printf 'mandatory_internal_skip=%d\n' "${MANDATORY_INTERNAL_SKIP_COUNT}"
+    printf 'diagnostic_subtest_pass=%d\ndiagnostic_subtest_fail=%d\n' \
+        "${DIAGNOSTIC_SUBTEST_PASS_COUNT}" "${DIAGNOSTIC_SUBTEST_FAIL_COUNT}"
+    printf 'diagnostic_internal_skip=%d\nsubtest_total=%d\n' \
+        "${DIAGNOSTIC_SUBTEST_SKIP_COUNT}" "${SUBTEST_TOTAL_COUNT}"
     printf 'exit_status=%d\n' "${EXIT_STATUS}"
     printf 'external_authority_index_preserved=%d\n' \
         "${PRESERVE_RUN_ROOT_FOR_EXTERNAL_AUTHORITY}"
     printf 'results=%s\n' "${RESULTS_FILE}"
+    printf 'subtests=%s\n' "${SUBTESTS_FILE}"
 } | tee "${RUN_ROOT}/summary.txt"
 
 if ((PROVENANCE_ACTIVE)); then
@@ -1298,7 +1563,8 @@ if ((PROVENANCE_ACTIVE)); then
         "${PROVENANCE_PYTHON}" "${PHASE2_EVIDENCE_TOOL}" \
         run-provenance-finish \
         --pending "${TEST_RUN_PROVENANCE_PENDING}" \
-        --results "${RESULTS_FILE}" --summary "${RUN_ROOT}/summary.txt" \
+        --results "${RESULTS_FILE}" --subtests "${SUBTESTS_FILE}" \
+        --summary "${RUN_ROOT}/summary.txt" \
         --output "${TEST_RUN_PROVENANCE}" \
         >"${RUN_ROOT}/test-run-provenance-finalize.log" 2>&1
     provenance_status=$?
