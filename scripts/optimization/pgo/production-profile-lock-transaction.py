@@ -1037,8 +1037,16 @@ class ProcessStatIdentity:
     start_ticks: str
 
 
-def parse_process_stat_identity(value: bytes, pid: int) -> ProcessStatIdentity:
-    """Parse one raw procfs stat payload without decoding its arbitrary comm."""
+def parse_process_stat_fields(
+    value: bytes, pid: int
+) -> tuple[bytes, int, str]:
+    """Parse state, process group, and start time from one procfs snapshot.
+
+    The command name is arbitrary bytes and can itself contain ``)``.  Split
+    from the right-hand delimiter and leave that field undecoded.  Callers use
+    the state only for liveness accounting; durable process identity remains
+    the process group plus start ticks.
+    """
 
     prefix, separator, suffix = value.rpartition(b") ")
     fields = suffix.split() if separator else []
@@ -1048,15 +1056,21 @@ def parse_process_stat_identity(value: bytes, pid: int) -> ProcessStatIdentity:
         not pid_separator
         or recorded_pid != expected_pid
         or len(fields) <= 19
+        or len(fields[0]) != 1
         or not fields[2].isdigit()
-        or int(fields[2]) <= 0
         or not fields[19].isdigit()
     ):
         fail(f"cannot parse transaction process identity for PID {pid}")
-    return ProcessStatIdentity(
-        process_group=int(fields[2]),
-        start_ticks=fields[19].decode("ascii"),
-    )
+    return fields[0], int(fields[2]), fields[19].decode("ascii")
+
+
+def parse_process_stat_identity(value: bytes, pid: int) -> ProcessStatIdentity:
+    """Parse one raw procfs stat payload without decoding its arbitrary comm."""
+
+    _state, process_group, start_ticks = parse_process_stat_fields(value, pid)
+    if process_group <= 0:
+        fail(f"cannot parse transaction process identity for PID {pid}")
+    return ProcessStatIdentity(process_group=process_group, start_ticks=start_ticks)
 
 
 def process_stat_identity(pid: int) -> ProcessStatIdentity | None:
@@ -3088,55 +3102,222 @@ def finalize_owned_transaction_locked(
     return receipt
 
 
-def process_group_exists(process_group: int) -> bool:
+def process_group_exists(
+    process_group: int, *, proc_root: Path = Path("/proc")
+) -> bool:
+    """Return whether a process group has at least one non-zombie member.
+
+    ``killpg(pgid, 0)`` reports success for a group containing only unreaped
+    zombies or dead tasks.  Such a group cannot execute work and no signal can
+    remove it; treating it as live turns successful bounded teardown into a
+    false failure.  Use the signal probe only as a cheap existence/permission
+    gate, then classify every visible member from one raw ``/proc/PID/stat``
+    read.  Unexpected procfs access failures remain fail-closed as live.
+    """
+
+    if process_group <= 0:
+        fail("process-group liveness requires a positive process group")
     try:
         os.killpg(process_group, 0)
-        return True
     except ProcessLookupError:
         return False
     except PermissionError:
+        pass
+
+    try:
+        entries = tuple(proc_root.iterdir())
+    except OSError:
         return True
+    for entry in entries:
+        if not entry.name.isdigit() or int(entry.name) <= 0:
+            continue
+        pid = int(entry.name)
+        try:
+            payload = (entry / "stat").read_bytes()
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        except OSError as error:
+            if error.errno in {errno.ENOENT, errno.ESRCH}:
+                continue
+            return True
+        try:
+            state, observed_group, _start_ticks = parse_process_stat_fields(
+                payload, pid
+            )
+        except TransactionError:
+            return True
+        if observed_group == process_group and state not in {b"Z", b"X", b"x"}:
+            return True
+    return False
 
 
 def terminate_process_group(
     process: subprocess.Popen[bytes], kill_after: float
 ) -> None:
+    """Boundedly terminate and reap one exact direct child supervisor.
+
+    ``process`` is a :class:`subprocess.Popen` instance created by this
+    coordinator with ``start_new_session=True``.  While that direct child is
+    unreaped, its numeric PID cannot be recycled, so ``Popen.terminate`` and
+    ``Popen.kill`` are the only safe fallbacks when the pidfd operations
+    themselves fail.  A numeric process-group signal is never used: once the
+    leader is gone, the PGID can no longer be proved to name the original
+    group.
+
+    Primitive failures are retained until cleanup is complete.  In
+    particular, an unavailable or denied pidfd operation must not escape
+    before the exact direct child has received bounded SIGTERM/SIGKILL cleanup
+    and been reaped.
+    """
+
+    if kill_after <= 0:
+        fail("child teardown requires a positive deadline")
     process_group = process.pid
-    try:
-        pidfd = os.pidfd_open(process.pid, 0)
-    except ProcessLookupError:
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            process.wait(timeout=0.1)
-        if process_group_exists(process_group):
-            fail(
-                "child supervisor is absent while its numeric process group "
-                "remains live; refusing an ambiguous/reused group signal"
-            )
-        return
-    except OSError as error:
-        fail(f"cannot open a pidfd for the child supervisor: {error}")
-    try:
-        with contextlib.suppress(ProcessLookupError):
-            signal.pidfd_send_signal(pidfd, signal.SIGTERM)
+    pidfd = -1
+    failures: list[str] = []
+    pidfd_open = getattr(os, "pidfd_open", None)
+    pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
+
+    def record_failure(message: str) -> None:
+        if message not in failures:
+            failures.append(message)
+
+    def direct_child_is_live() -> bool:
+        return process.poll() is None
+
+    def signal_exact_direct_child(signum: int) -> None:
+        """Fallback only to the still-unreaped child owned by ``process``."""
+
+        if not direct_child_is_live():
+            return
         try:
-            process.wait(timeout=kill_after)
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError):
-                signal.pidfd_send_signal(pidfd, signal.SIGKILL)
-            with contextlib.suppress(subprocess.TimeoutExpired):
+            if signum == signal.SIGTERM:
+                process.terminate()
+            elif signum == signal.SIGKILL:
+                process.kill()
+            else:  # pragma: no cover - all callers use the two reviewed signals.
+                raise AssertionError(f"unsupported child teardown signal: {signum}")
+        except ProcessLookupError:
+            # The direct child exited between poll and signal.  Because it is
+            # still ours and unreaped, its PID could not have been recycled.
+            return
+        except OSError as error:
+            record_failure(
+                f"exact direct-child fallback signal {signum} failed: {error}"
+            )
+
+    try:
+        if direct_child_is_live():
+            if not callable(pidfd_open):
+                record_failure(
+                    "cannot open a pidfd for the child supervisor: Python "
+                    "runtime has no callable pidfd_open"
+                )
+            else:
+                try:
+                    pidfd = pidfd_open(process.pid, 0)
+                except ProcessLookupError:
+                    # Reap an exit racing pidfd_open.  If it is still live, the
+                    # owned-Popen fallback remains exact and cannot hit a reused
+                    # PID.
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        process.wait(timeout=0.1)
+                    if direct_child_is_live():
+                        record_failure(
+                            "pidfd_open reported a missing exact direct child while "
+                            "the owned Popen child remained live"
+                        )
+                except OSError as error:
+                    record_failure(
+                        f"cannot open a pidfd for the child supervisor: {error}"
+                    )
+
+        if direct_child_is_live():
+            if pidfd >= 0:
+                if not callable(pidfd_send_signal):
+                    record_failure(
+                        "child supervisor pidfd SIGTERM failed: Python runtime "
+                        "has no callable pidfd_send_signal"
+                    )
+                    signal_exact_direct_child(signal.SIGTERM)
+                else:
+                    try:
+                        pidfd_send_signal(pidfd, signal.SIGTERM)
+                    except ProcessLookupError:
+                        signal_exact_direct_child(signal.SIGTERM)
+                    except OSError as error:
+                        record_failure(
+                            f"child supervisor pidfd SIGTERM failed: {error}"
+                        )
+                        signal_exact_direct_child(signal.SIGTERM)
+            else:
+                signal_exact_direct_child(signal.SIGTERM)
+
+        if direct_child_is_live():
+            try:
                 process.wait(timeout=kill_after)
+            except subprocess.TimeoutExpired:
+                if pidfd >= 0:
+                    if not callable(pidfd_send_signal):
+                        record_failure(
+                            "child supervisor pidfd SIGKILL failed: Python runtime "
+                            "has no callable pidfd_send_signal"
+                        )
+                        signal_exact_direct_child(signal.SIGKILL)
+                    else:
+                        try:
+                            pidfd_send_signal(pidfd, signal.SIGKILL)
+                        except ProcessLookupError:
+                            signal_exact_direct_child(signal.SIGKILL)
+                        except OSError as error:
+                            record_failure(
+                                f"child supervisor pidfd SIGKILL failed: {error}"
+                            )
+                            signal_exact_direct_child(signal.SIGKILL)
+                else:
+                    signal_exact_direct_child(signal.SIGKILL)
+                if direct_child_is_live():
+                    try:
+                        process.wait(timeout=kill_after)
+                    except (OSError, subprocess.TimeoutExpired) as wait_error:
+                        record_failure(
+                            "cannot reap exact direct child after bounded "
+                            f"SIGTERM/SIGKILL cleanup: {wait_error}"
+                        )
+            except OSError as error:
+                record_failure(f"cannot reap child supervisor after SIGTERM: {error}")
+                signal_exact_direct_child(signal.SIGKILL)
+                if direct_child_is_live():
+                    try:
+                        process.wait(timeout=kill_after)
+                    except (OSError, subprocess.TimeoutExpired) as wait_error:
+                        record_failure(
+                            "cannot reap exact direct child after fallback SIGKILL: "
+                            f"{wait_error}"
+                        )
     finally:
-        os.close(pidfd)
+        if process.poll() is not None:
+            # ``poll`` reaps on POSIX; ``wait`` also keeps fake/test Popen
+            # implementations and alternate runtimes on the same contract.
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                process.wait(timeout=0.1)
+        if pidfd >= 0:
+            try:
+                os.close(pidfd)
+            except OSError as error:
+                record_failure(f"cannot close child supervisor pidfd: {error}")
     if process.poll() is None:
-        fail(f"child supervisor survived pidfd SIGKILL: {process.pid}")
+        record_failure(f"exact direct child remains unreaped: {process.pid}")
     deadline = time.monotonic() + kill_after
     while process_group_exists(process_group) and time.monotonic() < deadline:
         time.sleep(0.02)
     if process_group_exists(process_group):
-        fail(
+        record_failure(
             "child supervisor exited but its numeric process group remains live; "
             "refusing an ambiguous/reused group signal"
         )
+    if failures:
+        fail("child supervisor teardown failures: " + "; ".join(failures))
 
 
 def quiesce_recorded_process_group(
@@ -3210,17 +3391,33 @@ def quiesce_recorded_process_group(
         except ProcessLookupError:
             refuse_leaderless_group()
             return
+        except OSError as error:
+            fail(
+                "cannot signal the exact recorded child supervisor through its "
+                f"pidfd with SIGTERM: {error}"
+            )
         if wait_for_group_teardown():
             return
-        with contextlib.suppress(ProcessLookupError):
+        try:
             signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+        except ProcessLookupError:
+            refuse_leaderless_group()
+            return
+        except OSError as error:
+            fail(
+                "cannot signal the exact recorded child supervisor through its "
+                f"pidfd with SIGKILL: {error}"
+            )
         if not wait_for_group_teardown():
             fail(
                 "recorded child supervisor group did not tear down through its "
                 "verified pidfd; refusing a numeric process-group signal"
             )
     finally:
-        os.close(pidfd)
+        try:
+            os.close(pidfd)
+        except OSError as error:
+            fail(f"cannot close the exact recorded child supervisor pidfd: {error}")
 
 
 def normalize_child_status(returncode: int) -> int:
@@ -3281,6 +3478,7 @@ def preflight_pidfd_termination(
     descriptor = -1
     observed_returncode: int | None = None
     failure: str | None = None
+    cleanup_failures: list[str] = []
     try:
         initial = process_stat_identity(process.pid)
         if initial is None or process.poll() is not None:
@@ -3324,27 +3522,26 @@ def preflight_pidfd_termination(
             try:
                 os.close(descriptor)
             except OSError as error:
-                if failure is None:
-                    failure = (
-                        "pidfd containment preflight could not close pidfd: "
-                        f"{error}"
-                    )
-        if process.poll() is None:
-            with contextlib.suppress(ProcessLookupError):
-                process.kill()
-            try:
-                process.wait(timeout=kill_after)
-            except subprocess.TimeoutExpired:
-                if failure is None:
-                    failure = (
-                        "pidfd containment preflight could not reap its disposable child"
-                    )
+                cleanup_failures.append(
+                    "pidfd containment preflight could not close pidfd: "
+                    f"{error}"
+                )
+        # Reuse the production teardown path even when the primitive under
+        # test failed.  It reports that failure but first falls back only to
+        # this still-unreaped direct Popen child and proves the private group
+        # empty; no numeric process-group signal is permitted.
+        try:
+            terminate_process_group(process, kill_after)
+        except TransactionError as error:
+            cleanup_failures.append(
+                f"pidfd containment preflight cleanup failed: {error}"
+            )
 
     deadline = time.monotonic() + kill_after
     while process_group_exists(process_group) and time.monotonic() < deadline:
         time.sleep(0.02)
     if process_group_exists(process_group):
-        fail(
+        cleanup_failures.append(
             "pidfd containment preflight left a live disposable process group: "
             f"{process_group}"
         )
@@ -3356,7 +3553,9 @@ def preflight_pidfd_termination(
     ):
         fail("pidfd preflight Python executable changed during containment proof")
     if failure is not None:
-        fail(failure)
+        cleanup_failures.insert(0, failure)
+    if cleanup_failures:
+        fail("; ".join(dict.fromkeys(cleanup_failures)))
     if observed_returncode != -signal.SIGTERM:
         fail(
             "pidfd containment preflight did not observe the exact child exit "
@@ -3496,6 +3695,7 @@ def preflight_unshare_kill_child(
     supervisor_identity: ProcessStatIdentity | None = None
     observed_returncode: int | None = None
     failure: str | None = None
+    cleanup_failures: list[str] = []
     with tempfile.TemporaryFile() as diagnostic:
         try:
             process = subprocess.Popen(
@@ -3532,15 +3732,15 @@ def preflight_unshare_kill_child(
                 )
             else:
                 try:
+                    child_pid, child_identity = wait_for_namespace_child(
+                        process, supervisor_identity, kill_after
+                    )
                     supervisor_pidfd = pidfd_open(process.pid, 0)
                     if process_stat_identity(process.pid) != supervisor_identity:
                         fail(
                             "PID-namespace supervisor identity changed after "
                             "pidfd_open"
                         )
-                    child_pid, child_identity = wait_for_namespace_child(
-                        process, supervisor_identity, kill_after
-                    )
                     child_pidfd = pidfd_open(child_pid, 0)
                 except (OSError, ProcessLookupError, TransactionError) as error:
                     failure = f"PID-namespace containment preflight failed: {error}"
@@ -3593,7 +3793,10 @@ def preflight_unshare_kill_child(
                         else process.pid
                     )
                     deadline = time.monotonic() + kill_after
-                    while process_group_exists(process_group) and time.monotonic() < deadline:
+                    while (
+                        process_group_exists(process_group)
+                        and time.monotonic() < deadline
+                    ):
                         time.sleep(0.02)
                     if process_group_exists(process_group):
                         failure = (
@@ -3602,21 +3805,113 @@ def preflight_unshare_kill_child(
                         )
         finally:
             # Failures must not leak the disposable namespace.  Signal only
-            # process instances already bound to open pidfds and coherent
-            # start identities; never fall back to a numeric process group.
-            if process.poll() is None and supervisor_pidfd >= 0:
-                with contextlib.suppress(OSError, ProcessLookupError):
-                    pidfd_send_signal(supervisor_pidfd, signal.SIGKILL)
-                with contextlib.suppress(subprocess.TimeoutExpired):
+            # process instances already bound to an open pidfd.  If opening
+            # that pidfd itself failed, ``process`` is still our own unreaped
+            # direct child, so its PID cannot be recycled; Popen termination
+            # is safe and is required to avoid leaking a failed preflight.
+            # The same carefully revalidated Popen fallback is required when
+            # pidfd_send_signal itself is denied: retaining an open pidfd does
+            # not make a failed signal useful.  Never extend this fallback to
+            # the namespace child or to a numeric process group.
+            # Always try SIGTERM first because that is the transition whose
+            # ``unshare --kill-child=KILL`` behavior is under test.
+
+            def record_cleanup_failure(message: str) -> None:
+                if message not in cleanup_failures:
+                    cleanup_failures.append(message)
+
+            def fallback_direct_supervisor(signum: int) -> None:
+                """Signal only our still-unreaped, coherently bound child."""
+
+                if process.poll() is not None:
+                    return
+                repeated = process_stat_identity(process.pid)
+                if repeated != supervisor_identity:
+                    # A final poll distinguishes an exit racing the procfs read
+                    # from an identity we cannot safely target.  A live direct
+                    # child cannot have its numeric PID recycled before wait.
+                    if process.poll() is not None:
+                        return
+                    record_cleanup_failure(
+                        "PID-namespace supervisor identity could not be "
+                        "revalidated for the direct-child cleanup fallback"
+                    )
+                    return
+                try:
+                    if signum == signal.SIGTERM:
+                        process.terminate()
+                    elif signum == signal.SIGKILL:
+                        process.kill()
+                    else:
+                        raise AssertionError(
+                            f"unsupported supervisor cleanup signal: {signum}"
+                        )
+                except ProcessLookupError:
+                    # The bound, unreaped child exited between revalidation and
+                    # the signal.  Popen.wait below remains the only reaper.
+                    return
+                except OSError as error:
+                    record_cleanup_failure(
+                        "PID-namespace direct-supervisor cleanup fallback "
+                        f"failed for signal {signum}: {error}"
+                    )
+
+            def signal_supervisor_for_cleanup(signum: int) -> None:
+                if process.poll() is not None:
+                    return
+                if supervisor_pidfd >= 0:
+                    try:
+                        pidfd_send_signal(supervisor_pidfd, signum)
+                    except (OSError, ProcessLookupError) as error:
+                        record_cleanup_failure(
+                            "PID-namespace supervisor cleanup pidfd signal "
+                            f"{signum} failed: {error}"
+                        )
+                        fallback_direct_supervisor(signum)
+                    return
+                fallback_direct_supervisor(signum)
+
+            if process.poll() is None:
+                signal_supervisor_for_cleanup(signal.SIGTERM)
+                try:
                     process.wait(timeout=kill_after)
+                except subprocess.TimeoutExpired:
+                    signal_supervisor_for_cleanup(signal.SIGKILL)
+                    try:
+                        process.wait(timeout=kill_after)
+                    except subprocess.TimeoutExpired:
+                        record_cleanup_failure(
+                            "PID-namespace supervisor could not be reaped after "
+                            "bounded SIGTERM/SIGKILL cleanup"
+                        )
             if (
                 child_pid is not None
                 and child_identity is not None
                 and not exact_process_is_gone(child_pid, child_identity)
                 and child_pidfd >= 0
             ):
-                with contextlib.suppress(OSError, ProcessLookupError):
+                try:
                     pidfd_send_signal(child_pidfd, signal.SIGKILL)
+                except (OSError, ProcessLookupError) as error:
+                    record_cleanup_failure(
+                        "PID-namespace exact-child cleanup pidfd signal failed: "
+                        f"{error}"
+                    )
+                deadline = time.monotonic() + kill_after
+                while (
+                    not exact_process_is_gone(child_pid, child_identity)
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.02)
+            if (
+                child_pid is not None
+                and child_identity is not None
+                and not exact_process_is_gone(child_pid, child_identity)
+                and child_pidfd < 0
+            ):
+                # A child-pidfd failure must still give the supervisor's
+                # reviewed kill-child contract a bounded chance to reap the
+                # namespace.  There is no safe fallback numeric child signal.
                 deadline = time.monotonic() + kill_after
                 while (
                     not exact_process_is_gone(child_pid, child_identity)
@@ -3625,22 +3920,41 @@ def preflight_unshare_kill_child(
                     time.sleep(0.02)
             for descriptor in (child_pidfd, supervisor_pidfd):
                 if descriptor >= 0:
-                    with contextlib.suppress(OSError):
+                    try:
                         os.close(descriptor)
+                    except OSError as error:
+                        record_cleanup_failure(
+                            f"PID-namespace cleanup could not close pidfd: {error}"
+                        )
             if process.poll() is None:
-                if failure is None:
-                    failure = "PID-namespace supervisor could not be reaped"
+                record_cleanup_failure(
+                    "PID-namespace containment cleanup left its exact supervisor "
+                    f"alive: {process.pid}"
+                )
             else:
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     process.wait(timeout=0.1)
 
+            if (
+                child_pid is not None
+                and child_identity is not None
+                and not exact_process_is_gone(child_pid, child_identity)
+            ):
+                record_cleanup_failure(
+                    "PID-namespace containment cleanup left its exact namespace "
+                    f"child alive: {child_pid}"
+                )
+
             if supervisor_identity is not None:
                 process_group = supervisor_identity.process_group
                 deadline = time.monotonic() + kill_after
-                while process_group_exists(process_group) and time.monotonic() < deadline:
+                while (
+                    process_group_exists(process_group)
+                    and time.monotonic() < deadline
+                ):
                     time.sleep(0.02)
-                if process_group_exists(process_group) and failure is None:
-                    failure = (
+                if process_group_exists(process_group):
+                    record_cleanup_failure(
                         "PID-namespace containment cleanup left its private process "
                         f"group alive: {process_group}"
                     )
@@ -3660,6 +3974,13 @@ def preflight_unshare_kill_child(
         != executable_identity
     ):
         fail("PID-namespace preflight Python executable changed during proof")
+    if cleanup_failures:
+        cleanup_text = "; ".join(cleanup_failures)
+        failure = (
+            f"{failure}; cleanup failures: {cleanup_text}"
+            if failure is not None
+            else f"PID-namespace containment cleanup failed: {cleanup_text}"
+        )
     if failure is not None:
         fail(failure + (f": {diagnostic_text}" if diagnostic_text else ""))
     if observed_returncode != -signal.SIGTERM:
@@ -3770,7 +4091,7 @@ def run_authorization_token_scan(
             if descriptor >= 0:
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
-        if process is not None and process_group_exists(process.pid):
+        if process is not None:
             terminate_process_group(process, kill_after)
     if not output.exists() and not output.is_symlink():
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
@@ -4051,7 +4372,7 @@ def run_child(
     finally:
         for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
             signal.signal(signum, signal.SIG_IGN)
-        if process is not None and process_group_exists(process.pid):
+        if process is not None:
             terminate_process_group(process, arguments.kill_after_seconds)
         for descriptor in (read_descriptor_fd, write_descriptor_fd):
             if descriptor >= 0:

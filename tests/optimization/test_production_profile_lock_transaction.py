@@ -45,10 +45,15 @@ GENERATION = {
 GATE_RUN_ID = "phase2-production-lock-test-run"
 
 
-def pidfd_capability() -> tuple[bool, str]:
-    """Probe the functional pidfd primitive used by production recovery."""
+def pid_namespace_capability() -> tuple[bool, str]:
+    """Run the production kill-child proof, not a namespace-creation smoke test."""
 
-    with tempfile.TemporaryDirectory(prefix="gentoo-pidfd-probe.") as root_value:
+    unshare = pathlib.Path("/usr/bin/unshare")
+    if os.geteuid() != 0:
+        return False, "PID-namespace containment probe requires root"
+    if not unshare.is_file():
+        return False, "PID-namespace containment probe lacks /usr/bin/unshare"
+    with tempfile.TemporaryDirectory(prefix="gentoo-namespace-probe.") as root_value:
         root = pathlib.Path(root_value)
         executable = root / "trusted-python"
         shutil.copyfile(pathlib.Path(sys.executable).resolve(strict=True), executable)
@@ -65,72 +70,42 @@ def pidfd_capability() -> tuple[bool, str]:
             with mock.patch.object(
                 coordinator.sys, "executable", os.fspath(executable)
             ):
-                coordinator.preflight_pidfd_termination(paths)
+                coordinator.preflight_unshare_kill_child(paths)
         except coordinator.TransactionError as error:
-            return False, f"functional pidfd containment probe failed: {error}"
-    return True, "functional pidfd containment probe passed"
-
-
-def pid_namespace_capability() -> tuple[bool, str]:
-    """Probe the exact namespace primitive instead of inferring availability."""
-
-    unshare = pathlib.Path("/usr/bin/unshare")
-    if os.geteuid() != 0:
-        return False, "PID-namespace containment probe requires root"
-    if not unshare.is_file():
-        return False, "PID-namespace containment probe lacks /usr/bin/unshare"
-    try:
-        completed = subprocess.run(
-            [
-                os.fspath(unshare),
-                "--pid",
-                "--fork",
-                "--kill-child=KILL",
-                "--mount-proc",
-                "--",
-                "/bin/true",
-            ],
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return False, f"PID-namespace containment probe failed: {error}"
-    if completed.returncode != 0:
-        diagnostic = completed.stderr.strip() or "no diagnostic"
-        return (
-            False,
-            "PID-namespace containment probe was denied: " + diagnostic,
-        )
+            return False, f"PID-namespace containment probe failed: {error}"
     return True, "PID-namespace containment probe passed"
 
 
-PIDFD_AVAILABLE, PIDFD_REASON = pidfd_capability()
-PID_NAMESPACE_AVAILABLE, PID_NAMESPACE_REASON = pid_namespace_capability()
-FULL_CONTAINMENT_AVAILABLE = PIDFD_AVAILABLE and PID_NAMESPACE_AVAILABLE
-FULL_CONTAINMENT_REASON = (
-    "functional pidfd and PID-namespace containment probes passed"
-    if FULL_CONTAINMENT_AVAILABLE
-    else PIDFD_REASON if not PIDFD_AVAILABLE else PID_NAMESPACE_REASON
-)
 CRASH_STRESS_REPETITIONS = 100
 
 
 @contextlib.contextmanager
 def emulated_pidfds(
     signal_hook: Callable[[int, int], None] | None = None,
-) -> Iterator[list[int]]:
+    *,
+    fail_open_call: int | None = None,
+    deny_signal_for_open_call: int | None = None,
+) -> Iterator[dict[int, tuple[int, object]]]:
     """Give hermetic containment tests pidfd semantics backed by exact PIDs."""
 
-    descriptors: dict[int, int] = {}
+    descriptors: dict[int, tuple[int, object]] = {}
+    denied_descriptors: set[int] = set()
+    open_calls = 0
 
     def pidfd_open(pid: int, flags: int = 0) -> int:
+        nonlocal open_calls
+        open_calls += 1
         if flags != 0:
             raise OSError(errno.EINVAL, "unsupported fixture pidfd flags")
+        if fail_open_call == open_calls:
+            raise OSError(errno.ENOSYS, "fixture pidfd_open failure")
+        identity = coordinator.process_stat_identity(pid)
+        if identity is None:
+            raise ProcessLookupError(pid)
         descriptor = os.open("/dev/null", os.O_RDONLY | os.O_CLOEXEC)
-        descriptors[descriptor] = pid
+        descriptors[descriptor] = (pid, identity)
+        if deny_signal_for_open_call == open_calls:
+            denied_descriptors.add(descriptor)
         return descriptor
 
     def pidfd_send_signal(
@@ -141,7 +116,12 @@ def emulated_pidfds(
     ) -> None:
         if siginfo is not None or flags != 0:
             raise OSError(errno.EINVAL, "unsupported fixture pidfd signal arguments")
-        pid = descriptors[descriptor]
+        os.fstat(descriptor)
+        if descriptor in denied_descriptors:
+            raise PermissionError(errno.EPERM, "fixture pidfd signal denied")
+        pid, identity = descriptors[descriptor]
+        if coordinator.process_stat_identity(pid) != identity:
+            raise ProcessLookupError(pid)
         if signal_hook is not None:
             signal_hook(pid, signum)
         os.kill(pid, signum)
@@ -154,7 +134,7 @@ def emulated_pidfds(
             side_effect=pidfd_send_signal,
         ),
     ):
-        yield list(descriptors)
+        yield descriptors
 
 
 class Fixture:
@@ -169,6 +149,45 @@ class Fixture:
         )
         self.python_path.chmod(0o700)
         self.python = os.fspath(self.python_path)
+        self.coordinator_launcher = self.root / "fixture-coordinator.py"
+        self.coordinator_launcher.write_text(
+            "\n".join(
+                (
+                    "import errno, importlib.util, os, pathlib, signal, sys",
+                    f"tool = pathlib.Path({os.fspath(TOOL)!r})",
+                    "spec = importlib.util.spec_from_file_location('fixture_coordinator', tool)",
+                    "if spec is None or spec.loader is None:",
+                    "    raise RuntimeError('cannot load fixture coordinator')",
+                    "module = importlib.util.module_from_spec(spec)",
+                    "sys.modules[spec.name] = module",
+                    "spec.loader.exec_module(module)",
+                    "descriptors = {}",
+                    "def pidfd_open(pid, flags=0):",
+                    "    if flags != 0:",
+                    "        raise OSError(errno.EINVAL, 'unsupported fixture pidfd flags')",
+                    "    identity = module.process_stat_identity(pid)",
+                    "    if identity is None:",
+                    "        raise ProcessLookupError(pid)",
+                    "    descriptor = os.open('/dev/null', os.O_RDONLY | os.O_CLOEXEC)",
+                    "    descriptors[descriptor] = (pid, identity)",
+                    "    return descriptor",
+                    "def pidfd_send_signal(descriptor, signum, siginfo=None, flags=0):",
+                    "    if siginfo is not None or flags != 0:",
+                    "        raise OSError(errno.EINVAL, 'unsupported fixture pidfd signal arguments')",
+                    "    os.fstat(descriptor)",
+                    "    pid, identity = descriptors[descriptor]",
+                    "    if module.process_stat_identity(pid) != identity:",
+                    "        raise ProcessLookupError(pid)",
+                    "    os.kill(pid, signum)",
+                    "module.os.pidfd_open = pidfd_open",
+                    "module.signal.pidfd_send_signal = pidfd_send_signal",
+                    "raise SystemExit(module.main())",
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
+        self.coordinator_launcher.chmod(0o700)
         self.run = self.root / "run"
         self.state = self.root / "state"
         self.run.mkdir(mode=0o700)
@@ -265,14 +284,27 @@ class Fixture:
             raise ValueError(f"invalid fake-unshare mode: {mode}")
         executable = self.root / f"fake-unshare-{mode}"
         child_pid_file = self.root / f"fake-unshare-{mode}.child-pid"
+        supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
+        process_group_file = pathlib.Path(f"{child_pid_file}.process-group")
         program = f"""#!{self.python}
 import os
 import signal
 import subprocess
 import sys
+import time
 
 MODE = {mode!r}
 CHILD_PID_FILE = {os.fspath(child_pid_file)!r}
+SUPERVISOR_PID_FILE = {os.fspath(supervisor_pid_file)!r}
+PROCESS_GROUP_FILE = {os.fspath(process_group_file)!r}
+for path, value in (
+    (SUPERVISOR_PID_FILE, os.getpid()),
+    (PROCESS_GROUP_FILE, os.getpgrp()),
+):
+    with open(path, "w", encoding="ascii") as output:
+        output.write(str(value) + "\\n")
+        output.flush()
+        os.fsync(output.fileno())
 if MODE == "denied":
     os.write(2, b"fixture namespace creation denied: Operation not permitted\\n")
     raise SystemExit(1)
@@ -280,14 +312,10 @@ try:
     separator = sys.argv.index("--")
 except ValueError:
     raise SystemExit("missing unshare command separator")
-child = subprocess.Popen(sys.argv[separator + 1:])
-with open(CHILD_PID_FILE, "w", encoding="ascii") as output:
-    output.write(str(child.pid) + "\\n")
-    output.flush()
-    os.fsync(output.fileno())
+child = None
 
 def terminate(signum, _frame):
-    if MODE == "pass":
+    if MODE == "pass" and child is not None:
         try:
             os.kill(child.pid, signal.SIGKILL)
         except ProcessLookupError:
@@ -300,7 +328,14 @@ def terminate(signum, _frame):
     os.kill(os.getpid(), signum)
 
 signal.signal(signal.SIGTERM, terminate)
-raise SystemExit(child.wait())
+child = subprocess.Popen(sys.argv[separator + 1:])
+with open(CHILD_PID_FILE, "w", encoding="ascii") as output:
+    output.write(str(child.pid) + "\\n")
+    output.flush()
+    os.fsync(output.fileno())
+while child.poll() is None:
+    time.sleep(0.05)
+raise SystemExit(child.returncode)
 """
         executable.write_text(program, encoding="utf-8")
         executable.chmod(0o700)
@@ -317,7 +352,7 @@ raise SystemExit(child.wait())
     ) -> list[str]:
         arguments = [
             self.python,
-            os.fspath(TOOL),
+            os.fspath(self.coordinator_launcher),
             "run",
             *self.path_arguments(),
             "--generation-id",
@@ -365,7 +400,7 @@ raise SystemExit(child.wait())
     def recover_arguments(self, failpoint: str | None = None) -> list[str]:
         arguments = [
             self.python,
-            os.fspath(TOOL),
+            os.fspath(self.coordinator_launcher),
             "recover",
             *self.path_arguments(),
         ]
@@ -537,7 +572,6 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         )
         return original, installed
 
-    @unittest.skipUnless(PIDFD_AVAILABLE, PIDFD_REASON)
     def test_functional_pidfd_preflight_terminates_exact_private_child(self) -> None:
         real_pidfd_open = coordinator.os.pidfd_open
         descriptors: list[int] = []
@@ -547,14 +581,17 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
             descriptors.append(descriptor)
             return descriptor
 
-        with mock.patch.object(
-            coordinator.os, "pidfd_open", side_effect=capture_pidfd
-        ), mock.patch.object(
-            coordinator.sys, "executable", self.fixture.python
-        ):
-            coordinator.preflight_pidfd_termination(
-                self.fixture.coordinator_paths()
-            )
+        try:
+            with mock.patch.object(
+                coordinator.os, "pidfd_open", side_effect=capture_pidfd
+            ), mock.patch.object(
+                coordinator.sys, "executable", self.fixture.python
+            ):
+                coordinator.preflight_pidfd_termination(
+                    self.fixture.coordinator_paths()
+                )
+        except coordinator.TransactionError as error:
+            self.skipTest(f"HOST-SKIP: functional pidfd preflight failed: {error}")
         self.assertEqual(len(descriptors), 1)
         with self.assertRaises(OSError) as closed:
             os.fstat(descriptors[0])
@@ -579,6 +616,41 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                     self.fixture.coordinator_paths()
                 )
 
+    def test_pidfd_preflight_signal_denial_reaps_its_disposable_child(self) -> None:
+        opened_pids: list[int] = []
+
+        def open_fixture_pidfd(pid: int, _flags: int = 0) -> int:
+            opened_pids.append(pid)
+            return os.open("/dev/null", os.O_RDONLY | os.O_CLOEXEC)
+
+        with (
+            mock.patch.object(
+                coordinator.os, "pidfd_open", side_effect=open_fixture_pidfd
+            ),
+            mock.patch.object(
+                coordinator.signal,
+                "pidfd_send_signal",
+                side_effect=PermissionError(
+                    errno.EPERM, "fixture preflight pidfd signal denied"
+                ),
+            ),
+            mock.patch.object(
+                coordinator.sys, "executable", self.fixture.python
+            ),
+        ):
+            with self.assertRaises(coordinator.TransactionError) as rejected:
+                coordinator.preflight_pidfd_termination(
+                    self.fixture.coordinator_paths(), kill_after=0.5
+                )
+        message = str(rejected.exception)
+        self.assertIn("cannot signal through pidfd", message)
+        self.assertIn("fixture preflight pidfd signal denied", message)
+        self.assertIn("pidfd containment preflight cleanup failed", message)
+        self.assertGreaterEqual(len(opened_pids), 2)
+        self.assert_processes_gone(opened_pids)
+        for pid in opened_pids:
+            self.assertFalse(coordinator.process_group_exists(pid))
+
     def test_pidfd_preflight_rejects_untrusted_interpreter_before_spawn(self) -> None:
         with (
             mock.patch.object(
@@ -598,6 +670,252 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                     self.fixture.coordinator_paths()
                 )
         spawn.assert_not_called()
+
+    def test_unshare_preflight_proves_kill_child_teardown_hermetically(self) -> None:
+        fake_unshare, child_pid_file = self.fixture.fake_unshare("pass")
+        real_euid = os.geteuid()
+        euid_calls = 0
+
+        def root_guard_only() -> int:
+            nonlocal euid_calls
+            euid_calls += 1
+            return 0 if euid_calls == 1 else real_euid
+
+        with (
+            mock.patch.object(
+                coordinator.os, "geteuid", side_effect=root_guard_only
+            ),
+            mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(coordinator.sys, "executable", self.fixture.python),
+            emulated_pidfds(),
+        ):
+            coordinator.preflight_unshare_kill_child(
+                self.fixture.coordinator_paths(), kill_after=1.0
+            )
+        self.assertTrue(child_pid_file.is_file())
+        self.assert_processes_gone([int(child_pid_file.read_text(encoding="ascii"))])
+
+    def test_unshare_preflight_pidfd_open_failure_cleans_every_child(self) -> None:
+        fake_unshare, child_pid_file = self.fixture.fake_unshare("pass")
+        real_euid = os.geteuid()
+        euid_calls = 0
+
+        def root_guard_only() -> int:
+            nonlocal euid_calls
+            euid_calls += 1
+            return 0 if euid_calls == 1 else real_euid
+
+        with (
+            mock.patch.object(
+                coordinator.os, "geteuid", side_effect=root_guard_only
+            ),
+            mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(coordinator.sys, "executable", self.fixture.python),
+            emulated_pidfds(fail_open_call=2),
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError, "fixture pidfd_open failure"
+            ):
+                coordinator.preflight_unshare_kill_child(
+                    self.fixture.coordinator_paths(), kill_after=1.0
+                )
+        self.assertTrue(child_pid_file.is_file())
+        self.assert_processes_gone([int(child_pid_file.read_text(encoding="ascii"))])
+
+    def test_unshare_preflight_supervisor_pidfd_failure_leaks_nothing(self) -> None:
+        fake_unshare, child_pid_file = self.fixture.fake_unshare("pass")
+        real_euid = os.geteuid()
+        euid_calls = 0
+
+        def root_guard_only() -> int:
+            nonlocal euid_calls
+            euid_calls += 1
+            return 0 if euid_calls == 1 else real_euid
+
+        with (
+            mock.patch.object(
+                coordinator.os, "geteuid", side_effect=root_guard_only
+            ),
+            mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(coordinator.sys, "executable", self.fixture.python),
+            emulated_pidfds(fail_open_call=1),
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError, "fixture pidfd_open failure"
+            ):
+                coordinator.preflight_unshare_kill_child(
+                    self.fixture.coordinator_paths(), kill_after=1.0
+                )
+        self.assertTrue(child_pid_file.is_file())
+        self.assert_processes_gone([int(child_pid_file.read_text(encoding="ascii"))])
+
+    def test_unshare_preflight_pidfd_signal_denial_uses_safe_fallback(self) -> None:
+        fake_unshare, child_pid_file = self.fixture.fake_unshare("pass")
+        real_euid = os.geteuid()
+        euid_calls = 0
+
+        def root_guard_only() -> int:
+            nonlocal euid_calls
+            euid_calls += 1
+            return 0 if euid_calls == 1 else real_euid
+
+        with (
+            mock.patch.object(
+                coordinator.os, "geteuid", side_effect=root_guard_only
+            ),
+            mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(coordinator.sys, "executable", self.fixture.python),
+            emulated_pidfds(deny_signal_for_open_call=1),
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError,
+                "PID-namespace supervisor cannot be signalled through its pidfd",
+            ) as rejected:
+                coordinator.preflight_unshare_kill_child(
+                    self.fixture.coordinator_paths(), kill_after=1.0
+                )
+        self.assertIn("fixture pidfd signal denied", str(rejected.exception))
+        self.assertIn(
+            "cleanup failures: PID-namespace supervisor cleanup pidfd signal "
+            "15 failed",
+            str(rejected.exception),
+        )
+        supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
+        process_group_file = pathlib.Path(f"{child_pid_file}.process-group")
+        self.assertTrue(child_pid_file.is_file())
+        self.assert_processes_gone(
+            [
+                int(supervisor_pid_file.read_text(encoding="ascii")),
+                int(child_pid_file.read_text(encoding="ascii")),
+            ]
+        )
+        self.assertFalse(
+            coordinator.process_group_exists(
+                int(process_group_file.read_text(encoding="ascii"))
+            )
+        )
+
+    def test_unshare_preflight_reports_group_residue_after_earlier_error(self) -> None:
+        fake_unshare, child_pid_file = self.fixture.fake_unshare("survivor")
+        real_euid = os.geteuid()
+        euid_calls = 0
+
+        def root_guard_only() -> int:
+            nonlocal euid_calls
+            euid_calls += 1
+            return 0 if euid_calls == 1 else real_euid
+
+        with (
+            mock.patch.object(
+                coordinator.os, "geteuid", side_effect=root_guard_only
+            ),
+            mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(coordinator.sys, "executable", self.fixture.python),
+            mock.patch.object(
+                coordinator, "process_group_exists", return_value=True
+            ),
+            emulated_pidfds(),
+        ):
+            with self.assertRaises(coordinator.TransactionError) as rejected:
+                coordinator.preflight_unshare_kill_child(
+                    self.fixture.coordinator_paths(), kill_after=0.1
+                )
+        message = str(rejected.exception)
+        self.assertIn("left its exact namespace child alive", message)
+        self.assertIn(
+            "cleanup left its private process group alive",
+            message,
+        )
+        supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
+        process_group_file = pathlib.Path(f"{child_pid_file}.process-group")
+        self.assert_processes_gone(
+            [
+                int(supervisor_pid_file.read_text(encoding="ascii")),
+                int(child_pid_file.read_text(encoding="ascii")),
+            ]
+        )
+        self.assertFalse(
+            coordinator.process_group_exists(
+                int(process_group_file.read_text(encoding="ascii"))
+            )
+        )
+
+    def test_unshare_preflight_surviving_child_is_reported_and_cleaned(self) -> None:
+        fake_unshare, child_pid_file = self.fixture.fake_unshare("survivor")
+        real_euid = os.geteuid()
+        euid_calls = 0
+
+        def root_guard_only() -> int:
+            nonlocal euid_calls
+            euid_calls += 1
+            return 0 if euid_calls == 1 else real_euid
+
+        with (
+            mock.patch.object(
+                coordinator.os, "geteuid", side_effect=root_guard_only
+            ),
+            mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(coordinator.sys, "executable", self.fixture.python),
+            emulated_pidfds(),
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError,
+                "left its exact namespace child alive",
+            ):
+                coordinator.preflight_unshare_kill_child(
+                    self.fixture.coordinator_paths(), kill_after=0.25
+                )
+        supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
+        process_group_file = pathlib.Path(f"{child_pid_file}.process-group")
+        self.assertTrue(child_pid_file.is_file())
+        self.assert_processes_gone(
+            [
+                int(supervisor_pid_file.read_text(encoding="ascii")),
+                int(child_pid_file.read_text(encoding="ascii")),
+            ]
+        )
+        self.assertFalse(
+            coordinator.process_group_exists(
+                int(process_group_file.read_text(encoding="ascii"))
+            )
+        )
+
+    def test_unshare_preflight_denied_mode_leaks_no_supervisor_or_group(self) -> None:
+        fake_unshare, child_pid_file = self.fixture.fake_unshare("denied")
+        real_euid = os.geteuid()
+        euid_calls = 0
+
+        def root_guard_only() -> int:
+            nonlocal euid_calls
+            euid_calls += 1
+            return 0 if euid_calls == 1 else real_euid
+
+        with (
+            mock.patch.object(
+                coordinator.os, "geteuid", side_effect=root_guard_only
+            ),
+            mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(coordinator.sys, "executable", self.fixture.python),
+            emulated_pidfds(),
+        ):
+            with self.assertRaisesRegex(
+                coordinator.TransactionError,
+                "fixture namespace creation denied",
+            ):
+                coordinator.preflight_unshare_kill_child(
+                    self.fixture.coordinator_paths(), kill_after=0.25
+                )
+        supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
+        process_group_file = pathlib.Path(f"{child_pid_file}.process-group")
+        self.assertFalse(child_pid_file.exists())
+        self.assert_processes_gone(
+            [int(supervisor_pid_file.read_text(encoding="ascii"))]
+        )
+        self.assertFalse(
+            coordinator.process_group_exists(
+                int(process_group_file.read_text(encoding="ascii"))
+            )
+        )
 
     def test_containment_preflight_rejects_untrusted_unshare_before_exec(self) -> None:
         with (
@@ -722,6 +1040,36 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         ):
             coordinator.parse_process_stat_identity(payload, 777)
 
+    def test_process_group_liveness_ignores_zombie_only_members(self) -> None:
+        proc = self.fixture.root / "proc"
+        proc.mkdir()
+
+        def write_stat(pid: int, state: bytes, process_group: int) -> None:
+            process = proc / str(pid)
+            process.mkdir()
+            fields = [state, b"1", str(process_group).encode()] + [b"0"] * 16 + [
+                b"987654"
+            ]
+            (process / "stat").write_bytes(
+                str(pid).encode() + b" (fixture) " + b" ".join(fields) + b"\n"
+            )
+
+        write_stat(7001, b"Z", 7000)
+        write_stat(7004, b"X", 7000)
+        write_stat(7005, b"x", 7000)
+        write_stat(7002, b"S", 9000)
+        write_stat(7006, b"I", 0)
+        with mock.patch.object(coordinator.os, "killpg", return_value=None):
+            self.assertFalse(
+                coordinator.process_group_exists(7000, proc_root=proc)
+            )
+
+        write_stat(7003, b"R", 7000)
+        with mock.patch.object(coordinator.os, "killpg", return_value=None):
+            self.assertTrue(
+                coordinator.process_group_exists(7000, proc_root=proc)
+            )
+
     def test_leaderless_live_numeric_group_is_never_signalled(self) -> None:
         document = {
             "boot_id": "fixture-boot",
@@ -747,7 +1095,6 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.quiesce_recorded_process_group(document, 0.0)
         killpg.assert_not_called()
 
-    @unittest.skipUnless(PIDFD_AVAILABLE, PIDFD_REASON)
     def test_live_exact_leader_process_group_is_quiesced(self) -> None:
         child = subprocess.Popen(
             [self.fixture.python, "-c", "import time; time.sleep(60)"],
@@ -769,7 +1116,8 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
             }
             reaper = threading.Thread(target=child.wait, daemon=True)
             reaper.start()
-            coordinator.quiesce_recorded_process_group(document, 1.0)
+            with emulated_pidfds():
+                coordinator.quiesce_recorded_process_group(document, 1.0)
             reaper.join(timeout=3)
             self.assertFalse(reaper.is_alive())
             self.assertNotEqual(child.returncode, 0)
@@ -777,6 +1125,59 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         finally:
             if child.poll() is None:
                 os.killpg(child.pid, signal.SIGKILL)
+                child.wait(timeout=3)
+
+    def test_recorded_child_pidfd_denial_never_uses_numeric_group_signal(
+        self,
+    ) -> None:
+        child = subprocess.Popen(
+            [self.fixture.python, "-c", "import time; time.sleep(60)"],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        descriptor = os.open("/dev/null", os.O_RDONLY | os.O_CLOEXEC)
+        try:
+            identity = coordinator.process_stat_identity(child.pid)
+            self.assertIsNotNone(identity)
+            assert identity is not None
+            document = {
+                "boot_id": coordinator.boot_id(),
+                "child": {
+                    "pid": child.pid,
+                    "process_group": identity.process_group,
+                    "start_ticks": identity.start_ticks,
+                },
+            }
+            with (
+                mock.patch.object(
+                    coordinator.os, "pidfd_open", return_value=descriptor
+                ),
+                mock.patch.object(
+                    coordinator.signal,
+                    "pidfd_send_signal",
+                    side_effect=PermissionError(
+                        errno.EPERM, "fixture recorded-child signal denied"
+                    ),
+                ),
+                mock.patch.object(coordinator.os, "killpg") as killpg,
+            ):
+                with self.assertRaisesRegex(
+                    coordinator.TransactionError,
+                    "exact recorded child supervisor.*SIGTERM.*signal denied",
+                ):
+                    coordinator.quiesce_recorded_process_group(document, 0.1)
+            killpg.assert_not_called()
+            self.assertIsNone(child.poll())
+            with self.assertRaises(OSError) as closed:
+                os.fstat(descriptor)
+            self.assertEqual(closed.exception.errno, errno.EBADF)
+        finally:
+            with contextlib.suppress(OSError):
+                os.close(descriptor)
+            if child.poll() is None:
+                child.kill()
                 child.wait(timeout=3)
 
     def test_executable_identity_rejects_setid_and_file_capability(self) -> None:
@@ -1032,6 +1433,30 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
             with self.subTest(partial=partial_label, object_kind=object_kind):
                 self.assertEqual(status, 1)
                 self.assertIn("partial transaction object", error)
+        self.fixture.assert_restored(self)
+
+    def test_recovery_rejects_contradictory_child_sidecar_and_partial(self) -> None:
+        crashed = self.completed(
+            self.fixture.run_arguments(failpoint="child-after-sidecar")
+        )
+        self.assertEqual(crashed.returncode, 94, crashed.stderr)
+        self.assertTrue(self.fixture.child_identity.is_file())
+        self.fixture.child_identity_partial.write_bytes(b"contradictory\n")
+        self.fixture.child_identity_partial.chmod(0o600)
+
+        rejected = self.completed(self.fixture.recover_arguments())
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn(
+            "child identity sidecar and its partial are simultaneously visible",
+            rejected.stderr,
+        )
+        self.assertTrue(self.fixture.journal.is_file())
+        self.assertTrue(self.fixture.child_identity.is_file())
+        self.assertTrue(self.fixture.child_identity_partial.is_file())
+
+        self.fixture.child_identity_partial.unlink()
+        recovered = self.completed(self.fixture.recover_arguments())
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
         self.fixture.assert_restored(self)
 
     def test_raw_token_leak_is_detected_after_child_containment_ends(self) -> None:
@@ -1419,7 +1844,6 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         self.assertEqual(json.loads(marker.read_text(encoding="utf-8")), [True, True])
         self.fixture.assert_restored(self)
 
-    @unittest.skipUnless(PIDFD_AVAILABLE, PIDFD_REASON)
     def test_child_timeout_terminates_process_group_and_restores(self) -> None:
         completed = self.completed(
             self.fixture.run_arguments(
@@ -1481,7 +1905,6 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         self.assertIn("test root must be an owner-private real directory", linked.stderr)
         self.fixture.assert_restored(self)
 
-    @unittest.skipUnless(PIDFD_AVAILABLE, PIDFD_REASON)
     def test_signal_terminates_exact_child_supervisor_and_restores(self) -> None:
         pid_file = self.fixture.root / "child-pid"
         child_code = "\n".join(
@@ -1527,11 +1950,188 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.TransactionError,
                 "refusing an ambiguous/reused group signal",
             ):
-                coordinator.terminate_process_group(process, 0.0)
+                coordinator.terminate_process_group(process, 0.01)
         killpg.assert_not_called()
 
-    @unittest.skipUnless(FULL_CONTAINMENT_AVAILABLE, FULL_CONTAINMENT_REASON)
+    def test_teardown_pidfd_open_error_still_reaps_exact_direct_child(self) -> None:
+        process = subprocess.Popen(
+            [self.fixture.python, "-c", "import time; time.sleep(60)"],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            with mock.patch.object(
+                coordinator.os,
+                "pidfd_open",
+                side_effect=OSError(errno.ENOSYS, "fixture pidfd unavailable"),
+            ):
+                with self.assertRaisesRegex(
+                    coordinator.TransactionError,
+                    "cannot open a pidfd.*fixture pidfd unavailable",
+                ):
+                    coordinator.terminate_process_group(process, 0.5)
+            self.assertIsNotNone(process.poll())
+            self.assertFalse(coordinator.process_group_exists(process.pid))
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=2)
+
+    def test_teardown_pidfd_eperm_still_reaps_exact_direct_child(self) -> None:
+        process = subprocess.Popen(
+            [self.fixture.python, "-c", "import time; time.sleep(60)"],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        descriptor = os.open("/dev/null", os.O_RDONLY | os.O_CLOEXEC)
+        try:
+            with (
+                mock.patch.object(
+                    coordinator.os, "pidfd_open", return_value=descriptor
+                ),
+                mock.patch.object(
+                    coordinator.signal,
+                    "pidfd_send_signal",
+                    side_effect=PermissionError(
+                        errno.EPERM, "fixture pidfd signal denied"
+                    ),
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    coordinator.TransactionError,
+                    "pidfd SIGTERM failed.*fixture pidfd signal denied",
+                ):
+                    coordinator.terminate_process_group(process, 0.5)
+            self.assertIsNotNone(process.poll())
+            self.assertFalse(coordinator.process_group_exists(process.pid))
+            with self.assertRaises(OSError) as closed:
+                os.fstat(descriptor)
+            self.assertEqual(closed.exception.errno, errno.EBADF)
+        finally:
+            with contextlib.suppress(OSError):
+                os.close(descriptor)
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=2)
+
+    def test_teardown_aggregates_pidfd_signal_and_close_failures(self) -> None:
+        ready = self.fixture.root / "teardown-ignore-term-ready"
+        child_code = "\n".join(
+            (
+                "import pathlib, signal, time",
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN)",
+                f"pathlib.Path({os.fspath(ready)!r}).write_text('ready')",
+                "time.sleep(60)",
+            )
+        )
+        process = subprocess.Popen(
+            [self.fixture.python, "-c", child_code],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        deadline = time.monotonic() + 3
+        while not ready.is_file() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(ready.is_file())
+        descriptor = os.open("/dev/null", os.O_RDONLY | os.O_CLOEXEC)
+        real_close = os.close
+
+        def denied_pidfd_signal(
+            _descriptor: int,
+            signum: int,
+            _siginfo: object | None = None,
+            _flags: int = 0,
+        ) -> None:
+            if signum == signal.SIGTERM:
+                raise PermissionError(errno.EPERM, "fixture TERM denied")
+            raise OSError(errno.EIO, "fixture KILL I/O error")
+
+        def close_then_error(open_descriptor: int) -> None:
+            real_close(open_descriptor)
+            raise OSError(errno.EIO, "fixture close I/O error")
+
+        try:
+            with (
+                mock.patch.object(
+                    coordinator.os, "pidfd_open", return_value=descriptor
+                ),
+                mock.patch.object(
+                    coordinator.signal,
+                    "pidfd_send_signal",
+                    side_effect=denied_pidfd_signal,
+                ),
+                mock.patch.object(
+                    coordinator.os, "close", side_effect=close_then_error
+                ),
+            ):
+                with self.assertRaises(coordinator.TransactionError) as rejected:
+                    coordinator.terminate_process_group(process, 0.1)
+            message = str(rejected.exception)
+            self.assertIn("pidfd SIGTERM failed", message)
+            self.assertIn("fixture TERM denied", message)
+            self.assertIn("pidfd SIGKILL failed", message)
+            self.assertIn("fixture KILL I/O error", message)
+            self.assertIn("cannot close child supervisor pidfd", message)
+            self.assertIn("fixture close I/O error", message)
+            self.assertIsNotNone(process.poll())
+            self.assertFalse(coordinator.process_group_exists(process.pid))
+            with self.assertRaises(OSError) as closed:
+                os.fstat(descriptor)
+            self.assertEqual(closed.exception.errno, errno.EBADF)
+        finally:
+            with contextlib.suppress(OSError):
+                real_close(descriptor)
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=2)
+
+    def test_teardown_aggregates_fallback_error_before_forced_reap(self) -> None:
+        process = subprocess.Popen(
+            [self.fixture.python, "-c", "import time; time.sleep(60)"],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        real_kill = process.kill
+        try:
+            with (
+                mock.patch.object(
+                    coordinator.os,
+                    "pidfd_open",
+                    side_effect=OSError(errno.ENOSYS, "fixture pidfd unavailable"),
+                ),
+                mock.patch.object(
+                    process,
+                    "terminate",
+                    side_effect=PermissionError(
+                        errno.EPERM, "fixture direct TERM denied"
+                    ),
+                ),
+            ):
+                with self.assertRaises(coordinator.TransactionError) as rejected:
+                    coordinator.terminate_process_group(process, 0.1)
+            message = str(rejected.exception)
+            self.assertIn("fixture pidfd unavailable", message)
+            self.assertIn("exact direct-child fallback signal 15 failed", message)
+            self.assertIn("fixture direct TERM denied", message)
+            self.assertIsNotNone(process.poll())
+            self.assertFalse(coordinator.process_group_exists(process.pid))
+        finally:
+            if process.poll() is None:
+                real_kill()
+                process.wait(timeout=2)
+
     def test_pid_namespace_kills_escaped_setsid_descendant_before_scan(self) -> None:
+        available, reason = pid_namespace_capability()
+        if not available:
+            self.skipTest(f"HOST-SKIP: {reason}")
         escaped_marker = self.fixture.artifacts / "escaped-descendant-ran"
         grandchild_code = (
             "import pathlib,time; time.sleep(1.5); "

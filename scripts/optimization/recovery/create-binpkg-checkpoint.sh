@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are intentionally single-quoted.
 # Create an exact, package-managed Gentoo binary-package recovery checkpoint.
 #
 # The source snapshot is selected through the same root-owned symlink that is
@@ -14,6 +15,7 @@ readonly PROGRAM=${0##*/}
 readonly COORDINATOR_PID=${BASHPID}
 
 FIXTURE_MODE=0
+ACTION=create
 FIXTURE_ROOT=
 FIXTURE_OWNER=
 TOOL_ROOT=
@@ -34,20 +36,19 @@ LOCK_FD=
 FRAMEWORK_LOCK_FD=
 PROJECT_LOCK_FD=
 GENERATION_LOCK_FD=
+FRAMEWORK_LOCK_GID=
 REPORT_READY=0
 ACTIVATION_STARTED=0
 ACTIVATION_COMPLETE=0
 PORTAGE_LOCK_PID=
-PORTAGE_LOCK_PGID=
+PORTAGE_LOCK_STARTTIME=
 MAKE_CONF_OVERLAY_ACTIVE=0
 IN_FAILURE_TRAP=0
 ACTIVE_CHILD_PID=
-ACTIVE_CHILD_PGID=
 ACTIVE_CHILD_STARTTIME=
 TRACKED_STATUS=0
 VERIFIER_STATUS=0
 VERIFY_COUNTS=
-TRAVERSAL_SEQUENCE=0
 JOURNAL_SEQUENCE=0
 CURRENT_PHASE=bootstrap
 EXPECTED_SELECTOR_IDENTITY=
@@ -56,8 +57,6 @@ EXPECTED_SOURCE_PACKAGES_IDENTITY=
 EXPECTED_VERIFIER_IDENTITY=
 EXPECTED_MAKE_CONF_IDENTITY=
 EXPECTED_MAKE_CONF_SHA256=
-PREPARED_WITNESS_IDENTITY=
-LIVE_CPVS=
 ACTIVATION_INTENT_SHA256=
 REPORT=
 STATE=
@@ -65,20 +64,25 @@ CACHE=
 DURABLE=
 CACHE_PARTIAL=
 DURABLE_PARTIAL=
-STATE_PARTIAL=
 SELECTOR_PARTIAL=
 SELECTOR_WITNESS=
 REPORT_PARTIAL=
 ACTIVATION_INTENT=
 ACTIVATION_RECEIPT=
-STATE_PRECAS=
+PREPARED_SELECTOR_RECORD=
+STATE_PREPARED=
+STATE_ACTIVATED=
+STATE_RESTORED=
 SELF=
+RESTORE_CPV=
+RETRY_INTERRUPTED_RESTORE=0
+VALIDATED_RETRY_COUNT=0
 
 declare -a ATOMS=()
 declare -a ATOM_CPVS=()
 declare -a TOOL_NAMES=(
-    bash chmod chown cmp cp date emaint env find findmnt flock install jq ln mount mv
-    portageq python3 quickpkg readlink setsid sha256sum sleep sort stat sync timeout umount
+    bash chmod chown cmp cp date emaint env find findmnt flock getent install jq ln mount mv
+    emerge portageq python3 qcheck quickpkg readlink rm setsid sha256sum sleep sort stat sync timeout umount
     unshare zstd
 )
 declare -A TOOL=()
@@ -104,6 +108,12 @@ Production defaults:
   transaction lock    /var/lib/gentoo-optimization/state/project/binpkg-checkpoint.lock
 
 Options:
+  --reconcile                        Reconcile an interrupted activation.
+  --finalize-offline-restore         Publish the terminal offline-restore proof.
+  --restore-cpv CATEGORY/PKG-VERSION Exact CPV restored by the supervised finalizer.
+  --retry-interrupted-offline-restore
+                                      Explicitly authorize another exact emerge
+                                      after an ambiguous interrupted attempt.
   --expected-source-target PATH       Exact absolute selector target.
   --expected-source-packages-sha256 H Exact source Packages SHA-256.
   --expected-verifier-sha256 H       Exact immutable direct-verifier SHA-256.
@@ -122,10 +132,10 @@ Options:
   --make-conf PATH                    Fixture make.conf override.
   -h, --help                          Show this help.
 
-The fixture-only path switches are rejected in production mode.  Checkpoint
-publication is intentionally not resumable under the same ID: an interrupted
-transaction leaves an immutable journal and must be inspected before a new ID
-is used.
+The fixture-only path switches are rejected in production mode.  Creation,
+reconciliation, and finalization use the same checkpoint ID and exact source,
+verifier, and delta bindings.  Reconciliation is idempotent and is the only
+supported way to complete a transaction interrupted after activation intent.
 EOF
 }
 
@@ -154,6 +164,25 @@ while (($#)); do
             need_value "$@"
             EXPECTED_VERIFIER_SHA256=$2
             shift 2
+            ;;
+        --reconcile)
+            [[ ${ACTION} == create ]] || die 'checkpoint action may be selected only once'
+            ACTION=reconcile
+            shift
+            ;;
+        --finalize-offline-restore)
+            [[ ${ACTION} == create ]] || die 'checkpoint action may be selected only once'
+            ACTION=finalize
+            shift
+            ;;
+        --restore-cpv)
+            need_value "$@"
+            RESTORE_CPV=$2
+            shift 2
+            ;;
+        --retry-interrupted-offline-restore)
+            RETRY_INTERRUPTED_RESTORE=1
+            shift
             ;;
         --fixture-mode)
             FIXTURE_MODE=1
@@ -245,6 +274,13 @@ done
     die 'an exact lowercase source Packages SHA-256 is required'
 [[ ${EXPECTED_VERIFIER_SHA256} =~ ^[0-9a-f]{64}$ ]] || \
     die 'an exact lowercase immutable verifier SHA-256 is required'
+if [[ ${ACTION} == finalize ]]; then
+    [[ ${RESTORE_CPV} =~ ^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$ ]] || \
+        die 'offline finalization requires --restore-cpv with an exact CPV'
+fi
+[[ ${ACTION} == finalize || -z ${RESTORE_CPV} ]] || die '--restore-cpv requires --finalize-offline-restore'
+[[ ${ACTION} == finalize || ${RETRY_INTERRUPTED_RESTORE} -eq 0 ]] || \
+    die '--retry-interrupted-offline-restore requires --finalize-offline-restore'
 
 # Do not permit inherited shell or compiler configuration to influence Portage
 # frontends.  Every external command below is invoked through an absolute path.
@@ -316,11 +352,13 @@ readonly CHOWN=${TOOL[chown]}
 readonly CMP=${TOOL[cmp]}
 readonly CP=${TOOL[cp]}
 readonly DATE=${TOOL[date]}
+readonly EMERGE=${TOOL[emerge]}
 readonly EMAINT=${TOOL[emaint]}
 readonly ENV_TOOL=${TOOL[env]}
 readonly FIND=${TOOL[find]}
 readonly FINDMNT=${TOOL[findmnt]}
 readonly FLOCK=${TOOL[flock]}
+readonly GETENT=${TOOL[getent]}
 readonly INSTALL=${TOOL[install]}
 readonly JQ=${TOOL[jq]}
 readonly LN=${TOOL[ln]}
@@ -328,8 +366,10 @@ readonly MOUNT=${TOOL[mount]}
 readonly MV=${TOOL[mv]}
 readonly PORTAGEQ=${TOOL[portageq]}
 readonly PYTHON=${TOOL[python3]}
+readonly QCHECK=${TOOL[qcheck]}
 readonly QUICKPKG=${TOOL[quickpkg]}
 readonly READLINK=${TOOL[readlink]}
+readonly RM=${TOOL[rm]}
 readonly SETSID=${TOOL[setsid]}
 readonly SHA256SUM=${TOOL[sha256sum]}
 readonly SLEEP=${TOOL[sleep]}
@@ -348,11 +388,14 @@ STATE=${STATE_PARENT}/binpkg-checkpoint-${CHECKPOINT_ID}.json
 CACHE_PARTIAL=${CACHE_PARENT}/.snapshot-${CHECKPOINT_ID}.partial.${COORDINATOR_PID}
 DURABLE_PARTIAL=${DURABLE_PARENT}/.critical-${CHECKPOINT_ID}.partial.${COORDINATOR_PID}
 REPORT_PARTIAL=${REPORT_PARENT}/.checkpoint-${CHECKPOINT_ID}.partial.${COORDINATOR_PID}
-STATE_PARTIAL=${STATE_PARENT}/.binpkg-checkpoint-${CHECKPOINT_ID}.partial.${COORDINATOR_PID}.json
-STATE_PRECAS=${STATE_PARENT}/binpkg-checkpoint-${CHECKPOINT_ID}.pre-cas-pending.json
+STATE_PREPARED=${STATE_PARENT}/binpkg-checkpoint-${CHECKPOINT_ID}.prepared.json
+STATE_ACTIVATED=${STATE_PARENT}/binpkg-checkpoint-${CHECKPOINT_ID}.selector-activated-offline-restore-pending.json
+STATE_RESTORED=${STATE_PARENT}/binpkg-checkpoint-${CHECKPOINT_ID}.offline-restore-proven.json
+SELECTOR_PARTIAL=${CACHE_PARENT}/critical-current.prepared-${CHECKPOINT_ID}
 SELECTOR_WITNESS=${CACHE_PARENT}/critical-current.previous-${CHECKPOINT_ID}
 ACTIVATION_INTENT=${REPORT}/activation-intent.json
 ACTIVATION_RECEIPT=${REPORT}/activation-receipt.json
+PREPARED_SELECTOR_RECORD=${REPORT}/prepared-selector.json
 
 has_unsafe_text() {
     local value=$1
@@ -478,11 +521,86 @@ acquire_framework_freeze_locks() {
         die 'stable framework lock directory is absent or symlinked'
     fields=$(stat_fields "${directory}") || die 'cannot stat stable framework lock directory'
     IFS=: read -r _ _ uid gid mode _ type <<<"${fields}"
-    [[ ${type} == directory && ${uid} == "${TRUST_UID}" && ${mode} == 750 ]] || \
+    [[ ${type} == directory && ${uid} == "${TRUST_UID}" && ${gid} == "${FRAMEWORK_LOCK_GID}" && ${mode} == 750 ]] || \
         die 'stable framework lock directory has an untrusted identity'
-    open_shared_framework_lock "${FRAMEWORK_LOCK_PATH}" FRAMEWORK_LOCK_FD "${gid}"
-    open_shared_framework_lock "${PROJECT_LOCK_PATH}" PROJECT_LOCK_FD "${gid}"
-    open_shared_framework_lock "${GENERATION_LOCK_PATH}" GENERATION_LOCK_FD "${gid}"
+    open_shared_framework_lock "${FRAMEWORK_LOCK_PATH}" FRAMEWORK_LOCK_FD "${FRAMEWORK_LOCK_GID}"
+    open_shared_framework_lock "${PROJECT_LOCK_PATH}" PROJECT_LOCK_FD "${FRAMEWORK_LOCK_GID}"
+    open_shared_framework_lock "${GENERATION_LOCK_PATH}" GENERATION_LOCK_FD "${FRAMEWORK_LOCK_GID}"
+}
+
+initialize_framework_freeze_locks() {
+    local directory=${FRAMEWORK_LOCK_PATH%/*} staging fields gid entry name lock staging_lock uid actual_gid mode links type
+    require_absolute_canonical "${directory}" 'stable framework lock directory'
+    validate_ancestor_chain "${directory%/*}"
+    if ((FIXTURE_MODE)); then
+        gid=${TRUST_GID}
+    else
+        entry=$(${GETENT} group portage) || die 'required portage group is absent'
+        IFS=: read -r name _ gid _ <<<"${entry}"
+        [[ ${name} == portage && ${gid} =~ ^[0-9]+$ ]] || die 'portage group identity is malformed'
+    fi
+    FRAMEWORK_LOCK_GID=${gid}
+    staging=${directory%/*}/.${directory##*/}.prepared
+    if ! path_absent "${staging}"; then
+        [[ -d ${staging} && ! -L ${staging} ]] || die 'foreign runtime lock-directory prepared object'
+        fields=$(stat_fields "${staging}") || die 'cannot stat runtime lock-directory prepared object'
+        IFS=: read -r _ _ uid actual_gid mode _ type <<<"${fields}"
+        [[ ${uid} == "${TRUST_UID}" && ${actual_gid} == "${gid}" && ${mode} == 750 && ${type} == directory ]] || \
+            die 'foreign runtime lock-directory prepared object'
+        [[ -z $(${FIND} "${staging}" -mindepth 1 -maxdepth 1 -print -quit) ]] || \
+            die 'runtime lock-directory prepared object is not empty'
+    fi
+    if path_absent "${directory}"; then
+        if path_absent "${staging}"; then
+            ${INSTALL} -d -o "${TRUST_UID}" -g "${gid}" -m 0750 "${staging}"
+        fi
+        sync_paths "${staging}" "${staging%/*}"
+        crash_point runtime-lock-directory-staged
+        ${MV} --no-clobber --no-copy -T -- "${staging}" "${directory}" || \
+            die 'framework lock-directory publication command failed'
+        if ! path_absent "${staging}"; then
+            fields=$(stat_fields "${directory}") || die 'concurrent framework lock-directory winner is unreadable'
+            IFS=: read -r _ _ uid actual_gid mode _ type <<<"${fields}"
+            [[ ${uid} == "${TRUST_UID}" && ${actual_gid} == "${gid}" && ${mode} == 750 && ${type} == directory ]] || \
+                die 'concurrent framework lock-directory winner is foreign'
+            ${RM} -d -- "${staging}"
+        fi
+        sync_paths "${directory}" "${directory%/*}"
+    fi
+    [[ -d ${directory} && ! -L ${directory} ]] || die 'stable framework lock directory is foreign'
+    fields=$(stat_fields "${directory}") || die 'cannot stat stable framework lock directory'
+    IFS=: read -r _ _ uid actual_gid mode _ type <<<"${fields}"
+    [[ ${uid} == "${TRUST_UID}" && ${actual_gid} == "${gid}" && ${mode} == 750 && ${type} == directory ]] || \
+        die 'stable framework lock directory has wrong owner or mode'
+    path_absent "${staging}" || ${RM} -d -- "${staging}"
+    for lock in "${FRAMEWORK_LOCK_PATH}" "${PROJECT_LOCK_PATH}" "${GENERATION_LOCK_PATH}"; do
+        staging_lock=${lock}.prepared
+        if ! path_absent "${staging_lock}"; then
+            fields=$(stat_fields "${staging_lock}") || die 'cannot stat stable-lock prepared object'
+            IFS=: read -r _ _ uid actual_gid mode links type <<<"${fields}"
+            [[ ${uid} == "${TRUST_UID}" && ${actual_gid} == "${gid}" && ${mode} == 640 && \
+               ${links} == 1 && ${type} == 'regular empty file' ]] || die 'foreign stable-lock prepared object'
+        fi
+        if path_absent "${lock}"; then
+            if path_absent "${staging_lock}"; then
+                ${INSTALL} -o "${TRUST_UID}" -g "${gid}" -m 0640 /dev/null "${staging_lock}"
+            fi
+            sync_paths "${staging_lock}" "${directory}"
+            crash_point "stable-lock-staged-${lock##*/}"
+            ${MV} --no-clobber --no-copy -T -- "${staging_lock}" "${lock}" || \
+                die 'stable framework lock publication command failed'
+            if ! path_absent "${staging_lock}"; then
+                fields=$(stat_fields "${lock}") || die 'concurrent stable-lock winner is unreadable'
+                ${RM} -f -- "${staging_lock}"
+                IFS=: read -r _ _ uid actual_gid mode links type <<<"${fields}"
+                [[ ${uid} == "${TRUST_UID}" && ${actual_gid} == "${gid}" && ${mode} == 640 && ${links} == 1 && \
+                   ${type} == 'regular empty file' ]] || \
+                    die 'concurrent stable-lock winner is foreign'
+            fi
+            sync_paths "${lock}" "${directory}"
+        fi
+        path_absent "${staging_lock}" || ${RM} -f -- "${staging_lock}"
+    done
 }
 
 tool_identity_line() {
@@ -520,7 +638,46 @@ tool_identity_line() {
 }
 
 path_absent() {
-    [[ ! -e $1 && ! -L $1 ]]
+    [[ -n $1 && ! -e $1 && ! -L $1 ]]
+}
+
+require_direct_child() {
+    local path=$1 parent=$2 label=$3
+    require_absolute_canonical "${path}" "${label}"
+    [[ ${path%/*} == "${parent}" && ${path##*/} != "${path}" ]] || \
+        die "${label} must be a direct child of ${parent}: ${path}"
+}
+
+validate_transaction_paths() {
+    local path
+    for path in "${CACHE}" "${CACHE_PARTIAL}" "${SELECTOR}" \
+        "${SELECTOR_PARTIAL}" "${SELECTOR_WITNESS}"; do
+        require_direct_child "${path}" "${CACHE_PARENT}" 'cache mutation path'
+    done
+    for path in "${DURABLE}" "${DURABLE_PARTIAL}"; do
+        require_direct_child "${path}" "${DURABLE_PARENT}" 'durable mutation path'
+    done
+    for path in "${REPORT}" "${REPORT_PARTIAL}"; do
+        require_direct_child "${path}" "${REPORT_PARENT}" 'report mutation path'
+    done
+    for path in "${STATE}" "${STATE_PREPARED}" "${STATE_ACTIVATED}" \
+        "${STATE_RESTORED}"; do
+        require_direct_child "${path}" "${STATE_PARENT}" 'state mutation path'
+    done
+    for path in "${ACTIVATION_INTENT}" "${ACTIVATION_RECEIPT}" \
+        "${PREPARED_SELECTOR_RECORD}"; do
+        require_direct_child "${path}" "${REPORT}" 'activation record path'
+    done
+}
+
+crash_point() {
+    local name=$1 marker
+    ((FIXTURE_MODE)) || return 0
+    marker=${FIXTURE_ROOT}/control/crash-${name}
+    [[ -e ${marker} ]] || return 0
+    ${SYNC} -f -- "${REPORT}" >/dev/null 2>&1 || :
+    kill -KILL -- "${COORDINATOR_PID}"
+    ${SLEEP} 60
 }
 
 safe_publish_noreplace() {
@@ -547,6 +704,71 @@ sync_paths() {
     done
 }
 
+preflight_selector_exchange() {
+    local left=${CACHE_PARENT}/.critical-current.exchange-preflight-${CHECKPOINT_ID}-a
+    local right=${CACHE_PARENT}/.critical-current.exchange-preflight-${CHECKPOINT_ID}-b
+    local left_before right_before left_after right_after left_target right_target
+    require_direct_child "${left}" "${CACHE_PARENT}" 'exchange preflight path'
+    require_direct_child "${right}" "${CACHE_PARENT}" 'exchange preflight path'
+    if ! path_absent "${left}" || ! path_absent "${right}"; then
+        left_target=absent
+        right_target=absent
+        path_absent "${left}" || {
+            [[ -L ${left} ]] || die 'foreign first exchange-preflight residue'
+            left_target=$(${READLINK} -- "${left}") || die 'cannot read first exchange-preflight residue'
+            [[ ${left_target} == exchange-preflight-a || ${left_target} == exchange-preflight-b ]] || \
+                die 'foreign first exchange-preflight residue'
+        }
+        path_absent "${right}" || {
+            [[ -L ${right} ]] || die 'foreign second exchange-preflight residue'
+            right_target=$(${READLINK} -- "${right}") || die 'cannot read second exchange-preflight residue'
+            [[ ${right_target} == exchange-preflight-a || ${right_target} == exchange-preflight-b ]] || \
+                die 'foreign second exchange-preflight residue'
+        }
+        [[ ${left_target} == absent || ${right_target} == absent || ${left_target} != "${right_target}" ]] || \
+            die 'ambiguous duplicate exchange-preflight residue'
+        ${RM} -f -- "${left}" "${right}"
+        sync_paths "${CACHE_PARENT}"
+    fi
+    ${LN} -s -- exchange-preflight-a "${left}"
+    ${CHOWN} -h "${TRUST_UID}:${TRUST_GID}" -- "${left}"
+    sync_paths "${CACHE_PARENT}"
+    crash_point exchange-preflight-first-created
+    ${LN} -s -- exchange-preflight-b "${right}"
+    ${CHOWN} -h "${TRUST_UID}:${TRUST_GID}" -- "${left}" "${right}"
+    sync_paths "${CACHE_PARENT}"
+    crash_point exchange-preflight-created
+    left_before=$(stat_fields "${left}") || die 'cannot stat first exchange preflight symlink'
+    right_before=$(stat_fields "${right}") || die 'cannot stat second exchange preflight symlink'
+    if ! ${MV} --exchange --no-copy -T -- "${left}" "${right}"; then
+        ${RM} -f -- "${left}" "${right}" >/dev/null 2>&1 || :
+        sync_paths "${CACHE_PARENT}" >/dev/null 2>&1 || :
+        die "selector filesystem does not support atomic mv --exchange: ${CACHE_PARENT}"
+    fi
+    crash_point exchange-preflight-swapped
+    left_after=$(stat_fields "${left}") || die 'exchange preflight lost first symlink'
+    right_after=$(stat_fields "${right}") || die 'exchange preflight lost second symlink'
+    [[ $(device_inode_from_fields "${left_after}") == $(device_inode_from_fields "${right_before}") && \
+       $(device_inode_from_fields "${right_after}") == $(device_inode_from_fields "${left_before}") && \
+       $(${READLINK} -- "${left}") == exchange-preflight-b && \
+       $(${READLINK} -- "${right}") == exchange-preflight-a ]] || \
+        die 'atomic exchange preflight did not swap exact symlink identities'
+    ${MV} --exchange --no-copy -T -- "${left}" "${right}" || \
+        die 'atomic exchange preflight could not restore its original identities'
+    sync_paths "${CACHE_PARENT}"
+    crash_point exchange-preflight-restored
+    left_after=$(stat_fields "${left}") || die 'cannot restat restored first preflight symlink'
+    right_after=$(stat_fields "${right}") || die 'cannot restat restored second preflight symlink'
+    [[ $(device_inode_from_fields "${left_after}") == $(device_inode_from_fields "${left_before}") && \
+       $(device_inode_from_fields "${right_after}") == $(device_inode_from_fields "${right_before}") ]] || \
+        die 'atomic exchange preflight did not restore exact identities'
+    ${RM} -f -- "${left}" "${right}"
+    if ! path_absent "${left}" || ! path_absent "${right}"; then
+        die 'atomic exchange preflight left unexplained objects'
+    fi
+    sync_paths "${CACHE_PARENT}"
+}
+
 read_proc_identity() {
     local pid=$1 state_destination=$2 start_destination=$3 line remainder
     local -a fields=()
@@ -562,6 +784,15 @@ read_proc_identity() {
 
 pidfd_signal() {
     local pid=$1 expected_start=$2 signal_name=$3 code status=0
+    if ((FIXTURE_MODE)); then
+        local state current_start
+        if ! read_proc_identity "${pid}" state current_start; then
+            return 3
+        fi
+        [[ ${current_start} == "${expected_start}" ]] || return 4
+        kill -s "${signal_name}" -- "${pid}" 2>/dev/null || return 3
+        return 0
+    fi
     read -r -d '' code <<'PY' || :
 import os
 import signal
@@ -647,27 +878,29 @@ terminate_active_child() {
     fi
     wait "${ACTIVE_CHILD_PID}" 2>/dev/null || :
     ACTIVE_CHILD_PID=
-    ACTIVE_CHILD_PGID=
     ACTIVE_CHILD_STARTTIME=
     return "${status}"
 }
 
 release_portage_vdb_lock() {
-    local index state
-    [[ -n ${PORTAGE_LOCK_PID} ]] || return 0
-    kill -TERM -- "${PORTAGE_LOCK_PID}" 2>/dev/null || :
+    local index state current_start signal_status=0
+    [[ -n ${PORTAGE_LOCK_PID} && -n ${PORTAGE_LOCK_STARTTIME} ]] || return 0
+    pidfd_signal "${PORTAGE_LOCK_PID}" "${PORTAGE_LOCK_STARTTIME}" TERM || signal_status=$?
+    [[ ${signal_status} == 0 || ${signal_status} == 3 ]] || return "${signal_status}"
     for ((index = 0; index < 100; index++)); do
-        [[ -r /proc/${PORTAGE_LOCK_PID}/stat ]] || break
-        read -r _ _ state _ <"/proc/${PORTAGE_LOCK_PID}/stat" || break
+        read_proc_identity "${PORTAGE_LOCK_PID}" state current_start || break
+        [[ ${current_start} == "${PORTAGE_LOCK_STARTTIME}" ]] || return 4
         [[ ${state} == Z ]] && break
         ${SLEEP} 0.05
     done
-    if [[ -r /proc/${PORTAGE_LOCK_PID}/stat ]]; then
-        kill -KILL -- "-${PORTAGE_LOCK_PGID}" 2>/dev/null || :
+    if read_proc_identity "${PORTAGE_LOCK_PID}" state current_start && \
+       [[ ${current_start} == "${PORTAGE_LOCK_STARTTIME}" && ${state} != Z ]]; then
+        pidfd_signal "${PORTAGE_LOCK_PID}" "${PORTAGE_LOCK_STARTTIME}" KILL || signal_status=$?
+        [[ ${signal_status} == 0 || ${signal_status} == 3 ]] || return "${signal_status}"
     fi
     wait "${PORTAGE_LOCK_PID}" 2>/dev/null || :
     PORTAGE_LOCK_PID=
-    PORTAGE_LOCK_PGID=
+    PORTAGE_LOCK_STARTTIME=
 }
 
 deactivate_make_conf_overlay() {
@@ -705,7 +938,7 @@ scan_portage_processes() {
 }
 
 scan_vdb_handles() {
-    local output=$1 proc pid object target map_line
+    local output=$1 proc pid object target map_line maps_fd
     : >"${output}"
     for proc in /proc/[0-9]*; do
         [[ -d ${proc} ]] || continue
@@ -719,22 +952,24 @@ scan_vdb_handles() {
                 printf '%s\t%s\t%s\n' "${pid}" "${object#"${proc}/"}" "${target}" >>"${output}"
             fi
         done
-        if [[ -r ${proc}/maps ]]; then
-            while IFS= read -r map_line; do
+        if [[ -r ${proc}/maps ]] && { exec {maps_fd}<"${proc}/maps"; } 2>/dev/null; then
+            while IFS= read -r map_line <&"${maps_fd}"; do
                 [[ ${map_line} == *" ${VDB}"* ]] || continue
                 printf '%s\tmaps\t%s\n' "${pid}" "${map_line}" >>"${output}"
-            done <"${proc}/maps"
+            done
+            exec {maps_fd}<&-
         fi
     done
     [[ ! -s ${output} ]] || die 'a pre-freeze process retains a VDB path or mapping'
 }
 
 activate_make_conf_overlay() {
-    local before=${REPORT}/make-conf-mount.before.json after=${REPORT}/make-conf-mount.overlay.json
-    local mounted_fields overlay_fields mounted_sha overlay_sha
+    local suffix=${1:-} before=${REPORT}/make-conf-mount.before${1:-}.json
+    local after=${REPORT}/make-conf-mount.overlay${1:-}.json
+    local mounted_fields overlay_fields mounted_sha overlay_sha features
     ${FINDMNT} --json --target "${MAKE_CONF}" -o TARGET,SOURCE,FSTYPE,OPTIONS >"${before}" || \
         die 'cannot record make.conf mount state before freeze'
-    run_tracked "${REPORT}/make-conf-bind-mount.log" "${REPORT}/make-conf-bind-mount.stderr" 2m \
+    run_tracked "${REPORT}/make-conf-bind-mount${suffix}.log" "${REPORT}/make-conf-bind-mount${suffix}.stderr" 2m \
         "${MOUNT}" --bind -- "${REPORT}/make.conf.freeze" "${MAKE_CONF}"
     [[ ${TRACKED_STATUS} -eq 0 ]] || die "make.conf bind mount failed with status ${TRACKED_STATUS}"
     MAKE_CONF_OVERLAY_ACTIVE=1
@@ -756,12 +991,12 @@ activate_make_conf_overlay() {
     overlay_sha=${overlay_sha%% *}
     [[ ${mounted_sha} == "${overlay_sha}" ]] || die 'mounted make.conf freeze bytes differ'
     printf '%s\t%s\t%s\n' "${MAKE_CONF}" "${mounted_fields}" "${mounted_sha}" \
-        >"${REPORT}/make-conf-mounted.identity"
-    run_tracked "${REPORT}/portage-features.freeze.txt" "${REPORT}/portage-features.freeze.stderr" 2m \
+        >"${REPORT}/make-conf-mounted${suffix}.identity"
+    run_tracked "${REPORT}/portage-features.freeze${suffix}.txt" "${REPORT}/portage-features.freeze${suffix}.stderr" 2m \
         "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
         "${PORTAGEQ}" envvar FEATURES
     [[ ${TRACKED_STATUS} -eq 0 ]] || die "portageq FEATURES probe failed with status ${TRACKED_STATUS}"
-    features=$(<"${REPORT}/portage-features.freeze.txt")
+    features=$(<"${REPORT}/portage-features.freeze${suffix}.txt")
     features=" ${features//$'\n'/ } "
     [[ ${features} != *' parallel-install '* ]] || \
         die 'make.conf freeze failed to disable FEATURES=parallel-install'
@@ -779,7 +1014,9 @@ verify_make_conf_restored() {
 }
 
 start_portage_vdb_lock() {
-    local ready=${REPORT}/portage-vdb-lock.ready.json index code ready_pid
+    local suffix ready index code ready_pid _state current_start
+    suffix=${1:-}
+    ready=${REPORT}/portage-vdb-lock${suffix}.ready.json
     local implementation_path implementation_sha actual_implementation_sha
     read -r -d '' code <<'PY' || :
 import ctypes
@@ -860,7 +1097,8 @@ PY
         "$([[ ${FIXTURE_MODE} -eq 1 ]] && printf fixture || printf production)" \
         >"${REPORT}/portage-vdb-lock.stdout" 2>"${REPORT}/portage-vdb-lock.stderr" &
     PORTAGE_LOCK_PID=$!
-    PORTAGE_LOCK_PGID=${PORTAGE_LOCK_PID}
+    read_proc_identity "${PORTAGE_LOCK_PID}" _state PORTAGE_LOCK_STARTTIME || \
+        die 'cannot bind Portage VDB lock-holder process identity'
     for ((index = 0; index < 3000; index++)); do
         [[ -f ${ready} ]] && break
         kill -0 "${PORTAGE_LOCK_PID}" 2>/dev/null || \
@@ -870,6 +1108,10 @@ PY
     [[ -f ${ready} ]] || die 'timed out acquiring the real Portage VDB lock'
     ready_pid=$(${JQ} -r '.pid' "${ready}")
     [[ ${ready_pid} == "${PORTAGE_LOCK_PID}" ]] || die 'Portage VDB lock readiness PID mismatch'
+    read_proc_identity "${PORTAGE_LOCK_PID}" _state current_start || \
+        die 'Portage VDB lock holder disappeared after readiness publication'
+    [[ ${current_start} == "${PORTAGE_LOCK_STARTTIME}" ]] || \
+        die 'Portage VDB lock holder identity changed after readiness publication'
     if ((!FIXTURE_MODE)); then
         implementation_path=$(${JQ} -r '.implementation' "${ready}")
         implementation_sha=$(${JQ} -r '.implementation_sha256' "${ready}")
@@ -912,7 +1154,6 @@ PY
         "${TIMEOUT}" --signal=TERM --kill-after=30s "${deadline}" \
         "$@" >"${output}" 2>"${error_output}" &
     ACTIVE_CHILD_PID=$!
-    ACTIVE_CHILD_PGID=${ACTIVE_CHILD_PID}
     for _ in {1..100}; do
         read_proc_identity "${ACTIVE_CHILD_PID}" state start && break
         ${SLEEP} 0.01
@@ -921,7 +1162,6 @@ PY
     ACTIVE_CHILD_STARTTIME=${start}
     wait "${ACTIVE_CHILD_PID}" || status=$?
     ACTIVE_CHILD_PID=
-    ACTIVE_CHILD_PGID=
     ACTIVE_CHILD_STARTTIME=
     [[ ${status} -ne 124 && ${status} -ne 137 ]] || \
         die "bounded child timed out or required SIGKILL (status=${status}): $1"
@@ -930,6 +1170,13 @@ PY
 
 preflight_containment_primitives() {
     local code
+    if ((FIXTURE_MODE)); then
+        printf '%s\n' \
+            '{"emulated":true,"kill_child":"KILL","pid_namespace":true,"pidfd_open":true,"pidfd_send_signal":true}' \
+            >"${REPORT}/containment-preflight.json"
+        : >"${REPORT}/containment-preflight.stderr"
+        return 0
+    fi
     read -r -d '' code <<'PY' || :
 import json
 import os
@@ -966,22 +1213,29 @@ PY
 }
 
 revalidate_all_tool_identities() {
-    local output=${REPORT}/tool-identities.final.tsv tool_name
+    local output=${REPORT}/.tool-identities.revalidate.${COORDINATOR_PID}.tsv tool_name
+    path_absent "${output}" || die 'stale tool-identity revalidation temporary exists'
     printf 'logical_path\tresolved_path\tlogical_stat\tsha256\tsymlink_chain\n' >"${output}"
     for tool_name in "${TOOL_NAMES[@]}"; do
         tool_identity_line "${TOOL[${tool_name}]}" >>"${output}"
     done
     tool_identity_line "${VERIFIER}" >>"${output}"
     tool_identity_line "${SELF}" >>"${output}"
-    ${CMP} -- "${REPORT}/tool-identities.tsv" "${output}" || \
+    if ! ${CMP} -- "${REPORT}/tool-identities.tsv" "${output}"; then
+        ${RM} -f -- "${output}"
         die 'a trusted tool identity changed during checkpoint creation'
+    fi
+    ${RM} -f -- "${output}"
 }
 
 materialize_sorted_find() {
     local output=$1 deadline=$2 raw
     shift 2
-    ((TRAVERSAL_SEQUENCE += 1))
-    raw=${REPORT}/traversal.$(printf '%03d' "${TRAVERSAL_SEQUENCE}").unsorted.paths0
+    raw=${output}.unsorted.paths0
+    if ! path_absent "${raw}"; then
+        validate_regular_trusted_file "${raw}" 0
+        ${RM} -f -- "${raw}"
+    fi
     run_tracked "${raw}" "${raw}.stderr" "${deadline}" "${FIND}" "$@" -print0
     [[ ${TRACKED_STATUS} -eq 0 ]] || die "find traversal failed with status ${TRACKED_STATUS}: $1"
     run_tracked "${output}" "${output}.sort.stderr" "${deadline}" "${SORT}" -z -- "${raw}"
@@ -993,8 +1247,17 @@ timestamp() {
 }
 
 journal_event() {
-    local phase=$1 detail=$2 sequence file partial
+    local phase=$1 detail=$2 sequence file partial existing name candidate
     ((REPORT_READY)) || return 0
+    if ((JOURNAL_SEQUENCE == 0)); then
+        for existing in "${REPORT}"/journal/[0-9][0-9][0-9]-*.json; do
+            [[ -f ${existing} && ! -L ${existing} ]] || continue
+            name=${existing##*/}
+            candidate=${name%%-*}
+            [[ ${candidate} =~ ^[0-9]{3}$ ]] || die 'journal contains a malformed sequence name'
+            ((10#${candidate} > JOURNAL_SEQUENCE)) && JOURNAL_SEQUENCE=$((10#${candidate}))
+        done
+    fi
     ((JOURNAL_SEQUENCE += 1))
     printf -v sequence '%03d' "${JOURNAL_SEQUENCE}"
     file=${REPORT}/journal/${sequence}-${phase}.json
@@ -1065,8 +1328,11 @@ capture_vdb_manifest() {
 }
 
 validate_snapshot_tree_trust() {
-    local snapshot=$1 path fields uid gid mode type paths
-    paths=${REPORT}/snapshot-traversal.$(printf '%03d' "$((TRAVERSAL_SEQUENCE + 1))").paths0
+    local snapshot=$1 path fields uid gid mode type paths snapshot_key
+    snapshot_key=$(${SHA256SUM} <<<"${snapshot}") || die 'cannot derive snapshot traversal identity'
+    snapshot_key=${snapshot_key%% *}
+    snapshot_key=${snapshot_key:0:16}
+    paths=${REPORT}/snapshot-traversal.${snapshot_key}.paths0
     materialize_sorted_find "${paths}" 2h "${snapshot}" -xdev
     while IFS= read -r -d '' path; do
         fields=$(stat_fields "${path}") || die "cannot stat snapshot object: ${path}"
@@ -1220,8 +1486,1058 @@ verify_source_delta() {
         die 'quickpkg atoms are not the complete exact source-to-live CPV delta'
 }
 
+publish_canonical_state() {
+    local phase_file=$1 staged=${STATE}.partial phase_fields state_fields predecessor_fields allowed=0
+    phase_fields=$(stat_fields "${phase_file}") || die 'cannot stat immutable phase state'
+    if path_absent "${STATE}"; then
+        [[ ${phase_file} == "${STATE_PREPARED}" ]] || \
+            die 'canonical state may be created only from the prepared phase'
+        allowed=1
+    elif [[ -f ${STATE} && ! -L ${STATE} ]]; then
+        state_fields=$(stat_fields "${STATE}") || die 'cannot stat canonical checkpoint state'
+        if [[ $(device_inode_from_fields "${phase_fields}") == \
+              $(device_inode_from_fields "${state_fields}") ]]; then
+            return 0
+        fi
+        if [[ ${phase_file} == "${STATE_ACTIVATED}" && -f ${STATE_PREPARED} && ! -L ${STATE_PREPARED} ]]; then
+            predecessor_fields=$(stat_fields "${STATE_PREPARED}") || die 'cannot stat prepared predecessor state'
+            if [[ $(device_inode_from_fields "${state_fields}") == \
+                  $(device_inode_from_fields "${predecessor_fields}") ]] && \
+               ${JQ} -e '.schema_version == 2 and .status == "prepared-selector-activation-pending" and
+                 .pending_total == 1 and .unknown_total == 0 and .failed_total == 0' \
+                 "${STATE_PREPARED}" >/dev/null; then
+                allowed=1
+            fi
+        elif [[ ${phase_file} == "${STATE_RESTORED}" && -f ${STATE_ACTIVATED} && ! -L ${STATE_ACTIVATED} ]]; then
+            predecessor_fields=$(stat_fields "${STATE_ACTIVATED}") || die 'cannot stat activated predecessor state'
+            if [[ $(device_inode_from_fields "${state_fields}") == \
+                  $(device_inode_from_fields "${predecessor_fields}") ]] && \
+               ${JQ} -e '.schema_version == 2 and .status == "selector-activated-offline-restore-pending" and
+                 .pending_total == 1 and .unknown_total == 0 and .failed_total == 0' \
+                 "${STATE_ACTIVATED}" >/dev/null; then
+                allowed=1
+            fi
+        fi
+    else
+        die 'canonical checkpoint state is a foreign object type'
+    fi
+    ((allowed)) || die 'canonical checkpoint state is not the exact allowed predecessor inode/state'
+    if ! path_absent "${staged}"; then
+        validate_regular_trusted_file "${staged}" 0
+        ${RM} -f -- "${staged}"
+    fi
+    ${LN} -- "${phase_file}" "${staged}"
+    sync_paths "${staged}" "${STATE_PARENT}"
+    ${MV} --force --no-copy -T -- "${staged}" "${STATE}" || \
+        die 'cannot atomically publish canonical checkpoint state'
+    sync_paths "${STATE}" "${STATE_PARENT}"
+    state_fields=$(stat_fields "${STATE}") || die 'cannot stat canonical checkpoint state'
+    [[ $(device_inode_from_fields "${phase_fields}") == \
+       $(device_inode_from_fields "${state_fields}") ]] || \
+        die 'canonical checkpoint state is not the immutable phase-state inode'
+}
+
+publish_phase_state() {
+    local status=$1 destination=$2 receipt_sha=${3:--} offline=$4 restore_receipt_sha=${5:--}
+    local partial=${destination}.partial intent_sha restore_evidence=null
+    intent_sha=$(${SHA256SUM} -- "${ACTIVATION_INTENT}") || die 'cannot hash activation intent'
+    intent_sha=${intent_sha%% *}
+    if [[ ${restore_receipt_sha} != - ]]; then
+        restore_evidence=$(${JQ} -c '.evidence' "${REPORT}/offline-restore-receipt.json") || \
+            die 'cannot load immutable offline restore evidence binding'
+    fi
+    if [[ -f ${destination} && ! -L ${destination} ]]; then
+        # shellcheck disable=SC2016 # jq variables, not shell expansions.
+        ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg status "${status}" \
+            --arg cache "${CACHE}" --arg durable "${DURABLE}" --arg selector "${SELECTOR}" \
+            --arg intent "${ACTIVATION_INTENT}" --arg receipt "${ACTIVATION_RECEIPT}" \
+            --arg restore_receipt "${REPORT}/offline-restore-receipt.json" \
+            --argjson live_cpvs "${live_cpvs:-0}" \
+            --arg intent_sha "${intent_sha}" --arg receipt_sha "${receipt_sha}" \
+            --arg restore_receipt_sha "${restore_receipt_sha}" \
+            --argjson restore_evidence "${restore_evidence}" \
+            --argjson offline "${offline}" '
+            .schema_version == 2 and .control == "exact-live-binpkg-checkpoint" and
+            .checkpoint_id == $id and .status == $status and .live_cpvs == $live_cpvs and
+            .cache_checkpoint == {path:$cache} and .durable_checkpoint == {path:$durable} and
+            .activation.selector == $selector and .activation.intent == $intent and
+            .activation.receipt == (if $receipt_sha == "-" then null else $receipt end) and
+            .activation.intent_sha256 == $intent_sha and
+            .activation.receipt_sha256 == (if $receipt_sha == "-" then null else $receipt_sha end) and
+            .offline_restore.receipt_sha256 ==
+              (if $restore_receipt_sha == "-" then null else $restore_receipt_sha end) and
+            .offline_restore.evidence == $restore_evidence and
+            .offline_restore.receipt ==
+              (if $restore_receipt_sha == "-" then null else $restore_receipt end) and
+            .offline_restoration_tested == $offline and
+            .pending_total == (if $offline then 0 else 1 end) and
+            .unknown_total == 0 and .failed_total == 0' "${destination}" >/dev/null || \
+            die "existing immutable phase state is incoherent: ${destination}"
+        publish_canonical_state "${destination}"
+        return 0
+    fi
+    if ! path_absent "${partial}"; then
+        validate_regular_trusted_file "${partial}" 0
+        ${RM} -f -- "${partial}"
+    fi
+    # shellcheck disable=SC2016 # jq variables, not shell expansions.
+    ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg status "${status}" \
+        --arg at "$(timestamp)" --arg cache "${CACHE}" --arg durable "${DURABLE}" \
+        --arg selector "${SELECTOR}" --arg intent "${ACTIVATION_INTENT}" \
+        --arg intent_sha "${intent_sha}" --arg receipt "${ACTIVATION_RECEIPT}" \
+        --arg receipt_sha "${receipt_sha}" --argjson offline "${offline}" \
+        --arg restore_receipt "${REPORT}/offline-restore-receipt.json" \
+        --arg restore_receipt_sha "${restore_receipt_sha}" \
+        --argjson restore_evidence "${restore_evidence}" \
+        --argjson live_cpvs "${live_cpvs:-0}" \
+        '{schema_version:2,control:"exact-live-binpkg-checkpoint",
+          checkpoint_id:$id,status:$status,recorded_at:$at,live_cpvs:$live_cpvs,
+          cache_checkpoint:{path:$cache},durable_checkpoint:{path:$durable},
+          activation:{selector:$selector,intent:$intent,intent_sha256:$intent_sha,
+            receipt:(if $receipt_sha == "-" then null else $receipt end),
+            receipt_sha256:(if $receipt_sha == "-" then null else $receipt_sha end)},
+          offline_restore:{receipt:(if $restore_receipt_sha == "-" then null else $restore_receipt end),
+            receipt_sha256:(if $restore_receipt_sha == "-" then null else $restore_receipt_sha end),
+            evidence:$restore_evidence},
+          offline_restoration_tested:$offline,
+          pending_total:(if $offline then 0 else 1 end),unknown_total:0,failed_total:0}' \
+        >"${partial}"
+    ${CHMOD} 0600 -- "${partial}"
+    ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+    sync_paths "${partial}" "${STATE_PARENT}"
+    safe_publish_noreplace "${partial}" "${destination}"
+    crash_point "after-${status}-phase-publication"
+    publish_canonical_state "${destination}"
+}
+
+recover_owned_make_conf_overlay() {
+    local mount_json=${REPORT}/make-conf-mount.recovery.json expected_path expected_fields expected_sha actual_sha intent_make_conf
+    local mounted_fields freeze_fields mounted_sha freeze_sha mount_target
+    [[ -f ${REPORT}/freeze-intent.json ]] || return 0
+    intent_make_conf=$(${JQ} -r '.make_conf // ""' "${REPORT}/freeze-intent.json") || \
+        die 'cannot read checkpoint freeze-intent make.conf path'
+    require_absolute_canonical "${intent_make_conf}" 'freeze-intent make.conf path'
+    validate_ancestor_chain "${intent_make_conf%/*}"
+    MAKE_CONF=${intent_make_conf}
+    ${FINDMNT} --json --target "${MAKE_CONF}" -o TARGET,SOURCE,FSTYPE,OPTIONS >"${mount_json}" || \
+        die 'cannot inspect make.conf while reconciling checkpoint'
+    validate_regular_trusted_file "${REPORT}/make.conf.freeze" 0
+    mount_target=$(${JQ} -r '.filesystems[0].target // ""' "${mount_json}")
+    mounted_fields=$(stat_fields "${MAKE_CONF}") || die 'cannot stat active make.conf during recovery'
+    freeze_fields=$(stat_fields "${REPORT}/make.conf.freeze") || die 'cannot stat checkpoint freeze file during recovery'
+    if [[ $(device_inode_from_fields "${mounted_fields}") != \
+          $(device_inode_from_fields "${freeze_fields}") ]]; then
+        [[ ${mount_target} != "${MAKE_CONF}" ]] || \
+            die 'foreign mount is active at checkpoint make.conf target'
+        return 0
+    fi
+    [[ ${mount_target} == "${MAKE_CONF}" ]] || die 'checkpoint freeze inode is active at an unexpected mount target'
+    mounted_sha=$(${SHA256SUM} -- "${MAKE_CONF}") || die 'cannot hash mounted make.conf during recovery'
+    mounted_sha=${mounted_sha%% *}
+    freeze_sha=$(${SHA256SUM} -- "${REPORT}/make.conf.freeze") || die 'cannot hash freeze source during recovery'
+    freeze_sha=${freeze_sha%% *}
+    [[ ${mounted_sha} == "${freeze_sha}" ]] || die 'mounted checkpoint freeze inode has unexpected bytes'
+    ${UMOUNT} -- "${MAKE_CONF}" || die 'cannot remove checkpoint-owned make.conf overlay'
+    IFS=$'\t' read -r expected_path expected_fields expected_sha \
+        <"${REPORT}/make-conf-source.identity" || die 'cannot read original make.conf identity'
+    [[ ${expected_path} == "${MAKE_CONF}" ]] || die 'make.conf recovery identity names another path'
+    [[ $(stat_fields "${MAKE_CONF}") == "${expected_fields}" ]] || \
+        die 'make.conf metadata was not restored after reconciliation unmount'
+    actual_sha=$(${SHA256SUM} -- "${MAKE_CONF}") || die 'cannot hash restored make.conf'
+    actual_sha=${actual_sha%% *}
+    [[ ${actual_sha} == "${expected_sha}" ]] || die 'make.conf bytes were not restored after reconciliation unmount'
+    sync_paths "${MAKE_CONF}" "${MAKE_CONF%/*}"
+}
+
+load_activation_intent() {
+    local staged=${ACTIVATION_INTENT}.partial incomplete=${REPORT}/activation-intent.incomplete
+    local delta_path delta_sha delta_count actual_sha cli_delta line actual_count=0
+    local preparation_path preparation_sha preparation_live
+    if path_absent "${ACTIVATION_INTENT}" && ! path_absent "${staged}"; then
+        validate_regular_trusted_file "${staged}" 0
+        # shellcheck disable=SC2016 # jq variables, not shell expansions.
+        if ! ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg selector "${SELECTOR}" \
+            --arg target "${DURABLE}" '
+            .schema_version == 1 and .checkpoint_id == $id and .status == "prepared" and
+            .selector == $selector and .target == $target' "${staged}" >/dev/null 2>&1; then
+            path_absent "${incomplete}" || die 'both incomplete activation-intent records are visible'
+            safe_publish_noreplace "${staged}" "${incomplete}"
+            sync_paths "${incomplete}" "${REPORT}" "${REPORT_PARENT}"
+            die 'incomplete activation intent was durably classified; selector activation did not start'
+        fi
+        sync_paths "${staged}" "${REPORT}"
+        safe_publish_noreplace "${staged}" "${ACTIVATION_INTENT}"
+        sync_paths "${ACTIVATION_INTENT}" "${REPORT}" "${REPORT_PARENT}"
+    fi
+    validate_regular_trusted_file "${ACTIVATION_INTENT}" 0
+    # shellcheck disable=SC2016 # jq variables, not shell expansions.
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg selector "${SELECTOR}" \
+        --arg target "${DURABLE}" --arg source "${EXPECTED_SOURCE_TARGET}" \
+        --arg source_sha "${EXPECTED_SOURCE_PACKAGES_SHA256}" --arg verifier "${VERIFIER}" \
+        --arg verifier_sha "${EXPECTED_VERIFIER_SHA256}" '
+        .schema_version == 1 and .checkpoint_id == $id and .status == "prepared" and
+        .selector == $selector and .target == $target and
+        .input_bindings.source.path == $source and
+        .input_bindings.source.packages_sha256 == $source_sha and
+        .input_bindings.verifier.path == $verifier and
+        .input_bindings.verifier.sha256 == $verifier_sha and
+        (.input_bindings.delta.sorted_cpvs_path | type == "string" and length > 0) and
+        (.input_bindings.delta.sorted_cpvs_sha256 | test("^[0-9a-f]{64}$")) and
+        (.input_bindings.delta.count | type == "number" and . > 0) and
+        (.input_bindings.artifact_preparation.path | type == "string" and length > 0) and
+        (.input_bindings.artifact_preparation.sha256 | test("^[0-9a-f]{64}$")) and
+        (.input_bindings.artifact_preparation.live_cpvs | type == "number" and . > 0) and
+        (.expected_old_selector_identity | type == "string" and length > 0) and
+        (.activation_evidence.path | type == "string" and length > 0) and
+        (.activation_evidence.sha256 | test("^[0-9a-f]{64}$"))' \
+        "${ACTIVATION_INTENT}" >/dev/null || die 'activation intent is invalid or names another transaction'
+    EXPECTED_SELECTOR_IDENTITY=$(${JQ} -r '.expected_old_selector_identity' "${ACTIVATION_INTENT}")
+    ACTIVATION_INTENT_SHA256=$(${SHA256SUM} -- "${ACTIVATION_INTENT}") || die 'cannot hash activation intent'
+    ACTIVATION_INTENT_SHA256=${ACTIVATION_INTENT_SHA256%% *}
+    validate_ancestor_chain "${EXPECTED_SOURCE_TARGET}"
+    validate_regular_trusted_file "${EXPECTED_SOURCE_TARGET}/Packages" 0
+    actual_sha=$(${SHA256SUM} -- "${EXPECTED_SOURCE_TARGET}/Packages") || \
+        die 'cannot hash bound source Packages during reconciliation'
+    actual_sha=${actual_sha%% *}
+    [[ ${actual_sha} == "${EXPECTED_SOURCE_PACKAGES_SHA256}" ]] || \
+        die 'bound source Packages changed after activation intent'
+    delta_path=$(${JQ} -r '.input_bindings.delta.sorted_cpvs_path' "${ACTIVATION_INTENT}")
+    delta_sha=$(${JQ} -r '.input_bindings.delta.sorted_cpvs_sha256' "${ACTIVATION_INTENT}")
+    delta_count=$(${JQ} -r '.input_bindings.delta.count' "${ACTIVATION_INTENT}")
+    require_direct_child "${delta_path}" "${REPORT}" 'bound sorted delta path'
+    validate_regular_trusted_file "${delta_path}" 0
+    actual_sha=$(${SHA256SUM} -- "${delta_path}") || die 'cannot hash bound sorted delta'
+    actual_sha=${actual_sha%% *}
+    [[ ${actual_sha} == "${delta_sha}" ]] || die 'bound sorted delta changed after activation intent'
+    while IFS= read -r line; do
+        [[ -n ${line} ]] || die 'bound sorted delta contains an empty CPV'
+        ((actual_count += 1))
+    done <"${delta_path}"
+    [[ ${actual_count} == "${delta_count}" ]] || die 'bound sorted delta count changed'
+    preparation_path=$(${JQ} -r '.input_bindings.artifact_preparation.path' "${ACTIVATION_INTENT}")
+    preparation_sha=$(${JQ} -r '.input_bindings.artifact_preparation.sha256' "${ACTIVATION_INTENT}")
+    preparation_live=$(${JQ} -r '.input_bindings.artifact_preparation.live_cpvs' "${ACTIVATION_INTENT}")
+    [[ ${preparation_path} == "${REPORT}/artifact-preparation-state.json" ]] || \
+        die 'activation intent names a foreign artifact preparation state'
+    validate_regular_trusted_file "${preparation_path}" 0
+    actual_sha=$(${SHA256SUM} -- "${preparation_path}"); actual_sha=${actual_sha%% *}
+    [[ ${actual_sha} == "${preparation_sha}" ]] || die 'bound artifact preparation state changed'
+    [[ $(${JQ} -r '.live_cpvs' "${preparation_path}") == "${preparation_live}" ]] || \
+        die 'bound artifact preparation live CPV count changed'
+    cli_delta=${REPORT}/.reconcile-cli-delta.txt
+    if ! path_absent "${cli_delta}"; then
+        validate_regular_trusted_file "${cli_delta}" 0
+        ${RM} -f -- "${cli_delta}"
+    fi
+    printf '%s\n' "${ATOM_CPVS[@]}" | ${SORT} >"${cli_delta}"
+    if ! ${CMP} -- "${cli_delta}" "${delta_path}"; then
+        ${RM} -f -- "${cli_delta}"
+        die 'reconcile/finalize exact delta atoms differ from activation intent'
+    fi
+    ${RM} -f -- "${cli_delta}"
+}
+
+validate_prepared_selector_record() {
+    local expected_identity=$1 prepared_identity
+    validate_regular_trusted_file "${PREPARED_SELECTOR_RECORD}" 0
+    # shellcheck disable=SC2016 # jq variables, not shell expansions.
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg path "${SELECTOR_PARTIAL}" \
+        --arg target "${DURABLE}" --arg intent_sha "${ACTIVATION_INTENT_SHA256}" '
+        .schema_version == 1 and .checkpoint_id == $id and
+        .path == $path and .target == $target and
+        .activation_intent_sha256 == $intent_sha and
+        (.selector_identity | type == "string" and length > 0)' \
+        "${PREPARED_SELECTOR_RECORD}" >/dev/null || die 'prepared-selector record is incoherent'
+    prepared_identity=$(${JQ} -r '.selector_identity // ""' "${PREPARED_SELECTOR_RECORD}") || \
+        die 'cannot read prepared-selector identity'
+    [[ ${prepared_identity} == "${expected_identity}" ]] || \
+        die 'prepared-selector identity differs from its immutable record'
+}
+
+require_activated_selector_is_prepared_object() {
+    local active_identity
+    active_identity=$(selector_identity "${SELECTOR}") || die 'cannot read activated selector identity'
+    validate_prepared_selector_record "${active_identity}"
+}
+
+validate_activation_receipt_contract() {
+    local active_identity witness_identity evidence_path evidence_sha evidence_actual
+    local prepared_sha receipt_prepared_sha
+    validate_regular_trusted_file "${ACTIVATION_RECEIPT}" 0
+    require_activated_selector_is_prepared_object
+    active_identity=$(selector_identity "${SELECTOR}") || die 'cannot read activated selector identity'
+    witness_identity=$(selector_identity "${SELECTOR_WITNESS}") || die 'cannot read displaced selector identity'
+    evidence_path=$(${JQ} -r '.activation_evidence.path' "${ACTIVATION_INTENT}")
+    evidence_sha=$(${JQ} -r '.activation_evidence.sha256' "${ACTIVATION_INTENT}")
+    validate_regular_trusted_file "${evidence_path}" 0
+    evidence_actual=$(${SHA256SUM} -- "${evidence_path}"); evidence_actual=${evidence_actual%% *}
+    [[ ${evidence_actual} == "${evidence_sha}" ]] || die 'activation evidence manifest changed'
+    prepared_sha=$(${SHA256SUM} -- "${PREPARED_SELECTOR_RECORD}"); prepared_sha=${prepared_sha%% *}
+    receipt_prepared_sha=$(${JQ} -r '.prepared_selector_record.sha256 // ""' "${ACTIVATION_RECEIPT}")
+    [[ ${receipt_prepared_sha} == "${prepared_sha}" ]] || die 'activation receipt prepared-record binding differs'
+    # shellcheck disable=SC2016 # jq variables, not shell expansions.
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg selector "${SELECTOR}" \
+        --arg target "${DURABLE}" --arg active "${active_identity}" \
+        --arg witness "${SELECTOR_WITNESS}" --arg displaced "${witness_identity}" \
+        --arg intent "${ACTIVATION_INTENT}" --arg intent_sha "${ACTIVATION_INTENT_SHA256}" \
+        --arg prepared "${PREPARED_SELECTOR_RECORD}" --arg prepared_sha "${prepared_sha}" \
+        --arg evidence "${evidence_path}" --arg evidence_sha "${evidence_sha}" '
+        .schema_version == 1 and .checkpoint_id == $id and .status == "selector-activated" and
+        .selector == $selector and .target == $target and
+        .activated_selector_identity == $active and
+        .displaced_selector_witness == $witness and .displaced_selector_identity == $displaced and
+        .activation_intent == {path:$intent,sha256:$intent_sha} and
+        .prepared_selector_record == {path:$prepared,sha256:$prepared_sha} and
+        .activation_evidence == {path:$evidence,sha256:$evidence_sha}' \
+        "${ACTIVATION_RECEIPT}" >/dev/null || die 'activation receipt is structurally incoherent'
+}
+
+ensure_prepared_selector() {
+    local identity partial
+    if path_absent "${SELECTOR_PARTIAL}"; then
+        ${LN} -s -- "${DURABLE}" "${SELECTOR_PARTIAL}"
+        ${CHOWN} -h "${TRUST_UID}:${TRUST_GID}" -- "${SELECTOR_PARTIAL}"
+        sync_paths "${SELECTOR_PARTIAL}" "${CACHE_PARENT}"
+    fi
+    identity=$(selector_identity "${SELECTOR_PARTIAL}") || die 'prepared selector is unreadable'
+    [[ $(${READLINK} -- "${SELECTOR_PARTIAL}") == "${DURABLE}" ]] || \
+        die 'prepared selector names a foreign target'
+    if path_absent "${PREPARED_SELECTOR_RECORD}"; then
+        partial=${PREPARED_SELECTOR_RECORD}.partial
+        if ! path_absent "${partial}"; then
+            validate_regular_trusted_file "${partial}" 0
+            ${RM} -f -- "${partial}"
+        fi
+        # shellcheck disable=SC2016 # jq variables, not shell expansions.
+        ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg at "$(timestamp)" \
+            --arg path "${SELECTOR_PARTIAL}" --arg target "${DURABLE}" \
+            --arg identity "${identity}" --arg intent_sha "${ACTIVATION_INTENT_SHA256}" \
+            '{schema_version:1,checkpoint_id:$id,prepared_at:$at,path:$path,target:$target,
+              selector_identity:$identity,activation_intent_sha256:$intent_sha}' >"${partial}"
+        ${CHMOD} 0600 -- "${partial}"
+        ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+        sync_paths "${partial}" "${REPORT}"
+        safe_publish_noreplace "${partial}" "${PREPARED_SELECTOR_RECORD}"
+        sync_paths "${PREPARED_SELECTOR_RECORD}" "${REPORT}"
+    else
+        validate_prepared_selector_record "${identity}"
+    fi
+}
+
+publish_activation_receipt() {
+    local active_identity witness_identity partial receipt_sha evidence_path evidence_sha actual_sha prepared_sha
+    active_identity=$(selector_identity "${SELECTOR}") || die 'activated selector is unreadable'
+    [[ $(${READLINK} -- "${SELECTOR}") == "${DURABLE}" ]] || die 'activated selector names a foreign target'
+    require_activated_selector_is_prepared_object
+    witness_identity=$(selector_identity "${SELECTOR_WITNESS}") || die 'displaced-selector witness is unreadable'
+    [[ ${witness_identity} == "${EXPECTED_SELECTOR_IDENTITY}" ]] || \
+        die 'displaced-selector witness does not have the expected old identity'
+    evidence_path=$(${JQ} -r '.activation_evidence.path' "${ACTIVATION_INTENT}")
+    evidence_sha=$(${JQ} -r '.activation_evidence.sha256' "${ACTIVATION_INTENT}")
+    actual_sha=$(${SHA256SUM} -- "${evidence_path}") || die 'cannot hash activation evidence manifest'
+    actual_sha=${actual_sha%% *}
+    [[ ${actual_sha} == "${evidence_sha}" ]] || die 'activation evidence manifest changed after intent publication'
+    prepared_sha=$(${SHA256SUM} -- "${PREPARED_SELECTOR_RECORD}") || die 'cannot hash prepared selector record'
+    prepared_sha=${prepared_sha%% *}
+    if path_absent "${ACTIVATION_RECEIPT}"; then
+        partial=${ACTIVATION_RECEIPT}.partial
+        if ! path_absent "${partial}"; then
+            validate_regular_trusted_file "${partial}" 0
+            ${RM} -f -- "${partial}"
+        fi
+        # shellcheck disable=SC2016 # jq variables, not shell expansions.
+        ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg at "$(timestamp)" \
+            --arg selector "${SELECTOR}" --arg target "${DURABLE}" \
+            --arg active_identity "${active_identity}" --arg witness "${SELECTOR_WITNESS}" \
+            --arg witness_identity "${witness_identity}" --arg intent "${ACTIVATION_INTENT}" \
+            --arg intent_sha "${ACTIVATION_INTENT_SHA256}" \
+            --arg prepared_record "${PREPARED_SELECTOR_RECORD}" \
+            --arg prepared_sha "${prepared_sha}" \
+            --arg evidence "${evidence_path}" --arg evidence_sha "${evidence_sha}" \
+            '{schema_version:1,checkpoint_id:$id,status:"selector-activated",
+              activated_at:$at,selector:$selector,target:$target,
+              activated_selector_identity:$active_identity,
+              displaced_selector_witness:$witness,
+              displaced_selector_identity:$witness_identity,
+              activation_intent:{path:$intent,sha256:$intent_sha},
+              prepared_selector_record:{path:$prepared_record,sha256:$prepared_sha},
+              activation_evidence:{path:$evidence,sha256:$evidence_sha}}' >"${partial}"
+        ${CHMOD} 0600 -- "${partial}"
+        ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+        sync_paths "${partial}" "${REPORT}"
+        safe_publish_noreplace "${partial}" "${ACTIVATION_RECEIPT}"
+        sync_paths "${ACTIVATION_RECEIPT}" "${REPORT}" "${REPORT_PARENT}"
+    else
+        validate_activation_receipt_contract
+    fi
+    validate_activation_receipt_contract
+    receipt_sha=$(${SHA256SUM} -- "${ACTIVATION_RECEIPT}") || die 'cannot hash activation receipt'
+    printf '%s\n' "${receipt_sha%% *}"
+}
+
+reconcile_activation() {
+    local freeze_already_held=${1:-0} current_identity displaced_identity receipt_sha
+    load_activation_intent
+    current_identity=$(selector_identity "${SELECTOR}") || die 'cannot classify current selector during reconciliation'
+    if [[ ${current_identity} == "${EXPECTED_SELECTOR_IDENTITY}" ]]; then
+        path_absent "${SELECTOR_WITNESS}" || die 'old selector and displaced-selector witness are simultaneously visible'
+        path_absent "${ACTIVATION_RECEIPT}" || die 'old selector is incompatible with an activation receipt'
+        ensure_prepared_selector
+        crash_point after-prepared-selector
+        publish_phase_state prepared-selector-activation-pending "${STATE_PREPARED}" - false
+        crash_point after-prepared-state
+        if ((freeze_already_held == 0)); then
+            scan_portage_processes "${REPORT}/portage-processes.reconcile-before-overlay.tsv"
+            activate_make_conf_overlay ".reconcile-${COORDINATOR_PID}"
+            scan_portage_processes "${REPORT}/portage-processes.reconcile-after-overlay.tsv"
+            start_portage_vdb_lock ".reconcile-${COORDINATOR_PID}"
+            scan_vdb_handles "${REPORT}/vdb-handles.reconcile-after-lock.tsv"
+            revalidate_vdb reconcile
+            require_selector_identity 'reconciliation final VDB/source freeze'
+        fi
+        ACTIVATION_STARTED=1
+        ${MV} --exchange --no-copy -T -- "${SELECTOR_PARTIAL}" "${SELECTOR}"
+        sync_paths "${CACHE_PARENT}"
+        crash_point after-exchange
+        current_identity=$(selector_identity "${SELECTOR}") || die 'exchange lost activated selector'
+        [[ $(${READLINK} -- "${SELECTOR}") == "${DURABLE}" ]] || die 'exchange did not activate the exact durable checkpoint'
+    elif [[ $(${READLINK} -- "${SELECTOR}" 2>/dev/null) == "${DURABLE}" ]]; then
+        ACTIVATION_STARTED=1
+        require_activated_selector_is_prepared_object
+    else
+        die 'selector is neither the exact old identity nor the exact activated target (foreign selector)'
+    fi
+
+    if [[ -L ${SELECTOR_PARTIAL} ]]; then
+        displaced_identity=$(selector_identity "${SELECTOR_PARTIAL}") || die 'displaced selector is unreadable'
+        if [[ ${displaced_identity} != "${EXPECTED_SELECTOR_IDENTITY}" ]]; then
+            ${MV} --exchange --no-copy -T -- "${SELECTOR_PARTIAL}" "${SELECTOR}" || \
+                die 'selector CAS captured a foreign update but could not roll it back'
+            sync_paths "${CACHE_PARENT}"
+            [[ $(selector_identity "${SELECTOR}") == "${displaced_identity}" ]] || \
+                die 'selector CAS rollback did not restore the foreign selector identity'
+            [[ $(${READLINK} -- "${SELECTOR_PARTIAL}") == "${DURABLE}" ]] || \
+                die 'selector CAS rollback lost the prepared checkpoint selector'
+            ${RM} -f -- "${SELECTOR_PARTIAL}"
+            sync_paths "${CACHE_PARENT}"
+            ACTIVATION_STARTED=0
+            die 'selector CAS captured a near-rename lost update and rolled it back'
+        fi
+        crash_point after-displaced-verified
+        path_absent "${SELECTOR_WITNESS}" || die 'both displaced selector and witness are visible'
+        safe_publish_noreplace "${SELECTOR_PARTIAL}" "${SELECTOR_WITNESS}"
+        sync_paths "${SELECTOR_WITNESS}" "${CACHE_PARENT}"
+        crash_point after-witness
+    fi
+    [[ -L ${SELECTOR_WITNESS} ]] || die 'activated selector has no displaced-selector witness'
+    displaced_identity=$(selector_identity "${SELECTOR_WITNESS}") || die 'cannot read displaced-selector witness'
+    [[ ${displaced_identity} == "${EXPECTED_SELECTOR_IDENTITY}" ]] || \
+        die 'displaced-selector witness is foreign'
+    path_absent "${SELECTOR_PARTIAL}" || die 'unexplained prepared selector remains after witness publication'
+    receipt_sha=$(publish_activation_receipt)
+    crash_point after-receipt
+    publish_phase_state selector-activated-offline-restore-pending "${STATE_ACTIVATED}" "${receipt_sha}" false
+    crash_point after-activated-state
+    ACTIVATION_COMPLETE=1
+    release_portage_vdb_lock
+    deactivate_make_conf_overlay || die 'cannot remove checkpoint make.conf overlay after activation'
+    verify_make_conf_restored "${REPORT}/make-conf-restored.identity"
+    path_absent "${SELECTOR_PARTIAL}" || die 'successful activation left an unexplained prepared selector'
+}
+
+validate_hash_manifest() {
+    local manifest=$1 label=$2 line expected path actual
+    validate_regular_trusted_file "${manifest}" 0
+    while IFS= read -r line; do
+        [[ ${line} =~ ^([0-9a-f]{64})[[:space:]][[:space:]](/.*)$ ]] || \
+            die "${label} contains a malformed entry"
+        expected=${BASH_REMATCH[1]}
+        path=${BASH_REMATCH[2]}
+        validate_regular_trusted_file "${path}" 0
+        actual=$(${SHA256SUM} -- "${path}") || die "cannot hash ${label} member: ${path}"
+        actual=${actual%% *}
+        [[ ${actual} == "${expected}" ]] || die "${label} member changed: ${path}"
+    done <"${manifest}"
+}
+
+validate_durable_archive_manifest() {
+    local cpv relative expected_size expected_sha archive actual_size actual_sha count=0
+    validate_regular_trusted_file "${REPORT}/durable-final-archives.tsv" 0
+    while IFS=$'\t' read -r cpv relative expected_size expected_sha; do
+        [[ ${cpv} != cpv ]] || continue
+        [[ -n ${cpv} && ${relative} != /* && ${relative} != *$'\n'* && "/${relative}/" != *'/../'* ]] || \
+            die 'durable archive manifest contains an unsafe record'
+        archive=${DURABLE}/${relative}
+        validate_regular_trusted_file "${archive}" 0
+        actual_size=$(${STAT} -c %s -- "${archive}") || die 'cannot stat durable archive'
+        actual_sha=$(${SHA256SUM} -- "${archive}"); actual_sha=${actual_sha%% *}
+        [[ ${actual_size} == "${expected_size}" && ${actual_sha} == "${expected_sha}" ]] || \
+            die "durable archive changed after creation: ${cpv}"
+        ((count += 1))
+    done <"${REPORT}/durable-final-archives.tsv"
+    [[ ${count} == "${live_cpvs}" ]] || die 'durable archive manifest count differs from prepared live CPVs'
+}
+
+validate_vdb_transition_confined() {
+    local before=$1 after=$2 cpv=$3 code
+    read -r -d '' code <<'PY' || :
+import pathlib
+import sys
+
+before = pathlib.Path(sys.argv[1])
+after = pathlib.Path(sys.argv[2])
+cpv = sys.argv[3]
+
+def load(path):
+    result = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        fields = line.split("\t", 3)
+        if len(fields) != 4:
+            raise SystemExit("malformed VDB manifest")
+        result[fields[1]] = line
+    return result
+
+def owned(path):
+    return path == cpv or path.startswith(cpv + "/")
+
+a = load(before)
+b = load(after)
+if {key: value for key, value in a.items() if not owned(key)} != {
+    key: value for key, value in b.items() if not owned(key)
+}:
+    raise SystemExit("VDB transition escaped restored CPV")
+if {key: value for key, value in a.items() if owned(key)} == {
+    key: value for key, value in b.items() if owned(key)
+}:
+    raise SystemExit("restored CPV VDB subtree did not change")
+PY
+    "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+        "${PYTHON}" -I -B -c "${code}" "${before}" "${after}" "${cpv}" || \
+        die 'supervised offline restore VDB transition is not confined to the exact CPV'
+}
+
+validate_offline_restore_directory_inventory() {
+    local directory=${REPORT}/offline-restore path name
+    validate_trusted_directory "${directory}"
+    for path in "${directory}"/* "${directory}"/.[!.]* "${directory}"/..?*; do
+        path_absent "${path}" && continue
+        [[ -f ${path} && ! -L ${path} ]] || die "foreign object in offline restore evidence: ${path}"
+        name=${path##*/}
+        case ${name} in
+            binpkg.json|command.json|post-verifier.json|post-verifier-report.json|post-verifier-report.json.stderr|command-intent.json|attempt-ledger.sha256) ;;
+            retry-intent-[0-9][0-9][0-9].json|pre-command-verifier.[0-9][0-9][0-9].json|pre-command-verifier.[0-9][0-9][0-9].json.stderr) ;;
+            vdb.before.[0-9][0-9][0-9].tsv|vdb.after.[0-9][0-9][0-9].tsv) ;;
+            vdb.before.[0-9][0-9][0-9].tsv.paths0*|vdb.after.[0-9][0-9][0-9].tsv.paths0*) ;;
+            emerge.stdout.[0-9][0-9][0-9]|emerge.stderr.[0-9][0-9][0-9]) ;;
+            qcheck.stdout.[0-9][0-9][0-9]|qcheck.stderr.[0-9][0-9][0-9]) ;;
+            *) die "unexplained file in offline restore evidence: ${path}" ;;
+        esac
+        validate_regular_trusted_file "${path}" 0
+    done
+}
+
+validate_restore_attempt_prefix() {
+    local restore_dir=${REPORT}/offline-restore command_intent=${REPORT}/offline-restore/command-intent.json
+    local binpkg=${REPORT}/offline-restore/binpkg.json binpkg_sha tool_line local_path expected_hash current_hash
+    local retry_path expected_retry retry_index=0 command_intent_sha actual
+    validate_regular_trusted_file "${binpkg}" 0
+    validate_regular_trusted_file "${command_intent}" 0
+    binpkg_sha=$(${SHA256SUM} -- "${binpkg}"); binpkg_sha=${binpkg_sha%% *}
+    tool_line=$(tool_identity_line "${EMERGE}")
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg tool "${tool_line}" --arg home "${HOME_DIR}" \
+        --arg snapshot "${DURABLE}" --arg cpv "${RESTORE_CPV}" --arg emerge "${EMERGE}" \
+        --arg binpkg_sha "${binpkg_sha}" '.schema_version == 1 and .checkpoint_id == $id and
+        .status == "supervised-command-pending" and .emerge_tool_identity == $tool and
+        .environment == {HOME:$home,LANG:"C",LC_ALL:"C",TZ:"UTC",PKGDIR:$snapshot} and
+        .argv == [$emerge,"--ignore-default-opts","--offline","--usepkgonly","--getbinpkg=n",
+          "--nodeps","--oneshot",("="+$cpv)] and .binpkg_evidence_sha256 == $binpkg_sha and
+        (.vdb_before.path | type == "string") and (.vdb_before.sha256 | test("^[0-9a-f]{64}$")) and
+        (.pre_command_verifier.path | type == "string") and
+        (.pre_command_verifier.sha256 | test("^[0-9a-f]{64}$"))' "${command_intent}" >/dev/null || \
+        die 'offline restore command intent is incoherent before retry'
+    for actual in vdb_before pre_command_verifier; do
+        local_path=$(${JQ} -r ".${actual}.path" "${command_intent}")
+        expected_hash=$(${JQ} -r ".${actual}.sha256" "${command_intent}")
+        require_direct_child "${local_path}" "${restore_dir}" 'command-intent evidence path'
+        validate_regular_trusted_file "${local_path}" 0
+        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
+        [[ ${current_hash} == "${expected_hash}" ]] || die "command-intent ${actual} evidence changed before retry"
+    done
+    command_intent_sha=$(${SHA256SUM} -- "${command_intent}"); command_intent_sha=${command_intent_sha%% *}
+    for retry_path in "${restore_dir}"/retry-intent-[0-9][0-9][0-9].json; do
+        [[ -f ${retry_path} && ! -L ${retry_path} ]] || continue
+        ((retry_index += 1)); printf -v expected_retry 'retry-intent-%03d.json' "${retry_index}"
+        [[ ${retry_path##*/} == "${expected_retry}" ]] || die 'retry intents are not contiguous before retry'
+        ${JQ} -e --arg id "${CHECKPOINT_ID}" --argjson attempt "${retry_index}" \
+            --arg intent_sha "${command_intent_sha}" '.schema_version == 1 and
+            .checkpoint_id == $id and .status == "operator-authorized-retry" and
+            .attempt == $attempt and .command_intent_sha256 == $intent_sha and
+            (.authorized_at_unix_ns | test("^[0-9]+$")) and
+            (.vdb_before.path | type == "string") and (.vdb_before.sha256 | test("^[0-9a-f]{64}$")) and
+            (.pre_command_verifier.path | type == "string") and
+            (.pre_command_verifier.sha256 | test("^[0-9a-f]{64}$"))' "${retry_path}" >/dev/null || \
+            die 'offline restore retry intent is incoherent before retry'
+        for actual in vdb_before pre_command_verifier; do
+            local_path=$(${JQ} -r ".${actual}.path" "${retry_path}")
+            expected_hash=$(${JQ} -r ".${actual}.sha256" "${retry_path}")
+            require_direct_child "${local_path}" "${restore_dir}" 'retry-intent evidence path'
+            validate_regular_trusted_file "${local_path}" 0
+            current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
+            [[ ${current_hash} == "${expected_hash}" ]] || die "retry-intent ${actual} evidence changed before retry"
+        done
+    done
+    VALIDATED_RETRY_COUNT=${retry_index}
+}
+
+validate_activated_state() {
+    local activation_sha intent_sha canonical_fields activated_fields restored_fields canonical_inode
+    validate_regular_trusted_file "${STATE_ACTIVATED}" 0
+    validate_activation_receipt_contract
+    activation_sha=$(${SHA256SUM} -- "${ACTIVATION_RECEIPT}") || die 'cannot hash activation receipt'
+    activation_sha=${activation_sha%% *}
+    intent_sha=$(${SHA256SUM} -- "${ACTIVATION_INTENT}") || die 'cannot hash activation intent'
+    intent_sha=${intent_sha%% *}
+    # shellcheck disable=SC2016 # jq variables, not shell expansions.
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg activation_sha "${activation_sha}" \
+        --arg intent_sha "${intent_sha}" --arg cache "${CACHE}" --arg durable "${DURABLE}" \
+        --arg selector "${SELECTOR}" --arg intent "${ACTIVATION_INTENT}" \
+        --arg receipt "${ACTIVATION_RECEIPT}" --argjson live_cpvs "${live_cpvs}" '
+        .schema_version == 2 and .control == "exact-live-binpkg-checkpoint" and .checkpoint_id == $id and
+        .status == "selector-activated-offline-restore-pending" and
+        .live_cpvs == $live_cpvs and .cache_checkpoint == {path:$cache} and
+        .durable_checkpoint == {path:$durable} and .activation.selector == $selector and
+        .activation.intent == $intent and .activation.receipt == $receipt and
+        .activation.intent_sha256 == $intent_sha and
+        .activation.receipt_sha256 == $activation_sha and
+        .offline_restoration_tested == false and .pending_total == 1 and
+        .unknown_total == 0 and .failed_total == 0 and
+        (.live_cpvs | type == "number" and . > 0)' "${STATE_ACTIVATED}" >/dev/null || \
+        die 'selector-activated immutable state is incoherent'
+    validate_regular_trusted_file "${STATE}" 0
+    canonical_fields=$(stat_fields "${STATE}") || die 'cannot stat canonical checkpoint state'
+    activated_fields=$(stat_fields "${STATE_ACTIVATED}") || die 'cannot stat activated phase state'
+    canonical_inode=$(device_inode_from_fields "${canonical_fields}")
+    if [[ ${canonical_inode} == $(device_inode_from_fields "${activated_fields}") ]]; then
+        return 0
+    fi
+    if [[ -f ${STATE_RESTORED} && ! -L ${STATE_RESTORED} ]]; then
+        restored_fields=$(stat_fields "${STATE_RESTORED}") || die 'cannot stat restored phase state'
+        [[ ${canonical_inode} == $(device_inode_from_fields "${restored_fields}") ]] && return 0
+    fi
+    die 'canonical checkpoint state is not an exact activated/restored phase-state inode'
+}
+
+validate_offline_restore_evidence() {
+    local restore_dir=${REPORT}/offline-restore binpkg command post receipt attempt_ledger
+    local binpkg_sha command_sha post_sha receipt_sha actual before after qcheck_stdout qcheck_stderr ledger_sha
+    local archive_relative archive_path archive_sha tool_line qcheck_tool_line command_intent command_intent_sha
+    local local_path expected_hash current_hash activation_actual
+    local selected_ns start_ns end_ns post_ns attempt retry_path retry_sha
+    local retry_index=0 retry_at retry_before retry_pre expected_retry
+    restore_dir=${REPORT}/offline-restore
+    binpkg=${restore_dir}/binpkg.json
+    command=${restore_dir}/command.json
+    post=${restore_dir}/post-verifier.json
+    receipt=${REPORT}/offline-restore-receipt.json
+    command_intent=${restore_dir}/command-intent.json
+    attempt_ledger=${restore_dir}/attempt-ledger.sha256
+    for actual in "${binpkg}" "${command}" "${post}" "${receipt}" "${command_intent}" "${attempt_ledger}"; do
+        validate_regular_trusted_file "${actual}" 0
+    done
+    binpkg_sha=$(${SHA256SUM} -- "${binpkg}"); binpkg_sha=${binpkg_sha%% *}
+    command_sha=$(${SHA256SUM} -- "${command}"); command_sha=${command_sha%% *}
+    post_sha=$(${SHA256SUM} -- "${post}"); post_sha=${post_sha%% *}
+    receipt_sha=$(${SHA256SUM} -- "${receipt}"); receipt_sha=${receipt_sha%% *}
+    command_intent_sha=$(${SHA256SUM} -- "${command_intent}"); command_intent_sha=${command_intent_sha%% *}
+    ledger_sha=$(${SHA256SUM} -- "${attempt_ledger}"); ledger_sha=${ledger_sha%% *}
+    validate_hash_manifest "${attempt_ledger}" 'offline restore attempt ledger'
+    archive_relative=$(${JQ} -r '.archive_relative_path' "${binpkg}")
+    archive_path=${DURABLE}/${archive_relative}
+    validate_regular_trusted_file "${archive_path}" 0
+    archive_sha=$(${SHA256SUM} -- "${archive_path}"); archive_sha=${archive_sha%% *}
+    selected_ns=$(${JQ} -r '.selected_at_unix_ns' "${binpkg}")
+    start_ns=$(${JQ} -r '.started_at_unix_ns' "${command}")
+    end_ns=$(${JQ} -r '.completed_at_unix_ns' "${command}")
+    post_ns=$(${JQ} -r '.completed_at_unix_ns' "${post}")
+    [[ ${selected_ns}${start_ns}${end_ns}${post_ns} =~ ^[0-9]+$ ]] || die 'offline restore timestamps are malformed'
+    ((selected_ns <= start_ns && start_ns <= end_ns && end_ns <= post_ns)) || \
+        die 'offline restore evidence timestamps are out of order'
+    attempt=$(${JQ} -r '.attempt' "${command}")
+    [[ ${attempt} =~ ^[0-9]+$ ]] || die 'offline restore attempt number is malformed'
+    if ((attempt == 0)); then
+        ${JQ} -e '.retry_authorization == null' "${command}" >/dev/null || \
+            die 'initial restore attempt has a retry authorization'
+    else
+        retry_path=$(${JQ} -r '.retry_authorization.path' "${command}")
+        retry_sha=$(${JQ} -r '.retry_authorization.sha256' "${command}")
+        validate_regular_trusted_file "${retry_path}" 0
+        current_hash=$(${SHA256SUM} -- "${retry_path}"); current_hash=${current_hash%% *}
+        [[ ${current_hash} == "${retry_sha}" ]] || die 'successful retry authorization changed'
+        ${JQ} -e --arg id "${CHECKPOINT_ID}" --argjson attempt "${attempt}" \
+            --arg intent_sha "${command_intent_sha}" '.schema_version == 1 and
+            .checkpoint_id == $id and .status == "operator-authorized-retry" and
+            .attempt == $attempt and .command_intent_sha256 == $intent_sha' \
+            "${retry_path}" >/dev/null || die 'successful retry authorization is incoherent'
+    fi
+    # shellcheck disable=SC2016 # jq variables, not shell expansions.
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg snapshot "${DURABLE}" \
+        --arg cpv "${RESTORE_CPV}" --arg relative "${archive_relative}" --arg archive_sha "${archive_sha}" '
+        .schema_version == 1 and .sequence == 1 and .checkpoint_id == $id and
+        .selected_snapshot == $snapshot and .cpv == $cpv and
+        .archive_relative_path == $relative and .archive_sha256 == $archive_sha' "${binpkg}" >/dev/null || \
+        die 'offline restore binpkg evidence is incoherent'
+    before=$(${JQ} -r '.vdb_transition.before.path' "${command}")
+    after=$(${JQ} -r '.vdb_transition.after.path' "${command}")
+    qcheck_stdout=$(${JQ} -r '.package_check.stdout.path' "${command}")
+    qcheck_stderr=$(${JQ} -r '.package_check.stderr.path' "${command}")
+    for actual in "${before}" "${after}" "${qcheck_stdout}" "${qcheck_stderr}" \
+        "$(${JQ} -r '.logs.stdout.path' "${command}")" \
+        "$(${JQ} -r '.logs.stderr.path' "${command}")"; do
+        require_direct_child "${actual}" "${restore_dir}" 'offline restore evidence path'
+        validate_regular_trusted_file "${actual}" 0
+    done
+    validate_vdb_transition_confined "${before}" "${after}" "${RESTORE_CPV}"
+    tool_line=$(tool_identity_line "${EMERGE}")
+    qcheck_tool_line=$(tool_identity_line "${QCHECK}")
+    # shellcheck disable=SC2016 # jq variables, not shell expansions.
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg tool "${tool_line}" --arg home "${HOME_DIR}" \
+        --arg snapshot "${DURABLE}" --arg cpv "${RESTORE_CPV}" --arg emerge "${EMERGE}" \
+        --arg binpkg_sha "${binpkg_sha}" '
+        .schema_version == 1 and .checkpoint_id == $id and .status == "supervised-command-pending" and
+        .emerge_tool_identity == $tool and
+        .environment == {HOME:$home,LANG:"C",LC_ALL:"C",TZ:"UTC",PKGDIR:$snapshot} and
+        .argv == [$emerge,"--ignore-default-opts","--offline","--usepkgonly","--getbinpkg=n",
+          "--nodeps","--oneshot",("="+$cpv)] and .binpkg_evidence_sha256 == $binpkg_sha and
+        (.vdb_before.path | type == "string") and (.vdb_before.sha256 | test("^[0-9a-f]{64}$")) and
+        (.pre_command_verifier.path | type == "string") and
+        (.pre_command_verifier.sha256 | test("^[0-9a-f]{64}$"))' "${command_intent}" >/dev/null || \
+        die 'offline restore command intent is incoherent'
+    for actual in vdb_before pre_command_verifier; do
+        local_path=$(${JQ} -r ".${actual}.path" "${command_intent}")
+        expected_hash=$(${JQ} -r ".${actual}.sha256" "${command_intent}")
+        require_direct_child "${local_path}" "${restore_dir}" 'command-intent evidence path'
+        validate_regular_trusted_file "${local_path}" 0
+        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
+        [[ ${current_hash} == "${expected_hash}" ]] || die "command-intent ${actual} evidence changed"
+    done
+    for retry_path in "${restore_dir}"/retry-intent-[0-9][0-9][0-9].json; do
+        [[ -f ${retry_path} && ! -L ${retry_path} ]] || continue
+        ((retry_index += 1))
+        printf -v expected_retry 'retry-intent-%03d.json' "${retry_index}"
+        [[ ${retry_path##*/} == "${expected_retry}" ]] || die 'retry intents are not contiguous'
+        validate_regular_trusted_file "${retry_path}" 0
+        ${JQ} -e --arg id "${CHECKPOINT_ID}" --argjson attempt "${retry_index}" \
+            --arg intent_sha "${command_intent_sha}" '.schema_version == 1 and
+            .checkpoint_id == $id and .status == "operator-authorized-retry" and
+            .attempt == $attempt and .command_intent_sha256 == $intent_sha and
+            (.authorized_at_unix_ns | test("^[0-9]+$")) and
+            (.vdb_before.path | type == "string") and (.vdb_before.sha256 | test("^[0-9a-f]{64}$")) and
+            (.pre_command_verifier.path | type == "string") and
+            (.pre_command_verifier.sha256 | test("^[0-9a-f]{64}$"))' "${retry_path}" >/dev/null || \
+            die 'offline restore retry intent is incoherent'
+        retry_at=$(${JQ} -r '.authorized_at_unix_ns' "${retry_path}")
+        retry_before=$(${JQ} -r '.vdb_before.path' "${retry_path}")
+        retry_pre=$(${JQ} -r '.pre_command_verifier.path' "${retry_path}")
+        for actual in vdb_before pre_command_verifier; do
+            local_path=$(${JQ} -r ".${actual}.path" "${retry_path}")
+            expected_hash=$(${JQ} -r ".${actual}.sha256" "${retry_path}")
+            require_direct_child "${local_path}" "${restore_dir}" 'retry-intent evidence path'
+            validate_regular_trusted_file "${local_path}" 0
+            current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
+            [[ ${current_hash} == "${expected_hash}" ]] || die "retry-intent ${actual} evidence changed"
+        done
+        [[ -n ${retry_before}${retry_pre} && ${retry_at} =~ ^[0-9]+$ ]] || die 'retry intent fields are malformed'
+    done
+    if ((attempt == 0)); then
+        ((retry_index == 0)) || die 'initial successful restore has unexplained retry intents'
+    else
+        ((attempt == retry_index)) || die 'successful restore does not bind the latest contiguous retry'
+        ((retry_at <= start_ns)) || die 'retry authorization occurs after successful attempt start'
+    fi
+    # shellcheck disable=SC2016 # jq variables, not shell expansions.
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg cpv "${RESTORE_CPV}" \
+        --arg snapshot "${DURABLE}" --arg vdb "${VDB}" --arg emerge "${EMERGE}" \
+        --arg tool "${tool_line}" --arg qcheck_tool "${qcheck_tool_line}" \
+        --arg home "${HOME_DIR}" --arg binpkg_sha "${binpkg_sha}" \
+        --arg intent_sha "${command_intent_sha}" '
+        .schema_version == 2 and .sequence == 2 and .checkpoint_id == $id and
+        .exit_status == 0 and .offline == true and .usepkgonly == true and
+        .getbinpkg == false and .nodeps == true and .selected_snapshot == $snapshot and
+        .pkgdir == $snapshot and .vdb == $vdb and .restored_cpv == $cpv and
+        .binpkg_evidence_sha256 == $binpkg_sha and .command_intent_sha256 == $intent_sha and
+        .emerge_tool_identity == $tool and
+        .environment == {HOME:$home,LANG:"C",LC_ALL:"C",TZ:"UTC",PKGDIR:$snapshot} and
+        .command == [$emerge,"--ignore-default-opts","--offline","--usepkgonly",
+          "--getbinpkg=n","--nodeps","--oneshot",("="+$cpv)] and
+        .vdb_transition.changed == true and .package_check.exit_status == 0 and
+        .package_check.tool_identity == $qcheck_tool' "${command}" >/dev/null || \
+        die 'offline restore command evidence is not an exact successful supervised restore'
+    for actual in before after; do
+        local_path=$(${JQ} -r ".vdb_transition.${actual}.path" "${command}")
+        expected_hash=$(${JQ} -r ".vdb_transition.${actual}.sha256" "${command}")
+        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
+        [[ ${current_hash} == "${expected_hash}" ]] || die "offline restore ${actual} VDB manifest changed"
+    done
+    for actual in stdout stderr; do
+        local_path=$(${JQ} -r ".package_check.${actual}.path" "${command}")
+        expected_hash=$(${JQ} -r ".package_check.${actual}.sha256" "${command}")
+        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
+        [[ ${current_hash} == "${expected_hash}" ]] || die "offline restore package-check ${actual} changed"
+    done
+    for actual in stdout stderr; do
+        local_path=$(${JQ} -r ".logs.${actual}.path" "${command}")
+        expected_hash=$(${JQ} -r ".logs.${actual}.sha256" "${command}")
+        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
+        [[ ${current_hash} == "${expected_hash}" ]] || die "offline restore emerge ${actual} changed"
+    done
+    # shellcheck disable=SC2016 # jq variables, not shell expansions.
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg command_sha "${command_sha}" \
+        --arg binpkg_sha "${binpkg_sha}" --arg verifier "${VERIFIER}" \
+        --arg verifier_sha "${EXPECTED_VERIFIER_SHA256}" --arg snapshot "${DURABLE}" \
+        --arg vdb "${VDB}" '
+        .schema_version == 1 and .sequence == 3 and .checkpoint_id == $id and
+        .command_evidence_sha256 == $command_sha and .binpkg_evidence_sha256 == $binpkg_sha and
+        .verifier == {path:$verifier,sha256:$verifier_sha} and
+        .report.schema_version == 1 and .report.status == "pass" and
+        .report.inputs.snapshot == $snapshot and .report.inputs.vdb == $vdb and
+        .report.inputs.validate_gpkg == true and .report.counts.errors == 0 and
+        .report.counts.missing_live_cpvs == 0 and .report.counts.extra_indexed_archives == 0 and
+        .report.counts.unindexed_gpkg_archives == 0 and .report.issues == []' "${post}" >/dev/null || \
+        die 'offline restore post-verifier evidence is not a strict exact pass'
+    # shellcheck disable=SC2016 # jq variables, not shell expansions.
+    activation_actual=$(${SHA256SUM} -- "${ACTIVATION_RECEIPT}"); activation_actual=${activation_actual%% *}
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg activation_sha "${activation_actual}" \
+        --arg command_sha "${command_sha}" --arg binpkg_sha "${binpkg_sha}" --arg post_sha "${post_sha}" \
+        --arg ledger_sha "${ledger_sha}" '
+        .schema_version == 1 and .checkpoint_id == $id and .status == "offline-restore-proven" and
+        .activation_receipt_sha256 == $activation_sha and
+        .evidence.command == {path:"offline-restore/command.json",sha256:$command_sha} and
+        .evidence.binpkg == {path:"offline-restore/binpkg.json",sha256:$binpkg_sha} and
+        .evidence.post_verifier == {path:"offline-restore/post-verifier.json",sha256:$post_sha} and
+        .evidence.attempt_ledger == {path:"offline-restore/attempt-ledger.sha256",sha256:$ledger_sha}' \
+        "${receipt}" >/dev/null || die 'offline restore receipt is incoherent'
+    validate_offline_restore_directory_inventory
+    printf '%s\n' "${receipt_sha}"
+}
+
+finalize_offline_restore_supervised() {
+    local restore_dir=${REPORT}/offline-restore binpkg command post receipt command_intent attempt_ledger
+    local partial archive_relative archive_path archive_sha match_count selected_at selected_ns
+    local binpkg_sha command_sha post_sha receipt_sha activation_sha tool_line qcheck_tool_line attempt=0 retry_path=- retry_sha=- ledger_sha
+    local before after before_sha after_sha started_at started_ns completed_at completed_ns
+    local pre_sha
+    local stdout stderr stdout_sha stderr_sha qstdout qstderr qstdout_sha qstderr_sha current_report
+    local existing retry_count=0 grep_match=0 command_intent_sha manifest_cpv manifest_relative
+    local manifest_size manifest_sha manifest_matches=0 archive_size
+    load_activation_intent
+    live_cpvs=$(${JQ} -r '.input_bindings.artifact_preparation.live_cpvs' "${ACTIVATION_INTENT}") || \
+        die 'cannot load prepared live CPV count for finalization'
+    [[ ${live_cpvs} =~ ^[0-9]+$ && ${live_cpvs} -gt 0 ]] || die 'prepared live CPV count is invalid'
+    validate_durable_archive_manifest
+    [[ $(${READLINK} -- "${SELECTOR}") == "${DURABLE}" ]] || die 'offline restore requires the exact activated selector'
+    activation_sha=$(publish_activation_receipt)
+    validate_activated_state
+    [[ -f ${STATE_RESTORED} ]] && {
+        ((RETRY_INTERRUPTED_RESTORE == 0)) || die 'retry authorization is invalid after terminal restoration'
+        for existing in "${REPORT}"/offline-restore/.terminal-verifier.*; do
+            path_absent "${existing}" && continue
+            validate_regular_trusted_file "${existing}" 0
+            ${RM} -f -- "${existing}"
+        done
+        receipt_sha=$(validate_offline_restore_evidence)
+        current_report=${REPORT}/offline-restore/.terminal-verifier.${COORDINATOR_PID}.json
+        verify_exact_final "${DURABLE}" "${current_report}"
+        ${RM} -f -- "${current_report}" "${current_report}.stderr"
+        sync_paths "${REPORT}/offline-restore"
+        publish_phase_state offline-restore-proven "${STATE_RESTORED}" "${activation_sha}" true "${receipt_sha}"
+        return 0
+    }
+    printf '%s\n' "${ATOM_CPVS[@]}" | ${SORT} | ${CMP} - "${REPORT}/source-final-preactivation-verification.requested-delta-cpvs.txt" || \
+        die 'finalizer delta differs from the activation intent'
+    grep_match=0
+    for existing in "${ATOM_CPVS[@]}"; do [[ ${existing} == "${RESTORE_CPV}" ]] && grep_match=1; done
+    ((grep_match)) || die '--restore-cpv is not in the exact checkpoint delta'
+    validate_hash_manifest "${REPORT}/evidence-manifest.sha256" 'creation evidence manifest'
+    validate_hash_manifest "${REPORT}/activation-evidence-manifest.sha256" 'activation evidence manifest'
+    [[ -d ${restore_dir} && ! -L ${restore_dir} ]] || ${INSTALL} -d -o "${TRUST_UID}" -g "${TRUST_GID}" -m 0700 "${restore_dir}"
+    validate_trusted_directory "${restore_dir}"
+    binpkg=${restore_dir}/binpkg.json; command=${restore_dir}/command.json
+    post=${restore_dir}/post-verifier.json; receipt=${REPORT}/offline-restore-receipt.json
+    command_intent=${restore_dir}/command-intent.json
+    attempt_ledger=${restore_dir}/attempt-ledger.sha256
+    match_count=$(${JQ} --arg cpv "${RESTORE_CPV}" '[.archives[]|select(.cpv==$cpv)]|length' "${REPORT}/durable-final-verification.json")
+    [[ ${match_count} == 1 ]] || die 'restore CPV does not have exactly one verified durable archive'
+    archive_relative=$(${JQ} -r --arg cpv "${RESTORE_CPV}" '.archives[]|select(.cpv==$cpv)|.path' "${REPORT}/durable-final-verification.json")
+    archive_path=${DURABLE}/${archive_relative}; validate_regular_trusted_file "${archive_path}" 0
+    archive_sha=$(${SHA256SUM} -- "${archive_path}"); archive_sha=${archive_sha%% *}
+    archive_size=$(${STAT} -c %s -- "${archive_path}") || die 'cannot stat selected restore archive size'
+    while IFS=$'\t' read -r manifest_cpv manifest_relative manifest_size manifest_sha; do
+        [[ ${manifest_cpv} != cpv ]] || continue
+        if [[ ${manifest_cpv} == "${RESTORE_CPV}" ]]; then
+            ((manifest_matches += 1))
+            [[ ${manifest_relative} == "${archive_relative}" && ${manifest_size} == "${archive_size}" && \
+               ${manifest_sha} == "${archive_sha}" ]] || die 'restore archive differs from creation-time durable manifest'
+        fi
+    done <"${REPORT}/durable-final-archives.tsv"
+    [[ ${manifest_matches} == 1 ]] || die 'creation-time durable manifest does not uniquely bind restore archive'
+    if path_absent "${binpkg}"; then
+        selected_at=$(timestamp); selected_ns=$(${DATE} -u '+%s%N'); partial=${binpkg}.partial
+        ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg at "${selected_at}" --arg ns "${selected_ns}" \
+            --arg snapshot "${DURABLE}" --arg cpv "${RESTORE_CPV}" --arg relative "${archive_relative}" \
+            --arg archive_sha "${archive_sha}" '{schema_version:1,sequence:1,checkpoint_id:$id,
+            selected_at:$at,selected_at_unix_ns:$ns,selected_snapshot:$snapshot,cpv:$cpv,
+            archive_relative_path:$relative,archive_sha256:$archive_sha}' >"${partial}"
+        ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+        sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${binpkg}"
+    fi
+    binpkg_sha=$(${SHA256SUM} -- "${binpkg}"); binpkg_sha=${binpkg_sha%% *}
+    if path_absent "${command}"; then
+        if path_absent "${command_intent}"; then
+            ((RETRY_INTERRUPTED_RESTORE == 0)) || die 'retry authorization requires an existing ambiguous command intent'
+            attempt=0
+        else
+            ((RETRY_INTERRUPTED_RESTORE)) || die 'offline restore attempt is ambiguous; inspect evidence, then rerun with --retry-interrupted-offline-restore'
+            validate_restore_attempt_prefix
+            retry_count=${VALIDATED_RETRY_COUNT}
+            attempt=${retry_count}
+            ((attempt += 1))
+        fi
+        printf -v before '%s/vdb.before.%03d.tsv' "${restore_dir}" "${attempt}"
+        printf -v after '%s/vdb.after.%03d.tsv' "${restore_dir}" "${attempt}"
+        capture_vdb_manifest "${before}"; before_sha=$(${SHA256SUM} -- "${before}"); before_sha=${before_sha%% *}
+        printf -v current_report '%s/pre-command-verifier.%03d.json' "${restore_dir}" "${attempt}"
+        verify_exact_final "${DURABLE}" "${current_report}"
+        pre_sha=$(${SHA256SUM} -- "${current_report}"); pre_sha=${pre_sha%% *}
+        tool_line=$(tool_identity_line "${EMERGE}"); started_at=$(timestamp); started_ns=$(${DATE} -u '+%s%N')
+        if ((attempt == 0)); then
+            partial=${command_intent}.partial
+            ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg at "${started_at}" --arg ns "${started_ns}" \
+                --arg tool "${tool_line}" --arg pkgdir "${DURABLE}" --arg cpv "${RESTORE_CPV}" \
+                --arg binpkg_sha "${binpkg_sha}" --arg before "${before}" --arg before_sha "${before_sha}" \
+                --arg pre "${current_report}" --arg pre_sha "${pre_sha}" \
+                --arg emerge "${EMERGE}" --arg home "${HOME_DIR}" '{schema_version:1,checkpoint_id:$id,
+                status:"supervised-command-pending",started_at:$at,started_at_unix_ns:$ns,
+                emerge_tool_identity:$tool,environment:{HOME:$home,LANG:"C",LC_ALL:"C",TZ:"UTC",PKGDIR:$pkgdir},
+                argv:[$emerge,"--ignore-default-opts","--offline","--usepkgonly","--getbinpkg=n","--nodeps","--oneshot",("="+$cpv)],
+                binpkg_evidence_sha256:$binpkg_sha,vdb_before:{path:$before,sha256:$before_sha},
+                pre_command_verifier:{path:$pre,sha256:$pre_sha}}' >"${partial}"
+            ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+            sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${command_intent}"
+        else
+            printf -v retry_path '%s/retry-intent-%03d.json' "${restore_dir}" "${attempt}"
+            partial=${retry_path}.partial
+            command_intent_sha=$(${SHA256SUM} -- "${command_intent}"); command_intent_sha=${command_intent_sha%% *}
+            ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg at "${started_at}" --arg ns "${started_ns}" \
+                --argjson attempt "${attempt}" --arg intent_sha "${command_intent_sha}" \
+                --arg before "${before}" --arg before_sha "${before_sha}" \
+                --arg pre "${current_report}" --arg pre_sha "${pre_sha}" '{schema_version:1,
+                checkpoint_id:$id,status:"operator-authorized-retry",authorized_at:$at,
+                authorized_at_unix_ns:$ns,attempt:$attempt,command_intent_sha256:$intent_sha,
+                vdb_before:{path:$before,sha256:$before_sha},
+                pre_command_verifier:{path:$pre,sha256:$pre_sha}}' >"${partial}"
+            ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+            sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${retry_path}"
+            retry_sha=$(${SHA256SUM} -- "${retry_path}"); retry_sha=${retry_sha%% *}
+        fi
+        crash_point before-offline-command
+        printf -v stdout '%s/emerge.stdout.%03d' "${restore_dir}" "${attempt}"
+        printf -v stderr '%s/emerge.stderr.%03d' "${restore_dir}" "${attempt}"
+        run_tracked "${stdout}" "${stderr}" 4h "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C \
+            PATH="${PATH_VALUE}" PKGDIR="${DURABLE}" TZ=UTC "${EMERGE}" --ignore-default-opts --offline \
+            --usepkgonly --getbinpkg=n --nodeps --oneshot "=${RESTORE_CPV}"
+        [[ ${TRACKED_STATUS} -eq 0 ]] || die "supervised offline emerge failed with status ${TRACKED_STATUS}"
+        crash_point after-offline-command
+        completed_at=$(timestamp); completed_ns=$(${DATE} -u '+%s%N')
+        capture_vdb_manifest "${after}"; after_sha=$(${SHA256SUM} -- "${after}"); after_sha=${after_sha%% *}
+        validate_vdb_transition_confined "${before}" "${after}" "${RESTORE_CPV}"
+        printf -v qstdout '%s/qcheck.stdout.%03d' "${restore_dir}" "${attempt}"
+        printf -v qstderr '%s/qcheck.stderr.%03d' "${restore_dir}" "${attempt}"
+        run_tracked "${qstdout}" "${qstderr}" 30m "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C \
+            PATH="${PATH_VALUE}" TZ=UTC "${QCHECK}" "=${RESTORE_CPV}"
+        [[ ${TRACKED_STATUS} -eq 0 ]] || die "package-managed installed-file check failed with status ${TRACKED_STATUS}"
+        stdout_sha=$(${SHA256SUM} -- "${stdout}"); stdout_sha=${stdout_sha%% *}; stderr_sha=$(${SHA256SUM} -- "${stderr}"); stderr_sha=${stderr_sha%% *}
+        qstdout_sha=$(${SHA256SUM} -- "${qstdout}"); qstdout_sha=${qstdout_sha%% *}; qstderr_sha=$(${SHA256SUM} -- "${qstderr}"); qstderr_sha=${qstderr_sha%% *}
+        qcheck_tool_line=$(tool_identity_line "${QCHECK}")
+        command_intent_sha=$(${SHA256SUM} -- "${command_intent}"); command_intent_sha=${command_intent_sha%% *}; partial=${command}.partial
+        ${JQ} -n --arg id "${CHECKPOINT_ID}" --argjson attempt "${attempt}" --arg start "${started_at}" \
+            --arg start_ns "${started_ns}" --arg end "${completed_at}" --arg end_ns "${completed_ns}" \
+            --arg snapshot "${DURABLE}" --arg vdb "${VDB}" --arg cpv "${RESTORE_CPV}" --arg binpkg_sha "${binpkg_sha}" \
+            --arg tool "${tool_line}" --arg emerge "${EMERGE}" --arg home "${HOME_DIR}" --arg intent_sha "${command_intent_sha}" \
+            --arg retry "${retry_path}" --arg retry_sha "${retry_sha}" --arg before "${before}" --arg before_sha "${before_sha}" \
+            --arg pre "${current_report}" --arg pre_sha "${pre_sha}" \
+            --arg after "${after}" --arg after_sha "${after_sha}" --arg stdout "${stdout}" --arg stdout_sha "${stdout_sha}" \
+            --arg stderr "${stderr}" --arg stderr_sha "${stderr_sha}" --arg qstdout "${qstdout}" --arg qstdout_sha "${qstdout_sha}" \
+            --arg qstderr "${qstderr}" --arg qstderr_sha "${qstderr_sha}" --arg qcheck_tool "${qcheck_tool_line}" \
+            '{schema_version:2,sequence:2,
+            checkpoint_id:$id,attempt:$attempt,started_at:$start,started_at_unix_ns:$start_ns,
+            completed_at:$end,completed_at_unix_ns:$end_ns,exit_status:0,offline:true,usepkgonly:true,
+            getbinpkg:false,nodeps:true,selected_snapshot:$snapshot,pkgdir:$snapshot,vdb:$vdb,restored_cpv:$cpv,
+            binpkg_evidence_sha256:$binpkg_sha,command_intent_sha256:$intent_sha,
+            retry_authorization:(if $retry == "-" then null else {path:$retry,sha256:$retry_sha} end),
+            emerge_tool_identity:$tool,environment:{HOME:$home,LANG:"C",LC_ALL:"C",TZ:"UTC",PKGDIR:$snapshot},
+            command:[$emerge,"--ignore-default-opts","--offline","--usepkgonly","--getbinpkg=n","--nodeps","--oneshot",("="+$cpv)],
+            vdb_transition:{before:{path:$before,sha256:$before_sha},after:{path:$after,sha256:$after_sha},changed:true},
+            pre_command_verifier:{path:$pre,sha256:$pre_sha},
+            logs:{stdout:{path:$stdout,sha256:$stdout_sha},stderr:{path:$stderr,sha256:$stderr_sha}},
+            package_check:{tool:"qcheck",tool_identity:$qcheck_tool,argv:["qcheck",("="+$cpv)],exit_status:0,
+              stdout:{path:$qstdout,sha256:$qstdout_sha},stderr:{path:$qstderr,sha256:$qstderr_sha}}}' >"${partial}"
+        ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+        sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${command}"
+    fi
+    ((RETRY_INTERRUPTED_RESTORE == 0 || attempt > 0)) || die 'retry authorization was not consumed'
+    command_sha=$(${SHA256SUM} -- "${command}"); command_sha=${command_sha%% *}
+    if path_absent "${post}"; then
+        current_report=${restore_dir}/post-verifier-report.json
+        verify_exact_final "${DURABLE}" "${current_report}"
+        partial=${post}.partial
+        ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg at "$(timestamp)" --arg ns "$(${DATE} -u '+%s%N')" \
+            --arg command_sha "${command_sha}" --arg binpkg_sha "${binpkg_sha}" --arg verifier "${VERIFIER}" \
+            --arg verifier_sha "${EXPECTED_VERIFIER_SHA256}" --slurpfile report "${current_report}" \
+            '{schema_version:1,sequence:3,checkpoint_id:$id,completed_at:$at,completed_at_unix_ns:$ns,
+            command_evidence_sha256:$command_sha,binpkg_evidence_sha256:$binpkg_sha,
+            verifier:{path:$verifier,sha256:$verifier_sha},report:$report[0]}' >"${partial}"
+        ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+        sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${post}"
+    fi
+    post_sha=$(${SHA256SUM} -- "${post}"); post_sha=${post_sha%% *}; crash_point after-offline-evidence
+    if path_absent "${attempt_ledger}"; then
+        partial=${attempt_ledger}.partial
+        : >"${partial}"
+        for existing in "${restore_dir}"/command-intent.json "${restore_dir}"/retry-intent-*.json \
+            "${restore_dir}"/pre-command-verifier.*.json* "${restore_dir}"/vdb.before.*.tsv* \
+            "${restore_dir}"/vdb.after.*.tsv* "${restore_dir}"/post-verifier-report.json \
+            "${restore_dir}"/post-verifier-report.json.stderr "${restore_dir}"/emerge.stdout.* \
+            "${restore_dir}"/emerge.stderr.* "${restore_dir}"/qcheck.stdout.* \
+            "${restore_dir}"/qcheck.stderr.*; do
+            [[ -f ${existing} && ! -L ${existing} ]] || continue
+            ${SHA256SUM} -- "${existing}" >>"${partial}"
+        done
+        ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+        sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${attempt_ledger}"
+    fi
+    ledger_sha=$(${SHA256SUM} -- "${attempt_ledger}"); ledger_sha=${ledger_sha%% *}
+    validate_hash_manifest "${attempt_ledger}" 'offline restore attempt ledger'
+    if path_absent "${receipt}"; then
+        partial=${receipt}.partial
+        ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg at "$(timestamp)" --arg activation_sha "${activation_sha}" \
+            --arg command_sha "${command_sha}" --arg binpkg_sha "${binpkg_sha}" --arg post_sha "${post_sha}" \
+            --arg ledger_sha "${ledger_sha}" \
+            '{schema_version:1,checkpoint_id:$id,status:"offline-restore-proven",recorded_at:$at,
+            activation_receipt_sha256:$activation_sha,evidence:{command:{path:"offline-restore/command.json",sha256:$command_sha},
+            binpkg:{path:"offline-restore/binpkg.json",sha256:$binpkg_sha},
+            post_verifier:{path:"offline-restore/post-verifier.json",sha256:$post_sha},
+            attempt_ledger:{path:"offline-restore/attempt-ledger.sha256",sha256:$ledger_sha}}}' >"${partial}"
+        ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+        sync_paths "${partial}" "${REPORT}"; safe_publish_noreplace "${partial}" "${receipt}"
+    fi
+    crash_point after-offline-receipt
+    receipt_sha=$(validate_offline_restore_evidence)
+    publish_phase_state offline-restore-proven "${STATE_RESTORED}" "${activation_sha}" true "${receipt_sha}"
+    crash_point after-offline-restored-state
+}
+
 failure_trap() {
-    local status=$? actual unchanged=unknown
+    local status=$? actual unchanged=unknown failure_record
     ((status != 0)) || return 0
     if ((IN_FAILURE_TRAP)); then
         trap - EXIT HUP INT TERM
@@ -1243,12 +2559,19 @@ failure_trap() {
     fi
     if ((REPORT_READY && !ACTIVATION_STARTED)); then
         journal_event failed "status=${status};phase=${CURRENT_PHASE};selector_unchanged=${unchanged};activation_started=${ACTIVATION_STARTED};activation_complete=${ACTIVATION_COMPLETE}" >/dev/null 2>&1
+        failure_record=${REPORT}/failure-attempt-${COORDINATOR_PID}.txt
         printf 'status=%s\nphase=%s\nselector_unchanged=%s\nactivation_started=%s\nactivation_complete=%s\n' \
             "${status}" "${CURRENT_PHASE}" "${unchanged}" "${ACTIVATION_STARTED}" \
-            "${ACTIVATION_COMPLETE}" >"${REPORT}/failure.txt.partial.${COORDINATOR_PID}"
-        ${CHMOD} 0600 -- "${REPORT}/failure.txt.partial.${COORDINATOR_PID}" >/dev/null 2>&1
-        ${MV} --no-clobber --no-copy -T -- "${REPORT}/failure.txt.partial.${COORDINATOR_PID}" \
-            "${REPORT}/failure.txt" >/dev/null 2>&1
+            "${ACTIVATION_COMPLETE}" >"${failure_record}.partial"
+        ${CHMOD} 0600 -- "${failure_record}.partial" >/dev/null 2>&1
+        ${MV} --no-clobber --no-copy -T -- "${failure_record}.partial" "${failure_record}" >/dev/null 2>&1
+        ${RM} -f -- "${failure_record}.partial" >/dev/null 2>&1
+        if path_absent "${REPORT}/failure.txt"; then
+            ${CP} -- "${failure_record}" "${REPORT}/failure.txt.partial.${COORDINATOR_PID}" >/dev/null 2>&1
+            ${MV} --no-clobber --no-copy -T -- "${REPORT}/failure.txt.partial.${COORDINATOR_PID}" \
+                "${REPORT}/failure.txt" >/dev/null 2>&1
+            ${RM} -f -- "${REPORT}/failure.txt.partial.${COORDINATOR_PID}" >/dev/null 2>&1
+        fi
         ${SYNC} -f -- "${REPORT}" >/dev/null 2>&1
     elif ((ACTIVATION_STARTED)); then
         printf 'EMERGENCY: selector activation began; durable failure evidence is intentionally not mutated; inspect selector and prepared activation intent\n' >&2
@@ -1313,15 +2636,19 @@ done
 TOOL_IDENTITY_LINES+=("$(tool_identity_line "${VERIFIER}")")
 TOOL_IDENTITY_LINES+=("$(tool_identity_line "${SELF}")")
 expected_bash=$(${READLINK} -e -- "${BASH_TOOL}") || die 'cannot resolve trusted Bash interpreter'
-actual_bash=$(${READLINK} -e -- "/proc/${COORDINATOR_PID}/exe") || die 'cannot resolve active Bash interpreter'
-[[ ${actual_bash} == "${expected_bash}" ]] || \
-    die "checkpoint is running under an untrusted Bash interpreter: ${actual_bash}"
+[[ /proc/${COORDINATOR_PID}/exe -ef ${expected_bash} ]] || \
+    die "checkpoint is not running under the trusted Bash interpreter: ${expected_bash}"
 
 # Hold the same three stable framework locks as the installed publisher, in
 # the publisher's global order.  This pins the framework-current resolution,
 # active make.conf, and generated project/generation policy for the complete
 # checkpoint transaction.
+initialize_framework_freeze_locks
 acquire_framework_freeze_locks
+if [[ ${ACTION} != create ]]; then
+    validate_trusted_directory "${REPORT}"
+    recover_owned_make_conf_overlay
+fi
 MAKE_CONF=$(${READLINK} -e -- "${MAKE_CONF}") || die 'cannot resolve active make.conf under framework lock'
 require_absolute_canonical "${MAKE_CONF}" 'resolved active make.conf'
 validate_regular_trusted_file "${MAKE_CONF}" 0
@@ -1345,13 +2672,29 @@ done
 
 # The lock parent is trusted, so creating a missing lock with install and then
 # verifying its path/fd identity cannot be redirected through an untrusted link.
+lock_partial=${LOCK_PATH}.prepared
+if ! path_absent "${lock_partial}"; then
+    validate_regular_trusted_file "${lock_partial}" 0
+    lock_fields=$(stat_fields "${lock_partial}") || die 'cannot stat transaction-lock prepared object'
+    [[ ${lock_fields} == *":${TRUST_UID}:${TRUST_GID}:600:1:regular empty file" ]] || \
+        die 'foreign transaction-lock prepared object'
+fi
 if path_absent "${LOCK_PATH}"; then
-    lock_partial=${LOCK_PATH}.partial.${COORDINATOR_PID}
-    path_absent "${lock_partial}" || die "stale lock staging path: ${lock_partial}"
-    ${INSTALL} -o "${TRUST_UID}" -g "${TRUST_GID}" -m 0600 /dev/null "${lock_partial}"
-    safe_publish_noreplace "${lock_partial}" "${LOCK_PATH}"
+    if path_absent "${lock_partial}"; then
+        ${INSTALL} -o "${TRUST_UID}" -g "${TRUST_GID}" -m 0600 /dev/null "${lock_partial}"
+    fi
+    crash_point transaction-lock-staged
+    ${MV} --no-clobber --no-copy -T -- "${lock_partial}" "${LOCK_PATH}" || \
+        die 'transaction-lock publication command failed'
+    if ! path_absent "${lock_partial}"; then
+        lock_fields=$(stat_fields "${LOCK_PATH}") || die 'concurrent transaction-lock winner is unreadable'
+        ${RM} -f -- "${lock_partial}"
+        [[ ${lock_fields} == *":${TRUST_UID}:${TRUST_GID}:600:1:regular empty file" ]] || \
+            die 'concurrent transaction-lock winner is foreign'
+    fi
     sync_paths "${LOCK_PATH}" "${LOCK_PATH%/*}"
 fi
+path_absent "${lock_partial}" || ${RM} -f -- "${lock_partial}"
 validate_regular_trusted_file "${LOCK_PATH}" 0
 lock_fields=$(stat_fields "${LOCK_PATH}") || die 'cannot stat transaction lock'
 [[ ${lock_fields} == *":${TRUST_UID}:${TRUST_GID}:600:"* ]] || \
@@ -1364,9 +2707,37 @@ lock_fd_identity=$(stat_follow_fields "/proc/${COORDINATOR_PID}/fd/${LOCK_FD}")
     "$(device_inode_from_fields "${lock_fd_identity}")" ]] || \
     die 'transaction lock path/fd identity mismatch'
 
+validate_transaction_paths
+preflight_selector_exchange
+
+if [[ ${ACTION} == reconcile ]]; then
+    REPORT_READY=1
+    revalidate_all_tool_identities
+    live_cpvs=$(${JQ} -r '.live_cpvs' "${REPORT}/artifact-preparation-state.json") || \
+        die 'cannot load prepared live CPV count for reconciliation'
+    [[ ${live_cpvs} =~ ^[0-9]+$ && ${live_cpvs} -gt 0 ]] || \
+        die 'prepared live CPV count is invalid'
+    reconcile_activation 0
+    trap - EXIT HUP INT TERM
+    printf 'PASS: checkpoint=%s action=reconcile state=%s evidence=%s\n' \
+        "${CHECKPOINT_ID}" "${STATE}" "${REPORT}"
+    exit 0
+fi
+
+if [[ ${ACTION} == finalize ]]; then
+    REPORT_READY=1
+    revalidate_all_tool_identities
+    finalize_offline_restore_supervised
+    trap - EXIT HUP INT TERM
+    printf 'PASS: checkpoint=%s action=finalize-offline-restore state=%s evidence=%s\n' \
+        "${CHECKPOINT_ID}" "${STATE}" "${REPORT}"
+    exit 0
+fi
+
 for path in "${CACHE}" "${DURABLE}" "${REPORT}" "${STATE}" \
     "${CACHE_PARTIAL}" "${DURABLE_PARTIAL}" "${REPORT_PARTIAL}" \
-    "${STATE_PARTIAL}" "${SELECTOR_PARTIAL}"; do
+    "${STATE_PREPARED}" "${STATE_ACTIVATED}" "${STATE_RESTORED}" \
+    "${SELECTOR_PARTIAL}" "${SELECTOR_WITNESS}"; do
     path_absent "${path}" || die "refusing existing transaction path: ${path}"
 done
 
@@ -1642,6 +3013,14 @@ ${CHMOD} 0600 -- "${activation_evidence_manifest}"
 ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${activation_evidence_manifest}"
 activation_evidence_sha=$(${SHA256SUM} -- "${activation_evidence_manifest}")
 activation_evidence_sha=${activation_evidence_sha%% *}
+delta_binding_path=${REPORT}/source-final-preactivation-verification.requested-delta-cpvs.txt
+delta_binding_sha=$(${SHA256SUM} -- "${delta_binding_path}") || die 'cannot hash final sorted delta binding'
+delta_binding_sha=${delta_binding_sha%% *}
+delta_binding_count=${#ATOM_CPVS[@]}
+artifact_preparation_sha=$(${SHA256SUM} -- "${REPORT}/artifact-preparation-state.json") || \
+    die 'cannot hash artifact preparation state'
+artifact_preparation_sha=${artifact_preparation_sha%% *}
+revalidate_all_tool_identities
 
 # shellcheck disable=SC2016 # jq variables, not shell expansions.
 ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg prepared_at "$(timestamp)" \
@@ -1649,82 +3028,38 @@ ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg prepared_at "$(timestamp)" \
     --arg target "${DURABLE}" --arg state "${STATE}" \
     --arg activation_evidence "${activation_evidence_manifest}" \
     --arg activation_evidence_sha "${activation_evidence_sha}" \
+    --arg source "${EXPECTED_SOURCE_TARGET}" \
+    --arg source_sha "${EXPECTED_SOURCE_PACKAGES_SHA256}" \
+    --arg verifier "${VERIFIER}" --arg verifier_sha "${EXPECTED_VERIFIER_SHA256}" \
+    --arg delta_path "${delta_binding_path}" --arg delta_sha "${delta_binding_sha}" \
+    --arg preparation "${REPORT}/artifact-preparation-state.json" \
+    --arg preparation_sha "${artifact_preparation_sha}" --argjson live_cpvs "${live_cpvs}" \
+    --argjson delta_count "${delta_binding_count}" \
     '{schema_version:1,checkpoint_id:$id,status:"prepared",
       prepared_at:$prepared_at,selector:$selector,
       expected_old_selector_identity:$expected_old,target:$target,state:$state,
+      input_bindings:{source:{path:$source,packages_sha256:$source_sha},
+        verifier:{path:$verifier,sha256:$verifier_sha},
+        delta:{sorted_cpvs_path:$delta_path,sorted_cpvs_sha256:$delta_sha,count:$delta_count},
+        artifact_preparation:{path:$preparation,sha256:$preparation_sha,live_cpvs:$live_cpvs}},
       activation_evidence:{path:$activation_evidence,sha256:$activation_evidence_sha},
       recovery_rule:"old=not-activated; exact-target=activated; anything-else=lost-update"}' \
-    >"${ACTIVATION_INTENT}.partial.${COORDINATOR_PID}"
-${CHMOD} 0600 -- "${ACTIVATION_INTENT}.partial.${COORDINATOR_PID}"
-${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${ACTIVATION_INTENT}.partial.${COORDINATOR_PID}"
-sync_paths "${ACTIVATION_INTENT}.partial.${COORDINATOR_PID}" "${REPORT}"
-safe_publish_noreplace "${ACTIVATION_INTENT}.partial.${COORDINATOR_PID}" "${ACTIVATION_INTENT}"
+    >"${ACTIVATION_INTENT}.partial"
+${CHMOD} 0600 -- "${ACTIVATION_INTENT}.partial"
+${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${ACTIVATION_INTENT}.partial"
+sync_paths "${ACTIVATION_INTENT}.partial" "${REPORT}"
+crash_point before-intent-publication
+safe_publish_noreplace "${ACTIVATION_INTENT}.partial" "${ACTIVATION_INTENT}"
 activation_intent_sha=$(${SHA256SUM} -- "${ACTIVATION_INTENT}")
 activation_intent_sha=${activation_intent_sha%% *}
 
-# Publish a canonical but explicitly nonterminal state only after every late
-# check passes while the real Portage VDB lock remains held.  Selector+intent,
-# not this pending state alone, determines crash recovery.
-# shellcheck disable=SC2016 # jq variables, not shell expansions.
-${JQ} -n --arg id "${CHECKPOINT_ID}" --arg prepared_at "$(timestamp)" \
-    --arg cache "${CACHE}" --arg durable "${DURABLE}" --arg selector "${SELECTOR}" \
-    --arg intent "${ACTIVATION_INTENT}" --arg intent_sha "${activation_intent_sha}" \
-    --argjson live_cpvs "${live_cpvs}" \
-    '{schema_version:1,control:"exact-live-binpkg-checkpoint",
-      checkpoint_id:$id,status:"verified-final-freeze-held-selector-activation-pending",
-      prepared_at:$prepared_at,live_cpvs:$live_cpvs,
-      cache_checkpoint:{path:$cache,indexed_cpvs:$live_cpvs},
-      durable_checkpoint:{path:$durable,indexed_cpvs:$live_cpvs},
-      activation:{selector:$selector,intent:$intent,intent_sha256:$intent_sha,
-        crash_recovery:"selector plus intent is authoritative"},
-      offline_restoration_tested:false,
-      pending_total:1,unknown_total:0,failed_total:0}' >"${STATE_PARTIAL}"
-${CHMOD} 0600 -- "${STATE_PARTIAL}"
-${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${STATE_PARTIAL}"
-sync_paths "${STATE_PARTIAL}" "${STATE_PARENT}"
-safe_publish_noreplace "${STATE_PARTIAL}" "${STATE}"
-sync_paths "${ACTIVATION_INTENT}" "${activation_evidence_manifest}" "${REPORT}" \
-    "${REPORT_PARENT}" "${STATE}" "${STATE_PARENT}"
-
-# This guarded compare-and-swap atomically exchanges the prepared and live
-# symlinks.  The displaced live object is then verified against the exact old
-# identity.  A near-rename noncooperating update is exchanged back before the
-# transaction fails, so it is never silently overwritten.
-require_selector_identity 'immediately before selector compare-and-swap'
-sync_paths "${REPORT}" "${STATE}" "${CACHE}" "${DURABLE}" \
-    "${REPORT_PARENT}" "${STATE_PARENT}" "${CACHE_PARENT}" "${DURABLE_PARENT}"
-
-${LN} -s -- "${DURABLE}" "${SELECTOR_PARTIAL}"
-${CHOWN} -h "${TRUST_UID}:${TRUST_GID}" -- "${SELECTOR_PARTIAL}"
-selector_partial_fields=$(stat_fields "${SELECTOR_PARTIAL}") || die 'cannot stat prepared selector'
-ACTIVATION_STARTED=1
-${MV} --exchange --no-copy -T -- "${SELECTOR_PARTIAL}" "${SELECTOR}"
-sync_paths "${SELECTOR%/*}"
-[[ -L ${SELECTOR} ]] || die 'activated selector is not a symlink'
-[[ -L ${SELECTOR_PARTIAL} ]] || die 'atomic exchange did not retain the displaced selector'
-displaced_selector_identity=$(selector_identity "${SELECTOR_PARTIAL}") || \
-    die 'atomic exchange displaced an unreadable selector identity'
-if [[ ${displaced_selector_identity} != "${EXPECTED_SELECTOR_IDENTITY}" ]]; then
-    unexpected_selector_identity=${displaced_selector_identity}
-    ${MV} --exchange --no-copy -T -- "${SELECTOR_PARTIAL}" "${SELECTOR}"
-    sync_paths "${SELECTOR%/*}"
-    restored_selector_identity=$(selector_identity "${SELECTOR}") || \
-        die 'selector CAS rollback did not restore a readable selector'
-    [[ ${restored_selector_identity} == "${unexpected_selector_identity}" ]] || \
-        die 'selector CAS rollback did not restore the noncooperating update'
-    ACTIVATION_STARTED=0
-    die 'selector CAS captured a near-rename lost update and rolled it back'
-fi
-activated_selector_fields=$(stat_fields "${SELECTOR}") || die 'cannot stat activated selector'
-[[ $(device_inode_from_fields "${selector_partial_fields}") == \
-    "$(device_inode_from_fields "${activated_selector_fields}")" ]] || \
-    die 'activated selector does not have the prepared symlink device/inode'
-[[ $(${READLINK} -- "${SELECTOR}") == "${DURABLE}" ]] || \
-    die 'activated selector target is not the exact durable checkpoint'
-ACTIVATION_COMPLETE=1
-release_portage_vdb_lock
-deactivate_make_conf_overlay || \
-    die 'selector activated but temporary make.conf overlay could not be unmounted'
+# The intent is the durable linearization prerequisite.  From this point, the
+# idempotent reconciler owns every transition: durable prepared selector,
+# exact exchange, named displaced-selector witness, immutable receipt, and the
+# activated/offline-restore-pending state.
+crash_point after-intent
+revalidate_all_tool_identities
+reconcile_activation 1
 
 trap - EXIT HUP INT TERM
 printf 'PASS: checkpoint=%s live_cpvs=%s cache=%s durable=%s state=%s evidence=%s\n' \

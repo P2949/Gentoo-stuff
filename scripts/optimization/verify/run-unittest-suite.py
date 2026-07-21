@@ -14,6 +14,56 @@ from typing import Any
 STRUCTURED_FRAGMENT: Path | None = None
 
 
+def flatten_tests(suite: unittest.TestSuite) -> list[unittest.case.TestCase]:
+    """Return concrete unittest cases without executing them."""
+    result: list[unittest.case.TestCase] = []
+    for item in suite:
+        if isinstance(item, unittest.TestSuite):
+            result.extend(flatten_tests(item))
+        else:
+            if not isinstance(item, unittest.TestCase):
+                raise RuntimeError(
+                    f"unittest discovery returned a non-TestCase object: {type(item)!r}"
+                )
+            result.append(item)
+    return result
+
+
+def filter_suite(
+    suite: unittest.TestSuite,
+    excluded_id_prefixes: tuple[str, ...],
+) -> unittest.TestSuite:
+    return unittest.TestSuite(
+        test
+        for test in flatten_tests(suite)
+        if not any(test.id().startswith(prefix) for prefix in excluded_id_prefixes)
+    )
+
+
+class FilteringLoader(unittest.TestLoader):
+    def __init__(self, excluded_id_prefixes: tuple[str, ...]) -> None:
+        super().__init__()
+        self.excluded_id_prefixes = excluded_id_prefixes
+
+    def loadTestsFromModule(  # noqa: N802 - unittest API name
+        self, module: Any, *args: Any, **kwargs: Any
+    ) -> unittest.TestSuite:
+        suite = super().loadTestsFromModule(module, *args, **kwargs)
+        return filter_suite(suite, self.excluded_id_prefixes)
+
+    def loadTestsFromName(  # noqa: N802 - unittest API name
+        self, name: str, module: Any = None
+    ) -> unittest.TestSuite:
+        suite = super().loadTestsFromName(name, module)
+        return filter_suite(suite, self.excluded_id_prefixes)
+
+    def loadTestsFromNames(  # noqa: N802 - unittest API name
+        self, names: list[str], module: Any = None
+    ) -> unittest.TestSuite:
+        suite = super().loadTestsFromNames(names, module)
+        return filter_suite(suite, self.excluded_id_prefixes)
+
+
 def clean(value: object) -> str:
     return " ".join(str(value).replace("\t", " ").splitlines()).strip() or "no detail"
 
@@ -124,16 +174,66 @@ class StructuredRunner(unittest.TextTestRunner):
     resultclass = StructuredResult
 
 
+class IdentityRunner:
+    """A unittest runner that lists the selected identities and executes none."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+
+    def run(self, suite: unittest.TestSuite) -> unittest.TestResult:
+        names = sorted(test.id() for test in flatten_tests(suite))
+        if len(names) != len(set(names)):
+            raise RuntimeError("unittest discovery produced duplicate test identities")
+        for name in names:
+            print(name)
+        result = unittest.TestResult()
+        result.testsRun = len(names)
+        return result
+
+
+def parse_private_arguments(arguments: list[str]) -> tuple[bool, tuple[str, ...], list[str]]:
+    list_identities = False
+    excluded: list[str] = []
+    unittest_arguments: list[str] = []
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--list-identities":
+            list_identities = True
+            index += 1
+        elif argument == "--exclude-id-prefix":
+            if index + 1 >= len(arguments):
+                raise ValueError("--exclude-id-prefix requires a value")
+            prefix = arguments[index + 1]
+            if not prefix or any(character.isspace() for character in prefix):
+                raise ValueError("--exclude-id-prefix must be a nonempty identity prefix")
+            excluded.append(prefix)
+            index += 2
+        else:
+            unittest_arguments.append(argument)
+            index += 1
+    if len(excluded) != len(set(excluded)):
+        raise ValueError("duplicate --exclude-id-prefix value")
+    return list_identities, tuple(sorted(excluded)), unittest_arguments
+
+
 def main() -> int:
     global STRUCTURED_FRAGMENT
-    if len(sys.argv) < 2:
+    try:
+        list_identities, excluded_id_prefixes, unittest_arguments = \
+            parse_private_arguments(sys.argv[1:])
+    except ValueError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    if not unittest_arguments:
         print("ERROR: pass unittest discovery or test-name arguments", file=sys.stderr)
         return 2
-    raw_fragment = os.environ.get("GENTOO_OPT_SUBTEST_RESULTS", "")
-    if not raw_fragment:
-        print("ERROR: GENTOO_OPT_SUBTEST_RESULTS is required", file=sys.stderr)
-        return 2
-    STRUCTURED_FRAGMENT = Path(raw_fragment)
+    if not list_identities:
+        raw_fragment = os.environ.get("GENTOO_OPT_SUBTEST_RESULTS", "")
+        if not raw_fragment:
+            print("ERROR: GENTOO_OPT_SUBTEST_RESULTS is required", file=sys.stderr)
+            return 2
+        STRUCTURED_FRAGMENT = Path(raw_fragment)
     # These variables are a private driver-to-result-channel contract, not
     # authority that test imports, test methods, or subprocesses may inherit.
     # The driver makes the authoritative decision after this process exits.
@@ -148,13 +248,25 @@ def main() -> int:
         print("ERROR: cannot resolve the repository root for unittest", file=sys.stderr)
         return 2
     sys.path.insert(0, os.fspath(repository))
+    test_loader = FilteringLoader(excluded_id_prefixes)
     program = unittest.main(
         module=None,
-        argv=[sys.argv[0], *sys.argv[1:]],
-        testRunner=StructuredRunner,
+        argv=[sys.argv[0], *unittest_arguments],
+        testLoader=test_loader,
+        testRunner=IdentityRunner if list_identities else StructuredRunner,
         exit=False,
     )
     result = program.result
+    if list_identities:
+        if test_loader.errors:
+            print("ERROR: unittest discovery reported import/load failures", file=sys.stderr)
+            for error in test_loader.errors:
+                print(clean(error), file=sys.stderr)
+            return 2
+        if result.testsRun == 0:
+            print("ERROR: unittest discovery selected zero test identities", file=sys.stderr)
+            return 2
+        return 0 if result.wasSuccessful() else 1
     if not isinstance(result, StructuredResult):
         print("ERROR: unittest did not use the structured result contract", file=sys.stderr)
         return 2

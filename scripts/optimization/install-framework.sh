@@ -139,6 +139,9 @@ EXPECTED_GID=$(id -g)
 if [[ -n ${TEST_ROOT} ]]; then
     PORTAGE_GID=${EXPECTED_GID}
     LOCK_GID=${EXPECTED_GID}
+    # The coordinator's hermetic lock tree is deliberately owner-private.
+    # Production uses the root:portage access contract below; its exact
+    # tmpfiles modes are exercised independently by the installer fixture.
     LOCK_DIRECTORY_MODE=0700
     LOCK_FILE_MODE=0600
 else
@@ -179,6 +182,13 @@ ETC_PORTAGE=$(physical /etc/portage)
 LOCK_PATH=$(physical /run/gentoo-optimization/framework-install.lock)
 PROJECT_LOCK_PATH=$(physical /run/gentoo-optimization/project.lock)
 GENERATION_LOCK_PATH=$(physical /run/gentoo-optimization/generation.lock)
+RUNTIME_ROOT=$(physical /run)
+TMPFILES_ROOT=$(physical /etc/tmpfiles.d)
+TMPFILES_RULE=${TMPFILES_ROOT}/gentoo-optimization.conf
+TMPFILES_TOOL=$(physical /usr/bin/systemd-tmpfiles)
+TMPFILES_INIT=$(physical /etc/init.d/systemd-tmpfiles-setup)
+TMPFILES_BOOT_LINK=$(physical /etc/runlevels/boot/systemd-tmpfiles-setup)
+TMPFILES_RULE_SYMLINK_TARGET=../../var/lib/gentoo-optimization/framework-current/share/tmpfiles/gentoo-optimization.conf
 JQ_PATH=$(physical /usr/bin/jq)
 GENERATIONS_ROOT=${BASE}/generations
 PGO_CACHE=$(physical /var/cache/gentoo-optimization/pgo)
@@ -186,7 +196,9 @@ PGO_RAW=$(physical /var/tmp/gentoo-optimization/pgo-raw)
 VAR_TMP_BOUNDARY=$(physical /var/tmp)
 readonly BASE FRAMEWORK_CURRENT ACTIVATION_JOURNAL STATE_ROOT MANIFEST CACHE_ROOT INSTALL_QA_ROOT \
     LIBEXEC_ROOT SHARE_ROOT ETC_PORTAGE LOCK_PATH PROJECT_LOCK_PATH \
-    GENERATION_LOCK_PATH JQ_PATH GENERATIONS_ROOT \
+    GENERATION_LOCK_PATH RUNTIME_ROOT TMPFILES_ROOT TMPFILES_RULE TMPFILES_TOOL \
+    TMPFILES_INIT TMPFILES_BOOT_LINK TMPFILES_RULE_SYMLINK_TARGET \
+    JQ_PATH GENERATIONS_ROOT \
     PGO_CACHE PGO_RAW VAR_TMP_BOUNDARY PORTAGE_GID \
     PROFILE_TRANSACTION_ROOT PROFILE_TRANSACTION_JOURNAL \
     PROFILE_TRANSACTION_JOURNAL_PARTIAL
@@ -208,6 +220,7 @@ declare -a INPUT_FILES=(
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
     scripts/optimization/recovery/verify-binpkg-snapshot.py
+    optimization/tmpfiles/gentoo-optimization.conf
     optimization/schema/package-state.schema.json
     optimization/schema/artifact-state.schema.json
     optimization/schema/final-system-state.schema.json
@@ -442,20 +455,110 @@ verify_lock_file() {
         fail "lock ownership/mode/link-count differs from ${EXPECTED_UID}:${LOCK_GID}:${LOCK_FILE_MODE}:1: ${path}"
 }
 
-create_lock_if_absent() {
+lock_preparation_path() {
+    printf '%s.prepared\n' "$1"
+}
+
+remove_trusted_lock_file_preparation() {
     local path=$1
+    [[ -e ${path} || -L ${path} ]] || return 0
+    verify_lock_file "${path}"
+    [[ ! -s ${path} ]] || fail "prepared lock file is unexpectedly nonempty: ${path}"
+    rm -f -- "${path}"
+    sync_path "${path%/*}"
+}
+
+remove_trusted_lock_directory_preparation() {
+    local path=$1
+    [[ -e ${path} || -L ${path} ]] || return 0
+    verify_directory "${path}" "${EXPECTED_UID}" "${LOCK_GID}" \
+        "${LOCK_DIRECTORY_MODE}"
+    [[ -z $(find "${path}" -mindepth 1 -print -quit) ]] || \
+        fail "prepared lock directory is unexpectedly nonempty: ${path}"
+    rmdir -- "${path}"
+    sync_path "${path%/*}"
+}
+
+create_lock_directory_if_absent() {
+    local path=$1 prepared publish_status=0
+    prepared=$(lock_preparation_path "${path}")
     if [[ ! -e ${path} && ! -L ${path} ]]; then
-        if ! (umask 077; set -o noclobber; : >"${path}") 2>/dev/null; then
-            [[ -e ${path} || -L ${path} ]] || \
-                fail "cannot atomically create lock file: ${path}"
-        else
-            chown "${EXPECTED_UID}:${LOCK_GID}" -- "${path}"
-            chmod "${LOCK_FILE_MODE}" -- "${path}"
-            sync_path "${path}"
-            sync_path "${path%/*}"
+        if [[ ! -e ${prepared} && ! -L ${prepared} ]]; then
+            if mkdir -m 0700 -- "${prepared}" 2>/dev/null; then
+                chown "${EXPECTED_UID}:${LOCK_GID}" -- "${prepared}"
+                chmod "${LOCK_DIRECTORY_MODE}" -- "${prepared}"
+            fi
         fi
+        verify_directory "${prepared}" "${EXPECTED_UID}" "${LOCK_GID}" \
+            "${LOCK_DIRECTORY_MODE}"
+        [[ -z $(find "${prepared}" -mindepth 1 -print -quit) ]] || \
+            fail "prepared lock directory is unexpectedly nonempty: ${prepared}"
+        sync_path "${prepared}"
+        sync_path "${prepared%/*}"
+        failure_point after-lock-directory-prepared
+        if [[ -e ${prepared} || -L ${prepared} ]]; then
+            /usr/bin/mv --no-clobber --no-copy -T -- "${prepared}" "${path}" || \
+                publish_status=$?
+        fi
+        if ((publish_status != 0)) && \
+            [[ ! -e ${path} && ! -L ${path} ]]; then
+            fail "cannot publish prepared lock directory: ${path}"
+        fi
+        if [[ -e ${prepared} || -L ${prepared} ]]; then
+            verify_directory "${path}" "${EXPECTED_UID}" "${LOCK_GID}" \
+                "${LOCK_DIRECTORY_MODE}"
+            remove_trusted_lock_directory_preparation "${prepared}"
+        fi
+        sync_path "${path%/*}"
+        failure_point after-lock-directory-published
+    fi
+    verify_directory "${path}" "${EXPECTED_UID}" "${LOCK_GID}" \
+        "${LOCK_DIRECTORY_MODE}"
+}
+
+create_lock_if_absent() {
+    local path=$1 prepared basename publish_status=0
+    prepared=$(lock_preparation_path "${path}")
+    if [[ ! -e ${path} && ! -L ${path} ]]; then
+        basename=${path##*/}
+        if [[ ! -e ${prepared} && ! -L ${prepared} ]]; then
+            if (umask 077; set -o noclobber; : >"${prepared}") 2>/dev/null; then
+                chown "${EXPECTED_UID}:${LOCK_GID}" -- "${prepared}"
+                chmod "${LOCK_FILE_MODE}" -- "${prepared}"
+            fi
+        fi
+        verify_lock_file "${prepared}"
+        [[ ! -s ${prepared} ]] || \
+            fail "prepared lock file is unexpectedly nonempty: ${prepared}"
+        sync_path "${prepared}"
+        sync_path "${prepared%/*}"
+        failure_point "after-lock-file-prepared-${basename}"
+        if [[ -e ${prepared} || -L ${prepared} ]]; then
+            /usr/bin/mv --no-clobber --no-copy -T -- "${prepared}" "${path}" || \
+                publish_status=$?
+        fi
+        if ((publish_status != 0)) && \
+            [[ ! -e ${path} && ! -L ${path} ]]; then
+            fail "cannot publish prepared lock file: ${path}"
+        fi
+        if [[ -e ${prepared} || -L ${prepared} ]]; then
+            verify_lock_file "${path}"
+            remove_trusted_lock_file_preparation "${prepared}"
+        fi
+        sync_path "${path%/*}"
+        failure_point "after-lock-file-published-${basename}"
     fi
     verify_lock_file "${path}"
+}
+
+verify_no_lock_preparation_debris() {
+    local path prepared
+    for path in "${LOCK_PATH%/*}" "${LOCK_PATH}" "${PROJECT_LOCK_PATH}" \
+        "${GENERATION_LOCK_PATH}"; do
+        prepared=$(lock_preparation_path "${path}")
+        [[ ! -e ${prepared} && ! -L ${prepared} ]] || \
+            fail "stale runtime lock preparation remains: ${prepared}"
+    done
 }
 
 open_verified_lock_descriptor() {
@@ -474,6 +577,7 @@ open_verified_lock_descriptor() {
 
 verify_runtime_namespaces() {
     local directory
+    verify_no_lock_preparation_debris
     verify_directory "${LOCK_PATH%/*}" "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_DIRECTORY_MODE}"
     verify_lock_file "${LOCK_PATH}"
     verify_lock_file "${PROJECT_LOCK_PATH}"
@@ -499,6 +603,61 @@ verify_jq() {
     JQ_VERSION=$("${JQ_PATH}" --version)
     [[ ${JQ_VERSION} =~ ^jq-[0-9][A-Za-z0-9.+_-]*$ ]] || \
         fail "jq reported an invalid version identity: ${JQ_VERSION}"
+}
+
+verify_tmpfiles_rule_content() {
+    local path=$1
+    local -a rules=()
+    verify_regular_trusted "${path}" 0644
+    mapfile -t rules < <(awk 'NF && $1 !~ /^#/ { print }' "${path}")
+    [[ ${rules[*]} == $'d /run/gentoo-optimization 0750 root portage -\nf /run/gentoo-optimization/framework-install.lock 0640 root portage -\nf /run/gentoo-optimization/project.lock 0640 root portage -\nf /run/gentoo-optimization/generation.lock 0640 root portage -' ]] || \
+        fail "tmpfiles rule differs from the reviewed runtime-lock contract: ${path}"
+}
+
+verify_tmpfiles_boot_prerequisites() {
+    local target owner
+    verify_existing_ancestor_chain "${TMPFILES_TOOL%/*}"
+    verify_regular_trusted "${TMPFILES_TOOL}" 0755
+    verify_existing_ancestor_chain "${TMPFILES_INIT%/*}"
+    verify_regular_trusted "${TMPFILES_INIT}" 0755
+    verify_existing_ancestor_chain "${TMPFILES_BOOT_LINK%/*}"
+    [[ -L ${TMPFILES_BOOT_LINK} ]] || \
+        fail "systemd-tmpfiles-setup is not enabled in the boot runlevel: ${TMPFILES_BOOT_LINK}"
+    target=
+    read_exact_symlink_target "${TMPFILES_BOOT_LINK}" target
+    [[ ${target} == /etc/init.d/systemd-tmpfiles-setup ]] || \
+        fail "systemd-tmpfiles-setup boot link has an unexpected target: ${target}"
+    owner=$(stat -c %u -- "${TMPFILES_BOOT_LINK}")
+    [[ ${owner} == "${EXPECTED_UID}" ]] || \
+        fail 'systemd-tmpfiles-setup boot link has the wrong owner'
+}
+
+verify_runtime_root() {
+    verify_directory "${RUNTIME_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
+}
+
+verify_installed_tmpfiles_rule() {
+    local target owner candidate_rule
+    [[ -L ${TMPFILES_RULE} ]] || \
+        fail "runtime-lock tmpfiles rule is not a stable symlink: ${TMPFILES_RULE}"
+    target=
+    read_exact_symlink_target "${TMPFILES_RULE}" target
+    [[ ${target} == "${TMPFILES_RULE_SYMLINK_TARGET}" ]] || \
+        fail "runtime-lock tmpfiles rule has an unexpected target: ${target}"
+    owner=$(stat -c %u -- "${TMPFILES_RULE}")
+    [[ ${owner} == "${EXPECTED_UID}" ]] || \
+        fail 'runtime-lock tmpfiles rule symlink has the wrong owner'
+    candidate_rule=${FRAMEWORK_CURRENT}/share/tmpfiles/gentoo-optimization.conf
+    verify_tmpfiles_rule_content "${candidate_rule}"
+    if [[ -n ${TEST_ROOT} ]]; then
+        "${TMPFILES_TOOL}" --root="${TEST_ROOT}" --create --dry-run \
+            gentoo-optimization.conf >/dev/null 2>&1 || \
+            fail 'systemd-tmpfiles rejected the installed runtime-lock rule in dry-run mode'
+    else
+        "${TMPFILES_TOOL}" --create --dry-run "${TMPFILES_RULE}" \
+            >/dev/null 2>&1 || \
+            fail 'systemd-tmpfiles rejected the installed runtime-lock rule in dry-run mode'
+    fi
 }
 
 verify_profile_transaction_authorization() {
@@ -551,7 +710,9 @@ preflight_destination_ancestors() {
     for path in \
         "${BASE}" "${STATE_ROOT}" "${PROFILE_TRANSACTION_ROOT}" "${CACHE_ROOT}" \
         "${INSTALL_QA_ROOT}" "${LIBEXEC_ROOT}" "${LOCK_PATH%/*}" \
-        "${SHARE_ROOT%/*}" "${ETC_PORTAGE%/*}" "${GENERATIONS_ROOT}" \
+        "${SHARE_ROOT%/*}" "${ETC_PORTAGE%/*}" "${TMPFILES_ROOT}" \
+        "${TMPFILES_TOOL%/*}" "${TMPFILES_INIT%/*}" \
+        "${TMPFILES_BOOT_LINK%/*}" "${GENERATIONS_ROOT}" \
         "${PGO_CACHE}" "${PGO_RAW}" "${JQ_PATH%/*}" "${BASE}/bootstrap"; do
         verify_existing_ancestor_chain "${path}"
     done
@@ -577,6 +738,7 @@ preflight_atomic_exchange_destinations() {
         "${SHARE_ROOT%/*}"
         "${INSTALL_QA_ROOT}"
         "${MANIFEST%/*}"
+        "${TMPFILES_ROOT}"
     )
     [[ -x /usr/bin/mv ]] || fail 'required atomic-exchange tool is absent: /usr/bin/mv'
     for destination_parent in "${destination_parents[@]}"; do
@@ -1629,6 +1791,10 @@ render_manifest() {
     printf 'lock_files=%s,%s,%s\t%s:%s\t%s\n' "${LOCK_PATH}" \
         "${PROJECT_LOCK_PATH}" "${GENERATION_LOCK_PATH}" \
         "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_FILE_MODE}"
+    printf 'tmpfiles_rule_path=%s\n' "${TMPFILES_RULE}"
+    printf 'tmpfiles_rule_target=%s\n' "${TMPFILES_RULE_SYMLINK_TARGET}"
+    printf 'tmpfiles_rule_sha256=%s\n' \
+        "$(sha256sum -- "${SNAPSHOT}/optimization/tmpfiles/gentoo-optimization.conf" | awk '{print $1}')"
     printf 'path\tsha256\tmode\towner\n'
     printf '%s\t%s\t0644\t%s:%s\n' \
         "${ETC_PORTAGE}/bashrc" \
@@ -1805,6 +1971,8 @@ verify_candidate() {
     [[ -z ${expected_manifest} ]] || cmp -s -- "${expected_manifest}" "${candidate}/install.manifest" || \
         fail 'candidate manifest is not the canonical expected manifest'
     verify_generated_policy "${candidate}"
+    verify_tmpfiles_rule_content \
+        "${candidate}/share/tmpfiles/gentoo-optimization.conf"
     verify_make_profile "${candidate}"
     grep -Fxq 'location = /var/lib/gentoo-optimization/framework-current/local-overlay' \
         "${candidate}/portage/repos.conf/codex-local.conf" || \
@@ -2109,7 +2277,7 @@ manifest_external_file_matches() {
 }
 
 verify_external_migration_source() {
-    local candidate=$1 qa=${INSTALL_QA_ROOT}/${HOOK_BASENAME}
+    local candidate=$1 qa=${INSTALL_QA_ROOT}/${HOOK_BASENAME} target
     if [[ -e ${LIBEXEC_ROOT} || -L ${LIBEXEC_ROOT} ]]; then
         verify_directory "${LIBEXEC_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
         bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
@@ -2140,6 +2308,14 @@ verify_external_migration_source() {
             { [[ -f ${MANIFEST} && ! -L ${MANIFEST} ]] && \
                 cmp -s -- "${candidate}/install.manifest" "${MANIFEST}"; } || \
             fail 'external manifest is neither the reviewed indirection nor the active generation manifest'
+    fi
+    if [[ -e ${TMPFILES_RULE} || -L ${TMPFILES_RULE} ]]; then
+        [[ -L ${TMPFILES_RULE} ]] || \
+            fail 'runtime-lock tmpfiles rule has an unmanaged filesystem type'
+        target=
+        read_exact_symlink_target "${TMPFILES_RULE}" target
+        [[ ${target} == "${TMPFILES_RULE_SYMLINK_TARGET}" ]] || \
+            fail 'runtime-lock tmpfiles rule has an unmanaged symlink target'
     fi
 }
 
@@ -2206,6 +2382,12 @@ install_external_indirections() {
     ln -s -- "${FRAMEWORK_CURRENT}/portage" "${stage}"
     atomic_publish_entry "${stage}" "${ETC_PORTAGE}"
 
+    safe_mkdir 0755 "${TMPFILES_ROOT}"
+    stage=${TMPFILES_RULE}.partial.$$
+    rm -rf -- "${stage}"
+    ln -s -- "${TMPFILES_RULE_SYMLINK_TARGET}" "${stage}"
+    atomic_publish_entry "${stage}" "${TMPFILES_RULE}"
+
     rm -f -- "${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt"
     sync_path "${INSTALL_QA_ROOT}"
 }
@@ -2222,6 +2404,7 @@ verify_external_indirections() {
         "${FRAMEWORK_CURRENT}/install.manifest" && \
         $(stat -c '%u:%g' -- "${MANIFEST}") == "${EXPECTED_UID}:${EXPECTED_GID}" ]] || \
         fail 'external manifest is not bound to framework-current/install.manifest'
+    verify_installed_tmpfiles_rule
     verify_directory "${LIBEXEC_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
     bootstrap_tree_matches "${LIBEXEC_ROOT}" || fail 'fixed helper bootstrap tree differs'
     verify_regular_trusted "${qa}" 0644
@@ -2260,6 +2443,7 @@ cleanup_stale_publication_debris() {
         "${ETC_PORTAGE}.partial.*"
         "${MANIFEST}.partial.*"
         "${INSTALL_QA_ROOT}/${HOOK_BASENAME}.partial.*"
+        "${TMPFILES_RULE}.partial.*"
         "${FRAMEWORK_CURRENT}.partial.*"
         "${BASE}/framework-*.partial.*"
         "${BASE}/.framework-expected-manifest.*"
@@ -2292,6 +2476,7 @@ verify_no_stale_publication_debris() {
         "${ETC_PORTAGE}.partial.*"
         "${MANIFEST}.partial.*"
         "${INSTALL_QA_ROOT}/${HOOK_BASENAME}.partial.*"
+        "${TMPFILES_RULE}.partial.*"
         "${FRAMEWORK_CURRENT}.partial.*"
         "${BASE}/framework-*.partial.*"
         "${BASE}/.framework-expected-manifest.*"
@@ -2380,9 +2565,15 @@ preflight_destination_ancestors
 preflight_atomic_exchange_destinations
 verify_bootstrap_identity
 verify_jq
+verify_tmpfiles_boot_prerequisites
+verify_runtime_root
 if [[ ${MODE} == install ]]; then
-    safe_mkdir_owner "${LOCK_DIRECTORY_MODE}" "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_PATH%/*}"
+    create_lock_directory_if_absent "${LOCK_PATH%/*}"
     create_lock_if_absent "${LOCK_PATH}"
+    create_lock_if_absent "${PROJECT_LOCK_PATH}"
+    create_lock_if_absent "${GENERATION_LOCK_PATH}"
+    verify_no_lock_preparation_debris
+    failure_point after-runtime-lock-namespace
     open_verified_lock_descriptor "${LOCK_PATH}" INSTALLER_LOCK_FD
     flock -n -x "${INSTALLER_LOCK_FD}" || \
         fail 'another framework installer holds the publication lock'
@@ -2392,6 +2583,7 @@ if [[ ${MODE} == install ]]; then
     open_project_lock "${PROJECT_LOCK_PATH}" exclusive
     open_project_lock "${GENERATION_LOCK_PATH}" exclusive
 else
+    verify_no_lock_preparation_debris
     verify_directory "${LOCK_PATH%/*}" "${EXPECTED_UID}" "${LOCK_GID}" "${LOCK_DIRECTORY_MODE}"
     verify_lock_file "${LOCK_PATH}"
     open_verified_lock_descriptor "${LOCK_PATH}" INSTALLER_LOCK_FD
@@ -2535,7 +2727,8 @@ mkdir -p -- "${CANDIDATE_STAGE}/portage" "${CANDIDATE_STAGE}/local-overlay" \
     "${CANDIDATE_STAGE}/libexec/scripts/optimization/lib" \
     "${CANDIDATE_STAGE}/libexec/scripts/optimization/verify" \
     "${CANDIDATE_STAGE}/libexec/recovery" \
-    "${CANDIDATE_STAGE}/share/schema" "${CANDIDATE_STAGE}/qa"
+    "${CANDIDATE_STAGE}/share/schema" "${CANDIDATE_STAGE}/share/tmpfiles" \
+    "${CANDIDATE_STAGE}/qa"
 cp -a -- "${SNAPSHOT}/portage/." "${CANDIDATE_STAGE}/portage/"
 cp -a -- "${SNAPSHOT}/local-overlay/." "${CANDIDATE_STAGE}/local-overlay/"
 render_bound_portage_bashrc "${CANDIDATE_FINAL}" >"${CANDIDATE_STAGE}/portage/bashrc"
@@ -2559,6 +2752,9 @@ install -m 0644 -T -- "${SNAPSHOT}/optimization/schema/artifact-state.schema.jso
     "${CANDIDATE_STAGE}/share/schema/artifact-state.schema.json"
 install -m 0644 -T -- "${SNAPSHOT}/optimization/schema/final-system-state.schema.json" \
     "${CANDIDATE_STAGE}/share/schema/final-system-state.schema.json"
+install -m 0644 -T -- \
+    "${SNAPSHOT}/optimization/tmpfiles/gentoo-optimization.conf" \
+    "${CANDIDATE_STAGE}/share/tmpfiles/gentoo-optimization.conf"
 install -m 0644 -T -- "${SNAPSHOT}/portage/install-qa-check.d/${HOOK_BASENAME}" \
     "${CANDIDATE_STAGE}/qa/${HOOK_BASENAME}"
 printf '%s\n' "${SOURCE_AGGREGATE}" >"${CANDIDATE_STAGE}/portage/.gentoo-optimization-source-hash"

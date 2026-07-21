@@ -45,7 +45,7 @@ done
 # directories only; an unexpected top-level file (such as the former `trap`
 # scratch output) is always fatal.
 declare -A allowed_root_entries=(
-    [.agents]=1 [.codex]=1 [.git]=1 [.gitignore]=1 [.mypy_cache]=1 [.vscode]=1
+    [.agents]=1 [.codex]=1 [.git]=1 [.github]=1 [.gitignore]=1 [.mypy_cache]=1 [.vscode]=1
     [LICENSE]=1 [README.md]=1 [bench]=1 [docs]=1 [local-overlay]=1
     [optimization]=1 [plan.md]=1 [plans]=1 [portage]=1 [scripts]=1 [tests]=1
 )

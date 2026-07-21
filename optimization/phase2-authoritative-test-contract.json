@@ -73,6 +73,18 @@
     {
       "subtest": "python.test_production_profile_lock_transaction.ProductionProfileLockTransactionTests.test_signal_terminates_exact_child_supervisor_and_restores",
       "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_create_binpkg_checkpoint.CheckpointHostCapabilityTest.test_host_kill_child_pid_namespace_is_functional",
+      "test": "python-unit-tests:tests/optimization/recovery"
+    },
+    {
+      "subtest": "python.test_create_binpkg_checkpoint.CheckpointHostCapabilityTest.test_host_pidfd_open_and_send_signal_are_functional",
+      "test": "python-unit-tests:tests/optimization/recovery"
+    },
+    {
+      "subtest": "python.test_state.PublicationAndSchemaTests.test_draft_202012_schema_parity_positive_and_negative",
+      "test": "python-unit-tests:tests/optimization"
     }
   ],
   "portable_allowed_top_level_skips": [
@@ -84,6 +96,7 @@
     "capability:rust",
     "framework-installer",
     "package-env-portage-semantic",
+    "phase2-run-provenance-start",
     "portage-pgo-use-integration",
     "portage-phase-identity",
     "portage-pre-strip-integration",

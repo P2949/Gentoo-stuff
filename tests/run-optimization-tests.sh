@@ -14,6 +14,10 @@ MODE=${OPTIMIZATION_TEST_MODE:-smoke}
 OUTPUT_DIR=
 KEEP_TEMP=0
 LIST_ONLY=0
+CONTRACT_TOPOLOGY_ONLY=0
+INTERNAL_PROCESS_GROUP_PROBE=
+INTERNAL_PROCESS_GROUP_PROC_ROOT=/proc
+INTERNAL_PROCESS_GROUP_ASSUME_VISIBLE=0
 EXPLICIT_CAPABILITIES=0
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -53,6 +57,14 @@ TEST_CASE_KILL_AFTER_SECONDS=${TEST_CASE_KILL_AFTER_SECONDS:-10}
 
 declare -A SELECTED_CAPABILITIES=()
 readonly -a ALL_CAPABILITIES=(clang-ir clang-sample gcc rust go bolt)
+readonly -a EXPLICIT_SHELL_SOURCES=(
+    "${REPOSITORY_ROOT}/optimization/fixtures/portage/capture-proxy.sh.in"
+    "${REPOSITORY_ROOT}/optimization/fixtures/portage/phase2-phase-identity-1.ebuild"
+    "${REPOSITORY_ROOT}/optimization/fixtures/portage/phase2-phase-identity-install-qa"
+    "${REPOSITORY_ROOT}/portage/bashrc"
+    "${REPOSITORY_ROOT}/portage/install-qa-check.d/zz-gentoo-optimization-bolt"
+    "${REPOSITORY_ROOT}/portage/repo.postsync.d/fix-sft-broken"
+)
 
 usage() {
     cat <<'EOF'
@@ -80,6 +92,8 @@ Options:
                         only letters, digits, /, ., _, and -.
   --keep-temp           Keep the automatically allocated temporary directory.
   --list                List suites and capability names without running them.
+  --contract-topology   Emit the machine-readable portable/authoritative test
+                        topology without executing tests, then exit.
   -h, --help            Show this help.
 
 Environment:
@@ -121,6 +135,8 @@ portable suites (smoke runs only the initial static/core subset):
   shellcheck (same shell source set; skipped when unavailable)
   python-source-compilation (temporary pycache only)
   python-unit-tests
+  phase2-test-contract-static (deterministic no-execution pre-gate topology check)
+  phase2-evidence-smoke (one parser/topology regression; smoke only)
   phase2-evidence-contract (clean-tree, plan-marker, tool, state, and detached-index binding)
   production-profile-lock-crash-stress (stress/authoritative only; 300 cycles)
   package-env-duplicate-policy (portable checks plus required live Portage semantics on Gentoo)
@@ -153,6 +169,118 @@ opt-in capability fixtures:
   go             Go CPU-pprof PGO
   bolt           BOLT ET_EXEC, dynamic PIE, static PIE, and DSO classes
 EOF
+}
+
+validate_explicit_shell_sources() {
+    local source
+    for source in "${EXPLICIT_SHELL_SOURCES[@]}"; do
+        if [[ ! -e ${source} && ! -L ${source} ]]; then
+            # Hermetic driver fixtures intentionally contain only their
+            # minimal synthetic source tree.  The real repository policy test
+            # requires every reviewed explicit source to exist.
+            continue
+        fi
+        [[ -f ${source} && ! -L ${source} ]] || \
+            fail_usage "reviewed shell source is absent or a symlink: ${source}"
+    done
+}
+
+discover_shell_sources() {
+    {
+        local source
+        for source in "${EXPLICIT_SHELL_SOURCES[@]}"; do
+            [[ -f ${source} && ! -L ${source} ]] || continue
+            printf '%s\0' "${source}"
+        done
+        find "${REPOSITORY_ROOT}/bench" "${REPOSITORY_ROOT}/optimization" \
+            "${REPOSITORY_ROOT}/scripts" "${REPOSITORY_ROOT}/tests" \
+            -type f -name '*.sh' -print0
+    } | LC_ALL=C sort -zu
+}
+
+emit_contract_topology() {
+    local name source_file test_file test_directory relative_directory exclusion i j swap
+    local LC_ALL=C
+    validate_explicit_shell_sources
+    local -a exact_names=(
+        bolt-command-policy
+        bolt-pre-strip-hooks
+        bolt-transaction-fixture
+        capability:bolt
+        capability:clang-ir
+        capability:clang-sample
+        capability:gcc
+        capability:go
+        capability:rust
+        driver-cli-self-test
+        framework-installer
+        no-legacy-pgo
+        package-env-duplicate-policy
+        package-env-portage-semantic
+        pgo-dispatcher
+        phase2-evidence-contract
+        phase2-run-provenance-start
+        phase2-test-contract-static
+        portage-config-cleanup
+        portage-pgo-use-integration
+        portage-phase-identity
+        portage-pre-strip-integration
+        portage-qa-hook-state
+        portage-sample-pgo-integration
+        portage-sample-pgo-live-policy-integration
+        portage-sample-production-env
+        production-profile-lock-crash-stress
+        python-source-compilation
+        recovery-boot-evidence-fixture
+        recovery-rollback-fixture
+        shellcheck
+    )
+    local -a test_directories=()
+    local -A seen_test_directories=()
+    for name in "${exact_names[@]}"; do
+        printf 'top-level\t%s\n' "${name}"
+    done
+    while IFS= read -r -d '' source_file; do
+        relative_directory=${source_file#"${REPOSITORY_ROOT}/"}
+        printf 'shell\tbash-syntax:%s\n' "${relative_directory}"
+    done < <(discover_shell_sources)
+    shopt -s globstar nullglob
+    for test_file in "${REPOSITORY_ROOT}"/tests/**/test_*.py; do
+        [[ -f ${test_file} && ! -L ${test_file} ]] || continue
+        test_directory=${test_file%/*}
+        if [[ -z ${seen_test_directories["${test_directory}"]:-} ]]; then
+            seen_test_directories["${test_directory}"]=1
+            test_directories+=("${test_directory}")
+        fi
+    done
+    ((${#test_directories[@]} > 0)) || \
+        fail_usage 'contract topology discovered no Python unittest directories'
+    for ((i = 0; i < ${#test_directories[@]}; i += 1)); do
+        for ((j = i + 1; j < ${#test_directories[@]}; j += 1)); do
+            if [[ ${test_directories[j]} < ${test_directories[i]} ]]; then
+                swap=${test_directories[i]}
+                test_directories[i]=${test_directories[j]}
+                test_directories[j]=${swap}
+            fi
+        done
+    done
+    for test_directory in "${test_directories[@]}"; do
+        relative_directory=${test_directory#"${REPOSITORY_ROOT}/"}
+        name=python-unit-tests:${relative_directory}
+        printf 'top-level\t%s\n' "${name}"
+        exclusion=
+        if [[ ${relative_directory} == tests/optimization ]]; then
+            exclusion=test_phase2_evidence.
+        fi
+        printf 'unittest\t%s\t%s\t%s\t%s\t%s\n' \
+            "${name}" "${relative_directory}" 'test_*.py' "${exclusion}" ''
+    done
+    printf 'unittest\t%s\t%s\t%s\t%s\t%s\n' \
+        phase2-evidence-contract tests/optimization test_phase2_evidence.py '' ''
+    printf 'unittest\t%s\t%s\t%s\t%s\t%s\n' \
+        production-profile-lock-crash-stress tests/optimization \
+        test_production_profile_lock_transaction.py '' \
+        test_child_barrier_crash_recovery_stress
 }
 
 fail_usage() {
@@ -225,6 +353,24 @@ while (($#)); do
             LIST_ONLY=1
             shift
             ;;
+        --contract-topology)
+            CONTRACT_TOPOLOGY_ONLY=1
+            shift
+            ;;
+        --internal-process-group-probe)
+            (($# >= 2)) || fail_usage '--internal-process-group-probe requires a PGID'
+            INTERNAL_PROCESS_GROUP_PROBE=$2
+            shift 2
+            ;;
+        --internal-process-group-proc-root)
+            (($# >= 2)) || fail_usage '--internal-process-group-proc-root requires a directory'
+            INTERNAL_PROCESS_GROUP_PROC_ROOT=$2
+            shift 2
+            ;;
+        --internal-process-group-assume-visible)
+            INTERNAL_PROCESS_GROUP_ASSUME_VISIBLE=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -257,6 +403,11 @@ if ((LIST_ONLY)); then
     list_suites
     exit 0
 fi
+if ((CONTRACT_TOPOLOGY_ONLY)); then
+    emit_contract_topology
+    exit 0
+fi
+validate_explicit_shell_sources
 
 validate_positive_seconds() {
     local variable_name=$1 value=$2
@@ -625,7 +776,45 @@ collect_case_subtests() {
 
 process_group_exists() {
     local pgid=$1
-    kill -0 -- "-${pgid}" 2>/dev/null
+    local stat_file stat_line stat_tail state member_pgid scanned=0
+    local -a stat_files=()
+    [[ ${pgid} =~ ^[1-9][0-9]*$ ]] || return 0
+    if ((INTERNAL_PROCESS_GROUP_ASSUME_VISIBLE == 0)); then
+        kill -0 -- "-${pgid}" 2>/dev/null || return 1
+    fi
+    # kill(2) reports a process group containing only zombies as existent even
+    # though it has no executable work and no signal can quiesce it further.
+    # Inspect one coherent stat record per member and keep the conservative
+    # "active" result if procfs itself is unavailable.
+    [[ -r ${INTERNAL_PROCESS_GROUP_PROC_ROOT}/self/stat ]] || return 0
+    stat_files=("${INTERNAL_PROCESS_GROUP_PROC_ROOT}"/[0-9]*/stat)
+    for stat_file in "${stat_files[@]}"; do
+        ((scanned += 1))
+        ((scanned <= 131072)) || return 0
+        if [[ ! -r ${stat_file} ]]; then
+            [[ ! -e ${stat_file} ]] || return 0
+            continue
+        fi
+        if ! IFS= read -r stat_line <"${stat_file}"; then
+            [[ ! -e ${stat_file} ]] || return 0
+            continue
+        fi
+        if [[ ${stat_line} != *') '* ]]; then
+            [[ ! -e ${stat_file} ]] || return 0
+            continue
+        fi
+        stat_tail=${stat_line##*) }
+        IFS=' ' read -r state _ member_pgid _ <<<"${stat_tail}"
+        if [[ ! ${state} =~ ^[A-Za-z]$ || ! ${member_pgid} =~ ^[0-9]+$ ]]; then
+            [[ ! -e ${stat_file} ]] || return 0
+            continue
+        fi
+        if ((member_pgid == pgid)) && \
+            [[ ${state} != Z && ${state} != X && ${state} != x ]]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 cleanup_process_group() {
@@ -768,6 +957,15 @@ run_case_in_repository() {
         "${REPOSITORY_ROOT}" "$@"
 }
 
+if [[ -n ${INTERNAL_PROCESS_GROUP_PROBE} ]]; then
+    if process_group_exists "${INTERNAL_PROCESS_GROUP_PROBE}"; then
+        printf 'active\n'
+        exit 0
+    fi
+    printf 'quiescent\n'
+    exit 1
+fi
+
 create_run_root
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -801,20 +999,54 @@ else
     fi
 fi
 
+TEST_CONTRACT_DISCOVERY_TOOL=${REPOSITORY_ROOT}/scripts/optimization/verify/phase2-test-contract.py
+AUTHORITATIVE_TEST_CONTRACT=${REPOSITORY_ROOT}/optimization/phase2-authoritative-test-contract.json
+if [[ ${MODE} == portable-complete || ${MODE} == authoritative || \
+      ${AUTHORITATIVE} == 1 ]]; then
+    contract_python=$(command -v python3 2>/dev/null || true)
+    if [[ -z ${contract_python} || ! -f ${TEST_CONTRACT_DISCOVERY_TOOL} ||
+          -L ${TEST_CONTRACT_DISCOVERY_TOOL} ||
+          ! -f ${AUTHORITATIVE_TEST_CONTRACT} ||
+          -L ${AUTHORITATIVE_TEST_CONTRACT} ]]; then
+        printf '%s\n' \
+            'ERROR: deterministic test-contract discovery prerequisites are unavailable' \
+            >"${RUN_ROOT}/test-contract-static-check.log"
+        cat -- "${RUN_ROOT}/test-contract-static-check.log" >&2
+        KEEP_TEMP=1
+        exit 2
+    fi
+    set +e
+    env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+        "${contract_python}" -I -B "${TEST_CONTRACT_DISCOVERY_TOOL}" check \
+        --repository-root "${REPOSITORY_ROOT}" \
+        --contract "${AUTHORITATIVE_TEST_CONTRACT}" \
+        >"${RUN_ROOT}/test-contract-static-check.log" 2>&1
+    contract_discovery_status=$?
+    set -e
+    if ((contract_discovery_status != 0)); then
+        printf 'FAIL: deterministic test-contract discovery (exit %d; log: %s)\n' \
+            "${contract_discovery_status}" \
+            "${RUN_ROOT}/test-contract-static-check.log" >&2
+        tail -n 240 -- "${RUN_ROOT}/test-contract-static-check.log" >&2 || true
+        KEEP_TEMP=1
+        exit 2
+    fi
+    printf 'TEST-CONTRACT-DISCOVERY: %s\n' \
+        "${RUN_ROOT}/test-contract-static-check.log"
+    record_subtest PASS required phase2-test-contract-static \
+        driver.case-completion \
+        'deterministic no-execution topology matches the reviewed contract'
+    ((PASS_COUNT += 1))
+    record_result PASS phase2-test-contract-static \
+        "exit_status=0 log=${RUN_ROOT}/test-contract-static-check.log discovery=pre-gate"
+fi
+
 declare -a SHELL_SOURCES=()
 declare -a PYTHON_SOURCES=()
 declare -a PYTHON_TEST_DIRECTORIES=()
 while IFS= read -r -d '' source_file; do
     SHELL_SOURCES+=("${source_file}")
-done < <(
-    find "${REPOSITORY_ROOT}/bench" "${REPOSITORY_ROOT}/optimization" \
-        "${REPOSITORY_ROOT}/scripts" "${REPOSITORY_ROOT}/tests" \
-        -type f -name '*.sh' -print0 | LC_ALL=C sort -z
-)
-PORTAGE_BOLT_QA_HOOK=${REPOSITORY_ROOT}/portage/install-qa-check.d/zz-gentoo-optimization-bolt
-if [[ -f ${PORTAGE_BOLT_QA_HOOK} ]]; then
-    SHELL_SOURCES+=("${PORTAGE_BOLT_QA_HOOK}")
-fi
+done < <(discover_shell_sources)
 while IFS= read -r -d '' source_file; do
     PYTHON_SOURCES+=("${source_file}")
 done < <(
@@ -882,11 +1114,32 @@ else
     else
         for test_directory in "${PYTHON_TEST_DIRECTORIES[@]}"; do
             relative_directory=${test_directory#"${REPOSITORY_ROOT}/"}
+            unittest_environment=(env -u PYTHONPYCACHEPREFIX \
+                -u GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES \
+                PYTHONDONTWRITEBYTECODE=1)
+            if ((AUTHORITATIVE == 1)) && \
+                [[ ${relative_directory} == tests/optimization/recovery ]]; then
+                # These two tests exercise the real host pidfd and
+                # unshare --kill-child primitives.  Portable runs retain their
+                # explicit required skips; an authoritative host run must
+                # execute them, so enable the reviewed opt-in only for this
+                # isolated recovery suite.
+                unittest_environment+=(
+                    GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES=1
+                )
+            fi
+            unittest_arguments=(discover -s "${test_directory}" -p 'test_*.py' -v)
+            if [[ ${relative_directory} == tests/optimization ]]; then
+                # This expensive matrix has its own required top-level case.
+                # Excluding it here prevents duplicate execution while its
+                # identity remains independently bound in results/subtests.
+                unittest_arguments=(--exclude-id-prefix test_phase2_evidence. \
+                    "${unittest_arguments[@]}")
+            fi
             run_case_in_repository "python-unit-tests:${relative_directory}" \
-                env -u PYTHONPYCACHEPREFIX \
-                PYTHONDONTWRITEBYTECODE=1 \
-                "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" discover \
-                -s "${test_directory}" -p 'test_*.py' -v
+                "${unittest_environment[@]}" \
+                "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" \
+                "${unittest_arguments[@]}"
         done
         if [[ ${MODE} != stress && ${MODE} != authoritative ]]; then
             skip_case production-profile-lock-crash-stress \
@@ -916,6 +1169,11 @@ elif [[ ! -f ${STRUCTURED_UNITTEST_RUNNER} || -L ${STRUCTURED_UNITTEST_RUNNER} ]
 elif [[ ! -f ${PHASE2_EVIDENCE_TEST} ]]; then
     skip_case phase2-evidence-contract \
         "fixture is absent: ${PHASE2_EVIDENCE_TEST}"
+elif [[ ${MODE} == smoke ]]; then
+    run_case_in_repository phase2-evidence-smoke \
+        env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+        "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" -v \
+        tests.optimization.test_phase2_evidence.Phase2EvidenceTests.test_exact_topology_rejects_deleted_and_unexpected_cases
 else
     run_case_in_repository phase2-evidence-contract \
         env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
@@ -1506,8 +1764,12 @@ if ((AUTHORITATIVE == 1)) && ((SKIP_COUNT != 0 || REQUIRED_SUBTEST_SKIP_COUNT !=
     EXIT_STATUS=1
     KEEP_TEMP=1
 fi
-AUTHORITATIVE_TEST_CONTRACT=${REPOSITORY_ROOT}/optimization/phase2-authoritative-test-contract.json
-if [[ ${MODE} == portable-complete || ${MODE} == authoritative ]]; then
+if [[ ${MODE} == portable-complete || ${MODE} == authoritative || \
+      ${AUTHORITATIVE} == 1 ]]; then
+    contract_validation_mode=portable-complete
+    if ((AUTHORITATIVE == 1)); then
+        contract_validation_mode=authoritative
+    fi
     set +e
     if [[ -n ${PYTHON_BIN} && -f ${PHASE2_EVIDENCE_TOOL} && \
           ! -L ${PHASE2_EVIDENCE_TOOL} && \
@@ -1517,7 +1779,7 @@ if [[ ${MODE} == portable-complete || ${MODE} == authoritative ]]; then
             "${PYTHON_BIN}" "${PHASE2_EVIDENCE_TOOL}" test-contract \
             --contract "${AUTHORITATIVE_TEST_CONTRACT}" \
             --results "${RESULTS_FILE}" --subtests "${SUBTESTS_FILE}" \
-            --mode "${MODE}" \
+            --mode "${contract_validation_mode}" \
             >"${RUN_ROOT}/test-contract.log" 2>&1
         contract_status=$?
     else
@@ -1531,7 +1793,7 @@ if [[ ${MODE} == portable-complete || ${MODE} == authoritative ]]; then
         EXIT_STATUS=1
         KEEP_TEMP=1
         printf 'FAIL: exact %s test topology/identity contract (log: %s)\n' \
-            "${MODE}" "${RUN_ROOT}/test-contract.log" >&2
+            "${contract_validation_mode}" "${RUN_ROOT}/test-contract.log" >&2
         tail -n 120 -- "${RUN_ROOT}/test-contract.log" >&2 || true
     else
         printf 'TEST-CONTRACT: %s\n' "${RUN_ROOT}/test-contract.log"

@@ -6,17 +6,112 @@ IFS=$'\n\t'
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 REPOSITORY_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd -P)
 DRIVER=${REPOSITORY_ROOT}/tests/run-optimization-tests.sh
+TRUSTED_ROOT_CREATED=0
+ZOMBIE_PARENT=
 if ((EUID == 0)); then
+    TRUSTED_ROOT=/var/tmp/gentoo-optimization
+    VAR_TMP_MODE=$(stat -c %a -- /var/tmp 2>/dev/null || true)
+    if [[ ! -d /var/tmp || -L /var/tmp ||
+          $(realpath -e -- /var/tmp) != /var/tmp ||
+          $(stat -c %u -- /var/tmp) != 0 ||
+          ! ${VAR_TMP_MODE} =~ ^[0-7]+$ ]] ||
+        { (( (8#${VAR_TMP_MODE} & 8#022) != 0 )) &&
+          (( (8#${VAR_TMP_MODE} & 8#1000) == 0 )); }; then
+        printf '%s\n' \
+            'FAIL: root self-test prerequisite /var/tmp must be root-owned and sticky or non-writable by group/other' >&2
+        exit 1
+    fi
+    if [[ ! -e ${TRUSTED_ROOT} && ! -L ${TRUSTED_ROOT} ]]; then
+        mkdir -m 0700 -- "${TRUSTED_ROOT}"
+        TRUSTED_ROOT_CREATED=1
+    fi
+    TRUSTED_ROOT_MODE=$(stat -c %a -- "${TRUSTED_ROOT}" 2>/dev/null || true)
+    if [[ ! -d ${TRUSTED_ROOT} || -L ${TRUSTED_ROOT} ||
+          $(realpath -e -- "${TRUSTED_ROOT}") != "${TRUSTED_ROOT}" ||
+          $(stat -c %u -- "${TRUSTED_ROOT}") != 0 ||
+          ! ${TRUSTED_ROOT_MODE} =~ ^[0-7]+$ ]] ||
+        (( (8#${TRUSTED_ROOT_MODE} & 8#022) != 0 )); then
+        printf 'FAIL: root self-test prerequisite is untrusted: %s\n' \
+            "${TRUSTED_ROOT}" >&2
+        exit 1
+    fi
     FIXTURE=$(mktemp -d \
-        /var/tmp/gentoo-optimization/optimization-driver-self-test.XXXXXXXX)
+        "${TRUSTED_ROOT}/optimization-driver-self-test.XXXXXXXX")
 else
     FIXTURE=$(mktemp -d /tmp/gentoo-optimization-driver-self-test.XXXXXXXX)
 fi
-trap 'rm -rf -- "${FIXTURE}"' EXIT
+cleanup() {
+    local status=$?
+    if [[ -n ${ZOMBIE_PARENT} ]]; then
+        kill -TERM "${ZOMBIE_PARENT}" 2>/dev/null || true
+        wait "${ZOMBIE_PARENT}" 2>/dev/null || true
+    fi
+    rm -rf -- "${FIXTURE}"
+    if ((TRUSTED_ROOT_CREATED)); then
+        rmdir -- "${TRUSTED_ROOT}" 2>/dev/null || true
+    fi
+    return "${status}"
+}
+trap cleanup EXIT
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
     exit 1
+}
+
+install_hermetic_contract_support() {
+    local repository=$1 binary_directory=$2
+    local contract=${repository}/optimization/phase2-authoritative-test-contract.json
+    local generated=${contract}.generated
+    local python3_path
+    python3_path=$(command -v -- python3) || \
+        fail 'self-test prerequisite is unavailable: python3'
+    mkdir -p -- "${repository}/optimization" \
+        "${repository}/scripts/optimization/verify" \
+        "${repository}/tests/contract-unit" \
+        "${repository}/tests/optimization"
+    cp -- "${REPOSITORY_ROOT}/scripts/optimization/verify/phase2-test-contract.py" \
+        "${repository}/scripts/optimization/verify/phase2-test-contract.py"
+    cp -- "${REPOSITORY_ROOT}/scripts/optimization/verify/phase2-evidence.py" \
+        "${repository}/scripts/optimization/verify/phase2-evidence.py"
+    cp -- "${REPOSITORY_ROOT}/scripts/optimization/verify/run-unittest-suite.py" \
+        "${repository}/scripts/optimization/verify/run-unittest-suite.py"
+    printf '%s\n' \
+        'import unittest' \
+        'class ContractIdentityTest(unittest.TestCase):' \
+        '    def test_identity(self):' \
+        '        pass' \
+        >"${repository}/tests/contract-unit/test_contract_identity.py"
+    printf '%s\n' \
+        'import unittest' \
+        'class EvidenceContractIdentityTest(unittest.TestCase):' \
+        '    def test_identity(self):' \
+        '        pass' \
+        >"${repository}/tests/optimization/test_phase2_evidence.py"
+    printf '%s\n' \
+        'import unittest' \
+        'class StressContractIdentityTest(unittest.TestCase):' \
+        '    def test_child_barrier_crash_recovery_stress(self):' \
+        '        pass' \
+        >"${repository}/tests/optimization/test_production_profile_lock_transaction.py"
+    printf '%s\n' \
+        '{' \
+        '  "expected_diagnostic_subtests": [],' \
+        '  "portable_allowed_required_skips": [],' \
+        '  "portable_allowed_top_level_skips": [],' \
+        '  "required_named_subtests": [],' \
+        '  "schema": "gentoo-optimization-phase2-authoritative-test-contract-v1",' \
+        '  "top_level": {"exact_names": [], "prefix_groups": []},' \
+        '  "unittest_suites": []' \
+        '}' >"${contract}"
+    "${python3_path}" -I -B \
+        "${REPOSITORY_ROOT}/scripts/optimization/verify/phase2-test-contract.py" \
+        generate --repository-root "${repository}" --contract "${contract}" \
+        --output "${generated}" >/dev/null
+    mv -f -- "${generated}" "${contract}"
+    if [[ ! -e ${binary_directory}/python3 && ! -L ${binary_directory}/python3 ]]; then
+        ln -s -- "${python3_path}" "${binary_directory}/python3"
+    fi
 }
 
 [[ -f ${DRIVER} ]] || fail "driver is absent: ${DRIVER}"
@@ -40,6 +135,8 @@ grep -Fq 'TEST_CASE_TIMEOUT_SECONDS_CLANG_IR' "${FIXTURE}/help.txt" || \
     fail 'help omits normalized per-capability deadline overrides'
 grep -Fq 'GENTOO_OPT_AUTHORITATIVE=0|1' "${FIXTURE}/help.txt" || \
     fail 'help omits authoritative subtest accounting'
+grep -Fq -- '--contract-topology' "${FIXTURE}/help.txt" || \
+    fail 'help omits deterministic contract topology discovery'
 
 bash -- "${DRIVER}" --list >"${FIXTURE}/list.txt"
 grep -Fq 'recovery-rollback-fixture' "${FIXTURE}/list.txt" || fail 'suite list omits rollback fixture'
@@ -80,6 +177,13 @@ for capability in clang-ir clang-sample gcc rust go bolt; do
     grep -Eq "^[[:space:]]+${capability}([[:space:]]|$)" \
         "${FIXTURE}/list.txt" || fail "suite list omits ${capability}"
 done
+bash -- "${DRIVER}" --contract-topology >"${FIXTURE}/contract-topology.tsv"
+grep -Fxq $'top-level\tphase2-evidence-contract' \
+    "${FIXTURE}/contract-topology.tsv" || \
+    fail 'contract topology omits the distinct Phase 2 evidence identity'
+[[ $(grep -Fc $'unittest\tphase2-evidence-contract\t' \
+    "${FIXTURE}/contract-topology.tsv") -eq 1 ]] || \
+    fail 'contract topology does not contain exactly one Phase 2 evidence suite'
 bash -- "${DRIVER}" --mode quick --list \
     >"${FIXTURE}/quick-list.txt" 2>"${FIXTURE}/quick-list.stderr"
 grep -Fq -- 'WARNING: --mode quick is deprecated; using portable-complete' \
@@ -137,6 +241,103 @@ grep -Fq -- '--output-dir canonical path contains characters unsafe for capabili
     "${FIXTURE}/bad-output-characters.log" || \
     fail 'unsafe output characters lack a visible diagnostic'
 [[ ! -e ${UNSAFE_OUTPUT} ]] || fail 'unsafe output path was created before rejection'
+
+# A zombie retains a numeric PID and process-group identity, so kill -0 alone
+# produces a false positive. Keep a deliberately unreaped zombie in its own
+# process group and prove the driver's bounded procfs inspection calls it
+# quiescent while its live parent remains outside that group.
+ZOMBIE_MARKER=${FIXTURE}/zombie-group.txt
+python3 - "${ZOMBIE_MARKER}" <<'PY' &
+import os
+from pathlib import Path
+import signal
+import sys
+import time
+
+marker = Path(sys.argv[1])
+child = os.fork()
+if child == 0:
+    os.setpgid(0, 0)
+    os._exit(0)
+
+def reap_and_exit(_signal: int, _frame: object) -> None:
+    os.waitpid(child, 0)
+    raise SystemExit(0)
+
+signal.signal(signal.SIGTERM, reap_and_exit)
+for _ in range(200):
+    try:
+        fields = Path(f"/proc/{child}/stat").read_text(encoding="utf-8").rsplit(") ", 1)[1].split()
+    except (FileNotFoundError, IndexError):
+        break
+    if fields[0] == "Z" and int(fields[2]) == child:
+        marker.write_text(f"{child}\n", encoding="utf-8")
+        while True:
+            signal.pause()
+    time.sleep(0.01)
+os.waitpid(child, 0)
+raise SystemExit(91)
+PY
+ZOMBIE_PARENT=$!
+for ((attempt = 0; attempt < 200; attempt += 1)); do
+    [[ ! -s ${ZOMBIE_MARKER} ]] || break
+    kill -0 "${ZOMBIE_PARENT}" 2>/dev/null || break
+    sleep 0.01
+done
+if [[ ! -s ${ZOMBIE_MARKER} ]]; then
+    kill -TERM "${ZOMBIE_PARENT}" 2>/dev/null || true
+    wait "${ZOMBIE_PARENT}" 2>/dev/null || true
+    fail 'could not construct the zombie-only process-group fixture'
+fi
+ZOMBIE_PGID=$(<"${ZOMBIE_MARKER}")
+kill -0 -- "-${ZOMBIE_PGID}" 2>/dev/null || \
+    fail 'zombie-only fixture is not visible to kill -0'
+set +e
+bash -- "${DRIVER}" --internal-process-group-probe "${ZOMBIE_PGID}" \
+    >"${FIXTURE}/zombie-group-probe.log" 2>&1
+ZOMBIE_PROBE_STATUS=$?
+set -e
+kill -TERM "${ZOMBIE_PARENT}" 2>/dev/null || true
+wait "${ZOMBIE_PARENT}" 2>/dev/null || true
+ZOMBIE_PARENT=
+[[ ${ZOMBIE_PROBE_STATUS} -eq 1 ]] || \
+    fail "zombie-only process group was reported active (status ${ZOMBIE_PROBE_STATUS})"
+grep -Fxq quiescent "${FIXTURE}/zombie-group-probe.log" || \
+    fail 'zombie-only process-group probe omitted the quiescent result'
+
+FAKE_PROC=${FIXTURE}/fake-proc
+mkdir -p -- "${FAKE_PROC}/self" "${FAKE_PROC}/100" "${FAKE_PROC}/101"
+printf '1 (self) S 0 1 1 0 0\n' >"${FAKE_PROC}/self/stat"
+assert_fake_process_group_state() {
+    local expected_status=$1 expected_output=$2 label=$3
+    shift 3
+    local status
+    "$@" >"${FIXTURE}/fake-proc-${label}.log" 2>&1 && status=0 || status=$?
+    [[ ${status} -eq ${expected_status} ]] || \
+        fail "${label} fake process group returned ${status}, expected ${expected_status}"
+    grep -Fxq "${expected_output}" "${FIXTURE}/fake-proc-${label}.log" || \
+        fail "${label} fake process group omitted ${expected_output}"
+}
+for dead_state in Z X x; do
+    printf '100 (dead member) %s 1 777 0 0 0\n' "${dead_state}" \
+        >"${FAKE_PROC}/100/stat"
+    rm -f -- "${FAKE_PROC}/101/stat"
+    assert_fake_process_group_state 1 quiescent "dead-${dead_state}" \
+        bash -- "${DRIVER}" --internal-process-group-probe 777 \
+        --internal-process-group-proc-root "${FAKE_PROC}" \
+        --internal-process-group-assume-visible
+done
+printf '100 (dead member) Z 1 777 0 0 0\n' >"${FAKE_PROC}/100/stat"
+printf '101 (live member) S 1 777 0 0 0\n' >"${FAKE_PROC}/101/stat"
+assert_fake_process_group_state 0 active mixed-live \
+    bash -- "${DRIVER}" --internal-process-group-probe 777 \
+    --internal-process-group-proc-root "${FAKE_PROC}" \
+    --internal-process-group-assume-visible
+printf 'malformed\n' >"${FAKE_PROC}/101/stat"
+assert_fake_process_group_state 0 active malformed-fail-closed \
+    bash -- "${DRIVER}" --internal-process-group-probe 777 \
+    --internal-process-group-proc-root "${FAKE_PROC}" \
+    --internal-process-group-assume-visible
 
 # Exercise capability preflight without recursively invoking this self-test or
 # risking a real profiling workload.  The copied driver sees a deliberately
@@ -239,18 +440,30 @@ grep -Fxq 'mode=capabilities' "${HERMETIC_OUTPUT}/summary.txt" || \
     fail 'hermetic capability-preflight run lost its exact mode'
 
 AUTHORITATIVE_OUTPUT=${FIXTURE}/hermetic-authoritative-output
+install_hermetic_contract_support "${HERMETIC_ROOT}" "${HERMETIC_BIN}"
 set +e
-PATH=${HERMETIC_BIN} bash -- "${HERMETIC_DRIVER}" \
-    --mode authoritative --output-dir "${AUTHORITATIVE_OUTPUT}" \
+PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 bash -- "${HERMETIC_DRIVER}" \
+    --mode capabilities --output-dir "${AUTHORITATIVE_OUTPUT}" \
     >"${FIXTURE}/hermetic-authoritative.log" 2>&1
 AUTHORITATIVE_STATUS=$?
 set -e
 [[ ${AUTHORITATIVE_STATUS} -eq 1 ]] || \
     fail "incomplete authoritative gate returned ${AUTHORITATIVE_STATUS}, expected 1"
-grep -Fxq 'mode=authoritative' "${AUTHORITATIVE_OUTPUT}/summary.txt" || \
-    fail 'authoritative summary lost its exact mode'
+grep -Fxq 'mode=capabilities' "${AUTHORITATIVE_OUTPUT}/summary.txt" || \
+    fail 'hermetic authoritative-accounting summary lost its exact mode'
 grep -Fxq 'authoritative=1' "${AUTHORITATIVE_OUTPUT}/summary.txt" || \
     fail 'authoritative mode did not enable fail-closed subtest accounting'
+grep -Fq $'PASS\tphase2-test-contract-static\t' \
+    "${AUTHORITATIVE_OUTPUT}/results.tsv" || \
+    fail 'authoritative capabilities mode omitted its static exact-contract gate'
+[[ -s ${AUTHORITATIVE_OUTPUT}/test-contract.log ]] || \
+    fail 'authoritative capabilities mode omitted its final exact-contract gate'
+awk -F '\t' '
+    $2 == "phase2-run-provenance-start" { provenance = NR }
+    $2 == "phase2-test-contract-static" { contract = NR }
+    END { exit !(provenance > 0 && contract > provenance) }
+' "${AUTHORITATIVE_OUTPUT}/results.tsv" || \
+    fail 'static contract discovery was not enclosed after provenance start'
 for capability in clang-ir clang-sample gcc rust go bolt; do
     grep -Eq $'^SKIP\tcapability:'"${capability}"$'(:|\t)' \
         "${AUTHORITATIVE_OUTPUT}/results.tsv" || \
@@ -465,6 +678,7 @@ printf '%s\n' \
     'printf "HOST-SKIP: unstructured host branch unavailable\n"' \
     'exit 0' >"${TIMEOUT_RUNNER}"
 chmod 0755 -- "${TIMEOUT_RUNNER}"
+install_hermetic_contract_support "${TIMEOUT_ROOT}" "${TIMEOUT_BIN_ROOT}"
 set +e
 PATH=${TIMEOUT_BIN_ROOT} GENTOO_OPT_AUTHORITATIVE=1 \
     bash -- "${TIMEOUT_DRIVER}" --mode smoke --capability go \
@@ -487,10 +701,12 @@ PYTHON_BIN_ROOT=${FIXTURE}/python-bin
 PYTHON_DRIVER=${PYTHON_ROOT}/tests/run-optimization-tests.sh
 PYTHON_UNITTEST_RUNNER=${PYTHON_ROOT}/scripts/optimization/verify/run-unittest-suite.py
 PYTHON_TEST_DIR=${PYTHON_ROOT}/tests/unit
+PYTHON_RECOVERY_TEST_DIR=${PYTHON_ROOT}/tests/optimization/recovery
 PYTHON_OUTPUT=${FIXTURE}/python-output
 PYTHON_ENV_MARKER=${FIXTURE}/python-unittest-environment.txt
 mkdir -p -- "${PYTHON_ROOT}/bench" "${PYTHON_ROOT}/optimization" \
     "${PYTHON_ROOT}/scripts/optimization/verify" "${PYTHON_TEST_DIR}" \
+    "${PYTHON_RECOVERY_TEST_DIR}" \
     "${PYTHON_BIN_ROOT}"
 cp -- "${DRIVER}" "${PYTHON_DRIVER}"
 cp -- "${REPOSITORY_ROOT}/scripts/optimization/verify/run-unittest-suite.py" \
@@ -515,6 +731,20 @@ printf '%s\n' \
     '    def test_required_internal_skip(self):' \
     '        self.fail("skip decorator did not skip")' \
     >"${PYTHON_TEST_DIR}/test_environment.py"
+printf '%s\n' \
+    'import os' \
+    'import unittest' \
+    '' \
+    '@unittest.skipUnless(' \
+    '    os.environ.get("GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES") == "1",' \
+    '    "checkpoint host primitives require the authoritative opt-in",' \
+    ')' \
+    'class CheckpointHostOptInTest(unittest.TestCase):' \
+    '    def test_authoritative_recovery_suite_receives_opt_in(self):' \
+    '        self.assertEqual(' \
+    '            os.environ.get("GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES"), "1"' \
+    '        )' \
+    >"${PYTHON_RECOVERY_TEST_DIR}/test_checkpoint_host_opt_in.py"
 for required_python_tool in bash dirname env find mkdir realpath setsid sleep \
     sort stat tail tee timeout; do
     required_python_path=$(command -v -- "${required_python_tool}") || \
@@ -560,6 +790,7 @@ grep -Fq 'ERROR: unittest discovery executed zero tests' \
     fail 'zero-test discovery failure omitted its exact diagnostic'
 PATH=${PYTHON_BIN_ROOT} \
 PYTHONPYCACHEPREFIX=/inherited-prefix-that-must-not-reach-unittest \
+GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES=1 \
     bash -- "${PYTHON_DRIVER}" --mode stress --output-dir "${PYTHON_OUTPUT}" \
     >"${FIXTURE}/python-driver.log" 2>&1 || {
     sed -n '1,240p' "${FIXTURE}/python-driver.log" >&2
@@ -575,8 +806,8 @@ find "${PYTHON_OUTPUT}/python-cache/compile" -type f -name '*.pyc' -print -quit 
     fail 'the driver recreated the removed unittest cache prefix'
 grep -Fxq 'fail=0' "${PYTHON_OUTPUT}/summary.txt" || \
     fail 'Python-environment self-test produced a driver failure'
-grep -Fxq 'mandatory_internal_skip=1' "${PYTHON_OUTPUT}/summary.txt" || \
-    fail 'Python unittest skip was not surfaced as one mandatory internal skip'
+grep -Fxq 'mandatory_internal_skip=2' "${PYTHON_OUTPUT}/summary.txt" || \
+    fail 'Python unittest and recovery host opt-in skips were not both surfaced'
 PYTHON_SKIP_ROWS=0
 while IFS=$'\t' read -r subtest_status subtest_requirement subtest_test \
     subtest_name subtest_detail; do
@@ -590,8 +821,12 @@ while IFS=$'\t' read -r subtest_status subtest_requirement subtest_test \
 done <"${PYTHON_OUTPUT}/subtests.tsv"
 [[ ${PYTHON_SKIP_ROWS} -eq 1 ]] || \
     fail "expected one explicit structured unittest skip row, found ${PYTHON_SKIP_ROWS}"
+grep -Fq $'SKIP\trequired\tpython-unit-tests:tests/optimization/recovery\tpython.' \
+    "${PYTHON_OUTPUT}/subtests.tsv" || \
+    fail 'portable recovery host-capability opt-in was not an explicit required skip'
 
 PYTHON_AUTHORITATIVE_OUTPUT=${FIXTURE}/python-authoritative-output
+install_hermetic_contract_support "${PYTHON_ROOT}" "${PYTHON_BIN_ROOT}"
 set +e
 PATH=${PYTHON_BIN_ROOT} \
 GENTOO_OPT_AUTHORITATIVE=1 \
@@ -602,9 +837,20 @@ PYTHON_AUTHORITATIVE_STATUS=$?
 set -e
 [[ ${PYTHON_AUTHORITATIVE_STATUS} -eq 1 ]] || \
     fail "authoritative unittest skip produced status ${PYTHON_AUTHORITATIVE_STATUS}, expected 1"
+grep -Fq $'PASS\tphase2-test-contract-static\t' \
+    "${PYTHON_AUTHORITATIVE_OUTPUT}/results.tsv" || \
+    fail 'authoritative stress mode omitted its static exact-contract gate'
+[[ -s ${PYTHON_AUTHORITATIVE_OUTPUT}/test-contract.log ]] || \
+    fail 'authoritative stress mode omitted its final exact-contract gate'
 grep -Fq $'FAIL\tpython-unit-tests:tests/unit\t' \
     "${PYTHON_AUTHORITATIVE_OUTPUT}/results.tsv" || \
     fail 'authoritative unittest skip remained hidden behind top-level PASS'
+grep -Fq $'PASS\tpython-unit-tests:tests/optimization/recovery\t' \
+    "${PYTHON_AUTHORITATIVE_OUTPUT}/results.tsv" || \
+    fail 'authoritative recovery suite did not execute its host-capability opt-in'
+grep -Fq $'PASS\trequired\tpython-unit-tests:tests/optimization/recovery\tpython.' \
+    "${PYTHON_AUTHORITATIVE_OUTPUT}/subtests.tsv" || \
+    fail 'authoritative recovery host-capability subtest did not pass'
 PROFILE_STRESS_SKIP_ROWS=0
 PROFILE_STRESS_SKIP_DETAIL=
 while IFS=$'\t' read -r result_status result_name result_detail; do

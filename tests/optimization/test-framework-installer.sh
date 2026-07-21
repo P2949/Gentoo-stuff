@@ -258,6 +258,7 @@ find_transaction_debris() {
         "${TARGET}/usr/local/share|gentoo-optimization.partial.*"
         "${TARGET}/etc|portage.partial.*"
         "${TARGET}/usr/local/lib/install-qa-check.d|zz-gentoo-optimization-bolt.partial.*"
+        "${TARGET}/etc/tmpfiles.d|gentoo-optimization.conf.partial.*"
         "${BASE}/state/project|phase-2-framework-install.manifest.partial.*"
         "${BASE}|framework-current.partial.*"
         "${BASE}|framework-*.partial.*"
@@ -358,6 +359,8 @@ cp -a -- "${SOURCE_ROOT}/scripts/optimization/recovery" \
     "${REPOSITORY}/scripts/optimization/recovery"
 mkdir -p -- "${REPOSITORY}/optimization"
 cp -a -- "${SOURCE_ROOT}/optimization/schema" "${REPOSITORY}/optimization/schema"
+cp -a -- "${SOURCE_ROOT}/optimization/tmpfiles" \
+    "${REPOSITORY}/optimization/tmpfiles"
 install -m 0755 -T -- "${SOURCE_ROOT}/scripts/optimization/install-framework.sh" \
     "${REPOSITORY}/scripts/optimization/install-framework.sh"
 install -m 0755 -T -- \
@@ -397,8 +400,41 @@ printf '%s\n' '..' '../../../../../features/llvm' >"${PROFILE}/parent"
 mkdir -p -- "${TARGET}/usr/bin"
 cp -- "$(command -v jq)" "${TARGET}/usr/bin/jq"
 chmod 0755 -- "${TARGET}/usr/bin/jq"
+cp -- "$(command -v systemd-tmpfiles)" "${TARGET}/usr/bin/systemd-tmpfiles"
+chmod 0755 -- "${TARGET}/usr/bin/systemd-tmpfiles"
+mkdir -p -- "${TARGET}/etc/init.d" "${TARGET}/etc/runlevels/boot"
+printf '#!/bin/sh\nexec systemd-tmpfiles --create --remove --boot --exclude-prefix=/dev\n' \
+    >"${TARGET}/etc/init.d/systemd-tmpfiles-setup"
+chmod 0755 -- "${TARGET}/etc/init.d/systemd-tmpfiles-setup"
+ln -s -- /etc/init.d/systemd-tmpfiles-setup \
+    "${TARGET}/etc/runlevels/boot/systemd-tmpfiles-setup"
+# systemd-tmpfiles --root resolves the reviewed names through the target NSS
+# database.  Map them to the unprivileged fixture identities without weakening
+# the production root:portage rule bytes.
+printf 'root:x:%s:%s:root:/root:/bin/sh\n' "$(id -u)" "$(id -g)" \
+    >"${TARGET}/etc/passwd"
+printf 'portage:x:%s:\n' "$(id -g)" >"${TARGET}/etc/group"
 mkdir -p -- "${TARGET}/var/tmp"
 chmod 1777 -- "${TARGET}/var/tmp"
+mkdir -p -- "${TARGET}/run"
+chmod 0755 -- "${TARGET}/run"
+
+# Boot persistence is an installation prerequisite, not an operator promise.
+# Missing or differently wired OpenRC tmpfiles setup must fail before any
+# volatile or durable framework namespace is created.
+rm -f -- "${TARGET}/etc/runlevels/boot/systemd-tmpfiles-setup"
+expect_failure 'systemd-tmpfiles-setup is not enabled in the boot runlevel' \
+    run_installer
+[[ ! -e ${TARGET}/run/gentoo-optimization && \
+    ! -e ${TARGET}/var/lib/gentoo-optimization ]] || \
+    fail 'missing tmpfiles boot integration was detected after mutation'
+ln -s -- /unmanaged/tmpfiles-setup \
+    "${TARGET}/etc/runlevels/boot/systemd-tmpfiles-setup"
+expect_failure 'systemd-tmpfiles-setup boot link has an unexpected target' \
+    run_installer
+rm -f -- "${TARGET}/etc/runlevels/boot/systemd-tmpfiles-setup"
+ln -s -- /etc/init.d/systemd-tmpfiles-setup \
+    "${TARGET}/etc/runlevels/boot/systemd-tmpfiles-setup"
 
 # Atomic exchange is a declared publication prerequisite and must fail before
 # the installer creates locks, framework state, or any durable destination.
@@ -501,6 +537,186 @@ expect_failure 'lock ownership/mode/link-count differs from' run_installer
     $(stat -c '%a:%h' -- "${LOCK_HARDLINK_VICTIM}") == 600:2 ]] || \
     fail 'installer mutated an unsafe hardlinked project lock before validation'
 rm -f -- "${PROJECT_LOCK}" "${LOCK_HARDLINK_VICTIM}"
+
+# Install mode is creation-only for the stable namespace.  It must never
+# repair an existing directory or file in place, even when the mismatch looks
+# harmless, and it must never erase a foreign payload while opening a lock.
+chmod 0750 -- "${LOCK_DIRECTORY}"
+expect_failure 'directory ownership/mode differs from' run_installer
+[[ $(stat -c %a -- "${LOCK_DIRECTORY}") == 750 ]] || \
+    fail 'installer repaired an existing lock directory'
+chmod 0700 -- "${LOCK_DIRECTORY}"
+chmod 0640 -- "${FRAMEWORK_LOCK}"
+expect_failure 'lock ownership/mode/link-count differs from' run_installer
+[[ $(stat -c %a -- "${FRAMEWORK_LOCK}") == 640 ]] || \
+    fail 'installer repaired an existing lock file'
+chmod 0600 -- "${FRAMEWORK_LOCK}"
+printf 'foreign-lock-payload\n' >"${FRAMEWORK_LOCK}"
+expect_failure 'framework publication lock payload is unexpectedly nonempty' \
+    run_installer
+[[ $(<"${FRAMEWORK_LOCK}") == foreign-lock-payload ]] || \
+    fail 'installer overwrote an existing lock payload'
+: >"${FRAMEWORK_LOCK}"
+
+crash_installer_at_runtime_point() {
+    local point=$1 pause_file
+    pause_file=${WORK}/runtime-lock-${point}
+    : >"${pause_file}"
+    : >"${LOG}"
+    /usr/bin/setsid --wait env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+        GENTOO_OPT_INSTALLER_PAUSE_AT="${point}" \
+        GENTOO_OPT_INSTALLER_PAUSE_FILE="${pause_file}" \
+        bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+        --test-root "${TARGET}" >"${LOG}" 2>&1 &
+    local installer_pid=$!
+    track_background_pid "${installer_pid}"
+    wait_for_log "PAUSE: ${point}" "${installer_pid}"
+    kill -KILL "${installer_pid}"
+    if wait "${installer_pid}" 2>/dev/null; then
+        fail "runtime-lock SIGKILL unexpectedly succeeded: ${point}"
+    fi
+    terminate_background_group "${installer_pid}"
+    untrack_background_pid "${installer_pid}"
+    rm -f -- "${pause_file}"
+}
+
+start_runtime_lock_race() {
+    local point=$1
+    RUNTIME_RACE_PAUSE=${WORK}/runtime-race-${point}
+    : >"${RUNTIME_RACE_PAUSE}"
+    : >"${LOG}"
+    /usr/bin/setsid --wait env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+        GENTOO_OPT_INSTALLER_PAUSE_AT="${point}" \
+        GENTOO_OPT_INSTALLER_PAUSE_FILE="${RUNTIME_RACE_PAUSE}" \
+        GENTOO_OPT_INSTALLER_FAIL_AT=after-runtime-lock-namespace \
+        bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+        --test-root "${TARGET}" >"${LOG}" 2>&1 &
+    RUNTIME_RACE_PID=$!
+    track_background_pid "${RUNTIME_RACE_PID}"
+    wait_for_log "PAUSE: ${point}" "${RUNTIME_RACE_PID}"
+}
+
+finish_runtime_lock_race() {
+    local expected=$1 child_status
+    rm -f -- "${RUNTIME_RACE_PAUSE}"
+    set +e
+    wait "${RUNTIME_RACE_PID}"
+    child_status=$?
+    set -e
+    ((child_status != 0)) || fail 'runtime-lock race child unexpectedly succeeded'
+    assert_background_group_gone "${RUNTIME_RACE_PID}"
+    untrack_background_pid "${RUNTIME_RACE_PID}"
+    grep -Fq -- "${expected}" "${LOG}" || {
+        sed -n '1,240p' "${LOG}" >&2 || true
+        fail "runtime-lock race omitted expected diagnostic: ${expected}"
+    }
+}
+
+recover_runtime_lock_namespace_only() {
+    expect_failure 'injected installer failure at after-runtime-lock-namespace' \
+        env GENTOO_OPT_INSTALLER_TEST_MODE=1 \
+        GENTOO_OPT_INSTALLER_FAIL_AT=after-runtime-lock-namespace \
+        bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
+        --test-root "${TARGET}"
+    [[ $(stat -c '%u:%g:%a' -- "${LOCK_DIRECTORY}") == \
+        "$(id -u):$(id -g):700" ]] || \
+        fail 'runtime-lock recovery produced the wrong directory identity'
+    local lock_path
+    for lock_path in "${LOCK_DIRECTORY}"/*.lock; do
+        [[ $(stat -c '%u:%g:%a:%h:%s' -- "${lock_path}") == \
+            "$(id -u):$(id -g):600:1:0" ]] || \
+            fail "runtime-lock recovery produced an unsafe lock: ${lock_path}"
+    done
+    [[ -z $(find "${TARGET}/run" -maxdepth 2 -name '*.prepared' -print -quit) ]] || \
+        fail 'runtime-lock recovery left prepared-object debris'
+}
+
+# All volatile objects are published only after their complete metadata is in
+# place.  A SIGKILL on either side of publication is recovered idempotently
+# without accepting or repairing a partially initialized final path.
+rm -f -- "${LOCK_DIRECTORY}"/*.lock
+rmdir -- "${LOCK_DIRECTORY}"
+crash_installer_at_runtime_point after-lock-directory-prepared
+[[ ! -e ${LOCK_DIRECTORY} && \
+    $(stat -c '%u:%g:%a' -- "${LOCK_DIRECTORY}.prepared") == \
+        "$(id -u):$(id -g):700" ]] || \
+    fail 'directory-preparation SIGKILL exposed an incomplete final namespace'
+recover_runtime_lock_namespace_only
+
+for runtime_lock in framework-install project generation; do
+    runtime_lock_path=${LOCK_DIRECTORY}/${runtime_lock}.lock
+    rm -f -- "${runtime_lock_path}"
+    crash_installer_at_runtime_point \
+        "after-lock-file-prepared-${runtime_lock}.lock"
+    [[ ! -e ${runtime_lock_path} && \
+        $(stat -c '%u:%g:%a:%h:%s' -- "${runtime_lock_path}.prepared") == \
+            "$(id -u):$(id -g):600:1:0" ]] || \
+        fail "prepared-lock SIGKILL exposed an incomplete final: ${runtime_lock}"
+    recover_runtime_lock_namespace_only
+
+    rm -f -- "${runtime_lock_path}"
+    crash_installer_at_runtime_point \
+        "after-lock-file-published-${runtime_lock}.lock"
+    [[ $(stat -c '%u:%g:%a:%h:%s' -- "${runtime_lock_path}") == \
+        "$(id -u):$(id -g):600:1:0" && \
+        ! -e ${runtime_lock_path}.prepared ]] || \
+        fail "published-lock SIGKILL left an unsafe final: ${runtime_lock}"
+    recover_runtime_lock_namespace_only
+done
+
+# Force no-clobber publication races.  An independently published exact winner
+# is adopted and leaves no prepared object.  A foreign winner is never repaired
+# or overwritten; after the operator removes only that foreign final path, the
+# exact deterministic preparation is safely adopted on retry.
+rm -f -- "${LOCK_DIRECTORY}"/*.lock
+rmdir -- "${LOCK_DIRECTORY}"
+start_runtime_lock_race after-lock-directory-prepared
+mkdir -m 0700 -- "${LOCK_DIRECTORY}"
+finish_runtime_lock_race \
+    'injected installer failure at after-runtime-lock-namespace'
+[[ $(stat -c '%u:%g:%a' -- "${LOCK_DIRECTORY}") == \
+    "$(id -u):$(id -g):700" && ! -e ${LOCK_DIRECTORY}.prepared ]] || \
+    fail 'exact concurrent directory winner did not converge cleanly'
+
+rm -f -- "${LOCK_DIRECTORY}"/*.lock
+rmdir -- "${LOCK_DIRECTORY}"
+start_runtime_lock_race after-lock-directory-prepared
+mkdir -m 0750 -- "${LOCK_DIRECTORY}"
+finish_runtime_lock_race 'directory ownership/mode differs from'
+[[ $(stat -c %a -- "${LOCK_DIRECTORY}") == 750 && \
+    -d ${LOCK_DIRECTORY}.prepared ]] || \
+    fail 'foreign concurrent directory winner was changed or preparation lost'
+rmdir -- "${LOCK_DIRECTORY}"
+recover_runtime_lock_namespace_only
+
+for runtime_lock in framework-install project generation; do
+    runtime_lock_path=${LOCK_DIRECTORY}/${runtime_lock}.lock
+    rm -f -- "${runtime_lock_path}"
+    start_runtime_lock_race \
+        "after-lock-file-prepared-${runtime_lock}.lock"
+    : >"${runtime_lock_path}"
+    chmod 0600 -- "${runtime_lock_path}"
+    finish_runtime_lock_race \
+        'injected installer failure at after-runtime-lock-namespace'
+    [[ $(stat -c '%u:%g:%a:%h:%s' -- "${runtime_lock_path}") == \
+        "$(id -u):$(id -g):600:1:0" && \
+        ! -e ${runtime_lock_path}.prepared ]] || \
+        fail "exact concurrent ${runtime_lock} winner did not converge cleanly"
+
+    rm -f -- "${runtime_lock_path}"
+    runtime_foreign_victim=${WORK}/${runtime_lock}-foreign-winner-victim
+    printf 'foreign-winner-sentinel\n' >"${runtime_foreign_victim}"
+    start_runtime_lock_race \
+        "after-lock-file-prepared-${runtime_lock}.lock"
+    ln -s -- "${runtime_foreign_victim}" "${runtime_lock_path}"
+    finish_runtime_lock_race 'expected a regular non-symlink lock file:'
+    [[ -L ${runtime_lock_path} && \
+        $(<"${runtime_foreign_victim}") == foreign-winner-sentinel && \
+        -f ${runtime_lock_path}.prepared && ! -L ${runtime_lock_path}.prepared ]] || \
+        fail "foreign concurrent ${runtime_lock} winner was changed or preparation lost"
+    rm -f -- "${runtime_lock_path}"
+    recover_runtime_lock_namespace_only
+done
 
 BASE=${TARGET}/var/lib/gentoo-optimization
 CURRENT=${BASE}/framework-current
@@ -898,7 +1114,7 @@ git -C "${REPOSITORY}" replace -d "${ORIGINAL_BLOB}" >/dev/null
 assert_no_transaction_debris
 
 assert_coherent_indirections() {
-    local active
+    local active tmpfiles_rule=${TARGET}/etc/tmpfiles.d/gentoo-optimization.conf
     [[ -L ${CURRENT} ]] || fail 'framework-current is not a symlink'
     active=$(readlink -- "${CURRENT}")
     [[ -d ${active} && ! -L ${active} ]] || fail 'framework-current target is unavailable'
@@ -909,6 +1125,11 @@ assert_coherent_indirections() {
             "${CURRENT}/share" ]] || fail 'schema namespace bypasses framework-current'
     [[ -L ${MANIFEST} && $(readlink -- "${MANIFEST}") == \
         "${CURRENT}/install.manifest" ]] || fail 'manifest bypasses framework-current'
+    [[ -L ${tmpfiles_rule} && $(readlink -- "${tmpfiles_rule}") == \
+        ../../var/lib/gentoo-optimization/framework-current/share/tmpfiles/gentoo-optimization.conf ]] || \
+        fail 'runtime-lock tmpfiles rule bypasses framework-current'
+    cmp -s -- "${active}/share/tmpfiles/gentoo-optimization.conf" \
+        "${tmpfiles_rule}" || fail 'tmpfiles indirection exposes a mixed generation'
     cmp -s -- "${active}/install.manifest" "${MANIFEST}" || \
         fail 'manifest indirection exposes a mixed generation'
     cmp -s -- "${active}/share/schema/package-state.schema.json" \
@@ -936,6 +1157,41 @@ grep -Fxq 'previous_generation=none' "${MANIFEST}" || fail 'initial manifest pre
 grep -Eq '^installer_sha256=[0-9a-f]{64}$' "${MANIFEST}" || fail 'manifest installer hash is invalid'
 grep -Eq '^source_aggregate_sha256=[0-9a-f]{64}$' "${MANIFEST}" || \
     fail 'manifest source aggregate is invalid'
+grep -Fxq \
+    'tmpfiles_rule_target=../../var/lib/gentoo-optimization/framework-current/share/tmpfiles/gentoo-optimization.conf' \
+    "${MANIFEST}" || fail 'manifest omits the stable tmpfiles-rule target'
+grep -Eq '^tmpfiles_rule_sha256=[0-9a-f]{64}$' "${MANIFEST}" || \
+    fail 'manifest omits the reviewed tmpfiles-rule identity'
+
+TMPFILES_RULE_LINK=${TARGET}/etc/tmpfiles.d/gentoo-optimization.conf
+rm -f -- "${TMPFILES_RULE_LINK}"
+ln -s -- /unmanaged/tmpfiles.conf "${TMPFILES_RULE_LINK}"
+expect_failure 'runtime-lock tmpfiles rule has an unmanaged symlink target' \
+    run_installer
+[[ -L ${TMPFILES_RULE_LINK} && \
+    $(readlink -- "${TMPFILES_RULE_LINK}") == /unmanaged/tmpfiles.conf ]] || \
+    fail 'installer overwrote a foreign tmpfiles-rule symlink'
+rm -f -- "${TMPFILES_RULE_LINK}"
+printf 'foreign tmpfiles rule\n' >"${TMPFILES_RULE_LINK}"
+chmod 0644 -- "${TMPFILES_RULE_LINK}"
+expect_failure 'runtime-lock tmpfiles rule has an unmanaged filesystem type' \
+    run_installer
+[[ $(<"${TMPFILES_RULE_LINK}") == 'foreign tmpfiles rule' ]] || \
+    fail 'installer overwrote a foreign regular tmpfiles rule'
+rm -f -- "${TMPFILES_RULE_LINK}"
+ln -s -- ../../var/lib/gentoo-optimization/framework-current/share/tmpfiles/gentoo-optimization.conf \
+    "${TMPFILES_RULE_LINK}"
+run_installer --check >/dev/null
+
+TMPFILES_CANDIDATE_RULE=${ACTIVE}/share/tmpfiles/gentoo-optimization.conf
+TMPFILES_CANDIDATE_BACKUP=${WORK}/gentoo-optimization.conf.candidate-backup
+cp -- "${TMPFILES_CANDIDATE_RULE}" "${TMPFILES_CANDIDATE_BACKUP}"
+printf '# unauthorized candidate mutation\n' >>"${TMPFILES_CANDIDATE_RULE}"
+expect_failure 'immutable candidate entry set or content differs' \
+    run_installer --check
+install -m 0644 -T -- "${TMPFILES_CANDIDATE_BACKUP}" \
+    "${TMPFILES_CANDIDATE_RULE}"
+run_installer --check >/dev/null
 grep -Eq '^git_commit=[0-9a-f]{40}$' "${MANIFEST}" || fail 'manifest Git commit is invalid'
 grep -Fxq 'git_worktree=clean' "${MANIFEST}" || fail 'manifest clean/dirty state differs'
 grep -Eq '^jq_sha256=[0-9a-f]{64}$' "${MANIFEST}" || fail 'manifest jq hash is invalid'
@@ -1303,6 +1559,76 @@ for lock in framework-install project generation; do
     [[ $(stat -c '%u:%g:%a' -- "${TARGET}/run/gentoo-optimization/${lock}.lock") == \
         "$(id -u):$(id -g):600" ]] || fail "${lock} lock ownership/mode differs"
 done
+
+# Independently exercise the reviewed tmpfiles types, paths, and modes.  A
+# non-root portable run substitutes only the owner/group tokens because Linux
+# does not permit an unprivileged process to issue even a same-UID chown; the
+# exact root:portage bytes were already dry-run parsed through the installed
+# stable symlink by every installer check above.
+TMPFILES_SEMANTIC_ROOT=${WORK}/tmpfiles-semantic-root
+mkdir -p -- "${TMPFILES_SEMANTIC_ROOT}/etc/tmpfiles.d"
+sed 's/ root portage / - - /' \
+    "${ACTIVE}/share/tmpfiles/gentoo-optimization.conf" \
+    >"${TMPFILES_SEMANTIC_ROOT}/etc/tmpfiles.d/gentoo-optimization.conf"
+"${TARGET}/usr/bin/systemd-tmpfiles" --root="${TMPFILES_SEMANTIC_ROOT}" \
+    --create gentoo-optimization.conf
+[[ $(stat -c '%u:%g:%a' -- \
+    "${TMPFILES_SEMANTIC_ROOT}/run/gentoo-optimization") == \
+    "$(id -u):$(id -g):750" ]] || \
+    fail 'tmpfiles semantic probe created the wrong lock directory'
+for lock in framework-install project generation; do
+    [[ $(stat -c '%u:%g:%a:%h:%s' -- \
+        "${TMPFILES_SEMANTIC_ROOT}/run/gentoo-optimization/${lock}.lock") == \
+        "$(id -u):$(id -g):640:1:0" ]] || \
+        fail "tmpfiles semantic probe created an unsafe ${lock} lock"
+done
+
+TMPFILES_SYMLINK_ROOT=${WORK}/tmpfiles-symlink-root
+mkdir -p -- "${TMPFILES_SYMLINK_ROOT}/etc/tmpfiles.d" \
+    "${TMPFILES_SYMLINK_ROOT}/run/gentoo-optimization"
+cp -- "${TMPFILES_SEMANTIC_ROOT}/etc/tmpfiles.d/gentoo-optimization.conf" \
+    "${TMPFILES_SYMLINK_ROOT}/etc/tmpfiles.d/gentoo-optimization.conf"
+printf 'tmpfiles-symlink-sentinel\n' >"${TMPFILES_SYMLINK_ROOT}/victim"
+ln -s -- "${TMPFILES_SYMLINK_ROOT}/victim" \
+    "${TMPFILES_SYMLINK_ROOT}/run/gentoo-optimization/framework-install.lock"
+if "${TARGET}/usr/bin/systemd-tmpfiles" --root="${TMPFILES_SYMLINK_ROOT}" \
+    --create gentoo-optimization.conf >"${LOG}" 2>&1; then
+    fail 'systemd-tmpfiles accepted a foreign lock symlink'
+fi
+[[ $(<"${TMPFILES_SYMLINK_ROOT}/victim") == tmpfiles-symlink-sentinel && \
+    -L ${TMPFILES_SYMLINK_ROOT}/run/gentoo-optimization/framework-install.lock ]] || \
+    fail 'systemd-tmpfiles changed a foreign lock symlink or its referent'
+
+# Model /run disappearing across reboot.  Root runs exercise the exact owner
+# names through an additional systemd-tmpfiles root; the installer's hermetic
+# namespace remains owner-private for the coordinator fixture.
+if ((EUID == 0)); then
+    TMPFILES_PRODUCTION_ROOT=${WORK}/tmpfiles-production-root
+    mkdir -p -- "${TMPFILES_PRODUCTION_ROOT}/etc/tmpfiles.d" \
+        "${TMPFILES_PRODUCTION_ROOT}/etc"
+    cp -- "${ACTIVE}/share/tmpfiles/gentoo-optimization.conf" \
+        "${TMPFILES_PRODUCTION_ROOT}/etc/tmpfiles.d/gentoo-optimization.conf"
+    cp -- "${TARGET}/etc/passwd" "${TMPFILES_PRODUCTION_ROOT}/etc/passwd"
+    cp -- "${TARGET}/etc/group" "${TMPFILES_PRODUCTION_ROOT}/etc/group"
+    "${TARGET}/usr/bin/systemd-tmpfiles" --root="${TMPFILES_PRODUCTION_ROOT}" \
+        --create gentoo-optimization.conf
+    [[ $(stat -c '%u:%g:%a' -- \
+        "${TMPFILES_PRODUCTION_ROOT}/run/gentoo-optimization") == \
+        "$(id -u):$(id -g):750" ]] || \
+        fail 'exact root:portage tmpfiles rule produced the wrong directory'
+fi
+rm -rf -- "${TARGET}/run/gentoo-optimization"
+run_installer >/dev/null
+for lock in framework-install project generation; do
+    [[ $(stat -c '%u:%g:%a:%h:%s' -- \
+        "${TARGET}/run/gentoo-optimization/${lock}.lock") == \
+        "$(id -u):$(id -g):600:1:0" ]] || \
+        fail "reboot recreation produced an unsafe ${lock} lock"
+done
+LOCK_BASELINE_IDENTITY=
+LOCK_BASELINE_SHA256=
+run_installer --check >/dev/null
+
 for lock in project generation; do
     ready=${WORK}/${lock}-lock-ready
     # shellcheck disable=SC2016  # Positional parameters expand in the child shell.
