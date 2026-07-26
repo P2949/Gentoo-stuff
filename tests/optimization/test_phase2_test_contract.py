@@ -170,25 +170,36 @@ class Phase2TestContractTests(unittest.TestCase):
                     "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
                     "open({str(child_ready)!r}, 'w').close(); time.sleep(60)",
                 ])
-                for _ in range(200):
-                    if Path({str(child_ready)!r}).exists():
-                        break
-                    time.sleep(0.01)
                 stat_fields = Path(f"/proc/{{child.pid}}/stat").read_text(
                     encoding="utf-8"
                 ).rsplit(") ", 1)[1].split()
                 Path({str(child_pid)!r}).write_text(
                     f"{{child.pid}} {{stat_fields[19]}}", encoding="utf-8"
                 )
+                for _ in range(200):
+                    if Path({str(child_ready)!r}).exists():
+                        break
+                    time.sleep(0.01)
+                else:
+                    raise RuntimeError(
+                        "spawned descendant did not reach readiness barrier"
+                    )
                 time.sleep(60)
                 """
             ),
             encoding="utf-8",
         )
-        result = self.run_tool("generate", "--timeout-seconds", "1")
+        # Discovery's deadline must leave room for the imported module to prove
+        # that its SIGTERM-ignoring descendant is ready.  The PID/start identity
+        # is published immediately after spawn, so a slow readiness marker can
+        # never turn cleanup verification into a missing-PID race.
+        result = self.run_tool("generate", "--timeout-seconds", "5")
         self.assertEqual(result.returncode, 2)
-        self.assertIn("exceeded the bounded 1-second discovery deadline", result.stderr)
+        self.assertIn(
+            "exceeded the bounded 5-second discovery deadline", result.stderr
+        )
         self.assertTrue(child_pid.is_file())
+        self.assertTrue(child_ready.is_file())
         raw_pid, recorded_start_time = child_pid.read_text(encoding="utf-8").split()
         pid = int(raw_pid)
         for _ in range(200):

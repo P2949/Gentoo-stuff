@@ -951,7 +951,13 @@ gentoo_opt_validate_profile_format() {
     # used when the profile was published.  Family equality is not enough:
     # bind profile consumption to the exact compiler realpath and bytes that
     # were resolved for this build.
-    if ! gentoo_opt_trusted_root_executable /usr/bin/jq; then
+    # Hermetic dispatcher and bounded Portage fixtures may run in a user
+    # namespace where host-root files are deliberately mapped to an overflow
+    # UID.  They still execute the exact /usr/bin/jq below, but cannot prove
+    # its host ownership from that namespace.  Production never qualifies for
+    # this fixture-only exemption and must retain the complete ancestor check.
+    if ! gentoo_opt_fixture_override_allowed && \
+        ! gentoo_opt_trusted_root_executable /usr/bin/jq; then
         gentoo_opt_error 'cannot trust the exact /usr/bin/jq metadata reader'
         return 1
     fi

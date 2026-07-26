@@ -280,13 +280,14 @@ class Fixture:
     def fake_unshare(self, mode: str) -> tuple[pathlib.Path, pathlib.Path]:
         """Create a trusted unshare analogue with selectable kill-child behavior."""
 
-        if mode not in {"pass", "denied", "survivor"}:
+        if mode not in {"pass", "denied", "survivor", "term-survivor"}:
             raise ValueError(f"invalid fake-unshare mode: {mode}")
         executable = self.root / f"fake-unshare-{mode}"
         child_pid_file = self.root / f"fake-unshare-{mode}.child-pid"
         supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
         process_group_file = pathlib.Path(f"{child_pid_file}.process-group")
         program = f"""#!{self.python}
+import ctypes
 import os
 import signal
 import subprocess
@@ -327,8 +328,27 @@ def terminate(signum, _frame):
     signal.signal(signum, signal.SIG_DFL)
     os.kill(os.getpid(), signum)
 
-signal.signal(signal.SIGTERM, terminate)
-child = subprocess.Popen(sys.argv[separator + 1:])
+if MODE == "term-survivor":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+else:
+    signal.signal(signal.SIGTERM, terminate)
+
+def bind_child_to_supervisor_death():
+    libc = ctypes.CDLL(None, use_errno=True)
+    parent = os.getppid()
+    if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
+        os._exit(91)
+    if os.getppid() != parent:
+        os._exit(92)
+
+child = subprocess.Popen(
+    sys.argv[separator + 1:],
+    preexec_fn=(
+        bind_child_to_supervisor_death
+        if MODE in {{"pass", "term-survivor"}}
+        else None
+    ),
+)
 with open(CHILD_PID_FILE, "w", encoding="ascii") as output:
     output.write(str(child.pid) + "\\n")
     output.flush()
@@ -695,6 +715,53 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         self.assertTrue(child_pid_file.is_file())
         self.assert_processes_gone([int(child_pid_file.read_text(encoding="ascii"))])
 
+    def test_unshare_preflight_exact_kill_proves_term_surviving_supervisor(
+        self,
+    ) -> None:
+        fake_unshare, child_pid_file = self.fixture.fake_unshare("term-survivor")
+        real_euid = os.geteuid()
+        euid_calls = 0
+        pidfd_signals: list[int] = []
+        term_survival_proven = False
+
+        def root_guard_only() -> int:
+            nonlocal euid_calls
+            euid_calls += 1
+            return 0 if euid_calls == 1 else real_euid
+
+        def prove_term_survival_before_exact_kill(pid: int, signum: int) -> None:
+            nonlocal term_survival_proven
+            pidfd_signals.append(signum)
+            if signum != signal.SIGKILL or term_survival_proven:
+                return
+            identity = coordinator.process_stat_identity(pid)
+            self.assertIsNotNone(identity)
+            os.kill(pid, signal.SIGTERM)
+            time.sleep(0.05)
+            self.assertEqual(coordinator.process_stat_identity(pid), identity)
+            term_survival_proven = True
+
+        with (
+            mock.patch.object(
+                coordinator.os, "geteuid", side_effect=root_guard_only
+            ),
+            mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(coordinator.sys, "executable", self.fixture.python),
+            emulated_pidfds(signal_hook=prove_term_survival_before_exact_kill),
+        ):
+            coordinator.preflight_unshare_kill_child(
+                self.fixture.coordinator_paths(), kill_after=1.0
+            )
+        self.assertTrue(term_survival_proven)
+        self.assertEqual(pidfd_signals, [signal.SIGKILL])
+        supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
+        self.assert_processes_gone(
+            [
+                int(supervisor_pid_file.read_text(encoding="ascii")),
+                int(child_pid_file.read_text(encoding="ascii")),
+            ]
+        )
+
     def test_unshare_preflight_pidfd_open_failure_cleans_every_child(self) -> None:
         fake_unshare, child_pid_file = self.fixture.fake_unshare("pass")
         real_euid = os.geteuid()
@@ -769,7 +836,8 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 coordinator.TransactionError,
-                "PID-namespace supervisor cannot be signalled through its pidfd",
+                "PID-namespace supervisor cannot be killed through its exact "
+                "pidfd with SIGKILL",
             ) as rejected:
                 coordinator.preflight_unshare_kill_child(
                     self.fixture.coordinator_paths(), kill_after=1.0
@@ -1412,7 +1480,7 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 "            partial.rmdir() if object_kind == 'directory' else partial.unlink()",
                 f"pathlib.Path({os.fspath(marker)!r}).write_text(json.dumps(results))",
                 "assert len(results) == 12",
-                "assert all(item[2] == 1 and 'partial transaction object' in item[3] for item in results)",
+                "assert all(item[2] == 1 for item in results)",
             )
         )
         completed = self.completed(
@@ -1432,7 +1500,18 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         for partial_label, object_kind, status, error in results:
             with self.subTest(partial=partial_label, object_kind=object_kind):
                 self.assertEqual(status, 1)
-                self.assertIn("partial transaction object", error)
+                if partial_label == "child-identity":
+                    self.assertTrue(
+                        "partial transaction object" in error
+                        or (
+                            "child identity sidecar and its partial are "
+                            "simultaneously visible"
+                        )
+                        in error,
+                        error,
+                    )
+                else:
+                    self.assertIn("partial transaction object", error)
         self.fixture.assert_restored(self)
 
     def test_recovery_rejects_contradictory_child_sidecar_and_partial(self) -> None:

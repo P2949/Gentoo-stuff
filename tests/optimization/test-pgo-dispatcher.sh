@@ -784,7 +784,15 @@ case_fingerprint_identity_tool_is_bounded() (
 case_production_trust_rejects_replaceable_paths() (
     GENTOO_OPT_MODE=off source "${BASHRC}" >/dev/null 2>&1 || return 1
     unset GENTOO_OPT_DISPATCHER_TEST_MODE GENTOO_OPT_PORTAGE_FIXTURE_MODE
-    gentoo_opt_trusted_root_executable /usr/bin/jq || return 1
+    # A portable sandbox can map host-root objects to an overflow UID.  Assert
+    # the positive system-path control only where namespace root is actually
+    # represented as UID 0; otherwise assert that the production predicate
+    # rejects the remapped system path too.
+    if [[ $(/usr/bin/stat -c %u -- /) == 0 ]]; then
+        gentoo_opt_trusted_root_executable /usr/bin/jq || return 1
+    else
+        gentoo_opt_trusted_root_executable /usr/bin/jq && return 1
+    fi
     gentoo_opt_trusted_root_executable "${TMP}/bin/clang" && return 1
     ln -s -- /usr "${TMP}/trusted-link"
     gentoo_opt_trusted_root_executable "${TMP}/trusted-link/bin/jq" && return 1

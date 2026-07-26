@@ -54,9 +54,18 @@ AUTHORITATIVE=${GENTOO_OPT_AUTHORITATIVE:-0}
 
 TEST_CASE_TIMEOUT_SECONDS=${TEST_CASE_TIMEOUT_SECONDS:-1800}
 TEST_CASE_KILL_AFTER_SECONDS=${TEST_CASE_KILL_AFTER_SECONDS:-10}
+CHECKPOINT_SMOKE_TIMEOUT_SECONDS=${CHECKPOINT_SMOKE_TIMEOUT_SECONDS:-600}
 
 declare -A SELECTED_CAPABILITIES=()
 readonly -a ALL_CAPABILITIES=(clang-ir clang-sample gcc rust go bolt)
+readonly -a CHECKPOINT_SMOKE_IDENTITIES=(
+    test_create_binpkg_checkpoint.CheckpointHarnessTest.test_subreaper_catches_fast_setsid_escape_without_touching_baseline_child
+    test_create_binpkg_checkpoint.CheckpointHarnessTest.test_timeout_kills_detached_descendant_without_waiting_for_pipe_eof
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_near_exchange_lost_update_is_atomically_captured_and_restored
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_offline_restore_finalizer_binds_all_evidence_and_is_idempotent
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_sigkill_inside_exchange_is_reconciled_without_guessing
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_success_is_exact_journaled_and_activates_last
+)
 readonly -a EXPLICIT_SHELL_SOURCES=(
     "${REPOSITORY_ROOT}/optimization/fixtures/portage/capture-proxy.sh.in"
     "${REPOSITORY_ROOT}/optimization/fixtures/portage/phase2-phase-identity-1.ebuild"
@@ -74,6 +83,10 @@ Run the repository's non-mutating optimization validation suites.
 
 Modes:
   --mode smoke              Short static/core gate (default).
+  --mode checkpoint-smoke   Static gate plus bounded timeout and fast-reparent
+                            cleanup paths and four state-machine paths: activation,
+                            post-exchange recovery, lost-update rejection, and
+                            offline finalization.
   --mode portable-complete  All portable non-capability, non-stress fixtures.
   --mode stress             Portable-complete plus the 300-cycle crash stress.
   --mode capabilities       Portable-complete plus every capability fixture.
@@ -97,11 +110,12 @@ Options:
   -h, --help            Show this help.
 
 Environment:
-  OPTIMIZATION_TEST_MODE=smoke|portable-complete|stress|capabilities|authoritative
+  OPTIMIZATION_TEST_MODE=smoke|checkpoint-smoke|portable-complete|stress|capabilities|authoritative
   OPTIMIZATION_TEST_CAPABILITIES=comma,separated,names
   SHELLCHECK=/path/to/shellcheck
   TEST_CASE_TIMEOUT_SECONDS=1800
   TEST_CASE_KILL_AFTER_SECONDS=10
+  CHECKPOINT_SMOKE_TIMEOUT_SECONDS=600
   GENTOO_OPT_AUTHORITATIVE=0|1
 
 Each case receives a private GENTOO_OPT_SUBTEST_RESULTS fragment path.  A
@@ -135,6 +149,8 @@ portable suites (smoke runs only the initial static/core subset):
   shellcheck (same shell source set; skipped when unavailable)
   python-source-compilation (temporary pycache only)
   python-unit-tests
+  checkpoint-smoke (bounded timeout and fast-reparent harness cleanup plus four
+                    focused checkpoint state-machine paths; its own mode only)
   phase2-test-contract-static (deterministic no-execution pre-gate topology check)
   phase2-evidence-smoke (one parser/topology regression; smoke only)
   phase2-evidence-contract (clean-tree, plan-marker, tool, state, and detached-index binding)
@@ -391,7 +407,7 @@ case ${MODE} in
             'WARNING: --mode quick is deprecated; using portable-complete' >&2
         MODE=portable-complete
         ;;
-    smoke|portable-complete|stress|capabilities|authoritative) ;;
+    smoke|checkpoint-smoke|portable-complete|stress|capabilities|authoritative) ;;
     *) fail_usage "unknown mode: ${MODE}" ;;
 esac
 
@@ -417,6 +433,8 @@ validate_positive_seconds() {
 
 validate_positive_seconds TEST_CASE_TIMEOUT_SECONDS "${TEST_CASE_TIMEOUT_SECONDS}"
 validate_positive_seconds TEST_CASE_KILL_AFTER_SECONDS "${TEST_CASE_KILL_AFTER_SECONDS}"
+validate_positive_seconds CHECKPOINT_SMOKE_TIMEOUT_SECONDS \
+    "${CHECKPOINT_SMOKE_TIMEOUT_SECONDS}"
 for capability in "${ALL_CAPABILITIES[@]}"; do
     capability_suffix=${capability^^}
     capability_suffix=${capability_suffix//-/_}
@@ -947,14 +965,22 @@ run_case() {
         "${TEST_CASE_KILL_AFTER_SECONDS}" "$@"
 }
 
+run_case_in_repository_with_deadline() {
+    local name=$1 timeout_seconds=$2 kill_after_seconds=$3
+    shift 3
+    # The positional parameters intentionally expand in the child Bash.
+    # shellcheck disable=SC2016
+    run_case_with_deadline "${name}" "${timeout_seconds}" \
+        "${kill_after_seconds}" bash -c \
+        'cd -- "$1"; shift; exec "$@"' run-in-repository \
+        "${REPOSITORY_ROOT}" "$@"
+}
+
 run_case_in_repository() {
     local name=$1
     shift
-    # The positional parameters intentionally expand in the child Bash.
-    # shellcheck disable=SC2016
-    run_case "${name}" bash -c \
-        'cd -- "$1"; shift; exec "$@"' run-in-repository \
-        "${REPOSITORY_ROOT}" "$@"
+    run_case_in_repository_with_deadline "${name}" \
+        "${TEST_CASE_TIMEOUT_SECONDS}" "${TEST_CASE_KILL_AFTER_SECONDS}" "$@"
 }
 
 if [[ -n ${INTERNAL_PROCESS_GROUP_PROBE} ]]; then
@@ -1102,6 +1128,59 @@ else
             'smoke mode excludes full Python unittest discovery; use portable-complete'
         skip_case production-profile-lock-crash-stress \
             'smoke mode excludes the 300-cycle crash stress; use stress or authoritative'
+    elif [[ ${MODE} == checkpoint-smoke ]]; then
+        if [[ ! -f ${STRUCTURED_UNITTEST_RUNNER} || \
+              -L ${STRUCTURED_UNITTEST_RUNNER} ]]; then
+            skip_case checkpoint-smoke \
+                'structured unittest runner is absent or symlinked'
+        else
+            # The child Bash must expand its own exact-identity arrays.
+            # shellcheck disable=SC2016
+            run_case_in_repository_with_deadline checkpoint-smoke \
+                "${CHECKPOINT_SMOKE_TIMEOUT_SECONDS}" \
+                "${TEST_CASE_KILL_AFTER_SECONDS}" \
+                env -u PYTHONPYCACHEPREFIX \
+                -u GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES \
+                PYTHONDONTWRITEBYTECODE=1 \
+                bash -c '
+                    set -Eeuo pipefail
+                    python_bin=$1
+                    runner=$2
+                    shift 2
+                    expected=("$@")
+                    filters=()
+                    for identity in "${expected[@]}"; do
+                        filters+=(-k "${identity##*.}")
+                    done
+                    mapfile -t actual < <(
+                        "${python_bin}" "${runner}" --list-identities discover \
+                            -s tests/optimization/recovery \
+                            -p test_create_binpkg_checkpoint.py \
+                            "${filters[@]}"
+                    )
+                    if ((${#actual[@]} != ${#expected[@]})); then
+                        printf "ERROR: checkpoint-smoke selected %s identities, expected %s\n" \
+                            "${#actual[@]}" "${#expected[@]}" >&2
+                        printf "actual=%s\n" "${actual[@]}" >&2
+                        exit 2
+                    fi
+                    for ((index = 0; index < ${#expected[@]}; index += 1)); do
+                        if [[ ${actual[index]} != "${expected[index]}" ]]; then
+                            printf "ERROR: checkpoint-smoke identity mismatch at %s: expected=%s actual=%s\n" \
+                                "${index}" "${expected[index]}" "${actual[index]}" >&2
+                            exit 2
+                        fi
+                    done
+                    exec "${python_bin}" "${runner}" discover \
+                        -s tests/optimization/recovery \
+                        -p test_create_binpkg_checkpoint.py -v \
+                        "${filters[@]}"
+                ' checkpoint-smoke-exact-identities \
+                "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" \
+                "${CHECKPOINT_SMOKE_IDENTITIES[@]}"
+        fi
+        skip_case production-profile-lock-crash-stress \
+            'checkpoint-smoke excludes the 300-cycle profile-lock stress'
     elif [[ ! -f ${STRUCTURED_UNITTEST_RUNNER} || -L ${STRUCTURED_UNITTEST_RUNNER} ]]; then
         skip_case python-unit-tests \
             'structured unittest runner is absent or symlinked'
@@ -1169,7 +1248,7 @@ elif [[ ! -f ${STRUCTURED_UNITTEST_RUNNER} || -L ${STRUCTURED_UNITTEST_RUNNER} ]
 elif [[ ! -f ${PHASE2_EVIDENCE_TEST} ]]; then
     skip_case phase2-evidence-contract \
         "fixture is absent: ${PHASE2_EVIDENCE_TEST}"
-elif [[ ${MODE} == smoke ]]; then
+elif [[ ${MODE} == smoke || ${MODE} == checkpoint-smoke ]]; then
     run_case_in_repository phase2-evidence-smoke \
         env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
         "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" -v \
@@ -1181,7 +1260,7 @@ else
         -s tests/optimization -p test_phase2_evidence.py -v
 fi
 
-if [[ ${MODE} != smoke ]]; then
+if [[ ${MODE} != smoke && ${MODE} != checkpoint-smoke ]]; then
 
 PACKAGE_ENV_DUPLICATE_CHECKER=${REPOSITORY_ROOT}/scripts/optimization/check-package-env-duplicates.py
 if [[ -z ${PYTHON_BIN} ]]; then

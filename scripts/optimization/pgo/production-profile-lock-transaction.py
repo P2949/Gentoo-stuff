@@ -3651,10 +3651,13 @@ def preflight_unshare_kill_child(
 
     A successful ``/bin/true`` invocation proves namespace creation but says
     nothing about the safety property used after a coordinator crash.  Keep a
-    namespace child asleep, bind both outer process identities, terminate the
-    exact unshare supervisor through a pidfd, and require the child and its
-    private process group to disappear.  Cleanup also uses only already-opened
-    pidfds; a recycled numeric PID or PGID is never signalled.
+    namespace child asleep, bind both outer process identities, kill the exact
+    unshare supervisor through a pidfd, and require the child and its private
+    process group to disappear.  SIGKILL is deliberate: util-linux ``unshare``
+    may survive or forward SIGTERM, while ``--kill-child=KILL`` must still tear
+    down the namespace when its exact supervisor is unconditionally killed.
+    Cleanup also uses only already-opened pidfds; a recycled numeric PID or PGID
+    is never signalled.
     """
 
     if os.geteuid() != 0:
@@ -3761,18 +3764,18 @@ def preflight_unshare_kill_child(
                     failure = "PID-namespace child identity changed after pidfd_open"
                 else:
                     try:
-                        pidfd_send_signal(supervisor_pidfd, signal.SIGTERM)
+                        pidfd_send_signal(supervisor_pidfd, signal.SIGKILL)
                     except (OSError, ProcessLookupError) as error:
                         failure = (
-                            "PID-namespace supervisor cannot be signalled through "
-                            f"its pidfd: {error}"
+                            "PID-namespace supervisor cannot be killed through its "
+                            f"exact pidfd with SIGKILL: {error}"
                         )
                     else:
                         try:
                             observed_returncode = process.wait(timeout=kill_after)
                         except subprocess.TimeoutExpired:
                             failure = (
-                                "PID-namespace supervisor survived exact pidfd SIGTERM"
+                                "PID-namespace supervisor survived exact pidfd SIGKILL"
                             )
 
             if failure is None and child_pid is not None and child_identity is not None:
@@ -3813,8 +3816,9 @@ def preflight_unshare_kill_child(
             # pidfd_send_signal itself is denied: retaining an open pidfd does
             # not make a failed signal useful.  Never extend this fallback to
             # the namespace child or to a numeric process group.
-            # Always try SIGTERM first because that is the transition whose
-            # ``unshare --kill-child=KILL`` behavior is under test.
+            # Cleanup remains a bounded TERM/KILL escalation so every failed
+            # preflight is reaped.  The successful proof above, independently,
+            # requires an exact pidfd SIGKILL and a -SIGKILL wait status.
 
             def record_cleanup_failure(message: str) -> None:
                 if message not in cleanup_failures:
@@ -3983,9 +3987,9 @@ def preflight_unshare_kill_child(
         )
     if failure is not None:
         fail(failure + (f": {diagnostic_text}" if diagnostic_text else ""))
-    if observed_returncode != -signal.SIGTERM:
+    if observed_returncode != -signal.SIGKILL:
         fail(
-            "PID-namespace supervisor did not exit from exact pidfd SIGTERM: "
+            "PID-namespace supervisor did not exit from exact pidfd SIGKILL: "
             f"{observed_returncode}"
         )
 

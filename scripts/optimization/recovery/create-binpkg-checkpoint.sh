@@ -782,6 +782,10 @@ read_proc_identity() {
     printf -v "${start_destination}" '%s' "${fields[19]}"
 }
 
+process_state_is_terminal() {
+    [[ $1 == Z || $1 == X || $1 == x ]]
+}
+
 pidfd_signal() {
     local pid=$1 expected_start=$2 signal_name=$3 code status=0
     if ((FIXTURE_MODE)); then
@@ -790,6 +794,9 @@ pidfd_signal() {
             return 3
         fi
         [[ ${current_start} == "${expected_start}" ]] || return 4
+        if [[ -e ${FIXTURE_ROOT}/control/force-cleanup-deadline-expiry ]]; then
+            return 0
+        fi
         kill -s "${signal_name}" -- "${pid}" 2>/dev/null || return 3
         return 0
     fi
@@ -839,14 +846,20 @@ PY
 }
 
 terminate_active_child() {
-    local status=0 index state current_start signal_status=0
+    local status=0 index state=unknown current_start=unknown signal_status=0
+    local safe_to_wait=0
+    local term_iterations=600 kill_iterations=100
     [[ -n ${ACTIVE_CHILD_PID} && -n ${ACTIVE_CHILD_STARTTIME} ]] || return 0
+    if ((FIXTURE_MODE)) && [[ -e ${FIXTURE_ROOT}/control/force-cleanup-deadline-expiry ]]; then
+        term_iterations=1
+        kill_iterations=1
+    fi
     pidfd_signal "${ACTIVE_CHILD_PID}" "${ACTIVE_CHILD_STARTTIME}" TERM || signal_status=$?
     case ${signal_status} in
         0|3) ;;
         *) status=${signal_status} ;;
     esac
-    for ((index = 0; index < 600; index++)); do
+    for ((index = 0; index < term_iterations; index++)); do
         if ! read_proc_identity "${ACTIVE_CHILD_PID}" state current_start; then
             break
         fi
@@ -854,13 +867,23 @@ terminate_active_child() {
             status=4
             break
         }
-        [[ ${state} == Z ]] && break
+        process_state_is_terminal "${state}" && break
         ${SLEEP} 0.05
     done
     if read_proc_identity "${ACTIVE_CHILD_PID}" state current_start && \
-        [[ ${current_start} == "${ACTIVE_CHILD_STARTTIME}" && ${state} != Z ]]; then
-        pidfd_signal "${ACTIVE_CHILD_PID}" "${ACTIVE_CHILD_STARTTIME}" KILL || status=$?
-        for ((index = 0; index < 100; index++)); do
+        [[ ${current_start} == "${ACTIVE_CHILD_STARTTIME}" ]] && \
+        ! process_state_is_terminal "${state}"; then
+        signal_status=0
+        pidfd_signal "${ACTIVE_CHILD_PID}" "${ACTIVE_CHILD_STARTTIME}" KILL || signal_status=$?
+        case ${signal_status} in
+            0|3) ;;
+            *)
+                if ((status == 0)); then
+                    status=${signal_status}
+                fi
+                ;;
+        esac
+        for ((index = 0; index < kill_iterations; index++)); do
             if ! read_proc_identity "${ACTIVE_CHILD_PID}" state current_start; then
                 break
             fi
@@ -868,39 +891,96 @@ terminate_active_child() {
                 status=4
                 break
             }
-            [[ ${state} == Z ]] && break
+            process_state_is_terminal "${state}" && break
             ${SLEEP} 0.05
         done
     fi
-    if read_proc_identity "${ACTIVE_CHILD_PID}" state current_start && \
-        [[ ${current_start} == "${ACTIVE_CHILD_STARTTIME}" && ${state} != Z ]]; then
+    if ! read_proc_identity "${ACTIVE_CHILD_PID}" state current_start; then
+        safe_to_wait=1
+    elif [[ ${current_start} != "${ACTIVE_CHILD_STARTTIME}" ]]; then
+        status=4
+        printf 'ERROR: active-child cleanup identity changed: pid=%s expected_start=%s actual_start=%s state=%s\n' \
+            "${ACTIVE_CHILD_PID}" "${ACTIVE_CHILD_STARTTIME}" "${current_start}" "${state}" >&2
+    elif process_state_is_terminal "${state}"; then
+        safe_to_wait=1
+    else
         status=5
+        printf 'ERROR: active-child cleanup deadline expired: pid=%s start=%s state=%s\n' \
+            "${ACTIVE_CHILD_PID}" "${ACTIVE_CHILD_STARTTIME}" "${state}" >&2
     fi
-    wait "${ACTIVE_CHILD_PID}" 2>/dev/null || :
-    ACTIVE_CHILD_PID=
-    ACTIVE_CHILD_STARTTIME=
+    if ((safe_to_wait)); then
+        wait "${ACTIVE_CHILD_PID}" 2>/dev/null || :
+        ACTIVE_CHILD_PID=
+        ACTIVE_CHILD_STARTTIME=
+    fi
     return "${status}"
 }
 
 release_portage_vdb_lock() {
-    local index state current_start signal_status=0
+    local index state=unknown current_start=unknown signal_status=0 status=0
+    local safe_to_wait=0
+    local term_iterations=100 kill_iterations=100
     [[ -n ${PORTAGE_LOCK_PID} && -n ${PORTAGE_LOCK_STARTTIME} ]] || return 0
+    if ((FIXTURE_MODE)) && [[ -e ${FIXTURE_ROOT}/control/force-cleanup-deadline-expiry ]]; then
+        term_iterations=1
+        kill_iterations=1
+    fi
     pidfd_signal "${PORTAGE_LOCK_PID}" "${PORTAGE_LOCK_STARTTIME}" TERM || signal_status=$?
-    [[ ${signal_status} == 0 || ${signal_status} == 3 ]] || return "${signal_status}"
-    for ((index = 0; index < 100; index++)); do
+    case ${signal_status} in
+        0|3) ;;
+        *) status=${signal_status} ;;
+    esac
+    for ((index = 0; index < term_iterations; index++)); do
         read_proc_identity "${PORTAGE_LOCK_PID}" state current_start || break
-        [[ ${current_start} == "${PORTAGE_LOCK_STARTTIME}" ]] || return 4
-        [[ ${state} == Z ]] && break
+        if [[ ${current_start} != "${PORTAGE_LOCK_STARTTIME}" ]]; then
+            status=4
+            break
+        fi
+        process_state_is_terminal "${state}" && break
         ${SLEEP} 0.05
     done
     if read_proc_identity "${PORTAGE_LOCK_PID}" state current_start && \
-       [[ ${current_start} == "${PORTAGE_LOCK_STARTTIME}" && ${state} != Z ]]; then
+       [[ ${current_start} == "${PORTAGE_LOCK_STARTTIME}" ]] && \
+       ! process_state_is_terminal "${state}"; then
+        signal_status=0
         pidfd_signal "${PORTAGE_LOCK_PID}" "${PORTAGE_LOCK_STARTTIME}" KILL || signal_status=$?
-        [[ ${signal_status} == 0 || ${signal_status} == 3 ]] || return "${signal_status}"
+        case ${signal_status} in
+            0|3) ;;
+            *)
+                if ((status == 0)); then
+                    status=${signal_status}
+                fi
+                ;;
+        esac
+        for ((index = 0; index < kill_iterations; index++)); do
+            read_proc_identity "${PORTAGE_LOCK_PID}" state current_start || break
+            if [[ ${current_start} != "${PORTAGE_LOCK_STARTTIME}" ]]; then
+                status=4
+                break
+            fi
+            process_state_is_terminal "${state}" && break
+            ${SLEEP} 0.05
+        done
     fi
-    wait "${PORTAGE_LOCK_PID}" 2>/dev/null || :
-    PORTAGE_LOCK_PID=
-    PORTAGE_LOCK_STARTTIME=
+    if ! read_proc_identity "${PORTAGE_LOCK_PID}" state current_start; then
+        safe_to_wait=1
+    elif [[ ${current_start} != "${PORTAGE_LOCK_STARTTIME}" ]]; then
+        status=4
+        printf 'ERROR: VDB-lock cleanup identity changed: pid=%s expected_start=%s actual_start=%s state=%s\n' \
+            "${PORTAGE_LOCK_PID}" "${PORTAGE_LOCK_STARTTIME}" "${current_start}" "${state}" >&2
+    elif process_state_is_terminal "${state}"; then
+        safe_to_wait=1
+    else
+        status=5
+        printf 'ERROR: VDB-lock cleanup deadline expired: pid=%s start=%s state=%s\n' \
+            "${PORTAGE_LOCK_PID}" "${PORTAGE_LOCK_STARTTIME}" "${state}" >&2
+    fi
+    if ((safe_to_wait)); then
+        wait "${PORTAGE_LOCK_PID}" 2>/dev/null || :
+        PORTAGE_LOCK_PID=
+        PORTAGE_LOCK_STARTTIME=
+    fi
+    return "${status}"
 }
 
 deactivate_make_conf_overlay() {
@@ -1015,8 +1095,14 @@ verify_make_conf_restored() {
 
 start_portage_vdb_lock() {
     local suffix ready index code ready_pid _state current_start
+    local barrier_request='' barrier_entered='' barrier_release=''
     suffix=${1:-}
     ready=${REPORT}/portage-vdb-lock${suffix}.ready.json
+    if ((FIXTURE_MODE)); then
+        barrier_request=${FIXTURE_ROOT}/control/vdb-lock-prebind-hold
+        barrier_entered=${FIXTURE_ROOT}/control/vdb-lock-prebind-entered
+        barrier_release=${FIXTURE_ROOT}/control/vdb-lock-prebind-release
+    fi
     local implementation_path implementation_sha actual_implementation_sha
     read -r -d '' code <<'PY' || :
 import ctypes
@@ -1026,16 +1112,36 @@ import json
 import os
 import signal
 import sys
+import time
 from pathlib import Path
 
 vdb = Path(sys.argv[1])
 ready = Path(sys.argv[2])
 fixture = sys.argv[3] == "fixture"
-parent = os.getppid()
+expected_parent = int(sys.argv[4])
+barrier_request_text, barrier_entered_text, barrier_release_text = sys.argv[5:8]
+barrier_arguments = (barrier_request_text, barrier_entered_text, barrier_release_text)
+if not fixture and any(barrier_arguments):
+    raise SystemExit("fixture pre-binding barrier reached production mode")
+if fixture and any(barrier_arguments) and not all(barrier_arguments):
+    raise SystemExit("incomplete fixture pre-binding barrier arguments")
+if fixture and all(barrier_arguments):
+    barrier_request = Path(barrier_request_text)
+    barrier_entered = Path(barrier_entered_text)
+    barrier_release = Path(barrier_release_text)
+    if barrier_request.exists():
+        barrier_entered.write_text(f"{os.getpid()}\n", encoding="ascii")
+        deadline = time.monotonic() + 30
+        while not barrier_release.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if not barrier_release.exists():
+            raise SystemExit("timed out at fixture pre-binding barrier")
+if os.getppid() != expected_parent:
+    raise SystemExit("coordinator disappeared before parent-death binding")
 libc = ctypes.CDLL(None, use_errno=True)
-if libc.prctl(1, signal.SIGTERM) != 0:
+if libc.prctl(1, signal.SIGKILL) != 0:
     raise OSError(ctypes.get_errno(), "PR_SET_PDEATHSIG failed")
-if os.getppid() != parent:
+if os.getppid() != expected_parent:
     raise SystemExit("coordinator disappeared before parent-death binding")
 stop = False
 def terminate(_signum, _frame):
@@ -1066,7 +1172,7 @@ try:
     payload = {
         "schema_version": 1,
         "pid": os.getpid(),
-        "parent_pid": parent,
+        "parent_pid": expected_parent,
         "vdb": str(vdb),
         "implementation": implementation,
         "implementation_sha256": implementation_sha256,
@@ -1095,6 +1201,7 @@ PY
     ${SETSID} "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
         "${PYTHON}" -I -B -c "${code}" "${VDB}" "${ready}" \
         "$([[ ${FIXTURE_MODE} -eq 1 ]] && printf fixture || printf production)" \
+        "${COORDINATOR_PID}" "${barrier_request}" "${barrier_entered}" "${barrier_release}" \
         >"${REPORT}/portage-vdb-lock.stdout" 2>"${REPORT}/portage-vdb-lock.stderr" &
     PORTAGE_LOCK_PID=$!
     read_proc_identity "${PORTAGE_LOCK_PID}" _state PORTAGE_LOCK_STARTTIME || \
@@ -1112,6 +1219,9 @@ PY
         die 'Portage VDB lock holder disappeared after readiness publication'
     [[ ${current_start} == "${PORTAGE_LOCK_STARTTIME}" ]] || \
         die 'Portage VDB lock holder identity changed after readiness publication'
+    if ((FIXTURE_MODE)) && [[ -e ${FIXTURE_ROOT}/control/fail-after-vdb-lock-ready ]]; then
+        die 'fixture injected failure after Portage VDB lock readiness'
+    fi
     if ((!FIXTURE_MODE)); then
         implementation_path=$(${JQ} -r '.implementation' "${ready}")
         implementation_sha=$(${JQ} -r '.implementation_sha256' "${ready}")
@@ -1126,8 +1236,9 @@ PY
 }
 
 # Run an expensive child in its own session under a hard deadline.  The outer
-# signal trap always terminates that exact process group, so no verifier,
-# quickpkg, emaint, or large clone can outlive the coordinator shell.
+# signal trap targets the exact pidfd-bound unshare supervisor; its kill-child
+# PID namespace and parent-death binding contain verifier, Portage, and clone
+# descendants when the coordinator exits.
 run_tracked() {
     local output=$1 error_output=$2 deadline=$3 status=0 launcher_code state start
     shift 3
@@ -1142,7 +1253,7 @@ command = sys.argv[2:]
 if not command:
     raise SystemExit("contained launcher received no command")
 libc = ctypes.CDLL(None, use_errno=True)
-if libc.prctl(1, signal.SIGTERM) != 0:
+if libc.prctl(1, signal.SIGKILL) != 0:
     raise OSError(ctypes.get_errno(), "PR_SET_PDEATHSIG failed")
 if os.getppid() != expected_parent:
     raise SystemExit("coordinator disappeared before parent-death binding")
@@ -1169,47 +1280,372 @@ PY
 }
 
 preflight_containment_primitives() {
-    local code
+    local code launcher_code partial status=0 state start
     if ((FIXTURE_MODE)); then
         printf '%s\n' \
-            '{"emulated":true,"kill_child":"KILL","pid_namespace":true,"pidfd_open":true,"pidfd_send_signal":true}' \
+            '{"schema_version":2,"emulated":true,"direct_pidfd_sigterm":{"exact_child_gone":true,"pidfd_open":true,"pidfd_send_signal":true,"signal":"SIGTERM","returncode":-15},"unshare_kill_child_sigkill":{"descendant_pidfd_open":true,"escaped_private_process_group_gone":true,"escaped_setsid_descendant_gone":true,"exact_namespace_child_gone":true,"kill_child_signal":"SIGKILL","pid_namespace":true,"private_process_group_gone":true,"supervisor_pidfd_open":true,"supervisor_returncode":-9,"supervisor_signal":"SIGKILL"}}' \
             >"${REPORT}/containment-preflight.json"
         : >"${REPORT}/containment-preflight.stderr"
         return 0
     fi
     read -r -d '' code <<'PY' || :
+import ctypes
+import errno
 import json
 import os
 import signal
 import subprocess
 import sys
+import time
+from pathlib import Path
 
-child = subprocess.Popen([sys.argv[1], "300"])
-try:
-    descriptor = os.pidfd_open(child.pid, 0)
+unshare, sleep, python = sys.argv[1:4]
+deadline_seconds = 20.0
+
+def wall_timeout(_signum, _frame):
+    raise TimeoutError("containment preflight wall deadline expired")
+
+signal.signal(signal.SIGALRM, wall_timeout)
+signal.alarm(60)
+
+def identity(pid):
     try:
-        signal.pidfd_send_signal(descriptor, signal.SIGTERM, None, 0)
-    finally:
+        text = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    fields = text[text.rfind(") ") + 2:].split()
+    if len(fields) < 20:
+        raise RuntimeError(f"cannot parse process identity for PID {pid}")
+    return {
+        "pid": pid,
+        "state": fields[0],
+        "ppid": int(fields[1]),
+        "process_group": int(fields[2]),
+        "session": int(fields[3]),
+        "start_time": int(fields[19]),
+    }
+
+def same_process(pid, expected):
+    current = identity(pid)
+    return current is not None and current["start_time"] == expected["start_time"]
+
+def exact_process_gone(pid, expected):
+    return not same_process(pid, expected)
+
+def children(pid):
+    try:
+        payload = Path(f"/proc/{pid}/task/{pid}/children").read_text(encoding="ascii")
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    result = tuple(int(field) for field in payload.split())
+    if len(result) != len(set(result)):
+        raise RuntimeError(f"duplicate children for PID {pid}")
+    return result
+
+def group_exists(process_group):
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        observed = identity(int(entry.name))
+        if observed is not None and observed["process_group"] == process_group:
+            return True
+    return False
+
+def wait_until(predicate, label):
+    deadline = time.monotonic() + deadline_seconds
+    while not predicate() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    if not predicate():
+        raise RuntimeError(f"timed out waiting for {label}")
+
+launcher = r'''
+import ctypes
+import os
+import signal
+import sys
+expected_parent = int(sys.argv[1])
+command = sys.argv[2:]
+if os.getppid() != expected_parent:
+    raise SystemExit("preflight child lost its exact parent before binding")
+libc = ctypes.CDLL(None, use_errno=True)
+if libc.prctl(1, signal.SIGKILL) != 0:
+    raise OSError(ctypes.get_errno(), "PR_SET_PDEATHSIG failed")
+if os.getppid() != expected_parent:
+    raise SystemExit("preflight child lost its exact parent after binding")
+os.execv(command[0], command)
+'''
+
+def start_bound(command):
+    return subprocess.Popen(
+        [python, "-I", "-B", "-c", launcher, str(os.getpid()), *command],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+
+def open_exact_pidfd(process, observed):
+    descriptor = os.pidfd_open(process.pid, 0)
+    repeated = identity(process.pid)
+    if repeated is None or repeated["start_time"] != observed["start_time"]:
         os.close(descriptor)
-    status = child.wait(timeout=10)
-    if status != -signal.SIGTERM:
-        raise SystemExit(f"pidfd probe child returned {status}")
-finally:
-    if child.poll() is None:
-        child.kill()
-        child.wait()
-print(json.dumps({"pid_namespace": True, "pidfd_open": True,
-                  "pidfd_send_signal": True, "kill_child": "KILL"}, sort_keys=True))
+        raise RuntimeError("process identity changed after pidfd_open")
+    return descriptor
+
+def prove_direct_pidfd():
+    process = start_bound([sleep, "300"])
+    descriptor = -1
+    observed = None
+    process_group = process.pid
+    try:
+        observed = identity(process.pid)
+        if observed is None or observed["process_group"] != process_group:
+            raise RuntimeError("direct pidfd child is not in its private process group")
+        descriptor = open_exact_pidfd(process, observed)
+        signal.pidfd_send_signal(descriptor, signal.SIGTERM, None, 0)
+        returncode = process.wait(timeout=deadline_seconds)
+        if returncode != -signal.SIGTERM:
+            raise RuntimeError(f"direct pidfd child returned {returncode}")
+        wait_until(lambda: exact_process_gone(process.pid, observed), "direct pidfd child exit")
+        wait_until(lambda: not group_exists(process_group), "direct pidfd private group exit")
+        return {
+            "pidfd_open": True,
+            "pidfd_send_signal": True,
+            "signal": "SIGTERM",
+            "returncode": returncode,
+            "exact_child_gone": True,
+        }
+    finally:
+        if process.poll() is None:
+            if descriptor >= 0:
+                try:
+                    signal.pidfd_send_signal(descriptor, signal.SIGKILL, None, 0)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            process.wait(timeout=deadline_seconds)
+        if descriptor >= 0:
+            os.close(descriptor)
+        if observed is not None:
+            wait_until(lambda: exact_process_gone(process.pid, observed), "direct pidfd cleanup")
+        wait_until(lambda: not group_exists(process_group), "direct pidfd group cleanup")
+
+def prove_unshare_kill_child():
+    namespace_code = r'''
+import os
+import signal
+
+descendant = os.fork()
+if descendant == 0:
+    os.setsid()
+    signal.pause()
+    raise SystemExit(90)
+signal.pause()
+raise SystemExit(91)
+'''
+    process = start_bound([
+        unshare, "--pid", "--fork", "--kill-child=KILL", "--mount-proc", "--",
+        python, "-I", "-B", "-c", namespace_code,
+    ])
+    supervisor_fd = -1
+    child_fd = -1
+    descendant_fd = -1
+    supervisor_identity = None
+    child_identity = None
+    descendant_identity = None
+    process_group = process.pid
+    try:
+        supervisor_identity = identity(process.pid)
+        if supervisor_identity is None or supervisor_identity["process_group"] != process_group:
+            raise RuntimeError("unshare supervisor is not in its private process group")
+        deadline = time.monotonic() + deadline_seconds
+        child_pid = None
+        while child_pid is None and time.monotonic() < deadline:
+            if process.poll() is not None:
+                diagnostic = process.stderr.read().decode(errors="replace").strip()
+                raise RuntimeError(f"unshare supervisor exited before child binding: {diagnostic}")
+            current_children = children(process.pid)
+            if current_children is not None:
+                if len(current_children) > 1:
+                    raise RuntimeError("unshare supervisor has unexpected extra children")
+                if len(current_children) == 1:
+                    child_pid = current_children[0]
+                    break
+            time.sleep(0.02)
+        if child_pid is None:
+            raise RuntimeError("timed out binding unshare namespace child")
+        child_identity = identity(child_pid)
+        if child_identity is None:
+            raise RuntimeError("unshare namespace child disappeared during binding")
+        if child_identity["ppid"] != process.pid or child_identity["process_group"] != process_group:
+            raise RuntimeError("unshare namespace child has incoherent identity")
+        descendant_pid = None
+        while descendant_pid is None and time.monotonic() < deadline:
+            current_descendants = children(child_pid)
+            if current_descendants is not None:
+                if len(current_descendants) > 1:
+                    raise RuntimeError("namespace child has unexpected extra descendants")
+                if len(current_descendants) == 1:
+                    descendant_pid = current_descendants[0]
+                    break
+            time.sleep(0.02)
+        if descendant_pid is None:
+            raise RuntimeError("timed out binding escaped setsid descendant")
+        descendant_identity = identity(descendant_pid)
+        if descendant_identity is None:
+            raise RuntimeError("escaped setsid descendant disappeared during binding")
+        if (
+            descendant_identity["ppid"] != child_pid
+            or descendant_identity["process_group"] != descendant_pid
+            or descendant_identity["session"] != descendant_pid
+        ):
+            raise RuntimeError("escaped setsid descendant has incoherent identity")
+        supervisor_fd = open_exact_pidfd(process, supervisor_identity)
+        child_fd = os.pidfd_open(child_pid, 0)
+        repeated_child = identity(child_pid)
+        if repeated_child is None or repeated_child["start_time"] != child_identity["start_time"]:
+            raise RuntimeError("namespace child identity changed after pidfd_open")
+        descendant_fd = os.pidfd_open(descendant_pid, 0)
+        repeated_descendant = identity(descendant_pid)
+        if (
+            repeated_descendant is None
+            or repeated_descendant["start_time"]
+            != descendant_identity["start_time"]
+        ):
+            raise RuntimeError("setsid descendant identity changed after pidfd_open")
+        signal.pidfd_send_signal(supervisor_fd, signal.SIGKILL, None, 0)
+        returncode = process.wait(timeout=deadline_seconds)
+        if returncode != -signal.SIGKILL:
+            raise RuntimeError(f"unshare supervisor returned {returncode}")
+        wait_until(lambda: exact_process_gone(child_pid, child_identity), "namespace child exit")
+        wait_until(
+            lambda: exact_process_gone(descendant_pid, descendant_identity),
+            "setsid descendant exit",
+        )
+        wait_until(lambda: not group_exists(process_group), "unshare private group exit")
+        wait_until(
+            lambda: not group_exists(descendant_identity["process_group"]),
+            "setsid descendant private group exit",
+        )
+        return {
+            "pid_namespace": True,
+            "kill_child_signal": "SIGKILL",
+            "supervisor_pidfd_open": True,
+            "supervisor_signal": "SIGKILL",
+            "supervisor_returncode": returncode,
+            "exact_namespace_child_gone": True,
+            "descendant_pidfd_open": True,
+            "escaped_setsid_descendant_gone": True,
+            "escaped_private_process_group_gone": True,
+            "private_process_group_gone": True,
+        }
+    finally:
+        if process.poll() is None:
+            if supervisor_fd >= 0:
+                try:
+                    signal.pidfd_send_signal(supervisor_fd, signal.SIGKILL, None, 0)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            process.wait(timeout=deadline_seconds)
+        if child_identity is not None and same_process(child_identity["pid"], child_identity):
+            if child_fd < 0:
+                raise RuntimeError("cannot safely clean an unbound namespace child")
+            try:
+                signal.pidfd_send_signal(child_fd, signal.SIGKILL, None, 0)
+            except ProcessLookupError:
+                pass
+            wait_until(
+                lambda: exact_process_gone(child_identity["pid"], child_identity),
+                "namespace child cleanup",
+            )
+        if (
+            descendant_identity is not None
+            and same_process(descendant_identity["pid"], descendant_identity)
+        ):
+            if descendant_fd < 0:
+                raise RuntimeError("cannot safely clean an unbound setsid descendant")
+            try:
+                signal.pidfd_send_signal(descendant_fd, signal.SIGKILL, None, 0)
+            except ProcessLookupError:
+                pass
+            wait_until(
+                lambda: exact_process_gone(
+                    descendant_identity["pid"], descendant_identity
+                ),
+                "setsid descendant cleanup",
+            )
+        for descriptor in (descendant_fd, child_fd, supervisor_fd):
+            if descriptor >= 0:
+                os.close(descriptor)
+        wait_until(lambda: not group_exists(process_group), "unshare group cleanup")
+        if descendant_identity is not None:
+            wait_until(
+                lambda: not group_exists(descendant_identity["process_group"]),
+                "setsid descendant group cleanup",
+            )
+
+payload = {
+    "schema_version": 2,
+    "emulated": False,
+    "direct_pidfd_sigterm": prove_direct_pidfd(),
+    "unshare_kill_child_sigkill": prove_unshare_kill_child(),
+}
+signal.alarm(0)
+print(json.dumps(payload, sort_keys=True))
 PY
-    run_tracked "${REPORT}/containment-preflight.json" \
-        "${REPORT}/containment-preflight.stderr" 2m \
-        "${PYTHON}" -I -B -c "${code}" "${SLEEP}"
-    [[ ${TRACKED_STATUS} -eq 0 ]] || \
-        die "PID-namespace/pidfd containment preflight failed with status ${TRACKED_STATUS}"
-    ${JQ} -e '.pid_namespace == true and .pidfd_open == true and
-        .pidfd_send_signal == true and .kill_child == "KILL"' \
-        "${REPORT}/containment-preflight.json" >/dev/null || \
+    read -r -d '' launcher_code <<'PY' || :
+import ctypes
+import os
+import signal
+import sys
+expected_parent = int(sys.argv[1])
+command = sys.argv[2:]
+if os.getppid() != expected_parent:
+    raise SystemExit("containment helper lost its exact parent before binding")
+libc = ctypes.CDLL(None, use_errno=True)
+if libc.prctl(1, signal.SIGKILL) != 0:
+    raise OSError(ctypes.get_errno(), "PR_SET_PDEATHSIG failed")
+if os.getppid() != expected_parent:
+    raise SystemExit("containment helper lost its exact parent after binding")
+os.execv(command[0], command)
+PY
+    partial=${REPORT}/containment-preflight.json.partial.${COORDINATOR_PID}
+    ${SETSID} "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+        "${PYTHON}" -I -B -c "${launcher_code}" "${COORDINATOR_PID}" \
+        "${PYTHON}" -I -B -c "${code}" "${UNSHARE}" "${SLEEP}" "${PYTHON}" \
+        >"${partial}" 2>"${REPORT}/containment-preflight.stderr" &
+    ACTIVE_CHILD_PID=$!
+    for _ in {1..100}; do
+        read_proc_identity "${ACTIVE_CHILD_PID}" state start && break
+        ${SLEEP} 0.01
+    done
+    [[ -n ${start:-} ]] || die 'containment helper disappeared before identity capture'
+    ACTIVE_CHILD_STARTTIME=${start}
+    wait "${ACTIVE_CHILD_PID}" || status=$?
+    ACTIVE_CHILD_PID=
+    ACTIVE_CHILD_STARTTIME=
+    [[ ${status} -eq 0 ]] || die "PID-namespace/pidfd containment preflight failed with status ${status}"
+    ${JQ} -e '
+        .schema_version == 2 and .emulated == false and
+        .direct_pidfd_sigterm == {
+          exact_child_gone:true,pidfd_open:true,pidfd_send_signal:true,
+          signal:"SIGTERM",returncode:-15} and
+        .unshare_kill_child_sigkill == {
+          descendant_pidfd_open:true,escaped_private_process_group_gone:true,
+          escaped_setsid_descendant_gone:true,exact_namespace_child_gone:true,
+          kill_child_signal:"SIGKILL",
+          pid_namespace:true,private_process_group_gone:true,
+          supervisor_pidfd_open:true,supervisor_returncode:-9,
+          supervisor_signal:"SIGKILL"}' "${partial}" >/dev/null || \
         die 'containment preflight returned an invalid result'
+    ${CHMOD} 0600 -- "${partial}"
+    ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+    sync_paths "${partial}" "${REPORT}"
+    safe_publish_noreplace "${partial}" "${REPORT}/containment-preflight.json"
+    sync_paths "${REPORT}/containment-preflight.json" "${REPORT}"
 }
 
 revalidate_all_tool_identities() {
@@ -2538,6 +2974,7 @@ finalize_offline_restore_supervised() {
 
 failure_trap() {
     local status=$? actual unchanged=unknown failure_record
+    local active_cleanup_status=0 lock_cleanup_status=0 overlay_cleanup_status=0
     ((status != 0)) || return 0
     if ((IN_FAILURE_TRAP)); then
         trap - EXIT HUP INT TERM
@@ -2546,9 +2983,13 @@ failure_trap() {
     IN_FAILURE_TRAP=1
     trap - EXIT HUP INT TERM
     set +e
-    terminate_active_child >/dev/null 2>&1 || :
-    release_portage_vdb_lock >/dev/null 2>&1 || :
-    deactivate_make_conf_overlay >/dev/null 2>&1 || :
+    terminate_active_child || active_cleanup_status=$?
+    release_portage_vdb_lock || lock_cleanup_status=$?
+    deactivate_make_conf_overlay || overlay_cleanup_status=$?
+    if ((active_cleanup_status != 0 || lock_cleanup_status != 0 || overlay_cleanup_status != 0)); then
+        printf 'ERROR: checkpoint cleanup incomplete: active_child_status=%s VDB_lock_status=%s make_conf_overlay_status=%s\n' \
+            "${active_cleanup_status}" "${lock_cleanup_status}" "${overlay_cleanup_status}" >&2
+    fi
     if [[ -n ${EXPECTED_SELECTOR_IDENTITY} ]]; then
         actual=$(selector_identity "${SELECTOR}" 2>/dev/null)
         if [[ ${actual} == "${EXPECTED_SELECTOR_IDENTITY}" ]]; then
@@ -2558,11 +2999,12 @@ failure_trap() {
         fi
     fi
     if ((REPORT_READY && !ACTIVATION_STARTED)); then
-        journal_event failed "status=${status};phase=${CURRENT_PHASE};selector_unchanged=${unchanged};activation_started=${ACTIVATION_STARTED};activation_complete=${ACTIVATION_COMPLETE}" >/dev/null 2>&1
+        journal_event failed "status=${status};phase=${CURRENT_PHASE};selector_unchanged=${unchanged};activation_started=${ACTIVATION_STARTED};activation_complete=${ACTIVATION_COMPLETE};active_child_cleanup_status=${active_cleanup_status};VDB_lock_cleanup_status=${lock_cleanup_status};make_conf_overlay_cleanup_status=${overlay_cleanup_status}" >/dev/null 2>&1
         failure_record=${REPORT}/failure-attempt-${COORDINATOR_PID}.txt
-        printf 'status=%s\nphase=%s\nselector_unchanged=%s\nactivation_started=%s\nactivation_complete=%s\n' \
+        printf 'status=%s\nphase=%s\nselector_unchanged=%s\nactivation_started=%s\nactivation_complete=%s\nactive_child_cleanup_status=%s\nVDB_lock_cleanup_status=%s\nmake_conf_overlay_cleanup_status=%s\n' \
             "${status}" "${CURRENT_PHASE}" "${unchanged}" "${ACTIVATION_STARTED}" \
-            "${ACTIVATION_COMPLETE}" >"${failure_record}.partial"
+            "${ACTIVATION_COMPLETE}" "${active_cleanup_status}" "${lock_cleanup_status}" \
+            "${overlay_cleanup_status}" >"${failure_record}.partial"
         ${CHMOD} 0600 -- "${failure_record}.partial" >/dev/null 2>&1
         ${MV} --no-clobber --no-copy -T -- "${failure_record}.partial" "${failure_record}" >/dev/null 2>&1
         ${RM} -f -- "${failure_record}.partial" >/dev/null 2>&1
@@ -2574,14 +3016,14 @@ failure_trap() {
         fi
         ${SYNC} -f -- "${REPORT}" >/dev/null 2>&1
     elif ((ACTIVATION_STARTED)); then
-        printf 'EMERGENCY: selector activation began; durable failure evidence is intentionally not mutated; inspect selector and prepared activation intent\n' >&2
+        printf 'EMERGENCY: selector activation began; durable failure evidence is intentionally not mutated; inspect selector and prepared activation intent; cleanup_statuses=%s/%s/%s\n' \
+            "${active_cleanup_status}" "${lock_cleanup_status}" "${overlay_cleanup_status}" >&2
     fi
     exit "${status}"
 }
 
 signal_exit() {
     local status=$1
-    terminate_active_child >/dev/null 2>&1 || :
     exit "${status}"
 }
 
@@ -2802,8 +3244,25 @@ require_selector_identity 'after source delta validation'
 sync_paths "${REPORT}" "${REPORT}/source-verification.json" "${REPORT}/vdb.before.tsv"
 journal_event source-validated 'source payloads, exact live delta, selector identity, and content-hashed VDB validated'
 
+# Both clone legs may cross filesystem boundaries: the selected source can be
+# the durable generation, and the durable destination may be mounted separately
+# from the cache.  Reflink auto preserves CoW where available and falls back to
+# the full copies for which the operator runbook reserves space.  Bind that
+# reviewed policy into the immutable checkpoint evidence.
+${JQ} -n --arg tool "${CP}" --arg source "${EXPECTED_SOURCE_TARGET}" \
+    --arg cache_partial "${CACHE_PARTIAL}" --arg cache "${CACHE}" \
+    --arg durable_partial "${DURABLE_PARTIAL}" \
+    '{schema_version:1,copy_tool:$tool,archive_mode:true,reflink_policy:"auto",
+      full_copy_fallback:true,cross_filesystem_supported:true,
+      clone_legs:[{source:$source,destination:$cache_partial},
+        {source:$cache,destination:$durable_partial}]}' \
+    >"${REPORT}/clone-policy.json"
+${CHMOD} 0600 -- "${REPORT}/clone-policy.json"
+${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${REPORT}/clone-policy.json"
+sync_paths "${REPORT}/clone-policy.json" "${REPORT}"
+
 run_tracked "${REPORT}/cache-clone.log" "${REPORT}/cache-clone.stderr" 4h \
-    "${CP}" -a --reflink="$([[ ${FIXTURE_MODE} -eq 1 ]] && printf auto || printf always)" \
+    "${CP}" -a --reflink=auto \
     -- "${EXPECTED_SOURCE_TARGET}" "${CACHE_PARTIAL}"
 [[ ${TRACKED_STATUS} -eq 0 ]] || die "cache staging clone failed with status ${TRACKED_STATUS}"
 [[ -d ${CACHE_PARTIAL} && ! -L ${CACHE_PARTIAL} ]] || die 'cache staging clone failed'
@@ -2841,7 +3300,7 @@ write_final_snapshot_manifest "${CACHE}" "${REPORT}/cache-final-verification.jso
 journal_event cache-published "inode-preserving no-replace publication;counts=${cache_counts}"
 
 run_tracked "${REPORT}/durable-clone.log" "${REPORT}/durable-clone.stderr" 4h \
-    "${CP}" -a --reflink="$([[ ${FIXTURE_MODE} -eq 1 ]] && printf auto || printf always)" \
+    "${CP}" -a --reflink=auto \
     -- "${CACHE}" "${DURABLE_PARTIAL}"
 [[ ${TRACKED_STATUS} -eq 0 ]] || die "durable staging clone failed with status ${TRACKED_STATUS}"
 ${CHMOD} 0700 -- "${DURABLE_PARTIAL}"

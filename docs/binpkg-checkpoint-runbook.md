@@ -153,8 +153,11 @@ test "${#DELTA_ATOMS[@]}" -gt 0
 ```
 
 Record a conservative no-reflink space bound. `qsize -b -f` measures installed
-payload bytes for the delta. Two source copies plus two delta copies and 20
-percent transaction/index overhead must fit:
+payload bytes for the delta. Each new checkpoint generation needs one source
+copy, one delta copy, and 20 percent transaction/index overhead. When the cache
+and durable parents share a filesystem, both generations must fit in the same
+free-space pool. When they are on different filesystems, one complete
+generation must fit independently on each filesystem:
 
 ```bash
 SOURCE_BYTES=$(du -sx --block-size=1 "$SOURCE" | awk '{print $1}')
@@ -168,20 +171,103 @@ test "${#DELTA_SIZE_VALUES[@]}" -eq 1
 DELTA_BYTES=${DELTA_SIZE_VALUES[0]}
 test "$SOURCE_BYTES" -gt 0
 test "$DELTA_BYTES" -gt 0
-REQUIRED_BYTES=$(( (2 * SOURCE_BYTES + 2 * DELTA_BYTES) * 120 / 100 ))
-AVAILABLE_BYTES=$(df --output=avail --block-size=1 \
-  /var/cache/gentoo-optimization/binpkgs | tail -1 | tr -d ' ')
-printf 'source_bytes=%s\ndelta_bytes=%s\nrequired_bytes=%s\navailable_bytes=%s\n' \
-  "$SOURCE_BYTES" "$DELTA_BYTES" "$REQUIRED_BYTES" "$AVAILABLE_BYTES" \
-  >"$EVIDENCE/space-preflight.txt"
-test "$AVAILABLE_BYTES" -ge "$REQUIRED_BYTES"
-df --block-size=1 /var/cache/gentoo-optimization/binpkgs \
-  /var/lib/gentoo-optimization/recovery/binpkgs \
-  >"$EVIDENCE/df.preflight.txt"
+CACHE_PARENT=/var/cache/gentoo-optimization/binpkgs
+DURABLE_PARENT=/var/lib/gentoo-optimization/recovery/binpkgs
+test -d "$CACHE_PARENT"
+test -d "$DURABLE_PARENT"
+
+CACHE_DEVICE=$(stat -Lc '%d' -- "$CACHE_PARENT")
+DURABLE_DEVICE=$(stat -Lc '%d' -- "$DURABLE_PARENT")
+CACHE_AVAILABLE_BYTES=$(df --output=avail --block-size=1 "$CACHE_PARENT" |
+  awk 'NR == 2 {print $1}')
+DURABLE_AVAILABLE_BYTES=$(df --output=avail --block-size=1 "$DURABLE_PARENT" |
+  awk 'NR == 2 {print $1}')
+[[ $CACHE_DEVICE =~ ^[0-9]+$ ]]
+[[ $DURABLE_DEVICE =~ ^[0-9]+$ ]]
+[[ $CACHE_AVAILABLE_BYTES =~ ^[0-9]+$ ]]
+[[ $DURABLE_AVAILABLE_BYTES =~ ^[0-9]+$ ]]
+
+GENERATION_RAW_BYTES=$((SOURCE_BYTES + DELTA_BYTES))
+GENERATION_REQUIRED_BYTES=$(((GENERATION_RAW_BYTES * 120 + 99) / 100))
+CACHE_REQUIRED_BYTES=$GENERATION_REQUIRED_BYTES
+DURABLE_REQUIRED_BYTES=$GENERATION_REQUIRED_BYTES
+if [[ $CACHE_DEVICE == "$DURABLE_DEVICE" ]]; then
+  SPACE_LAYOUT=shared-filesystem
+  SPACE_ENFORCEMENT=combined-two-generation-bound
+  SHARED_RAW_BYTES=$((2 * GENERATION_RAW_BYTES))
+  SHARED_REQUIRED_BYTES=$(((SHARED_RAW_BYTES * 120 + 99) / 100))
+  if ((CACHE_AVAILABLE_BYTES < DURABLE_AVAILABLE_BYTES)); then
+    SHARED_AVAILABLE_BYTES=$CACHE_AVAILABLE_BYTES
+  else
+    SHARED_AVAILABLE_BYTES=$DURABLE_AVAILABLE_BYTES
+  fi
+  if ((SHARED_AVAILABLE_BYTES >= SHARED_REQUIRED_BYTES)); then
+    SPACE_SUFFICIENT=yes
+  else
+    SPACE_SUFFICIENT=no
+  fi
+else
+  SPACE_LAYOUT=split-filesystems
+  SPACE_ENFORCEMENT=independent-one-generation-bounds
+  SHARED_RAW_BYTES=0
+  SHARED_REQUIRED_BYTES=0
+  SHARED_AVAILABLE_BYTES=0
+  if ((CACHE_AVAILABLE_BYTES >= CACHE_REQUIRED_BYTES &&
+      DURABLE_AVAILABLE_BYTES >= DURABLE_REQUIRED_BYTES)); then
+    SPACE_SUFFICIENT=yes
+  else
+    SPACE_SUFFICIENT=no
+  fi
+fi
+
+{
+  printf 'layout=%s\n' "$SPACE_LAYOUT"
+  printf 'enforcement=%s\n' "$SPACE_ENFORCEMENT"
+  printf 'sufficient=%s\n' "$SPACE_SUFFICIENT"
+  printf 'cache_parent=%s\n' "$CACHE_PARENT"
+  printf 'cache_device=%s\n' "$CACHE_DEVICE"
+  printf 'cache_available_bytes=%s\n' "$CACHE_AVAILABLE_BYTES"
+  printf 'cache_required_bytes=%s\n' "$CACHE_REQUIRED_BYTES"
+  printf 'durable_parent=%s\n' "$DURABLE_PARENT"
+  printf 'durable_device=%s\n' "$DURABLE_DEVICE"
+  printf 'durable_available_bytes=%s\n' "$DURABLE_AVAILABLE_BYTES"
+  printf 'durable_required_bytes=%s\n' "$DURABLE_REQUIRED_BYTES"
+  printf 'source_bytes=%s\n' "$SOURCE_BYTES"
+  printf 'delta_bytes=%s\n' "$DELTA_BYTES"
+  printf 'generation_raw_bytes=%s\n' "$GENERATION_RAW_BYTES"
+  printf 'generation_required_bytes=%s\n' "$GENERATION_REQUIRED_BYTES"
+  printf 'shared_raw_bytes=%s\n' "$SHARED_RAW_BYTES"
+  printf 'shared_required_bytes=%s\n' "$SHARED_REQUIRED_BYTES"
+  printf 'shared_available_bytes=%s\n' "$SHARED_AVAILABLE_BYTES"
+} >"$EVIDENCE/space-preflight.txt"
+
+{
+  stat -Lc 'path=%n device=%d mode=%a owner=%u group=%g' -- \
+    "$CACHE_PARENT" "$DURABLE_PARENT"
+  df --block-size=1 -- "$CACHE_PARENT" "$DURABLE_PARENT"
+  findmnt --target "$CACHE_PARENT" \
+    --output TARGET,SOURCE,FSTYPE,OPTIONS --noheadings
+  findmnt --target "$DURABLE_PARENT" \
+    --output TARGET,SOURCE,FSTYPE,OPTIONS --noheadings
+} >"$EVIDENCE/filesystem-preflight.txt"
+
+test "$SPACE_SUFFICIENT" = yes
 ```
 
-If cache and durable parents are on different filesystems, apply the bound to
-each filesystem independently rather than pooling free space.
+`space-preflight.txt` is the machine-readable decision record. A
+`shared-filesystem` result enforces the combined two-generation bound against
+the lower of the two observed free-space values. A `split-filesystems` result
+enforces the one-generation bound separately against both values. Preserve
+`filesystem-preflight.txt` with it so the device, mount, filesystem, and raw
+`df` observations can be audited later.
+
+The checkpoint implementation uses `cp -a --reflink=auto` for both clone legs.
+That retains copy-on-write cloning when the source and destination support it
+and performs a full copy across filesystems or when reflinks are unavailable.
+The conservative calculation above reserves space for the full-copy path. The
+transaction publishes `clone-policy.json` before cloning and binds both clone
+legs, the exact `cp` tool path, `reflink_policy=auto`, full-copy fallback, and
+cross-filesystem support into the checkpoint evidence.
 
 ## 3. Create and activate
 

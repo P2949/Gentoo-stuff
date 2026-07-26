@@ -75,16 +75,20 @@
       "test": "python-unit-tests:tests/optimization"
     },
     {
+      "subtest": "python.test_state.PublicationAndSchemaTests.test_draft_202012_schema_parity_positive_and_negative",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_create_binpkg_checkpoint.CheckpointHostCapabilityTest.test_host_file_and_directory_sync_are_functional",
+      "test": "python-unit-tests:tests/optimization/recovery"
+    },
+    {
       "subtest": "python.test_create_binpkg_checkpoint.CheckpointHostCapabilityTest.test_host_kill_child_pid_namespace_is_functional",
       "test": "python-unit-tests:tests/optimization/recovery"
     },
     {
       "subtest": "python.test_create_binpkg_checkpoint.CheckpointHostCapabilityTest.test_host_pidfd_open_and_send_signal_are_functional",
       "test": "python-unit-tests:tests/optimization/recovery"
-    },
-    {
-      "subtest": "python.test_state.PublicationAndSchemaTests.test_draft_202012_schema_parity_positive_and_negative",
-      "test": "python-unit-tests:tests/optimization"
     }
   ],
   "portable_allowed_top_level_skips": [
@@ -150,6 +154,7 @@
       "pgo-dispatcher",
       "phase2-evidence-contract",
       "phase2-run-provenance-start",
+      "phase2-test-contract-static",
       "portage-config-cleanup",
       "portage-pgo-use-integration",
       "portage-phase-identity",
@@ -168,7 +173,7 @@
     ],
     "prefix_groups": [
       {
-        "expected_count": 51,
+        "expected_count": 58,
         "expected_names": [
           "bash-syntax:bench/compare-two-commands.sh",
           "bash-syntax:bench/perf-stat.sh",
@@ -181,8 +186,14 @@
           "bash-syntax:optimization/fixtures/pgo/gcc/run.sh",
           "bash-syntax:optimization/fixtures/pgo/go/run.sh",
           "bash-syntax:optimization/fixtures/pgo/rust/run.sh",
+          "bash-syntax:optimization/fixtures/portage/capture-proxy.sh.in",
+          "bash-syntax:optimization/fixtures/portage/phase2-phase-identity-1.ebuild",
+          "bash-syntax:optimization/fixtures/portage/phase2-phase-identity-install-qa",
           "bash-syntax:optimization/fixtures/recovery/test-record-boot-evidence.sh",
           "bash-syntax:optimization/fixtures/recovery/test-rollback.sh",
+          "bash-syntax:portage/bashrc",
+          "bash-syntax:portage/install-qa-check.d/zz-gentoo-optimization-bolt",
+          "bash-syntax:portage/repo.postsync.d/fix-sft-broken",
           "bash-syntax:scripts/allocators/disable-user-allocator.sh",
           "bash-syntax:scripts/allocators/enable-user-allocator.sh",
           "bash-syntax:scripts/allocators/run-with-jemalloc.sh",
@@ -197,6 +208,7 @@
           "bash-syntax:scripts/optimization/bolt/deploy-output.sh",
           "bash-syntax:scripts/optimization/bolt/register-output.sh",
           "bash-syntax:scripts/optimization/install-framework.sh",
+          "bash-syntax:scripts/optimization/recovery/create-binpkg-checkpoint.sh",
           "bash-syntax:scripts/optimization/recovery/record-boot-evidence.sh",
           "bash-syntax:scripts/optimization/recovery/rollback.sh",
           "bash-syntax:scripts/pgo/collect-sample-profile.sh",
@@ -228,8 +240,8 @@
   },
   "unittest_suites": [
     {
-      "expected_count": 30,
-      "subtest_names_sha256": "31e42cc8c8573d3dac2981b5d24f944b5cd3badc46e13972f6f475668e0c8b9c",
+      "expected_count": 31,
+      "subtest_names_sha256": "e721ab1dfc1d5c6e68275320260b8bc7d91868d6b7c3b7b517459aeb4976709f",
       "test": "phase2-evidence-contract"
     },
     {
@@ -238,13 +250,13 @@
       "test": "production-profile-lock-crash-stress"
     },
     {
-      "expected_count": 204,
-      "subtest_names_sha256": "2fe8712d4e2a49a42be111721926fab477148914f284a268329b7ab398a3d678",
+      "expected_count": 198,
+      "subtest_names_sha256": "fccf6c55f17dbc065cbea1d39ff8e206fbb25e05ea5cb9352af31059fffec55d",
       "test": "python-unit-tests:tests/optimization"
     },
     {
-      "expected_count": 10,
-      "subtest_names_sha256": "41e10700bc3a88e4f6ac78857699a645f7581db9b9e019a05be89492855dff10",
+      "expected_count": 56,
+      "subtest_names_sha256": "41a53c7e9d481ddb0a9020ee74b670d1c64c245e1abbf0db524cb6378d16294b",
       "test": "python-unit-tests:tests/optimization/recovery"
     }
   ]

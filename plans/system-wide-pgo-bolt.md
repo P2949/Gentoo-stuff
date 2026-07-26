@@ -2,15 +2,15 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 and Phase 1 are complete. Phase 2 is active. The repository now contains the strict dispatcher, stage-specific environments, candidate-complete publisher, production sample-PGO coordinator, BOLT capture/deployment hooks, and detached evidence contract. Branch head `821dd3daa65253555f1dc5e8e0bf2f3ff249e10d` is the latest committed Candidate-A revision; the working tree contains the still-uncommitted Candidate-A closure corrections described in §11.7. Neither revision has been installed or accepted by the complete host and production gates. No generated package assignment is active.
+- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. The current branch head is the latest committed Candidate-A implementation revision; it is non-authorizing until one exact clean commit passes the complete portable, live-host, and supervised production precheck. The working tree may contain the next Candidate-A corrections while that boundary is being stabilized. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
-- **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-07-18 `/var/db/pkg` refresh; this is live progress evidence, not the frozen Phase 3 inventory.
+- **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-07-26 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This is live progress evidence, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-07-18; Candidate-A closure is in progress. The complete plan must be re-read again after the checkpoint fixture, prerequisite package installation, exact recovery checkpoint, and final repository gates complete. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-07-26; Candidate-A repository-boundary stabilization is in progress. The complete plan must be re-read after the bounded checkpoint fixture and final repository gates, and again after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -125,13 +125,28 @@ Every generated profile and BOLT output must be associated with:
 
 ---
 
-# 3. Existing repository defects that must be corrected first
+# 3. Starting repository defects and their resolution status
 
-The current repository contains a useful starting framework, but the existing PGO/BOLT mechanism must not be used for the system-wide rebuild until these defects are fixed.
+These were defects in the project's starting framework. The ledger below
+distinguishes repository implementation from live Candidate-A validation and
+Candidate-B authorization. Repository-resolved does not authorize Phase 2,
+activate an optimization generation, or permit a system-wide rebuild.
+
+| Starting defect | Repository implementation | Live/authorization status |
+| --- | --- | --- |
+| Mixed Clang IR and sample-profile handling | Resolved by the distinct `merged.profdata`/`sample.prof` stores, validators, states, and consumers in §11.4. | Open: all four §11.4 live sample-PGO claims remain unchecked. |
+| Compiler-family leakage | Resolved by the fail-closed backend/ABI dispatcher in §11.1–§11.2. | Open: the exact installed Candidate A and frozen Candidate B must pass the complete live gate. |
+| Weak `${CATEGORY}/${PN}` profile key | Resolved by the versioned package/compiler/ABI/build fingerprint contract in §7.1 and §11.2. | Open: live Candidate A/B proof remains required. Independently observing and hashing the exact ebuild used by each installed build remains Phase 3 provenance work. |
+| Clang receiving GCC correction flags | Resolved; profile correction is confined to the GCC lane. | Open: current installed-candidate live revalidation is required. |
+| BOLT operating on installed stripped files | Resolved in the cached exact-input, registration, and pre-strip `${ED}` hooks in §11.5–§11.6. | Open: the current exact candidate must pass live capture/deployment and four-class BOLT gates. |
+| Globally enabled BOLT/sample readiness | Resolved by the stage-only policy in checked §11.3. | Open: the installed candidate must prove ordinary/off builds are clean and stage assignments are exact. |
 
 ## 3.1 Remove mixed instrumentation/sample-profile handling
 
-The current sample-profile converter writes an `llvm-profgen` sample profile to a file named `merged.profdata`, while the global hook consumes that file with `-fprofile-use`. Instrumentation and sample profiles are different formats and must use different compiler options.
+At project start, the sample-profile converter wrote an `llvm-profgen` sample
+profile to a file named `merged.profdata`, while the global hook consumed that
+file with `-fprofile-use`. Instrumentation and sample profiles are different
+formats and must use different compiler options.
 
 Required replacement:
 
@@ -153,7 +168,9 @@ The new implementation must use distinct directories, file names, states, valida
 
 ## 3.2 Remove compiler-family leakage
 
-Delete the global rule that enables LLVM `-fprofile-use` for every package based only on a file existing. The replacement must choose a backend after detecting the package’s actual compiler lane:
+At project start, a global rule enabled LLVM `-fprofile-use` for every package
+based only on a file existing. Its replacement must choose a backend after
+detecting the package's actual compiler lane:
 
 ```text
 clang-ir
@@ -170,7 +187,9 @@ A Clang indexed profile must never be passed to GCC. A Rust profile must be tied
 
 ## 3.3 Replace the current weak profile key
 
-The current path based only on `${CATEGORY}/${PN}` must be removed. It allows different versions, slots, ABIs, compilers, and configurations to collide.
+At project start, the path based only on `${CATEGORY}/${PN}` allowed different
+versions, slots, ABIs, compilers, and configurations to collide. It must remain
+absent.
 
 Use a generation-aware fingerprint described in section 7.
 
@@ -180,7 +199,9 @@ Do not use `-fprofile-correction` in the Clang path. Keep GCC correction behavio
 
 ## 3.5 Move BOLT from installed stripped files to cached exact inputs and pre-strip deployment
 
-The current scripts process `/usr/bin/...` after Portage installation and write test copies under `/opt/bolt-test`. That is acceptable only as an early experiment. The final pipeline must:
+At project start, the scripts processed `/usr/bin/...` after Portage
+installation and wrote test copies under `/opt/bolt-test`. That was acceptable
+only as an early experiment. The final pipeline must:
 
 1. capture the exact unstripped PGO-built ELF from `${ED}` during `post_src_install`;
 2. train the corresponding installed PGO binary;
@@ -191,7 +212,10 @@ The current scripts process `/usr/bin/...` after Portage installation and write 
 
 ## 3.6 Make BOLT readiness stage-aware
 
-The current global flags add line tables, sample mapping metadata, relocation sections, optimization records, and section splitting to every package at all times. Refactor them into independent stage profiles:
+At project start, global flags added line tables, sample mapping metadata,
+relocation sections, optimization records, and section splitting to every
+package at all times. They must remain separated into independent stage
+profiles:
 
 ```text
 profile-map-ready.conf
@@ -802,11 +826,11 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
 
 # 11. Phase 2 — Refactor the repository framework
 
-### 2026-07-18 Candidate-A pre-activation checkpoint
+### 2026-07-26 Candidate-A pre-activation checkpoint
 
 - Candidate A is repository/pre-activation implementation only. The current
-  branch head is the latest committed implementation revision, and the closure
-  corrections below remain uncommitted. No Candidate-A revision has been
+  branch head is the latest committed implementation revision, and any current
+  working-tree corrections belong to the next candidate boundary. No Candidate-A revision has been
   installed as the live candidate or accepted by the complete host and
   production sample-PGO gates.
 - No current detached Phase 2 evidence index exists. The four sample-profile
@@ -829,7 +853,7 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
 ### Immediate legacy-consumer neutralization evidence
 
 - The live `/etc/portage` now resolves through `framework-current/portage`; its selected installed candidate predates Candidate A. In the repository, `50-global-pgo` is assignment-free, the obsolete `pgo-instrument.conf`, `pgo-use-if-available.conf`, and `no-pgo-use.conf` files are deleted, backend-specific files live only below `portage/env/optimization/`, and no generated package assignments are active.
-- The exact dispatcher now leaves all flags byte-identical in unset/`off` mode and still fails closed if either stale `PGO_USE_IF_AVAILABLE=1` or `PGO_INSTRUMENT=1` is supplied. Bash syntax and ShellCheck 0.11.0 pass.
+- The exact dispatcher now leaves all flags byte-identical in unset/`off` mode and still fails closed if either stale `PGO_USE_IF_AVAILABLE=1` or `PGO_INSTRUMENT=1` is supplied. The focused dispatcher fixture covers those invariants; the final Candidate-A repository gate must bind the complete Bash-syntax and pinned-ShellCheck results to the exact clean source revision.
 
 > Historical Phase 2 evidence (superseded; not authorization): the dormant implementation deletion was recorded in `/var/lib/gentoo-optimization/reports/phase-1-dead-legacy-pgo-removal.log` (SHA-256 `6acdd8d373f3bd9bd54e6afda5e4a75c5bd5ab8a41995fa8260f98338378f101`) and `/var/lib/gentoo-optimization/state/project/legacy-pgo-neutralization.json` (SHA-256 `aeba82f79f4e6ec7028d9db60a30a4999203d4cfb434f552a1adac928f2e897d`). Those records prove the older revision only. No package build may proceed through the legacy lane.
 
@@ -883,7 +907,7 @@ The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the 
 
 ## 11.4 Fix sample-profile scripts
 
-### 2026-07-18 Candidate-A architecture checkpoint
+### 2026-07-26 Candidate-A architecture checkpoint
 
 - Production runtime helpers now live under `scripts/optimization/pgo/`, not
   `tests/`. The root-owned coordinator constructs an exact clean child
@@ -923,10 +947,11 @@ The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the 
   without becoming Portage-writable: runtime directories are `0750`, stable
   locks and profile/metadata/manifest files are `0640`, conversion/perf inputs
   are `0440`, and the mapped input is `0550`.
-- Repository syntax, pinned ShellCheck, strict runtime typing, unit tests,
-  transaction recovery, and portable policy tests pass. These are not live
-  authorization. The four boxes below remain open until the exact clean
-  candidate is installed and the complete supervised live Portage chain passes.
+- Repository fixtures exist for syntax, pinned ShellCheck, strict runtime
+  typing, unit behavior, transaction recovery, and portable policy. Focused
+  current-tree tests are non-authorizing; the exact complete portable boundary,
+  green CI run, installed candidate, and supervised live Portage chain still
+  must pass. The four boxes below remain open until that live proof exists.
 
 - [ ] Write sample profiles to `sample.prof` or another unmistakable sample-profile name.
 - [ ] Validate them with an LLVM sample-profile-aware command.
@@ -966,9 +991,9 @@ During final `post_src_install` with BOLT deployment enabled:
 
 The hook must not modify installed `/usr` files directly.
 
-Output registration now requires both the prepared BOLT output and its exact captured input, and rejects a full-file, build-ID, or `.text` mismatch before publishing anything. Deployment requires exact output coverage for all eligible artifacts, validates every input and output before mutation, preserves diagnostic preimages, stages same-inode groups, atomically replaces only staging-tree entries, and keeps final BOLT-note/hash/metadata/topology verification inside the rollback boundary. A forced post-rename verifier failure restores all three fixture inputs byte-for-byte and restores the two-name hardlink group before returning failure. The root fixture proves setuid, a real file capability, user xattrs, ownership intent, hardlinks, symlinks, and runtime behavior survive; the non-root fixture emits an explicit capability skip and passes every other invariant. The tool refuses `/`, `/usr` and descendants, overlapping roots, symlink components, prepared-output symlinks, and installed `/usr` modification.
+Output registration now requires both the prepared BOLT output and its exact captured input, and rejects a full-file, build-ID, or `.text` mismatch before publishing anything. Deployment requires exact output coverage for all eligible artifacts, validates every input and output before mutation, preserves diagnostic preimages, stages same-inode groups, atomically replaces only staging-tree entries, and keeps final BOLT-note/hash/metadata/topology verification inside the rollback boundary. A forced post-rename verifier failure restores all three fixture inputs byte-for-byte and restores the two-name hardlink group before returning failure. The root-only fixture is designed to prove setuid, a real file capability, user xattrs, ownership intent, hardlinks, symlinks, and runtime behavior survive; its required privileged branch must rerun against the exact Candidate A. The non-root fixture emits an explicit capability skip and exercises the remaining invariants. The tool refuses `/`, `/usr` and descendants, overlapping roots, symlink components, prepared-output symlinks, and installed `/usr` modification.
 
-The current repository architecture retains the 2026-07-15 privilege-metadata remediation but awaits Candidate-A live revalidation. Both deployment and rollback stage in the only safe order: private copy, ownership, every hardlink, ordinary/capability xattrs, and final setuid/setgid mode last, followed by completed-inode-group verification and an inode fsync before rename. Independent root tests cover `04755`, `02755`, `06755`, user xattrs, `security.capability`, hardlink groups, and rollback. Static PIE is a distinct fourth real BOLT class: `ET_DYN` without `PT_INTERP` but with `DF_1_PIE` is an executable, while an `ET_DYN` object without the PIE flag remains a DSO. The four-class perf/BOLT and root staging fixtures must rerun against Candidate A. Production framework/project/generation locks are root:`portage` `0640` below a root:`portage` `0750` runtime directory; the disposable Portage gate must prove compile phases run as `portage` while `pre_src_install`, `src_install`, `post_src_install`, and the final install-QA hook run as root, so BOLT does not require disabling `userpriv`.
+The current repository architecture retains the 2026-07-15 privilege-metadata remediation but awaits Candidate-A live revalidation. Both deployment and rollback stage in the only safe order: private copy, ownership, every hardlink, ordinary/capability xattrs, and final setuid/setgid mode last, followed by completed-inode-group verification and an inode fsync before rename. The root-only matrix includes `04755`, `02755`, `06755`, user xattrs, `security.capability`, hardlink groups, and rollback, but it must rerun without a privileged-metadata skip against the exact Candidate A. Static PIE is a distinct fourth real BOLT class: `ET_DYN` without `PT_INTERP` but with `DF_1_PIE` is an executable, while an `ET_DYN` object without the PIE flag remains a DSO. The four-class perf/BOLT and root staging fixtures must rerun against Candidate A. Production framework/project/generation locks are root:`portage` `0640` below a root:`portage` `0750` runtime directory; the disposable Portage gate must prove compile phases run as `portage` while `pre_src_install`, `src_install`, `post_src_install`, and the final install-QA hook run as root, so BOLT does not require disabling `userpriv`.
 
 > Historical Phase 2 evidence (superseded; not authorization): §11.5–11.6 evidence was `/var/lib/gentoo-optimization/reports/phase-2-bolt-hooks-20260712` (manifest SHA-256 `1d01fe4e7770ec2ad787c00aa05248281fced4d5946b7b7adb48cf9f59ed7cad`) and component state SHA-256 `57469e99bef2df7a96c7170fe55171b7e8257c27ab5468555b452dbaeb92ecf2`. Its tested artifact-tool SHA-256 was `f43d1a5fe95dae797071a19a25243e5e19eb3e455d7cf9efe67117bd54a2ad9b` and fixture SHA-256 was `af6b37802b79e0814d2a6d6625b4ba15d637953e73ac735ce32980dfeec36225`; none describes Candidate A. No installed artifact has been captured or deployed by this repository gate, and no installed-system BOLT coverage is claimed.
 
@@ -978,7 +1003,7 @@ The current repository architecture retains the 2026-07-15 privilege-metadata re
 - [ ] Install and validate the candidate-complete framework through its exact clean commit, immutable inventory, crash-consistent activation, stable bootstrap ABI, and final `--check` gate.
 - [ ] Capture and verify the root-owned detached Phase 2 evidence index at its policy-pinned run-scoped path with exact current-boot, source, tool, test, component-state, and production-receipt identities.
 
-The framework publisher is candidate-complete and crash-consistent: Portage, overlay, helpers, schemas, QA logic, generated policy, and the manifest live inside one immutable candidate. First migration installs a fail-closed Portage guard before its fsynced activation journal; normal upgrades change behavior only through the atomic `framework-current` rename. Each installed bashrc embeds and exports its exact candidate target, and stable shell/Python/QA bootstraps honor that pin, so a build begun on generation A cannot call generation B after an upgrade; re-sourcing another generation fails closed. Candidate Python helpers run isolated with bytecode writes disabled, and a terminal inventory check must prove helper execution did not change the immutable candidate. Fixed bootstrap bytes are an invariant upgrade ABI and a changed renderer is rejected before external publication. Hermetic tests cover SIGKILL on both sides of activation, same-generation re-source, an old-bound process across activation, cross-generation rejection, and incompatible bootstrap migration. This remains a repository/framework claim until the clean live install and combined host gate pass.
+The framework publisher is candidate-complete and crash-consistent: Portage, overlay, helpers, schemas, QA logic, generated policy, and the manifest live inside one immutable candidate. First migration installs a fail-closed Portage guard before its fsynced activation journal; normal upgrades change behavior only through the atomic `framework-current` rename. Each installed bashrc embeds and exports its exact candidate target, and stable shell/Python/QA bootstraps honor that pin, so a build begun on generation A cannot call generation B after an upgrade; re-sourcing another generation fails closed. Candidate Python helpers run isolated with bytecode writes disabled, and a terminal inventory check must prove helper execution did not change the immutable candidate. Fixed bootstrap bytes are an invariant upgrade ABI and a changed renderer is rejected before external publication. The hermetic fixture contains SIGKILL cases on both sides of activation, same-generation re-source, an old-bound process across activation, cross-generation rejection, and incompatible bootstrap migration; the exact final-tree fixture run and live filesystem exchange proof remain pending. This remains a repository/framework claim until the clean live install and combined host gate pass.
 
 Python bootstrap schema v2 uses `#!/usr/bin/python3 -IB` and an exact
 `/usr/bin/python3 -I -B` handoff, so bytecode is disabled before standard-library
@@ -995,8 +1020,12 @@ same exchange path still requires proof on the live XFS destinations.
 
 The detached evidence contract avoids self-referential plan hashes and stale prose authorization. Candidate A is a non-authorizing implementation/live precheck. After A passes, generated claim markers and truthful boxes are committed as Candidate B; the complete gate then reruns against B with no later plan edit. The sole accepted index path is `/var/lib/gentoo-optimization/state/project/phase2-evidence/<run-id>/index.json`. It binds one clean commit/tree, the current boot, active immutable candidate, exact production transaction receipt and validation input, required tool and test identities, eleven immutable run-scoped component states, exact directory membership, and aggregate `pending_total=0`, `unknown_total=0`, `failed_total=0`. Reboot, source drift, candidate drift, partial transaction debris, extra state entries, or any plan correction invalidates authorization and requires a new run ID and complete rerun.
 
-The test driver has distinct `smoke`, `portable-complete`, `stress`,
-`capabilities`, and `authoritative` modes. Every top-level case publishes a
+The test driver has distinct `smoke`, `checkpoint-smoke`, `portable-complete`,
+`stress`, `capabilities`, and `authoritative` modes. `checkpoint-smoke` runs
+bounded timeout/pipe-EOF and fast fork/`setsid` reparent cleanup regressions
+plus activation, post-exchange reconciliation, lost-update, and
+offline-finalization paths; the complete recovery matrix remains part of
+`portable-complete`. Every top-level case publishes a
 structured completion row; every conditional shell branch and every Python
 `unittest` method publishes its own required/diagnostic row. Atomic shell
 fixtures with no conditional branch are represented by their fail-closed
@@ -1007,14 +1036,94 @@ and zero-discovery rule are reviewed inputs. Authoritative mode requires zero
 top-level skips and zero required internal skips; portable skips require an
 exact allowlist and cannot grow silently. The detached verifier reloads the
 tracked reviewed tool manifest and rejects deleted, duplicated, reordered, or
-substituted index tool specifications before re-observation. Its current
-63-entry host/tool boundary includes containment, atomic-publication, ELF,
+substituted index tool specifications before re-observation. The reviewed
+host/tool boundary includes containment, atomic-publication, ELF,
 metadata, hashing, text-processing, Git/tar, compiler, Portage, and profiling
 primitives plus the reviewed core `jsonschema` schema-validation distribution
 closure (`attrs`, `referencing`, `jsonschema-specifications`, `rpds-py`, and the
 conditional `typing-extensions`). The boundary separately binds the stable
 bootstrap's requested `/bin/bash` path (in addition to `/usr/bin/bash`) and the
 installer's exact `/usr/bin/tr` text-processing primitive.
+
+The non-authorizing 2026-07-26 dirty-tree stabilization checkpoint has exact
+deterministic discovery of 33 top-level cases, 58 shell sources, 31 evidence
+tests, one dedicated stress test, 198 main tests, and 56 recovery tests. The
+reviewed portable skip policy is sorted and its exact contract check passes.
+The new child-subreaper harness passed a 20-cycle fast fork/`setsid` escape
+stress, preserved an unrelated baseline child, and restored the caller's prior
+subreaper state. The retained stress log is
+`/tmp/checkpoint-fast-escape-stress-20260726.log`, contains 20 terminal `PASS`
+rows, and has SHA-256
+`9a6a1d441ffedbae736b6356e4e615599bd179f021e97afbe0425498fe2454cb`.
+The six-selected-method `checkpoint-smoke` run at
+`/tmp/gentoo-opt-checkpoint-smoke-containment-final-20260726` passed with 62 top-level
+passes, zero failures, eight exact mode/provenance skips, 69 required subtest
+passes, zero required failures, and zero mandatory internal skips. Its
+`summary.txt`, `results.tsv`, and `subtests.tsv` SHA-256 values are respectively
+`0904e999aaed0a160563acb0d68f4b1016b836355a61f90e5f309811f5e5eeea`,
+`56027b2eb3a459a1646d58dfe93ed166974df4adc440918d97bd88610f581e84`, and
+`14c6b25606d4b90d7db1da9e24d7e8c9f2d134c97ce8ae9dda04ce6b27c57958`.
+The exact topology hashes are
+`fccf6c55f17dbc065cbea1d39ff8e206fbb25e05ea5cb9352af31059fffec55d`
+for the 198-test main suite and
+`41a53c7e9d481ddb0a9020ee74b670d1c64c245e1abbf0db524cb6378d16294b`
+for the 56-test recovery suite. The complete dirty-tree recovery matrix passed
+all 56 tests with the three exact root-host capability
+methods surfaced as portable required skips; its structured ledger at
+`/tmp/recovery-complete-current-subtests.tsv` has SHA-256
+`422fc0277a5c4cbd7c85ecf80f21cbb1068df9971096e9ca0464913d9e3bcac5`.
+The exact root-host rerun and complete mirror precheck are recorded below;
+clean-commit provenance and the current green CI run remain pending and are not
+inferred from this dirty-tree result.
+
+Containment preflight evidence now distinguishes a disposable exact-child
+pidfd `SIGTERM` proof from a real `unshare --pid --fork --kill-child=KILL`
+proof. The latter runs from a coherent host `/proc` view, kills the exact
+supervisor through its pidfd with `SIGKILL`, requires return code `-SIGKILL`,
+and proves teardown of the namespace child and an escaped `setsid` descendant
+including both private process groups. The checkpoint's tracked-child and VDB
+lock launchers use parent-death `SIGKILL`, so a coordinator `SIGKILL` cannot be
+defeated by an `unshare` implementation that survives or forwards `SIGTERM`.
+The three root-host checkpoint primitive tests were rerun against checkpoint
+script SHA-256
+`077eba6ba27f642f3840475a5b503176c3cc46d2095d7fb27f681ef885cc2df3`
+and fixture SHA-256
+`f5a9c1be08ac1c53e45f978b58644d18f706416708ed7183eccb95fa481f9290`;
+all three passed with zero skips. Their structured ledger at
+`/tmp/checkpoint-host-capability-subtests-final.tsv` has SHA-256
+`657f96ff703ed04ff08435c0cd9b8a7ad3c850b529db9041907ee3415413f49c`.
+
+An earlier clean-mirror precheck reached every portable case; its terminal
+results were not retained and are treated only as an unbound diagnostic
+observation. The observed failure was the dispatcher fixture treating the managed namespace's
+overflow UID for exact `/usr/bin/jq` as a production ownership failure. The
+bounded fixture path now continues to execute exact `/usr/bin/jq` while
+waiving only that unobservable ownership assertion; production retains the
+complete root/ancestor check. The dispatcher subsequently passed all 45 cases
+both in the live checkout and a fresh `/tmp` mirror. This earlier failed run is
+diagnostic only. The subsequent exact source mirror at
+`/tmp/gentoo-candidate-a-mirror-20260726-v2` was created by applying the
+working-tree patch whose source and applied-copy SHA-256 values both equal
+`cdb08db28802cfff7900eb188d7c8ff9bfb69e03f296e163ae29c6a295dabbbb`.
+Its complete `portable-complete` run at
+`/tmp/gentoo-opt-portable-complete-candidate-a-mirror-v2` passed with 78
+top-level passes, zero failures, and 13 exact portable skips; it recorded 355
+required subtest passes, zero required failures, 26 required portable skips,
+one diagnostic skip, and zero unexpected results. The SHA-256 values for
+`summary.txt`, `results.tsv`, `subtests.tsv`, and `test-contract.log` are
+respectively
+`de85099bfc95cde0fa24f2e7479e32a6d7b42a786e55ad16a61d4c068b9f621f`,
+`7029f960da5f6423185118b952590203e44d41541a0afec798810d211e8493a7`,
+`f724a19cd09adf5298da66a3efa3609a9d08e7f3c4b116ecf9f64ef55e98c1c1`,
+and `b4777b5842b67dce71f32c13acee03d741f5676d2ce468ad58b1be814b7b346e`.
+This remains a dirty-source, non-authorizing mirror precheck: exact
+clean-commit provenance and a green current-commit CI run remain required.
+The mirror, smoke, checkpoint-smoke, recovery, stress, host-capability, patch,
+and evidence ledgers cited in this checkpoint were copied byte-for-byte into
+the root-owned durable tree
+`/var/lib/gentoo-optimization/reports/candidate-a-repository-precheck-20260726`;
+the individual hashes above continue to identify the preserved payloads.
+
 The system Python does not yet contain that closure, so an exact 1,220-CPV
 recovery checkpoint must precede its source installation; the post-install CPV
 set then requires another exact checkpoint and an offline restoration proof.
@@ -1023,8 +1132,10 @@ Repository authorization commands no longer use visual hash comparison.
 Immutable bundle and installer copies are compared programmatically, root Git
 materialization runs with no system configuration and a private empty HOME,
 and root-owned state/cache/evidence existence checks run through `doas`. A
-portable GitHub Actions gate runs the exact portable-complete contract; the
-300-cycle crash workload is confined to `stress` and `authoritative` modes.
+portable GitHub Actions workflow is configured to run the exact
+portable-complete contract; a green run for the final Candidate-A commit is
+required before live installation. The 300-cycle crash workload is confined to
+`stress` and `authoritative` modes.
 All of this remains non-authorizing until one clean Candidate A passes live and
 one frozen Candidate B reruns the complete gate into its detached index.
 

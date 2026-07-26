@@ -895,9 +895,33 @@ class ProfileValidatorTests(unittest.TestCase):
         binary = Path(metadata["source"]["binary_path"])
         original = binary.read_bytes()
         original_sha256 = sha256(binary)
-        binary.unlink()
-        binary.write_bytes(b"temporary different content\n")
-        binary.write_bytes(original)
+        original_stat = binary.stat()
+        recorded_observation = metadata["source"]["binary_observation"]
+        replacement = binary.with_name(f".{binary.name}.restored-content")
+        replacement.write_bytes(b"temporary different content\n")
+        replacement.write_bytes(original)
+        replacement.chmod(original_stat.st_mode & 0o7777)
+        prepared_stat = replacement.stat()
+        self.assertNotEqual(
+            (prepared_stat.st_dev, prepared_stat.st_ino),
+            (
+                recorded_observation["device"],
+                recorded_observation["inode"],
+            ),
+        )
+        os.replace(replacement, binary)
+        installed_stat = binary.stat()
+        self.assertEqual(
+            (installed_stat.st_dev, installed_stat.st_ino),
+            (prepared_stat.st_dev, prepared_stat.st_ino),
+        )
+        self.assertNotEqual(
+            (installed_stat.st_dev, installed_stat.st_ino),
+            (
+                recorded_observation["device"],
+                recorded_observation["inode"],
+            ),
+        )
         self.assertEqual(sha256(binary), original_sha256)
 
         manifest = self.root / "sample-restored-content.manifest"

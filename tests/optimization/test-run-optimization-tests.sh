@@ -118,6 +118,8 @@ install_hermetic_contract_support() {
 
 bash -- "${DRIVER}" --help >"${FIXTURE}/help.txt"
 grep -Fq -- '--mode smoke' "${FIXTURE}/help.txt" || fail 'help omits smoke mode'
+grep -Fq -- '--mode checkpoint-smoke' "${FIXTURE}/help.txt" || \
+    fail 'help omits checkpoint-smoke mode'
 grep -Fq -- '--mode portable-complete' "${FIXTURE}/help.txt" || \
     fail 'help omits portable-complete mode'
 grep -Fq -- '--mode stress' "${FIXTURE}/help.txt" || fail 'help omits stress mode'
@@ -131,6 +133,8 @@ grep -Fq 'TEST_CASE_TIMEOUT_SECONDS=1800' "${FIXTURE}/help.txt" || \
     fail 'help omits the global per-case timeout'
 grep -Fq 'TEST_CASE_KILL_AFTER_SECONDS=10' "${FIXTURE}/help.txt" || \
     fail 'help omits the per-case forced-kill grace period'
+grep -Fq 'CHECKPOINT_SMOKE_TIMEOUT_SECONDS=600' "${FIXTURE}/help.txt" || \
+    fail 'help omits the checkpoint-smoke deadline'
 grep -Fq 'TEST_CASE_TIMEOUT_SECONDS_CLANG_IR' "${FIXTURE}/help.txt" || \
     fail 'help omits normalized per-capability deadline overrides'
 grep -Fq 'GENTOO_OPT_AUTHORITATIVE=0|1' "${FIXTURE}/help.txt" || \
@@ -173,6 +177,8 @@ grep -Fq 'bolt-transaction-fixture' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the hermetic BOLT transaction fixture'
 grep -Fq 'bolt-pre-strip-hooks' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the pre-strip BOLT hook fixture'
+grep -Fq 'checkpoint-smoke' "${FIXTURE}/list.txt" || \
+    fail 'suite list omits the focused checkpoint state-machine gate'
 for capability in clang-ir clang-sample gcc rust go bolt; do
     grep -Eq "^[[:space:]]+${capability}([[:space:]]|$)" \
         "${FIXTURE}/list.txt" || fail "suite list omits ${capability}"
@@ -216,6 +222,15 @@ if TEST_CASE_TIMEOUT_SECONDS=0 bash -- "${DRIVER}" --mode quick \
 fi
 grep -Fq 'TEST_CASE_TIMEOUT_SECONDS must be a positive integer number of seconds' \
     "${FIXTURE}/bad-timeout.log" || fail 'invalid global timeout lacks a visible diagnostic'
+
+if CHECKPOINT_SMOKE_TIMEOUT_SECONDS=0 bash -- "${DRIVER}" \
+    --mode checkpoint-smoke >"${FIXTURE}/bad-checkpoint-timeout.log" 2>&1; then
+    fail 'zero checkpoint-smoke timeout unexpectedly succeeded'
+fi
+grep -Fq \
+    'CHECKPOINT_SMOKE_TIMEOUT_SECONDS must be a positive integer number of seconds' \
+    "${FIXTURE}/bad-checkpoint-timeout.log" || \
+    fail 'invalid checkpoint-smoke timeout lacks a visible diagnostic'
 
 if TEST_CASE_KILL_AFTER_SECONDS_BOLT=invalid bash -- "${DRIVER}" --mode quick \
     >"${FIXTURE}/bad-capability-kill-after.log" 2>&1; then
