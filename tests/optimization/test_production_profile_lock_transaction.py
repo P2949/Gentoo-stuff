@@ -11,6 +11,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import shutil
 import signal
 import stat
@@ -361,6 +362,40 @@ raise SystemExit(child.returncode)
         executable.chmod(0o700)
         return executable, child_pid_file
 
+    def fake_unshare_child_observer(
+        self, child_pid_file: pathlib.Path
+    ) -> Callable[[int], tuple[int, ...]]:
+        """Return the fixture-owned child observer for a fake supervisor.
+
+        Production must bind the real ``unshare --fork`` child through procfs.
+        These portable tests deliberately replace ``unshare`` with an
+        independent program, so they consume that program's private,
+        fsync-published PID receipt instead of depending on a host-specific
+        ``/proc/.../children`` view.  The supervisor receipt binds the observer
+        to the exact process passed by production code.
+        """
+
+        supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
+
+        def observe(supervisor_pid: int) -> tuple[int, ...]:
+            if not supervisor_pid_file.is_file():
+                return ()
+            supervisor_payload = supervisor_pid_file.read_text(encoding="ascii")
+            if re.fullmatch(r"[1-9][0-9]*\n", supervisor_payload) is None:
+                raise AssertionError("fake-unshare supervisor receipt is malformed")
+            if int(supervisor_payload) != supervisor_pid:
+                raise AssertionError(
+                    "fake-unshare child observer was asked about a foreign supervisor"
+                )
+            if not child_pid_file.is_file():
+                return ()
+            child_payload = child_pid_file.read_text(encoding="ascii")
+            if re.fullmatch(r"[1-9][0-9]*\n", child_payload) is None:
+                return ()
+            return (int(child_payload),)
+
+        return observe
+
     def run_arguments(
         self,
         command: list[str] | None = None,
@@ -706,6 +741,11 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.os, "geteuid", side_effect=root_guard_only
             ),
             mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(
+                coordinator,
+                "process_children",
+                side_effect=self.fixture.fake_unshare_child_observer(child_pid_file),
+            ),
             mock.patch.object(coordinator.sys, "executable", self.fixture.python),
             emulated_pidfds(),
         ):
@@ -746,6 +786,11 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.os, "geteuid", side_effect=root_guard_only
             ),
             mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(
+                coordinator,
+                "process_children",
+                side_effect=self.fixture.fake_unshare_child_observer(child_pid_file),
+            ),
             mock.patch.object(coordinator.sys, "executable", self.fixture.python),
             emulated_pidfds(signal_hook=prove_term_survival_before_exact_kill),
         ):
@@ -777,6 +822,11 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.os, "geteuid", side_effect=root_guard_only
             ),
             mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(
+                coordinator,
+                "process_children",
+                side_effect=self.fixture.fake_unshare_child_observer(child_pid_file),
+            ),
             mock.patch.object(coordinator.sys, "executable", self.fixture.python),
             emulated_pidfds(fail_open_call=2),
         ):
@@ -804,6 +854,11 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.os, "geteuid", side_effect=root_guard_only
             ),
             mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(
+                coordinator,
+                "process_children",
+                side_effect=self.fixture.fake_unshare_child_observer(child_pid_file),
+            ),
             mock.patch.object(coordinator.sys, "executable", self.fixture.python),
             emulated_pidfds(fail_open_call=1),
         ):
@@ -831,6 +886,11 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.os, "geteuid", side_effect=root_guard_only
             ),
             mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(
+                coordinator,
+                "process_children",
+                side_effect=self.fixture.fake_unshare_child_observer(child_pid_file),
+            ),
             mock.patch.object(coordinator.sys, "executable", self.fixture.python),
             emulated_pidfds(deny_signal_for_open_call=1),
         ):
@@ -878,6 +938,11 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.os, "geteuid", side_effect=root_guard_only
             ),
             mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(
+                coordinator,
+                "process_children",
+                side_effect=self.fixture.fake_unshare_child_observer(child_pid_file),
+            ),
             mock.patch.object(coordinator.sys, "executable", self.fixture.python),
             mock.patch.object(
                 coordinator, "process_group_exists", return_value=True
@@ -923,6 +988,11 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 coordinator.os, "geteuid", side_effect=root_guard_only
             ),
             mock.patch.object(coordinator, "UNSHARE", fake_unshare),
+            mock.patch.object(
+                coordinator,
+                "process_children",
+                side_effect=self.fixture.fake_unshare_child_observer(child_pid_file),
+            ),
             mock.patch.object(coordinator.sys, "executable", self.fixture.python),
             emulated_pidfds(),
         ):

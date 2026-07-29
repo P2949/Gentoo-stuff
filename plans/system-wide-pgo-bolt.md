@@ -10,7 +10,7 @@
 - **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-07-26 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This is live progress evidence, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-07-26; Candidate-A repository-boundary stabilization is in progress. The complete plan must be re-read after the bounded checkpoint fixture and final repository gates, and again after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-07-29; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is the rejected predecessor, not the final candidate: its exact GitHub Actions run `30226349306` failed the portable boundary. The current Candidate-A correction revision contains the narrow non-authorizing fixes, but no clean exact-SHA portable and CI pass exists yet. The complete plan must be re-read after the bounded checkpoint fixture and final repository gates, and again after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -844,6 +844,35 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
 - No optimization generation or frozen inventory exists, and no installed
   package or ELF coverage claim follows from this repository checkpoint.
 
+### 2026-07-29 Candidate-A repository correction checkpoint
+
+- GitHub Actions run `30226349306` tested exact commit
+  `1d77b16ada380ade6396c91e33907d7bc13942a9` and failed. The failure is retained
+  as superseded diagnostic evidence, not a Candidate-A pass: CI used the
+  distribution's ShellCheck 0.9.0 instead of the reviewed 0.11.0 identity, and
+  two portable recovery cases overclaimed userspace emulation of kernel
+  `unshare --pid --fork --kill-child=KILL` parent-death behavior.
+- The current Candidate-A correction scope is intentionally bounded. It fixes the portable
+  fake-`unshare` observation path without changing production procfs child
+  observation, gives that adapter exact readiness and terminal receipts plus
+  bounded same-session drain/rescan, early-watchdog, stalled-watchdog, inherited-
+  signal, and post-terminal signal-race coverage, makes restored-content
+  conversion-log fixtures use a guaranteed distinct inode and atomic
+  replacement, confines raw fork/subreaper ownership to a dedicated
+  single-threaded checkpoint test supervisor, separates the deterministic
+  portable cleanup adapter from mandatory real-host containment proof, routes
+  `git symbolic-ref` through the bounded hardened Git observer, and pins the CI
+  ShellCheck 0.11.0 archive and executable by SHA-256. A non-root portable run
+  now records the reviewed required skip when a complete live Portage policy is
+  root-private; authoritative root execution must still prove that policy and
+  cannot accept the skip.
+- These corrections are not authorization. The dirty-tree contract check may
+  bind the current test topology, but the final clean-commit contract, full
+  portable boundary, green CI run for that exact commit, live recovery
+  checkpoints, installed Candidate-A gate, supervised sample-PGO transaction,
+  frozen Candidate B, and detached evidence index all remain pending. No §11.4
+  or §11.7 checkbox is closed by this checkpoint.
+
 ## 11.1 Remove the unsafe global consumer
 
 - [x] Delete or disable `portage/package.env/50-global-pgo` in its current form.
@@ -924,6 +953,12 @@ The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the 
   reason-bearing skip only. Recovery reads PID, process group, state, and start
   identity from one `/proc/<pid>/stat` snapshot, and deterministic replacement
   fixtures pre-create a distinct inode before `os.replace()`.
+- Production and root-host containment continue to discover the real
+  `unshare --fork` child by repeated `/proc/<supervisor>/task/<supervisor>/children`
+  observations. Only the seven independent fake-`unshare` unit cases inject a
+  fixture-owned observer; it accepts a child PID only after an fsynced receipt
+  binds the queried supervisor exactly. This isolates host procfs scheduling
+  from portable fault injection without weakening the production path.
 - The integration has separate isolated-diagnostic and normal live-Portage
   policy lanes. Only the production coordinator lane can authorize Phase 2.
   The live lane binds the complete effective last-token-wins `FEATURES` state,
@@ -937,6 +972,12 @@ The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the 
   identity, conversion command, and immutable conversion log. The dispatcher
   has only the `-fprofile-sample-use`/`-fsample-profile-use-profi` sample
   consumer; the IR consumer remains separate.
+- Both restored-content conversion-log regressions now construct a second
+  regular file, assert that its device/inode identity differs from the recorded
+  observation, restore the exact bytes and mode there, and publish it with
+  `os.replace()`. They therefore test an observable same-content replacement;
+  they no longer claim that a current-state validator can detect perfectly
+  restored in-place history without an external historical authority.
 - Mapping-input and consumer-build fingerprints are distinct identities. The
   Portage fixture binds the observed mapping receipt, representative perf
   data, `llvm-profgen` conversion, immutable manifest/sidecar, generated
@@ -1021,10 +1062,10 @@ same exchange path still requires proof on the live XFS destinations.
 The detached evidence contract avoids self-referential plan hashes and stale prose authorization. Candidate A is a non-authorizing implementation/live precheck. After A passes, generated claim markers and truthful boxes are committed as Candidate B; the complete gate then reruns against B with no later plan edit. The sole accepted index path is `/var/lib/gentoo-optimization/state/project/phase2-evidence/<run-id>/index.json`. It binds one clean commit/tree, the current boot, active immutable candidate, exact production transaction receipt and validation input, required tool and test identities, eleven immutable run-scoped component states, exact directory membership, and aggregate `pending_total=0`, `unknown_total=0`, `failed_total=0`. Reboot, source drift, candidate drift, partial transaction debris, extra state entries, or any plan correction invalidates authorization and requires a new run ID and complete rerun.
 
 The test driver has distinct `smoke`, `checkpoint-smoke`, `portable-complete`,
-`stress`, `capabilities`, and `authoritative` modes. `checkpoint-smoke` runs
-bounded timeout/pipe-EOF and fast fork/`setsid` reparent cleanup regressions
-plus activation, post-exchange reconciliation, lost-update, and
-offline-finalization paths; the complete recovery matrix remains part of
+`stress`, `capabilities`, and `authoritative` modes. `checkpoint-smoke` selects
+18 exact methods: four supervisor containment/release paths, nine portable
+fake-`unshare` terminal/watchdog paths, and five checkpoint state-machine/
+process-group paths. The complete 68-method recovery matrix remains part of
 `portable-complete`. Every top-level case publishes a
 structured completion row; every conditional shell branch and every Python
 `unittest` method publishes its own required/diagnostic row. Atomic shell
@@ -1045,7 +1086,82 @@ conditional `typing-extensions`). The boundary separately binds the stable
 bootstrap's requested `/bin/bash` path (in addition to `/usr/bin/bash`) and the
 installer's exact `/usr/bin/tr` text-processing primitive.
 
-The non-authorizing 2026-07-26 dirty-tree stabilization checkpoint has exact
+The Candidate-A correction removes raw `os.fork()` and process-wide child-
+subreaper mutation from the multi-test unittest process. A dedicated
+single-threaded `checkpoint_process_supervisor.py` remains in the driver's exact
+case process group, starts each checkpoint target in a private session, writes
+target output to regular files rather than inherited capture pipes, and binds
+parent/target PID and start identities. It must drain every recorded live
+fixture descendant, reap the exact target and every adopted child returned by
+`waitpid`, and publish a typed v4 terminal receipt. The caller independently
+rejects any recorded residual PID/start identity that still exists; a reused
+numeric PID with a different start identity is not confused with the old
+process. The target-release pending-signal observation is the documented
+linearization point: an interruption already handled or pending before that
+point closes/rejects the release gate, while a later interruption is a
+post-commit cancellation that drives bounded teardown. External fixture
+barriers exercise pre-fork, pre-release, and masked-pending interruption, and
+the receipt proves whether target release was ever committed. The
+portable fake-namespace watchdog is a deterministic test adapter only; the
+three opt-in root-host checkpoint methods remain the mandatory proof of real
+pidfds, `unshare --kill-child`, and filesystem durability. The helper's normal,
+interrupted, hard-deadline, malformed-receipt, and exact-driver paths must all
+pass before the exact clean Candidate-A contract can be accepted and authorized.
+
+All Git observations used by the detached evidence verifier now share one
+60-second hardened runner with system/global configuration disabled. Attached
+and detached `git symbolic-ref -q HEAD` outcomes are handled explicitly as
+return codes 0 and 1; an unbounded direct subprocess is no longer used. The
+portable workflow no longer accepts the mutable Ubuntu ShellCheck package as
+the reviewed identity: it downloads the official 0.11.0 archive, verifies
+archive SHA-256
+`8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198`,
+verifies executable SHA-256
+`4da528ddb3a4d1b7b24a59d4e16eb2f5fd960f4bd9a3708a15baddbdf1d5a55b`,
+and checks the exact reported version before running the driver. Local success
+with both 0.9.0 and 0.11.0 is diagnostic only; the final clean candidate still
+requires a green exact-SHA workflow run.
+
+The current non-authorizing deterministic contract check discovers 33
+top-level cases, 58 shell sources, 32 evidence tests, one dedicated stress
+test, 198 main tests, and 68 recovery tests. The exact unittest identity hashes
+are `ba1f71adb31f9d59203b345b9a01017a2fc1994c002582206eff1c3ed9622c57`,
+`99dbe6b4806232fcb55e043b38a940d720b28775d387824f2cd98aeed4e65c84`,
+`fccf6c55f17dbc065cbea1d39ff8e206fbb25e05ea5cb9352af31059fffec55d`,
+and `22a7c819de3b48d8aad27289c79717fb1b7c13fd98f3c3ad4090a05b06548421`
+for evidence, stress, main, and recovery respectively. The expanded 18-method
+`checkpoint-smoke` run at
+`/tmp/gentoo-opt-checkpoint-smoke-candidate-a-20260729-v8` passed with 62
+top-level passes, zero failures, eight exact mode/provenance skips, 81 required
+subtest passes, zero required failures, and zero mandatory internal skips. Its
+`summary.txt`, `results.tsv`, and `subtests.tsv` SHA-256 values are respectively
+`f9868614ed3723856bf068a6ad8f2388aa008e73daaef7a61437e9354fe1436e`,
+`0150a9b1258b118e270b4ce30b42b31d5c301019dc11d21ef6a44f0267ac3363`,
+and `6170906cfad5e069be03a589f0df4667a0e9dc1d4bc14b6d26ad684144470b44`.
+Its four supervisor, nine fake-namespace terminal/watchdog, and five
+state-machine/process-group methods all passed through the exact project
+driver.
+
+The first complete current-tree diagnostic at
+`/tmp/gentoo-opt-portable-complete-candidate-a-20260729-v6` proved all 198 main
+and all 68 recovery tests, the framework installer, evidence contract, BOLT
+hooks, and the remaining executed fixtures, but correctly remained failed and
+non-authorizing: old repository bytecode residue predated the run, and the
+non-root live-policy probe treated an unreadable root-private installed
+candidate as an unexpected error. Its `summary.txt`, `results.tsv`, and
+`subtests.tsv` SHA-256 values are respectively
+`f20ed2b83f42e8f5c4b69851685935d4e366fab6b9324535622f47d1e8397820`,
+`75a39b1ed7cc2cc2b06c8f6e8af5cc1de30cf327bb6971c915f906aba55dd882`,
+and `ce1ebb56ca77b1a1d64ce17cb44eb185cc6797e0f6c6665b8b2067ff5ae63963`.
+The residue is removed, and a direct rerun of the corrected production-
+environment fixture exits zero while publishing the reviewed required
+`live-portage.policy` skip. The complete corrected portable boundary and exact
+clean-commit CI result remain pending.
+
+The following non-authorizing 2026-07-26 checkpoint is retained as historical
+evidence for the superseded in-process child-subreaper harness; its evidence
+and recovery counts and identity hashes are not the current contract. That dirty-tree
+stabilization checkpoint had exact
 deterministic discovery of 33 top-level cases, 58 shell sources, 31 evidence
 tests, one dedicated stress test, 198 main tests, and 56 recovery tests. The
 reviewed portable skip policy is sorted and its exact contract check passes.

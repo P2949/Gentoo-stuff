@@ -59,11 +59,23 @@ CHECKPOINT_SMOKE_TIMEOUT_SECONDS=${CHECKPOINT_SMOKE_TIMEOUT_SECONDS:-600}
 declare -A SELECTED_CAPABILITIES=()
 readonly -a ALL_CAPABILITIES=(clang-ir clang-sample gcc rust go bolt)
 readonly -a CHECKPOINT_SMOKE_IDENTITIES=(
+    test_create_binpkg_checkpoint.CheckpointHarnessTest.test_forced_supervisor_deadline_freezes_and_drains_private_escape
+    test_create_binpkg_checkpoint.CheckpointHarnessTest.test_interruption_before_fork_or_release_commitment_never_executes_target
     test_create_binpkg_checkpoint.CheckpointHarnessTest.test_subreaper_catches_fast_setsid_escape_without_touching_baseline_child
     test_create_binpkg_checkpoint.CheckpointHarnessTest.test_timeout_kills_detached_descendant_without_waiting_for_pipe_eof
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_fake_unshare_terminal_commit_keeps_late_signal_and_receipt_consistent
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_fake_unshare_unblocks_inherited_handled_signals
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_fake_unshare_watchdog_drains_normal_same_session_background_group
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_fake_unshare_watchdog_failure_dominates_sigterm_status
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_fake_unshare_watchdog_pre_drain_failure_is_bounded_and_non_sigterm
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_fake_unshare_watchdog_rescans_late_same_session_group_after_sigterm
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_fake_unshare_watchdog_stall_after_child_then_late_signal_is_bounded
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_fake_unshare_watchdog_stall_after_short_child_uses_original_deadline
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_fake_unshare_watchdog_stall_is_bounded_and_non_sigterm
     test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_near_exchange_lost_update_is_atomically_captured_and_restored
     test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_offline_restore_finalizer_binds_all_evidence_and_is_idempotent
     test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_sigkill_inside_exchange_is_reconciled_without_guessing
+    test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_signal_terminates_active_process_group_and_preserves_selector_inode
     test_create_binpkg_checkpoint.CreateBinpkgCheckpointTest.test_success_is_exact_journaled_and_activates_last
 )
 readonly -a EXPLICIT_SHELL_SOURCES=(
@@ -83,10 +95,10 @@ Run the repository's non-mutating optimization validation suites.
 
 Modes:
   --mode smoke              Short static/core gate (default).
-  --mode checkpoint-smoke   Static gate plus bounded timeout and fast-reparent
-                            cleanup paths and four state-machine paths: activation,
-                            post-exchange recovery, lost-update rejection, and
-                            offline finalization.
+  --mode checkpoint-smoke   Static gate plus 18 exact checkpoint methods: four
+                            supervisor containment/release paths, nine portable
+                            fake-unshare terminal/watchdog paths, and five
+                            state-machine/process-group paths.
   --mode portable-complete  All portable non-capability, non-stress fixtures.
   --mode stress             Portable-complete plus the 300-cycle crash stress.
   --mode capabilities       Portable-complete plus every capability fixture.
@@ -149,8 +161,9 @@ portable suites (smoke runs only the initial static/core subset):
   shellcheck (same shell source set; skipped when unavailable)
   python-source-compilation (temporary pycache only)
   python-unit-tests
-  checkpoint-smoke (bounded timeout and fast-reparent harness cleanup plus four
-                    focused checkpoint state-machine paths; its own mode only)
+  checkpoint-smoke (18 exact methods: four supervisor containment/release,
+                    nine portable fake-unshare terminal/watchdog, and five
+                    checkpoint state-machine/process-group paths; its own mode only)
   phase2-test-contract-static (deterministic no-execution pre-gate topology check)
   phase2-evidence-smoke (one parser/topology regression; smoke only)
   phase2-evidence-contract (clean-tree, plan-marker, tool, state, and detached-index binding)
@@ -595,7 +608,8 @@ create_run_root() {
 }
 
 # The EXIT/signal traps invoke this function indirectly.
-# shellcheck disable=SC2329
+# ShellCheck <=0.10 reports SC2317; >=0.11 reports SC2329 for trap callbacks.
+# shellcheck disable=SC2317,SC2329
 cleanup() {
     local status=$?
     local active_case_pid=
@@ -1198,7 +1212,7 @@ else
                 PYTHONDONTWRITEBYTECODE=1)
             if ((AUTHORITATIVE == 1)) && \
                 [[ ${relative_directory} == tests/optimization/recovery ]]; then
-                # These two tests exercise the real host pidfd and
+                # These three methods exercise the real host pidfd and
                 # unshare --kill-child primitives.  Portable runs retain their
                 # explicit required skips; an authoritative host run must
                 # execute them, so enable the reviewed opt-in only for this

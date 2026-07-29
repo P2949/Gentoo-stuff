@@ -483,6 +483,22 @@ class EvidenceFixture:
 
 
 class Phase2EvidenceTests(unittest.TestCase):
+    def test_repository_identity_bounds_attached_and_detached_head_queries(self) -> None:
+        fixture = EvidenceFixture()
+        self.addCleanup(fixture.cleanup)
+        namespace = runpy.run_path(os.fspath(TOOL))
+        repository_identity = namespace["repository_identity"]
+
+        attached = repository_identity(fixture.git, fixture.repository)
+        self.assertEqual(
+            attached["head_ref"],
+            fixture.run_git("symbolic-ref", "-q", "HEAD").stdout.strip(),
+        )
+
+        fixture.run_git("checkout", "--detach", "-q")
+        detached = repository_identity(fixture.git, fixture.repository)
+        self.assertIsNone(detached["head_ref"])
+
     def setUp(self) -> None:
         self.fixture = EvidenceFixture()
 

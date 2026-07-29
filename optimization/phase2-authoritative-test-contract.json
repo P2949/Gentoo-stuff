@@ -240,8 +240,8 @@
   },
   "unittest_suites": [
     {
-      "expected_count": 31,
-      "subtest_names_sha256": "e721ab1dfc1d5c6e68275320260b8bc7d91868d6b7c3b7b517459aeb4976709f",
+      "expected_count": 32,
+      "subtest_names_sha256": "ba1f71adb31f9d59203b345b9a01017a2fc1994c002582206eff1c3ed9622c57",
       "test": "phase2-evidence-contract"
     },
     {
@@ -255,8 +255,8 @@
       "test": "python-unit-tests:tests/optimization"
     },
     {
-      "expected_count": 56,
-      "subtest_names_sha256": "41a53c7e9d481ddb0a9020ee74b670d1c64c245e1abbf0db524cb6378d16294b",
+      "expected_count": 68,
+      "subtest_names_sha256": "22a7c819de3b48d8aad27289c79717fb1b7c13fd98f3c3ad4090a05b06548421",
       "test": "python-unit-tests:tests/optimization/recovery"
     }
   ]

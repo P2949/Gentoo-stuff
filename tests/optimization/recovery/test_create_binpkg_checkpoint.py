@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import ctypes
 import fcntl
 import hashlib
 import json
 import os
 import re
-import select
 import signal
 import shutil
 import stat
@@ -14,7 +12,6 @@ import subprocess
 import sys
 import tempfile
 import textwrap
-import threading
 import time
 import unittest
 from pathlib import Path
@@ -29,6 +26,7 @@ CHECKPOINT = (
     / "recovery"
     / "create-binpkg-checkpoint.sh"
 )
+PROCESS_SUPERVISOR = Path(__file__).with_name("checkpoint_process_supervisor.py")
 
 TOOLS = (
     "bash",
@@ -198,6 +196,25 @@ def surviving_processes(
     return [identity for identity in identities.values() if process_identity_is_live(identity)]
 
 
+def live_session_processes(session: int) -> list[ProcessIdentity]:
+    processes: list[ProcessIdentity] = []
+    try:
+        entries = tuple(Path("/proc").iterdir())
+    except OSError:
+        return processes
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        identity = read_process_identity(int(entry.name))
+        if (
+            identity is not None
+            and identity.session == session
+            and identity.state not in {"Z", "X", "x"}
+        ):
+            processes.append(identity)
+    return sorted(processes, key=lambda item: (item.pid, item.start_time))
+
+
 def wait_process_identity_stopped(identity: ProcessIdentity, timeout: float) -> bool:
     deadline = time.monotonic() + timeout
     while process_identity_is_live(identity) and time.monotonic() < deadline:
@@ -245,497 +262,629 @@ def terminate_process_tree(
     return survivors
 
 
-PR_SET_PDEATHSIG = 1
-PR_SET_CHILD_SUBREAPER = 36
-PR_GET_CHILD_SUBREAPER = 37
 SUPERVISOR_NATURAL_EXIT_SECONDS = 3.0
 SUPERVISOR_TERM_SECONDS = 3.0
 SUPERVISOR_KILL_SECONDS = 3.0
-TARGET_READY_SECONDS = 3.0
-_CONTAINMENT_LOCK = threading.Lock()
+
+IDENTITY_PAYLOAD_KEYS = {
+    "pid",
+    "ppid",
+    "process_group",
+    "session",
+    "state",
+    "start_time",
+}
+SUCCESS_RECEIPT_KEYS = {
+    "cleanup_survivors",
+    "interruption_signal",
+    "reaped_pids",
+    "residual_before_cleanup",
+    "schema_version",
+    "supervisor",
+    "target",
+    "target_release_committed",
+    "target_returncode",
+    "timed_out",
+}
 
 
-def set_prctl(option: int, argument: int, label: str) -> None:
-    libc = ctypes.CDLL(None, use_errno=True)
-    if libc.prctl(option, argument, 0, 0, 0) != 0:
-        error_number = ctypes.get_errno()
-        raise OSError(error_number, f"{label}: {os.strerror(error_number)}")
+def require_exact_integer(value: object, label: str, *, positive: bool = False) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise AssertionError(f"{label} is not an exact integer: {value!r}")
+    if positive and value <= 0:
+        raise AssertionError(f"{label} is not positive: {value!r}")
+    return value
 
 
-def get_child_subreaper() -> int:
-    value = ctypes.c_int()
-    libc = ctypes.CDLL(None, use_errno=True)
-    if libc.prctl(PR_GET_CHILD_SUBREAPER, ctypes.byref(value), 0, 0, 0) != 0:
-        error_number = ctypes.get_errno()
-        raise OSError(
-            error_number,
-            f"checkpoint fixture PR_GET_CHILD_SUBREAPER: {os.strerror(error_number)}",
+def parse_identity_payload(payload: object, label: str) -> ProcessIdentity:
+    if not isinstance(payload, dict) or set(payload) != IDENTITY_PAYLOAD_KEYS:
+        raise AssertionError(f"{label} has the wrong identity schema: {payload!r}")
+    state = payload["state"]
+    if not isinstance(state, str) or len(state) != 1:
+        raise AssertionError(f"{label} has an invalid process state: {state!r}")
+    return ProcessIdentity(
+        pid=require_exact_integer(payload["pid"], f"{label}.pid", positive=True),
+        ppid=require_exact_integer(payload["ppid"], f"{label}.ppid", positive=True),
+        process_group=require_exact_integer(
+            payload["process_group"], f"{label}.process_group", positive=True
+        ),
+        session=require_exact_integer(
+            payload["session"], f"{label}.session", positive=True
+        ),
+        state=state,
+        start_time=require_exact_integer(
+            payload["start_time"], f"{label}.start_time", positive=True
+        ),
+    )
+
+
+def parse_identity_list(payload: object, label: str) -> list[ProcessIdentity]:
+    if not isinstance(payload, list):
+        raise AssertionError(f"{label} is not a list: {payload!r}")
+    return [
+        parse_identity_payload(item, f"{label}[{index}]")
+        for index, item in enumerate(payload)
+    ]
+
+
+def validate_supervisor_ready_receipt(
+    payload: object,
+    *,
+    helper_identity: ProcessIdentity,
+    parent_identity: ProcessIdentity,
+) -> tuple[ProcessIdentity, ProcessIdentity]:
+    if not isinstance(payload, dict) or set(payload) != {
+        "schema_version",
+        "supervisor",
+        "target",
+    }:
+        raise AssertionError(f"checkpoint supervisor readiness has the wrong schema: {payload!r}")
+    if require_exact_integer(payload["schema_version"], "readiness.schema_version") != 1:
+        raise AssertionError(f"checkpoint supervisor readiness has the wrong version: {payload!r}")
+    supervisor = parse_identity_payload(payload["supervisor"], "readiness.supervisor")
+    target = parse_identity_payload(payload["target"], "readiness.target")
+    if (
+        supervisor.pid != helper_identity.pid
+        or supervisor.start_time != helper_identity.start_time
+        or supervisor.ppid != parent_identity.pid
+        or supervisor.process_group != parent_identity.process_group
+        or supervisor.session != parent_identity.session
+    ):
+        raise AssertionError(
+            "checkpoint supervisor readiness does not bind the exact helper: "
+            f"parent={parent_identity!r} helper={helper_identity!r} "
+            f"receipt={supervisor!r}"
         )
-    return value.value
+    if (
+        target.ppid != supervisor.pid
+        or target.process_group != target.pid
+        or target.session != target.pid
+        or target.state in {"Z", "X", "x"}
+    ):
+        raise AssertionError(
+            "checkpoint supervisor readiness does not bind an exact private target: "
+            f"{target!r}"
+        )
+    return supervisor, target
 
 
-def identity_payload(identity: ProcessIdentity) -> dict[str, int | str]:
-    return {
-        "pid": identity.pid,
-        "ppid": identity.ppid,
-        "process_group": identity.process_group,
-        "session": identity.session,
-        "state": identity.state,
-        "start_time": identity.start_time,
+def validate_success_supervisor_receipt(
+    payload: object,
+    *,
+    helper_status: int,
+    helper_identity: ProcessIdentity,
+    parent_identity: ProcessIdentity,
+    readiness_payload: object,
+    identity_reader=read_process_identity,
+) -> tuple[int, bool, list[ProcessIdentity]]:
+    if helper_status != 0:
+        raise AssertionError(f"checkpoint process supervisor failed with status {helper_status}")
+    if not isinstance(payload, dict) or set(payload) != SUCCESS_RECEIPT_KEYS:
+        raise AssertionError(f"checkpoint supervisor receipt has the wrong schema: {payload!r}")
+    if require_exact_integer(payload["schema_version"], "receipt.schema_version") != 4:
+        raise AssertionError(f"checkpoint supervisor receipt has the wrong version: {payload!r}")
+    ready_supervisor, ready_target = validate_supervisor_ready_receipt(
+        readiness_payload,
+        helper_identity=helper_identity,
+        parent_identity=parent_identity,
+    )
+    supervisor = parse_identity_payload(payload["supervisor"], "receipt.supervisor")
+    target = parse_identity_payload(payload["target"], "receipt.target")
+    if (
+        supervisor.pid != ready_supervisor.pid
+        or supervisor.start_time != ready_supervisor.start_time
+        or supervisor.ppid != parent_identity.pid
+        or supervisor.process_group != parent_identity.process_group
+        or supervisor.session != parent_identity.session
+    ):
+        raise AssertionError(
+            "checkpoint supervisor receipt does not bind the exact helper: "
+            f"ready={ready_supervisor!r} final={supervisor!r}"
+        )
+    if target != ready_target:
+        raise AssertionError(
+            "checkpoint supervisor receipt changed the bound target identity: "
+            f"ready={ready_target!r} final={target!r}"
+        )
+    cleanup_survivors = parse_identity_list(
+        payload["cleanup_survivors"], "receipt.cleanup_survivors"
+    )
+    if cleanup_survivors:
+        raise AssertionError(
+            "checkpoint process supervisor left non-zombie fixture processes: "
+            f"{cleanup_survivors!r}"
+        )
+    residual = parse_identity_list(
+        payload["residual_before_cleanup"], "receipt.residual_before_cleanup"
+    )
+    residual_keys = [(identity.pid, identity.start_time) for identity in residual]
+    if residual_keys != sorted(set(residual_keys)):
+        raise AssertionError(
+            "receipt.residual_before_cleanup is not an exact sorted identity set: "
+            f"{residual!r}"
+        )
+    timed_out = payload["timed_out"]
+    if type(timed_out) is not bool:
+        raise AssertionError(f"receipt.timed_out is not an exact boolean: {timed_out!r}")
+    if payload["interruption_signal"] is not None:
+        raise AssertionError(
+            "successful checkpoint supervisor receipt records an interruption: "
+            f"{payload['interruption_signal']!r}"
+        )
+    if payload["target_release_committed"] is not True:
+        raise AssertionError(
+            "successful checkpoint supervisor receipt does not prove its target "
+            f"release commitment: {payload['target_release_committed']!r}"
+        )
+    returncode = require_exact_integer(
+        payload["target_returncode"], "receipt.target_returncode"
+    )
+    reaped_pids_payload = payload["reaped_pids"]
+    if not isinstance(reaped_pids_payload, list):
+        raise AssertionError(f"receipt.reaped_pids is not a list: {reaped_pids_payload!r}")
+    reaped_pids = [
+        require_exact_integer(value, f"receipt.reaped_pids[{index}]", positive=True)
+        for index, value in enumerate(reaped_pids_payload)
+    ]
+    if reaped_pids != sorted(set(reaped_pids)) or target.pid not in reaped_pids:
+        raise AssertionError(
+            "checkpoint supervisor receipt does not prove exact target reaping: "
+            f"target={target.pid} reaped={reaped_pids!r}"
+        )
+    current_target = identity_reader(target.pid)
+    if current_target is not None and current_target.start_time == target.start_time:
+        raise AssertionError(
+            "checkpoint supervisor returned while its exact target identity remained: "
+            f"{current_target!r}"
+        )
+    for identity in residual:
+        current = identity_reader(identity.pid)
+        if current is not None and current.start_time == identity.start_time:
+            raise AssertionError(
+                "checkpoint supervisor returned while a recorded residual identity "
+                f"remained: expected={identity!r} current={current!r}"
+            )
+    if residual and not timed_out:
+        raise AssertionError(
+            "checkpoint command exited with non-zombie fixture descendants: "
+            f"{residual!r}; cleanup_survivors=[]"
+        )
+    return returncode, timed_out, residual
+
+
+def bind_fake_unshare_adapter(
+    path: Path,
+    *,
+    coordinator: ProcessIdentity,
+) -> dict[str, ProcessIdentity]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or set(payload) != {
+        "schema_version",
+        "supervisor",
+        "child",
+        "watchdog",
+    }:
+        raise AssertionError(f"fake-unshare adapter receipt has the wrong schema: {payload!r}")
+    if require_exact_integer(payload["schema_version"], "adapter.schema_version") != 1:
+        raise AssertionError(f"fake-unshare adapter receipt has the wrong version: {payload!r}")
+    recorded = {
+        name: parse_identity_payload(payload[name], f"adapter.{name}")
+        for name in ("supervisor", "child", "watchdog")
     }
+    supervisor = recorded["supervisor"]
+    child = recorded["child"]
+    watchdog = recorded["watchdog"]
+    if (
+        supervisor.ppid != coordinator.pid
+        or supervisor.process_group != supervisor.pid
+        or supervisor.session != supervisor.pid
+        or child.ppid != supervisor.pid
+        or child.process_group != child.pid
+        or child.session != child.pid
+        or watchdog.ppid != supervisor.pid
+        or watchdog.process_group != supervisor.process_group
+        or watchdog.session != supervisor.session
+    ):
+        raise AssertionError(
+            "fake-unshare adapter identities do not form the expected private topology: "
+            f"coordinator={coordinator!r} receipt={recorded!r}"
+        )
+    for name, expected in recorded.items():
+        current = read_process_identity(expected.pid)
+        if (
+            current is None
+            or current.start_time != expected.start_time
+            or current.ppid != expected.ppid
+            or current.process_group != expected.process_group
+            or current.session != expected.session
+            or current.state in {"Z", "X", "x"}
+        ):
+            raise AssertionError(
+                f"fake-unshare adapter {name} identity changed before binding: "
+                f"expected={expected!r} current={current!r}"
+            )
+    return recorded
 
 
-def signal_identity_set(
+def validate_fake_unshare_terminal(
+    path: Path,
+    *,
+    ready: dict[str, ProcessIdentity],
+    expected_terminating: bool,
+    expected_child_returncode: int | None = None,
+    expected_watchdog_status: int = 0,
+    expected_watchdog_exited_before_child: bool = False,
+    expected_watchdog_cleanup_timed_out: bool = False,
+    expected_signal: signal.Signals = signal.SIGTERM,
+) -> None:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    expected_keys = {
+        "schema_version",
+        "supervisor",
+        "child",
+        "watchdog",
+        "terminating",
+        "termination_signal",
+        "watchdog_exited_before_child",
+        "watchdog_cleanup_timed_out",
+        "child_returncode",
+        "watchdog_status",
+        "remaining_members",
+    }
+    if not isinstance(payload, dict) or set(payload) != expected_keys:
+        raise AssertionError(
+            f"fake-unshare terminal receipt has the wrong schema: {payload!r}"
+        )
+    if require_exact_integer(payload["schema_version"], "adapter-terminal.schema_version") != 1:
+        raise AssertionError(
+            f"fake-unshare terminal receipt has the wrong version: {payload!r}"
+        )
+    recorded = {
+        name: parse_identity_payload(payload[name], f"adapter-terminal.{name}")
+        for name in ("supervisor", "child", "watchdog")
+    }
+    if recorded != ready:
+        raise AssertionError(
+            "fake-unshare terminal receipt does not bind its exact readiness identities: "
+            f"ready={ready!r} terminal={recorded!r}"
+        )
+    terminating = payload["terminating"]
+    if type(terminating) is not bool or terminating is not expected_terminating:
+        raise AssertionError(
+            "fake-unshare terminal receipt has the wrong termination state: "
+            f"expected={expected_terminating!r} actual={terminating!r}"
+        )
+    termination_signal = payload["termination_signal"]
+    if expected_terminating:
+        if (
+            require_exact_integer(
+                termination_signal, "adapter-terminal.termination_signal", positive=True
+            )
+            != int(expected_signal)
+        ):
+            raise AssertionError(
+                "fake-unshare terminal receipt has the wrong signal: "
+                f"expected={int(expected_signal)} actual={termination_signal!r}"
+            )
+    elif termination_signal is not None:
+        raise AssertionError(
+            "fake-unshare normal terminal receipt records a signal: "
+            f"{termination_signal!r}"
+        )
+    watchdog_exited_before_child = payload["watchdog_exited_before_child"]
+    if (
+        type(watchdog_exited_before_child) is not bool
+        or watchdog_exited_before_child is not expected_watchdog_exited_before_child
+    ):
+        raise AssertionError(
+            "fake-unshare terminal receipt has the wrong early-watchdog state: "
+            f"expected={expected_watchdog_exited_before_child!r} "
+            f"actual={watchdog_exited_before_child!r}"
+        )
+    watchdog_cleanup_timed_out = payload["watchdog_cleanup_timed_out"]
+    if (
+        type(watchdog_cleanup_timed_out) is not bool
+        or watchdog_cleanup_timed_out is not expected_watchdog_cleanup_timed_out
+    ):
+        raise AssertionError(
+            "fake-unshare terminal receipt has the wrong watchdog-timeout state: "
+            f"expected={expected_watchdog_cleanup_timed_out!r} "
+            f"actual={watchdog_cleanup_timed_out!r}"
+        )
+    child_returncode = require_exact_integer(
+        payload["child_returncode"], "adapter-terminal.child_returncode"
+    )
+    if (
+        expected_child_returncode is not None
+        and child_returncode != expected_child_returncode
+    ):
+        raise AssertionError(
+            "fake-unshare terminal receipt has the wrong child status: "
+            f"expected={expected_child_returncode} actual={child_returncode}"
+        )
+    watchdog_status = require_exact_integer(
+        payload["watchdog_status"], "adapter-terminal.watchdog_status"
+    )
+    if watchdog_status != expected_watchdog_status:
+        raise AssertionError(
+            "fake-unshare watchdog has the wrong terminal status: "
+            f"expected={expected_watchdog_status} actual={watchdog_status}"
+        )
+    remaining = parse_identity_list(
+        payload["remaining_members"], "adapter-terminal.remaining_members"
+    )
+    remaining_keys = [(identity.pid, identity.start_time) for identity in remaining]
+    if remaining_keys != sorted(set(remaining_keys)):
+        raise AssertionError(
+            "fake-unshare terminal remaining-member identities are not exact and sorted: "
+            f"{remaining!r}"
+        )
+    if remaining:
+        raise AssertionError(
+            f"fake-unshare terminal receipt records live session members: {remaining!r}"
+        )
+    for name, expected in ready.items():
+        current = read_process_identity(expected.pid)
+        if (
+            current is not None
+            and current.start_time == expected.start_time
+            and current.state not in {"Z", "X", "x"}
+        ):
+            raise AssertionError(
+                "fake-unshare terminal receipt returned while an exact readiness "
+                f"identity remained live: name={name} expected={expected!r} "
+                f"current={current!r}"
+            )
+    independently_live = live_session_processes(ready["child"].session)
+    if independently_live:
+        raise AssertionError(
+            "fake-unshare terminal receipt claimed an empty recorded session while "
+            f"members remain: {independently_live!r}"
+        )
+
+
+def read_fixture_process_identity(path: Path, label: str) -> ProcessIdentity:
+    fields = path.read_text(encoding="ascii").split()
+    if len(fields) != 6:
+        raise AssertionError(f"{label} has the wrong identity field count: {fields!r}")
+    try:
+        identity = ProcessIdentity(
+            pid=int(fields[0]),
+            ppid=int(fields[1]),
+            process_group=int(fields[2]),
+            session=int(fields[3]),
+            state=fields[4],
+            start_time=int(fields[5]),
+        )
+    except ValueError as error:
+        raise AssertionError(f"{label} has a non-integer identity field: {fields!r}") from error
+    if (
+        identity.pid <= 0
+        or identity.ppid <= 0
+        or identity.process_group <= 0
+        or identity.session <= 0
+        or len(identity.state) != 1
+        or identity.start_time <= 0
+    ):
+        raise AssertionError(f"{label} has an invalid process identity: {identity!r}")
+    return identity
+
+
+def require_current_fixture_topology(
+    expected: ProcessIdentity,
+    label: str,
+) -> ProcessIdentity:
+    current = read_process_identity(expected.pid)
+    if (
+        current is None
+        or current.state in {"Z", "X", "x"}
+        or current.pid != expected.pid
+        or current.ppid != expected.ppid
+        or current.process_group != expected.process_group
+        or current.session != expected.session
+        or current.start_time != expected.start_time
+    ):
+        raise AssertionError(
+            f"{label} changed before the fixture bound it: "
+            f"expected={expected!r} current={current!r}"
+        )
+    return current
+
+
+def exact_signal(identity: ProcessIdentity, signum: signal.Signals) -> None:
+    current = read_process_identity(identity.pid)
+    if (
+        current is None
+        or current.start_time != identity.start_time
+        or current.state in {"Z", "X", "x"}
+    ):
+        return
+    try:
+        os.kill(identity.pid, signum)
+    except ProcessLookupError:
+        pass
+
+
+def signal_private_fixture_identities(
     identities: dict[tuple[int, int], ProcessIdentity],
     signum: signal.Signals,
-) -> None:
-    if not identities:
-        return
-    first_key = next(iter(identities))
-    first = identities[first_key]
-    remaining = dict(identities)
-    del remaining[first_key]
-    signal_observed_processes(first, remaining, signum)
-
-
-def write_supervisor_json(path: Path, payload: dict[str, object]) -> None:
-    temporary = path.with_name(path.name + f".partial.{os.getpid()}")
-    with temporary.open("x", encoding="utf-8") as stream:
-        json.dump(payload, stream, sort_keys=True)
-        stream.write("\n")
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, path)
-
-
-def supervise_command_process(
-    command: list[str],
     *,
-    cwd: str,
-    env: dict[str, str],
-    timeout: float,
-    stdout_descriptor: int,
-    stderr_descriptor: int,
-    receipt: Path,
-    expected_parent: int,
+    protected_group: int,
 ) -> None:
-    target_pid: int | None = None
-    target_start_time: int | None = None
-    target_returncode: int | None = None
-    timed_out = False
-    residual_before_cleanup: dict[tuple[int, int], ProcessIdentity] = {}
-    reaped_pids: list[int] = []
-    survivors: dict[tuple[int, int], ProcessIdentity] = {}
-
-    def reap_available() -> None:
-        nonlocal target_returncode
-        while True:
-            try:
-                pid, wait_status = os.waitpid(-1, os.WNOHANG)
-            except ChildProcessError:
-                return
-            if pid == 0:
-                return
-            reaped_pids.append(pid)
-            if pid == target_pid:
-                target_returncode = os.waitstatus_to_exitcode(wait_status)
-
-    def current_descendants() -> dict[tuple[int, int], ProcessIdentity]:
-        return {
-            key: identity
-            for key, identity in snapshot_descendants(os.getpid()).items()
-            if identity.state not in {"Z", "X", "x"}
-        }
-
-    def drain_with_signal(
-        requested_signal: signal.Signals,
-        seconds: float,
-    ) -> dict[tuple[int, int], ProcessIdentity]:
-        signalled: set[tuple[int, int]] = set()
-        deadline = time.monotonic() + seconds
-        survivors = current_descendants()
-        while survivors and time.monotonic() < deadline:
-            newly_observed = {
-                key: identity
-                for key, identity in survivors.items()
-                if key not in signalled
-            }
-            if newly_observed:
-                signal_identity_set(newly_observed, requested_signal)
-                signalled.update(newly_observed)
-            reap_available()
-            time.sleep(0.02)
-            survivors = current_descendants()
-        reap_available()
-        return current_descendants()
-
-    try:
-        if os.getppid() != expected_parent:
-            raise RuntimeError("supervisor parent changed before parent-death binding")
-        set_prctl(PR_SET_PDEATHSIG, signal.SIGKILL, "supervisor PR_SET_PDEATHSIG")
-        if os.getppid() != expected_parent:
-            raise RuntimeError("supervisor parent changed during parent-death binding")
-        set_prctl(
-            PR_SET_CHILD_SUBREAPER,
-            1,
-            "checkpoint fixture PR_SET_CHILD_SUBREAPER",
-        )
-        os.setsid()
-
-        supervisor_pid = os.getpid()
-        ready_reader, ready_writer = os.pipe2(os.O_CLOEXEC)
-        release_reader, release_writer = os.pipe2(os.O_CLOEXEC)
-        target_pid = os.fork()
-        if target_pid == 0:
-            try:
-                os.close(ready_reader)
-                os.close(release_writer)
-                os.setsid()
-                if os.getppid() != supervisor_pid:
-                    raise RuntimeError("target supervisor changed before parent-death binding")
-                set_prctl(PR_SET_PDEATHSIG, signal.SIGKILL, "target PR_SET_PDEATHSIG")
-                if os.getppid() != supervisor_pid:
-                    raise RuntimeError("target supervisor changed during parent-death binding")
-                null_descriptor = os.open("/dev/null", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
-                os.dup2(null_descriptor, 0)
-                os.dup2(stdout_descriptor, 1)
-                os.dup2(stderr_descriptor, 2)
-                if null_descriptor > 2:
-                    os.close(null_descriptor)
-                if stdout_descriptor > 2:
-                    os.close(stdout_descriptor)
-                if stderr_descriptor > 2 and stderr_descriptor != stdout_descriptor:
-                    os.close(stderr_descriptor)
-                os.chdir(cwd)
-                if os.write(ready_writer, b"R") != 1:
-                    raise RuntimeError("target readiness barrier write was incomplete")
-                os.close(ready_writer)
-                if os.read(release_reader, 1) != b"R":
-                    raise RuntimeError("target exec release barrier was not satisfied")
-                os.close(release_reader)
-                os.execvpe(command[0], command, env)
-            except BaseException as error:
-                try:
-                    os.write(2, f"fixture target exec failed: {error!r}\n".encode())
-                finally:
-                    os._exit(127)
-
-        os.close(ready_writer)
-        os.close(release_reader)
-        os.close(stdout_descriptor)
-        if stderr_descriptor != stdout_descriptor:
-            os.close(stderr_descriptor)
-        try:
-            readable, _, _ = select.select([ready_reader], [], [], TARGET_READY_SECONDS)
-            if not readable or os.read(ready_reader, 1) != b"R":
-                raise RuntimeError("target did not satisfy its bounded readiness barrier")
-            target_identity = read_process_identity(target_pid)
-            if target_identity is None:
-                raise RuntimeError("target disappeared before supervisor identity capture")
-            if (
-                target_identity.ppid != supervisor_pid
-                or target_identity.process_group != target_pid
-                or target_identity.session != target_pid
-            ):
-                raise RuntimeError(
-                    "target did not enter its exact private session: "
-                    f"{target_identity!r}"
-                )
-            target_start_time = target_identity.start_time
-            if os.write(release_writer, b"R") != 1:
-                raise RuntimeError("target exec release barrier write was incomplete")
-        finally:
-            os.close(ready_reader)
-            os.close(release_writer)
-
-        target_deadline = time.monotonic() + timeout
-        while target_returncode is None and time.monotonic() < target_deadline:
-            try:
-                waited_pid, wait_status = os.waitpid(target_pid, os.WNOHANG)
-            except ChildProcessError as error:
-                raise RuntimeError("target was reaped outside its supervisor") from error
-            if waited_pid == target_pid:
-                reaped_pids.append(waited_pid)
-                target_returncode = os.waitstatus_to_exitcode(wait_status)
-                break
-            time.sleep(0.02)
-
-        if target_returncode is None:
-            timed_out = True
-            residual_before_cleanup = current_descendants()
-        else:
-            natural_deadline = time.monotonic() + SUPERVISOR_NATURAL_EXIT_SECONDS
-            while time.monotonic() < natural_deadline:
-                reap_available()
-                residual_before_cleanup = current_descendants()
-                if not residual_before_cleanup:
-                    break
-                time.sleep(0.02)
-
-        survivors = current_descendants()
-        if survivors:
-            survivors = drain_with_signal(signal.SIGTERM, SUPERVISOR_TERM_SECONDS)
-        if survivors:
-            survivors = drain_with_signal(signal.SIGKILL, SUPERVISOR_KILL_SECONDS)
-        reap_available()
-        survivors = current_descendants()
-        write_supervisor_json(
-            receipt,
-            {
-                "cleanup_survivors": [
-                    identity_payload(identity)
-                    for identity in sorted(survivors.values())
-                ],
-                "reaped_pids": sorted(set(reaped_pids)),
-                "residual_before_cleanup": [
-                    identity_payload(identity)
-                    for identity in sorted(residual_before_cleanup.values())
-                ],
-                "schema_version": 1,
-                "target_pid": target_pid,
-                "target_returncode": target_returncode,
-                "target_start_time": target_start_time,
-                "timed_out": timed_out,
-            },
-        )
-        os._exit(0)
-    except BaseException as error:
-        survivors = {}
-        try:
-            survivors = current_descendants()
-            if survivors:
-                survivors = drain_with_signal(signal.SIGTERM, SUPERVISOR_TERM_SECONDS)
-            if survivors:
-                survivors = drain_with_signal(signal.SIGKILL, SUPERVISOR_KILL_SECONDS)
-            reap_available()
-            write_supervisor_json(
-                receipt,
-                {
-                    "cleanup_survivors": [
-                        identity_payload(identity)
-                        for identity in sorted(survivors.values())
-                    ],
-                    "error": f"{type(error).__name__}: {error}",
-                    "reaped_pids": sorted(set(reaped_pids)),
-                    "schema_version": 1,
-                    "target_pid": target_pid,
-                    "target_returncode": target_returncode,
-                    "target_start_time": target_start_time,
-                    "timed_out": timed_out,
-                },
-            )
-        finally:
-            os._exit(70)
-
-
-def post_baseline_descendants(
-    parent_pid: int,
-    baseline: dict[tuple[int, int], ProcessIdentity],
-) -> dict[tuple[int, int], ProcessIdentity]:
-    return {
-        key: identity
-        for key, identity in snapshot_descendants(parent_pid).items()
-        if key not in baseline
-    }
-
-
-def reap_exact_direct_children(
-    parent_pid: int,
-    identities: dict[tuple[int, int], ProcessIdentity],
-) -> None:
+    groups: set[int] = set()
     for identity in identities.values():
         current = read_process_identity(identity.pid)
         if (
-            current is None
-            or current.start_time != identity.start_time
-            or current.ppid != parent_pid
-            or current.state not in {"Z", "X", "x"}
+            current is not None
+            and current.start_time == identity.start_time
+            and current.state not in {"Z", "X", "x"}
+            and current.process_group > 0
+            and current.process_group != protected_group
         ):
-            continue
+            groups.add(current.process_group)
+    for process_group in sorted(groups):
         try:
-            os.waitpid(identity.pid, os.WNOHANG)
-        except ChildProcessError:
+            os.killpg(process_group, signum)
+        except ProcessLookupError:
             pass
+    for identity in identities.values():
+        exact_signal(identity, signum)
 
 
-def drain_post_baseline_descendants(
-    parent_pid: int,
-    baseline: dict[tuple[int, int], ProcessIdentity],
-) -> tuple[dict[tuple[int, int], ProcessIdentity], list[ProcessIdentity]]:
+def force_stop_and_reap_supervisor(
+    helper: subprocess.Popen[bytes],
+    helper_identity: ProcessIdentity,
+    *,
+    parent_identity: ProcessIdentity,
+    ready_path: Path,
+) -> list[ProcessIdentity]:
+    """Freeze a wedged helper and its exact private tree before killing it."""
     observed: dict[tuple[int, int], ProcessIdentity] = {}
-
-    def drain(signum: signal.Signals, seconds: float) -> None:
-        signalled: set[tuple[int, int]] = set()
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            current = post_baseline_descendants(parent_pid, baseline)
-            observed.update(current)
-            newly_observed = {
-                key: identity
-                for key, identity in current.items()
-                if key not in signalled and process_identity_is_live(identity)
-            }
-            if newly_observed:
-                signal_identity_set(newly_observed, signum)
-                signalled.update(newly_observed)
-            reap_exact_direct_children(parent_pid, observed)
-            current = post_baseline_descendants(parent_pid, baseline)
-            observed.update(current)
-            if not current:
-                return
-            time.sleep(0.02)
-
-    drain(signal.SIGTERM, SUPERVISOR_TERM_SECONDS)
-    if post_baseline_descendants(parent_pid, baseline):
-        drain(signal.SIGKILL, SUPERVISOR_KILL_SECONDS)
-    reap_exact_direct_children(parent_pid, observed)
-    survivors = surviving_processes(observed)
-    return observed, survivors
-
-
-def terminate_forked_supervisor(
-    supervisor_pid: int,
-    supervisor_identity: ProcessIdentity,
-    *,
-    parent_pid: int,
-    parent_baseline: dict[tuple[int, int], ProcessIdentity],
-) -> tuple[dict[tuple[int, int], ProcessIdentity], list[ProcessIdentity]]:
-    # The caller is itself temporarily a child subreaper.  Killing this exact
-    # supervisor therefore reparents every surviving fixture descendant to the
-    # caller instead of init, including a child that forked between /proc scans.
-    if process_identity_is_live(supervisor_identity):
+    exact_signal(helper_identity, signal.SIGSTOP)
+    target_identity: ProcessIdentity | None = None
+    readiness_error: BaseException | None = None
+    if ready_path.is_file() and not ready_path.is_symlink():
         try:
-            os.kill(supervisor_pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    deadline = time.monotonic() + SUPERVISOR_TERM_SECONDS
-    while process_identity_is_live(supervisor_identity) and time.monotonic() < deadline:
-        time.sleep(0.02)
-    if process_identity_is_live(supervisor_identity):
-        try:
-            os.kill(supervisor_pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    try:
-        os.waitpid(supervisor_pid, 0)
-    except ChildProcessError:
-        pass
-    return drain_post_baseline_descendants(parent_pid, parent_baseline)
-
-
-def run_contained_command_under_subreaper(
-    command: list[str],
-    *,
-    cwd: str,
-    env: dict[str, str],
-    timeout: float,
-    parent_pid: int,
-    parent_baseline: dict[tuple[int, int], ProcessIdentity],
-    started_pids: list[int] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    # The supervisor is a Linux child subreaper, so double-forked descendants
-    # are adopted in-kernel even when every parent exits between /proc polls.
-    # Regular files replace PIPE, preventing an escaped descriptor from turning
-    # result collection into an unbounded EOF wait.
-    with (
-        tempfile.TemporaryFile() as stdout_file,
-        tempfile.TemporaryFile() as stderr_file,
-        tempfile.TemporaryDirectory(prefix="checkpoint-supervisor-") as directory,
-    ):
-        receipt = Path(directory) / "receipt.json"
-        expected_parent = os.getpid()
-        supervisor_pid = os.fork()
-        if supervisor_pid == 0:
-            supervise_command_process(
-                command,
-                cwd=cwd,
-                env=env,
-                timeout=timeout,
-                stdout_descriptor=stdout_file.fileno(),
-                stderr_descriptor=stderr_file.fileno(),
-                receipt=receipt,
-                expected_parent=expected_parent,
+            ready_payload = json.loads(ready_path.read_text(encoding="utf-8"))
+            _, target_identity = validate_supervisor_ready_receipt(
+                ready_payload,
+                helper_identity=helper_identity,
+                parent_identity=parent_identity,
             )
-            os._exit(71)
+        except BaseException as error:
+            # A malformed early receipt must not bypass emergency teardown.
+            readiness_error = error
+        else:
+            observed[(target_identity.pid, target_identity.start_time)] = target_identity
+            current_target = read_process_identity(target_identity.pid)
+            if (
+                current_target is not None
+                and current_target.start_time == target_identity.start_time
+                and current_target.process_group == target_identity.pid
+                and current_target.session == target_identity.pid
+            ):
+                try:
+                    os.killpg(target_identity.pid, signal.SIGSTOP)
+                except ProcessLookupError:
+                    pass
 
-        supervisor_identity = read_process_identity(supervisor_pid)
-        if supervisor_identity is None:
-            try:
-                os.waitpid(supervisor_pid, 0)
-            except ChildProcessError:
-                pass
-            raise AssertionError("checkpoint supervisor disappeared before identity capture")
-        supervisor_deadline = (
-            time.monotonic()
-            + timeout
-            + SUPERVISOR_NATURAL_EXIT_SECONDS
-            + SUPERVISOR_TERM_SECONDS
-            + SUPERVISOR_KILL_SECONDS
-            + 5
+    stable_scans = 0
+    previous_keys: set[tuple[int, int]] | None = None
+    freeze_deadline = time.monotonic() + 3
+    while time.monotonic() < freeze_deadline and stable_scans < 3:
+        current = snapshot_descendants(helper_identity.pid)
+        observed.update(current)
+        signal_private_fixture_identities(
+            current,
+            signal.SIGSTOP,
+            protected_group=parent_identity.process_group,
         )
-        supervisor_wait_status: int | None = None
-        while time.monotonic() < supervisor_deadline:
-            waited_pid, wait_status = os.waitpid(supervisor_pid, os.WNOHANG)
-            if waited_pid == supervisor_pid:
-                supervisor_wait_status = wait_status
-                break
-            time.sleep(0.02)
-        if supervisor_wait_status is None:
-            observed, survivors = terminate_forked_supervisor(
-                supervisor_pid,
-                supervisor_identity,
-                parent_pid=parent_pid,
-                parent_baseline=parent_baseline,
-            )
-            raise AssertionError(
-                "checkpoint child-subreaper exceeded its bounded deadline; "
-                f"adopted={sorted(observed.values())!r}; survivors={survivors!r}"
-            )
+        current_keys = set(current)
+        if current_keys == previous_keys and all(
+            (identity := read_process_identity(pid)) is None
+            or identity.start_time != start_time
+            or identity.state in {"T", "t", "Z", "X", "x", "D"}
+            for pid, start_time in current_keys
+        ):
+            stable_scans += 1
+        else:
+            stable_scans = 0
+        previous_keys = current_keys
+        time.sleep(0.02)
+    freeze_converged = stable_scans >= 3
 
-        stdout = read_capture(stdout_file)
-        stderr = read_capture(stderr_file)
-        if not receipt.is_file():
-            raise AssertionError(
-                "checkpoint child-subreaper exited without a receipt: "
-                f"status={os.waitstatus_to_exitcode(supervisor_wait_status)}\n"
-                f"stdout:\n{stdout}\nstderr:\n{stderr}"
+    if target_identity is not None:
+        current_target = read_process_identity(target_identity.pid)
+        if (
+            current_target is not None
+            and current_target.start_time == target_identity.start_time
+            and current_target.process_group == target_identity.pid
+            and current_target.session == target_identity.pid
+        ):
+            try:
+                os.killpg(target_identity.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    # Keep the stopped subreaper alive until repeated scans prove that no live
+    # descendant remains.  This closes the old snapshot-then-kill fork window:
+    # a child created just before its parent was stopped is adopted or remains
+    # below this helper and is discovered by a later scan before helper death.
+    empty_scans = 0
+    kill_deadline = time.monotonic() + 3
+    while time.monotonic() < kill_deadline and empty_scans < 3:
+        current = snapshot_descendants(helper_identity.pid)
+        observed.update(current)
+        live_current = {
+            key: identity
+            for key, identity in current.items()
+            if process_identity_is_live(identity)
+        }
+        if live_current:
+            empty_scans = 0
+            signal_private_fixture_identities(
+                live_current,
+                signal.SIGKILL,
+                protected_group=parent_identity.process_group,
             )
-        payload = json.loads(receipt.read_text(encoding="utf-8"))
-        target_pid = payload.get("target_pid")
-        if not isinstance(target_pid, int) or target_pid <= 0:
-            raise AssertionError(f"checkpoint supervisor returned an invalid target PID: {payload!r}")
-        if started_pids is not None:
-            started_pids.append(target_pid)
-        cleanup_survivors = payload.get("cleanup_survivors")
-        if cleanup_survivors:
-            raise AssertionError(
-                "checkpoint child-subreaper left non-zombie fixture processes: "
-                f"{cleanup_survivors!r}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-            )
-        if "error" in payload:
-            raise AssertionError(
-                f"checkpoint child-subreaper failed: {payload['error']}\n"
-                f"stdout:\n{stdout}\nstderr:\n{stderr}"
-            )
-        residual = payload.get("residual_before_cleanup")
-        timed_out = payload.get("timed_out") is True
-        if residual and not timed_out:
-            raise AssertionError(
-                "checkpoint command exited with non-zombie fixture descendants: "
-                f"{residual!r}; cleanup_survivors=[]\n"
-                f"stdout:\n{stdout}\nstderr:\n{stderr}"
-            )
-        if timed_out:
-            raise subprocess.TimeoutExpired(
-                command,
-                timeout,
-                output=stdout,
-                stderr=stderr,
-            )
-        returncode = payload.get("target_returncode")
-        if not isinstance(returncode, int):
-            raise AssertionError(f"checkpoint supervisor omitted target return code: {payload!r}")
-        return subprocess.CompletedProcess(command, returncode, stdout, stderr)
+        else:
+            empty_scans += 1
+        time.sleep(0.02)
+    kill_converged = empty_scans >= 3
+
+    exact_signal(helper_identity, signal.SIGKILL)
+    try:
+        helper.wait(timeout=SUPERVISOR_KILL_SECONDS)
+    except subprocess.TimeoutExpired:
+        exact_signal(helper_identity, signal.SIGKILL)
+        helper.wait(timeout=SUPERVISOR_KILL_SECONDS)
+
+    deadline = time.monotonic() + SUPERVISOR_KILL_SECONDS
+    survivors = surviving_processes(observed)
+    while survivors and time.monotonic() < deadline:
+        signal_private_fixture_identities(
+            {(item.pid, item.start_time): item for item in survivors},
+            signal.SIGKILL,
+            protected_group=parent_identity.process_group,
+        )
+        time.sleep(0.02)
+        survivors = surviving_processes(observed)
+    if not freeze_converged:
+        raise AssertionError(
+            "checkpoint supervisor emergency teardown could not freeze a stable "
+            f"descendant closure; cleanup_survivors={survivors!r}"
+        )
+    if not kill_converged:
+        raise AssertionError(
+            "checkpoint supervisor emergency teardown could not drain its frozen "
+            f"descendant closure; cleanup_survivors={survivors!r}"
+        )
+    if readiness_error is not None:
+        raise AssertionError(
+            "checkpoint supervisor published malformed readiness before its "
+            f"hard deadline; cleanup_survivors={survivors!r}"
+        ) from readiness_error
+    return survivors
 
 
 def run_contained_command(
@@ -745,46 +894,164 @@ def run_contained_command(
     env: dict[str, str],
     timeout: float,
     started_pids: list[int] | None = None,
+    fixture_force_supervisor_deadline: bool = False,
+    fixture_force_supervisor_deadline_marker: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    # PR_SET_CHILD_SUBREAPER is process-wide.  Serialize fixture invocations,
-    # preserve the caller's original setting, and record every pre-existing
-    # descendant by exact PID/start identity so fallback cleanup cannot touch it.
-    with _CONTAINMENT_LOCK:
-        parent_pid = os.getpid()
-        original_subreaper = get_child_subreaper()
-        parent_baseline = snapshot_descendants(parent_pid)
-        if original_subreaper != 1:
-            set_prctl(
-                PR_SET_CHILD_SUBREAPER,
-                1,
-                "checkpoint fixture parent PR_SET_CHILD_SUBREAPER",
+    # Raw fork and PR_SET_CHILD_SUBREAPER are confined to a dedicated,
+    # single-threaded helper.  It remains in this process group so the project
+    # driver's case-level TERM/KILL cleanup cannot lose it, while the command
+    # itself enters a private session inside the helper.
+    parent = read_process_identity(os.getpid())
+    if parent is None:
+        raise AssertionError("cannot capture checkpoint fixture parent identity")
+    if not PROCESS_SUPERVISOR.is_file() or PROCESS_SUPERVISOR.is_symlink():
+        raise AssertionError(f"checkpoint process supervisor is unavailable: {PROCESS_SUPERVISOR}")
+    if fixture_force_supervisor_deadline != (
+        fixture_force_supervisor_deadline_marker is not None
+    ):
+        raise AssertionError(
+            "forced supervisor deadline requires exactly one fixture readiness marker"
+        )
+    with tempfile.TemporaryDirectory(prefix="checkpoint-supervisor-") as directory:
+        root = Path(directory)
+        environment_path = root / "environment.json"
+        stdout_path = root / "target.stdout"
+        stderr_path = root / "target.stderr"
+        ready_path = root / "ready.json"
+        receipt_path = root / "receipt.json"
+        environment_path.write_text(json.dumps(env, sort_keys=True) + "\n", encoding="utf-8")
+        helper_command = [
+            sys.executable,
+            "-I",
+            "-B",
+            str(PROCESS_SUPERVISOR),
+            "--expected-parent-pid",
+            str(parent.pid),
+            "--expected-parent-start",
+            str(parent.start_time),
+            "--cwd",
+            cwd,
+            "--timeout",
+            str(timeout),
+            "--environment",
+            str(environment_path),
+            "--stdout",
+            str(stdout_path),
+            "--stderr",
+            str(stderr_path),
+            "--ready",
+            str(ready_path),
+            "--receipt",
+            str(receipt_path),
+        ]
+        if fixture_force_supervisor_deadline:
+            helper_command.append("--fixture-hang-after-ready")
+        helper_command.extend(("--", *command))
+        with tempfile.TemporaryFile() as helper_stdout, tempfile.TemporaryFile() as helper_stderr:
+            helper = subprocess.Popen(
+                helper_command,
+                cwd="/",
+                env={
+                    "HOME": "/nonexistent",
+                    "LANG": "C",
+                    "LC_ALL": "C",
+                    "PATH": "/usr/bin:/bin",
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                },
+                stdin=subprocess.DEVNULL,
+                stdout=helper_stdout,
+                stderr=helper_stderr,
             )
-        try:
-            return run_contained_command_under_subreaper(
-                command,
-                cwd=cwd,
-                env=env,
-                timeout=timeout,
-                parent_pid=parent_pid,
-                parent_baseline=parent_baseline,
-                started_pids=started_pids,
-            )
-        finally:
-            observed, survivors = drain_post_baseline_descendants(
-                parent_pid,
-                parent_baseline,
-            )
-            if original_subreaper != 1:
-                set_prctl(
-                    PR_SET_CHILD_SUBREAPER,
-                    original_subreaper,
-                    "checkpoint fixture parent PR_SET_CHILD_SUBREAPER restore",
+            helper_identity = read_process_identity(helper.pid)
+            if helper_identity is None:
+                helper.kill()
+                helper.wait(timeout=3)
+                raise AssertionError("checkpoint process supervisor disappeared before identity capture")
+            if fixture_force_supervisor_deadline:
+                assert fixture_force_supervisor_deadline_marker is not None
+                marker_deadline = time.monotonic() + 10
+                while (
+                    not fixture_force_supervisor_deadline_marker.is_file()
+                    and helper.poll() is None
+                    and time.monotonic() < marker_deadline
+                ):
+                    time.sleep(0.02)
+                if not fixture_force_supervisor_deadline_marker.is_file():
+                    survivors = force_stop_and_reap_supervisor(
+                        helper,
+                        helper_identity,
+                        parent_identity=parent,
+                        ready_path=ready_path,
+                    )
+                    raise AssertionError(
+                        "forced supervisor fallback target did not satisfy its "
+                        f"fixture readiness barrier; cleanup_survivors={survivors!r}"
+                    )
+                helper_deadline = 0.2
+            else:
+                helper_deadline = (
+                    timeout
+                    + SUPERVISOR_NATURAL_EXIT_SECONDS
+                    + SUPERVISOR_TERM_SECONDS
+                    + SUPERVISOR_KILL_SECONDS
+                    + 5
                 )
-            if observed:
+            try:
+                helper_status = helper.wait(timeout=helper_deadline)
+            except subprocess.TimeoutExpired as error:
+                survivors = force_stop_and_reap_supervisor(
+                    helper,
+                    helper_identity,
+                    parent_identity=parent,
+                    ready_path=ready_path,
+                )
                 raise AssertionError(
-                    "checkpoint outer subreaper adopted fixture descendants; "
-                    f"adopted={sorted(observed.values())!r}; survivors={survivors!r}"
-                )
+                    "checkpoint process supervisor exceeded its bounded deadline; "
+                    f"cleanup_survivors={survivors!r}"
+                ) from error
+            helper_output = read_capture(helper_stdout)
+            helper_error = read_capture(helper_stderr)
+
+        stdout = stdout_path.read_text(encoding="utf-8", errors="replace") \
+            if stdout_path.is_file() else ""
+        stderr = stderr_path.read_text(encoding="utf-8", errors="replace") \
+            if stderr_path.is_file() else ""
+        if not receipt_path.is_file():
+            raise AssertionError(
+                "checkpoint process supervisor exited without a receipt: "
+                f"status={helper_status}\nhelper stdout:\n{helper_output}\n"
+                f"helper stderr:\n{helper_error}\ntarget stdout:\n{stdout}\n"
+                f"target stderr:\n{stderr}"
+            )
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if "error" in payload or helper_status != 0:
+            raise AssertionError(
+                "checkpoint process supervisor failed: "
+                f"status={helper_status} error={payload.get('error', 'none')}\n"
+                f"helper stdout:\n{helper_output}\nhelper stderr:\n{helper_error}\n"
+                f"target stdout:\n{stdout}\ntarget stderr:\n{stderr}"
+            )
+        if not ready_path.is_file() or ready_path.is_symlink():
+            raise AssertionError("checkpoint process supervisor omitted its exact readiness receipt")
+        readiness_payload = json.loads(ready_path.read_text(encoding="utf-8"))
+        returncode, timed_out, _residual = validate_success_supervisor_receipt(
+            payload,
+            helper_status=helper_status,
+            helper_identity=helper_identity,
+            parent_identity=parent,
+            readiness_payload=readiness_payload,
+        )
+        target = parse_identity_payload(payload["target"], "receipt.target")
+        if started_pids is not None:
+            started_pids.append(target.pid)
+        if timed_out:
+            raise subprocess.TimeoutExpired(
+                command,
+                timeout,
+                output=stdout,
+                stderr=stderr,
+            )
+        return subprocess.CompletedProcess(command, returncode, stdout, stderr)
 
 
 FAKE_PORTAGE = r'''#!/usr/bin/python3
@@ -855,7 +1122,10 @@ if os.getppid() != expected_parent:
 time.sleep(300)
 """
         child = subprocess.Popen(
-            ["/usr/bin/python3", "-I", "-B", "-c", child_code, str(os.getpid())]
+            [
+                "/usr/bin/python3", "-I", "-B", "-c", child_code,
+                str(os.getpid()),
+            ]
         )
         (control / "active-pids").write_text(
             f"{os.getpid()}\n{child.pid}\n", encoding="utf-8"
@@ -1212,7 +1482,10 @@ exit 0
 FAKE_UNSHARE = r'''#!/usr/bin/python3
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
+import select
 import signal
 import subprocess
 import sys
@@ -1225,42 +1498,590 @@ if not arguments or arguments.pop(0) != "--" or not arguments:
     raise SystemExit("unexpected fake unshare arguments")
 
 launcher = r"""
-import ctypes
 import os
-import signal
+import subprocess
 import sys
 expected_parent = int(sys.argv[1])
-command = sys.argv[2:]
+release_descriptor = int(sys.argv[2])
+command = sys.argv[3:]
 if os.getppid() != expected_parent:
     raise SystemExit(91)
-libc = ctypes.CDLL(None, use_errno=True)
-if libc.prctl(1, signal.SIGKILL) != 0:
-    raise OSError(ctypes.get_errno(), 'PR_SET_PDEATHSIG failed')
+if os.read(release_descriptor, 1) != b'R':
+    raise SystemExit(93)
+os.close(release_descriptor)
 if os.getppid() != expected_parent:
     raise SystemExit(92)
-os.execv(command[0], command)
+# Remain the exact private session/group leader while the command runs.  The
+# separately parent-death-bound watchdog can therefore signal the group without
+# relying on a reusable numeric PGID after its leader disappeared.
+process = subprocess.Popen(command)
+returncode = process.wait()
+raise SystemExit(returncode if returncode >= 0 else 128 - returncode)
 """
+
+watchdog_code = r"""
+import ctypes
+import os
+from pathlib import Path
+import select
+import signal
+import sys
+import time
+
+expected_parent = int(sys.argv[1])
+expected_parent_start = int(sys.argv[2])
+child_pid = int(sys.argv[3])
+child_start = int(sys.argv[4])
+child_process_group = int(sys.argv[5])
+child_session = int(sys.argv[6])
+control_descriptor = int(sys.argv[7])
+ready_descriptor = int(sys.argv[8])
+control_root = Path(sys.argv[9])
+terminal = {'Z', 'X', 'x'}
+parent_died = False
+
+def identity(pid):
+    try:
+        text = Path(f'/proc/{pid}/stat').read_text(encoding='ascii')
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    fields = text[text.rfind(') ') + 2:].split()
+    if len(fields) < 20:
+        return None
+    return int(fields[1]), int(fields[2]), int(fields[3]), fields[0], int(fields[19])
+
+def live_session_members():
+    members = []
+    for entry in Path('/proc').iterdir():
+        if not entry.name.isdigit():
+            continue
+        current = identity(int(entry.name))
+        if (
+            current is not None
+            and current[2] == child_session
+            and current[3] not in terminal
+        ):
+            members.append((int(entry.name), current[1], current[4]))
+    return members
+
+def publish_marker(path, text):
+    partial = path.with_name(path.name + f'.partial.{os.getpid()}')
+    partial.write_text(text, encoding='ascii')
+    with partial.open('rb') as stream:
+        os.fsync(stream.fileno())
+    os.replace(partial, path)
+
+def parent_death(_signum, _frame):
+    global parent_died
+    parent_died = True
+
+signal.signal(signal.SIGTERM, parent_death)
+signal.signal(signal.SIGHUP, parent_death)
+signal.signal(signal.SIGINT, parent_death)
+libc = ctypes.CDLL(None, use_errno=True)
+if libc.prctl(1, signal.SIGTERM) != 0:
+    raise OSError(ctypes.get_errno(), 'watchdog PR_SET_PDEATHSIG failed')
+parent = identity(expected_parent)
+if (
+    os.getppid() != expected_parent
+    or parent is None
+    or parent[4] != expected_parent_start
+):
+    parent_died = True
+if os.write(ready_descriptor, b'R') != 1:
+    raise SystemExit(94)
+os.close(ready_descriptor)
+
+while not parent_died:
+    readable, _, _ = select.select([control_descriptor], [], [], 0.02)
+    if readable:
+        command = os.read(control_descriptor, 1)
+        if command != b'N':
+            parent_died = True
+        break
+    parent = identity(expected_parent)
+    if (
+        os.getppid() != expected_parent
+        or parent is None
+        or parent[4] != expected_parent_start
+    ):
+        parent_died = True
+os.close(control_descriptor)
+
+child = identity(child_pid)
+if (
+    child_process_group != child_pid
+    or child_session != child_pid
+    or (
+        child is not None
+        and (
+            child[4] != child_start
+            or child[1] != child_process_group
+            or child[2] != child_session
+        )
+    )
+):
+    raise SystemExit(76)
+if (control_root / 'force-watchdog-pre-drain-failure').exists():
+    raise SystemExit(80)
+if (control_root / 'force-watchdog-stop-before-drain').exists():
+    publish_marker(control_root / 'watchdog-stopped-before-drain', 'ready\n')
+    os.kill(os.getpid(), signal.SIGSTOP)
+# The exact session leader was bound before workload release.  It may already
+# be reaped after a termination signal while other groups in that same session
+# remain live.  A present-but-reused/mismatched leader is rejected above; an
+# absent leader requires draining the still-anchored recorded session.
+deadline = time.monotonic() + 15
+empty_scans = 0
+first_scan = True
+while time.monotonic() < deadline:
+    members = live_session_members()
+    if not members:
+        empty_scans += 1
+        if empty_scans >= 3:
+            raise SystemExit(
+                79 if (control_root / 'force-watchdog-failure').exists() else 0
+            )
+        time.sleep(0.02)
+        continue
+    empty_scans = 0
+    if first_scan and (control_root / 'exercise-late-session-group').exists():
+        first_scan = False
+        publish_marker(control_root / 'watchdog-first-snapshot', 'ready\n')
+        late_deadline = time.monotonic() + 5
+        while not (control_root / 'late-session-pid').is_file() and time.monotonic() < late_deadline:
+            time.sleep(0.01)
+        if not (control_root / 'late-session-pid').is_file():
+            raise SystemExit(77)
+        publish_marker(control_root / 'late-session-visible', 'ready\n')
+        bound_deadline = time.monotonic() + 5
+        while not (control_root / 'late-session-bound').is_file() and time.monotonic() < bound_deadline:
+            time.sleep(0.01)
+        if not (control_root / 'late-session-bound').is_file():
+            raise SystemExit(78)
+    else:
+        first_scan = False
+    for pid, process_group, start_time in members:
+        current = identity(pid)
+        if (
+            current is None
+            or current[1] != process_group
+            or current[2] != child_session
+            or current[4] != start_time
+            or current[3] in terminal
+        ):
+            continue
+        pidfd = None
+        pidfd_signalled = False
+        try:
+            if hasattr(os, 'pidfd_open') and hasattr(signal, 'pidfd_send_signal'):
+                try:
+                    pidfd = os.pidfd_open(pid)
+                    current = identity(pid)
+                    if (
+                        current is None
+                        or current[1] != process_group
+                        or current[2] != child_session
+                        or current[4] != start_time
+                        or current[3] in terminal
+                    ):
+                        continue
+                    signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+                    pidfd_signalled = True
+                except (OSError, ProcessLookupError):
+                    # Portable fixture hosts may expose the Python pidfd API
+                    # while denying the syscall.  Fall back only inside this
+                    # already-bound private test session and revalidate again.
+                    pass
+            if not pidfd_signalled:
+                current = identity(pid)
+                if (
+                    current is not None
+                    and current[1] == process_group
+                    and current[2] == child_session
+                    and current[4] == start_time
+                    and current[3] not in terminal
+                ):
+                    os.kill(pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            # The repeated observation loop proves eventual emptiness.  A task
+            # that changes identity or exits during this exact-signal attempt is
+            # simply re-observed on the next pass.
+            pass
+        finally:
+            if pidfd is not None:
+                os.close(pidfd)
+    if not live_session_members():
+        empty_scans = 1
+    if empty_scans >= 3:
+        raise SystemExit(
+            79 if (control_root / 'force-watchdog-failure').exists() else 0
+        )
+    time.sleep(0.02)
+raise SystemExit(75)
+"""
+
+def identity(pid: int):
+    try:
+        text = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    fields = text[text.rfind(") ") + 2:].split()
+    if len(fields) < 20:
+        return None
+    return int(fields[1]), int(fields[2]), int(fields[3]), fields[0], int(fields[19])
+
+def identity_payload(pid: int, current):
+    return {
+        "pid": pid,
+        "ppid": current[0],
+        "process_group": current[1],
+        "session": current[2],
+        "state": current[3],
+        "start_time": current[4],
+    }
+
+def live_session_identities(session_id: int):
+    members = []
+    for entry in Path('/proc').iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        current = identity(pid)
+        if current is not None and current[2] == session_id and current[3] not in {'Z', 'X', 'x'}:
+            members.append(identity_payload(pid, current))
+    return sorted(members, key=lambda item: (item['pid'], item['start_time']))
+
+def signal_exact_member(member) -> None:
+    pid = member['pid']
+    current = identity(pid)
+    if (
+        current is None
+        or current[1] != member['process_group']
+        or current[2] != member['session']
+        or current[3] in {'Z', 'X', 'x'}
+        or current[4] != member['start_time']
+    ):
+        return
+    pidfd = None
+    pidfd_signalled = False
+    try:
+        if hasattr(os, 'pidfd_open') and hasattr(signal, 'pidfd_send_signal'):
+            try:
+                pidfd = os.pidfd_open(pid)
+                current = identity(pid)
+                if (
+                    current is None
+                    or current[1] != member['process_group']
+                    or current[2] != member['session']
+                    or current[3] in {'Z', 'X', 'x'}
+                    or current[4] != member['start_time']
+                ):
+                    return
+                signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+                pidfd_signalled = True
+            except (OSError, ProcessLookupError):
+                pass
+        if not pidfd_signalled:
+            current = identity(pid)
+            if (
+                current is not None
+                and current[1] == member['process_group']
+                and current[2] == member['session']
+                and current[3] not in {'Z', 'X', 'x'}
+                and current[4] == member['start_time']
+            ):
+                os.kill(pid, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        pass
+    finally:
+        if pidfd is not None:
+            os.close(pidfd)
+
+def bounded_outer_session_drain(session_id: int):
+    deadline = time.monotonic() + 5
+    empty_scans = 0
+    while time.monotonic() < deadline:
+        members = live_session_identities(session_id)
+        if not members:
+            empty_scans += 1
+            if empty_scans >= 3:
+                return []
+            time.sleep(0.02)
+            continue
+        empty_scans = 0
+        for member in members:
+            signal_exact_member(member)
+        time.sleep(0.02)
+    return live_session_identities(session_id)
+
+def publish_json(path: Path, payload) -> None:
+    partial = path.with_name(path.name + f".partial.{os.getpid()}")
+    partial.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+    with partial.open("rb") as stream:
+        os.fsync(stream.fileno())
+    os.replace(partial, path)
+    directory_descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory_descriptor)
+    finally:
+        os.close(directory_descriptor)
+
+parent = identity(os.getpid())
+if parent is None:
+    raise SystemExit("fake unshare cannot capture its own identity")
+release_reader, release_writer = os.pipe()
 child = subprocess.Popen(
-    ["/usr/bin/python3", "-I", "-B", "-c", launcher, str(os.getpid()), *arguments],
+    [
+        "/usr/bin/python3", "-I", "-B", "-c", launcher,
+        str(os.getpid()), str(release_reader), *arguments,
+    ],
+    pass_fds=(release_reader,),
     start_new_session=True,
 )
-terminating = False
+os.close(release_reader)
+child_identity = None
+deadline = time.monotonic() + 3
+while child_identity is None and child.poll() is None and time.monotonic() < deadline:
+    child_identity = identity(child.pid)
+    if child_identity is None:
+        time.sleep(0.01)
+if child_identity is None:
+    child.kill()
+    child.wait(timeout=2)
+    raise SystemExit("fake unshare child disappeared before identity capture")
+if child_identity[1:3] != (child.pid, child.pid):
+    child.kill()
+    child.wait(timeout=2)
+    raise SystemExit("fake unshare child did not enter a private session")
 
-def terminate(signum: int, _frame: object) -> None:
-    global terminating
-    terminating = True
+watchdog_control_reader, watchdog_control_writer = os.pipe()
+watchdog_ready_reader, watchdog_ready_writer = os.pipe()
+fixture_root = Path(__file__).resolve().parents[3]
+watchdog = subprocess.Popen(
+    [
+        "/usr/bin/python3", "-I", "-B", "-c", watchdog_code,
+        str(os.getpid()), str(parent[4]), str(child.pid), str(child_identity[4]),
+        str(child_identity[1]), str(child_identity[2]),
+        str(watchdog_control_reader), str(watchdog_ready_writer),
+        str(fixture_root / "control"),
+    ],
+    pass_fds=(watchdog_control_reader, watchdog_ready_writer),
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
+os.close(watchdog_control_reader)
+os.close(watchdog_ready_writer)
+readable, _, _ = select.select([watchdog_ready_reader], [], [], 3)
+if not readable or os.read(watchdog_ready_reader, 1) != b"R":
     try:
         os.killpg(child.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    child.wait(timeout=2)
+    watchdog.kill()
+    watchdog.wait(timeout=2)
+    raise SystemExit("fake unshare watchdog did not bind before release")
+os.close(watchdog_ready_reader)
+watchdog_identity = identity(watchdog.pid)
+if watchdog_identity is None:
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    child.wait(timeout=2)
+    watchdog.kill()
+    watchdog.wait(timeout=2)
+    raise SystemExit("fake unshare watchdog disappeared after readiness")
+adapter_receipt = fixture_root / "control/fake-unshare-adapter-ready.json"
+adapter_payload = {
+    "schema_version": 1,
+    "supervisor": identity_payload(os.getpid(), parent),
+    "child": identity_payload(child.pid, child_identity),
+    "watchdog": identity_payload(watchdog.pid, watchdog_identity),
+}
+termination_signal = None
+termination_started_at = None
+watchdog_request_sent = False
 
+def request_watchdog(command: bytes) -> None:
+    global watchdog_request_sent
+    if watchdog_request_sent:
+        return
+    try:
+        os.write(watchdog_control_writer, command)
+    except BrokenPipeError:
+        pass
+    watchdog_request_sent = True
+
+def terminate(signum: int, _frame: object) -> None:
+    global termination_signal, termination_started_at
+    if termination_signal is None:
+        termination_signal = signum
+        termination_started_at = time.monotonic()
+    request_watchdog(b"T")
+
+blocked_signals = {signal.SIGTERM, signal.SIGINT, signal.SIGHUP}
+previous_signal_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked_signals)
 signal.signal(signal.SIGTERM, terminate)
 signal.signal(signal.SIGINT, terminate)
 signal.signal(signal.SIGHUP, terminate)
+publish_json(adapter_receipt, adapter_payload)
+# The pending-set observation is this fixture adapter's release-commit
+# linearization point.  A signal already pending here prevents release; a
+# signal that becomes pending afterward is ordered post-commit even if Python
+# delivers its handler just after the one-byte release write.
+pending_before_release = set(signal.sigpending()) & blocked_signals
+try:
+    if pending_before_release:
+        termination_signal = min(int(item) for item in pending_before_release)
+        termination_started_at = time.monotonic()
+        request_watchdog(b"T")
+    elif os.write(release_writer, b"R") != 1:
+        request_watchdog(b"T")
+        raise SystemExit("fake unshare child release was incomplete")
+finally:
+    os.close(release_writer)
+    # This private adapter owns its three handled lifecycle signals.  Do not
+    # reintroduce an inherited block that would defeat the bounded cleanup
+    # deadline after release commitment.
+    signal.pthread_sigmask(
+        signal.SIG_SETMASK, set(previous_signal_mask) - blocked_signals
+    )
+watchdog_exited_before_child = False
+watchdog_cleanup_timed_out = False
+watchdog_status = None
 while child.poll() is None:
+    watchdog_status = watchdog.poll()
+    if watchdog_status is not None:
+        current_child = identity(child.pid)
+        watchdog_exited_before_child = (
+            current_child is not None
+            and current_child[4] == child_identity[4]
+            and current_child[3] not in {'Z', 'X', 'x'}
+        )
+        if watchdog_exited_before_child:
+            bounded_outer_session_drain(child_identity[2])
+        break
+    if (
+        termination_started_at is not None
+        and time.monotonic() - termination_started_at >= 5
+    ):
+        watchdog_exited_before_child = True
+        watchdog_cleanup_timed_out = True
+        signal_exact_member(identity_payload(watchdog.pid, watchdog_identity))
+        try:
+            watchdog.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        watchdog_status = 124
+        bounded_outer_session_drain(child_identity[2])
+        break
     time.sleep(0.01)
-if terminating:
-    raise SystemExit(128 + signal.SIGTERM)
+if child.poll() is None:
+    try:
+        child.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        signal_exact_member(identity_payload(child.pid, child_identity))
+        try:
+            child.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+if watchdog_status is None and not watchdog_request_sent:
+    # Normal completion still drains every same-session fixture background
+    # group.  This adapter deliberately does not claim to emulate kernel PID
+    # namespace teardown for a descendant that escapes with setsid().
+    request_watchdog(b"N")
+os.close(watchdog_control_writer)
+if watchdog_status is None:
+    normal_watchdog_deadline = time.monotonic() + 18.0
+    while watchdog.poll() is None:
+        effective_deadline = normal_watchdog_deadline
+        if termination_started_at is not None:
+            effective_deadline = min(
+                effective_deadline, termination_started_at + 5.0
+            )
+        remaining = effective_deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(0.02, remaining))
+    if watchdog.poll() is None:
+        watchdog_cleanup_timed_out = True
+        signal_exact_member(identity_payload(watchdog.pid, watchdog_identity))
+        try:
+            watchdog.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        watchdog_status = 124
+        bounded_outer_session_drain(child_identity[2])
+    else:
+        watchdog_status = watchdog.returncode
+else:
+    try:
+        watchdog.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        signal_exact_member(identity_payload(watchdog.pid, watchdog_identity))
+        try:
+            watchdog.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            watchdog_status = 125
+signal.pthread_sigmask(signal.SIG_BLOCK, blocked_signals)
+pending_at_terminal_commit = set(signal.sigpending()) & blocked_signals
+if termination_signal is None and pending_at_terminal_commit:
+    termination_signal = min(int(item) for item in pending_at_terminal_commit)
+# This immutable snapshot is the terminal-status linearization point.  Signals
+# pending here are reflected in both receipt and status; later signals remain
+# blocked and are ordered after the adapter's completed result.
+terminal_signal = termination_signal
+child_returncode = child.returncode if child.returncode is not None else 125
+remaining_members = live_session_identities(child_identity[2])
+terminal_receipt = fixture_root / "control/fake-unshare-adapter-terminal.json"
+publish_json(
+    terminal_receipt,
+    {
+        "schema_version": 1,
+        "supervisor": adapter_payload["supervisor"],
+        "child": adapter_payload["child"],
+        "watchdog": adapter_payload["watchdog"],
+        "terminating": terminal_signal is not None,
+        "termination_signal": terminal_signal,
+        "watchdog_exited_before_child": watchdog_exited_before_child,
+        "watchdog_cleanup_timed_out": watchdog_cleanup_timed_out,
+        "child_returncode": child_returncode,
+        "watchdog_status": watchdog_status,
+        "remaining_members": remaining_members,
+    },
+)
+if (fixture_root / "control/pause-after-terminal-publication").exists():
+    publish_json(
+        fixture_root / "control/fake-unshare-terminal-paused.json",
+        {"schema_version": 1},
+    )
+    pause_deadline = time.monotonic() + 5
+    while (
+        not (fixture_root / "control/fake-unshare-terminal-release").is_file()
+        and time.monotonic() < pause_deadline
+    ):
+        time.sleep(0.01)
+    if not (fixture_root / "control/fake-unshare-terminal-release").is_file():
+        raise SystemExit("fake unshare terminal-publication pause timed out")
+if watchdog_exited_before_child:
+    raise SystemExit(
+        "fake unshare watchdog exited before its bound child: "
+        + str(watchdog_status)
+    )
+if watchdog_cleanup_timed_out:
+    raise SystemExit("fake unshare watchdog cleanup timed out: " + str(watchdog_status))
+if watchdog_status != 0:
+    raise SystemExit(f"fake unshare watchdog failed: {watchdog_status}")
+if remaining_members:
+    raise SystemExit(
+        "fake unshare watchdog returned with live recorded-session members: "
+        + repr(remaining_members)
+    )
+if terminal_signal is not None:
+    raise SystemExit(128 + terminal_signal)
 raise SystemExit(child.returncode)
 '''
 
@@ -1476,11 +2297,393 @@ class CheckpointFixture:
         self.last_coordinator_pid = started_pids[0]
         return result
 
+    def fake_unshare_command(self, workload: str) -> list[str]:
+        return [
+            str(self.tool_root / "usr/bin/unshare"),
+            "--pid",
+            "--fork",
+            "--kill-child=KILL",
+            "--mount-proc",
+            "--",
+            "/usr/bin/python3",
+            "-I",
+            "-B",
+            "-c",
+            workload,
+            str(self.control),
+        ]
+
     def marker(self, name: str) -> None:
         (self.control / name).touch()
 
 
 class CheckpointHarnessTest(unittest.TestCase):
+    def test_success_receipt_validation_rejects_malformed_schema_and_identity(
+        self,
+    ) -> None:
+        parent = ProcessIdentity(41001, 1, 41001, 41001, "S", 101)
+        helper = ProcessIdentity(41002, parent.pid, parent.process_group, parent.session, "S", 102)
+        target = ProcessIdentity(41003, helper.pid, 41003, 41003, "R", 103)
+
+        def encoded(identity: ProcessIdentity) -> dict[str, int | str]:
+            return {
+                "pid": identity.pid,
+                "ppid": identity.ppid,
+                "process_group": identity.process_group,
+                "session": identity.session,
+                "state": identity.state,
+                "start_time": identity.start_time,
+            }
+
+        readiness = {
+            "schema_version": 1,
+            "supervisor": encoded(helper),
+            "target": encoded(target),
+        }
+        valid = {
+            "cleanup_survivors": [],
+            "interruption_signal": None,
+            "reaped_pids": [target.pid],
+            "residual_before_cleanup": [],
+            "schema_version": 4,
+            "supervisor": encoded(helper),
+            "target": encoded(target),
+            "target_release_committed": True,
+            "target_returncode": 0,
+            "timed_out": False,
+        }
+        self.assertEqual(
+            validate_success_supervisor_receipt(
+                valid,
+                helper_status=0,
+                helper_identity=helper,
+                parent_identity=parent,
+                readiness_payload=readiness,
+                identity_reader=lambda _pid: None,
+            ),
+            (0, False, []),
+        )
+
+        malformed: dict[str, dict[str, object]] = {}
+        for name in (
+            "missing-supervisor",
+            "cleanup-not-list",
+            "timed-out-not-bool",
+            "interrupted-success",
+            "helper-start-changed",
+            "release-not-committed",
+            "target-not-reaped",
+        ):
+            malformed[name] = json.loads(json.dumps(valid))
+        del malformed["missing-supervisor"]["supervisor"]
+        malformed["cleanup-not-list"]["cleanup_survivors"] = False
+        malformed["timed-out-not-bool"]["timed_out"] = 0
+        malformed["interrupted-success"]["interruption_signal"] = signal.SIGTERM
+        assert isinstance(malformed["helper-start-changed"]["supervisor"], dict)
+        malformed["helper-start-changed"]["supervisor"]["start_time"] = helper.start_time + 1
+        malformed["release-not-committed"]["target_release_committed"] = False
+        malformed["target-not-reaped"]["reaped_pids"] = []
+        for name, payload in malformed.items():
+            with self.subTest(name=name), self.assertRaises(AssertionError):
+                validate_success_supervisor_receipt(
+                    payload,
+                    helper_status=0,
+                    helper_identity=helper,
+                    parent_identity=parent,
+                    readiness_payload=readiness,
+                    identity_reader=lambda _pid: None,
+                )
+
+        with self.assertRaisesRegex(AssertionError, "exact target identity remained"):
+            validate_success_supervisor_receipt(
+                valid,
+                helper_status=0,
+                helper_identity=helper,
+                parent_identity=parent,
+                readiness_payload=readiness,
+                identity_reader=lambda _pid: target,
+            )
+
+        residual = ProcessIdentity(41004, helper.pid, 41004, 41004, "S", 104)
+        live_residual = json.loads(json.dumps(valid))
+        live_residual["timed_out"] = True
+        live_residual["residual_before_cleanup"] = [encoded(residual)]
+        with self.assertRaisesRegex(AssertionError, "recorded residual identity remained"):
+            validate_success_supervisor_receipt(
+                live_residual,
+                helper_status=0,
+                helper_identity=helper,
+                parent_identity=parent,
+                readiness_payload=readiness,
+                identity_reader=(
+                    lambda pid: residual if pid == residual.pid else None
+                ),
+            )
+        reused_pid = residual._replace(start_time=residual.start_time + 1)
+        self.assertEqual(
+            validate_success_supervisor_receipt(
+                live_residual,
+                helper_status=0,
+                helper_identity=helper,
+                parent_identity=parent,
+                readiness_payload=readiness,
+                identity_reader=(
+                    lambda pid: reused_pid if pid == residual.pid else None
+                ),
+            ),
+            (0, True, [residual]),
+        )
+
+    def test_interruption_before_fork_or_release_commitment_never_executes_target(
+        self,
+    ) -> None:
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        stage_contract = {
+            "fork": ("--fixture-interrupt-before-fork", "before-target-creation"),
+            "release": ("--fixture-interrupt-before-release", "before-target-release"),
+            "masked-release": (
+                "--fixture-interrupt-after-release-mask",
+                "after-release-mask",
+            ),
+        }
+        for stage, (fixture_option, barrier_stage) in stage_contract.items():
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory(
+                prefix=f"checkpoint-interrupt-{stage}-"
+            ) as directory:
+                root = Path(directory)
+                environment = root / "environment.json"
+                stdout = root / "target.stdout"
+                stderr = root / "target.stderr"
+                ready = root / "ready.json"
+                receipt = root / "receipt.json"
+                interruption_barrier = root / "interruption-barrier.json"
+                marker = root / "target-started"
+                environment.write_text(
+                    json.dumps(
+                        {
+                            "HOME": "/nonexistent",
+                            "LANG": "C",
+                            "LC_ALL": "C",
+                            "PATH": "/usr/bin:/bin",
+                            "PYTHONDONTWRITEBYTECODE": "1",
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                command = [
+                    sys.executable,
+                    "-I",
+                    "-B",
+                    str(PROCESS_SUPERVISOR),
+                    "--expected-parent-pid",
+                    str(parent.pid),
+                    "--expected-parent-start",
+                    str(parent.start_time),
+                    "--cwd",
+                    "/",
+                    "--timeout",
+                    "10",
+                    "--environment",
+                    str(environment),
+                    "--stdout",
+                    str(stdout),
+                    "--stderr",
+                    str(stderr),
+                    "--ready",
+                    str(ready),
+                    "--receipt",
+                    str(receipt),
+                    fixture_option,
+                    str(interruption_barrier),
+                    "--",
+                    sys.executable,
+                    "-I",
+                    "-B",
+                    "-c",
+                    (
+                        "from pathlib import Path; "
+                        f"Path({str(marker)!r}).write_text('started', encoding='ascii')"
+                    ),
+                ]
+                helper = subprocess.Popen(
+                    command,
+                    cwd="/",
+                    env={
+                        "HOME": "/nonexistent",
+                        "LANG": "C",
+                        "LC_ALL": "C",
+                        "PATH": "/usr/bin:/bin",
+                        "PYTHONDONTWRITEBYTECODE": "1",
+                    },
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                helper_identity = read_process_identity(helper.pid)
+                self.assertIsNotNone(helper_identity)
+                assert helper_identity is not None
+                barrier_deadline = time.monotonic() + 10
+                while (
+                    not interruption_barrier.is_file()
+                    and helper.poll() is None
+                    and time.monotonic() < barrier_deadline
+                ):
+                    time.sleep(0.01)
+                if not interruption_barrier.is_file():
+                    if helper.poll() is None:
+                        survivors = force_stop_and_reap_supervisor(
+                            helper,
+                            helper_identity,
+                            parent_identity=parent,
+                            ready_path=ready,
+                        )
+                    else:
+                        survivors = []
+                    self.fail(
+                        "checkpoint supervisor omitted its interruption barrier; "
+                        f"status={helper.poll()} cleanup_survivors={survivors!r}"
+                    )
+                barrier = json.loads(
+                    interruption_barrier.read_text(encoding="utf-8")
+                )
+                self.assertEqual(
+                    set(barrier), {"schema_version", "stage", "supervisor"}
+                )
+                self.assertEqual(barrier["schema_version"], 1)
+                self.assertEqual(
+                    barrier["stage"], barrier_stage,
+                )
+                barrier_supervisor = parse_identity_payload(
+                    barrier["supervisor"], "interruption-barrier.supervisor"
+                )
+                self.assertEqual(
+                    (barrier_supervisor.pid, barrier_supervisor.start_time),
+                    (helper_identity.pid, helper_identity.start_time),
+                )
+                current_helper = read_process_identity(helper_identity.pid)
+                self.assertIsNotNone(current_helper)
+                assert current_helper is not None
+                self.assertEqual(current_helper.start_time, helper_identity.start_time)
+                os.kill(helper_identity.pid, signal.SIGTERM)
+                try:
+                    helper_status = helper.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    survivors = force_stop_and_reap_supervisor(
+                        helper,
+                        helper_identity,
+                        parent_identity=parent,
+                        ready_path=ready,
+                    )
+                    self.fail(
+                        "interrupted checkpoint supervisor exceeded its deadline; "
+                        f"cleanup_survivors={survivors!r}"
+                    )
+
+                self.assertEqual(helper_status, 128 + signal.SIGTERM)
+                self.assertFalse(marker.exists(), "interrupted target executed its command")
+                payload = json.loads(receipt.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    set(payload),
+                    {
+                        "cleanup_survivors",
+                        "error",
+                        "interruption_signal",
+                        "reaped_pids",
+                        "schema_version",
+                        "target",
+                        "target_release_committed",
+                        "target_returncode",
+                        "timed_out",
+                    },
+                )
+                self.assertEqual(payload["schema_version"], 4)
+                self.assertEqual(payload["interruption_signal"], signal.SIGTERM)
+                self.assertIs(payload["timed_out"], False)
+                self.assertIs(payload["target_release_committed"], False)
+                expected_stage = "creation" if stage == "fork" else "release"
+                self.assertIn(f"before target {expected_stage}", payload["error"])
+                self.assertEqual(
+                    parse_identity_list(
+                        payload["cleanup_survivors"], "receipt.cleanup_survivors"
+                    ),
+                    [],
+                )
+                reaped_pids = payload["reaped_pids"]
+                self.assertIsInstance(reaped_pids, list)
+                self.assertEqual(reaped_pids, sorted(set(reaped_pids)))
+                if stage == "fork":
+                    self.assertIsNone(payload["target"])
+                    self.assertFalse(ready.exists())
+                else:
+                    target = parse_identity_payload(payload["target"], "receipt.target")
+                    self.assertIn(target.pid, reaped_pids)
+                    current = read_process_identity(target.pid)
+                    self.assertTrue(
+                        current is None or current.start_time != target.start_time,
+                        f"interrupted target remained: {current!r}",
+                    )
+                    readiness = json.loads(ready.read_text(encoding="utf-8"))
+                    _supervisor, ready_target = validate_supervisor_ready_receipt(
+                        readiness,
+                        helper_identity=helper_identity,
+                        parent_identity=parent,
+                    )
+                    self.assertEqual(ready_target, target)
+
+    def test_forced_supervisor_deadline_freezes_and_drains_private_escape(
+        self,
+    ) -> None:
+        child_identity: ProcessIdentity | None = None
+        with tempfile.TemporaryDirectory(prefix="checkpoint-forced-fallback-") as directory:
+            marker = Path(directory) / "child.identity"
+            code = textwrap.dedent(
+                f"""\
+                import subprocess
+                import time
+                from pathlib import Path
+
+                child = subprocess.Popen(["/usr/bin/sleep", "300"], start_new_session=True)
+                fields = Path(f"/proc/{{child.pid}}/stat").read_text().rsplit(") ", 1)[1].split()
+                Path({str(marker)!r}).write_text(
+                    f"{{child.pid}} {{fields[19]}}\\n", encoding="ascii"
+                )
+                time.sleep(300)
+                """
+            )
+            started = time.monotonic()
+            with self.assertRaisesRegex(
+                AssertionError,
+                r"exceeded its bounded deadline; cleanup_survivors=\[\]",
+            ):
+                run_contained_command(
+                    ["/usr/bin/python3", "-I", "-B", "-c", code],
+                    cwd="/",
+                    env={
+                        "HOME": "/nonexistent",
+                        "LANG": "C",
+                        "LC_ALL": "C",
+                        "PATH": "/usr/bin:/bin",
+                    },
+                    timeout=60,
+                    fixture_force_supervisor_deadline=True,
+                    fixture_force_supervisor_deadline_marker=marker,
+                )
+            self.assertLess(time.monotonic() - started, 10)
+            self.assertTrue(marker.is_file(), "forced fallback target never published readiness")
+            child_pid, child_start = (
+                int(value) for value in marker.read_text(encoding="ascii").split()
+            )
+            child_identity = ProcessIdentity(child_pid, 0, 0, 0, "?", child_start)
+            self.assertFalse(
+                process_identity_is_live(child_identity),
+                f"forced supervisor fallback left a private escape: "
+                f"{read_process_identity(child_pid)!r}",
+            )
+
     def test_subreaper_catches_fast_setsid_escape_without_touching_baseline_child(
         self,
     ) -> None:
@@ -2528,7 +3731,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                             f"{cleanup_survivors!r}"
                         )
 
-    def test_cleanup_deadline_expiry_is_bounded_reported_and_children_die_with_parent(self) -> None:
+    def test_cleanup_deadline_expiry_is_bounded_and_portable_adapter_drains_children(self) -> None:
         self.fixture.marker("hang-quickpkg")
         self.fixture.marker("force-cleanup-deadline-expiry")
         with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
@@ -2569,6 +3772,16 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                     identity = read_process_identity(int(pid_text))
                     if identity is not None:
                         observed[(identity.pid, identity.start_time)] = identity
+                adapter = bind_fake_unshare_adapter(
+                    self.fixture.control / "fake-unshare-adapter-ready.json",
+                    coordinator=root,
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
 
                 started = time.monotonic()
                 os.kill(root.pid, signal.SIGTERM)
@@ -2586,9 +3799,16 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                 )
                 failure = (self.report() / "failure.txt").read_text()
                 self.assertIn("active_child_cleanup_status=5", failure)
-                self.assertTrue(
-                    all(wait_process_identity_stopped(identity, 10) for identity in observed.values()),
-                    f"children outlived bounded coordinator failure: {surviving_processes(observed)!r}",
+                teardown_deadline = time.monotonic() + 10
+                survivors = surviving_processes(observed)
+                while survivors and time.monotonic() < teardown_deadline:
+                    time.sleep(0.02)
+                    survivors = surviving_processes(observed)
+                self.assertEqual(
+                    survivors,
+                    [],
+                    "deterministic portable adapter did not drain the bounded "
+                    f"coordinator failure: {survivors!r}",
                 )
                 self.assert_selector_unchanged()
             finally:
@@ -2687,7 +3907,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                             f"{cleanup_survivors!r}"
                         )
 
-    def test_coordinator_sigkill_cannot_orphan_term_surviving_tracked_descendants(self) -> None:
+    def test_portable_adapter_drains_tracked_descendants_after_coordinator_sigkill(self) -> None:
         self.fixture.marker("hang-quickpkg")
         with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
             process = subprocess.Popen(
@@ -2724,12 +3944,28 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                     assert identity is not None
                     active_identities.append(identity)
                     observed[(identity.pid, identity.start_time)] = identity
+                adapter = bind_fake_unshare_adapter(
+                    self.fixture.control / "fake-unshare-adapter-ready.json",
+                    coordinator=root,
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
                 os.kill(root.pid, signal.SIGKILL)
                 self.assertEqual(process.wait(timeout=10), -signal.SIGKILL)
-                self.assertTrue(
-                    all(wait_process_identity_stopped(identity, 10) for identity in active_identities),
-                    f"tracked descendants survived coordinator SIGKILL: "
-                    f"{surviving_processes(observed)!r}",
+                teardown_deadline = time.monotonic() + 10
+                survivors = surviving_processes(observed)
+                while survivors and time.monotonic() < teardown_deadline:
+                    time.sleep(0.02)
+                    survivors = surviving_processes(observed)
+                self.assertEqual(
+                    survivors,
+                    [],
+                    "portable adapter left tracked descendants after coordinator SIGKILL: "
+                    f"{survivors!r}",
                 )
                 self.assert_selector_unchanged()
             finally:
@@ -2739,6 +3975,979 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                     if cleanup_survivors and sys.exc_info()[0] is None:
                         self.fail(
                             "coordinator-SIGKILL regression left non-zombie processes: "
+                            f"{cleanup_survivors!r}"
+                        )
+
+    def test_fake_unshare_terminal_commit_keeps_late_signal_and_receipt_consistent(
+        self,
+    ) -> None:
+        self.fixture.marker("pause-after-terminal-publication")
+        workload = textwrap.dedent(
+            """
+            from pathlib import Path
+            import sys
+            import time
+
+            control = Path(sys.argv[1])
+            (control / "terminal-workload-ready").write_text(
+                "ready", encoding="ascii"
+            )
+            deadline = time.monotonic() + 10
+            while (
+                not (control / "terminal-workload-release").is_file()
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+            if not (control / "terminal-workload-release").is_file():
+                raise SystemExit(91)
+            raise SystemExit(0)
+            """
+        )
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        observed: dict[tuple[int, int], ProcessIdentity] = {}
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                self.fixture.fake_unshare_command(workload),
+                cwd="/",
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+            root = read_process_identity(process.pid)
+            if root is None:
+                process.kill()
+                process.wait(timeout=3)
+                self.fail("fake-unshare supervisor disappeared before identity capture")
+            adapter: dict[str, ProcessIdentity] | None = None
+            try:
+                ready_path = self.fixture.control / "fake-unshare-adapter-ready.json"
+                workload_ready = self.fixture.control / "terminal-workload-ready"
+                deadline = time.monotonic() + 10
+                while (
+                    (not ready_path.is_file() or not workload_ready.is_file())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    observed.update(snapshot_descendants(root.pid))
+                    time.sleep(0.01)
+                if not ready_path.is_file() or not workload_ready.is_file():
+                    self.fail(
+                        "terminal-commit adapter did not publish readiness: "
+                        f"rc={process.poll()} stderr={read_capture(stderr_file)!r}"
+                    )
+                adapter = bind_fake_unshare_adapter(ready_path, coordinator=parent)
+                self.assertEqual(
+                    (adapter["supervisor"].pid, adapter["supervisor"].start_time),
+                    (root.pid, root.start_time),
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
+                (self.fixture.control / "terminal-workload-release").touch()
+                paused = self.fixture.control / "fake-unshare-terminal-paused.json"
+                deadline = time.monotonic() + 10
+                while (
+                    not paused.is_file()
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.01)
+                if not paused.is_file():
+                    self.fail(
+                        "adapter did not reach its post-publication terminal barrier: "
+                        f"rc={process.poll()} stderr={read_capture(stderr_file)!r}"
+                    )
+                exact_signal(root, signal.SIGTERM)
+                self.assertTrue(process_identity_is_live(root))
+                (self.fixture.control / "fake-unshare-terminal-release").touch()
+                self.assertEqual(process.wait(timeout=10), 0)
+                validate_fake_unshare_terminal(
+                    self.fixture.control / "fake-unshare-adapter-terminal.json",
+                    ready=adapter,
+                    expected_terminating=False,
+                    expected_child_returncode=0,
+                )
+            finally:
+                observed.update(snapshot_descendants(root.pid))
+                if process.poll() is None or surviving_processes(observed):
+                    cleanup_survivors = terminate_process_tree(process, root, observed)
+                    if cleanup_survivors and sys.exc_info()[0] is None:
+                        self.fail(
+                            "terminal-commit adapter cleanup left live processes: "
+                            f"{cleanup_survivors!r}"
+                        )
+
+    def test_fake_unshare_unblocks_inherited_handled_signals(self) -> None:
+        workload = (
+            "from pathlib import Path; import sys, time; "
+            "Path(sys.argv[1], 'inherited-mask-workload-ready').write_text("
+            "'ready', encoding='ascii'); time.sleep(300)"
+        )
+        adapter_command = self.fixture.fake_unshare_command(workload)
+        inherited_mask_launcher = (
+            "import os, signal, sys; "
+            "signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM}); "
+            "os.execv(sys.argv[1], sys.argv[1:])"
+        )
+        command = [
+            "/usr/bin/python3",
+            "-I",
+            "-B",
+            "-c",
+            inherited_mask_launcher,
+            *adapter_command,
+        ]
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        observed: dict[tuple[int, int], ProcessIdentity] = {}
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                command,
+                cwd="/",
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+            root = read_process_identity(process.pid)
+            if root is None:
+                process.kill()
+                process.wait(timeout=3)
+                self.fail("fake-unshare supervisor disappeared before identity capture")
+            adapter: dict[str, ProcessIdentity] | None = None
+            try:
+                ready_path = self.fixture.control / "fake-unshare-adapter-ready.json"
+                workload_ready = self.fixture.control / "inherited-mask-workload-ready"
+                deadline = time.monotonic() + 10
+                while (
+                    (not ready_path.is_file() or not workload_ready.is_file())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    observed.update(snapshot_descendants(root.pid))
+                    time.sleep(0.01)
+                if not ready_path.is_file() or not workload_ready.is_file():
+                    self.fail(
+                        "inherited-mask adapter did not publish readiness: "
+                        f"rc={process.poll()} stderr={read_capture(stderr_file)!r}"
+                    )
+                adapter = bind_fake_unshare_adapter(ready_path, coordinator=parent)
+                self.assertEqual(
+                    (adapter["supervisor"].pid, adapter["supervisor"].start_time),
+                    (root.pid, root.start_time),
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
+                started = time.monotonic()
+                exact_signal(root, signal.SIGTERM)
+                self.assertEqual(process.wait(timeout=10), 143)
+                self.assertLess(time.monotonic() - started, 8)
+                validate_fake_unshare_terminal(
+                    self.fixture.control / "fake-unshare-adapter-terminal.json",
+                    ready=adapter,
+                    expected_terminating=True,
+                    expected_child_returncode=-signal.SIGKILL,
+                )
+            finally:
+                observed.update(snapshot_descendants(root.pid))
+                if process.poll() is None or surviving_processes(observed):
+                    cleanup_survivors = terminate_process_tree(process, root, observed)
+                    if cleanup_survivors and sys.exc_info()[0] is None:
+                        self.fail(
+                            "inherited-mask adapter cleanup left live processes: "
+                            f"{cleanup_survivors!r}"
+                        )
+
+    def test_fake_unshare_watchdog_rescans_late_same_session_group_after_sigterm(
+        self,
+    ) -> None:
+        self.fixture.marker("exercise-late-session-group")
+        workload = textwrap.dedent(
+            r"""
+            import os
+            from pathlib import Path
+            import subprocess
+            import sys
+            import time
+
+            control = Path(sys.argv[1])
+
+            def publish_identity(path: Path) -> None:
+                text = Path(f"/proc/{os.getpid()}/stat").read_text(encoding="ascii")
+                fields = text[text.rfind(") ") + 2:].split()
+                payload = " ".join(
+                    (
+                        str(os.getpid()), fields[1], fields[2], fields[3],
+                        fields[0], fields[19],
+                    )
+                )
+                partial = path.with_name(path.name + f".partial.{os.getpid()}")
+                partial.write_text(payload, encoding="ascii")
+                with partial.open("rb") as stream:
+                    os.fsync(stream.fileno())
+                os.replace(partial, path)
+
+            os.setpgid(0, 0)
+            publish_identity(control / "late-session-spawner")
+            deadline = time.monotonic() + 10
+            while (
+                not (control / "watchdog-first-snapshot").is_file()
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+            if not (control / "watchdog-first-snapshot").is_file():
+                raise SystemExit(91)
+            late_code = (
+                "import os\n"
+                "from pathlib import Path\n"
+                "import sys\n"
+                "import time\n"
+                "os.setpgid(0, 0)\n"
+                "path = Path(sys.argv[1])\n"
+                "text = Path(f'/proc/{os.getpid()}/stat').read_text(encoding='ascii')\n"
+                "fields = text[text.rfind(') ') + 2:].split()\n"
+                "payload = ' '.join((str(os.getpid()), fields[1], fields[2], fields[3], fields[0], fields[19]))\n"
+                "partial = path.with_name(path.name + f'.partial.{os.getpid()}')\n"
+                "partial.write_text(payload, encoding='ascii')\n"
+                "stream = partial.open('rb')\n"
+                "os.fsync(stream.fileno())\n"
+                "stream.close()\n"
+                "os.replace(partial, path)\n"
+                "time.sleep(300)\n"
+            )
+            subprocess.Popen(
+                [
+                    "/usr/bin/python3", "-I", "-B", "-c", late_code,
+                    str(control / "late-session-pid"),
+                ]
+            )
+            time.sleep(300)
+            """
+        )
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        observed: dict[tuple[int, int], ProcessIdentity] = {}
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                self.fixture.fake_unshare_command(workload),
+                cwd="/",
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+            root = read_process_identity(process.pid)
+            if root is None:
+                process.kill()
+                process.wait(timeout=3)
+                self.fail("fake-unshare supervisor disappeared before identity capture")
+            adapter: dict[str, ProcessIdentity] | None = None
+            spawner: ProcessIdentity | None = None
+            late: ProcessIdentity | None = None
+            try:
+                ready_path = self.fixture.control / "fake-unshare-adapter-ready.json"
+                spawner_path = self.fixture.control / "late-session-spawner"
+                deadline = time.monotonic() + 10
+                while (
+                    (not ready_path.is_file() or not spawner_path.is_file())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    observed.update(snapshot_descendants(root.pid))
+                    time.sleep(0.01)
+                if not ready_path.is_file() or not spawner_path.is_file():
+                    self.fail(
+                        "late-group adapter did not publish its bound topology: "
+                        f"rc={process.poll()} stdout={read_capture(stdout_file)!r} "
+                        f"stderr={read_capture(stderr_file)!r}"
+                    )
+                adapter = bind_fake_unshare_adapter(ready_path, coordinator=parent)
+                self.assertEqual(
+                    (adapter["supervisor"].pid, adapter["supervisor"].start_time),
+                    (root.pid, root.start_time),
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
+                spawner = read_fixture_process_identity(
+                    spawner_path, "late-session spawner"
+                )
+                self.assertEqual(spawner.process_group, spawner.pid)
+                self.assertEqual(spawner.session, adapter["child"].session)
+                require_current_fixture_topology(spawner, "late-session spawner")
+                observed[(spawner.pid, spawner.start_time)] = spawner
+
+                exact_signal(root, signal.SIGTERM)
+                late_path = self.fixture.control / "late-session-pid"
+                visible_path = self.fixture.control / "late-session-visible"
+                deadline = time.monotonic() + 10
+                while (
+                    (not late_path.is_file() or not visible_path.is_file())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.01)
+                if not late_path.is_file() or not visible_path.is_file():
+                    self.fail(
+                        "watchdog did not expose the post-snapshot group before cleanup: "
+                        f"rc={process.poll()} stdout={read_capture(stdout_file)!r} "
+                        f"stderr={read_capture(stderr_file)!r}"
+                    )
+                late = read_fixture_process_identity(late_path, "late-session child")
+                self.assertEqual(late.process_group, late.pid)
+                self.assertEqual(late.session, adapter["child"].session)
+                require_current_fixture_topology(late, "late-session child")
+                observed[(late.pid, late.start_time)] = late
+                (self.fixture.control / "late-session-bound").touch()
+
+                self.assertEqual(process.wait(timeout=20), 143)
+                validate_fake_unshare_terminal(
+                    self.fixture.control / "fake-unshare-adapter-terminal.json",
+                    ready=adapter,
+                    expected_terminating=True,
+                )
+                self.assertTrue(wait_process_identity_stopped(spawner, 5))
+                self.assertTrue(wait_process_identity_stopped(late, 5))
+            finally:
+                observed.update(snapshot_descendants(root.pid))
+                if spawner is not None:
+                    observed[(spawner.pid, spawner.start_time)] = spawner
+                if late is not None:
+                    observed[(late.pid, late.start_time)] = late
+                if process.poll() is None or surviving_processes(observed):
+                    cleanup_survivors = terminate_process_tree(process, root, observed)
+                    if cleanup_survivors and sys.exc_info()[0] is None:
+                        self.fail(
+                            "late-group adapter cleanup left non-zombie processes: "
+                            f"{cleanup_survivors!r}"
+                        )
+
+    def test_fake_unshare_watchdog_drains_normal_same_session_background_group(
+        self,
+    ) -> None:
+        workload = textwrap.dedent(
+            r"""
+            import os
+            from pathlib import Path
+            import subprocess
+            import sys
+            import time
+
+            control = Path(sys.argv[1])
+            background_code = (
+                "import os\n"
+                "from pathlib import Path\n"
+                "import sys\n"
+                "import time\n"
+                "os.setpgid(0, 0)\n"
+                "path = Path(sys.argv[1])\n"
+                "text = Path(f'/proc/{os.getpid()}/stat').read_text(encoding='ascii')\n"
+                "fields = text[text.rfind(') ') + 2:].split()\n"
+                "payload = ' '.join((str(os.getpid()), fields[1], fields[2], fields[3], fields[0], fields[19]))\n"
+                "partial = path.with_name(path.name + f'.partial.{os.getpid()}')\n"
+                "partial.write_text(payload, encoding='ascii')\n"
+                "stream = partial.open('rb')\n"
+                "os.fsync(stream.fileno())\n"
+                "stream.close()\n"
+                "os.replace(partial, path)\n"
+                "time.sleep(300)\n"
+            )
+            subprocess.Popen(
+                [
+                    "/usr/bin/python3", "-I", "-B", "-c", background_code,
+                    str(control / "normal-session-background"),
+                ]
+            )
+            deadline = time.monotonic() + 10
+            while (
+                not (control / "normal-session-background").is_file()
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+            if not (control / "normal-session-background").is_file():
+                raise SystemExit(92)
+            deadline = time.monotonic() + 10
+            while (
+                not (control / "normal-session-parent-release").is_file()
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+            if not (control / "normal-session-parent-release").is_file():
+                raise SystemExit(93)
+            raise SystemExit(0)
+            """
+        )
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        observed: dict[tuple[int, int], ProcessIdentity] = {}
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                self.fixture.fake_unshare_command(workload),
+                cwd="/",
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+            root = read_process_identity(process.pid)
+            if root is None:
+                process.kill()
+                process.wait(timeout=3)
+                self.fail("fake-unshare supervisor disappeared before identity capture")
+            adapter: dict[str, ProcessIdentity] | None = None
+            background: ProcessIdentity | None = None
+            try:
+                ready_path = self.fixture.control / "fake-unshare-adapter-ready.json"
+                background_path = self.fixture.control / "normal-session-background"
+                deadline = time.monotonic() + 10
+                while (
+                    (not ready_path.is_file() or not background_path.is_file())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    observed.update(snapshot_descendants(root.pid))
+                    time.sleep(0.01)
+                if not ready_path.is_file() or not background_path.is_file():
+                    self.fail(
+                        "normal-exit adapter did not publish its bound topology: "
+                        f"rc={process.poll()} stdout={read_capture(stdout_file)!r} "
+                        f"stderr={read_capture(stderr_file)!r}"
+                    )
+                adapter = bind_fake_unshare_adapter(ready_path, coordinator=parent)
+                self.assertEqual(
+                    (adapter["supervisor"].pid, adapter["supervisor"].start_time),
+                    (root.pid, root.start_time),
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
+                background = read_fixture_process_identity(
+                    background_path, "normal same-session background"
+                )
+                self.assertEqual(background.process_group, background.pid)
+                self.assertEqual(background.session, adapter["child"].session)
+                require_current_fixture_topology(
+                    background, "normal same-session background"
+                )
+                observed[(background.pid, background.start_time)] = background
+                (self.fixture.control / "normal-session-parent-release").touch()
+
+                self.assertEqual(process.wait(timeout=20), 0)
+                validate_fake_unshare_terminal(
+                    self.fixture.control / "fake-unshare-adapter-terminal.json",
+                    ready=adapter,
+                    expected_terminating=False,
+                    expected_child_returncode=0,
+                )
+                self.assertTrue(wait_process_identity_stopped(background, 5))
+            finally:
+                observed.update(snapshot_descendants(root.pid))
+                if background is not None:
+                    observed[(background.pid, background.start_time)] = background
+                if process.poll() is None or surviving_processes(observed):
+                    cleanup_survivors = terminate_process_tree(process, root, observed)
+                    if cleanup_survivors and sys.exc_info()[0] is None:
+                        self.fail(
+                            "normal background-group adapter cleanup left live processes: "
+                            f"{cleanup_survivors!r}"
+                        )
+
+    def test_fake_unshare_watchdog_failure_dominates_sigterm_status(self) -> None:
+        self.fixture.marker("force-watchdog-failure")
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        observed: dict[tuple[int, int], ProcessIdentity] = {}
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            workload = (
+                "from pathlib import Path; import sys, time; "
+                "Path(sys.argv[1], 'watchdog-failure-workload-ready').write_text("
+                "'ready', encoding='ascii'); time.sleep(300)"
+            )
+            process = subprocess.Popen(
+                self.fixture.fake_unshare_command(workload),
+                cwd="/",
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+            root = read_process_identity(process.pid)
+            if root is None:
+                process.kill()
+                process.wait(timeout=3)
+                self.fail("fake-unshare supervisor disappeared before identity capture")
+            adapter: dict[str, ProcessIdentity] | None = None
+            try:
+                ready_path = self.fixture.control / "fake-unshare-adapter-ready.json"
+                workload_ready = self.fixture.control / "watchdog-failure-workload-ready"
+                deadline = time.monotonic() + 10
+                while (
+                    (not ready_path.is_file() or not workload_ready.is_file())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    observed.update(snapshot_descendants(root.pid))
+                    time.sleep(0.01)
+                if not ready_path.is_file() or not workload_ready.is_file():
+                    self.fail(
+                        "watchdog-failure adapter did not publish readiness: "
+                        f"rc={process.poll()} stderr={read_capture(stderr_file)!r}"
+                    )
+                adapter = bind_fake_unshare_adapter(ready_path, coordinator=parent)
+                self.assertEqual(
+                    (adapter["supervisor"].pid, adapter["supervisor"].start_time),
+                    (root.pid, root.start_time),
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
+                exact_signal(root, signal.SIGTERM)
+                self.assertEqual(process.wait(timeout=20), 1)
+                stderr = read_capture(stderr_file)
+                self.assertIn("fake unshare watchdog failed: 79", stderr)
+                self.assertNotEqual(process.returncode, 143)
+                validate_fake_unshare_terminal(
+                    self.fixture.control / "fake-unshare-adapter-terminal.json",
+                    ready=adapter,
+                    expected_terminating=True,
+                    expected_child_returncode=-signal.SIGKILL,
+                    expected_watchdog_status=79,
+                )
+            finally:
+                observed.update(snapshot_descendants(root.pid))
+                if process.poll() is None or surviving_processes(observed):
+                    cleanup_survivors = terminate_process_tree(process, root, observed)
+                    if cleanup_survivors and sys.exc_info()[0] is None:
+                        self.fail(
+                            "watchdog-failure adapter cleanup left live processes: "
+                            f"{cleanup_survivors!r}"
+                        )
+
+    def test_fake_unshare_watchdog_pre_drain_failure_is_bounded_and_non_sigterm(
+        self,
+    ) -> None:
+        self.fixture.marker("force-watchdog-pre-drain-failure")
+        workload = textwrap.dedent(
+            """
+            import os
+            from pathlib import Path
+            import sys
+            import time
+
+            os.setpgid(0, 0)
+            Path(sys.argv[1], "pre-drain-workload-ready").write_text(
+                "ready", encoding="ascii"
+            )
+            time.sleep(300)
+            """
+        )
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        observed: dict[tuple[int, int], ProcessIdentity] = {}
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                self.fixture.fake_unshare_command(workload),
+                cwd="/",
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+            root = read_process_identity(process.pid)
+            if root is None:
+                process.kill()
+                process.wait(timeout=3)
+                self.fail("fake-unshare supervisor disappeared before identity capture")
+            adapter: dict[str, ProcessIdentity] | None = None
+            try:
+                ready_path = self.fixture.control / "fake-unshare-adapter-ready.json"
+                workload_ready = self.fixture.control / "pre-drain-workload-ready"
+                deadline = time.monotonic() + 10
+                while (
+                    (not ready_path.is_file() or not workload_ready.is_file())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    observed.update(snapshot_descendants(root.pid))
+                    time.sleep(0.01)
+                if not ready_path.is_file() or not workload_ready.is_file():
+                    self.fail(
+                        "pre-drain failure adapter did not publish readiness: "
+                        f"rc={process.poll()} stderr={read_capture(stderr_file)!r}"
+                    )
+                adapter = bind_fake_unshare_adapter(ready_path, coordinator=parent)
+                self.assertEqual(
+                    (adapter["supervisor"].pid, adapter["supervisor"].start_time),
+                    (root.pid, root.start_time),
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
+                started = time.monotonic()
+                exact_signal(root, signal.SIGTERM)
+                self.assertEqual(process.wait(timeout=15), 1)
+                self.assertLess(time.monotonic() - started, 12)
+                stderr = read_capture(stderr_file)
+                self.assertIn(
+                    "fake unshare watchdog exited before its bound child: 80", stderr
+                )
+                self.assertNotEqual(process.returncode, 143)
+                validate_fake_unshare_terminal(
+                    self.fixture.control / "fake-unshare-adapter-terminal.json",
+                    ready=adapter,
+                    expected_terminating=True,
+                    expected_child_returncode=-signal.SIGKILL,
+                    expected_watchdog_status=80,
+                    expected_watchdog_exited_before_child=True,
+                )
+            finally:
+                observed.update(snapshot_descendants(root.pid))
+                if process.poll() is None or surviving_processes(observed):
+                    cleanup_survivors = terminate_process_tree(process, root, observed)
+                    if cleanup_survivors and sys.exc_info()[0] is None:
+                        self.fail(
+                            "pre-drain watchdog-failure cleanup left live processes: "
+                            f"{cleanup_survivors!r}"
+                        )
+
+    def test_fake_unshare_watchdog_stall_after_short_child_uses_original_deadline(
+        self,
+    ) -> None:
+        self.fixture.marker("force-watchdog-stop-before-drain")
+        workload = textwrap.dedent(
+            """
+            from pathlib import Path
+            import sys
+            import time
+
+            Path(sys.argv[1], "short-child-workload-ready").write_text(
+                "ready", encoding="ascii"
+            )
+            time.sleep(0.25)
+            raise SystemExit(0)
+            """
+        )
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        observed: dict[tuple[int, int], ProcessIdentity] = {}
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                self.fixture.fake_unshare_command(workload),
+                cwd="/",
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+            root = read_process_identity(process.pid)
+            if root is None:
+                process.kill()
+                process.wait(timeout=3)
+                self.fail("fake-unshare supervisor disappeared before identity capture")
+            adapter: dict[str, ProcessIdentity] | None = None
+            try:
+                ready_path = self.fixture.control / "fake-unshare-adapter-ready.json"
+                workload_ready = self.fixture.control / "short-child-workload-ready"
+                deadline = time.monotonic() + 10
+                while (
+                    (not ready_path.is_file() or not workload_ready.is_file())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    observed.update(snapshot_descendants(root.pid))
+                    time.sleep(0.01)
+                if not ready_path.is_file() or not workload_ready.is_file():
+                    self.fail(
+                        "short-child stalled-watchdog adapter omitted readiness: "
+                        f"rc={process.poll()} stderr={read_capture(stderr_file)!r}"
+                    )
+                adapter = bind_fake_unshare_adapter(ready_path, coordinator=parent)
+                self.assertEqual(
+                    (adapter["supervisor"].pid, adapter["supervisor"].start_time),
+                    (root.pid, root.start_time),
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
+                started = time.monotonic()
+                exact_signal(root, signal.SIGTERM)
+                self.assertEqual(process.wait(timeout=10), 1)
+                elapsed = time.monotonic() - started
+                self.assertGreater(elapsed, 4)
+                self.assertLess(elapsed, 8)
+                stderr = read_capture(stderr_file)
+                self.assertIn("fake unshare watchdog cleanup timed out: 124", stderr)
+                self.assertNotEqual(process.returncode, 143)
+                validate_fake_unshare_terminal(
+                    self.fixture.control / "fake-unshare-adapter-terminal.json",
+                    ready=adapter,
+                    expected_terminating=True,
+                    expected_child_returncode=0,
+                    expected_watchdog_status=124,
+                    expected_watchdog_exited_before_child=False,
+                    expected_watchdog_cleanup_timed_out=True,
+                )
+            finally:
+                observed.update(snapshot_descendants(root.pid))
+                if process.poll() is None or surviving_processes(observed):
+                    cleanup_survivors = terminate_process_tree(process, root, observed)
+                    if cleanup_survivors and sys.exc_info()[0] is None:
+                        self.fail(
+                            "short-child stalled-watchdog cleanup left live processes: "
+                            f"{cleanup_survivors!r}"
+                        )
+
+    def test_fake_unshare_watchdog_stall_after_child_then_late_signal_is_bounded(
+        self,
+    ) -> None:
+        self.fixture.marker("force-watchdog-stop-before-drain")
+        workload = textwrap.dedent(
+            """
+            from pathlib import Path
+            import sys
+            import time
+
+            control = Path(sys.argv[1])
+            (control / "late-signal-workload-ready").write_text(
+                "ready", encoding="ascii"
+            )
+            deadline = time.monotonic() + 10
+            while (
+                not (control / "late-signal-workload-release").is_file()
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+            if not (control / "late-signal-workload-release").is_file():
+                raise SystemExit(92)
+            time.sleep(0.1)
+            raise SystemExit(0)
+            """
+        )
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        observed: dict[tuple[int, int], ProcessIdentity] = {}
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                self.fixture.fake_unshare_command(workload),
+                cwd="/",
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+            root = read_process_identity(process.pid)
+            if root is None:
+                process.kill()
+                process.wait(timeout=3)
+                self.fail("fake-unshare supervisor disappeared before identity capture")
+            adapter: dict[str, ProcessIdentity] | None = None
+            try:
+                ready_path = self.fixture.control / "fake-unshare-adapter-ready.json"
+                workload_ready = self.fixture.control / "late-signal-workload-ready"
+                deadline = time.monotonic() + 10
+                while (
+                    (not ready_path.is_file() or not workload_ready.is_file())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    observed.update(snapshot_descendants(root.pid))
+                    time.sleep(0.01)
+                if not ready_path.is_file() or not workload_ready.is_file():
+                    self.fail(
+                        "late-signal stalled-watchdog adapter omitted readiness: "
+                        f"rc={process.poll()} stderr={read_capture(stderr_file)!r}"
+                    )
+                adapter = bind_fake_unshare_adapter(ready_path, coordinator=parent)
+                self.assertEqual(
+                    (adapter["supervisor"].pid, adapter["supervisor"].start_time),
+                    (root.pid, root.start_time),
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
+                (self.fixture.control / "late-signal-workload-release").touch()
+                stopped_marker = self.fixture.control / "watchdog-stopped-before-drain"
+                deadline = time.monotonic() + 10
+                current_watchdog = read_process_identity(adapter["watchdog"].pid)
+                while (
+                    (
+                        not stopped_marker.is_file()
+                        or current_watchdog is None
+                        or current_watchdog.start_time != adapter["watchdog"].start_time
+                        or current_watchdog.state != "T"
+                    )
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.01)
+                    current_watchdog = read_process_identity(adapter["watchdog"].pid)
+                if (
+                    not stopped_marker.is_file()
+                    or current_watchdog is None
+                    or current_watchdog.start_time != adapter["watchdog"].start_time
+                    or current_watchdog.state != "T"
+                ):
+                    self.fail(
+                        "watchdog did not stop after the normal child completed: "
+                        f"rc={process.poll()} current={current_watchdog!r} "
+                        f"stderr={read_capture(stderr_file)!r}"
+                    )
+                started = time.monotonic()
+                exact_signal(root, signal.SIGTERM)
+                self.assertEqual(process.wait(timeout=10), 1)
+                elapsed = time.monotonic() - started
+                self.assertGreater(elapsed, 4)
+                self.assertLess(elapsed, 8)
+                stderr = read_capture(stderr_file)
+                self.assertIn("fake unshare watchdog cleanup timed out: 124", stderr)
+                validate_fake_unshare_terminal(
+                    self.fixture.control / "fake-unshare-adapter-terminal.json",
+                    ready=adapter,
+                    expected_terminating=True,
+                    expected_child_returncode=0,
+                    expected_watchdog_status=124,
+                    expected_watchdog_exited_before_child=False,
+                    expected_watchdog_cleanup_timed_out=True,
+                )
+            finally:
+                observed.update(snapshot_descendants(root.pid))
+                if process.poll() is None or surviving_processes(observed):
+                    cleanup_survivors = terminate_process_tree(process, root, observed)
+                    if cleanup_survivors and sys.exc_info()[0] is None:
+                        self.fail(
+                            "late-signal stalled-watchdog cleanup left live processes: "
+                            f"{cleanup_survivors!r}"
+                        )
+
+    def test_fake_unshare_watchdog_stall_is_bounded_and_non_sigterm(self) -> None:
+        self.fixture.marker("force-watchdog-stop-before-drain")
+        workload = textwrap.dedent(
+            """
+            from pathlib import Path
+            import sys
+            import time
+
+            Path(sys.argv[1], "stalled-watchdog-workload-ready").write_text(
+                "ready", encoding="ascii"
+            )
+            time.sleep(300)
+            """
+        )
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        observed: dict[tuple[int, int], ProcessIdentity] = {}
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                self.fixture.fake_unshare_command(workload),
+                cwd="/",
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+            root = read_process_identity(process.pid)
+            if root is None:
+                process.kill()
+                process.wait(timeout=3)
+                self.fail("fake-unshare supervisor disappeared before identity capture")
+            adapter: dict[str, ProcessIdentity] | None = None
+            try:
+                ready_path = self.fixture.control / "fake-unshare-adapter-ready.json"
+                workload_ready = self.fixture.control / "stalled-watchdog-workload-ready"
+                deadline = time.monotonic() + 10
+                while (
+                    (not ready_path.is_file() or not workload_ready.is_file())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
+                    observed.update(snapshot_descendants(root.pid))
+                    time.sleep(0.01)
+                if not ready_path.is_file() or not workload_ready.is_file():
+                    self.fail(
+                        "stalled-watchdog adapter did not publish readiness: "
+                        f"rc={process.poll()} stderr={read_capture(stderr_file)!r}"
+                    )
+                adapter = bind_fake_unshare_adapter(ready_path, coordinator=parent)
+                self.assertEqual(
+                    (adapter["supervisor"].pid, adapter["supervisor"].start_time),
+                    (root.pid, root.start_time),
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
+                started = time.monotonic()
+                exact_signal(root, signal.SIGTERM)
+                self.assertEqual(process.wait(timeout=15), 1)
+                self.assertLess(time.monotonic() - started, 12)
+                stderr = read_capture(stderr_file)
+                self.assertIn(
+                    "fake unshare watchdog exited before its bound child: 124", stderr
+                )
+                self.assertNotEqual(process.returncode, 143)
+                validate_fake_unshare_terminal(
+                    self.fixture.control / "fake-unshare-adapter-terminal.json",
+                    ready=adapter,
+                    expected_terminating=True,
+                    expected_child_returncode=-signal.SIGKILL,
+                    expected_watchdog_status=124,
+                    expected_watchdog_exited_before_child=True,
+                    expected_watchdog_cleanup_timed_out=True,
+                )
+            finally:
+                observed.update(snapshot_descendants(root.pid))
+                if process.poll() is None or surviving_processes(observed):
+                    cleanup_survivors = terminate_process_tree(process, root, observed)
+                    if cleanup_survivors and sys.exc_info()[0] is None:
+                        self.fail(
+                            "stalled-watchdog adapter cleanup left live processes: "
                             f"{cleanup_survivors!r}"
                         )
 
@@ -2781,7 +4990,18 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                     for pid in pids
                     if (identity := read_process_identity(pid)) is not None
                 }
+                self.assertEqual(set(active_identities), set(pids))
                 observed.update(snapshot_descendants(root.pid))
+                adapter = bind_fake_unshare_adapter(
+                    self.fixture.control / "fake-unshare-adapter-ready.json",
+                    coordinator=root,
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in adapter.values()
+                    }
+                )
                 try:
                     os.killpg(root.process_group, signal.SIGTERM)
                     process.wait(timeout=20)
@@ -2796,21 +5016,27 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                 stdout = read_capture(stdout_file)
                 stderr = read_capture(stderr_file)
                 self.assertEqual(process.returncode, 143, (stdout, stderr))
-                residue_deadline = time.monotonic() + 5
-                survivors = [
-                    identity
-                    for identity in active_identities.values()
-                    if process_identity_is_live(identity)
-                ]
+                validate_fake_unshare_terminal(
+                    self.fixture.control / "fake-unshare-adapter-terminal.json",
+                    ready=adapter,
+                    expected_terminating=True,
+                )
+                observed.update(
+                    {
+                        (identity.pid, identity.start_time): identity
+                        for identity in active_identities.values()
+                    }
+                )
+                residue_deadline = time.monotonic() + 10
+                survivors = surviving_processes(observed)
                 while survivors and time.monotonic() < residue_deadline:
                     time.sleep(0.05)
-                    survivors = [
-                        identity
-                        for identity in active_identities.values()
-                        if process_identity_is_live(identity)
-                    ]
+                    survivors = surviving_processes(observed)
                 if survivors:
-                    self.fail(f"tracked processes survived: {survivors!r}")
+                    self.fail(
+                        "tracked processes survived: "
+                        f"{survivors!r}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+                    )
             finally:
                 observed.update(snapshot_descendants(root.pid))
                 if process.poll() is None or surviving_processes(observed):

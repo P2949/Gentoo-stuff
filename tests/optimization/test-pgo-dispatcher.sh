@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The fixture intentionally writes literal ${...} expressions into fake tools
 # and isolates every environment mutation inside a case subshell.
-# shellcheck disable=SC1090,SC1091,SC2016,SC2030,SC2031,SC2034,SC2329
+# SC2317/SC2329 cover callbacks invoked indirectly by traps and fixture hooks.
+# shellcheck disable=SC1090,SC1091,SC2016,SC2030,SC2031,SC2034,SC2317,SC2329
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)

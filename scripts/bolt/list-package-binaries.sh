@@ -28,6 +28,8 @@ list_package_paths() {
 
 list_package_paths | while read -r path; do
     if [[ -f "${path}" && -x "${path}" ]]; then
-        file "${path}" | grep -q 'ELF' && echo "${path}" || true
+        if file "${path}" | grep -q 'ELF'; then
+            echo "${path}"
+        fi
     fi
 done

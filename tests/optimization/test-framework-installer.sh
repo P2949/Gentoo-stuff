@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1090,SC1091,SC2031,SC2329
+# SC2317/SC2329 cover callbacks invoked indirectly by traps and fixture hooks.
+# shellcheck disable=SC1090,SC1091,SC2031,SC2317,SC2329
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077

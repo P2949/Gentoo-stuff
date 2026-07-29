@@ -945,12 +945,37 @@ class ProfileValidatorTests(unittest.TestCase):
         metadata_path = self._sample_metadata(profile)
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         conversion_log = Path(metadata["source"]["conversion_log_path"])
+        recorded_observation = metadata["source"]["conversion_log_observation"]
         original = conversion_log.read_bytes()
         original_sha256 = sha256(conversion_log)
-        conversion_log.chmod(0o640)
-        conversion_log.write_bytes(b"temporary hostile conversion log\n")
-        conversion_log.write_bytes(original)
-        conversion_log.chmod(0o440)
+        original_stat = conversion_log.stat()
+        replacement = conversion_log.with_name(
+            f".{conversion_log.name}.restored-content"
+        )
+        replacement.write_bytes(b"temporary hostile conversion log\n")
+        replacement.write_bytes(original)
+        replacement.chmod(original_stat.st_mode & 0o7777)
+        prepared_stat = replacement.stat()
+        self.assertNotEqual(
+            (prepared_stat.st_dev, prepared_stat.st_ino),
+            (
+                recorded_observation["device"],
+                recorded_observation["inode"],
+            ),
+        )
+        os.replace(replacement, conversion_log)
+        installed_stat = conversion_log.stat()
+        self.assertEqual(
+            (installed_stat.st_dev, installed_stat.st_ino),
+            (prepared_stat.st_dev, prepared_stat.st_ino),
+        )
+        self.assertNotEqual(
+            (installed_stat.st_dev, installed_stat.st_ino),
+            (
+                recorded_observation["device"],
+                recorded_observation["inode"],
+            ),
+        )
         self.assertEqual(sha256(conversion_log), original_sha256)
 
         manifest = self.root / "sample-restored-conversion-log.manifest"

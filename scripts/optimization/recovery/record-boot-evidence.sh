@@ -359,7 +359,8 @@ prepare_output() {
 }
 
 # Invoked indirectly by the EXIT trap below.
-# shellcheck disable=SC2329
+# ShellCheck <=0.10 reports SC2317; >=0.11 reports SC2329 for trap callbacks.
+# shellcheck disable=SC2317,SC2329
 cleanup() {
     local status=$?
     if [[ -n ${EVIDENCE_TEMP} && -e ${EVIDENCE_TEMP} ]]; then

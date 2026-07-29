@@ -1027,7 +1027,15 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
     }
 
 
-def git_command(git: Path, repository: Path, arguments: Sequence[str]) -> bytes:
+def git_command_result(
+    git: Path,
+    repository: Path,
+    arguments: Sequence[str],
+    *,
+    allowed_returncodes: frozenset[int] = frozenset({0}),
+) -> subprocess.CompletedProcess[bytes]:
+    if not allowed_returncodes:
+        fail("Git inspection requires at least one allowed return code")
     command = [
         os.fspath(git),
         "--no-pager",
@@ -1065,10 +1073,14 @@ def git_command(git: Path, repository: Path, arguments: Sequence[str]) -> bytes:
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         fail(f"Git inspection failed: {error}")
-    if result.returncode != 0:
+    if result.returncode not in allowed_returncodes:
         detail = result.stderr.decode("utf-8", "replace").strip()
         fail(f"Git inspection exited {result.returncode}: {detail}")
-    return result.stdout
+    return result
+
+
+def git_command(git: Path, repository: Path, arguments: Sequence[str]) -> bytes:
+    return git_command_result(git, repository, arguments).stdout
 
 
 def repository_identity(git: Path, repository: Path) -> dict[str, object]:
@@ -1079,16 +1091,12 @@ def repository_identity(git: Path, repository: Path) -> dict[str, object]:
     status_output = git_command(git, repository, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
     if status_output:
         fail("authoritative Phase 2 evidence requires a clean worktree")
-    reference_result = subprocess.run(
-        [os.fspath(git), "--no-pager", "-c", f"safe.directory={repository}", "-C", os.fspath(repository), "symbolic-ref", "-q", "HEAD"],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        check=False,
-        env={"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "HOME": "/nonexistent", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+    reference_result = git_command_result(
+        git,
+        repository,
+        ["symbolic-ref", "-q", "HEAD"],
+        allowed_returncodes=frozenset({0, 1}),
     )
-    if reference_result.returncode not in {0, 1}:
-        fail("cannot determine the Git HEAD reference")
     head_ref = reference_result.stdout.decode().strip() if reference_result.returncode == 0 else None
     tree_listing = git_command(git, repository, ["ls-tree", "-r", "-z", "--full-tree", "HEAD"])
     if not tree_listing:

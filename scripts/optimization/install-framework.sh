@@ -1885,8 +1885,10 @@ verify_make_profile() {
         runuser -u portage -- test -r "${candidate}/portage/make.conf" || \
             fail 'Portage user cannot read the candidate configuration'
     else
-        test -r "${probe}" && test -r "${candidate}/portage/make.conf" || \
+        if ! test -r "${probe}" || \
+            ! test -r "${candidate}/portage/make.conf"; then
             fail 'installer test user cannot read candidate configuration/profile'
+        fi
     fi
 }
 

@@ -27,6 +27,7 @@ record_required_subtest() {
 LIVE_POLICY_BASELINE_LOG=${WORK}/live-policy-preflight-baseline.tsv
 LIVE_POLICY_PREFLIGHT_LOG=${WORK}/live-policy-preflight-poisoned.tsv
 if [[ -x /usr/bin/portageq && -e /etc/portage/make.conf ]]; then
+    LIVE_POLICY_PREFLIGHT_AVAILABLE=1
     EXPECTED_LIVE_FEATURES=$(/usr/bin/env -i HOME=/root USER=root LOGNAME=root \
         SHELL=/bin/bash PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
         PORTAGE_CONFIGROOT=/ /usr/bin/portageq envvar FEATURES)
@@ -36,15 +37,20 @@ if [[ -x /usr/bin/portageq && -e /etc/portage/make.conf ]]; then
     if ! /bin/bash -- "${FIXTURE}" --live-policy-preflight \
         > "${LIVE_POLICY_BASELINE_LOG}" 2> "${WORK}/live-policy-preflight.stderr"; then
         if grep -Fq 'canonical ancestry is not root-trusted' \
-            "${WORK}/live-policy-preflight.stderr"; then
+            "${WORK}/live-policy-preflight.stderr" || \
+            { ((EUID != 0)) && grep -Fq \
+                'PermissionError: [Errno 13] Permission denied:' \
+                "${WORK}/live-policy-preflight.stderr"; }; then
             record_required_subtest SKIP live-portage.policy \
-                'managed user namespace does not expose literal uid-0 trust metadata'
-            printf 'INFO: live uid-0 trust metadata unavailable; recorded required subtest SKIP\n'
+                'non-root portable driver cannot read the complete root-owned live Portage policy'
+            printf 'INFO: complete live Portage policy is root-private; recorded required subtest SKIP\n'
+            LIVE_POLICY_PREFLIGHT_AVAILABLE=0
         else
             sed -n '1,120p' "${WORK}/live-policy-preflight.stderr" >&2
             fail 'live-policy baseline preflight failed unexpectedly'
         fi
-    else
+    fi
+    if ((LIVE_POLICY_PREFLIGHT_AVAILABLE)); then
         /usr/bin/env \
             HOME=/tmp/poison-home TMPDIR=/tmp/poison-tmpdir PATH=/tmp \
             FEATURES='caller-injected-feature -sandbox -usersandbox' \
@@ -68,26 +74,26 @@ if [[ -x /usr/bin/portageq && -e /etc/portage/make.conf ]]; then
             CC=/tmp/poison-cc CXX=/tmp/poison-cxx \
             /bin/bash -- "${FIXTURE}" --live-policy-preflight \
             > "${LIVE_POLICY_PREFLIGHT_LOG}"
-    /usr/bin/cmp -- "${LIVE_POLICY_BASELINE_LOG}" \
-        "${LIVE_POLICY_PREFLIGHT_LOG}" || \
-        fail 'poisoned FEATURES changed the complete live-policy preflight output'
-    grep -Fxq $'schema\tgentoo-optimization-sample-live-policy-preflight-v2' \
-        "${LIVE_POLICY_PREFLIGHT_LOG}" || \
-        fail 'live-policy preflight lacks its exact schema'
-    grep -Fxq $'live_resolved_features\t'"${EXPECTED_LIVE_FEATURES}" \
-        "${LIVE_POLICY_PREFLIGHT_LOG}" || \
-        fail 'inherited FEATURES changed the captured authoritative live policy'
-    grep -Fxq $'live_make_conf_sha256\t'"${EXPECTED_LIVE_MAKE_CONF_SHA256}" \
-        "${LIVE_POLICY_PREFLIGHT_LOG}" || \
-        fail 'live-policy preflight recorded the wrong make.conf identity'
-    if grep -Fq caller-injected-feature "${LIVE_POLICY_PREFLIGHT_LOG}"; then
-        fail 'live-policy preflight persisted an inherited FEATURES token'
-    fi
-    grep -Eq $'^live_policy_identity_sha256\t[0-9a-f]{64}$' \
-        "${LIVE_POLICY_PREFLIGHT_LOG}" || \
-        fail 'live-policy preflight lacks its complete trusted identity digest'
-    record_required_subtest PASS live-portage.policy \
-        'poisoned caller environment reproduced the exact trusted live Portage policy'
+        /usr/bin/cmp -- "${LIVE_POLICY_BASELINE_LOG}" \
+            "${LIVE_POLICY_PREFLIGHT_LOG}" || \
+            fail 'poisoned FEATURES changed the complete live-policy preflight output'
+        grep -Fxq $'schema\tgentoo-optimization-sample-live-policy-preflight-v2' \
+            "${LIVE_POLICY_PREFLIGHT_LOG}" || \
+            fail 'live-policy preflight lacks its exact schema'
+        grep -Fxq $'live_resolved_features\t'"${EXPECTED_LIVE_FEATURES}" \
+            "${LIVE_POLICY_PREFLIGHT_LOG}" || \
+            fail 'inherited FEATURES changed the captured authoritative live policy'
+        grep -Fxq $'live_make_conf_sha256\t'"${EXPECTED_LIVE_MAKE_CONF_SHA256}" \
+            "${LIVE_POLICY_PREFLIGHT_LOG}" || \
+            fail 'live-policy preflight recorded the wrong make.conf identity'
+        if grep -Fq caller-injected-feature "${LIVE_POLICY_PREFLIGHT_LOG}"; then
+            fail 'live-policy preflight persisted an inherited FEATURES token'
+        fi
+        grep -Eq $'^live_policy_identity_sha256\t[0-9a-f]{64}$' \
+            "${LIVE_POLICY_PREFLIGHT_LOG}" || \
+            fail 'live-policy preflight lacks its complete trusted identity digest'
+        record_required_subtest PASS live-portage.policy \
+            'poisoned caller environment reproduced the exact trusted live Portage policy'
     fi
 else
     record_required_subtest SKIP live-portage.policy \

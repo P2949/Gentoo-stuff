@@ -1045,10 +1045,36 @@ class SampleConversionTest(unittest.TestCase):
             conversion_log = output.parent / "llvm-profgen-conversion-log.json"
             original = conversion_log.read_bytes()
             original_hash = hashlib.sha256(original).hexdigest()
-            conversion_log.chmod(0o640)
-            conversion_log.write_bytes(b"temporary hostile replacement\n")
-            conversion_log.write_bytes(original)
-            conversion_log.chmod(0o440)
+            original_stat = conversion_log.stat()
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            recorded_observation = metadata["source"]["conversion_log_observation"]
+            replacement = conversion_log.with_name(
+                f".{conversion_log.name}.restored-content"
+            )
+            replacement.write_bytes(b"temporary hostile replacement\n")
+            replacement.write_bytes(original)
+            replacement.chmod(original_stat.st_mode & 0o7777)
+            prepared_stat = replacement.stat()
+            self.assertNotEqual(
+                (prepared_stat.st_dev, prepared_stat.st_ino),
+                (
+                    recorded_observation["device"],
+                    recorded_observation["inode"],
+                ),
+            )
+            os.replace(replacement, conversion_log)
+            installed_stat = conversion_log.stat()
+            self.assertEqual(
+                (installed_stat.st_dev, installed_stat.st_ino),
+                (prepared_stat.st_dev, prepared_stat.st_ino),
+            )
+            self.assertNotEqual(
+                (installed_stat.st_dev, installed_stat.st_ino),
+                (
+                    recorded_observation["device"],
+                    recorded_observation["inode"],
+                ),
+            )
             self.assertEqual(hashlib.sha256(conversion_log.read_bytes()).hexdigest(), original_hash)
 
             validation_arguments = fixture.sample_arguments(output)
