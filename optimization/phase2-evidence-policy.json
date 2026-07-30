@@ -1,5 +1,10 @@
 {
   "aggregate_requires_zero": true,
+  "authoritative_test_path": [
+    "/usr/bin",
+    "/usr/lib/llvm/22/bin",
+    "/bin"
+  ],
   "authoritative_test_contract_path": "optimization/phase2-authoritative-test-contract.json",
   "component_state_path_template": "/var/lib/gentoo-optimization/state/project/phase-2-components/{run_id}/{name}.json",
   "index_path_template": "/var/lib/gentoo-optimization/state/project/phase2-evidence/{run_id}/index.json",
@@ -172,6 +177,7 @@
     "b2sum",
     "bash",
     "bash-bootstrap",
+    "cc",
     "chmod",
     "chown",
     "clang",
@@ -182,6 +188,7 @@
     "emaint",
     "emerge",
     "env",
+    "file",
     "find",
     "findmnt",
     "flock",
@@ -234,6 +241,7 @@
     "sleep",
     "sort",
     "stat",
+    "strip",
     "sync",
     "systemd-tmpfiles",
     "tar",
@@ -257,5 +265,15 @@
     "tests/run-optimization-tests.sh"
   ],
   "test_driver_path": "tests/run-optimization-tests.sh",
+  "test_execution_tools": [
+    "bash",
+    "env",
+    "git",
+    "python3",
+    "setsid",
+    "shellcheck",
+    "sleep",
+    "timeout"
+  ],
   "tool_manifest_template_path": "optimization/phase2-tool-manifest.json"
 }

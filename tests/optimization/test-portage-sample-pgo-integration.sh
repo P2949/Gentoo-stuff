@@ -468,6 +468,52 @@ require_root_trusted_canonical_path() {
     done
 }
 
+LIVE_POLICY_ERROR_SCHEMA=gentoo-optimization-live-policy-observation-error-v1
+LIVE_POLICY_ROOT_IDENTITY_STATUS=74
+
+emit_live_policy_observation_error() {
+    local value
+    for value in "$@"; do
+        [[ -n ${value} && ${value} != *$'\t'* && ${value} != *$'\n'* ]] || \
+            fail 'live-policy observation error contains an unsafe field'
+    done
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "${LIVE_POLICY_ERROR_SCHEMA}" "$1" "$2" "$3" "$4" "$5" "$6" \
+        "$7" "$8" "$9" "${10}" >&2
+}
+
+observe_remapped_root_tool_identity() {
+    local logical=$1 resolved root_uid current metadata mode
+    resolved=$(/usr/bin/realpath -e -- "${logical}") || return 1
+    [[ ${resolved} == /* && -f ${resolved} && -x ${resolved} && ! -L ${resolved} ]] || \
+        return 1
+    root_uid=$(/usr/bin/stat -c %u -- /) || return 1
+    [[ ${root_uid} =~ ^[0-9]+$ ]] || return 1
+    ((root_uid != 0)) || return 1
+    metadata=$(/usr/bin/stat -c '%u:%a' -- "${resolved}") || return 1
+    [[ ${metadata%%:*} == "${root_uid}" ]] || return 1
+    mode=${metadata#*:}
+    [[ ${mode} =~ ^[0-7]{3,4}$ ]] || return 1
+    (( (8#${mode} & 8#022) == 0 )) || return 1
+    current=${resolved%/*}
+    [[ -n ${current} ]] || current=/
+    while :; do
+        [[ -d ${current} && ! -L ${current} && \
+            $(/usr/bin/realpath -e -- "${current}") == "${current}" ]] || return 1
+        metadata=$(/usr/bin/stat -c '%u:%a' -- "${current}") || return 1
+        [[ ${metadata%%:*} == "${root_uid}" ]] || return 1
+        (( (8#${metadata#*:} & 8#022) == 0 )) || return 1
+        [[ ${current} == / ]] && break
+        current=${current%/*}
+        [[ -n ${current} ]] || current=/
+    done
+    printf -v mode '%04o' "$((8#${mode}))"
+    emit_live_policy_observation_error \
+        root-identity-unobservable not-applicable live-policy.tool-root-trust \
+        "${resolved}" executable-regular 0 root-owned-no-group-world-write \
+        executable-regular "${root_uid}" "${mode}"
+}
+
 resolve_live_portage_policy() {
     local output=$1 tool feature writable_roots_tsv
     local -a live_feature_tokens=()
@@ -475,8 +521,13 @@ resolve_live_portage_policy() {
     for tool in /usr/bin/env /usr/bin/portageq /usr/bin/python3 \
         /usr/bin/realpath /usr/bin/sha256sum /usr/bin/stat /usr/bin/mktemp \
         /usr/bin/rm; do
-        require_root_trusted_canonical_path "${tool}" executable || \
+        if ! require_root_trusted_canonical_path "${tool}" executable; then
+            if [[ ${tool} == /usr/bin/env ]] && \
+                observe_remapped_root_tool_identity "${tool}"; then
+                return "${LIVE_POLICY_ROOT_IDENTITY_STATUS}"
+            fi
             fail "live-policy tool or canonical ancestry is not root-trusted: ${tool}"
+        fi
     done
     LIVE_MAKE_CONF=$(/usr/bin/realpath -e -- /etc/portage/make.conf)
     require_root_trusted_canonical_path "${LIVE_MAKE_CONF}" regular || \
@@ -703,6 +754,37 @@ portage_config_info = portage_config_selector.lstat()
 if portage_config_info.st_uid != 0:
     raise SystemExit("live Portage config selector is not root-owned")
 portage_config = require_trusted_canonical(portage_config_selector, "directory")
+private_source_marker = portage_config / ".gentoo-optimization-source-hash"
+if private_source_marker.exists() and not private_source_marker.is_symlink():
+    private_source_marker_info = private_source_marker.lstat()
+    if (
+        stat.S_ISREG(private_source_marker_info.st_mode)
+        and private_source_marker_info.st_uid == 0
+        and stat.S_IMODE(private_source_marker_info.st_mode) == 0o600
+    ):
+        try:
+            digest(private_source_marker)
+        except PermissionError as error:
+            canonical_marker = private_source_marker.resolve(strict=True).as_posix()
+            fields = (
+                "gentoo-optimization-live-policy-observation-error-v1",
+                "permission-denied",
+                str(error.errno),
+                "portage_config.tree.regular-content-sha256",
+                canonical_marker,
+                "regular",
+                "0",
+                "0600",
+                "regular",
+                str(private_source_marker_info.st_uid),
+                f"{stat.S_IMODE(private_source_marker_info.st_mode):04o}",
+            )
+            if any(not field or "\t" in field or "\n" in field for field in fields):
+                raise SystemExit(
+                    "live-policy permission error contains an unsafe field"
+                ) from error
+            sys.stderr.write("\t".join(fields) + "\n")
+            raise SystemExit(73) from None
 writable_root_lines = os.environ["LIVE_WRITABLE_ROOTS_TSV"].splitlines()
 if not writable_root_lines or writable_root_lines[0] != (
     "schema\tgentoo-optimization-portage-writable-roots-v1"

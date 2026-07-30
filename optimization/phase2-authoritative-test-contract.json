@@ -240,8 +240,8 @@
   },
   "unittest_suites": [
     {
-      "expected_count": 32,
-      "subtest_names_sha256": "ba1f71adb31f9d59203b345b9a01017a2fc1994c002582206eff1c3ed9622c57",
+      "expected_count": 36,
+      "subtest_names_sha256": "cc631c2bba201c6b754ac6344ee167adde640d6caac083b20fa0bf027f3f7f06",
       "test": "phase2-evidence-contract"
     },
     {
@@ -250,13 +250,13 @@
       "test": "production-profile-lock-crash-stress"
     },
     {
-      "expected_count": 198,
-      "subtest_names_sha256": "fccf6c55f17dbc065cbea1d39ff8e206fbb25e05ea5cb9352af31059fffec55d",
+      "expected_count": 201,
+      "subtest_names_sha256": "2bcd4a21b69e2234d4fcdc09ee42ddd613c6ac959a70cb89d97e1585feb18fc4",
       "test": "python-unit-tests:tests/optimization"
     },
     {
-      "expected_count": 68,
-      "subtest_names_sha256": "22a7c819de3b48d8aad27289c79717fb1b7c13fd98f3c3ad4090a05b06548421",
+      "expected_count": 70,
+      "subtest_names_sha256": "7b7222cb6798c7d7e3379e8544f3dc11625e3bb868be5f933406d7ddb84ed533",
       "test": "python-unit-tests:tests/optimization/recovery"
     }
   ]

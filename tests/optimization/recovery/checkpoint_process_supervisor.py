@@ -72,6 +72,31 @@ def identity_is_live(identity: ProcessIdentity) -> bool:
     )
 
 
+def require_single_native_task_before_fork() -> None:
+    """Fail closed unless this helper has exactly its main native task.
+
+    CPython cannot make ``fork()`` safe after an embedding runtime or injected
+    module has created native threads.  This helper exists specifically to own
+    the fixture's raw fork, so prove that invariant at the last possible point
+    before creating the target.
+    """
+
+    try:
+        entries = tuple(Path("/proc/self/task").iterdir())
+        task_ids = tuple(sorted(int(entry.name) for entry in entries))
+    except (OSError, ValueError) as error:
+        raise RuntimeError(
+            "checkpoint fixture supervisor cannot inspect its native tasks "
+            "before fork"
+        ) from error
+    expected = (os.getpid(),)
+    if task_ids != expected:
+        raise RuntimeError(
+            "checkpoint fixture supervisor is not single-threaded before fork: "
+            f"native_tasks={list(task_ids)!r}"
+        )
+
+
 def snapshot_descendants(root_pid: int) -> dict[tuple[int, int], ProcessIdentity]:
     identities: dict[int, ProcessIdentity] = {}
     try:
@@ -129,6 +154,14 @@ def write_json(path: Path, payload: dict[str, object]) -> None:
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(temporary, path)
+    directory_fd = os.open(
+        path.parent,
+        os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC,
+    )
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 def signal_identities(
@@ -403,6 +436,7 @@ def main() -> int:
         release_reader, release_writer = os.pipe2(os.O_CLOEXEC)
         supervisor_pid = os.getpid()
         reject_interruption("before target creation")
+        require_single_native_task_before_fork()
         target_pid = os.fork()
         if target_pid == 0:
             try:

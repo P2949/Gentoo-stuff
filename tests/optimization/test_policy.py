@@ -119,6 +119,7 @@ class OptimizationPolicyTests(unittest.TestCase):
         policy = self.load("phase2-evidence-policy.json")
         manifest = self.load("phase2-tool-manifest.json")
         required_tools = cast(list[str], policy["required_tools"])
+        test_execution_tools = cast(list[str], policy["test_execution_tools"])
         manifest_tools = cast(list[dict[str, object]], manifest["tools"])
         manifest_names = [cast(str, entry["name"]) for entry in manifest_tools]
         checkpoint_primitives = {
@@ -136,6 +137,24 @@ class OptimizationPolicyTests(unittest.TestCase):
         framework_primitives = {"systemd-tmpfiles"}
         self.assertEqual(required_tools, sorted(required_tools))
         self.assertEqual(manifest_names, required_tools)
+        self.assertEqual(
+            policy["authoritative_test_path"],
+            ["/usr/bin", "/usr/lib/llvm/22/bin", "/bin"],
+        )
+        self.assertEqual(
+            test_execution_tools,
+            [
+                "bash",
+                "env",
+                "git",
+                "python3",
+                "setsid",
+                "shellcheck",
+                "sleep",
+                "timeout",
+            ],
+        )
+        self.assertLessEqual(set(test_execution_tools), set(required_tools))
         self.assertLessEqual(
             checkpoint_primitives | framework_primitives,
             set(required_tools),

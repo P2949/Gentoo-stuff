@@ -213,11 +213,11 @@ COORD=/usr/local/libexec/gentoo-optimization/pgo/production-profile-lock-transac
 SCAN=/usr/local/libexec/gentoo-optimization/pgo/authorization-token-scan.py
 CONTAINMENT_PREFLIGHT=$(doas /usr/bin/env -i \
   HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  PATH=/usr/bin:/bin \
   LANG=C LC_ALL=C TZ=UTC "$COORD" preflight-containment)
 test "$CONTAINMENT_PREFLIGHT" = PREFLIGHT-PASS
 doas /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  PATH=/usr/bin:/bin \
   LANG=C LC_ALL=C TZ=UTC "$COORD" recover
 ```
 
@@ -245,10 +245,10 @@ doas /usr/bin/env -i HOME=/root LANG=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
   /usr/bin/python3 -I -B -c \
   'from jsonschema import Draft202012Validator; Draft202012Validator.check_schema({"$schema": "https://json-schema.org/draft/2020-12/schema"})'
 doas /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-  PATH=/usr/lib/llvm/22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  PATH=/usr/bin:/usr/lib/llvm/22/bin:/bin \
   LANG=C LC_ALL=C TZ=UTC \
   SHELLCHECK=/var/lib/gentoo-optimization/test-tools/shellcheck-0.11.0 \
-  "$SOURCE/tests/run-optimization-tests.sh" --mode authoritative \
+  /usr/bin/bash "$SOURCE/tests/run-optimization-tests.sh" --mode authoritative \
   --capability all --output-dir "$EVIDENCE_ROOT"
 
 doas awk -F '\t' 'NR > 1 { count[$1]++ } END {
@@ -263,6 +263,18 @@ doas grep -Fx 'required_subtest_fail=0' "$EVIDENCE_ROOT/summary.txt"
 doas grep -Fx 'required_subtest_skip=0' "$EVIDENCE_ROOT/summary.txt"
 doas grep -Fx 'mandatory_internal_skip=0' "$EVIDENCE_ROOT/summary.txt"
 ```
+
+The authoritative driver must itself be invoked with `/usr/bin/bash` as Bash
+argv zero. Before it trusts PATH, repository-path setup and diagnostics use
+only Bash builtins. It then pins the reviewed `bash`, `env`, `git`, `python3`,
+`setsid`, `shellcheck`, `sleep`, and `timeout` entry points and rejects any PATH
+shadow before running a case. The ShellCheck case uses the already-bound
+entry point rather than independently accepting `SHELLCHECK`; portable runs
+record their selected ShellCheck entry point. Finalized provenance records the
+requested entry points and resolved executable identities, additionally binds
+the active Bash process and Python runtime that executed the evidence helper,
+and is independently compared with the reviewed tool manifest by the detached
+index. A matching version string alone is not an execution identity.
 
 The isolated sample lane remains a diagnostic cross-check. The separately named
 `portage-sample-pgo-live-policy-integration` is authoritative for normal live
@@ -338,7 +350,7 @@ descriptor. Operators never generate, print, export, or store the raw token.
 ```sh
 set -Eeuo pipefail
 doas /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  PATH=/usr/bin:/bin \
   LANG=C LC_ALL=C TZ=UTC \
   "$COORD" run \
   --generation-id "$GENERATION_ID" \
@@ -461,7 +473,7 @@ doas install -d -o root -g root -m 0700 "$COMPONENT_ROOT"
 
 phase2_evidence_tool() {
   doas /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-    PATH=/usr/lib/llvm/22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/usr/bin:/usr/lib/llvm/22/bin:/bin \
     LANG=C LC_ALL=C TZ=UTC PYTHONDONTWRITEBYTECODE=1 \
     "$EVIDENCE_PY" -I -B "$EVIDENCE_TOOL" "$@"
 }

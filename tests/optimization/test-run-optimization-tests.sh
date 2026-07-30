@@ -63,7 +63,7 @@ install_hermetic_contract_support() {
     local repository=$1 binary_directory=$2
     local contract=${repository}/optimization/phase2-authoritative-test-contract.json
     local generated=${contract}.generated
-    local python3_path
+    local python3_path git_path readelf_path
     python3_path=$(command -v -- python3) || \
         fail 'self-test prerequisite is unavailable: python3'
     mkdir -p -- "${repository}/optimization" \
@@ -104,14 +104,68 @@ install_hermetic_contract_support() {
         '  "top_level": {"exact_names": [], "prefix_groups": []},' \
         '  "unittest_suites": []' \
         '}' >"${contract}"
+    if [[ ! -e ${binary_directory}/python3 && ! -L ${binary_directory}/python3 ]]; then
+        ln -s -- "${python3_path}" "${binary_directory}/python3"
+    fi
+    git_path=$(command -v -- git) || \
+        fail 'self-test prerequisite is unavailable: git'
+    if [[ ! -e ${binary_directory}/git && ! -L ${binary_directory}/git ]]; then
+        ln -s -- "${git_path}" "${binary_directory}/git"
+    fi
+    readelf_path=$(command -v -- readelf) ||
+        fail 'self-test prerequisite is unavailable: readelf'
+    if [[ ! -e ${binary_directory}/readelf &&
+          ! -L ${binary_directory}/readelf ]]; then
+        ln -s -- "${readelf_path}" "${binary_directory}/readelf"
+    fi
+    if [[ ! -e ${binary_directory}/shellcheck &&
+          ! -L ${binary_directory}/shellcheck ]]; then
+        # The positional expression expands only in the generated fixture.
+        # shellcheck disable=SC2016
+        printf '%s\n' \
+            '#!/usr/bin/bash' \
+            'if [[ ${1:-} == --version ]]; then' \
+            '    printf "version: fixture-shellcheck\\n"' \
+            'fi' \
+            'exit 0' >"${binary_directory}/shellcheck"
+        chmod 0755 -- "${binary_directory}/shellcheck"
+    fi
+    printf '%s\n' \
+        '{' \
+        '  "authoritative_test_path": [' \
+        "    \"${binary_directory}\"" \
+        '  ],' \
+        '  "test_execution_tools": [' \
+        '    "bash",' \
+        '    "env",' \
+        '    "git",' \
+        '    "python3",' \
+        '    "setsid",' \
+        '    "shellcheck",' \
+        '    "sleep",' \
+        '    "timeout"' \
+        '  ]' \
+        '}' >"${repository}/optimization/phase2-evidence-policy.json"
+    printf '%s\n' \
+        '{' \
+        '  "schema": "gentoo-optimization-phase2-tool-manifest-v1",' \
+        '  "tools": [' \
+        "    {\"name\": \"bash\", \"path\": \"${binary_directory}/bash\", \"version_args\": [\"--version\"]}," \
+        "    {\"name\": \"env\", \"path\": \"${binary_directory}/env\", \"version_args\": [\"--version\"]}," \
+        "    {\"name\": \"git\", \"path\": \"${binary_directory}/git\", \"version_args\": [\"--version\"]}," \
+        "    {\"name\": \"python3\", \"path\": \"${binary_directory}/python3\", \"version_args\": [\"--version\"]}," \
+        "    {\"name\": \"readelf\", \"path\": \"${binary_directory}/readelf\", \"version_args\": [\"--version\"]}," \
+        "    {\"name\": \"setsid\", \"path\": \"${binary_directory}/setsid\", \"version_args\": [\"--version\"]}," \
+        "    {\"name\": \"shellcheck\", \"path\": \"${binary_directory}/shellcheck\", \"version_args\": [\"--version\"]}," \
+        "    {\"name\": \"sleep\", \"path\": \"${binary_directory}/sleep\", \"version_args\": [\"--version\"]}," \
+        "    {\"name\": \"timeout\", \"path\": \"${binary_directory}/timeout\", \"version_args\": [\"--version\"]}" \
+        '  ]' \
+        '}' >"${repository}/optimization/phase2-tool-manifest.json"
     "${python3_path}" -I -B \
         "${REPOSITORY_ROOT}/scripts/optimization/verify/phase2-test-contract.py" \
         generate --repository-root "${repository}" --contract "${contract}" \
         --output "${generated}" >/dev/null
     mv -f -- "${generated}" "${contract}"
-    if [[ ! -e ${binary_directory}/python3 && ! -L ${binary_directory}/python3 ]]; then
-        ln -s -- "${python3_path}" "${binary_directory}/python3"
-    fi
 }
 
 [[ -f ${DRIVER} ]] || fail "driver is absent: ${DRIVER}"
@@ -456,14 +510,163 @@ grep -Fxq 'mode=capabilities' "${HERMETIC_OUTPUT}/summary.txt" || \
 
 AUTHORITATIVE_OUTPUT=${FIXTURE}/hermetic-authoritative-output
 install_hermetic_contract_support "${HERMETIC_ROOT}" "${HERMETIC_BIN}"
+
+# A PATH-selected wrapper must never stand in for any PATH-resolved execution-
+# core tool during an authoritative run. Exercise this contract against the
+# hermetic reviewed manifest so the portable CI host need not contain Gentoo's
+# complete production tool topology. The driver itself starts through reviewed
+# Bash, proving preflight rejection rather than accidentally executing a shadow.
+TOOL_SHADOW_BIN=${FIXTURE}/tool-shadow-bin
+TOOL_SHADOW_MARKER=${FIXTURE}/tool-shadow-was-executed
+mkdir -p -- "${TOOL_SHADOW_BIN}"
+for shadowed_tool in bash env git python3 setsid sleep timeout; do
+    rm -f -- "${TOOL_SHADOW_BIN}"/* "${TOOL_SHADOW_MARKER}"
+    printf '%s\n' \
+        '#!/usr/bin/bash' \
+        "printf '%s\\n' '${shadowed_tool}' >'${TOOL_SHADOW_MARKER}'" \
+        'exit 99' >"${TOOL_SHADOW_BIN}/${shadowed_tool}"
+    chmod 0755 -- "${TOOL_SHADOW_BIN}/${shadowed_tool}"
+    set +e
+    PATH=${TOOL_SHADOW_BIN}:${HERMETIC_BIN} \
+    GENTOO_OPT_AUTHORITATIVE=1 \
+    SHELLCHECK=${HERMETIC_BIN}/shellcheck \
+        "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
+        --internal-process-group-probe 2147483647 \
+        >"${FIXTURE}/shadow-${shadowed_tool}.log" 2>&1
+    shadow_status=$?
+    set -e
+    [[ ${shadow_status} -eq 2 ]] || \
+        fail "authoritative ${shadowed_tool} shadow returned ${shadow_status}, expected 2"
+    grep -Fq \
+        "authoritative PATH shadows reviewed ${shadowed_tool}:" \
+        "${FIXTURE}/shadow-${shadowed_tool}.log" || \
+        fail "authoritative ${shadowed_tool} shadow lacks an exact diagnostic"
+    [[ ! -e ${TOOL_SHADOW_MARKER} ]] || \
+        fail "authoritative driver executed the PATH shadow for ${shadowed_tool}"
+done
+rm -f -- "${TOOL_SHADOW_BIN}"/*
+
 set +e
-PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 bash -- "${HERMETIC_DRIVER}" \
+PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
+SHELLCHECK=${HERMETIC_BIN}/shellcheck \
+    "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
+    --internal-process-group-probe 2147483647 \
+    >"${FIXTURE}/authoritative-reviewed-entrypoints.log" 2>&1
+reviewed_entrypoint_status=$?
+set -e
+[[ ${reviewed_entrypoint_status} -eq 1 ]] || \
+    fail "authoritative reviewed-entrypoint probe returned ${reviewed_entrypoint_status}, expected 1"
+grep -Fxq quiescent "${FIXTURE}/authoritative-reviewed-entrypoints.log" || \
+    fail 'authoritative reviewed-entrypoint probe did not reach process inspection'
+
+set +e
+PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
+SHELLCHECK=${HERMETIC_BIN}/shellcheck \
+    /bin/bash -- "${HERMETIC_DRIVER}" \
+    --internal-process-group-probe 2147483647 \
+    >"${FIXTURE}/authoritative-bin-bash.log" 2>&1
+bin_bash_status=$?
+set -e
+[[ ${bin_bash_status} -eq 2 ]] || \
+    fail "authoritative /bin/bash probe returned ${bin_bash_status}, expected 2"
+grep -Fq 'authoritative driver Bash argv-zero differs from the reviewed entry point:' \
+    "${FIXTURE}/authoritative-bin-bash.log" || \
+    fail 'authoritative driver accepted /bin/bash for another reviewed Bash entry point'
+
+set +e
+PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
+SHELLCHECK=/usr/bin/true \
+    "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
+    --internal-process-group-probe 2147483647 \
+    >"${FIXTURE}/authoritative-fake-shellcheck.log" 2>&1
+fake_shellcheck_status=$?
+set -e
+[[ ${fake_shellcheck_status} -eq 2 ]] || \
+    fail "authoritative fake ShellCheck probe returned ${fake_shellcheck_status}, expected 2"
+grep -Fq 'authoritative ShellCheck entry point differs from the reviewed manifest:' \
+    "${FIXTURE}/authoritative-fake-shellcheck.log" || \
+    fail 'authoritative driver accepted an unreviewed ShellCheck entry point'
+
+PREBIND_SHADOW_BIN=${FIXTURE}/prebind-shadow-bin
+PREBIND_DIRNAME_MARKER=${FIXTURE}/prebind-dirname-executed
+mkdir -p -- "${PREBIND_SHADOW_BIN}"
+printf '%s\n' \
+    '#!/usr/bin/bash' \
+    "printf '%s\\n' executed >'${PREBIND_DIRNAME_MARKER}'" \
+    'exec /usr/bin/dirname "$@"' \
+    >"${PREBIND_SHADOW_BIN}/dirname"
+chmod 0755 -- "${PREBIND_SHADOW_BIN}/dirname"
+set +e
+PATH=${PREBIND_SHADOW_BIN}:${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
+SHELLCHECK=${HERMETIC_BIN}/shellcheck \
+    "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
+    --internal-process-group-probe 2147483647 \
+    >"${FIXTURE}/authoritative-prebind-shadow.log" 2>&1
+prebind_shadow_status=$?
+set -e
+[[ ${prebind_shadow_status} -eq 2 ]] || \
+    fail "authoritative pre-binding shadow probe returned ${prebind_shadow_status}, expected 2"
+grep -Fq 'authoritative PATH differs from the reviewed execution path:' \
+    "${FIXTURE}/authoritative-prebind-shadow.log" || \
+    fail 'authoritative pre-binding shadow lacks the exact PATH diagnostic'
+[[ ! -e ${PREBIND_DIRNAME_MARKER} ]] || \
+    fail 'authoritative driver executed PATH-selected dirname before tool binding'
+
+TOOL_ALIAS_BIN=${FIXTURE}/tool-alias-bin
+mkdir -p -- "${TOOL_ALIAS_BIN}"
+ln -s -- "${HERMETIC_BIN}/git" "${TOOL_ALIAS_BIN}/git"
+ln -s -- "${HERMETIC_BIN}/python3" "${TOOL_ALIAS_BIN}/python3"
+set +e
+PATH=${TOOL_ALIAS_BIN}:${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
+SHELLCHECK=${HERMETIC_BIN}/shellcheck \
+    "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
+    --internal-process-group-probe 2147483647 \
+    >"${FIXTURE}/authoritative-symlink-entrypoints.log" 2>&1
+symlink_entrypoint_status=$?
+set -e
+[[ ${symlink_entrypoint_status} -eq 2 ]] || \
+    fail "authoritative alias-PATH probe returned ${symlink_entrypoint_status}, expected 2"
+grep -Fq 'authoritative PATH shadows reviewed git:' \
+    "${FIXTURE}/authoritative-symlink-entrypoints.log" || \
+    fail 'authoritative driver accepted an unreviewed identity-equivalent PATH'
+
+MANIFEST_SHADOW_BIN=${FIXTURE}/manifest-shadow-bin
+MANIFEST_SHADOW_MARKER=${FIXTURE}/manifest-shadow-was-executed
+mkdir -p -- "${MANIFEST_SHADOW_BIN}"
+printf '%s\n' \
+    '#!/usr/bin/bash' \
+    "printf '%s\\n' executed >'${MANIFEST_SHADOW_MARKER}'" \
+    'exit 99' >"${MANIFEST_SHADOW_BIN}/readelf"
+chmod 0755 -- "${MANIFEST_SHADOW_BIN}/readelf"
+set +e
+PATH=${MANIFEST_SHADOW_BIN}:${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
+SHELLCHECK=${HERMETIC_BIN}/shellcheck \
+    "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
+    --internal-process-group-probe 2147483647 \
+    >"${FIXTURE}/authoritative-manifest-shadow.log" 2>&1
+manifest_shadow_status=$?
+set -e
+[[ ${manifest_shadow_status} -eq 2 ]] || \
+    fail "authoritative non-core manifest shadow returned ${manifest_shadow_status}, expected 2"
+grep -Fq \
+    "authoritative PATH shadows reviewed readelf: expected=${HERMETIC_BIN}/readelf selected=${MANIFEST_SHADOW_BIN}/readelf" \
+    "${FIXTURE}/authoritative-manifest-shadow.log" || \
+    fail 'authoritative driver accepted a non-core reviewed-tool PATH shadow'
+[[ ! -e ${MANIFEST_SHADOW_MARKER} ]] || \
+    fail 'authoritative driver executed the non-core manifest PATH shadow'
+
+set +e
+PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
+SHELLCHECK=${HERMETIC_BIN}/shellcheck \
+    "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
     --mode capabilities --output-dir "${AUTHORITATIVE_OUTPUT}" \
     >"${FIXTURE}/hermetic-authoritative.log" 2>&1
 AUTHORITATIVE_STATUS=$?
 set -e
-[[ ${AUTHORITATIVE_STATUS} -eq 1 ]] || \
+if [[ ${AUTHORITATIVE_STATUS} -ne 1 ]]; then
+    sed -n '1,240p' "${FIXTURE}/hermetic-authoritative.log" >&2
     fail "incomplete authoritative gate returned ${AUTHORITATIVE_STATUS}, expected 1"
+fi
 grep -Fxq 'mode=capabilities' "${AUTHORITATIVE_OUTPUT}/summary.txt" || \
     fail 'hermetic authoritative-accounting summary lost its exact mode'
 grep -Fxq 'authoritative=1' "${AUTHORITATIVE_OUTPUT}/summary.txt" || \
@@ -696,7 +899,8 @@ chmod 0755 -- "${TIMEOUT_RUNNER}"
 install_hermetic_contract_support "${TIMEOUT_ROOT}" "${TIMEOUT_BIN_ROOT}"
 set +e
 PATH=${TIMEOUT_BIN_ROOT} GENTOO_OPT_AUTHORITATIVE=1 \
-    bash -- "${TIMEOUT_DRIVER}" --mode smoke --capability go \
+SHELLCHECK=${TIMEOUT_BIN_ROOT}/shellcheck \
+    "${TIMEOUT_BIN_ROOT}/bash" -- "${TIMEOUT_DRIVER}" --mode smoke --capability go \
     --output-dir "${HOST_SKIP_OUTPUT}" \
     >"${FIXTURE}/unstructured-host-skip-driver.log" 2>&1
 HOST_SKIP_STATUS=$?
@@ -724,6 +928,10 @@ mkdir -p -- "${PYTHON_ROOT}/bench" "${PYTHON_ROOT}/optimization" \
     "${PYTHON_RECOVERY_TEST_DIR}" \
     "${PYTHON_BIN_ROOT}"
 cp -- "${DRIVER}" "${PYTHON_DRIVER}"
+cp -- "${REPOSITORY_ROOT}/optimization/phase2-evidence-policy.json" \
+    "${PYTHON_ROOT}/optimization/phase2-evidence-policy.json"
+cp -- "${REPOSITORY_ROOT}/optimization/phase2-tool-manifest.json" \
+    "${PYTHON_ROOT}/optimization/phase2-tool-manifest.json"
 cp -- "${REPOSITORY_ROOT}/scripts/optimization/verify/run-unittest-suite.py" \
     "${PYTHON_UNITTEST_RUNNER}"
 printf '%s\n' \
@@ -845,7 +1053,8 @@ install_hermetic_contract_support "${PYTHON_ROOT}" "${PYTHON_BIN_ROOT}"
 set +e
 PATH=${PYTHON_BIN_ROOT} \
 GENTOO_OPT_AUTHORITATIVE=1 \
-    bash -- "${PYTHON_DRIVER}" --mode stress \
+SHELLCHECK=${PYTHON_BIN_ROOT}/shellcheck \
+    "${PYTHON_BIN_ROOT}/bash" -- "${PYTHON_DRIVER}" --mode stress \
     --output-dir "${PYTHON_AUTHORITATIVE_OUTPUT}" \
     >"${FIXTURE}/python-authoritative-driver.log" 2>&1
 PYTHON_AUTHORITATIVE_STATUS=$?
@@ -980,5 +1189,103 @@ grep -Fq '<-O2>' "${FIXTURE}/fake-gxx-fail.log" || \
     fail 'GCC/libstdc++ preflight did not invoke g++ after the Clang probe passed'
 [[ ! -e ${RECOVERY_MARKER} ]] || \
     fail 'rollback fixture executed despite a failed ABI capability probe'
+
+# Portable mode may use a PATH-selected Python entry point, but its finalized
+# provenance must identify the wrapper that actually launched every Python
+# case.  Use a clean synthetic repository and replace this recursive self-test
+# with a harmless same-path stub so the nested smoke gate stays bounded.
+PORTABLE_TOOL_ROOT=${FIXTURE}/portable-tool-repository
+PORTABLE_TOOL_BIN=${FIXTURE}/portable-tool-bin
+PORTABLE_TOOL_OUTPUT=${FIXTURE}/portable-tool-output
+PORTABLE_PYTHON_MARKER=${FIXTURE}/portable-python-invocations.log
+PORTABLE_GIT_PRECHECK_MARKER=${FIXTURE}/portable-ambient-git-precheck-executed
+mkdir -p -- "${PORTABLE_TOOL_ROOT}" "${PORTABLE_TOOL_BIN}"
+(
+    cd -- "${REPOSITORY_ROOT}"
+    git ls-files -z | tar --null --files-from=- --create --file=-
+) | (
+    cd -- "${PORTABLE_TOOL_ROOT}"
+    tar --extract --file=-
+)
+printf '%s\n' '#!/usr/bin/bash' 'exit 0' \
+    >"${PORTABLE_TOOL_ROOT}/tests/optimization/test-run-optimization-tests.sh"
+chmod 0755 -- \
+    "${PORTABLE_TOOL_ROOT}/tests/optimization/test-run-optimization-tests.sh"
+printf '%s\n' \
+    '#!/usr/bin/bash' \
+    "printf '%s\\n' invoked >>'${PORTABLE_PYTHON_MARKER}'" \
+    'exec /usr/bin/python3 "$@"' \
+    >"${PORTABLE_TOOL_BIN}/python3"
+# The positional expression expands only in the generated fixture.
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/usr/bin/bash' \
+    'if [[ ${1:-} == --version ]]; then' \
+    '    printf "version: portable-fixture-shellcheck\\n"' \
+    'fi' \
+    'exit 0' >"${PORTABLE_TOOL_BIN}/shellcheck"
+# The positional expressions expand only in the generated Git wrapper.
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/usr/bin/bash' \
+    'if [[ ${1:-} == -C && ${3:-} == status ]]; then' \
+    "    printf '%s\\n' executed >'${PORTABLE_GIT_PRECHECK_MARKER}'" \
+    '    exit 99' \
+    'fi' \
+    'exec /usr/bin/git "$@"' >"${PORTABLE_TOOL_BIN}/git"
+chmod 0755 -- "${PORTABLE_TOOL_BIN}/python3" \
+    "${PORTABLE_TOOL_BIN}/shellcheck" "${PORTABLE_TOOL_BIN}/git"
+git -C "${PORTABLE_TOOL_ROOT}" init -q
+git -C "${PORTABLE_TOOL_ROOT}" config user.email \
+    gentoo-optimization-fixture.invalid
+git -C "${PORTABLE_TOOL_ROOT}" config user.name \
+    gentoo-optimization-fixture
+git -C "${PORTABLE_TOOL_ROOT}" add -A
+git -C "${PORTABLE_TOOL_ROOT}" commit -qm portable-tool-provenance-fixture
+PATH=${PORTABLE_TOOL_BIN}:/usr/bin:/bin \
+SHELLCHECK=${PORTABLE_TOOL_BIN}/shellcheck \
+    /usr/bin/bash -- \
+    "${PORTABLE_TOOL_ROOT}/tests/run-optimization-tests.sh" --mode smoke \
+    --output-dir "${PORTABLE_TOOL_OUTPUT}" \
+    >"${FIXTURE}/portable-tool-driver.log" 2>&1 || {
+    sed -n '1,240p' "${FIXTURE}/portable-tool-driver.log" >&2
+    fail 'portable PATH-selected Python provenance run failed'
+}
+[[ -s ${PORTABLE_PYTHON_MARKER} ]] || \
+    fail 'portable PATH-selected Python wrapper was not executed'
+[[ ! -e ${PORTABLE_GIT_PRECHECK_MARKER} ]] || \
+    fail 'portable test-run provenance used the old ambient Git status precheck'
+[[ -f ${PORTABLE_TOOL_OUTPUT}/test-run-provenance.json ]] || \
+    fail 'portable PATH-selected Python run omitted finalized provenance'
+/usr/bin/python3 -I -B - \
+    "${PORTABLE_TOOL_OUTPUT}/test-run-provenance.json" \
+    "${PORTABLE_TOOL_BIN}/python3" \
+    "${PORTABLE_TOOL_BIN}/shellcheck" <<'PY'
+import json
+import pathlib
+import sys
+
+document = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+tools = document.get("executed_tools")
+if not isinstance(tools, list):
+    raise SystemExit("finalized provenance omits executed_tools")
+python_records = [item for item in tools if item.get("name") == "python3"]
+if len(python_records) != 1:
+    raise SystemExit("finalized provenance lacks one Python execution record")
+entrypoint = python_records[0].get("entrypoint")
+if not isinstance(entrypoint, dict) or entrypoint.get("requested_path") != sys.argv[2]:
+    raise SystemExit("finalized provenance did not retain the PATH-selected Python wrapper")
+shellcheck_records = [item for item in tools if item.get("name") == "shellcheck"]
+if len(shellcheck_records) != 1:
+    raise SystemExit("finalized provenance lacks one ShellCheck execution record")
+shellcheck_entrypoint = shellcheck_records[0].get("entrypoint")
+if (
+    not isinstance(shellcheck_entrypoint, dict)
+    or shellcheck_entrypoint.get("requested_path") != sys.argv[3]
+):
+    raise SystemExit(
+        "finalized provenance did not retain the selected ShellCheck entry point"
+    )
+PY
 
 printf 'PASS: optimization test-driver CLI self-test\n'

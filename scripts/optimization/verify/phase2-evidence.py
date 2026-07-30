@@ -209,6 +209,32 @@ def file_identity(
     return {"path": os.fspath(path), "sha256": sha256(payload), "stat": identity}
 
 
+def requested_entrypoint_identity(path: Path, label: str) -> dict[str, object]:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        fail(f"cannot inspect {label} {path}: {error}")
+    if stat.S_ISREG(metadata.st_mode):
+        object_type = "regular"
+        symlink_target = None
+    elif stat.S_ISLNK(metadata.st_mode):
+        object_type = "symlink"
+        try:
+            symlink_target = os.readlink(path)
+        except OSError as error:
+            fail(f"cannot read {label} symlink {path}: {error}")
+        if not symlink_target or "\x00" in symlink_target:
+            fail(f"{label} has an invalid symlink target: {path}")
+    else:
+        fail(f"{label} must be a regular file or symlink: {path}")
+    return {
+        "path": os.fspath(path),
+        "stat": stat_identity(metadata),
+        "symlink_target": symlink_target,
+        "type": object_type,
+    }
+
+
 def validate_root_trust(path: Path, label: str, *, directory: bool = False) -> None:
     """Require a real root-owned, non-writable ancestry and final object."""
     current = Path("/")
@@ -243,6 +269,26 @@ def validate_root_trust(path: Path, label: str, *, directory: bool = False) -> N
             continue
         if metadata.st_uid != 0 or mode & 0o022:
             fail(f"production {label} is not root-owned and non-writable: {current}")
+
+
+def validate_root_trusted_entrypoint(path: Path, label: str) -> None:
+    """Validate a reviewed executable entry point without erasing symlink ABI.
+
+    Gentoo's reviewed Git and Python entry points are intentional symlinks. The
+    symlink itself is protected by its trusted parent directory, while the
+    resolved executable receives the ordinary full-file trust check.
+    """
+
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        fail(f"cannot inspect production {label} entry point {path}: {error}")
+    if stat.S_ISLNK(metadata.st_mode):
+        validate_root_trust(path.parent, f"{label} entry-point parent", directory=True)
+        if metadata.st_uid != 0:
+            fail(f"production {label} entry-point symlink is not root-owned: {path}")
+        return
+    validate_root_trust(path, label)
 
 
 def load_authoritative_test_contract(path: Path) -> dict[str, Any]:
@@ -472,6 +518,7 @@ def load_policy(repository: Path, policy_path: Path) -> dict[str, Any]:
         "Phase 2 evidence policy",
         {
             "aggregate_requires_zero",
+            "authoritative_test_path",
             "authoritative_test_contract_path",
             "component_state_path_template",
             "index_path_template",
@@ -492,6 +539,7 @@ def load_policy(repository: Path, policy_path: Path) -> dict[str, Any]:
             "schema",
             "source_scopes",
             "test_driver_path",
+            "test_execution_tools",
             "tool_manifest_template_path",
         },
     )
@@ -504,17 +552,44 @@ def load_policy(repository: Path, policy_path: Path) -> dict[str, Any]:
     ):
         if not isinstance(policy[key], bool):
             fail(f"{key} must be boolean")
+    authoritative_path = [
+        absolute_path(item, "authoritative_test_path item")
+        for item in require_list(
+            policy["authoritative_test_path"],
+            "authoritative_test_path",
+            nonempty=True,
+        )
+    ]
+    authoritative_path_text = [os.fspath(item) for item in authoritative_path]
+    if len(authoritative_path_text) != len(set(authoritative_path_text)):
+        fail("authoritative_test_path must contain unique absolute directories")
+    if any(
+        ":" in item or "\n" in item or "\t" in item
+        for item in authoritative_path_text
+    ):
+        fail("authoritative_test_path contains an unsafe path component")
+    policy["authoritative_test_path"] = authoritative_path_text
     for key in (
         "required_tools",
         "required_passing_test_names",
         "required_passing_test_prefixes",
+        "test_execution_tools",
     ):
         values = [require_string(item, f"{key} item") for item in require_list(policy[key], key, nonempty=True)]
         if values != sorted(set(values)):
             fail(f"{key} must be sorted and unique")
-        if key == "required_tools":
+        if key in {"required_tools", "test_execution_tools"}:
             for value in values:
                 require_string(value, f"{key} item", NAME_RE)
+        policy[key] = values
+    unknown_execution_tools = set(policy["test_execution_tools"]) - set(
+        policy["required_tools"]
+    )
+    if unknown_execution_tools:
+        fail(
+            "test_execution_tools contains names absent from required_tools: "
+            f"{sorted(unknown_execution_tools)!r}"
+        )
     component_specs: list[dict[str, object]] = []
     component_names: list[str] = []
     for index, raw in enumerate(
@@ -683,6 +758,7 @@ def load_policy(repository: Path, policy_path: Path) -> dict[str, Any]:
     policy["authoritative_test_contract"] = load_authoritative_test_contract(
         contract_path
     )
+    policy["_resolved_path"] = policy_path
     return policy
 
 
@@ -913,6 +989,9 @@ print(json.dumps({'declared_files':sorted(files),'import_locations':sorted(locat
 def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, object]:
     name = specification["name"]
     requested: Path = specification["path"]
+    requested_entrypoint = requested_entrypoint_identity(
+        requested, f"tool {name} requested entry point"
+    )
     try:
         resolved = requested.resolve(strict=True)
     except OSError as error:
@@ -920,7 +999,12 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
     if not resolved.is_absolute() or not resolved.is_file() or not os.access(resolved, os.X_OK):
         fail(f"tool {name} does not resolve to an executable regular file")
     if production:
+        validate_root_trusted_entrypoint(requested, f"tool {name}")
         validate_root_trust(resolved, f"tool {name}")
+    if requested_entrypoint_identity(
+        requested, f"tool {name} requested entry point"
+    ) != requested_entrypoint:
+        fail(f"tool {name} requested entry point changed during resolution")
     binary_payload, binary_stat = read_regular(resolved, f"tool {name}")
     binary = {
         "path": os.fspath(resolved),
@@ -954,6 +1038,9 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
         ):
             fail(f"tool {name} shebang interpreter is not executable")
         if production:
+            validate_root_trusted_entrypoint(
+                interpreter_requested, f"tool {name} shebang interpreter"
+            )
             validate_root_trust(
                 interpreter_resolved, f"tool {name} shebang interpreter"
             )
@@ -1005,6 +1092,10 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
         fail(f"cannot re-resolve tool {name} after execution: {error}")
     if after_resolved != resolved:
         fail(f"tool {name} requested entry point changed during observation")
+    if requested_entrypoint_identity(
+        requested, f"tool {name} requested entry point"
+    ) != requested_entrypoint:
+        fail(f"tool {name} requested entry point object changed during observation")
     python_distribution = None
     if specification.get("python_distribution") is not None:
         python_distribution = observe_python_distribution(
@@ -1017,6 +1108,7 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
     return {
         "name": name,
         "python_distribution": python_distribution,
+        "requested_entrypoint": requested_entrypoint,
         "requested_path": os.fspath(requested),
         "resolved_path": os.fspath(resolved),
         "binary": binary,
@@ -1025,6 +1117,338 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
         "stdout": {"text": stdout, "sha256": sha256(result.stdout)},
         "stderr": {"text": stderr, "sha256": sha256(result.stderr)},
     }
+
+
+def process_identity(pid: int, label: str) -> tuple[int, int]:
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
+        fail(f"{label} PID must be an integer greater than one")
+    try:
+        payload = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+    except (OSError, UnicodeError) as error:
+        fail(f"cannot read {label} process identity: {error}")
+    delimiter = payload.rfind(") ")
+    fields = payload[delimiter + 2 :].split() if delimiter >= 0 else []
+    if len(fields) < 20:
+        fail(f"{label} process identity is malformed")
+    try:
+        return int(fields[1]), int(fields[19])
+    except ValueError:
+        fail(f"{label} process identity contains a non-integer field")
+
+
+def require_ancestor_process(pid: int, label: str) -> int:
+    expected_parent, start_time = process_identity(pid, label)
+    current = os.getpid()
+    observed: set[int] = set()
+    while current > 1 and current not in observed:
+        observed.add(current)
+        parent, _current_start = process_identity(current, "provenance process")
+        if parent == pid:
+            after_parent, after_start = process_identity(pid, label)
+            if (after_parent, after_start) != (expected_parent, start_time):
+                fail(f"{label} process identity changed during ancestry observation")
+            return start_time
+        current = parent
+    fail(f"{label} is not an ancestor of the provenance process")
+
+
+def process_executable_identity(pid: int, label: str) -> dict[str, object]:
+    _parent, before_start = process_identity(pid, label)
+    try:
+        raw_path = os.readlink(f"/proc/{pid}/exe")
+    except OSError as error:
+        fail(f"cannot read {label} executable identity: {error}")
+    if raw_path.endswith(" (deleted)"):
+        fail(f"{label} executable has been unlinked")
+    executable = absolute_path(raw_path, f"{label} executable path")
+    try:
+        executable = executable.resolve(strict=True)
+    except OSError as error:
+        fail(f"cannot resolve {label} executable: {error}")
+    identity = file_identity(executable, f"{label} executable", allow_hardlinks=True)
+    _after_parent, after_start = process_identity(pid, label)
+    if after_start != before_start:
+        fail(f"{label} process identity changed during observation")
+    return identity
+
+
+def process_argv0(pid: int, label: str) -> str:
+    _parent, before_start = process_identity(pid, label)
+    try:
+        payload = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError as error:
+        fail(f"cannot read {label} command line: {error}")
+    _after_parent, after_start = process_identity(pid, label)
+    if after_start != before_start:
+        fail(f"{label} process changed while its command line was observed")
+    if not payload or b"\0" not in payload:
+        fail(f"{label} command line is empty or malformed")
+    raw_argv0 = payload.split(b"\0", 1)[0]
+    try:
+        argv0 = raw_argv0.decode("utf-8")
+    except UnicodeDecodeError as error:
+        fail(f"{label} argv[0] is not UTF-8: {error}")
+    if not argv0:
+        fail(f"{label} argv[0] is empty")
+    return argv0
+
+
+def observe_python_runtime(
+    requested: Path, resolved: Path, production: bool
+) -> dict[str, object]:
+    probe = (
+        "import os,sys;"
+        "print(os.readlink('/proc/self/exe'));"
+        "print(sys.executable)"
+    )
+    environment = {
+        "HOME": "/nonexistent",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+        "TZ": "UTC",
+    }
+    try:
+        result = subprocess.run(
+            [os.fspath(requested), "-I", "-B", "-c", probe],
+            executable=os.fspath(resolved),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=30,
+            env=environment,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        fail(f"cannot observe active Python runtime executable: {error}")
+    if result.returncode != 0:
+        fail(f"Python runtime probe exited {result.returncode}")
+    try:
+        lines = result.stdout.decode("utf-8").splitlines()
+    except UnicodeDecodeError as error:
+        fail(f"Python runtime probe output is not UTF-8: {error}")
+    if len(lines) != 2:
+        fail("Python runtime probe did not emit exactly two paths")
+    runtime_path = absolute_path(lines[0], "Python runtime /proc executable")
+    reported_path = absolute_path(lines[1], "Python reported executable")
+    try:
+        runtime_path = runtime_path.resolve(strict=True)
+        reported_path = reported_path.resolve(strict=True)
+    except OSError as error:
+        fail(f"cannot resolve Python runtime executable identity: {error}")
+    if production:
+        validate_root_trust(runtime_path, "Python runtime executable")
+        validate_root_trust(reported_path, "Python reported executable")
+    return {
+        "binary": file_identity(
+            runtime_path, "Python runtime executable", allow_hardlinks=True
+        ),
+        "reported_path": os.fspath(reported_path),
+    }
+
+
+def observe_execution_tools(
+    repository: Path,
+    policy: dict[str, Any],
+    requested_paths: dict[str, Path],
+    authoritative_tools: bool,
+    production: bool,
+) -> list[dict[str, object]]:
+    specifications = tool_manifest(
+        repository / policy["tool_manifest_template_path"],
+        policy["required_tools"],
+    )
+    specifications_by_name = {str(item["name"]): item for item in specifications}
+    expected_names = policy["test_execution_tools"]
+    if sorted(requested_paths) != expected_names:
+        fail(
+            "executed tool names differ from the policy execution core: "
+            f"expected={expected_names!r} actual={sorted(requested_paths)!r}"
+        )
+    if authoritative_tools:
+        for name in expected_names:
+            requested = requested_paths[name]
+            reviewed = specifications_by_name[name]["path"]
+            if requested != reviewed:
+                fail(
+                    f"authoritative executed tool {name} differs from its reviewed "
+                    f"entry point: expected={reviewed} actual={requested}"
+                )
+    observed: list[dict[str, object]] = []
+    for name in expected_names:
+        specification = specifications_by_name[name]
+        requested = requested_paths[name]
+        active_specification = dict(specification)
+        active_specification["path"] = requested
+        entrypoint = observe_tool(active_specification, production)
+        resolved = Path(str(entrypoint["resolved_path"]))
+        runtime: dict[str, object]
+        if name == "python3":
+            runtime = observe_python_runtime(requested, resolved, production)
+        elif entrypoint["shebang"] is not None:
+            shebang = require_object(
+                entrypoint["shebang"],
+                f"executed tool {name} shebang",
+                {"argv", "binary", "line", "requested_path", "resolved_path"},
+            )
+            runtime = {
+                "binary": shebang["binary"],
+                "reported_path": shebang["resolved_path"],
+            }
+        else:
+            runtime = {
+                "binary": entrypoint["binary"],
+                "reported_path": entrypoint["resolved_path"],
+            }
+        observed.append(
+            {
+                "entrypoint": entrypoint,
+                "name": name,
+                "runtime": runtime,
+            }
+        )
+    return observed
+
+
+def recorded_execution_tool_paths(value: Any) -> dict[str, Path]:
+    records = require_list(value, "test-run executed tools", nonempty=True)
+    mapped: dict[str, Path] = {}
+    for index, raw in enumerate(records):
+        record = require_object(
+            raw,
+            f"test-run executed_tools[{index}]",
+            {"entrypoint", "name", "runtime"},
+        )
+        name = require_string(
+            record["name"], f"test-run executed_tools[{index}].name", NAME_RE
+        )
+        entrypoint = require_object(
+            record["entrypoint"],
+            f"test-run executed_tools[{index}].entrypoint",
+        )
+        requested = absolute_path(
+            entrypoint.get("requested_path"),
+            f"test-run executed_tools[{index}] requested path",
+        )
+        if name in mapped:
+            fail(f"duplicate test-run executed tool: {name}")
+        mapped[name] = requested
+    if list(mapped) != sorted(mapped):
+        fail("test-run executed tools are not sorted by unique name")
+    return mapped
+
+
+def validate_execution_tool_records(
+    value: Any,
+    repository: Path,
+    policy: dict[str, Any],
+    authoritative_tools: bool,
+    production: bool,
+) -> list[dict[str, object]]:
+    requested_paths = recorded_execution_tool_paths(value)
+    current = observe_execution_tools(
+        repository,
+        policy,
+        requested_paths,
+        authoritative_tools,
+        production,
+    )
+    if current != value:
+        fail("test-run executed tool identity changed")
+    if production and not authoritative_tools:
+        fail("production evidence requires authoritative executed-tool binding")
+    return current
+
+
+def current_python_runtime_identity() -> dict[str, object]:
+    try:
+        reported = Path(sys.executable).resolve(strict=True)
+    except OSError as error:
+        fail(f"cannot resolve the active Python reported executable: {error}")
+    return {
+        "binary": process_executable_identity(
+            os.getpid(), "active provenance Python"
+        ),
+        "reported_path": os.fspath(reported),
+    }
+
+
+def execution_tool_by_name(
+    records: list[dict[str, object]], name: str
+) -> dict[str, object]:
+    matches = [record for record in records if record.get("name") == name]
+    if len(matches) != 1:
+        fail(f"test-run executed tools do not contain exactly one {name} record")
+    return matches[0]
+
+
+def observe_driver_shell(
+    pid: int, execution_tools: list[dict[str, object]]
+) -> dict[str, object]:
+    start_time = require_ancestor_process(pid, "active test-driver Bash")
+    executable = process_executable_identity(pid, "active test-driver Bash")
+    argv0 = process_argv0(pid, "active test-driver Bash")
+    if require_ancestor_process(pid, "active test-driver Bash") != start_time:
+        fail("active test-driver Bash changed during observation")
+    bash_record = execution_tool_by_name(execution_tools, "bash")
+    runtime = require_object(
+        bash_record.get("runtime"), "executed Bash runtime", {"binary", "reported_path"}
+    )
+    if executable != runtime["binary"]:
+        fail("active test-driver Bash differs from the recorded Bash runtime")
+    bash_entrypoint = require_object(
+        bash_record.get("entrypoint"), "executed Bash entry point"
+    )
+    if argv0 != bash_entrypoint.get("requested_path"):
+        fail("active test-driver Bash was not invoked through its requested path")
+    return {
+        "argv0": argv0,
+        "executable": executable,
+        "pid": pid,
+        "start_time": start_time,
+    }
+
+
+def require_active_python_matches(
+    execution_tools: list[dict[str, object]], label: str
+) -> None:
+    python_record = execution_tool_by_name(execution_tools, "python3")
+    if current_python_runtime_identity() != python_record.get("runtime"):
+        fail(f"{label} did not execute with the recorded Python runtime")
+
+
+def require_active_python_matches_reviewed_tools(
+    reviewed_tools: list[dict[str, object]], label: str, production: bool = True
+) -> None:
+    python_record = execution_tool_by_name(reviewed_tools, "python3")
+    requested = absolute_path(
+        python_record.get("requested_path"), "reviewed Python requested path"
+    )
+    resolved = absolute_path(
+        python_record.get("resolved_path"), "reviewed Python resolved path"
+    )
+    # Gentoo's reviewed /usr/bin/python3 is an argv-zero-sensitive python-exec
+    # dispatcher.  Its requested and resolved entry-point identities therefore
+    # differ from the interpreter that ultimately owns /proc/self/exe.  Probe
+    # the reviewed entry point exactly as execution-tool provenance does rather
+    # than assuming the dispatcher binary is the active Python runtime.
+    expected = observe_python_runtime(requested, resolved, production)
+    if current_python_runtime_identity() != expected:
+        fail(f"{label} did not execute with the reviewed Python runtime")
+
+
+def require_execution_entrypoints_match_reviewed_tools(
+    execution_tools: list[dict[str, object]],
+    reviewed_tools: list[dict[str, object]],
+) -> None:
+    reviewed_by_name = {str(record.get("name")): record for record in reviewed_tools}
+    for record in execution_tools:
+        name = str(record.get("name"))
+        if record.get("entrypoint") != reviewed_by_name.get(name):
+            fail(
+                f"executed tool {name} differs from the independently observed "
+                "reviewed tool manifest"
+            )
 
 
 def git_command_result(
@@ -2933,15 +3357,67 @@ def run_provenance_start(arguments: argparse.Namespace) -> None:
         fail("test driver escapes the repository root")
     git_raw = absolute_path(arguments.git, "Git executable")
     git = git_raw.resolve(strict=True)
+    policy_path = Path(arguments.policy)
+    if not policy_path.is_absolute():
+        policy_path = repository / relative_path(arguments.policy, "evidence policy")
+    else:
+        policy_path = absolute_path(arguments.policy, "evidence policy")
+    try:
+        policy_path.relative_to(repository)
+    except ValueError:
+        fail("evidence policy escapes the repository")
+    if policy_path.is_symlink():
+        fail("evidence policy must not be a symlink")
+    try:
+        resolved_policy_path = policy_path.resolve(strict=True)
+    except OSError as error:
+        fail(f"cannot resolve evidence policy: {error}")
+    if resolved_policy_path != policy_path:
+        fail("evidence policy traverses a symlink or non-canonical path")
+    policy = load_policy(repository, policy_path)
+    executed_paths = parse_named_paths(arguments.executed_tool, "executed tool")
+    execution_tools = observe_execution_tools(
+        repository,
+        policy,
+        executed_paths,
+        bool(arguments.authoritative_tools),
+        bool(arguments.authoritative_tools),
+    )
+    executed_git = execution_tool_by_name(execution_tools, "git")
+    git_entrypoint = require_object(
+        executed_git.get("entrypoint"), "executed Git entrypoint"
+    )
+    if (
+        git_entrypoint.get("requested_path") != os.fspath(git_raw)
+        or git_entrypoint.get("resolved_path") != os.fspath(git)
+    ):
+        fail("executed Git record differs from the provenance Git entry point")
+    if "python3" in policy["test_execution_tools"]:
+        require_active_python_matches(execution_tools, "provenance start")
+    driver_shell = None
+    if "bash" in policy["test_execution_tools"]:
+        if arguments.driver_bash_pid is None:
+            fail("the execution-tool policy requires an active test-driver Bash PID")
+        driver_shell = observe_driver_shell(
+            arguments.driver_bash_pid, execution_tools
+        )
     identity = repository_identity(git, repository)
     document = {
-        "schema": "gentoo-optimization-phase2-test-run-pending-v1",
+        "schema": "gentoo-optimization-phase2-test-run-pending-v2",
         "started_at": utc_now(),
+        "authoritative_tools": bool(arguments.authoritative_tools),
         "boot_id": current_boot_id(),
         "repository": identity,
         "driver": file_identity(driver, "test driver"),
+        "driver_shell": driver_shell,
+        "executed_tools": execution_tools,
         "git_requested_path": os.fspath(git_raw),
         "git_resolved_path": os.fspath(git),
+        "policy": file_identity(policy_path, "Phase 2 evidence policy"),
+        "tool_manifest": file_identity(
+            repository / policy["tool_manifest_template_path"],
+            "reviewed tool manifest",
+        ),
     }
     atomic_publish(
         absolute_path(arguments.output, "test-run provenance pending output"),
@@ -2961,6 +3437,7 @@ def validate_run_provenance(
     git_resolved_path: Path,
     expected_boot_id: str,
     production: bool,
+    policy: dict[str, Any],
 ) -> dict[str, Any]:
     if production:
         validate_root_trust(path, "test-run provenance")
@@ -2969,21 +3446,28 @@ def validate_run_provenance(
         parse_json_bytes(payload, "test-run provenance"),
         "test-run provenance",
         {
+            "authoritative_tools",
             "boot_id",
             "completed_at",
             "driver",
+            "driver_shell",
+            "executed_tools",
             "git_requested_path",
             "git_resolved_path",
+            "policy",
             "repository",
             "results",
             "schema",
             "started_at",
             "subtests",
             "summary",
+            "tool_manifest",
         },
     )
-    if document["schema"] != "gentoo-optimization-phase2-test-run-provenance-v1":
+    if document["schema"] != "gentoo-optimization-phase2-test-run-provenance-v2":
         fail("test-run provenance schema is invalid")
+    if not isinstance(document["authoritative_tools"], bool):
+        fail("test-run authoritative_tools is not boolean")
     started = parse_timestamp(document["started_at"], "test-run started_at")
     completed = parse_timestamp(document["completed_at"], "test-run completed_at")
     if completed < started:
@@ -2992,6 +3476,50 @@ def validate_run_provenance(
         fail("test-run provenance boot identity differs from the required boot")
     if document["repository"] != repository:
         fail("test-run provenance belongs to another commit/tree/source listing")
+    repository_root = absolute_path(repository.get("root"), "repository root")
+    policy_path = Path(policy["_resolved_path"])
+    policy_record = require_object(document["policy"], "test-run provenance policy")
+    if policy_record != file_identity(policy_path, "Phase 2 evidence policy"):
+        fail("test-run provenance evidence policy identity changed")
+    manifest_path = repository_root / policy["tool_manifest_template_path"]
+    manifest_record = require_object(
+        document["tool_manifest"], "test-run provenance tool manifest"
+    )
+    if manifest_record != file_identity(manifest_path, "reviewed tool manifest"):
+        fail("test-run provenance tool manifest identity changed")
+    execution_tools = validate_execution_tool_records(
+        document["executed_tools"],
+        repository_root,
+        policy,
+        bool(document["authoritative_tools"]),
+        production,
+    )
+    driver_shell = document["driver_shell"]
+    if "bash" in policy["test_execution_tools"]:
+        shell_record = require_object(
+            driver_shell,
+            "test-run provenance driver shell",
+            {"argv0", "executable", "pid", "start_time"},
+        )
+        require_int(shell_record["pid"], "test-run driver shell PID", 2)
+        require_int(
+            shell_record["start_time"], "test-run driver shell start time", 1
+        )
+        bash_runtime = require_object(
+            execution_tool_by_name(execution_tools, "bash").get("runtime"),
+            "test-run executed Bash runtime",
+            {"binary", "reported_path"},
+        )
+        if shell_record["executable"] != bash_runtime["binary"]:
+            fail("test-run driver shell differs from the executed Bash runtime")
+        bash_entrypoint = require_object(
+            execution_tool_by_name(execution_tools, "bash").get("entrypoint"),
+            "test-run executed Bash entry point",
+        )
+        if shell_record["argv0"] != bash_entrypoint.get("requested_path"):
+            fail("test-run driver shell argv[0] differs from the executed Bash entry point")
+    elif driver_shell is not None:
+        fail("test-run provenance records a driver shell outside its tool policy")
     driver = require_object(document["driver"], "test-run provenance driver")
     driver_path = Path(str(repository["root"])) / str(driver_source["path"])
     if driver != file_identity(driver_path, "test-run provenance driver"):
@@ -3001,6 +3529,15 @@ def validate_run_provenance(
     )
     if recorded_requested != git_requested_path or recorded_resolved != git_resolved_path:
         fail("test-run provenance Git entry point differs from the indexed tool")
+    executed_git = execution_tool_by_name(execution_tools, "git")
+    git_entrypoint = require_object(
+        executed_git.get("entrypoint"), "test-run executed Git entrypoint"
+    )
+    if (
+        git_entrypoint.get("requested_path") != os.fspath(recorded_requested)
+        or git_entrypoint.get("resolved_path") != os.fspath(recorded_resolved)
+    ):
+        fail("test-run executed Git differs from its provenance Git entry point")
     if document["results"] != file_identity(results_path, "test results"):
         fail("test-run provenance results identity is stale")
     if document["subtests"] != file_identity(
@@ -3021,22 +3558,64 @@ def run_provenance_finish(arguments: argparse.Namespace) -> None:
         parse_json_bytes(pending_payload, "test-run pending provenance"),
         "test-run pending provenance",
         {
+            "authoritative_tools",
             "boot_id",
             "driver",
+            "driver_shell",
+            "executed_tools",
             "git_requested_path",
             "git_resolved_path",
+            "policy",
             "repository",
             "schema",
             "started_at",
+            "tool_manifest",
         },
     )
-    if pending["schema"] != "gentoo-optimization-phase2-test-run-pending-v1":
+    if pending["schema"] != "gentoo-optimization-phase2-test-run-pending-v2":
         fail("test-run pending provenance schema is invalid")
+    if not isinstance(pending["authoritative_tools"], bool):
+        fail("pending authoritative_tools is not boolean")
     parse_timestamp(pending["started_at"], "pending started_at")
     if require_string(pending["boot_id"], "pending boot_id") != current_boot_id():
         fail("test run cannot be finalized after a reboot")
     repository_record = require_object(pending["repository"], "pending repository")
     repository = absolute_path(repository_record.get("root"), "pending repository root")
+    policy_record = require_object(pending["policy"], "pending evidence policy")
+    policy_path = absolute_path(policy_record.get("path"), "pending evidence policy path")
+    try:
+        policy_path.relative_to(repository)
+    except ValueError:
+        fail("pending evidence policy escapes the recorded repository")
+    if file_identity(policy_path, "Phase 2 evidence policy") != policy_record:
+        fail("Phase 2 evidence policy changed during the test run")
+    policy = load_policy(repository, policy_path)
+    manifest_record = require_object(
+        pending["tool_manifest"], "pending reviewed tool manifest"
+    )
+    manifest_path = repository / policy["tool_manifest_template_path"]
+    if file_identity(manifest_path, "reviewed tool manifest") != manifest_record:
+        fail("reviewed tool manifest changed during the test run")
+    execution_tools = validate_execution_tool_records(
+        pending["executed_tools"],
+        repository,
+        policy,
+        bool(pending["authoritative_tools"]),
+        bool(pending["authoritative_tools"]),
+    )
+    if "python3" in policy["test_execution_tools"]:
+        require_active_python_matches(execution_tools, "provenance finalization")
+    driver_shell = pending["driver_shell"]
+    if "bash" in policy["test_execution_tools"]:
+        if arguments.driver_bash_pid is None:
+            fail("provenance finalization requires the active test-driver Bash PID")
+        current_driver_shell = observe_driver_shell(
+            arguments.driver_bash_pid, execution_tools
+        )
+        if current_driver_shell != driver_shell:
+            fail("active test-driver Bash changed during the test run")
+    elif driver_shell is not None:
+        fail("pending provenance records a driver shell outside its tool policy")
     _git_requested, git = validate_recorded_git_paths(
         pending["git_requested_path"], pending["git_resolved_path"]
     )
@@ -3050,17 +3629,22 @@ def run_provenance_finish(arguments: argparse.Namespace) -> None:
     subtests = absolute_path(arguments.subtests, "structured subtest results")
     summary = absolute_path(arguments.summary, "test summary")
     document = {
-        "schema": "gentoo-optimization-phase2-test-run-provenance-v1",
+        "schema": "gentoo-optimization-phase2-test-run-provenance-v2",
         "started_at": pending["started_at"],
         "completed_at": utc_now(),
+        "authoritative_tools": pending["authoritative_tools"],
         "boot_id": pending["boot_id"],
         "repository": repository_record,
         "driver": driver_record,
+        "driver_shell": driver_shell,
+        "executed_tools": execution_tools,
         "git_requested_path": pending["git_requested_path"],
         "git_resolved_path": pending["git_resolved_path"],
+        "policy": policy_record,
         "results": file_identity(results, "test results"),
         "subtests": file_identity(subtests, "structured subtest results"),
         "summary": file_identity(summary, "test summary"),
+        "tool_manifest": manifest_record,
     }
     output = absolute_path(arguments.output, "test-run provenance output")
     atomic_publish(output, pretty_json(document), False)
@@ -3156,6 +3740,11 @@ def component_state_command(arguments: argparse.Namespace) -> None:
             repository / policy["tool_manifest_template_path"],
             policy["required_tools"],
         )
+        reviewed_python = next(item for item in tools if item["name"] == "python3")
+        require_active_python_matches_reviewed_tools(
+            [observe_tool(reviewed_python, True)],
+            "production component-state generation",
+        )
         reviewed_git = next(item for item in tools if item["name"] == "git")
         if git_requested != reviewed_git["path"]:
             fail("production component generation requires the reviewed Git entry point")
@@ -3178,6 +3767,7 @@ def component_state_command(arguments: argparse.Namespace) -> None:
         git_resolved,
         current_boot_id(),
         arguments.production,
+        policy,
     )
     external_paths = parse_named_paths(
         arguments.external_evidence, "external-evidence"
@@ -3276,6 +3866,10 @@ def build_capture(arguments: argparse.Namespace) -> dict[str, object]:
     if tools_payload != template_payload:
         fail("retained tool manifest differs from the tracked reviewed template")
     tools = [observe_tool(item, arguments.production) for item in tool_specs]
+    if arguments.production:
+        require_active_python_matches_reviewed_tools(
+            tools, "production evidence capture"
+        )
     git_record = next(item for item in tools if item["name"] == "git")
     git = Path(str(git_record["resolved_path"]))
     before_repository = repository_identity(git, repository)
@@ -3322,6 +3916,10 @@ def build_capture(arguments: argparse.Namespace) -> dict[str, object]:
         git,
         current_boot_id(),
         arguments.production,
+        policy,
+    )
+    require_execution_entrypoints_match_reviewed_tools(
+        provenance["executed_tools"], tools
     )
     states, aggregate = component_states(
         arguments.component_state,
@@ -3361,6 +3959,8 @@ def build_capture(arguments: argparse.Namespace) -> dict[str, object]:
                 "sha256": test_driver["sha256"],
                 "stat": stat_identity((repository / policy["test_driver_path"]).lstat()),
             },
+            "driver_shell": provenance["driver_shell"],
+            "executed_tools": provenance["executed_tools"],
             "results": file_identity(test_results, "test results"),
             "subtests": file_identity(
                 test_subtests, "structured subtest results"
@@ -3467,6 +4067,10 @@ def verify_index(arguments: argparse.Namespace) -> None:
         observe_tool(specification, production)
         for specification in reviewed_tool_specs
     ]
+    if production:
+        require_active_python_matches_reviewed_tools(
+            observed_tools, "production evidence verification"
+        )
     if observed_tools != tools_raw:
         fail(
             "indexed tool topology, reviewed specification, or observed identity "
@@ -3565,6 +4169,13 @@ def verify_index(arguments: argparse.Namespace) -> None:
     }
     if driver_record != expected_driver_record:
         fail("test driver identity differs from the current source")
+    indexed_driver_shell = test_record.get("driver_shell")
+    if "bash" in policy["test_execution_tools"]:
+        indexed_driver_shell = require_object(
+            indexed_driver_shell, "test driver shell identity"
+        )
+    elif indexed_driver_shell is not None:
+        fail("indexed driver-shell identity exists outside its tool policy")
     provenance_record = require_object(
         test_record.get("provenance"), "test-run provenance identity"
     )
@@ -3575,7 +4186,7 @@ def verify_index(arguments: argparse.Namespace) -> None:
         fail("test-run provenance identity changed")
     recorded_boot_id = require_string(test_record.get("boot_id"), "test run boot_id")
     require_verification_boot(recorded_boot_id, production)
-    validate_run_provenance(
+    verified_provenance = validate_run_provenance(
         provenance_path,
         repository_now,
         driver_source,
@@ -3586,6 +4197,14 @@ def verify_index(arguments: argparse.Namespace) -> None:
         git,
         recorded_boot_id,
         production,
+        policy,
+    )
+    if test_record.get("executed_tools") != verified_provenance["executed_tools"]:
+        fail("indexed executed-tool records differ from test-run provenance")
+    if indexed_driver_shell != verified_provenance["driver_shell"]:
+        fail("indexed driver-shell identity differs from test-run provenance")
+    require_execution_entrypoints_match_reviewed_tools(
+        verified_provenance["executed_tools"], observed_tools
     )
     evidence_record = require_object(document["evidence_manifest"], "evidence manifest")
     evidence_root = absolute_path(evidence_record.get("root"), "evidence root")
@@ -3720,7 +4339,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     provenance_start.add_argument("--repository-root", required=True)
     provenance_start.add_argument("--driver", required=True)
+    provenance_start.add_argument(
+        "--policy", default="optimization/phase2-evidence-policy.json"
+    )
     provenance_start.add_argument("--git", default="/usr/bin/git")
+    provenance_start.add_argument(
+        "--executed-tool", action="append", default=[], required=True
+    )
+    provenance_start.add_argument("--driver-bash-pid", type=int)
+    provenance_start.add_argument("--authoritative-tools", action="store_true")
     provenance_start.add_argument("--output", required=True)
 
     provenance_finish = subparsers.add_parser(
@@ -3731,6 +4358,7 @@ def build_parser() -> argparse.ArgumentParser:
     provenance_finish.add_argument("--results", required=True)
     provenance_finish.add_argument("--subtests", required=True)
     provenance_finish.add_argument("--summary", required=True)
+    provenance_finish.add_argument("--driver-bash-pid", type=int)
     provenance_finish.add_argument("--output", required=True)
 
     component = subparsers.add_parser(

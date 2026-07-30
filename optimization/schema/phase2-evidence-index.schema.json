@@ -87,12 +87,29 @@
     "test_run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["authoritative", "contract", "contract_totals", "driver", "results", "subtests", "summary", "provenance", "boot_id", "mode", "totals", "subtest_totals", "mandatory_internal_skip", "diagnostic_internal_skip", "required_passes", "required_named_subtests"],
+      "required": ["authoritative", "contract", "contract_totals", "driver", "driver_shell", "executed_tools", "results", "subtests", "summary", "provenance", "boot_id", "mode", "totals", "subtest_totals", "mandatory_internal_skip", "diagnostic_internal_skip", "required_passes", "required_named_subtests"],
       "properties": {
         "authoritative": {"const": true},
         "contract": {"$ref": "#/$defs/file_identity"},
         "contract_totals": {"$ref": "#/$defs/test_contract_totals"},
         "driver": {"$ref": "#/$defs/file_identity"},
+        "driver_shell": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["argv0", "executable", "pid", "start_time"],
+          "properties": {
+            "argv0": {"type": "string", "pattern": "^/"},
+            "executable": {"$ref": "#/$defs/file_identity"},
+            "pid": {"type": "integer", "minimum": 2},
+            "start_time": {"type": "integer", "minimum": 1}
+          }
+        },
+        "executed_tools": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/execution_tool_identity"}
+        },
         "results": {"$ref": "#/$defs/file_identity"},
         "subtests": {"$ref": "#/$defs/file_identity"},
         "summary": {"$ref": "#/$defs/file_identity"},
@@ -263,9 +280,20 @@
     "tool_identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "requested_path", "resolved_path", "binary", "shebang", "python_distribution", "version_argv", "stdout", "stderr"],
+      "required": ["name", "requested_entrypoint", "requested_path", "resolved_path", "binary", "shebang", "python_distribution", "version_argv", "stdout", "stderr"],
       "properties": {
         "name": {"$ref": "#/$defs/safe_name"},
+        "requested_entrypoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "stat", "symlink_target", "type"],
+          "properties": {
+            "path": {"type": "string", "pattern": "^/"},
+            "stat": {"$ref": "#/$defs/stat_identity"},
+            "symlink_target": {"type": ["string", "null"]},
+            "type": {"enum": ["regular", "symlink"]}
+          }
+        },
         "requested_path": {"type": "string", "pattern": "^/"},
         "resolved_path": {"type": "string", "pattern": "^/"},
         "binary": {"$ref": "#/$defs/file_identity"},
@@ -290,6 +318,24 @@
         "version_argv": {"type": "array", "minItems": 2, "items": {"type": "string"}},
         "stdout": {"type": "object", "additionalProperties": false, "required": ["text", "sha256"], "properties": {"text": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}}},
         "stderr": {"type": "object", "additionalProperties": false, "required": ["text", "sha256"], "properties": {"text": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}}}
+      }
+    },
+    "execution_tool_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entrypoint", "name", "runtime"],
+      "properties": {
+        "entrypoint": {"$ref": "#/$defs/tool_identity"},
+        "name": {"$ref": "#/$defs/safe_name"},
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["binary", "reported_path"],
+          "properties": {
+            "binary": {"$ref": "#/$defs/file_identity"},
+            "reported_path": {"type": "string", "pattern": "^/"}
+          }
+        }
       }
     },
     "python_distribution_identity": {

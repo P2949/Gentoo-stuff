@@ -24,6 +24,149 @@ record_required_subtest() {
         >>"${GENTOO_OPT_SUBTEST_RESULTS}"
 }
 
+LIVE_POLICY_ERROR_SCHEMA=gentoo-optimization-live-policy-observation-error-v1
+LIVE_POLICY_PERMISSION_STATUS=73
+LIVE_POLICY_ROOT_IDENTITY_STATUS=74
+
+read_single_live_policy_error_record() {
+    local source=$1
+    local -a rows=()
+    [[ -f ${source} && ! -L ${source} ]] || return 1
+    mapfile -t rows <"${source}"
+    ((${#rows[@]} == 1)) || return 1
+    printf '%s' "${rows[0]}"
+}
+
+expected_live_policy_error_record() {
+    local reason=$1 errno_value=$2 observation=$3 canonical_path=$4
+    local expected_kind=$5 expected_uid=$6 expected_mode=$7
+    local observed_kind=$8 observed_uid=$9 observed_mode=${10}
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
+        "${LIVE_POLICY_ERROR_SCHEMA}" "${reason}" "${errno_value}" \
+        "${observation}" "${canonical_path}" "${expected_kind}" \
+        "${expected_uid}" "${expected_mode}" "${observed_kind}" \
+        "${observed_uid}" "${observed_mode}"
+}
+
+live_policy_error_record_matches() {
+    local source=$1 reason=$2 errno_value=$3 observation=$4 canonical_path=$5
+    local expected_kind=$6 expected_uid=$7 expected_mode=$8
+    local observed_kind=$9 observed_uid=${10} observed_mode=${11}
+    local actual expected
+    actual=$(read_single_live_policy_error_record "${source}") || return 1
+    expected=$(expected_live_policy_error_record \
+        "${reason}" "${errno_value}" "${observation}" "${canonical_path}" \
+        "${expected_kind}" "${expected_uid}" "${expected_mode}" \
+        "${observed_kind}" "${observed_uid}" "${observed_mode}")
+    [[ ${actual} == "${expected}" ]]
+}
+
+normalized_mode() {
+    local raw
+    raw=$(/usr/bin/stat -c %a -- "$1") || return 1
+    [[ ${raw} =~ ^[0-7]{3,4}$ ]] || return 1
+    printf '%04o\n' "$((8#${raw}))"
+}
+
+root_trusted_regular_file() {
+    local path=$1 expected_mode=$2 resolved current metadata mode
+    resolved=$(/usr/bin/realpath -e -- "${path}") || return 1
+    [[ ${resolved} == "${path}" && -f ${resolved} && ! -L ${resolved} ]] || return 1
+    metadata=$(/usr/bin/stat -c '%u:%a' -- "${resolved}") || return 1
+    mode=$(normalized_mode "${resolved}") || return 1
+    [[ ${metadata%%:*} == 0 && ${mode} == "${expected_mode}" ]] || return 1
+    current=${resolved%/*}
+    [[ -n ${current} ]] || current=/
+    while :; do
+        [[ -d ${current} && ! -L ${current} && \
+            $(/usr/bin/realpath -e -- "${current}") == "${current}" ]] || return 1
+        metadata=$(/usr/bin/stat -c '%u:%a' -- "${current}") || return 1
+        [[ ${metadata%%:*} == 0 ]] || return 1
+        (( (8#${metadata#*:} & 8#022) == 0 )) || return 1
+        [[ ${current} == / ]] && break
+        current=${current%/*}
+        [[ -n ${current} ]] || current=/
+    done
+}
+
+expected_private_marker_permission_error() {
+    local source=$1 portage_root=$2 marker uid mode
+    portage_root=$(/usr/bin/realpath -e -- "${portage_root}") || return 1
+    marker=${portage_root}/.gentoo-optimization-source-hash
+    root_trusted_regular_file "${marker}" 0600 || return 1
+    uid=$(/usr/bin/stat -c %u -- "${marker}") || return 1
+    mode=$(normalized_mode "${marker}") || return 1
+    ((EUID != 0)) || return 1
+    [[ ! -r ${marker} ]] || return 1
+    live_policy_error_record_matches "${source}" \
+        permission-denied 13 portage_config.tree.regular-content-sha256 \
+        "${marker}" regular 0 0600 regular "${uid}" "${mode}"
+}
+
+expected_remapped_root_identity_error() {
+    local source=$1 canonical_env root_uid env_uid env_mode current metadata
+    canonical_env=$(/usr/bin/realpath -e -- /usr/bin/env) || return 1
+    [[ -f ${canonical_env} && -x ${canonical_env} && ! -L ${canonical_env} ]] || return 1
+    root_uid=$(/usr/bin/stat -c %u -- /) || return 1
+    env_uid=$(/usr/bin/stat -c %u -- "${canonical_env}") || return 1
+    env_mode=$(normalized_mode "${canonical_env}") || return 1
+    ((EUID != 0 && root_uid != 0 && env_uid == root_uid)) || return 1
+    (( (8#${env_mode} & 8#022) == 0 )) || return 1
+    current=${canonical_env%/*}
+    [[ -n ${current} ]] || current=/
+    while :; do
+        [[ -d ${current} && ! -L ${current} && \
+            $(/usr/bin/realpath -e -- "${current}") == "${current}" ]] || return 1
+        metadata=$(/usr/bin/stat -c '%u:%a' -- "${current}") || return 1
+        [[ ${metadata%%:*} == "${root_uid}" ]] || return 1
+        (( (8#${metadata#*:} & 8#022) == 0 )) || return 1
+        [[ ${current} == / ]] && break
+        current=${current%/*}
+        [[ -n ${current} ]] || current=/
+    done
+    live_policy_error_record_matches "${source}" \
+        root-identity-unobservable not-applicable live-policy.tool-root-trust \
+        "${canonical_env}" executable-regular 0 root-owned-no-group-world-write \
+        executable-regular "${env_uid}" "${env_mode}"
+}
+
+test_live_policy_error_record_contract() {
+    local fixture=${WORK}/live-policy-error-contract marker exact
+    /usr/bin/mkdir -p -- "${fixture}"
+    marker=${fixture}/.gentoo-optimization-source-hash
+    : >"${marker}"
+    /usr/bin/chmod 0600 -- "${marker}"
+    marker=$(/usr/bin/realpath -e -- "${marker}")
+    exact=$(expected_live_policy_error_record permission-denied 13 \
+        portage_config.tree.regular-content-sha256 "${marker}" regular 0 0600 \
+        regular 0 0600)
+    printf '%s\n' "${exact}" >"${fixture}/record"
+    live_policy_error_record_matches "${fixture}/record" permission-denied 13 \
+        portage_config.tree.regular-content-sha256 "${marker}" regular 0 0600 \
+        regular 0 0600 || fail 'exact live-policy error record was rejected'
+    for mutation in \
+        'PermissionError: [Errno 13] Permission denied: unrelated' \
+        "${exact/permission-denied/unrelated-permission}" \
+        "${exact/portage_config.tree.regular-content-sha256/other-observation}" \
+        "${exact/${marker}/${marker}.other}" \
+        "${exact/$'\t0\t0600\tregular\t0\t0600'/$'\t0\t0644\tregular\t0\t0644'}"; do
+        printf '%s\n' "${mutation}" >"${fixture}/record"
+        if live_policy_error_record_matches "${fixture}/record" permission-denied 13 \
+            portage_config.tree.regular-content-sha256 "${marker}" regular 0 0600 \
+            regular 0 0600; then
+            fail 'live-policy error classifier accepted a mutated record'
+        fi
+    done
+    printf '%s\n%s\n' "${exact}" traceback >"${fixture}/record"
+    if live_policy_error_record_matches "${fixture}/record" permission-denied 13 \
+        portage_config.tree.regular-content-sha256 "${marker}" regular 0 0600 \
+        regular 0 0600; then
+        fail 'live-policy error classifier accepted additional stderr'
+    fi
+}
+
+test_live_policy_error_record_contract
+
 LIVE_POLICY_BASELINE_LOG=${WORK}/live-policy-preflight-baseline.tsv
 LIVE_POLICY_PREFLIGHT_LOG=${WORK}/live-policy-preflight-poisoned.tsv
 if [[ -x /usr/bin/portageq && -e /etc/portage/make.conf ]]; then
@@ -34,19 +177,33 @@ if [[ -x /usr/bin/portageq && -e /etc/portage/make.conf ]]; then
     LIVE_MAKE_CONF=$(/usr/bin/realpath -e -- /etc/portage/make.conf)
     EXPECTED_LIVE_MAKE_CONF_SHA256=$(/usr/bin/sha256sum -- "${LIVE_MAKE_CONF}")
     EXPECTED_LIVE_MAKE_CONF_SHA256=${EXPECTED_LIVE_MAKE_CONF_SHA256%% *}
-    if ! /bin/bash -- "${FIXTURE}" --live-policy-preflight \
+    if /bin/bash -- "${FIXTURE}" --live-policy-preflight \
         > "${LIVE_POLICY_BASELINE_LOG}" 2> "${WORK}/live-policy-preflight.stderr"; then
-        if grep -Fq 'canonical ancestry is not root-trusted' \
-            "${WORK}/live-policy-preflight.stderr" || \
-            { ((EUID != 0)) && grep -Fq \
-                'PermissionError: [Errno 13] Permission denied:' \
-                "${WORK}/live-policy-preflight.stderr"; }; then
+        :
+    else
+        LIVE_POLICY_PREFLIGHT_STATUS=$?
+        LIVE_PORTAGE_ROOT=$(/usr/bin/realpath -e -- /etc/portage)
+        LIVE_POLICY_SKIP_DETAIL=
+        if ((LIVE_POLICY_PREFLIGHT_STATUS == LIVE_POLICY_PERMISSION_STATUS)) && \
+            expected_private_marker_permission_error \
+                "${WORK}/live-policy-preflight.stderr" "${LIVE_PORTAGE_ROOT}"; then
+            LIVE_POLICY_SKIP_DETAIL="reason=permission-denied observation=portage_config.tree.regular-content-sha256 path=${LIVE_PORTAGE_ROOT}/.gentoo-optimization-source-hash expected_kind=regular expected_uid=0 expected_mode=0600"
+        elif ((LIVE_POLICY_PREFLIGHT_STATUS == LIVE_POLICY_ROOT_IDENTITY_STATUS)) && \
+            expected_remapped_root_identity_error \
+                "${WORK}/live-policy-preflight.stderr"; then
+            LIVE_POLICY_SKIP_DETAIL="reason=root-identity-unobservable observation=live-policy.tool-root-trust path=$(/usr/bin/realpath -e -- /usr/bin/env) expected_kind=executable-regular expected_uid=0 expected_mode=root-owned-no-group-world-write"
+        fi
+        if [[ -n ${LIVE_POLICY_SKIP_DETAIL} && \
+            ${GENTOO_OPT_AUTHORITATIVE:-0} == 0 ]]; then
             record_required_subtest SKIP live-portage.policy \
-                'non-root portable driver cannot read the complete root-owned live Portage policy'
-            printf 'INFO: complete live Portage policy is root-private; recorded required subtest SKIP\n'
+                "${LIVE_POLICY_SKIP_DETAIL}"
+            printf 'INFO: live Portage policy observation unavailable under the exact reviewed boundary; recorded required subtest SKIP\n'
             LIVE_POLICY_PREFLIGHT_AVAILABLE=0
         else
             sed -n '1,120p' "${WORK}/live-policy-preflight.stderr" >&2
+            if [[ -n ${LIVE_POLICY_SKIP_DETAIL} ]]; then
+                fail 'authoritative live-policy preflight cannot skip an unavailable required observation'
+            fi
             fail 'live-policy baseline preflight failed unexpectedly'
         fi
     fi

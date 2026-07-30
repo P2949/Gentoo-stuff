@@ -58,22 +58,27 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           set -Eeuo pipefail
-          python3 -I -B scripts/optimization/verify/phase2-test-contract.py check \
+          /usr/bin/python3 -I -B scripts/optimization/verify/phase2-test-contract.py check \
             --repository-root . \
             --contract optimization/phase2-authoritative-test-contract.json
           output=/tmp/gentoo-optimization-portable-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
           test ! -e "$output"
-          tests/run-optimization-tests.sh \
+          /usr/bin/bash tests/run-optimization-tests.sh \
             --mode portable-complete \
             --output-dir "$output"
           grep -Fx 'mode=portable-complete' "$output/summary.txt"
           grep -Fx 'fail=0' "$output/summary.txt"
+          test -f "$output/results.tsv"
+          test -f "$output/subtests.tsv"
+          test -f "$output/test-run-provenance.json"
+          test -f "$output/test-contract-static-check.log"
+          test -f "$output/test-contract.log"
 
-      - name: Upload failure evidence
-        if: failure()
+      - name: Upload portable evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: portable-optimization-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          name: portable-optimization-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/gentoo-optimization-portable-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 14

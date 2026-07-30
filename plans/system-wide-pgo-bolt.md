@@ -10,7 +10,7 @@
 - **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-07-26 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This is live progress evidence, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-07-29; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is the rejected predecessor, not the final candidate: its exact GitHub Actions run `30226349306` failed the portable boundary. The current Candidate-A correction revision contains the narrow non-authorizing fixes, but no clean exact-SHA portable and CI pass exists yet. The complete plan must be re-read after the bounded checkpoint fixture and final repository gates, and again after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-07-30; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is the rejected predecessor, not the final candidate: its exact GitHub Actions run `30226349306` failed the portable boundary. The current working tree contains the bounded tool-execution, supervisor, receipt-publication, and live-policy observation corrections for the next Candidate-A commit, but no clean exact-SHA portable and CI pass exists yet. The complete plan was re-read after the current repository validation checkpoint and must be re-read again after the exact clean portable/CI gates and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -873,6 +873,111 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   frozen Candidate B, and detached evidence index all remain pending. No §11.4
   or §11.7 checkbox is closed by this checkpoint.
 
+### 2026-07-30 Candidate-A execution-identity closure checkpoint
+
+- The test driver now starts through the exact `/usr/bin/bash` shebang and
+  loads a reviewed execution core from the evidence policy and tool manifest.
+  Authoritative mode requires the policy-declared
+  `/usr/bin:/usr/lib/llvm/22/bin:/bin` PATH, invokes the reviewed `bash`, `env`,
+  `git`, `python3`, `setsid`, `shellcheck`, `sleep`, and `timeout` entry points,
+  and rejects a PATH shadow before any test case. Every reviewed manifest tool
+  whose command name is its requested-path basename is resolved through that
+  PATH and must select the exact requested entry point; this extends the check
+  beyond the eight-tool execution core to utilities such as `readelf`, `nm`,
+  `objcopy`, `strip`, `file`, and `cc`. Repository-root discovery uses Bash
+  builtins and parameter expansion. Authoritative policy parsing uses the
+  absolute reviewed `/usr/bin/python3` bootstrap before binding the complete
+  execution core; portable parsing may use another PATH-selected Python but is
+  non-authorizing and records the resulting execution identity. The active
+  Bash command-line `argv[0]` must be the exact reviewed entry point;
+  an inode alias such as `/bin/bash` is rejected. Gentoo's intentional
+  `/usr/bin/git` and `/usr/bin/python3` symlink entry points remain the
+  requested ABI while their resolved executable bytes are independently
+  hashed. An authoritative ShellCheck override may name only the same reviewed
+  manifest entry point; it cannot substitute another executable. A portable
+  override remains non-authorizing and is recorded.
+- Test-run provenance schema v2 records every selected execution-core entry
+  point with requested-object lstat identity and symlink target, resolved path,
+  version output, file SHA-256, and device/inode metadata. It separately
+  records the actual Python runtime and binds the active driver Bash PID, start
+  identity, ancestry, executable, and command-line entry point. Start and
+  finish re-observe these identities; authoritative runs validate root-owned
+  non-writable ancestry at both boundaries. Candidate-B component-state,
+  capture, and verification commands independently require their active Python
+  runtime to equal the final interpreter reached through the reviewed Python
+  entry point; on this Gentoo host that distinguishes the `python-exec`
+  dispatcher bytes from the actual `/usr/bin/python3.14` runtime. Git
+  cleanliness observation is bounded and runs with system/global configuration
+  and fsmonitor disabled.
+  Capture and detached verification compare the finalized records with the
+  independently observed reviewed tool manifest. An external or
+  symlink-escaping evidence policy is rejected at provenance start.
+- The checkpoint process supervisor now enumerates `/proc/self/task`
+  immediately before its raw fork and fails closed unless the only native task
+  is its own PID. The fake-namespace fixture no longer uses Python
+  `preexec_fn`; a small executable parent-death wrapper performs the exact
+  `PR_SET_PDEATHSIG`/parent recheck/exec sequence. Supervisor, process-group,
+  and child receipts publish through private partial files, file fsync,
+  `os.replace`, and parent-directory fsync. Focused regressions cover the
+  single-task success path, deliberate multithreaded refusal before target
+  execution, and refusal when the wrapper's expected parent is already wrong;
+  the target never executes in either refusal case.
+- The portable live-Portage policy lane no longer accepts a broad
+  `PermissionError` substring. It recognizes only a versioned one-line record
+  for the canonical root-owned `0600`
+  `.gentoo-optimization-source-hash` observation (status 73), or the separately
+  verified root-identity-remapped review boundary (status 74). Wrong paths,
+  observations, modes, reasons, or additional stderr are rejected, and
+  authoritative mode cannot accept either skip.
+- Deterministic discovery now binds 33 top-level cases, 58 shell sources, 36
+  evidence tests, one dedicated stress test, 201 main tests, and 70 recovery
+  tests. The exact evidence, stress, main, and recovery identity hashes are
+  `cc631c2bba201c6b754ac6344ee167adde640d6caac083b20fa0bf027f3f7f06`,
+  `99dbe6b4806232fcb55e043b38a940d720b28775d387824f2cd98aeed4e65c84`,
+  `2bcd4a21b69e2234d4fcdc09ee42ddd613c6ac959a70cb89d97e1585feb18fc4`,
+  and `7b7222cb6798c7d7e3379e8544f3dc11625e3bb868be5f933406d7ddb84ed533`.
+  The regenerated tracked contract exactly matches discovery. These are
+  current working-tree topology facts, not an exact-commit authorization.
+- Current non-authorizing validation passed all 36 evidence tests with no
+  skips, and the isolated current-tree mirror completed all 201 main tests with
+  194 required passes, six exact reviewed required host skips, and one
+  diagnostic stress skip. Its 73-test production-transaction subset contains
+  71 required passes, one reviewed root-only PID-namespace skip, and the one
+  diagnostic stress skip. The complete recovery matrix completed 70 methods
+  with 67 required passes and the three exact opt-in host-primitive skips. The
+  smoke driver reports 61 passes, zero failures, one dirty-tree provenance skip,
+  eight mode-selection skips, zero required-subtest failures, and zero mandatory
+  internal skips. The structured ledgers and SHA-256 values are
+  `/tmp/candidate-evidence-post-review-subtests.tsv`
+  (`3ec986a654333b13f23535a0b125e1c004634d5a7db440d8ee0e38b838b53132`),
+  `/tmp/candidate-main-post-review-subtests.tsv`
+  (`b6bd423cc0fc0431bf591fef7e5fb58ea3d518c8e0d32e57060ed65d4a35966f`),
+  `/tmp/candidate-production-post-review-subtests.tsv`
+  (`e6162f4debfef0d7e4adcda21af43fc3452d79242d8564dfd61792d2c4229104`),
+  and `/tmp/candidate-recovery-final-subtests.tsv`
+  (`079391adacf7d7dbe11e764c371d7e24602d6f6d36b85b5175a9d328ffdaa210`).
+  The smoke evidence directory is
+  `/tmp/gentoo-opt-smoke-candidate-a-20260730-execution-identity-v4`; its
+  summary, results, and subtest SHA-256 values are respectively
+  `6cfe41bb7138f64deabee2d825283b8b3267e5052769321d17dfd28473d5aedd`,
+  `3a92b35962fd8e489d47c415757de2e8d0666b0c0e7a887729df11211bdf99b1`,
+  and `942eb99bca290126a29137292fd375bf8adcc179e09f50fe8a094150cd7b9970`.
+  The driver CLI/self-provenance fixture, Bash syntax for all 58 sources, and
+  exact hash-pinned ShellCheck 0.11.0 pass. The structured live-policy fixture
+  exits zero while surfacing its exact reviewed required `live-portage.policy`
+  skip in this managed non-authoritative boundary; the live Gentoo gate must
+  execute that branch rather than skip it.
+  The post-review driver fixture log is
+  `/tmp/candidate-driver-selftest-post-review.log` with SHA-256
+  `f78aa9c62eabdfbb7c7baa4db16c1eda7d35321ac066feb75a11fe975fee41b8`;
+  its execution-core shadow matrix uses a hermetic reviewed manifest so the
+  portable CI host does not depend on Gentoo-only production tool paths.
+  These are dirty-tree/mirror diagnostics: the clean exact-source portable
+  driver and exact-SHA CI result remain required before installing Candidate A.
+- No §11.4 or §11.7 checkbox is closed by this checkpoint. No framework was
+  installed, no package was emerged, no optimization generation was activated,
+  and the Phase 3 inventory remains unfrozen.
+
 ## 11.1 Remove the unsafe global consumer
 
 - [x] Delete or disable `portage/package.env/50-global-pgo` in its current form.
@@ -1065,7 +1170,7 @@ The test driver has distinct `smoke`, `checkpoint-smoke`, `portable-complete`,
 `stress`, `capabilities`, and `authoritative` modes. `checkpoint-smoke` selects
 18 exact methods: four supervisor containment/release paths, nine portable
 fake-`unshare` terminal/watchdog paths, and five checkpoint state-machine/
-process-group paths. The complete 68-method recovery matrix remains part of
+process-group paths. The complete 70-method recovery matrix remains part of
 `portable-complete`. Every top-level case publishes a
 structured completion row; every conditional shell branch and every Python
 `unittest` method publishes its own required/diagnostic row. Atomic shell
@@ -1086,10 +1191,34 @@ conditional `typing-extensions`). The boundary separately binds the stable
 bootstrap's requested `/bin/bash` path (in addition to `/usr/bin/bash`) and the
 installer's exact `/usr/bin/tr` text-processing primitive.
 
+The test-execution core is a separate reviewed subset of that complete tool
+manifest. Repository-root discovery uses only Bash builtins. Authoritative
+policy parsing uses the absolute reviewed `/usr/bin/python3` bootstrap before
+the complete core is bound; portable bootstrap selection is non-authorizing and
+recorded. Authoritative runs use the policy-pinned PATH and exact requested
+entry points for every reviewed manifest tool addressable by its command name,
+including Bash, environment, Git, Python, session/deadline control, ShellCheck,
+bounded polling, ELF/binutils tools, the default compiler, and file inspection,
+while portable runs may select another absolute entry point but must record it.
+Authoritative Bash must also have the exact reviewed path in command-line
+`argv[0]`, not merely matching executable bytes. An authoritative ShellCheck
+override must equal the manifest entry point; portable alternatives are
+recorded. Provenance binds requested
+object lstat/symlink identity, resolved/version/file identity, the active Bash
+process, and the Python runtime at both start and finish; the detached index
+then requires exact equality with independently re-observed reviewed tools.
+Candidate-B state, capture, and verification operations additionally bind their
+own active Python runtime after the reviewed Gentoo `python-exec` entry point
+has selected its final interpreter, and Git cleanliness is observed by the same
+bounded isolated execution boundary. The workflow invokes `/usr/bin/bash` and
+`/usr/bin/python3` explicitly and uploads the successful result, subtest,
+summary, contract, and provenance evidence as well as failure evidence.
+
 The Candidate-A correction removes raw `os.fork()` and process-wide child-
 subreaper mutation from the multi-test unittest process. A dedicated
-single-threaded `checkpoint_process_supervisor.py` remains in the driver's exact
-case process group, starts each checkpoint target in a private session, writes
+`checkpoint_process_supervisor.py` remains in the driver's exact case process
+group and requires `/proc/self/task` to contain exactly its own PID immediately
+before raw fork. It starts each checkpoint target in a private session, writes
 target output to regular files rather than inherited capture pipes, and binds
 parent/target PID and start identities. It must drain every recorded live
 fixture descendant, reap the exact target and every adopted child returned by
@@ -1106,7 +1235,9 @@ portable fake-namespace watchdog is a deterministic test adapter only; the
 three opt-in root-host checkpoint methods remain the mandatory proof of real
 pidfds, `unshare --kill-child`, and filesystem durability. The helper's normal,
 interrupted, hard-deadline, malformed-receipt, and exact-driver paths must all
-pass before the exact clean Candidate-A contract can be accepted and authorized.
+pass before the exact clean Candidate-A repository boundary can be accepted for
+live precheck. Phase 2 authorization still requires the frozen Candidate-B
+rerun and its detached evidence index.
 
 All Git observations used by the detached evidence verifier now share one
 60-second hardened runner with system/global configuration disabled. Attached
@@ -1123,14 +1254,14 @@ with both 0.9.0 and 0.11.0 is diagnostic only; the final clean candidate still
 requires a green exact-SHA workflow run.
 
 The current non-authorizing deterministic contract check discovers 33
-top-level cases, 58 shell sources, 32 evidence tests, one dedicated stress
-test, 198 main tests, and 68 recovery tests. The exact unittest identity hashes
-are `ba1f71adb31f9d59203b345b9a01017a2fc1994c002582206eff1c3ed9622c57`,
+top-level cases, 58 shell sources, 36 evidence tests, one dedicated stress
+test, 201 main tests, and 70 recovery tests. The exact unittest identity hashes
+are `cc631c2bba201c6b754ac6344ee167adde640d6caac083b20fa0bf027f3f7f06`,
 `99dbe6b4806232fcb55e043b38a940d720b28775d387824f2cd98aeed4e65c84`,
-`fccf6c55f17dbc065cbea1d39ff8e206fbb25e05ea5cb9352af31059fffec55d`,
-and `22a7c819de3b48d8aad27289c79717fb1b7c13fd98f3c3ad4090a05b06548421`
-for evidence, stress, main, and recovery respectively. The expanded 18-method
-`checkpoint-smoke` run at
+`2bcd4a21b69e2234d4fcdc09ee42ddd613c6ac959a70cb89d97e1585feb18fc4`,
+and `7b7222cb6798c7d7e3379e8544f3dc11625e3bb868be5f933406d7ddb84ed533`
+for evidence, stress, main, and recovery respectively. The superseded
+pre-execution-identity 18-method `checkpoint-smoke` run at
 `/tmp/gentoo-opt-checkpoint-smoke-candidate-a-20260729-v8` passed with 62
 top-level passes, zero failures, eight exact mode/provenance skips, 81 required
 subtest passes, zero required failures, and zero mandatory internal skips. Its
@@ -1140,7 +1271,8 @@ subtest passes, zero required failures, and zero mandatory internal skips. Its
 and `6170906cfad5e069be03a589f0df4667a0e9dc1d4bc14b6d26ad684144470b44`.
 Its four supervisor, nine fake-namespace terminal/watchdog, and five
 state-machine/process-group methods all passed through the exact project
-driver.
+driver of that working-tree revision. The current exact-driver
+`checkpoint-smoke` and complete clean `portable-complete` runs remain pending.
 
 The first complete current-tree diagnostic at
 `/tmp/gentoo-opt-portable-complete-candidate-a-20260729-v6` proved all 198 main

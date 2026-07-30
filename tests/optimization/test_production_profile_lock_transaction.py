@@ -284,29 +284,82 @@ class Fixture:
         if mode not in {"pass", "denied", "survivor", "term-survivor"}:
             raise ValueError(f"invalid fake-unshare mode: {mode}")
         executable = self.root / f"fake-unshare-{mode}"
+        parent_death_exec = self.root / f"fake-unshare-{mode}.pdeath-exec"
         child_pid_file = self.root / f"fake-unshare-{mode}.child-pid"
         supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
         process_group_file = pathlib.Path(f"{child_pid_file}.process-group")
-        program = f"""#!{self.python}
+        parent_death_exec.write_text(
+            f"""#!{self.python}
 import ctypes
+import os
+import signal
+import sys
+
+if len(sys.argv) < 4 or sys.argv[2] != "--":
+    raise SystemExit("invalid parent-death exec arguments")
+expected_parent = int(sys.argv[1])
+if os.getppid() != expected_parent:
+    os._exit(92)
+libc = ctypes.CDLL(None, use_errno=True)
+if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
+    os._exit(91)
+if os.getppid() != expected_parent:
+    os._exit(93)
+command = sys.argv[3:]
+os.execvpe(command[0], command, os.environ)
+""",
+            encoding="utf-8",
+        )
+        parent_death_exec.chmod(0o700)
+        program = f"""#!{self.python}
 import os
 import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 MODE = {mode!r}
 CHILD_PID_FILE = {os.fspath(child_pid_file)!r}
 SUPERVISOR_PID_FILE = {os.fspath(supervisor_pid_file)!r}
 PROCESS_GROUP_FILE = {os.fspath(process_group_file)!r}
-for path, value in (
-    (SUPERVISOR_PID_FILE, os.getpid()),
-    (PROCESS_GROUP_FILE, os.getpgrp()),
-):
-    with open(path, "w", encoding="ascii") as output:
-        output.write(str(value) + "\\n")
-        output.flush()
-        os.fsync(output.fileno())
+PARENT_DEATH_EXEC = {os.fspath(parent_death_exec)!r}
+
+def publish_ascii(path_text, value):
+    path = Path(path_text)
+    partial = path.with_name(path.name + ".partial." + str(os.getpid()))
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    try:
+        descriptor = os.open(partial, flags, 0o600)
+        with os.fdopen(descriptor, "w", encoding="ascii") as output:
+            descriptor = -1
+            output.write(str(value) + "\\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(partial, path)
+        directory_descriptor = os.open(
+            path.parent,
+            os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0),
+        )
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except BaseException:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            partial.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+# Publish the process group first; the supervisor receipt is the readiness
+# marker consumed by the portable child observer.
+publish_ascii(PROCESS_GROUP_FILE, os.getpgrp())
+publish_ascii(SUPERVISOR_PID_FILE, os.getpid())
 if MODE == "denied":
     os.write(2, b"fixture namespace creation denied: Operation not permitted\\n")
     raise SystemExit(1)
@@ -334,26 +387,11 @@ if MODE == "term-survivor":
 else:
     signal.signal(signal.SIGTERM, terminate)
 
-def bind_child_to_supervisor_death():
-    libc = ctypes.CDLL(None, use_errno=True)
-    parent = os.getppid()
-    if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
-        os._exit(91)
-    if os.getppid() != parent:
-        os._exit(92)
-
-child = subprocess.Popen(
-    sys.argv[separator + 1:],
-    preexec_fn=(
-        bind_child_to_supervisor_death
-        if MODE in {{"pass", "term-survivor"}}
-        else None
-    ),
-)
-with open(CHILD_PID_FILE, "w", encoding="ascii") as output:
-    output.write(str(child.pid) + "\\n")
-    output.flush()
-    os.fsync(output.fileno())
+child_command = sys.argv[separator + 1:]
+if MODE in {{"pass", "term-survivor"}}:
+    child_command = [PARENT_DEATH_EXEC, str(os.getpid()), "--", *child_command]
+child = subprocess.Popen(child_command)
+publish_ascii(CHILD_PID_FILE, child.pid)
 while child.poll() is None:
     time.sleep(0.05)
 raise SystemExit(child.returncode)
@@ -391,7 +429,7 @@ raise SystemExit(child.returncode)
                 return ()
             child_payload = child_pid_file.read_text(encoding="ascii")
             if re.fullmatch(r"[1-9][0-9]*\n", child_payload) is None:
-                return ()
+                raise AssertionError("fake-unshare child receipt is malformed")
             return (int(child_payload),)
 
         return observe
@@ -725,6 +763,134 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                     self.fixture.coordinator_paths()
                 )
         spawn.assert_not_called()
+
+    def test_fake_unshare_observer_ignores_partials_and_rejects_malformed_finals(
+        self,
+    ) -> None:
+        _fake_unshare, child_pid_file = self.fixture.fake_unshare("pass")
+        supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
+        observer = self.fixture.fake_unshare_child_observer(child_pid_file)
+        supervisor_pid = 41001
+        child_pid = 41002
+
+        supervisor_partial = supervisor_pid_file.with_name(
+            f"{supervisor_pid_file.name}.partial.fixture"
+        )
+        supervisor_partial.write_text("incomplete", encoding="ascii")
+        self.assertEqual(observer(supervisor_pid), ())
+
+        prepared_supervisor = supervisor_pid_file.with_name(
+            f"{supervisor_pid_file.name}.prepared"
+        )
+        prepared_supervisor.write_text(f"{supervisor_pid}\n", encoding="ascii")
+        os.replace(prepared_supervisor, supervisor_pid_file)
+
+        child_partial = child_pid_file.with_name(
+            f"{child_pid_file.name}.partial.fixture"
+        )
+        child_partial.write_text("incomplete", encoding="ascii")
+        self.assertEqual(observer(supervisor_pid), ())
+
+        prepared_child = child_pid_file.with_name(f"{child_pid_file.name}.prepared")
+        prepared_child.write_text(f"{child_pid}\n", encoding="ascii")
+        os.replace(prepared_child, child_pid_file)
+        self.assertEqual(observer(supervisor_pid), (child_pid,))
+
+        child_pid_file.write_text("incomplete", encoding="ascii")
+        with self.assertRaisesRegex(
+            AssertionError, "fake-unshare child receipt is malformed"
+        ):
+            observer(supervisor_pid)
+        child_pid_file.write_text(f"{child_pid}\n", encoding="ascii")
+        supervisor_pid_file.write_text("incomplete", encoding="ascii")
+        with self.assertRaisesRegex(
+            AssertionError, "fake-unshare supervisor receipt is malformed"
+        ):
+            observer(supervisor_pid)
+
+    def test_fake_unshare_exec_wrapper_binds_parent_death_and_publishes_atomically(
+        self,
+    ) -> None:
+        fake_unshare, child_pid_file = self.fixture.fake_unshare("pass")
+        parent_death_exec = self.fixture.root / "fake-unshare-pass.pdeath-exec"
+        self.assertTrue(parent_death_exec.is_file())
+        self.assertEqual(stat.S_IMODE(parent_death_exec.stat().st_mode), 0o700)
+        self.assertNotIn(
+            "preexec" + "_fn", fake_unshare.read_text(encoding="utf-8")
+        )
+
+        supervisor = subprocess.Popen(
+            [os.fspath(fake_unshare), "--", "/usr/bin/sleep", "300"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        child_pid: int | None = None
+        try:
+            observer = self.fixture.fake_unshare_child_observer(child_pid_file)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and supervisor.poll() is None:
+                observed = observer(supervisor.pid)
+                if observed:
+                    child_pid = observed[0]
+                    break
+                time.sleep(0.01)
+            self.assertIsNotNone(child_pid, "fake-unshare omitted its child receipt")
+            assert child_pid is not None
+            supervisor_pid_file = pathlib.Path(f"{child_pid_file}.supervisor")
+            process_group_file = pathlib.Path(f"{child_pid_file}.process-group")
+            self.assertEqual(
+                supervisor_pid_file.read_text(encoding="ascii"),
+                f"{supervisor.pid}\n",
+            )
+            self.assertEqual(
+                process_group_file.read_text(encoding="ascii"),
+                f"{supervisor.pid}\n",
+            )
+            self.assertEqual(
+                child_pid_file.read_text(encoding="ascii"), f"{child_pid}\n"
+            )
+            self.assertEqual(
+                list(self.fixture.root.glob("fake-unshare-pass*.partial.*")), []
+            )
+
+            os.kill(supervisor.pid, signal.SIGKILL)
+            self.assertEqual(supervisor.wait(timeout=3), -signal.SIGKILL)
+            self.assert_processes_gone([child_pid])
+        finally:
+            if supervisor.poll() is None:
+                try:
+                    os.killpg(supervisor.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                supervisor.wait(timeout=3)
+            if child_pid is not None:
+                try:
+                    os.kill(child_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def test_fake_unshare_exec_wrapper_rejects_wrong_parent_before_target(self) -> None:
+        self.fixture.fake_unshare("pass")
+        parent_death_exec = self.fixture.root / "fake-unshare-pass.pdeath-exec"
+        marker = self.fixture.root / "wrong-parent-target-ran"
+        completed = subprocess.run(
+            [
+                os.fspath(parent_death_exec),
+                "1",
+                "--",
+                "/usr/bin/touch",
+                os.fspath(marker),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=3,
+        )
+        self.assertEqual(completed.returncode, 92, completed.stderr)
+        self.assertFalse(marker.exists())
 
     def test_unshare_preflight_proves_kill_child_teardown_hermetically(self) -> None:
         fake_unshare, child_pid_file = self.fixture.fake_unshare("pass")

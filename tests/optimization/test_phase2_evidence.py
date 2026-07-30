@@ -246,6 +246,7 @@ class EvidenceFixture:
         )
         policy = {
             "aggregate_requires_zero": True,
+            "authoritative_test_path": [os.fspath(self.bin)],
             "authoritative_test_contract_path": "test-contract.json",
             "component_state_path_template": (
                 f"{self.state_root}/{{run_id}}/{{name}}.json"
@@ -273,16 +274,22 @@ class EvidenceFixture:
             "required_passing_test_prefixes": ["capability:"],
             "required_sources": ["plan.md", "policy.json", "src/code.py", "test-contract.json", "test-driver.sh"],
             "required_test_mode": "capabilities",
-            "required_tools": ["git", "script-tool"],
+            "required_tools": ["git", "python3", "script-tool"],
             "schema": POLICY_SCHEMA,
             "source_scopes": ["plan.md", "policy.json", "src", "test-contract.json", "test-driver.sh"],
             "test_driver_path": "test-driver.sh",
+            "test_execution_tools": ["git", "python3", "script-tool"],
             "tool_manifest_template_path": "tools-template.json",
         }
         tools_template = {
             "schema": TOOL_SCHEMA,
             "tools": [
                 {"name": "git", "path": os.fspath(self.git), "version_args": ["--version"]},
+                {
+                    "name": "python3",
+                    "path": os.fspath(Path(sys.executable)),
+                    "version_args": ["--version"],
+                },
                 {
                     "name": "script-tool",
                     "path": os.fspath(self.script_link),
@@ -376,8 +383,16 @@ class EvidenceFixture:
                 os.fspath(self.repository),
                 "--driver",
                 os.fspath(self.repository / "test-driver.sh"),
+                "--policy",
+                "policy.json",
                 "--git",
                 os.fspath(self.git),
+                "--executed-tool",
+                f"git={self.git}",
+                "--executed-tool",
+                f"python3={Path(sys.executable)}",
+                "--executed-tool",
+                f"script-tool={self.script_link}",
                 "--output",
                 os.fspath(self.evidence / "test-run-provenance.pending.json"),
             ],
@@ -483,6 +498,60 @@ class EvidenceFixture:
 
 
 class Phase2EvidenceTests(unittest.TestCase):
+    def test_candidate_b_commands_bind_their_active_python_runtime(self) -> None:
+        manifest = json.loads(
+            (REPOSITORY / "optimization/phase2-tool-manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        reviewed_python = next(
+            item for item in manifest["tools"] if item["name"] == "python3"
+        )
+        probe = """
+import json
+import pathlib
+import runpy
+import sys
+
+namespace = runpy.run_path(sys.argv[1])
+specification = json.loads(sys.argv[2])
+specification["path"] = pathlib.Path(specification["path"])
+observed = namespace["observe_tool"](specification, False)
+namespace["require_active_python_matches_reviewed_tools"](
+    [observed], "fixture Candidate-B command", False
+)
+"""
+        result = subprocess.run(
+            [
+                reviewed_python["path"],
+                "-I",
+                "-B",
+                "-c",
+                probe,
+                os.fspath(TOOL),
+                json.dumps(reviewed_python, sort_keys=True),
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        namespace = runpy.run_path(os.fspath(TOOL))
+        require_runtime = namespace["require_active_python_matches_reviewed_tools"]
+        reviewed_specification = copy.deepcopy(reviewed_python)
+        reviewed_specification["path"] = Path(reviewed_specification["path"])
+        observed = namespace["observe_tool"](reviewed_specification, False)
+        broken = copy.deepcopy(observed)
+        broken["requested_path"] = "/usr/bin/false"
+        broken["resolved_path"] = "/usr/bin/false"
+        with self.assertRaisesRegex(
+            namespace["EvidenceError"],
+            "Python runtime probe exited",
+        ):
+            require_runtime([broken], "fixture Candidate-B command", False)
+
     def test_repository_identity_bounds_attached_and_detached_head_queries(self) -> None:
         fixture = EvidenceFixture()
         self.addCleanup(fixture.cleanup)
@@ -512,6 +581,11 @@ class Phase2EvidenceTests(unittest.TestCase):
         script = next(item for item in document["tools"] if item["name"] == "script-tool")
         self.assertEqual(script["requested_path"], os.fspath(self.fixture.script_link))
         self.assertEqual(script["resolved_path"], os.fspath(self.fixture.real_script))
+        self.assertEqual(script["requested_entrypoint"]["type"], "symlink")
+        self.assertEqual(
+            script["requested_entrypoint"]["symlink_target"],
+            self.fixture.real_script.name,
+        )
         self.assertEqual(script["stdout"]["text"], "fixture-tool 1.0\n")
         self.assertEqual(script["shebang"]["line"], "/bin/sh")
         self.assertTrue(script["shebang"]["resolved_path"].startswith("/"))
@@ -1411,6 +1485,182 @@ class Phase2EvidenceTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("provenance driver", result.stderr)
 
+    def test_executed_tool_provenance_is_indexed_and_tamper_evident(self) -> None:
+        provenance_path = self.fixture.evidence / "test-run-provenance.json"
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            [record["name"] for record in provenance["executed_tools"]],
+            ["git", "python3", "script-tool"],
+        )
+        for record in provenance["executed_tools"]:
+            self.assertEqual(record["entrypoint"]["name"], record["name"])
+            self.assertRegex(record["runtime"]["binary"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertTrue(record["runtime"]["reported_path"].startswith("/"))
+        script_record = next(
+            record
+            for record in provenance["executed_tools"]
+            if record["name"] == "script-tool"
+        )
+        self.assertIsNotNone(script_record["entrypoint"]["shebang"])
+        self.assertEqual(
+            script_record["runtime"]["binary"],
+            script_record["entrypoint"]["shebang"]["binary"],
+        )
+        self.assertNotEqual(
+            script_record["runtime"]["binary"],
+            script_record["entrypoint"]["binary"],
+        )
+
+        self.fixture.run(check=True)
+        index = json.loads(self.fixture.index.read_text(encoding="utf-8"))
+        self.assertEqual(
+            index["test_run"]["executed_tools"], provenance["executed_tools"]
+        )
+        self.fixture.index.unlink()
+
+        provenance["executed_tools"][0]["runtime"]["binary"]["sha256"] = "0" * 64
+        provenance_path.write_text(
+            json.dumps(provenance, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        result = self.fixture.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("executed tool identity changed", result.stderr)
+
+    def test_authoritative_provenance_rejects_unreviewed_execution_path(self) -> None:
+        external_policy = self.fixture.root / "external-policy.json"
+        external_policy.write_bytes(
+            (self.fixture.repository / "policy.json").read_bytes()
+        )
+        escaped = subprocess.run(
+            [
+                sys.executable,
+                os.fspath(TOOL),
+                "run-provenance-start",
+                "--repository-root",
+                os.fspath(self.fixture.repository),
+                "--driver",
+                os.fspath(self.fixture.repository / "test-driver.sh"),
+                "--policy",
+                os.fspath(external_policy),
+                "--git",
+                os.fspath(self.fixture.git),
+                "--executed-tool",
+                f"git={self.fixture.git}",
+                "--executed-tool",
+                f"python3={Path(sys.executable)}",
+                "--executed-tool",
+                f"script-tool={self.fixture.script_link}",
+                "--output",
+                os.fspath(self.fixture.root / "escaped-policy.pending.json"),
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertNotEqual(escaped.returncode, 0)
+        self.assertIn("evidence policy escapes the repository", escaped.stderr)
+
+        pending = self.fixture.root / "authoritative-tools.pending.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.fspath(TOOL),
+                "run-provenance-start",
+                "--repository-root",
+                os.fspath(self.fixture.repository),
+                "--driver",
+                os.fspath(self.fixture.repository / "test-driver.sh"),
+                "--policy",
+                "policy.json",
+                "--git",
+                os.fspath(self.fixture.git),
+                "--executed-tool",
+                f"git={self.fixture.git}",
+                "--executed-tool",
+                f"python3={Path(sys.executable)}",
+                "--executed-tool",
+                f"script-tool={self.fixture.real_script}",
+                "--authoritative-tools",
+                "--output",
+                os.fspath(pending),
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "authoritative executed tool script-tool differs from its reviewed entry point",
+            result.stderr,
+        )
+        self.assertFalse(pending.exists())
+
+    def test_provenance_finalization_rejects_execution_tool_replacement(self) -> None:
+        pending = self.fixture.root / "replacement.pending.json"
+        output = self.fixture.root / "replacement.provenance.json"
+        start = subprocess.run(
+            [
+                sys.executable,
+                os.fspath(TOOL),
+                "run-provenance-start",
+                "--repository-root",
+                os.fspath(self.fixture.repository),
+                "--driver",
+                os.fspath(self.fixture.repository / "test-driver.sh"),
+                "--policy",
+                "policy.json",
+                "--git",
+                os.fspath(self.fixture.git),
+                "--executed-tool",
+                f"git={self.fixture.git}",
+                "--executed-tool",
+                f"python3={Path(sys.executable)}",
+                "--executed-tool",
+                f"script-tool={self.fixture.script_link}",
+                "--output",
+                os.fspath(pending),
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(start.returncode, 0, start.stderr)
+        replacement = self.fixture.bin / "fixture-tool-replacement"
+        replacement.write_text(
+            "#!/bin/sh\nprintf 'fixture-tool 2.0\\n'\n", encoding="utf-8"
+        )
+        replacement.chmod(0o700)
+        self.fixture.script_link.unlink()
+        self.fixture.script_link.symlink_to(replacement.name)
+        finish = subprocess.run(
+            [
+                sys.executable,
+                os.fspath(TOOL),
+                "run-provenance-finish",
+                "--pending",
+                os.fspath(pending),
+                "--results",
+                os.fspath(self.fixture.evidence / "results.tsv"),
+                "--subtests",
+                os.fspath(self.fixture.evidence / "subtests.tsv"),
+                "--summary",
+                os.fspath(self.fixture.evidence / "summary.txt"),
+                "--output",
+                os.fspath(output),
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertNotEqual(finish.returncode, 0)
+        self.assertIn("executed tool identity changed", finish.stderr)
+        self.assertFalse(output.exists())
+
     def test_pending_test_run_cannot_finalize_with_another_boot_identity(self) -> None:
         pending = self.fixture.root / "second.pending.json"
         output = self.fixture.root / "second.provenance.json"
@@ -1423,8 +1673,16 @@ class Phase2EvidenceTests(unittest.TestCase):
                 os.fspath(self.fixture.repository),
                 "--driver",
                 os.fspath(self.fixture.repository / "test-driver.sh"),
+                "--policy",
+                "policy.json",
                 "--git",
                 os.fspath(self.fixture.git),
+                "--executed-tool",
+                f"git={self.fixture.git}",
+                "--executed-tool",
+                f"python3={Path(sys.executable)}",
+                "--executed-tool",
+                f"script-tool={self.fixture.script_link}",
                 "--output",
                 os.fspath(pending),
             ],
@@ -1637,15 +1895,18 @@ class Phase2EvidenceTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("deterministic projection", result.stderr)
 
-    def test_requested_tool_symlink_retarget_is_rejected(self) -> None:
+    def test_requested_tool_symlink_same_target_replacement_is_rejected(self) -> None:
         self.fixture.run(check=True)
-        replacement = self.fixture.bin / "replacement-tool"
-        replacement.write_text(
-            "#!/bin/sh\nprintf 'fixture-tool 1.0\\n'\n", encoding="utf-8"
+        replacement = self.fixture.bin / "replacement-link"
+        replacement.symlink_to(self.fixture.real_script.name)
+        self.assertNotEqual(
+            replacement.lstat().st_ino,
+            self.fixture.script_link.lstat().st_ino,
         )
-        replacement.chmod(0o700)
-        self.fixture.script_link.unlink()
-        self.fixture.script_link.symlink_to(replacement.name)
+        os.replace(replacement, self.fixture.script_link)
+        self.assertEqual(
+            self.fixture.script_link.resolve(strict=True), self.fixture.real_script
+        )
         result = self.fixture.run("verify")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("indexed tool topology", result.stderr)

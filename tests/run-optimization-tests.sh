@@ -1,11 +1,17 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 export PYTHONDONTWRITEBYTECODE=1
 
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+SCRIPT_SOURCE=${BASH_SOURCE[0]}
+if [[ ${SCRIPT_SOURCE} == */* ]]; then
+    SCRIPT_PARENT=${SCRIPT_SOURCE%/*}
+else
+    SCRIPT_PARENT=.
+fi
+SCRIPT_DIR=$(cd -- "${SCRIPT_PARENT}" && pwd -P)
 readonly SCRIPT_DIR
 REPOSITORY_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd -P)
 readonly REPOSITORY_ROOT
@@ -33,6 +39,17 @@ TIMEOUT_BIN=
 SETSID_BIN=
 SLEEP_BIN=
 ENV_BIN=
+BASH_BIN=
+PYTHON_BIN=
+GIT_BIN=
+SHELLCHECK_BIN=
+TEST_EXECUTION_POLICY=${REPOSITORY_ROOT}/optimization/phase2-evidence-policy.json
+TEST_EXECUTION_TOOL_MANIFEST=${REPOSITORY_ROOT}/optimization/phase2-tool-manifest.json
+REVIEWED_AUTHORITATIVE_PATH=
+declare -a TEST_EXECUTION_TOOL_NAMES=()
+declare -A TEST_EXECUTION_TOOL_PATHS=()
+declare -a AUTHORITATIVE_PATH_TOOL_NAMES=()
+declare -A AUTHORITATIVE_PATH_TOOL_PATHS=()
 ACTIVE_CASE_PGID=
 ACTIVE_CASE_NAME=
 ACTIVE_CASE_KILL_AFTER_SECONDS=
@@ -87,8 +104,15 @@ readonly -a EXPLICIT_SHELL_SOURCES=(
     "${REPOSITORY_ROOT}/portage/repo.postsync.d/fix-sft-broken"
 )
 
+print_block() {
+    local line
+    while IFS= read -r line || [[ -n ${line} ]]; do
+        printf '%s\n' "${line}"
+    done
+}
+
 usage() {
-    cat <<'EOF'
+    print_block <<'EOF'
 Usage: tests/run-optimization-tests.sh [OPTIONS]
 
 Run the repository's non-mutating optimization validation suites.
@@ -124,7 +148,7 @@ Options:
 Environment:
   OPTIMIZATION_TEST_MODE=smoke|checkpoint-smoke|portable-complete|stress|capabilities|authoritative
   OPTIMIZATION_TEST_CAPABILITIES=comma,separated,names
-  SHELLCHECK=/path/to/shellcheck
+  SHELLCHECK=/path/to/shellcheck (authoritative mode requires the reviewed path)
   TEST_CASE_TIMEOUT_SECONDS=1800
   TEST_CASE_KILL_AFTER_SECONDS=10
   CHECKPOINT_SMOKE_TIMEOUT_SECONDS=600
@@ -155,7 +179,7 @@ EOF
 }
 
 list_suites() {
-    cat <<'EOF'
+    print_block <<'EOF'
 portable suites (smoke runs only the initial static/core subset):
   bash-syntax (every .sh below bench/, optimization/, scripts/, and tests/)
   shellcheck (same shell source set; skipped when unavailable)
@@ -428,14 +452,6 @@ if [[ ${MODE} == authoritative ]]; then
     AUTHORITATIVE=1
 fi
 
-if ((LIST_ONLY)); then
-    list_suites
-    exit 0
-fi
-if ((CONTRACT_TOPOLOGY_ONLY)); then
-    emit_contract_topology
-    exit 0
-fi
 validate_explicit_shell_sources
 
 validate_positive_seconds() {
@@ -483,26 +499,251 @@ resolve_executable() {
     RESOLVED_TOOL=${resolved}
 }
 
-resolve_executable timeout || fail_usage 'GNU timeout is required for per-case deadlines'
+load_test_execution_tool_contract() {
+    local python_bin=$1 rows name path index
+    local -a expected=(bash env git python3 setsid shellcheck sleep timeout)
+    [[ -f ${TEST_EXECUTION_POLICY} && ! -L ${TEST_EXECUTION_POLICY} ]] ||
+        fail_usage "test-execution policy is absent or symlinked: ${TEST_EXECUTION_POLICY}"
+    [[ -f ${TEST_EXECUTION_TOOL_MANIFEST} &&
+       ! -L ${TEST_EXECUTION_TOOL_MANIFEST} ]] ||
+        fail_usage "test-execution tool manifest is absent or symlinked: ${TEST_EXECUTION_TOOL_MANIFEST}"
+    rows=$("${python_bin}" -I -B -c '
+import json
+import pathlib
+import sys
+
+policy_path = pathlib.Path(sys.argv[1])
+manifest_path = pathlib.Path(sys.argv[2])
+expected = ["bash", "env", "git", "python3", "setsid", "shellcheck", "sleep", "timeout"]
+try:
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError) as error:
+    raise SystemExit(f"cannot read test-execution policy or tool manifest: {error}")
+names = policy.get("test_execution_tools")
+if names != expected:
+    raise SystemExit(
+        f"test_execution_tools must exactly equal the reviewed execution core: {expected!r}"
+    )
+authoritative_path = policy.get("authoritative_test_path")
+if (
+    not isinstance(authoritative_path, list)
+    or not authoritative_path
+    or len(authoritative_path) != len(set(authoritative_path))
+    or any(
+        not isinstance(path, str)
+        or not path.startswith("/")
+        or ":" in path
+        or "\t" in path
+        or "\n" in path
+        for path in authoritative_path
+    )
+):
+    raise SystemExit("authoritative_test_path must be unique safe absolute paths")
+tools = manifest.get("tools")
+if not isinstance(tools, list):
+    raise SystemExit("tool manifest tools must be a list")
+by_name = {}
+for item in tools:
+    if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+        raise SystemExit("tool manifest contains an invalid tool entry")
+    name = item["name"]
+    if name in by_name:
+        raise SystemExit(f"tool manifest repeats tool name: {name}")
+    by_name[name] = item
+for name in names:
+    item = by_name.get(name)
+    if item is None:
+        raise SystemExit(f"tool manifest omits test-execution tool: {name}")
+    path = item.get("path")
+    if (
+        not isinstance(path, str)
+        or not path.startswith("/")
+        or "\t" in path
+        or "\n" in path
+    ):
+        raise SystemExit(f"tool manifest has an invalid path for {name}")
+print("@authoritative-path\t" + ":".join(authoritative_path))
+for name in names:
+    print(name + "\t" + str(by_name[name].get("path")))
+for name, item in sorted(by_name.items()):
+    path = str(item.get("path"))
+    if pathlib.PurePosixPath(path).name == name:
+        print("@path-tool:" + name + "\t" + path)
+' "${TEST_EXECUTION_POLICY}" "${TEST_EXECUTION_TOOL_MANIFEST}") ||
+        fail_usage 'cannot load the reviewed test-execution tool contract'
+
+    TEST_EXECUTION_TOOL_NAMES=()
+    TEST_EXECUTION_TOOL_PATHS=()
+    AUTHORITATIVE_PATH_TOOL_NAMES=()
+    AUTHORITATIVE_PATH_TOOL_PATHS=()
+    REVIEWED_AUTHORITATIVE_PATH=
+    while IFS=$'\t' read -r name path; do
+        [[ -n ${name} && -n ${path} ]] ||
+            fail_usage 'test-execution tool contract emitted an empty row'
+        if [[ ${name} == @authoritative-path ]]; then
+            [[ -z ${REVIEWED_AUTHORITATIVE_PATH} ]] ||
+                fail_usage 'test-execution tool contract repeated its authoritative PATH'
+            REVIEWED_AUTHORITATIVE_PATH=${path}
+            continue
+        fi
+        if [[ ${name} == @path-tool:* ]]; then
+            name=${name#@path-tool:}
+            [[ ! -v AUTHORITATIVE_PATH_TOOL_PATHS["${name}"] ]] ||
+                fail_usage "test-execution tool contract repeated PATH tool ${name}"
+            AUTHORITATIVE_PATH_TOOL_NAMES+=("${name}")
+            AUTHORITATIVE_PATH_TOOL_PATHS["${name}"]=${path}
+            continue
+        fi
+        [[ ! -v TEST_EXECUTION_TOOL_PATHS["${name}"] ]] ||
+            fail_usage "test-execution tool contract repeated ${name}"
+        TEST_EXECUTION_TOOL_NAMES+=("${name}")
+        TEST_EXECUTION_TOOL_PATHS["${name}"]=${path}
+    done <<<"${rows}"
+    [[ -n ${REVIEWED_AUTHORITATIVE_PATH} ]] ||
+        fail_usage 'test-execution tool contract omitted its authoritative PATH'
+    ((${#TEST_EXECUTION_TOOL_NAMES[@]} == ${#expected[@]})) ||
+        fail_usage 'test-execution tool contract emitted the wrong name count'
+    for ((index = 0; index < ${#expected[@]}; index += 1)); do
+        [[ ${TEST_EXECUTION_TOOL_NAMES[index]} == "${expected[index]}" ]] ||
+            fail_usage 'test-execution tool contract emitted the wrong ordered names'
+    done
+}
+
+validate_authoritative_manifest_path_tools() {
+    local name expected selected
+    ((AUTHORITATIVE == 1)) || return 0
+    for name in "${AUTHORITATIVE_PATH_TOOL_NAMES[@]}"; do
+        expected=${AUTHORITATIVE_PATH_TOOL_PATHS["${name}"]}
+        selected=$(command -v -- "${name}" 2>/dev/null) ||
+            fail_usage "reviewed authoritative PATH tool is unavailable: ${name}=${expected}"
+        [[ ${selected} == "${expected}" ]] ||
+            fail_usage "authoritative PATH shadows reviewed ${name}: expected=${expected} selected=${selected}"
+    done
+    [[ ${PATH} == "${REVIEWED_AUTHORITATIVE_PATH}" ]] ||
+        fail_usage "authoritative PATH differs from the reviewed execution path: expected=${REVIEWED_AUTHORITATIVE_PATH} actual=${PATH}"
+}
+
+bind_test_execution_tool() {
+    local name=$1 selection=${2:-$1} requested selected selected_directory selected_name
+    requested=${TEST_EXECUTION_TOOL_PATHS["${name}"]}
+    if [[ ${selection} == */* ]]; then
+        [[ -x ${selection} && ! -d ${selection} ]] || return 1
+        selected=${selection}
+    else
+        selected=$(command -v -- "${selection}" 2>/dev/null) || return 1
+    fi
+    [[ -x ${selected} && ! -d ${selected} ]] || return 1
+    if [[ ${selected} != /* ]]; then
+        selected_name=${selected##*/}
+        if [[ ${selected} == */* ]]; then
+            selected_directory=${selected%/*}
+        else
+            selected_directory=.
+        fi
+        selected_directory=$(cd -- "${selected_directory}" && pwd -P) ||
+            return 1
+        selected=${selected_directory}/${selected_name}
+    fi
+    if ((AUTHORITATIVE == 1)); then
+        [[ ${requested} == /* && -x ${requested} && ! -d ${requested} ]] ||
+            fail_usage "reviewed test-execution tool is unavailable: ${name}=${requested}"
+        if [[ ${name} == shellcheck && ${selected} != "${requested}" ]]; then
+            fail_usage "authoritative ShellCheck entry point differs from the reviewed manifest: expected=${requested} selected=${selected}"
+        fi
+        [[ ${selected} -ef ${requested} ]] ||
+            fail_usage "authoritative PATH shadows reviewed ${name}: expected=${requested} selected=${selected}"
+        # Preserve the reviewed entry point instead of its canonical target.
+        # Git and Python are intentionally argv-zero-sensitive symlinks on the
+        # Gentoo host, and the evidence contract distinguishes requested from
+        # resolved identity.
+        selected=${requested}
+    fi
+    TEST_EXECUTION_TOOL_PATHS["${name}"]=${selected}
+    RESOLVED_TOOL=${selected}
+}
+
+# `/usr/bin/python3` is the reviewed bootstrap used to read the tracked tool
+# contract in authoritative mode.  Portable runs may use another PATH-selected
+# Python, but record that actual entry point in test-run provenance.
+if ((AUTHORITATIVE == 1)); then
+    [[ -x /usr/bin/python3 && ! -d /usr/bin/python3 ]] ||
+        fail_usage 'reviewed Python bootstrap is unavailable: /usr/bin/python3'
+    TOOL_CONTRACT_PYTHON=/usr/bin/python3
+else
+    TOOL_CONTRACT_PYTHON=$(command -v -- python3 2>/dev/null || true)
+fi
+if [[ -n ${TOOL_CONTRACT_PYTHON} ]]; then
+    load_test_execution_tool_contract "${TOOL_CONTRACT_PYTHON}"
+else
+    TEST_EXECUTION_TOOL_NAMES=(bash env git python3 setsid shellcheck sleep timeout)
+    for execution_tool_name in "${TEST_EXECUTION_TOOL_NAMES[@]}"; do
+        TEST_EXECUTION_TOOL_PATHS["${execution_tool_name}"]=
+    done
+fi
+
+validate_authoritative_manifest_path_tools
+
+bind_test_execution_tool bash || fail_usage 'bash is required for shell validation'
+BASH_BIN=${RESOLVED_TOOL}
+bind_test_execution_tool timeout || fail_usage 'GNU timeout is required for per-case deadlines'
 TIMEOUT_BIN=${RESOLVED_TOOL}
 timeout_help=$("${TIMEOUT_BIN}" --help 2>&1) || \
     fail_usage 'timeout --help failed while checking per-case deadline support'
 [[ ${timeout_help} == *'--kill-after'* && ${timeout_help} == *'--foreground'* ]] || \
     fail_usage 'timeout lacks the required --kill-after/--foreground support'
-resolve_executable setsid || fail_usage 'setsid is required for per-case process isolation'
+bind_test_execution_tool setsid || fail_usage 'setsid is required for per-case process isolation'
 SETSID_BIN=${RESOLVED_TOOL}
 setsid_help=$("${SETSID_BIN}" --help 2>&1) || \
     fail_usage 'setsid --help failed while checking process-isolation support'
 [[ ${setsid_help} == *'--wait'* ]] || \
     fail_usage 'setsid lacks the required --wait support'
-resolve_executable sleep || fail_usage 'sleep is required for process-group cleanup'
+bind_test_execution_tool sleep || fail_usage 'sleep is required for process-group cleanup'
 SLEEP_BIN=${RESOLVED_TOOL}
-resolve_executable env || fail_usage 'GNU env is required for child signal normalization'
+bind_test_execution_tool env || fail_usage 'GNU env is required for child signal normalization'
 ENV_BIN=${RESOLVED_TOOL}
 env_help=$("${ENV_BIN}" --help 2>&1) || \
     fail_usage 'env --help failed while checking child signal-normalization support'
 [[ ${env_help} == *'--default-signal'* ]] || \
     fail_usage 'env lacks the required --default-signal support'
+if bind_test_execution_tool git; then
+    GIT_BIN=${RESOLVED_TOOL}
+elif ((AUTHORITATIVE == 1)); then
+    fail_usage 'reviewed Git is required for authoritative test-run provenance'
+fi
+if bind_test_execution_tool python3; then
+    PYTHON_BIN=${RESOLVED_TOOL}
+elif ((AUTHORITATIVE == 1)); then
+    fail_usage 'reviewed Python is required for authoritative test execution'
+fi
+if bind_test_execution_tool shellcheck "${SHELLCHECK:-shellcheck}"; then
+    SHELLCHECK_BIN=${RESOLVED_TOOL}
+elif ((AUTHORITATIVE == 1)); then
+    fail_usage 'reviewed ShellCheck is required for authoritative shell validation'
+else
+    TEST_EXECUTION_TOOL_PATHS["shellcheck"]=
+fi
+
+if ((AUTHORITATIVE == 1)); then
+    [[ ${PATH} == "${REVIEWED_AUTHORITATIVE_PATH}" ]] ||
+        fail_usage "authoritative PATH differs from the reviewed execution path: expected=${REVIEWED_AUTHORITATIVE_PATH} actual=${PATH}"
+    [[ /proc/${BASHPID}/exe -ef ${BASH_BIN} ]] ||
+        fail_usage "authoritative driver is not running under reviewed Bash: ${BASH_BIN}"
+    ACTIVE_BASH_ARGV0=
+    IFS= read -r -d '' ACTIVE_BASH_ARGV0 <"/proc/${BASHPID}/cmdline" ||
+        fail_usage 'cannot read the authoritative driver Bash argv-zero identity'
+    [[ ${ACTIVE_BASH_ARGV0} == "${BASH_BIN}" ]] ||
+        fail_usage "authoritative driver Bash argv-zero differs from the reviewed entry point: expected=${BASH_BIN} actual=${ACTIVE_BASH_ARGV0}"
+fi
+
+if ((LIST_ONLY)); then
+    list_suites
+    exit 0
+fi
+if ((CONTRACT_TOPOLOGY_ONLY)); then
+    emit_contract_topology
+    exit 0
+fi
 
 require_commands() {
     local -a missing=()
@@ -985,7 +1226,7 @@ run_case_in_repository_with_deadline() {
     # The positional parameters intentionally expand in the child Bash.
     # shellcheck disable=SC2016
     run_case_with_deadline "${name}" "${timeout_seconds}" \
-        "${kill_after_seconds}" bash -c \
+        "${kill_after_seconds}" "${BASH_BIN}" -c \
         'cd -- "$1"; shift; exec "$@"' run-in-repository \
         "${REPOSITORY_ROOT}" "$@"
 }
@@ -1014,24 +1255,59 @@ trap 'exit 143' TERM HUP
 PHASE2_EVIDENCE_TOOL=${REPOSITORY_ROOT}/scripts/optimization/verify/phase2-evidence.py
 TEST_RUN_PROVENANCE_PENDING=${RUN_ROOT}/test-run-provenance.pending.json
 TEST_RUN_PROVENANCE=${RUN_ROOT}/test-run-provenance.json
-PROVENANCE_PYTHON=$(command -v python3 2>/dev/null || true)
+PROVENANCE_PYTHON=${PYTHON_BIN}
+declare -a PROVENANCE_EXECUTED_TOOL_ARGUMENTS=()
+for execution_tool_name in "${TEST_EXECUTION_TOOL_NAMES[@]}"; do
+    PROVENANCE_EXECUTED_TOOL_ARGUMENTS+=(
+        --executed-tool
+        "${execution_tool_name}=${TEST_EXECUTION_TOOL_PATHS["${execution_tool_name}"]}"
+    )
+done
+declare -a PROVENANCE_AUTHORITY_ARGUMENTS=()
+if ((AUTHORITATIVE == 1)); then
+    PROVENANCE_AUTHORITY_ARGUMENTS+=(--authoritative-tools)
+fi
 PROVENANCE_ACTIVE=0
+PROVENANCE_GIT_STATUS=
+read_isolated_repository_status() {
+    "${SETSID_BIN}" --wait \
+        "${TIMEOUT_BIN}" --signal=TERM \
+        --kill-after=10s 60s \
+        "${ENV_BIN}" -i \
+        GIT_CONFIG_GLOBAL=/dev/null \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_OPTIONAL_LOCKS=0 \
+        HOME=/nonexistent LANG=C LC_ALL=C PATH=/usr/bin:/bin \
+        "${GIT_BIN}" --no-pager --no-replace-objects \
+        -c core.hooksPath=/dev/null \
+        -c core.fsmonitor=false \
+        -c diff.external= \
+        -c "safe.directory=${REPOSITORY_ROOT}" \
+        -C "${REPOSITORY_ROOT}" \
+        status --porcelain=v1 --untracked-files=all
+}
 if [[ ! -f ${PHASE2_EVIDENCE_TOOL} || -L ${PHASE2_EVIDENCE_TOOL} ]]; then
     skip_case phase2-run-provenance-start \
         "evidence tool is absent or symlinked: ${PHASE2_EVIDENCE_TOOL}"
-elif [[ -z ${PROVENANCE_PYTHON} ]] || ! command -v git >/dev/null 2>&1; then
+elif [[ -z ${PROVENANCE_PYTHON} || -z ${GIT_BIN} || -z ${SHELLCHECK_BIN} ]]; then
     skip_case phase2-run-provenance-start \
-        'python3 or git is unavailable for exact test-run provenance'
-elif [[ -n $(git -C "${REPOSITORY_ROOT}" status --porcelain=v1 \
-    --untracked-files=all 2>/dev/null) ]]; then
+        'python3, git, or shellcheck is unavailable for exact test-run provenance'
+elif ! PROVENANCE_GIT_STATUS=$(read_isolated_repository_status 2>/dev/null); then
+    skip_case phase2-run-provenance-start \
+        'bounded isolated repository status inspection failed'
+elif [[ -n ${PROVENANCE_GIT_STATUS} ]]; then
     skip_case phase2-run-provenance-start \
         'repository is dirty or has untracked files; authoritative provenance requires a clean commit'
 else
     run_case_in_repository phase2-run-provenance-start \
-        env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
-        "${PROVENANCE_PYTHON}" "${PHASE2_EVIDENCE_TOOL}" \
+        "${ENV_BIN}" -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+        "${PROVENANCE_PYTHON}" -I -B "${PHASE2_EVIDENCE_TOOL}" \
         run-provenance-start --repository-root "${REPOSITORY_ROOT}" \
+        --policy optimization/phase2-evidence-policy.json \
         --driver "${REPOSITORY_ROOT}/tests/run-optimization-tests.sh" \
+        --driver-bash-pid "${BASHPID}" --git "${GIT_BIN}" \
+        "${PROVENANCE_AUTHORITY_ARGUMENTS[@]}" \
+        "${PROVENANCE_EXECUTED_TOOL_ARGUMENTS[@]}" \
         --output "${TEST_RUN_PROVENANCE_PENDING}"
     if [[ -f ${TEST_RUN_PROVENANCE_PENDING} && \
         ! -L ${TEST_RUN_PROVENANCE_PENDING} ]]; then
@@ -1043,7 +1319,7 @@ TEST_CONTRACT_DISCOVERY_TOOL=${REPOSITORY_ROOT}/scripts/optimization/verify/phas
 AUTHORITATIVE_TEST_CONTRACT=${REPOSITORY_ROOT}/optimization/phase2-authoritative-test-contract.json
 if [[ ${MODE} == portable-complete || ${MODE} == authoritative || \
       ${AUTHORITATIVE} == 1 ]]; then
-    contract_python=$(command -v python3 2>/dev/null || true)
+    contract_python=${PYTHON_BIN}
     if [[ -z ${contract_python} || ! -f ${TEST_CONTRACT_DISCOVERY_TOOL} ||
           -L ${TEST_CONTRACT_DISCOVERY_TOOL} ||
           ! -f ${AUTHORITATIVE_TEST_CONTRACT} ||
@@ -1056,7 +1332,7 @@ if [[ ${MODE} == portable-complete || ${MODE} == authoritative || \
         exit 2
     fi
     set +e
-    env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+    "${ENV_BIN}" -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
         "${contract_python}" -I -B "${TEST_CONTRACT_DISCOVERY_TOOL}" check \
         --repository-root "${REPOSITORY_ROOT}" \
         --contract "${AUTHORITATIVE_TEST_CONTRACT}" \
@@ -1106,12 +1382,12 @@ if ((${#SHELL_SOURCES[@]} == 0)); then
 else
     for source_file in "${SHELL_SOURCES[@]}"; do
         relative_file=${source_file#"${REPOSITORY_ROOT}/"}
-        run_case "bash-syntax:${relative_file}" bash -n -- "${source_file}"
+        run_case "bash-syntax:${relative_file}" \
+            "${BASH_BIN}" -n -- "${source_file}"
     done
 fi
 
-if resolve_executable "${SHELLCHECK:-shellcheck}"; then
-    SHELLCHECK_BIN=${RESOLVED_TOOL}
+if [[ -n ${SHELLCHECK_BIN} ]]; then
     run_case_in_repository shellcheck \
         "${SHELLCHECK_BIN}" -- "${SHELL_SOURCES[@]}"
 else
@@ -1119,20 +1395,18 @@ else
         "${SHELLCHECK:-shellcheck} is not an executable in PATH; set SHELLCHECK=/absolute/path"
 fi
 
-PYTHON_BIN=
 PRODUCTION_PROFILE_LOCK_TEST=${REPOSITORY_ROOT}/tests/optimization/test_production_profile_lock_transaction.py
 STRUCTURED_UNITTEST_RUNNER=${REPOSITORY_ROOT}/scripts/optimization/verify/run-unittest-suite.py
-if ! resolve_executable python3; then
+if [[ -z ${PYTHON_BIN} ]]; then
     skip_case python-source-compilation 'python3 is unavailable'
     skip_case python-unit-tests 'python3 is unavailable'
     skip_case production-profile-lock-crash-stress 'python3 is unavailable'
 else
-    PYTHON_BIN=${RESOLVED_TOOL}
     if ((${#PYTHON_SOURCES[@]} == 0)); then
         skip_case python-source-compilation \
             'no Python sources were discovered in the repository test scope'
     else
-        run_case python-source-compilation env \
+        run_case python-source-compilation "${ENV_BIN}" \
             PYTHONDONTWRITEBYTECODE=1 \
             PYTHONPYCACHEPREFIX="${RUN_ROOT}/python-cache/compile" \
             "${PYTHON_BIN}" -m py_compile "${PYTHON_SOURCES[@]}"
@@ -1153,10 +1427,10 @@ else
             run_case_in_repository_with_deadline checkpoint-smoke \
                 "${CHECKPOINT_SMOKE_TIMEOUT_SECONDS}" \
                 "${TEST_CASE_KILL_AFTER_SECONDS}" \
-                env -u PYTHONPYCACHEPREFIX \
+                "${ENV_BIN}" -u PYTHONPYCACHEPREFIX \
                 -u GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES \
                 PYTHONDONTWRITEBYTECODE=1 \
-                bash -c '
+                "${BASH_BIN}" -c '
                     set -Eeuo pipefail
                     python_bin=$1
                     runner=$2
@@ -1207,7 +1481,7 @@ else
     else
         for test_directory in "${PYTHON_TEST_DIRECTORIES[@]}"; do
             relative_directory=${test_directory#"${REPOSITORY_ROOT}/"}
-            unittest_environment=(env -u PYTHONPYCACHEPREFIX \
+            unittest_environment=("${ENV_BIN}" -u PYTHONPYCACHEPREFIX \
                 -u GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES \
                 PYTHONDONTWRITEBYTECODE=1)
             if ((AUTHORITATIVE == 1)) && \
@@ -1240,7 +1514,7 @@ else
         elif [[ -f ${PRODUCTION_PROFILE_LOCK_TEST} &&
                 ! -L ${PRODUCTION_PROFILE_LOCK_TEST} ]]; then
             run_case_in_repository production-profile-lock-crash-stress \
-                env -u PYTHONPYCACHEPREFIX \
+                "${ENV_BIN}" -u PYTHONPYCACHEPREFIX \
                 GENTOO_OPT_COORDINATOR_CRASH_STRESS=1 \
                 PYTHONDONTWRITEBYTECODE=1 \
                 "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" discover \
@@ -1264,12 +1538,12 @@ elif [[ ! -f ${PHASE2_EVIDENCE_TEST} ]]; then
         "fixture is absent: ${PHASE2_EVIDENCE_TEST}"
 elif [[ ${MODE} == smoke || ${MODE} == checkpoint-smoke ]]; then
     run_case_in_repository phase2-evidence-smoke \
-        env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+        "${ENV_BIN}" -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
         "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" -v \
         tests.optimization.test_phase2_evidence.Phase2EvidenceTests.test_exact_topology_rejects_deleted_and_unexpected_cases
 else
     run_case_in_repository phase2-evidence-contract \
-        env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+        "${ENV_BIN}" -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
         "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" discover \
         -s tests/optimization -p test_phase2_evidence.py -v
 fi
@@ -1304,7 +1578,8 @@ if [[ ! -f ${PORTAGE_CONFIG_CLEANUP_FIXTURE} ]]; then
 elif ! require_commands bash grep rg stat wc; then
     skip_case portage-config-cleanup "${PREFLIGHT_REASON}"
 else
-    run_case portage-config-cleanup bash -- "${PORTAGE_CONFIG_CLEANUP_FIXTURE}"
+    run_case portage-config-cleanup \
+        "${BASH_BIN}" -- "${PORTAGE_CONFIG_CLEANUP_FIXTURE}"
 fi
 
 FRAMEWORK_INSTALLER_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-framework-installer.sh
@@ -1315,9 +1590,9 @@ elif ! require_commands awk bash chmod cmp cp find flock getfattr git grep insta
     sleep sort stat sync tar tr rmdir setfattr; then
     skip_case framework-installer "${PREFLIGHT_REASON}"
 else
-    run_case framework-installer env \
+    run_case framework-installer "${ENV_BIN}" \
         TEST_CASE_TIMEOUT_SECONDS="${TEST_CASE_TIMEOUT_SECONDS}" \
-        bash -- "${FRAMEWORK_INSTALLER_FIXTURE}"
+        "${BASH_BIN}" -- "${FRAMEWORK_INSTALLER_FIXTURE}"
 fi
 
 NO_LEGACY_PGO_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-no-legacy-pgo.sh
@@ -1326,7 +1601,7 @@ if [[ ! -f ${NO_LEGACY_PGO_FIXTURE} ]]; then
 elif ! require_commands awk bash grep mktemp rg rm; then
     skip_case no-legacy-pgo "${PREFLIGHT_REASON}"
 else
-    run_case no-legacy-pgo bash -- "${NO_LEGACY_PGO_FIXTURE}"
+    run_case no-legacy-pgo "${BASH_BIN}" -- "${NO_LEGACY_PGO_FIXTURE}"
 fi
 
 PGO_DISPATCHER_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-pgo-dispatcher.sh
@@ -1336,7 +1611,7 @@ elif ! require_commands awk bash chmod dirname find grep head mkdir mktemp realp
     rm sed sha256sum sort stat touch tr wc; then
     skip_case pgo-dispatcher "${PREFLIGHT_REASON}"
 else
-    run_case pgo-dispatcher bash -- "${PGO_DISPATCHER_FIXTURE}"
+    run_case pgo-dispatcher "${BASH_BIN}" -- "${PGO_DISPATCHER_FIXTURE}"
 fi
 
 PORTAGE_QA_HOOK_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-qa-hook.sh
@@ -1345,7 +1620,8 @@ if [[ ! -f ${PORTAGE_QA_HOOK_FIXTURE} ]]; then
 elif ! require_commands bash mkdir mktemp rm wc; then
     skip_case portage-qa-hook-state "${PREFLIGHT_REASON}"
 else
-    run_case portage-qa-hook-state bash -- "${PORTAGE_QA_HOOK_FIXTURE}"
+    run_case portage-qa-hook-state \
+        "${BASH_BIN}" -- "${PORTAGE_QA_HOOK_FIXTURE}"
 fi
 
 PORTAGE_PHASE_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-phase-integration.sh
@@ -1359,7 +1635,8 @@ elif ! require_commands awk b2sum bash ebuild portageq python3 readelf sed \
     sha256sum sha512sum stat; then
     skip_case portage-pre-strip-integration "${PREFLIGHT_REASON}"
 else
-    run_case portage-pre-strip-integration bash -- "${PORTAGE_PHASE_FIXTURE}"
+    run_case portage-pre-strip-integration \
+        "${BASH_BIN}" -- "${PORTAGE_PHASE_FIXTURE}"
 fi
 
 PORTAGE_PHASE_IDENTITY_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-phase-identity.sh
@@ -1374,7 +1651,8 @@ elif ! require_commands awk b2sum bash cat chmod cp cut ebuild find getent grep 
     sha512sum sort stat sync tail xargs; then
     skip_case portage-phase-identity "${PREFLIGHT_REASON}"
 else
-    run_case portage-phase-identity bash -- "${PORTAGE_PHASE_IDENTITY_FIXTURE}" \
+    run_case portage-phase-identity \
+        "${BASH_BIN}" -- "${PORTAGE_PHASE_IDENTITY_FIXTURE}" \
         --output-dir "${RUN_ROOT}/portage-phase-identity"
 fi
 
@@ -1388,7 +1666,8 @@ elif ! require_commands awk b2sum bash cp ebuild find grep mv python3 rm sed \
     sha256sum sha512sum stat tail wc; then
     skip_case portage-pgo-use-integration "${PREFLIGHT_REASON}"
 else
-    run_case portage-pgo-use-integration bash -- "${PORTAGE_PGO_FIXTURE}"
+    run_case portage-pgo-use-integration \
+        "${BASH_BIN}" -- "${PORTAGE_PGO_FIXTURE}"
 fi
 
 PORTAGE_SAMPLE_PGO_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-portage-sample-pgo-integration.sh
@@ -1399,7 +1678,8 @@ if [[ ! -f ${PORTAGE_SAMPLE_ENV_FIXTURE} ]]; then
 elif ! require_commands bash env grep mktemp realpath sha256sum; then
     skip_case portage-sample-production-env "${PREFLIGHT_REASON}"
 else
-    run_case portage-sample-production-env bash -- "${PORTAGE_SAMPLE_ENV_FIXTURE}"
+    run_case portage-sample-production-env \
+        "${BASH_BIN}" -- "${PORTAGE_SAMPLE_ENV_FIXTURE}"
 fi
 
 PORTAGE_SAMPLE_CASES=(
@@ -1433,10 +1713,11 @@ else
     # separately fsynced authoritative Work tree.  Preserve this run root so
     # its log and publication-context.tsv remain a durable index to that tree.
     PRESERVE_RUN_ROOT_FOR_EXTERNAL_AUTHORITY=1
-    run_case portage-sample-pgo-integration bash -- "${PORTAGE_SAMPLE_PGO_FIXTURE}" \
+    run_case portage-sample-pgo-integration \
+        "${BASH_BIN}" -- "${PORTAGE_SAMPLE_PGO_FIXTURE}" \
         --portage-policy isolated-diagnostic \
         --output-dir "${RUN_ROOT}/portage-sample-pgo"
-    run_case portage-sample-pgo-live-policy-integration bash -- \
+    run_case portage-sample-pgo-live-policy-integration "${BASH_BIN}" -- \
         "${PORTAGE_SAMPLE_PGO_FIXTURE}" --portage-policy live \
         --output-dir "${RUN_ROOT}/portage-sample-pgo-live-policy"
 fi
@@ -1448,7 +1729,8 @@ if [[ ! -f ${BOLT_COMMAND_POLICY_FIXTURE} ]]; then
 elif ! require_commands bash grep; then
     skip_case bolt-command-policy "${PREFLIGHT_REASON}"
 else
-    run_case bolt-command-policy bash -- "${BOLT_COMMAND_POLICY_FIXTURE}"
+    run_case bolt-command-policy \
+        "${BASH_BIN}" -- "${BOLT_COMMAND_POLICY_FIXTURE}"
 fi
 
 BOLT_TRANSACTION_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-transaction.sh
@@ -1459,7 +1741,8 @@ elif ! require_commands awk bash chmod cmp cp grep mkdir mktemp mv ps rm sleep \
     timeout tr; then
     skip_case bolt-transaction-fixture "${PREFLIGHT_REASON}"
 else
-    run_case bolt-transaction-fixture bash -- "${BOLT_TRANSACTION_FIXTURE}"
+    run_case bolt-transaction-fixture \
+        "${BASH_BIN}" -- "${BOLT_TRANSACTION_FIXTURE}"
 fi
 
 BOLT_HOOK_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-hooks.sh
@@ -1470,12 +1753,12 @@ elif ! require_commands awk bash cc chmod cmp cp find grep ln mkdir mktemp \
     objcopy python3 readelf readlink rm sed sha256sum sort stat; then
     skip_case bolt-pre-strip-hooks "${PREFLIGHT_REASON}"
 else
-    run_case bolt-pre-strip-hooks bash -- "${BOLT_HOOK_FIXTURE}"
+    run_case bolt-pre-strip-hooks "${BASH_BIN}" -- "${BOLT_HOOK_FIXTURE}"
 fi
 
 DRIVER_SELF_TEST=${REPOSITORY_ROOT}/tests/optimization/test-run-optimization-tests.sh
 if [[ -f ${DRIVER_SELF_TEST} ]]; then
-    run_case driver-cli-self-test bash -- "${DRIVER_SELF_TEST}"
+    run_case driver-cli-self-test "${BASH_BIN}" -- "${DRIVER_SELF_TEST}"
 else
     skip_case driver-cli-self-test "fixture is absent: ${DRIVER_SELF_TEST}"
 fi
@@ -1487,7 +1770,8 @@ if [[ ! -f ${BOOT_EVIDENCE_FIXTURE} ]]; then
 elif ! require_commands bash grep find sha256sum mktemp; then
     skip_case recovery-boot-evidence-fixture "${PREFLIGHT_REASON}"
 else
-    run_case recovery-boot-evidence-fixture bash -- "${BOOT_EVIDENCE_FIXTURE}"
+    run_case recovery-boot-evidence-fixture \
+        "${BASH_BIN}" -- "${BOOT_EVIDENCE_FIXTURE}"
 fi
 
 ROLLBACK_FIXTURE=${REPOSITORY_ROOT}/optimization/fixtures/recovery/test-rollback.sh
@@ -1588,7 +1872,8 @@ elif ! preflight_recovery_abi_lanes; then
     skip_case recovery-rollback-fixture \
         "${PREFLIGHT_REASON}; the C++ ABI lane fixture was not run"
 else
-    run_case recovery-rollback-fixture bash -- "${ROLLBACK_FIXTURE}"
+    run_case recovery-rollback-fixture \
+        "${BASH_BIN}" -- "${ROLLBACK_FIXTURE}"
 fi
 
 fi
@@ -1838,7 +2123,7 @@ run_capability() {
     run_case_with_deadline "capability:${capability}" \
         "${RESOLVED_CASE_TIMEOUT_SECONDS}" \
         "${RESOLVED_CASE_KILL_AFTER_SECONDS}" \
-        bash -- "${runner}" "${output}"
+        "${BASH_BIN}" -- "${runner}" "${output}"
 }
 
 for capability in "${ALL_CAPABILITIES[@]}"; do
@@ -1868,8 +2153,8 @@ if [[ ${MODE} == portable-complete || ${MODE} == authoritative || \
           ! -L ${PHASE2_EVIDENCE_TOOL} && \
           -f ${AUTHORITATIVE_TEST_CONTRACT} && \
           ! -L ${AUTHORITATIVE_TEST_CONTRACT} ]]; then
-        env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
-            "${PYTHON_BIN}" "${PHASE2_EVIDENCE_TOOL}" test-contract \
+        "${ENV_BIN}" -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+            "${PYTHON_BIN}" -I -B "${PHASE2_EVIDENCE_TOOL}" test-contract \
             --contract "${AUTHORITATIVE_TEST_CONTRACT}" \
             --results "${RESULTS_FILE}" --subtests "${SUBTESTS_FILE}" \
             --mode "${contract_validation_mode}" \
@@ -1914,10 +2199,11 @@ fi
 
 if ((PROVENANCE_ACTIVE)); then
     set +e
-    env -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
-        "${PROVENANCE_PYTHON}" "${PHASE2_EVIDENCE_TOOL}" \
+    "${ENV_BIN}" -u PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE=1 \
+        "${PROVENANCE_PYTHON}" -I -B "${PHASE2_EVIDENCE_TOOL}" \
         run-provenance-finish \
         --pending "${TEST_RUN_PROVENANCE_PENDING}" \
+        --driver-bash-pid "${BASHPID}" \
         --results "${RESULTS_FILE}" --subtests "${SUBTESTS_FILE}" \
         --summary "${RUN_ROOT}/summary.txt" \
         --output "${TEST_RUN_PROVENANCE}" \

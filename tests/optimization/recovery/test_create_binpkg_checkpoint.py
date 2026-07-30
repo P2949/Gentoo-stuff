@@ -2434,6 +2434,150 @@ class CheckpointHarnessTest(unittest.TestCase):
             (0, True, [residual]),
         )
 
+    def test_process_supervisor_proves_single_native_task_before_fork(self) -> None:
+        completed = run_contained_command(
+            ["/bin/true"],
+            cwd="/",
+            env={
+                "HOME": "/nonexistent",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+            },
+            timeout=3,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_process_supervisor_rejects_multithreaded_interpreter_before_fork(
+        self,
+    ) -> None:
+        parent = read_process_identity(os.getpid())
+        self.assertIsNotNone(parent)
+        assert parent is not None
+        harness = textwrap.dedent(
+            """\
+            import os
+            import runpy
+            import sys
+            import threading
+
+            helper = sys.argv[1]
+            helper_arguments = sys.argv[2:]
+            stop = threading.Event()
+            started = threading.Event()
+
+            def native_worker():
+                started.set()
+                stop.wait()
+
+            worker = threading.Thread(target=native_worker, name="fixture-native-worker")
+            worker.start()
+            if not started.wait(2):
+                os._exit(88)
+            try:
+                sys.argv = [helper, *helper_arguments]
+                runpy.run_path(helper, run_name="__main__")
+            finally:
+                stop.set()
+                worker.join(timeout=2)
+                if worker.is_alive():
+                    os._exit(89)
+            """
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="checkpoint-multithread-refusal-"
+        ) as directory:
+            root = Path(directory)
+            environment = root / "environment.json"
+            stdout = root / "target.stdout"
+            stderr = root / "target.stderr"
+            ready = root / "ready.json"
+            receipt = root / "receipt.json"
+            marker = root / "target-started"
+            environment.write_text(
+                json.dumps(
+                    {
+                        "HOME": "/nonexistent",
+                        "LANG": "C",
+                        "LC_ALL": "C",
+                        "PATH": "/usr/bin:/bin",
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            command = [
+                sys.executable,
+                "-I",
+                "-B",
+                "-c",
+                harness,
+                str(PROCESS_SUPERVISOR),
+                "--expected-parent-pid",
+                str(parent.pid),
+                "--expected-parent-start",
+                str(parent.start_time),
+                "--cwd",
+                "/",
+                "--timeout",
+                "3",
+                "--environment",
+                str(environment),
+                "--stdout",
+                str(stdout),
+                "--stderr",
+                str(stderr),
+                "--ready",
+                str(ready),
+                "--receipt",
+                str(receipt),
+                "--",
+                sys.executable,
+                "-I",
+                "-B",
+                "-c",
+                (
+                    "from pathlib import Path; "
+                    f"Path({str(marker)!r}).touch()"
+                ),
+            ]
+            completed = subprocess.run(
+                command,
+                check=False,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=10,
+                env={
+                    "HOME": "/nonexistent",
+                    "LANG": "C",
+                    "LC_ALL": "C",
+                    "PATH": "/usr/bin:/bin",
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                },
+            )
+            self.assertEqual(
+                completed.returncode,
+                70,
+                completed.stderr.decode("utf-8", errors="replace"),
+            )
+            self.assertFalse(
+                marker.exists(), "multithreaded helper executed its target"
+            )
+            self.assertFalse(
+                ready.exists(), "multithreaded helper published target readiness"
+            )
+            payload = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertIn(
+                "checkpoint fixture supervisor is not single-threaded before fork: "
+                "native_tasks=",
+                payload["error"],
+            )
+            self.assertIsNone(payload["target"])
+            self.assertIs(payload["target_release_committed"], False)
+            self.assertEqual(payload["cleanup_survivors"], [])
+
     def test_interruption_before_fork_or_release_commitment_never_executes_target(
         self,
     ) -> None:
