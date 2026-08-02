@@ -189,6 +189,8 @@ grep -Fq 'TEST_CASE_KILL_AFTER_SECONDS=10' "${FIXTURE}/help.txt" || \
     fail 'help omits the per-case forced-kill grace period'
 grep -Fq 'CHECKPOINT_SMOKE_TIMEOUT_SECONDS=600' "${FIXTURE}/help.txt" || \
     fail 'help omits the checkpoint-smoke deadline'
+grep -Fq 'RECOVERY_SUITE_TIMEOUT_SECONDS=2700' "${FIXTURE}/help.txt" || \
+    fail 'help omits the complete recovery-suite deadline'
 grep -Fq 'TEST_CASE_TIMEOUT_SECONDS_CLANG_IR' "${FIXTURE}/help.txt" || \
     fail 'help omits normalized per-capability deadline overrides'
 grep -Fq 'GENTOO_OPT_AUTHORITATIVE=0|1' "${FIXTURE}/help.txt" || \
@@ -285,6 +287,15 @@ grep -Fq \
     'CHECKPOINT_SMOKE_TIMEOUT_SECONDS must be a positive integer number of seconds' \
     "${FIXTURE}/bad-checkpoint-timeout.log" || \
     fail 'invalid checkpoint-smoke timeout lacks a visible diagnostic'
+
+if RECOVERY_SUITE_TIMEOUT_SECONDS=0 bash -- "${DRIVER}" --mode smoke \
+    >"${FIXTURE}/bad-recovery-timeout.log" 2>&1; then
+    fail 'zero recovery-suite timeout unexpectedly succeeded'
+fi
+grep -Fq \
+    'RECOVERY_SUITE_TIMEOUT_SECONDS must be a positive integer number of seconds' \
+    "${FIXTURE}/bad-recovery-timeout.log" || \
+    fail 'invalid recovery-suite timeout lacks a visible diagnostic'
 
 if TEST_CASE_KILL_AFTER_SECONDS_BOLT=invalid bash -- "${DRIVER}" --mode quick \
     >"${FIXTURE}/bad-capability-kill-after.log" 2>&1; then
@@ -1014,6 +1025,7 @@ grep -Fq 'ERROR: unittest discovery executed zero tests' \
 PATH=${PYTHON_BIN_ROOT} \
 PYTHONPYCACHEPREFIX=/inherited-prefix-that-must-not-reach-unittest \
 GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES=1 \
+RECOVERY_SUITE_TIMEOUT_SECONDS=2711 \
     bash -- "${PYTHON_DRIVER}" --mode stress --output-dir "${PYTHON_OUTPUT}" \
     >"${FIXTURE}/python-driver.log" 2>&1 || {
     sed -n '1,240p' "${FIXTURE}/python-driver.log" >&2
@@ -1047,6 +1059,18 @@ done <"${PYTHON_OUTPUT}/subtests.tsv"
 grep -Fq $'SKIP\trequired\tpython-unit-tests:tests/optimization/recovery\tpython.' \
     "${PYTHON_OUTPUT}/subtests.tsv" || \
     fail 'portable recovery host-capability opt-in was not an explicit required skip'
+PYTHON_RECOVERY_RESULT_ROWS=0
+while IFS=$'\t' read -r result_status result_name result_detail; do
+    if [[ ${result_name} == python-unit-tests:tests/optimization/recovery ]]; then
+        ((PYTHON_RECOVERY_RESULT_ROWS += 1))
+        [[ ${result_status} == PASS ]] || \
+            fail "hermetic recovery suite did not pass: ${result_status}"
+        [[ ${result_detail} == *'timeout_seconds=2711 '* ]] || \
+            fail "recovery suite did not use its dedicated deadline: ${result_detail}"
+    fi
+done <"${PYTHON_OUTPUT}/results.tsv"
+[[ ${PYTHON_RECOVERY_RESULT_ROWS} -eq 1 ]] || \
+    fail "expected one hermetic recovery-suite result, found ${PYTHON_RECOVERY_RESULT_ROWS}"
 
 PYTHON_AUTHORITATIVE_OUTPUT=${FIXTURE}/python-authoritative-output
 install_hermetic_contract_support "${PYTHON_ROOT}" "${PYTHON_BIN_ROOT}"

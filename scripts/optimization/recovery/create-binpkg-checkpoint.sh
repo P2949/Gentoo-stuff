@@ -77,6 +77,7 @@ SELF=
 RESTORE_CPV=
 RETRY_INTERRUPTED_RESTORE=0
 VALIDATED_RETRY_COUNT=0
+PORTAGE_CPV=
 
 declare -a ATOMS=()
 declare -a ATOM_CPVS=()
@@ -309,6 +310,7 @@ if ((FIXTURE_MODE)); then
     VERIFIER=${VERIFIER_OVERRIDE}
     MAKE_CONF=${MAKE_CONF_OVERRIDE:-${FIXTURE_ROOT}/etc/portage/make.conf}
     HOME_DIR=${FIXTURE_ROOT}/root
+    PORTAGE_STATE_PARENT=${FIXTURE_ROOT}/var/lib/portage
     PATH_VALUE=${TOOL_ROOT}/usr/sbin:${TOOL_ROOT}/usr/bin:${TOOL_ROOT}/sbin:${TOOL_ROOT}/bin
 else
     [[ ${EUID} -eq 0 ]] || die 'checkpoint creation requires root'
@@ -335,6 +337,7 @@ else
     VERIFIER=
     MAKE_CONF=/etc/portage/make.conf
     HOME_DIR=/root
+    PORTAGE_STATE_PARENT=/var/lib/portage
     PATH_VALUE=/usr/sbin:/usr/bin:/sbin:/bin
 fi
 
@@ -380,6 +383,24 @@ readonly TIMEOUT=${TOOL[timeout]}
 readonly UMOUNT=${TOOL[umount]}
 readonly UNSHARE=${TOOL[unshare]}
 readonly ZSTD=${TOOL[zstd]}
+readonly EMERGE_EPYTHON=python3.15
+readonly EMERGE_PYTHON=${TOOL_ROOT}/usr/bin/${EMERGE_EPYTHON}
+readonly EMERGE_IMPLEMENTATION=${TOOL_ROOT}/usr/lib/python-exec/${EMERGE_EPYTHON}/emerge
+declare -ar RESTORE_EMERGE_OPTIONS=(
+    --ignore-default-opts
+    --ask=n
+    --autounmask=n
+    --autounmask-write=n
+    --buildpkg=n
+    --getbinpkg=n
+    --usepkgonly
+    --binpkg-changed-deps=n
+    --binpkg-respect-use=n
+    --use-ebuild-visibility=n
+    --nodeps
+    --oneshot
+    --verbose
+)
 
 CACHE=${CACHE_PARENT}/snapshot-${CHECKPOINT_ID}
 DURABLE=${DURABLE_PARENT}/critical-${CHECKPOINT_ID}
@@ -1240,8 +1261,23 @@ PY
 # PID namespace and parent-death binding contain verifier, Portage, and clone
 # descendants when the coordinator exits.
 run_tracked() {
-    local output=$1 error_output=$2 deadline=$3 status=0 launcher_code state start
+    local output=$1 error_output=$2 deadline=$3 status=0 launcher_code state start network_isolated=0
+    local -a unshare_arguments=(--pid)
     shift 3
+    if [[ ${1:-} == --network-isolated ]]; then
+        network_isolated=1
+        shift
+    fi
+    if ((network_isolated)); then
+        unshare_arguments+=(--net)
+    fi
+    unshare_arguments+=(--fork --kill-child=KILL)
+    if ((network_isolated)); then
+        # Hide the host PID namespace from root package phases as well as
+        # placing the restore in a fresh network namespace with no uplink.
+        unshare_arguments+=(--mount-proc)
+    fi
+    unshare_arguments+=(--)
     read -r -d '' launcher_code <<'PY' || :
 import ctypes
 import os
@@ -1261,7 +1297,7 @@ os.execv(command[0], command)
 PY
     ${SETSID} "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
         "${PYTHON}" -I -B -c "${launcher_code}" "${COORDINATOR_PID}" \
-        "${UNSHARE}" --pid --fork --kill-child=KILL -- \
+        "${UNSHARE}" "${unshare_arguments[@]}" \
         "${TIMEOUT}" --signal=TERM --kill-after=30s "${deadline}" \
         "$@" >"${output}" 2>"${error_output}" &
     ACTIVE_CHILD_PID=$!
@@ -1280,12 +1316,15 @@ PY
 }
 
 preflight_containment_primitives() {
+    local destination=${1:-${REPORT}/containment-preflight.json}
+    local error_output=${destination}.stderr
     local code launcher_code partial status=0 state start
+    path_absent "${destination}" || die "containment preflight output already exists: ${destination}"
+    path_absent "${error_output}" || die "containment preflight stderr already exists: ${error_output}"
     if ((FIXTURE_MODE)); then
         printf '%s\n' \
-            '{"schema_version":2,"emulated":true,"direct_pidfd_sigterm":{"exact_child_gone":true,"pidfd_open":true,"pidfd_send_signal":true,"signal":"SIGTERM","returncode":-15},"unshare_kill_child_sigkill":{"descendant_pidfd_open":true,"escaped_private_process_group_gone":true,"escaped_setsid_descendant_gone":true,"exact_namespace_child_gone":true,"kill_child_signal":"SIGKILL","pid_namespace":true,"private_process_group_gone":true,"supervisor_pidfd_open":true,"supervisor_returncode":-9,"supervisor_signal":"SIGKILL"}}' \
-            >"${REPORT}/containment-preflight.json"
-        : >"${REPORT}/containment-preflight.stderr"
+            '{"schema_version":3,"emulated":true,"direct_pidfd_sigterm":{"exact_child_gone":true,"pidfd_open":true,"pidfd_send_signal":true,"signal":"SIGTERM","returncode":-15},"unshare_kill_child_sigkill":{"descendant_pidfd_open":true,"escaped_private_process_group_gone":true,"escaped_setsid_descendant_gone":true,"exact_namespace_child_gone":true,"ipv4_errno":"ENETUNREACH","ipv4_external_unreachable":true,"ipv6_errno":"EADDRNOTAVAIL","ipv6_external_unreachable":true,"kill_child_signal":"SIGKILL","mount_proc":true,"namespace_interfaces":["lo"],"namespace_pid":1,"network_namespace":true,"network_namespace_distinct":true,"pid_namespace":true,"private_process_group_gone":true,"supervisor_pidfd_open":true,"supervisor_returncode":-9,"supervisor_signal":"SIGKILL"}}' \
+            >"${destination}"
         return 0
     fi
     read -r -d '' code <<'PY' || :
@@ -1293,7 +1332,9 @@ import ctypes
 import errno
 import json
 import os
+import select
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -1375,11 +1416,11 @@ if os.getppid() != expected_parent:
 os.execv(command[0], command)
 '''
 
-def start_bound(command):
+def start_bound(command, *, capture_stdout=False):
     return subprocess.Popen(
         [python, "-I", "-B", "-c", launcher, str(os.getpid()), *command],
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
+        stdout=subprocess.PIPE if capture_stdout else subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         start_new_session=True,
     )
@@ -1433,8 +1474,54 @@ def prove_direct_pidfd():
 
 def prove_unshare_kill_child():
     namespace_code = r'''
+import errno
+import json
 import os
 import signal
+import socket
+import sys
+
+parent_network_namespace = (int(sys.argv[1]), int(sys.argv[2]))
+current_network_stat = os.stat("/proc/self/ns/net")
+current_network_namespace = (current_network_stat.st_dev, current_network_stat.st_ino)
+if current_network_namespace == parent_network_namespace:
+    raise SystemExit("network namespace was not isolated")
+interfaces = sorted(name for _index, name in socket.if_nameindex())
+if interfaces != ["lo"]:
+    raise SystemExit(f"network namespace has unexpected interfaces: {interfaces!r}")
+
+def prove_unreachable(family, address, accepted):
+    try:
+        connection = socket.socket(family, socket.SOCK_STREAM)
+    except OSError as error:
+        if error.errno not in accepted:
+            raise
+        return errno.errorcode.get(error.errno, str(error.errno))
+    connection.settimeout(1)
+    try:
+        connection.connect(address)
+    except OSError as error:
+        if error.errno not in accepted:
+            raise
+        return errno.errorcode.get(error.errno, str(error.errno))
+    finally:
+        connection.close()
+    raise SystemExit(f"isolated network namespace connected to {address!r}")
+
+ipv4_errno = prove_unreachable(socket.AF_INET, ("192.0.2.1", 9), {errno.ENETUNREACH})
+ipv6_errno = prove_unreachable(
+    socket.AF_INET6,
+    ("2001:db8::1", 9, 0, 0),
+    {errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT, errno.ENETUNREACH},
+)
+print(json.dumps({
+    "ipv4_errno": ipv4_errno,
+    "ipv6_errno": ipv6_errno,
+    "namespace_interfaces": interfaces,
+    "namespace_pid": os.getpid(),
+    "network_namespace": f"{current_network_namespace[0]}:{current_network_namespace[1]}",
+    "parent_network_namespace": f"{parent_network_namespace[0]}:{parent_network_namespace[1]}",
+}, sort_keys=True), flush=True)
 
 descendant = os.fork()
 if descendant == 0:
@@ -1444,16 +1531,19 @@ if descendant == 0:
 signal.pause()
 raise SystemExit(91)
 '''
+    parent_network_stat = os.stat("/proc/self/ns/net")
     process = start_bound([
-        unshare, "--pid", "--fork", "--kill-child=KILL", "--mount-proc", "--",
+        unshare, "--pid", "--net", "--fork", "--kill-child=KILL", "--mount-proc", "--",
         python, "-I", "-B", "-c", namespace_code,
-    ])
+        str(parent_network_stat.st_dev), str(parent_network_stat.st_ino),
+    ], capture_stdout=True)
     supervisor_fd = -1
     child_fd = -1
     descendant_fd = -1
     supervisor_identity = None
     child_identity = None
     descendant_identity = None
+    network_payload = None
     process_group = process.pid
     try:
         supervisor_identity = identity(process.pid)
@@ -1480,6 +1570,26 @@ raise SystemExit(91)
             raise RuntimeError("unshare namespace child disappeared during binding")
         if child_identity["ppid"] != process.pid or child_identity["process_group"] != process_group:
             raise RuntimeError("unshare namespace child has incoherent identity")
+        if process.stdout is None:
+            raise RuntimeError("network namespace preflight stdout is unavailable")
+        readable, _, _ = select.select([process.stdout], [], [], deadline_seconds)
+        if not readable:
+            raise RuntimeError("timed out reading network namespace preflight")
+        line = process.stdout.readline()
+        if not line:
+            diagnostic = process.stderr.read().decode(errors="replace").strip()
+            raise RuntimeError(f"network namespace preflight produced no evidence: {diagnostic}")
+        network_payload = json.loads(line.decode("utf-8"))
+        if network_payload.get("namespace_pid") != 1:
+            raise RuntimeError("network namespace workload is not PID 1 in its private namespace")
+        if network_payload.get("namespace_interfaces") != ["lo"]:
+            raise RuntimeError("network namespace interface evidence is incoherent")
+        if network_payload.get("network_namespace") == network_payload.get("parent_network_namespace"):
+            raise RuntimeError("network namespace identity did not change")
+        if network_payload.get("ipv4_errno") != "ENETUNREACH":
+            raise RuntimeError("IPv4 remained reachable in the isolated network namespace")
+        if network_payload.get("ipv6_errno") not in {"EADDRNOTAVAIL", "EAFNOSUPPORT", "ENETUNREACH"}:
+            raise RuntimeError("IPv6 remained reachable in the isolated network namespace")
         descendant_pid = None
         while descendant_pid is None and time.monotonic() < deadline:
             current_descendants = children(child_pid)
@@ -1530,6 +1640,15 @@ raise SystemExit(91)
         )
         return {
             "pid_namespace": True,
+            "network_namespace": True,
+            "network_namespace_distinct": True,
+            "mount_proc": True,
+            "namespace_pid": network_payload["namespace_pid"],
+            "namespace_interfaces": network_payload["namespace_interfaces"],
+            "ipv4_external_unreachable": True,
+            "ipv4_errno": network_payload["ipv4_errno"],
+            "ipv6_external_unreachable": True,
+            "ipv6_errno": network_payload["ipv6_errno"],
             "kill_child_signal": "SIGKILL",
             "supervisor_pidfd_open": True,
             "supervisor_signal": "SIGKILL",
@@ -1586,9 +1705,11 @@ raise SystemExit(91)
                 lambda: not group_exists(descendant_identity["process_group"]),
                 "setsid descendant group cleanup",
             )
+        if process.stdout is not None:
+            process.stdout.close()
 
 payload = {
-    "schema_version": 2,
+    "schema_version": 3,
     "emulated": False,
     "direct_pidfd_sigterm": prove_direct_pidfd(),
     "unshare_kill_child_sigkill": prove_unshare_kill_child(),
@@ -1612,11 +1733,11 @@ if os.getppid() != expected_parent:
     raise SystemExit("containment helper lost its exact parent after binding")
 os.execv(command[0], command)
 PY
-    partial=${REPORT}/containment-preflight.json.partial.${COORDINATOR_PID}
+    partial=${destination}.partial.${COORDINATOR_PID}
     ${SETSID} "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
         "${PYTHON}" -I -B -c "${launcher_code}" "${COORDINATOR_PID}" \
         "${PYTHON}" -I -B -c "${code}" "${UNSHARE}" "${SLEEP}" "${PYTHON}" \
-        >"${partial}" 2>"${REPORT}/containment-preflight.stderr" &
+        >"${partial}" 2>"${error_output}" &
     ACTIVE_CHILD_PID=$!
     for _ in {1..100}; do
         read_proc_identity "${ACTIVE_CHILD_PID}" state start && break
@@ -1629,34 +1750,201 @@ PY
     ACTIVE_CHILD_STARTTIME=
     [[ ${status} -eq 0 ]] || die "PID-namespace/pidfd containment preflight failed with status ${status}"
     ${JQ} -e '
-        .schema_version == 2 and .emulated == false and
+        .schema_version == 3 and .emulated == false and
         .direct_pidfd_sigterm == {
           exact_child_gone:true,pidfd_open:true,pidfd_send_signal:true,
           signal:"SIGTERM",returncode:-15} and
-        .unshare_kill_child_sigkill == {
-          descendant_pidfd_open:true,escaped_private_process_group_gone:true,
-          escaped_setsid_descendant_gone:true,exact_namespace_child_gone:true,
-          kill_child_signal:"SIGKILL",
-          pid_namespace:true,private_process_group_gone:true,
-          supervisor_pidfd_open:true,supervisor_returncode:-9,
-          supervisor_signal:"SIGKILL"}' "${partial}" >/dev/null || \
+        .unshare_kill_child_sigkill.descendant_pidfd_open == true and
+        .unshare_kill_child_sigkill.escaped_private_process_group_gone == true and
+        .unshare_kill_child_sigkill.escaped_setsid_descendant_gone == true and
+        .unshare_kill_child_sigkill.exact_namespace_child_gone == true and
+        .unshare_kill_child_sigkill.ipv4_errno == "ENETUNREACH" and
+        .unshare_kill_child_sigkill.ipv4_external_unreachable == true and
+        (.unshare_kill_child_sigkill.ipv6_errno == "EADDRNOTAVAIL" or
+          .unshare_kill_child_sigkill.ipv6_errno == "EAFNOSUPPORT" or
+          .unshare_kill_child_sigkill.ipv6_errno == "ENETUNREACH") and
+        .unshare_kill_child_sigkill.ipv6_external_unreachable == true and
+        .unshare_kill_child_sigkill.kill_child_signal == "SIGKILL" and
+        .unshare_kill_child_sigkill.mount_proc == true and
+        .unshare_kill_child_sigkill.namespace_interfaces == ["lo"] and
+        .unshare_kill_child_sigkill.namespace_pid == 1 and
+        .unshare_kill_child_sigkill.network_namespace == true and
+        .unshare_kill_child_sigkill.network_namespace_distinct == true and
+        .unshare_kill_child_sigkill.pid_namespace == true and
+        .unshare_kill_child_sigkill.private_process_group_gone == true and
+        .unshare_kill_child_sigkill.supervisor_pidfd_open == true and
+        .unshare_kill_child_sigkill.supervisor_returncode == -9 and
+        .unshare_kill_child_sigkill.supervisor_signal == "SIGKILL"' "${partial}" >/dev/null || \
         die 'containment preflight returned an invalid result'
+    [[ ! -s ${error_output} ]] || die 'containment preflight produced unexpected stderr'
+    ${RM} -f -- "${error_output}"
     ${CHMOD} 0600 -- "${partial}"
     ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
     sync_paths "${partial}" "${REPORT}"
-    safe_publish_noreplace "${partial}" "${REPORT}/containment-preflight.json"
-    sync_paths "${REPORT}/containment-preflight.json" "${REPORT}"
+    safe_publish_noreplace "${partial}" "${destination}"
+    sync_paths "${destination}" "${destination%/*}"
+}
+
+preflight_emerge_restore_cli() {
+    local stdout=${REPORT}/emerge-restore-cli-preflight.stdout
+    local stderr=${REPORT}/emerge-restore-cli-preflight.stderr
+    local record=${REPORT}/emerge-restore-cli-preflight.json partial
+    partial=${record}.partial.${COORDINATOR_PID}
+    local stdout_sha stderr_sha containment_sha emerge_tool_line unshare_tool_line
+    local emerge_python_tool_line emerge_implementation_tool_line
+    path_absent "${stdout}" || die 'emerge restore CLI preflight stdout already exists'
+    path_absent "${stderr}" || die 'emerge restore CLI preflight stderr already exists'
+    path_absent "${record}" || die 'emerge restore CLI preflight record already exists'
+    run_tracked "${stdout}" "${stderr}" 5m --network-isolated \
+        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
+        PKGDIR="${EXPECTED_SOURCE_TARGET}" TZ=UTC PORTAGE_BINHOST= GENTOO_MIRRORS= \
+        FETCHCOMMAND=/bin/false RESUMECOMMAND=/bin/false EPYTHON="${EMERGE_EPYTHON}" \
+        "${EMERGE}" "${RESTORE_EMERGE_OPTIONS[@]}" --help
+    [[ ${TRACKED_STATUS} -eq 0 ]] || \
+        die "emerge restore CLI preflight failed with status ${TRACKED_STATUS}"
+    [[ -s ${stdout} && ! -s ${stderr} ]] || \
+        die 'emerge restore CLI preflight did not produce clean help output'
+    stdout_sha=$(${SHA256SUM} -- "${stdout}"); stdout_sha=${stdout_sha%% *}
+    stderr_sha=$(${SHA256SUM} -- "${stderr}"); stderr_sha=${stderr_sha%% *}
+    containment_sha=$(${SHA256SUM} -- "${REPORT}/containment-preflight.json")
+    containment_sha=${containment_sha%% *}
+    emerge_tool_line=$(tool_identity_line "${EMERGE}")
+    unshare_tool_line=$(tool_identity_line "${UNSHARE}")
+    emerge_python_tool_line=$(tool_identity_line "${EMERGE_PYTHON}")
+    emerge_implementation_tool_line=$(tool_identity_line "${EMERGE_IMPLEMENTATION}")
+    ${JQ} -n --arg emerge "${EMERGE}" --arg emerge_tool "${emerge_tool_line}" \
+        --arg unshare "${UNSHARE}" --arg unshare_tool "${unshare_tool_line}" \
+        --arg home "${HOME_DIR}" --arg path "${PATH_VALUE}" --arg pkgdir "${EXPECTED_SOURCE_TARGET}" \
+        --arg epython "${EMERGE_EPYTHON}" --arg emerge_python "${EMERGE_PYTHON}" \
+        --arg emerge_python_tool "${emerge_python_tool_line}" \
+        --arg emerge_implementation "${EMERGE_IMPLEMENTATION}" \
+        --arg emerge_implementation_tool "${emerge_implementation_tool_line}" \
+        --arg containment "${REPORT}/containment-preflight.json" \
+        --arg containment_sha "${containment_sha}" --arg stdout "${stdout}" \
+        --arg stdout_sha "${stdout_sha}" --arg stderr "${stderr}" --arg stderr_sha "${stderr_sha}" '
+        {schema_version:1,status:"pass",exit_status:0,
+         environment:{HOME:$home,LANG:"C",LC_ALL:"C",PATH:$path,
+           TZ:"UTC",PKGDIR:$pkgdir,PORTAGE_BINHOST:"",GENTOO_MIRRORS:"",
+           FETCHCOMMAND:"/bin/false",RESUMECOMMAND:"/bin/false",EPYTHON:$epython},
+         argv:[$emerge,"--ignore-default-opts","--ask=n","--autounmask=n",
+           "--autounmask-write=n","--buildpkg=n","--getbinpkg=n","--usepkgonly",
+           "--binpkg-changed-deps=n","--binpkg-respect-use=n","--use-ebuild-visibility=n",
+           "--nodeps","--oneshot","--verbose","--help"],
+         emerge_tool_identity:$emerge_tool,
+         portage_implementation:{epython:$epython,python:{path:$emerge_python,tool_identity:$emerge_python_tool},
+           emerge:{path:$emerge_implementation,tool_identity:$emerge_implementation_tool}},
+         containment:{network_namespace:true,pid_namespace:true,mount_proc:true,
+           launcher:[$unshare,"--pid","--net","--fork","--kill-child=KILL","--mount-proc","--"],
+           unshare_tool_identity:$unshare_tool,preflight:{path:$containment,sha256:$containment_sha}},
+         logs:{stdout:{path:$stdout,sha256:$stdout_sha},stderr:{path:$stderr,sha256:$stderr_sha}}}' \
+        >"${partial}"
+    ${CHMOD} 0600 -- "${partial}"
+    ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+    sync_paths "${partial}" "${REPORT}"
+    safe_publish_noreplace "${partial}" "${record}"
+    sync_paths "${record}" "${REPORT}"
+}
+
+bind_portage_implementation() {
+    local record=${REPORT}/portage-implementation.json
+    local match_stdout=${REPORT}/portage-package-match.stdout
+    local match_stderr=${REPORT}/portage-package-match.stderr
+    local qstdout=${REPORT}/portage-package-qcheck.stdout qstderr=${REPORT}/portage-package-qcheck.stderr
+    local partial match_sha match_stderr_sha qstdout_sha qstderr_sha
+    partial=${record}.partial.${COORDINATOR_PID}
+    local emerge_tool_line python_tool_line implementation_tool_line portageq_tool_line qcheck_tool_line
+    local actual local_path expected_hash current_hash
+    local -a matches=()
+    if [[ -f ${record} && ! -L ${record} ]]; then
+        validate_regular_trusted_file "${record}" 0
+        PORTAGE_CPV=$(${JQ} -r '.portage_cpv' "${record}") || die 'cannot load bound Portage CPV'
+        [[ ${PORTAGE_CPV} =~ ^sys-apps/portage-[0-9] ]] || die 'bound Portage CPV is malformed'
+        emerge_tool_line=$(tool_identity_line "${EMERGE}")
+        python_tool_line=$(tool_identity_line "${EMERGE_PYTHON}")
+        implementation_tool_line=$(tool_identity_line "${EMERGE_IMPLEMENTATION}")
+        portageq_tool_line=$(tool_identity_line "${PORTAGEQ}")
+        qcheck_tool_line=$(tool_identity_line "${QCHECK}")
+        ${JQ} -e --arg cpv "${PORTAGE_CPV}" --arg epython "${EMERGE_EPYTHON}" \
+            --arg emerge "${EMERGE}" --arg emerge_tool "${emerge_tool_line}" \
+            --arg python "${EMERGE_PYTHON}" --arg python_tool "${python_tool_line}" \
+            --arg implementation "${EMERGE_IMPLEMENTATION}" --arg implementation_tool "${implementation_tool_line}" \
+            --arg portageq_tool "${portageq_tool_line}" --arg qcheck_tool "${qcheck_tool_line}" '
+            .schema_version == 1 and .portage_cpv == $cpv and .epython == $epython and
+            .frontends.emerge == {path:$emerge,tool_identity:$emerge_tool} and
+            .implementation.python == {path:$python,tool_identity:$python_tool} and
+            .implementation.emerge == {path:$implementation,tool_identity:$implementation_tool} and
+            .package_match.tool_identity == $portageq_tool and .package_match.exit_status == 0 and
+            .package_check.tool_identity == $qcheck_tool and .package_check.exit_status == 0' \
+            "${record}" >/dev/null || die 'bound Portage implementation record is incoherent'
+        for actual in package_match.stdout package_match.stderr package_check.stdout package_check.stderr; do
+            local_path=$(${JQ} -r ".${actual}.path" "${record}")
+            expected_hash=$(${JQ} -r ".${actual}.sha256" "${record}")
+            validate_regular_trusted_file "${local_path}" 0
+            current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
+            [[ ${current_hash} == "${expected_hash}" ]] || die "bound Portage ${actual} changed"
+        done
+        return 0
+    fi
+    [[ ${ACTION} == create ]] || die 'bound Portage implementation record is absent'
+    run_tracked "${match_stdout}" "${match_stderr}" 5m \
+        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+        "${PORTAGEQ}" match / sys-apps/portage
+    [[ ${TRACKED_STATUS} -eq 0 && ! -s ${match_stderr} ]] || \
+        die 'exact installed Portage package lookup failed'
+    mapfile -t matches <"${match_stdout}"
+    [[ ${#matches[@]} -eq 1 && ${matches[0]} =~ ^sys-apps/portage-[0-9] ]] || \
+        die 'installed Portage package lookup did not return one exact CPV'
+    PORTAGE_CPV=${matches[0]}
+    run_tracked "${qstdout}" "${qstderr}" 30m \
+        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+        "${QCHECK}" "=${PORTAGE_CPV}"
+    [[ ${TRACKED_STATUS} -eq 0 ]] || die 'installed Portage package integrity check failed'
+    match_sha=$(${SHA256SUM} -- "${match_stdout}"); match_sha=${match_sha%% *}
+    match_stderr_sha=$(${SHA256SUM} -- "${match_stderr}"); match_stderr_sha=${match_stderr_sha%% *}
+    qstdout_sha=$(${SHA256SUM} -- "${qstdout}"); qstdout_sha=${qstdout_sha%% *}
+    qstderr_sha=$(${SHA256SUM} -- "${qstderr}"); qstderr_sha=${qstderr_sha%% *}
+    emerge_tool_line=$(tool_identity_line "${EMERGE}")
+    python_tool_line=$(tool_identity_line "${EMERGE_PYTHON}")
+    implementation_tool_line=$(tool_identity_line "${EMERGE_IMPLEMENTATION}")
+    portageq_tool_line=$(tool_identity_line "${PORTAGEQ}")
+    qcheck_tool_line=$(tool_identity_line "${QCHECK}")
+    ${JQ} -n --arg cpv "${PORTAGE_CPV}" --arg epython "${EMERGE_EPYTHON}" \
+        --arg emerge "${EMERGE}" --arg emerge_tool "${emerge_tool_line}" \
+        --arg python "${EMERGE_PYTHON}" --arg python_tool "${python_tool_line}" \
+        --arg implementation "${EMERGE_IMPLEMENTATION}" --arg implementation_tool "${implementation_tool_line}" \
+        --arg portageq_tool "${portageq_tool_line}" --arg qcheck_tool "${qcheck_tool_line}" \
+        --arg match_stdout "${match_stdout}" --arg match_sha "${match_sha}" \
+        --arg match_stderr "${match_stderr}" --arg match_stderr_sha "${match_stderr_sha}" \
+        --arg qstdout "${qstdout}" --arg qstdout_sha "${qstdout_sha}" \
+        --arg qstderr "${qstderr}" --arg qstderr_sha "${qstderr_sha}" '
+        {schema_version:1,portage_cpv:$cpv,epython:$epython,
+         frontends:{emerge:{path:$emerge,tool_identity:$emerge_tool}},
+         implementation:{python:{path:$python,tool_identity:$python_tool},
+           emerge:{path:$implementation,tool_identity:$implementation_tool}},
+         package_match:{tool:"portageq",tool_identity:$portageq_tool,argv:["portageq","match","/","sys-apps/portage"],
+           exit_status:0,stdout:{path:$match_stdout,sha256:$match_sha},stderr:{path:$match_stderr,sha256:$match_stderr_sha}},
+         package_check:{tool:"qcheck",tool_identity:$qcheck_tool,argv:["qcheck",("="+$cpv)],exit_status:0,
+           stdout:{path:$qstdout,sha256:$qstdout_sha},stderr:{path:$qstderr,sha256:$qstderr_sha}}}' >"${partial}"
+    ${CHMOD} 0600 -- "${partial}"
+    ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
+    sync_paths "${partial}" "${REPORT}"
+    safe_publish_noreplace "${partial}" "${record}"
+    sync_paths "${record}" "${REPORT}"
 }
 
 revalidate_all_tool_identities() {
     local output=${REPORT}/.tool-identities.revalidate.${COORDINATOR_PID}.tsv tool_name
     path_absent "${output}" || die 'stale tool-identity revalidation temporary exists'
-    printf 'logical_path\tresolved_path\tlogical_stat\tsha256\tsymlink_chain\n' >"${output}"
-    for tool_name in "${TOOL_NAMES[@]}"; do
-        tool_identity_line "${TOOL[${tool_name}]}" >>"${output}"
-    done
-    tool_identity_line "${VERIFIER}" >>"${output}"
-    tool_identity_line "${SELF}" >>"${output}"
+    {
+        printf 'logical_path\tresolved_path\tlogical_stat\tsha256\tsymlink_chain\n'
+        for tool_name in "${TOOL_NAMES[@]}"; do
+            tool_identity_line "${TOOL[${tool_name}]}"
+        done
+        tool_identity_line "${VERIFIER}"
+        tool_identity_line "${SELF}"
+        tool_identity_line "${EMERGE_PYTHON}"
+        tool_identity_line "${EMERGE_IMPLEMENTATION}"
+    } >"${output}"
     if ! ${CMP} -- "${REPORT}/tool-identities.tsv" "${output}"; then
         ${RM} -f -- "${output}"
         die 'a trusted tool identity changed during checkpoint creation'
@@ -1761,6 +2049,51 @@ capture_vdb_manifest() {
             die "unsupported object in VDB: ${path}"
         fi
     done <"${paths}"
+}
+
+capture_tree_metadata_manifest() {
+    local root=$1 output=$2 path relative fields target paths
+    paths=${output}.paths0
+    materialize_sorted_find "${paths}" 2h "${root}" -xdev
+    : >"${output}"
+    while IFS= read -r -d '' path; do
+        relative=${path#"${root}/"}
+        [[ ${path} == "${root}" ]] && relative=.
+        ! has_unsafe_text "${relative}" || die "tree path contains control whitespace: ${path}"
+        fields=$(${STAT} -c '%d:%i:%u:%g:%a:%h:%s:%Y:%Z:%F' -- "${path}") || \
+            die "cannot stat tree object: ${path}"
+        if [[ -L ${path} ]]; then
+            target=$(${READLINK} -- "${path}") || die "cannot read tree symlink: ${path}"
+            ! has_unsafe_text "${target}" || die "tree symlink has unsafe target text: ${path}"
+            printf 'symlink\t%s\t%s\t%s\n' "${relative}" "${fields}" "${target}" >>"${output}"
+        elif [[ -f ${path} ]]; then
+            printf 'file\t%s\t%s\t-\n' "${relative}" "${fields}" >>"${output}"
+        elif [[ -d ${path} ]]; then
+            printf 'directory\t%s\t%s\t-\n' "${relative}" "${fields}" >>"${output}"
+        else
+            die "unsupported object in immutable tree: ${path}"
+        fi
+    done <"${paths}"
+    ${RM} -f -- "${paths}" "${paths}.unsorted.paths0" "${paths}.unsorted.paths0.stderr" \
+        "${paths}.sort.stderr"
+    sync_paths "${output}" "${output%/*}"
+}
+
+capture_selected_sets_state() {
+    local output=$1 path fields sha
+    : >"${output}"
+    for path in "${PORTAGE_STATE_PARENT}/world" "${PORTAGE_STATE_PARENT}/world_sets"; do
+        if path_absent "${path}"; then
+            printf 'absent\t%s\t-\t-\n' "${path}" >>"${output}"
+            continue
+        fi
+        [[ -f ${path} && ! -L ${path} ]] || \
+            die "Portage selected-set object is not regular: ${path}"
+        fields=$(${STAT} -c '%d:%i:%u:%g:%a:%h:%s:%Y:%Z:%F' -- "${path}") || \
+            die "cannot stat Portage selected-set object: ${path}"
+        sha=$(${SHA256SUM} -- "${path}"); sha=${sha%% *}
+        printf 'present\t%s\t%s\t%s\n' "${path}" "${fields}" "${sha}" >>"${output}"
+    done
 }
 
 validate_snapshot_tree_trust() {
@@ -2462,65 +2795,386 @@ validate_offline_restore_directory_inventory() {
         case ${name} in
             binpkg.json|command.json|post-verifier.json|post-verifier-report.json|post-verifier-report.json.stderr|command-intent.json|attempt-ledger.sha256) ;;
             retry-intent-[0-9][0-9][0-9].json|pre-command-verifier.[0-9][0-9][0-9].json|pre-command-verifier.[0-9][0-9][0-9].json.stderr) ;;
+            containment-preflight.[0-9][0-9][0-9].json) ;;
             vdb.before.[0-9][0-9][0-9].tsv|vdb.after.[0-9][0-9][0-9].tsv) ;;
             vdb.before.[0-9][0-9][0-9].tsv.paths0*|vdb.after.[0-9][0-9][0-9].tsv.paths0*) ;;
             emerge.stdout.[0-9][0-9][0-9]|emerge.stderr.[0-9][0-9][0-9]) ;;
+            emerge.pretend.stdout.[0-9][0-9][0-9]|emerge.pretend.stderr.[0-9][0-9][0-9]) ;;
             qcheck.stdout.[0-9][0-9][0-9]|qcheck.stderr.[0-9][0-9][0-9]) ;;
+            selected-sets.before.[0-9][0-9][0-9].tsv|selected-sets.after.[0-9][0-9][0-9].tsv) ;;
+            pkgdir.before.[0-9][0-9][0-9].tsv|pkgdir.after.[0-9][0-9][0-9].tsv) ;;
+            portage-match.[0-9][0-9][0-9].stdout|portage-match.[0-9][0-9][0-9].stderr) ;;
+            portage-qcheck.before.[0-9][0-9][0-9].stdout|portage-qcheck.before.[0-9][0-9][0-9].stderr) ;;
+            portage-qcheck.after.[0-9][0-9][0-9].stdout|portage-qcheck.after.[0-9][0-9][0-9].stderr) ;;
             *) die "unexplained file in offline restore evidence: ${path}" ;;
         esac
         validate_regular_trusted_file "${path}" 0
     done
 }
 
+reconcile_incomplete_restore_preparation() {
+    local attempt=$1 intent_path=$2 restore_dir=${REPORT}/offline-restore sequence path count=0
+    local -a residue=()
+    [[ ! -e ${intent_path} && ! -L ${intent_path} ]] || return 0
+    printf -v sequence '%03d' "${attempt}"
+    residue=(
+        "${restore_dir}/vdb.before.${sequence}.tsv"
+        "${restore_dir}/vdb.before.${sequence}.tsv.paths0"
+        "${restore_dir}/vdb.before.${sequence}.tsv.paths0.unsorted.paths0"
+        "${restore_dir}/vdb.before.${sequence}.tsv.paths0.unsorted.paths0.stderr"
+        "${restore_dir}/vdb.before.${sequence}.tsv.paths0.sort.stderr"
+        "${restore_dir}/pre-command-verifier.${sequence}.json"
+        "${restore_dir}/pre-command-verifier.${sequence}.json.stderr"
+        "${restore_dir}/containment-preflight.${sequence}.json"
+        "${restore_dir}/containment-preflight.${sequence}.json.stderr"
+        "${restore_dir}/selected-sets.before.${sequence}.tsv"
+        "${restore_dir}/pkgdir.before.${sequence}.tsv"
+        "${restore_dir}/pkgdir.before.${sequence}.tsv.paths0"
+        "${restore_dir}/pkgdir.before.${sequence}.tsv.paths0.unsorted.paths0"
+        "${restore_dir}/pkgdir.before.${sequence}.tsv.paths0.unsorted.paths0.stderr"
+        "${restore_dir}/pkgdir.before.${sequence}.tsv.paths0.sort.stderr"
+        "${restore_dir}/portage-match.${sequence}.stdout"
+        "${restore_dir}/portage-match.${sequence}.stderr"
+        "${restore_dir}/portage-qcheck.before.${sequence}.stdout"
+        "${restore_dir}/portage-qcheck.before.${sequence}.stderr"
+        "${restore_dir}/emerge.pretend.stdout.${sequence}"
+        "${restore_dir}/emerge.pretend.stderr.${sequence}"
+        "${intent_path}.partial"
+    )
+    for path in "${restore_dir}/containment-preflight.${sequence}.json.partial."*; do
+        path_absent "${path}" && continue
+        residue+=("${path}")
+    done
+    for path in "${residue[@]}"; do
+        path_absent "${path}" && continue
+        require_direct_child "${path}" "${restore_dir}" 'incomplete restore preparation residue'
+        validate_regular_trusted_file "${path}" 0
+        ${RM} -f -- "${path}"
+        ((count += 1))
+    done
+    if ((count)); then
+        sync_paths "${restore_dir}"
+        printf 'INFO: reconciled %s trusted pre-intent preparation objects for restore attempt %s; no emerge intent had been published\n' \
+            "${count}" "${sequence}" >&2
+    fi
+}
+
+validate_restore_pending_attempt_record() {
+    local record=$1 attempt=$2 kind=$3 command_intent_sha=${4:--}
+    local restore_dir=${REPORT}/offline-restore archive_relative archive_path archive_sha archive_size
+    local before pre containment selected pkgdir match_stdout match_stderr portage_qstdout portage_qstderr
+    local pretend_stdout pretend_stderr before_sha pre_sha containment_sha selected_sha pkgdir_sha
+    local match_stdout_sha match_stderr_sha portage_qstdout_sha portage_qstderr_sha
+    local pretend_stdout_sha pretend_stderr_sha tool_line unshare_tool_line qcheck_tool_line portageq_tool_line binpkg_sha
+    local emerge_python_tool_line emerge_implementation_tool_line actual local_path expected_hash current_hash
+    local summary_count=0 binary_count=0 line
+    printf -v before '%s/vdb.before.%03d.tsv' "${restore_dir}" "${attempt}"
+    printf -v pre '%s/pre-command-verifier.%03d.json' "${restore_dir}" "${attempt}"
+    printf -v containment '%s/containment-preflight.%03d.json' "${restore_dir}" "${attempt}"
+    printf -v selected '%s/selected-sets.before.%03d.tsv' "${restore_dir}" "${attempt}"
+    printf -v pkgdir '%s/pkgdir.before.%03d.tsv' "${restore_dir}" "${attempt}"
+    printf -v match_stdout '%s/portage-match.%03d.stdout' "${restore_dir}" "${attempt}"
+    printf -v match_stderr '%s/portage-match.%03d.stderr' "${restore_dir}" "${attempt}"
+    printf -v portage_qstdout '%s/portage-qcheck.before.%03d.stdout' "${restore_dir}" "${attempt}"
+    printf -v portage_qstderr '%s/portage-qcheck.before.%03d.stderr' "${restore_dir}" "${attempt}"
+    printf -v pretend_stdout '%s/emerge.pretend.stdout.%03d' "${restore_dir}" "${attempt}"
+    printf -v pretend_stderr '%s/emerge.pretend.stderr.%03d' "${restore_dir}" "${attempt}"
+    for actual in "${before}" "${pre}" "${containment}" "${selected}" "${pkgdir}" \
+        "${match_stdout}" "${match_stderr}" "${portage_qstdout}" "${portage_qstderr}" \
+        "${pretend_stdout}" "${pretend_stderr}"; do
+        require_direct_child "${actual}" "${restore_dir}" 'pending restore attempt evidence path'
+        validate_regular_trusted_file "${actual}" 0
+    done
+    [[ ! -s ${match_stderr} && $(<"${match_stdout}") == "${PORTAGE_CPV}" ]] || \
+        die 'pending restore attempt Portage identity output is incoherent'
+    [[ ! -s ${pretend_stderr} ]] || die 'pending restore attempt pretend stderr is nonempty'
+    while IFS= read -r line; do
+        [[ ${line} == 'Total: 1 package (1 reinstall, 1 binary), Size of downloads: 0 KiB' ]] && \
+            ((summary_count += 1))
+        [[ ${line} == \[binary*R*\]* ]] && ((binary_count += 1))
+    done <"${pretend_stdout}"
+    [[ ${summary_count} -eq 1 && ${binary_count} -eq 1 ]] || \
+        die 'pending restore attempt pretend proof is incoherent'
+    before_sha=$(${SHA256SUM} -- "${before}"); before_sha=${before_sha%% *}
+    pre_sha=$(${SHA256SUM} -- "${pre}"); pre_sha=${pre_sha%% *}
+    containment_sha=$(${SHA256SUM} -- "${containment}"); containment_sha=${containment_sha%% *}
+    selected_sha=$(${SHA256SUM} -- "${selected}"); selected_sha=${selected_sha%% *}
+    pkgdir_sha=$(${SHA256SUM} -- "${pkgdir}"); pkgdir_sha=${pkgdir_sha%% *}
+    match_stdout_sha=$(${SHA256SUM} -- "${match_stdout}"); match_stdout_sha=${match_stdout_sha%% *}
+    match_stderr_sha=$(${SHA256SUM} -- "${match_stderr}"); match_stderr_sha=${match_stderr_sha%% *}
+    portage_qstdout_sha=$(${SHA256SUM} -- "${portage_qstdout}"); portage_qstdout_sha=${portage_qstdout_sha%% *}
+    portage_qstderr_sha=$(${SHA256SUM} -- "${portage_qstderr}"); portage_qstderr_sha=${portage_qstderr_sha%% *}
+    pretend_stdout_sha=$(${SHA256SUM} -- "${pretend_stdout}"); pretend_stdout_sha=${pretend_stdout_sha%% *}
+    pretend_stderr_sha=$(${SHA256SUM} -- "${pretend_stderr}"); pretend_stderr_sha=${pretend_stderr_sha%% *}
+    archive_relative=$(${JQ} -r '.archive_relative_path' "${restore_dir}/binpkg.json")
+    binpkg_sha=$(${SHA256SUM} -- "${restore_dir}/binpkg.json"); binpkg_sha=${binpkg_sha%% *}
+    archive_path=${DURABLE}/${archive_relative}
+    validate_regular_trusted_file "${archive_path}" 0
+    archive_sha=$(${SHA256SUM} -- "${archive_path}"); archive_sha=${archive_sha%% *}
+    archive_size=$(${STAT} -c %s -- "${archive_path}")
+    tool_line=$(tool_identity_line "${EMERGE}")
+    unshare_tool_line=$(tool_identity_line "${UNSHARE}")
+    qcheck_tool_line=$(tool_identity_line "${QCHECK}")
+    portageq_tool_line=$(tool_identity_line "${PORTAGEQ}")
+    emerge_python_tool_line=$(tool_identity_line "${EMERGE_PYTHON}")
+    emerge_implementation_tool_line=$(tool_identity_line "${EMERGE_IMPLEMENTATION}")
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg kind "${kind}" --argjson attempt "${attempt}" \
+        --arg intent_sha "${command_intent_sha}" --arg binpkg_sha "${binpkg_sha}" \
+        --arg tool "${tool_line}" --arg home "${HOME_DIR}" \
+        --arg path "${PATH_VALUE}" --arg snapshot "${DURABLE}" --arg emerge "${EMERGE}" \
+        --arg epython "${EMERGE_EPYTHON}" --arg portage_cpv "${PORTAGE_CPV}" \
+        --arg emerge_python "${EMERGE_PYTHON}" --arg emerge_python_tool "${emerge_python_tool_line}" \
+        --arg emerge_implementation "${EMERGE_IMPLEMENTATION}" \
+        --arg emerge_implementation_tool "${emerge_implementation_tool_line}" \
+        --arg portageq "${PORTAGEQ}" --arg portageq_tool "${portageq_tool_line}" \
+        --arg qcheck "${QCHECK}" --arg qcheck_tool "${qcheck_tool_line}" \
+        --arg unshare "${UNSHARE}" --arg unshare_tool "${unshare_tool_line}" \
+        --arg containment "${containment}" --arg containment_sha "${containment_sha}" \
+        --arg archive "${archive_path}" --arg relative "${archive_relative}" \
+        --argjson archive_size "${archive_size}" --arg archive_sha "${archive_sha}" \
+        --arg before "${before}" --arg before_sha "${before_sha}" --arg pre "${pre}" --arg pre_sha "${pre_sha}" \
+        --arg selected "${selected}" --arg selected_sha "${selected_sha}" \
+        --arg pkgdir_before "${pkgdir}" --arg pkgdir_before_sha "${pkgdir_sha}" \
+        --arg match_stdout "${match_stdout}" --arg match_stdout_sha "${match_stdout_sha}" \
+        --arg match_stderr "${match_stderr}" --arg match_stderr_sha "${match_stderr_sha}" \
+        --arg portage_qstdout "${portage_qstdout}" --arg portage_qstdout_sha "${portage_qstdout_sha}" \
+        --arg portage_qstderr "${portage_qstderr}" --arg portage_qstderr_sha "${portage_qstderr_sha}" \
+        --arg pretend_stdout "${pretend_stdout}" --arg pretend_stdout_sha "${pretend_stdout_sha}" \
+        --arg pretend_stderr "${pretend_stderr}" --arg pretend_stderr_sha "${pretend_stderr_sha}" '
+        (if $kind == "initial" then
+           .schema_version == 3 and .status == "supervised-command-pending" and .attempt == null
+         else
+           .schema_version == 2 and .status == "operator-authorized-retry" and
+           .attempt == $attempt and .command_intent_sha256 == $intent_sha
+         end) and
+        .checkpoint_id == $id and .binpkg_evidence_sha256 == $binpkg_sha and
+        (.started_at_unix_ns // .authorized_at_unix_ns | test("^[0-9]+$")) and
+        .emerge_tool_identity == $tool and
+        .environment == {HOME:$home,LANG:"C",LC_ALL:"C",PATH:$path,TZ:"UTC",PKGDIR:$snapshot,
+          PORTAGE_BINHOST:"",GENTOO_MIRRORS:"",FETCHCOMMAND:"/bin/false",RESUMECOMMAND:"/bin/false",EPYTHON:$epython} and
+        .argv == [$emerge,"--ignore-default-opts","--ask=n","--autounmask=n","--autounmask-write=n",
+          "--buildpkg=n","--getbinpkg=n","--usepkgonly","--binpkg-changed-deps=n",
+          "--binpkg-respect-use=n","--use-ebuild-visibility=n","--nodeps","--oneshot","--verbose",$archive] and
+        .containment == {network_namespace:true,pid_namespace:true,mount_proc:true,
+          launcher:[$unshare,"--pid","--net","--fork","--kill-child=KILL","--mount-proc","--"],
+          unshare_tool_identity:$unshare_tool,preflight:{path:$containment,sha256:$containment_sha}} and
+        .portage_implementation == {cpv:$portage_cpv,epython:$epython,
+          python:{path:$emerge_python,tool_identity:$emerge_python_tool},
+          emerge:{path:$emerge_implementation,tool_identity:$emerge_implementation_tool},
+          package_match:{tool:"portageq",tool_identity:$portageq_tool,
+            argv:[$portageq,"match","/","sys-apps/portage"],exit_status:0,
+            stdout:{path:$match_stdout,sha256:$match_stdout_sha},stderr:{path:$match_stderr,sha256:$match_stderr_sha}},
+          package_check_before:{tool:"qcheck",tool_identity:$qcheck_tool,
+            argv:[$qcheck,("="+$portage_cpv)],exit_status:0,
+            stdout:{path:$portage_qstdout,sha256:$portage_qstdout_sha},stderr:{path:$portage_qstderr,sha256:$portage_qstderr_sha}}} and
+        .selected_archive == {path:$archive,relative_path:$relative,size:$archive_size,sha256:$archive_sha} and
+        .selected_sets_before == {path:$selected,sha256:$selected_sha} and
+        .pkgdir_before == {path:$pkgdir_before,sha256:$pkgdir_before_sha} and
+        .pretend == {argv:[$emerge,"--ignore-default-opts","--ask=n","--autounmask=n","--autounmask-write=n",
+            "--buildpkg=n","--getbinpkg=n","--usepkgonly","--binpkg-changed-deps=n",
+            "--binpkg-respect-use=n","--use-ebuild-visibility=n","--nodeps","--oneshot","--verbose","--pretend",$archive],
+          exit_status:0,summary:{packages:1,reinstall:1,binary:1,download_kib:0},
+          logs:{stdout:{path:$pretend_stdout,sha256:$pretend_stdout_sha},stderr:{path:$pretend_stderr,sha256:$pretend_stderr_sha}}} and
+        .vdb_before == {path:$before,sha256:$before_sha} and
+        .pre_command_verifier == {path:$pre,sha256:$pre_sha}' "${record}" >/dev/null || \
+        die "offline restore ${kind} attempt evidence is incoherent"
+    for actual in vdb_before pre_command_verifier containment.preflight selected_sets_before pkgdir_before \
+        portage_implementation.package_match.stdout portage_implementation.package_match.stderr \
+        portage_implementation.package_check_before.stdout portage_implementation.package_check_before.stderr \
+        pretend.logs.stdout pretend.logs.stderr; do
+        local_path=$(${JQ} -r ".${actual}.path" "${record}")
+        expected_hash=$(${JQ} -r ".${actual}.sha256" "${record}")
+        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
+        [[ ${current_hash} == "${expected_hash}" ]] || die "offline restore ${kind} ${actual} evidence changed"
+    done
+}
+
+validate_successful_restore_command_record() {
+    local record=$1 attempt=$2 command_intent_sha=$3 binpkg_sha=$4
+    local restore_dir=${REPORT}/offline-restore archive_relative archive_path archive_sha archive_size
+    local before after pre containment selected_before selected_after pkgdir_before pkgdir_after
+    local match_stdout match_stderr portage_qbefore_stdout portage_qbefore_stderr
+    local portage_qafter_stdout portage_qafter_stderr pretend_stdout pretend_stderr stdout stderr qstdout qstderr
+    local transaction_vdb_before transaction_selected_before transaction_pkgdir_before
+    local before_sha after_sha pre_sha containment_sha selected_before_sha selected_after_sha
+    local pkgdir_before_sha pkgdir_after_sha match_stdout_sha match_stderr_sha
+    local transaction_vdb_before_sha transaction_selected_before_sha transaction_pkgdir_before_sha
+    local portage_qbefore_stdout_sha portage_qbefore_stderr_sha portage_qafter_stdout_sha portage_qafter_stderr_sha
+    local pretend_stdout_sha pretend_stderr_sha stdout_sha stderr_sha qstdout_sha qstderr_sha
+    local tool_line unshare_tool_line qcheck_tool_line portageq_tool_line emerge_python_tool_line emerge_implementation_tool_line
+    local actual digest binary_count=0 source_count=0 summary_count=0 pretend_binary_count=0 line
+    printf -v before '%s/vdb.before.%03d.tsv' "${restore_dir}" "${attempt}"
+    printf -v after '%s/vdb.after.%03d.tsv' "${restore_dir}" "${attempt}"
+    printf -v pre '%s/pre-command-verifier.%03d.json' "${restore_dir}" "${attempt}"
+    printf -v containment '%s/containment-preflight.%03d.json' "${restore_dir}" "${attempt}"
+    printf -v selected_before '%s/selected-sets.before.%03d.tsv' "${restore_dir}" "${attempt}"
+    printf -v selected_after '%s/selected-sets.after.%03d.tsv' "${restore_dir}" "${attempt}"
+    printf -v pkgdir_before '%s/pkgdir.before.%03d.tsv' "${restore_dir}" "${attempt}"
+    printf -v pkgdir_after '%s/pkgdir.after.%03d.tsv' "${restore_dir}" "${attempt}"
+    printf -v match_stdout '%s/portage-match.%03d.stdout' "${restore_dir}" "${attempt}"
+    printf -v match_stderr '%s/portage-match.%03d.stderr' "${restore_dir}" "${attempt}"
+    printf -v portage_qbefore_stdout '%s/portage-qcheck.before.%03d.stdout' "${restore_dir}" "${attempt}"
+    printf -v portage_qbefore_stderr '%s/portage-qcheck.before.%03d.stderr' "${restore_dir}" "${attempt}"
+    printf -v portage_qafter_stdout '%s/portage-qcheck.after.%03d.stdout' "${restore_dir}" "${attempt}"
+    printf -v portage_qafter_stderr '%s/portage-qcheck.after.%03d.stderr' "${restore_dir}" "${attempt}"
+    printf -v pretend_stdout '%s/emerge.pretend.stdout.%03d' "${restore_dir}" "${attempt}"
+    printf -v pretend_stderr '%s/emerge.pretend.stderr.%03d' "${restore_dir}" "${attempt}"
+    printf -v stdout '%s/emerge.stdout.%03d' "${restore_dir}" "${attempt}"
+    printf -v stderr '%s/emerge.stderr.%03d' "${restore_dir}" "${attempt}"
+    printf -v qstdout '%s/qcheck.stdout.%03d' "${restore_dir}" "${attempt}"
+    printf -v qstderr '%s/qcheck.stderr.%03d' "${restore_dir}" "${attempt}"
+    transaction_vdb_before=$(${JQ} -r '.vdb_before.path' "${restore_dir}/command-intent.json")
+    transaction_selected_before=$(${JQ} -r '.selected_sets_before.path' "${restore_dir}/command-intent.json")
+    transaction_pkgdir_before=$(${JQ} -r '.pkgdir_before.path' "${restore_dir}/command-intent.json")
+    for actual in "${before}" "${after}" "${pre}" "${containment}" "${selected_before}" "${selected_after}" \
+        "${pkgdir_before}" "${pkgdir_after}" "${match_stdout}" "${match_stderr}" \
+        "${portage_qbefore_stdout}" "${portage_qbefore_stderr}" "${portage_qafter_stdout}" "${portage_qafter_stderr}" \
+        "${pretend_stdout}" "${pretend_stderr}" "${stdout}" "${stderr}" "${qstdout}" "${qstderr}"; do
+        require_direct_child "${actual}" "${restore_dir}" 'successful restore evidence path'
+        validate_regular_trusted_file "${actual}" 0
+    done
+    for actual in "${transaction_vdb_before}" "${transaction_selected_before}" "${transaction_pkgdir_before}"; do
+        require_direct_child "${actual}" "${restore_dir}" 'successful restore transaction baseline path'
+        validate_regular_trusted_file "${actual}" 0
+    done
+    [[ ! -s ${match_stderr} && $(<"${match_stdout}") == "${PORTAGE_CPV}" ]] || \
+        die 'successful restore Portage identity output is incoherent'
+    [[ ! -s ${pretend_stderr} ]] || die 'successful restore pretend stderr is nonempty'
+    while IFS= read -r line; do
+        [[ ${line} == 'Total: 1 package (1 reinstall, 1 binary), Size of downloads: 0 KiB' ]] && \
+            ((summary_count += 1))
+        [[ ${line} == \[binary*R*\]* ]] && ((pretend_binary_count += 1))
+    done <"${pretend_stdout}"
+    [[ ${summary_count} -eq 1 && ${pretend_binary_count} -eq 1 ]] || \
+        die 'successful restore pretend proof is incoherent'
+    while IFS= read -r line; do
+        [[ ${line} == '>>> Emerging binary ('* ]] && ((binary_count += 1))
+        [[ ${line} == '>>> Emerging ('* && ${line} != '>>> Emerging binary ('* ]] && ((source_count += 1))
+    done <"${stdout}"
+    [[ ${binary_count} -eq 1 && ${source_count} -eq 0 ]] || die 'successful restore log is not binary-only'
+    ${CMP} -- "${selected_before}" "${selected_after}" || die 'successful restore selected-set state changed'
+    ${CMP} -- "${pkgdir_before}" "${pkgdir_after}" || die 'successful restore PKGDIR tree changed'
+    validate_vdb_transition_confined "${before}" "${after}" "${RESTORE_CPV}"
+    ${CMP} -- "${transaction_selected_before}" "${selected_after}" || \
+        die 'successful restore selected-set state differs from the first attempt baseline'
+    ${CMP} -- "${transaction_pkgdir_before}" "${pkgdir_after}" || \
+        die 'successful restore PKGDIR differs from the first attempt baseline'
+    validate_vdb_transition_confined "${transaction_vdb_before}" "${after}" "${RESTORE_CPV}"
+    for actual in before after pre containment selected_before selected_after pkgdir_before pkgdir_after \
+        match_stdout match_stderr portage_qbefore_stdout portage_qbefore_stderr portage_qafter_stdout portage_qafter_stderr \
+        pretend_stdout pretend_stderr stdout stderr qstdout qstderr; do
+        digest=$(${SHA256SUM} -- "${!actual}"); digest=${digest%% *}
+        printf -v "${actual}_sha" '%s' "${digest}"
+    done
+    transaction_vdb_before_sha=$(${SHA256SUM} -- "${transaction_vdb_before}"); transaction_vdb_before_sha=${transaction_vdb_before_sha%% *}
+    transaction_selected_before_sha=$(${SHA256SUM} -- "${transaction_selected_before}"); transaction_selected_before_sha=${transaction_selected_before_sha%% *}
+    transaction_pkgdir_before_sha=$(${SHA256SUM} -- "${transaction_pkgdir_before}"); transaction_pkgdir_before_sha=${transaction_pkgdir_before_sha%% *}
+    archive_relative=$(${JQ} -r '.archive_relative_path' "${restore_dir}/binpkg.json")
+    archive_path=${DURABLE}/${archive_relative}
+    validate_regular_trusted_file "${archive_path}" 0
+    archive_sha=$(${SHA256SUM} -- "${archive_path}"); archive_sha=${archive_sha%% *}
+    archive_size=$(${STAT} -c %s -- "${archive_path}")
+    tool_line=$(tool_identity_line "${EMERGE}")
+    unshare_tool_line=$(tool_identity_line "${UNSHARE}")
+    qcheck_tool_line=$(tool_identity_line "${QCHECK}")
+    portageq_tool_line=$(tool_identity_line "${PORTAGEQ}")
+    emerge_python_tool_line=$(tool_identity_line "${EMERGE_PYTHON}")
+    emerge_implementation_tool_line=$(tool_identity_line "${EMERGE_IMPLEMENTATION}")
+    ${JQ} -e --arg id "${CHECKPOINT_ID}" --argjson attempt "${attempt}" --arg intent_sha "${command_intent_sha}" \
+        --arg binpkg_sha "${binpkg_sha}" --arg tool "${tool_line}" --arg home "${HOME_DIR}" --arg path "${PATH_VALUE}" \
+        --arg snapshot "${DURABLE}" --arg vdb "${VDB}" --arg cpv "${RESTORE_CPV}" --arg emerge "${EMERGE}" \
+        --arg epython "${EMERGE_EPYTHON}" --arg portage_cpv "${PORTAGE_CPV}" \
+        --arg emerge_python "${EMERGE_PYTHON}" --arg emerge_python_tool "${emerge_python_tool_line}" \
+        --arg emerge_implementation "${EMERGE_IMPLEMENTATION}" \
+        --arg emerge_implementation_tool "${emerge_implementation_tool_line}" \
+        --arg portageq "${PORTAGEQ}" --arg portageq_tool "${portageq_tool_line}" \
+        --arg qcheck "${QCHECK}" --arg qcheck_tool "${qcheck_tool_line}" \
+        --arg unshare "${UNSHARE}" --arg unshare_tool "${unshare_tool_line}" \
+        --arg containment "${containment}" --arg containment_sha "${containment_sha}" \
+        --arg archive "${archive_path}" --arg relative "${archive_relative}" --argjson archive_size "${archive_size}" \
+        --arg archive_sha "${archive_sha}" --arg before "${before}" --arg before_sha "${before_sha}" \
+        --arg after "${after}" --arg after_sha "${after_sha}" --arg pre "${pre}" --arg pre_sha "${pre_sha}" \
+        --arg selected_before "${selected_before}" --arg selected_before_sha "${selected_before_sha}" \
+        --arg selected_after "${selected_after}" --arg selected_after_sha "${selected_after_sha}" \
+        --arg pkgdir_before "${pkgdir_before}" --arg pkgdir_before_sha "${pkgdir_before_sha}" \
+        --arg pkgdir_after "${pkgdir_after}" --arg pkgdir_after_sha "${pkgdir_after_sha}" \
+        --arg transaction_vdb_before "${transaction_vdb_before}" \
+        --arg transaction_vdb_before_sha "${transaction_vdb_before_sha}" \
+        --arg transaction_selected_before "${transaction_selected_before}" \
+        --arg transaction_selected_before_sha "${transaction_selected_before_sha}" \
+        --arg transaction_pkgdir_before "${transaction_pkgdir_before}" \
+        --arg transaction_pkgdir_before_sha "${transaction_pkgdir_before_sha}" \
+        --arg match_stdout "${match_stdout}" --arg match_stdout_sha "${match_stdout_sha}" \
+        --arg match_stderr "${match_stderr}" --arg match_stderr_sha "${match_stderr_sha}" \
+        --arg portage_qbefore_stdout "${portage_qbefore_stdout}" --arg portage_qbefore_stdout_sha "${portage_qbefore_stdout_sha}" \
+        --arg portage_qbefore_stderr "${portage_qbefore_stderr}" --arg portage_qbefore_stderr_sha "${portage_qbefore_stderr_sha}" \
+        --arg portage_qafter_stdout "${portage_qafter_stdout}" --arg portage_qafter_stdout_sha "${portage_qafter_stdout_sha}" \
+        --arg portage_qafter_stderr "${portage_qafter_stderr}" --arg portage_qafter_stderr_sha "${portage_qafter_stderr_sha}" \
+        --arg pretend_stdout "${pretend_stdout}" --arg pretend_stdout_sha "${pretend_stdout_sha}" \
+        --arg pretend_stderr "${pretend_stderr}" --arg pretend_stderr_sha "${pretend_stderr_sha}" \
+        --arg stdout "${stdout}" --arg stdout_sha "${stdout_sha}" --arg stderr "${stderr}" --arg stderr_sha "${stderr_sha}" \
+        --arg qstdout "${qstdout}" --arg qstdout_sha "${qstdout_sha}" --arg qstderr "${qstderr}" --arg qstderr_sha "${qstderr_sha}" '
+        .schema_version == 4 and .sequence == 2 and .checkpoint_id == $id and .attempt == $attempt and
+        .exit_status == 0 and .offline == true and .network_isolated == true and .usepkgonly == true and
+        .getbinpkg == false and .nodeps == true and .selected_snapshot == $snapshot and .pkgdir == $snapshot and
+        .vdb == $vdb and .restored_cpv == $cpv and .binpkg_evidence_sha256 == $binpkg_sha and
+        .command_intent_sha256 == $intent_sha and .emerge_tool_identity == $tool and
+        .environment == {HOME:$home,LANG:"C",LC_ALL:"C",PATH:$path,TZ:"UTC",PKGDIR:$snapshot,
+          PORTAGE_BINHOST:"",GENTOO_MIRRORS:"",FETCHCOMMAND:"/bin/false",RESUMECOMMAND:"/bin/false",EPYTHON:$epython} and
+        .containment == {network_namespace:true,pid_namespace:true,mount_proc:true,
+          launcher:[$unshare,"--pid","--net","--fork","--kill-child=KILL","--mount-proc","--"],
+          unshare_tool_identity:$unshare_tool,preflight:{path:$containment,sha256:$containment_sha}} and
+        .portage_implementation == {cpv:$portage_cpv,epython:$epython,
+          python:{path:$emerge_python,tool_identity:$emerge_python_tool},
+          emerge:{path:$emerge_implementation,tool_identity:$emerge_implementation_tool},
+          package_match:{tool:"portageq",tool_identity:$portageq_tool,
+            argv:[$portageq,"match","/","sys-apps/portage"],exit_status:0,
+            stdout:{path:$match_stdout,sha256:$match_stdout_sha},stderr:{path:$match_stderr,sha256:$match_stderr_sha}},
+          package_check_before:{tool:"qcheck",tool_identity:$qcheck_tool,argv:[$qcheck,("="+$portage_cpv)],exit_status:0,
+            stdout:{path:$portage_qbefore_stdout,sha256:$portage_qbefore_stdout_sha},stderr:{path:$portage_qbefore_stderr,sha256:$portage_qbefore_stderr_sha}},
+          package_check_after:{tool:"qcheck",tool_identity:$qcheck_tool,argv:[$qcheck,("="+$portage_cpv)],exit_status:0,
+            stdout:{path:$portage_qafter_stdout,sha256:$portage_qafter_stdout_sha},stderr:{path:$portage_qafter_stderr,sha256:$portage_qafter_stderr_sha}}} and
+        .selected_archive == {path:$archive,relative_path:$relative,size_before:$archive_size,sha256_before:$archive_sha,
+          size_after:$archive_size,sha256_after:$archive_sha,unchanged:true} and
+        .selected_sets_transition == {before:{path:$selected_before,sha256:$selected_before_sha},
+          after:{path:$selected_after,sha256:$selected_after_sha},unchanged:true} and
+        .pkgdir_transition == {before:{path:$pkgdir_before,sha256:$pkgdir_before_sha},
+          after:{path:$pkgdir_after,sha256:$pkgdir_after_sha},unchanged:true} and
+        .transaction_baseline_transition == {
+          vdb:{before:{path:$transaction_vdb_before,sha256:$transaction_vdb_before_sha},
+            after:{path:$after,sha256:$after_sha},confined_to_restored_cpv:true},
+          selected_sets:{before:{path:$transaction_selected_before,sha256:$transaction_selected_before_sha},
+            after:{path:$selected_after,sha256:$selected_after_sha},unchanged:true},
+          pkgdir:{before:{path:$transaction_pkgdir_before,sha256:$transaction_pkgdir_before_sha},
+            after:{path:$pkgdir_after,sha256:$pkgdir_after_sha},unchanged:true}} and
+        .pretend == {argv:[$emerge,"--ignore-default-opts","--ask=n","--autounmask=n","--autounmask-write=n",
+            "--buildpkg=n","--getbinpkg=n","--usepkgonly","--binpkg-changed-deps=n",
+            "--binpkg-respect-use=n","--use-ebuild-visibility=n","--nodeps","--oneshot","--verbose","--pretend",$archive],
+          exit_status:0,summary:{packages:1,reinstall:1,binary:1,download_kib:0},
+          logs:{stdout:{path:$pretend_stdout,sha256:$pretend_stdout_sha},stderr:{path:$pretend_stderr,sha256:$pretend_stderr_sha}}} and
+        .command == [$emerge,"--ignore-default-opts","--ask=n","--autounmask=n","--autounmask-write=n",
+          "--buildpkg=n","--getbinpkg=n","--usepkgonly","--binpkg-changed-deps=n",
+          "--binpkg-respect-use=n","--use-ebuild-visibility=n","--nodeps","--oneshot","--verbose",$archive] and
+        .vdb_transition == {before:{path:$before,sha256:$before_sha},after:{path:$after,sha256:$after_sha},changed:true} and
+        .pre_command_verifier == {path:$pre,sha256:$pre_sha} and
+        .logs == {stdout:{path:$stdout,sha256:$stdout_sha},stderr:{path:$stderr,sha256:$stderr_sha}} and
+        .package_check == {tool:"qcheck",tool_identity:$qcheck_tool,argv:[$qcheck,("="+$cpv)],exit_status:0,
+          stdout:{path:$qstdout,sha256:$qstdout_sha},stderr:{path:$qstderr,sha256:$qstderr_sha}}' "${record}" >/dev/null || \
+        die 'offline restore command evidence is not an exact successful supervised restore'
+}
+
 validate_restore_attempt_prefix() {
     local restore_dir=${REPORT}/offline-restore command_intent=${REPORT}/offline-restore/command-intent.json
-    local binpkg=${REPORT}/offline-restore/binpkg.json binpkg_sha tool_line local_path expected_hash current_hash
-    local retry_path expected_retry retry_index=0 command_intent_sha actual
+    local binpkg=${REPORT}/offline-restore/binpkg.json retry_path expected_retry retry_index=0 command_intent_sha
     validate_regular_trusted_file "${binpkg}" 0
     validate_regular_trusted_file "${command_intent}" 0
-    binpkg_sha=$(${SHA256SUM} -- "${binpkg}"); binpkg_sha=${binpkg_sha%% *}
-    tool_line=$(tool_identity_line "${EMERGE}")
-    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg tool "${tool_line}" --arg home "${HOME_DIR}" \
-        --arg snapshot "${DURABLE}" --arg cpv "${RESTORE_CPV}" --arg emerge "${EMERGE}" \
-        --arg binpkg_sha "${binpkg_sha}" '.schema_version == 1 and .checkpoint_id == $id and
-        .status == "supervised-command-pending" and .emerge_tool_identity == $tool and
-        .environment == {HOME:$home,LANG:"C",LC_ALL:"C",TZ:"UTC",PKGDIR:$snapshot} and
-        .argv == [$emerge,"--ignore-default-opts","--offline","--usepkgonly","--getbinpkg=n",
-          "--nodeps","--oneshot",("="+$cpv)] and .binpkg_evidence_sha256 == $binpkg_sha and
-        (.vdb_before.path | type == "string") and (.vdb_before.sha256 | test("^[0-9a-f]{64}$")) and
-        (.pre_command_verifier.path | type == "string") and
-        (.pre_command_verifier.sha256 | test("^[0-9a-f]{64}$"))' "${command_intent}" >/dev/null || \
-        die 'offline restore command intent is incoherent before retry'
-    for actual in vdb_before pre_command_verifier; do
-        local_path=$(${JQ} -r ".${actual}.path" "${command_intent}")
-        expected_hash=$(${JQ} -r ".${actual}.sha256" "${command_intent}")
-        require_direct_child "${local_path}" "${restore_dir}" 'command-intent evidence path'
-        validate_regular_trusted_file "${local_path}" 0
-        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
-        [[ ${current_hash} == "${expected_hash}" ]] || die "command-intent ${actual} evidence changed before retry"
-    done
+    validate_restore_pending_attempt_record "${command_intent}" 0 initial
     command_intent_sha=$(${SHA256SUM} -- "${command_intent}"); command_intent_sha=${command_intent_sha%% *}
     for retry_path in "${restore_dir}"/retry-intent-[0-9][0-9][0-9].json; do
         [[ -f ${retry_path} && ! -L ${retry_path} ]] || continue
         ((retry_index += 1)); printf -v expected_retry 'retry-intent-%03d.json' "${retry_index}"
         [[ ${retry_path##*/} == "${expected_retry}" ]] || die 'retry intents are not contiguous before retry'
-        ${JQ} -e --arg id "${CHECKPOINT_ID}" --argjson attempt "${retry_index}" \
-            --arg intent_sha "${command_intent_sha}" '.schema_version == 1 and
-            .checkpoint_id == $id and .status == "operator-authorized-retry" and
-            .attempt == $attempt and .command_intent_sha256 == $intent_sha and
-            (.authorized_at_unix_ns | test("^[0-9]+$")) and
-            (.vdb_before.path | type == "string") and (.vdb_before.sha256 | test("^[0-9a-f]{64}$")) and
-            (.pre_command_verifier.path | type == "string") and
-            (.pre_command_verifier.sha256 | test("^[0-9a-f]{64}$"))' "${retry_path}" >/dev/null || \
-            die 'offline restore retry intent is incoherent before retry'
-        for actual in vdb_before pre_command_verifier; do
-            local_path=$(${JQ} -r ".${actual}.path" "${retry_path}")
-            expected_hash=$(${JQ} -r ".${actual}.sha256" "${retry_path}")
-            require_direct_child "${local_path}" "${restore_dir}" 'retry-intent evidence path'
-            validate_regular_trusted_file "${local_path}" 0
-            current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
-            [[ ${current_hash} == "${expected_hash}" ]] || die "retry-intent ${actual} evidence changed before retry"
-        done
+        validate_restore_pending_attempt_record "${retry_path}" "${retry_index}" retry "${command_intent_sha}"
     done
     VALIDATED_RETRY_COUNT=${retry_index}
 }
@@ -2569,7 +3223,11 @@ validate_offline_restore_evidence() {
     local archive_relative archive_path archive_sha tool_line qcheck_tool_line command_intent command_intent_sha
     local local_path expected_hash current_hash activation_actual
     local selected_ns start_ns end_ns post_ns attempt retry_path retry_sha
-    local retry_index=0 retry_at retry_before retry_pre expected_retry
+    local retry_index=0 retry_at expected_retry containment_preflight containment_sha unshare_tool_line
+    local emerge_python_tool_line emerge_implementation_tool_line portageq_tool_line qcheck_tool_line
+    local selected_before selected_after pkgdir_before pkgdir_after pretend_stdout pretend_stderr
+    local portage_match_stdout portage_match_stderr portage_qcheck_before_stdout portage_qcheck_before_stderr
+    local portage_qcheck_after_stdout portage_qcheck_after_stderr archive_size
     restore_dir=${REPORT}/offline-restore
     binpkg=${restore_dir}/binpkg.json
     command=${restore_dir}/command.json
@@ -2610,7 +3268,7 @@ validate_offline_restore_evidence() {
         current_hash=$(${SHA256SUM} -- "${retry_path}"); current_hash=${current_hash%% *}
         [[ ${current_hash} == "${retry_sha}" ]] || die 'successful retry authorization changed'
         ${JQ} -e --arg id "${CHECKPOINT_ID}" --argjson attempt "${attempt}" \
-            --arg intent_sha "${command_intent_sha}" '.schema_version == 1 and
+            --arg intent_sha "${command_intent_sha}" '.schema_version == 2 and
             .checkpoint_id == $id and .status == "operator-authorized-retry" and
             .attempt == $attempt and .command_intent_sha256 == $intent_sha' \
             "${retry_path}" >/dev/null || die 'successful retry authorization is incoherent'
@@ -2634,55 +3292,21 @@ validate_offline_restore_evidence() {
     done
     validate_vdb_transition_confined "${before}" "${after}" "${RESTORE_CPV}"
     tool_line=$(tool_identity_line "${EMERGE}")
+    unshare_tool_line=$(tool_identity_line "${UNSHARE}")
     qcheck_tool_line=$(tool_identity_line "${QCHECK}")
-    # shellcheck disable=SC2016 # jq variables, not shell expansions.
-    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg tool "${tool_line}" --arg home "${HOME_DIR}" \
-        --arg snapshot "${DURABLE}" --arg cpv "${RESTORE_CPV}" --arg emerge "${EMERGE}" \
-        --arg binpkg_sha "${binpkg_sha}" '
-        .schema_version == 1 and .checkpoint_id == $id and .status == "supervised-command-pending" and
-        .emerge_tool_identity == $tool and
-        .environment == {HOME:$home,LANG:"C",LC_ALL:"C",TZ:"UTC",PKGDIR:$snapshot} and
-        .argv == [$emerge,"--ignore-default-opts","--offline","--usepkgonly","--getbinpkg=n",
-          "--nodeps","--oneshot",("="+$cpv)] and .binpkg_evidence_sha256 == $binpkg_sha and
-        (.vdb_before.path | type == "string") and (.vdb_before.sha256 | test("^[0-9a-f]{64}$")) and
-        (.pre_command_verifier.path | type == "string") and
-        (.pre_command_verifier.sha256 | test("^[0-9a-f]{64}$"))' "${command_intent}" >/dev/null || \
-        die 'offline restore command intent is incoherent'
-    for actual in vdb_before pre_command_verifier; do
-        local_path=$(${JQ} -r ".${actual}.path" "${command_intent}")
-        expected_hash=$(${JQ} -r ".${actual}.sha256" "${command_intent}")
-        require_direct_child "${local_path}" "${restore_dir}" 'command-intent evidence path'
-        validate_regular_trusted_file "${local_path}" 0
-        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
-        [[ ${current_hash} == "${expected_hash}" ]] || die "command-intent ${actual} evidence changed"
-    done
+    portageq_tool_line=$(tool_identity_line "${PORTAGEQ}")
+    emerge_python_tool_line=$(tool_identity_line "${EMERGE_PYTHON}")
+    emerge_implementation_tool_line=$(tool_identity_line "${EMERGE_IMPLEMENTATION}")
+    validate_restore_pending_attempt_record "${command_intent}" 0 initial
     for retry_path in "${restore_dir}"/retry-intent-[0-9][0-9][0-9].json; do
         [[ -f ${retry_path} && ! -L ${retry_path} ]] || continue
         ((retry_index += 1))
         printf -v expected_retry 'retry-intent-%03d.json' "${retry_index}"
         [[ ${retry_path##*/} == "${expected_retry}" ]] || die 'retry intents are not contiguous'
         validate_regular_trusted_file "${retry_path}" 0
-        ${JQ} -e --arg id "${CHECKPOINT_ID}" --argjson attempt "${retry_index}" \
-            --arg intent_sha "${command_intent_sha}" '.schema_version == 1 and
-            .checkpoint_id == $id and .status == "operator-authorized-retry" and
-            .attempt == $attempt and .command_intent_sha256 == $intent_sha and
-            (.authorized_at_unix_ns | test("^[0-9]+$")) and
-            (.vdb_before.path | type == "string") and (.vdb_before.sha256 | test("^[0-9a-f]{64}$")) and
-            (.pre_command_verifier.path | type == "string") and
-            (.pre_command_verifier.sha256 | test("^[0-9a-f]{64}$"))' "${retry_path}" >/dev/null || \
-            die 'offline restore retry intent is incoherent'
+        validate_restore_pending_attempt_record "${retry_path}" "${retry_index}" retry "${command_intent_sha}"
         retry_at=$(${JQ} -r '.authorized_at_unix_ns' "${retry_path}")
-        retry_before=$(${JQ} -r '.vdb_before.path' "${retry_path}")
-        retry_pre=$(${JQ} -r '.pre_command_verifier.path' "${retry_path}")
-        for actual in vdb_before pre_command_verifier; do
-            local_path=$(${JQ} -r ".${actual}.path" "${retry_path}")
-            expected_hash=$(${JQ} -r ".${actual}.sha256" "${retry_path}")
-            require_direct_child "${local_path}" "${restore_dir}" 'retry-intent evidence path'
-            validate_regular_trusted_file "${local_path}" 0
-            current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
-            [[ ${current_hash} == "${expected_hash}" ]] || die "retry-intent ${actual} evidence changed"
-        done
-        [[ -n ${retry_before}${retry_pre} && ${retry_at} =~ ^[0-9]+$ ]] || die 'retry intent fields are malformed'
+        [[ ${retry_at} =~ ^[0-9]+$ ]] || die 'retry intent fields are malformed'
     done
     if ((attempt == 0)); then
         ((retry_index == 0)) || die 'initial successful restore has unexplained retry intents'
@@ -2690,42 +3314,7 @@ validate_offline_restore_evidence() {
         ((attempt == retry_index)) || die 'successful restore does not bind the latest contiguous retry'
         ((retry_at <= start_ns)) || die 'retry authorization occurs after successful attempt start'
     fi
-    # shellcheck disable=SC2016 # jq variables, not shell expansions.
-    ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg cpv "${RESTORE_CPV}" \
-        --arg snapshot "${DURABLE}" --arg vdb "${VDB}" --arg emerge "${EMERGE}" \
-        --arg tool "${tool_line}" --arg qcheck_tool "${qcheck_tool_line}" \
-        --arg home "${HOME_DIR}" --arg binpkg_sha "${binpkg_sha}" \
-        --arg intent_sha "${command_intent_sha}" '
-        .schema_version == 2 and .sequence == 2 and .checkpoint_id == $id and
-        .exit_status == 0 and .offline == true and .usepkgonly == true and
-        .getbinpkg == false and .nodeps == true and .selected_snapshot == $snapshot and
-        .pkgdir == $snapshot and .vdb == $vdb and .restored_cpv == $cpv and
-        .binpkg_evidence_sha256 == $binpkg_sha and .command_intent_sha256 == $intent_sha and
-        .emerge_tool_identity == $tool and
-        .environment == {HOME:$home,LANG:"C",LC_ALL:"C",TZ:"UTC",PKGDIR:$snapshot} and
-        .command == [$emerge,"--ignore-default-opts","--offline","--usepkgonly",
-          "--getbinpkg=n","--nodeps","--oneshot",("="+$cpv)] and
-        .vdb_transition.changed == true and .package_check.exit_status == 0 and
-        .package_check.tool_identity == $qcheck_tool' "${command}" >/dev/null || \
-        die 'offline restore command evidence is not an exact successful supervised restore'
-    for actual in before after; do
-        local_path=$(${JQ} -r ".vdb_transition.${actual}.path" "${command}")
-        expected_hash=$(${JQ} -r ".vdb_transition.${actual}.sha256" "${command}")
-        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
-        [[ ${current_hash} == "${expected_hash}" ]] || die "offline restore ${actual} VDB manifest changed"
-    done
-    for actual in stdout stderr; do
-        local_path=$(${JQ} -r ".package_check.${actual}.path" "${command}")
-        expected_hash=$(${JQ} -r ".package_check.${actual}.sha256" "${command}")
-        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
-        [[ ${current_hash} == "${expected_hash}" ]] || die "offline restore package-check ${actual} changed"
-    done
-    for actual in stdout stderr; do
-        local_path=$(${JQ} -r ".logs.${actual}.path" "${command}")
-        expected_hash=$(${JQ} -r ".logs.${actual}.sha256" "${command}")
-        current_hash=$(${SHA256SUM} -- "${local_path}"); current_hash=${current_hash%% *}
-        [[ ${current_hash} == "${expected_hash}" ]] || die "offline restore emerge ${actual} changed"
-    done
+    validate_successful_restore_command_record "${command}" "${attempt}" "${command_intent_sha}" "${binpkg_sha}"
     # shellcheck disable=SC2016 # jq variables, not shell expansions.
     ${JQ} -e --arg id "${CHECKPOINT_ID}" --arg command_sha "${command_sha}" \
         --arg binpkg_sha "${binpkg_sha}" --arg verifier "${VERIFIER}" \
@@ -2763,13 +3352,28 @@ finalize_offline_restore_supervised() {
     local before after before_sha after_sha started_at started_ns completed_at completed_ns
     local pre_sha
     local stdout stderr stdout_sha stderr_sha qstdout qstderr qstdout_sha qstderr_sha current_report
-    local existing retry_count=0 grep_match=0 command_intent_sha manifest_cpv manifest_relative
-    local manifest_size manifest_sha manifest_matches=0 archive_size
+    local existing retry_count=0 grep_match=0 command_intent_sha manifest_cpv manifest_relative preparation_intent
+    local manifest_size manifest_sha manifest_matches=0 archive_size original_archive_size original_archive_sha containment_preflight containment_sha unshare_tool_line
+    local pretend_stdout pretend_stderr pretend_stdout_sha pretend_stderr_sha pretend_summary_count pretend_binary_count line
+    local emerge_binary_count emerge_source_count
+    local selected_before selected_after selected_before_sha selected_after_sha
+    local pkgdir_before pkgdir_after pkgdir_before_sha pkgdir_after_sha archive_sha_after archive_size_after
+    local transaction_vdb_before transaction_vdb_before_sha transaction_selected_before transaction_selected_before_sha
+    local transaction_pkgdir_before transaction_pkgdir_before_sha baseline_current_sha
+    local portage_match_stdout portage_match_stderr portage_qcheck_before_stdout portage_qcheck_before_stderr
+    local portage_qcheck_after_stdout portage_qcheck_after_stderr portage_match_sha portage_match_stderr_sha
+    local portage_qcheck_before_stdout_sha portage_qcheck_before_stderr_sha
+    local portage_qcheck_after_stdout_sha portage_qcheck_after_stderr_sha
+    local emerge_python_tool_line emerge_implementation_tool_line portageq_tool_line
     load_activation_intent
     live_cpvs=$(${JQ} -r '.input_bindings.artifact_preparation.live_cpvs' "${ACTIVATION_INTENT}") || \
         die 'cannot load prepared live CPV count for finalization'
     [[ ${live_cpvs} =~ ^[0-9]+$ && ${live_cpvs} -gt 0 ]] || die 'prepared live CPV count is invalid'
     validate_durable_archive_manifest
+    unshare_tool_line=$(tool_identity_line "${UNSHARE}")
+    emerge_python_tool_line=$(tool_identity_line "${EMERGE_PYTHON}")
+    emerge_implementation_tool_line=$(tool_identity_line "${EMERGE_IMPLEMENTATION}")
+    portageq_tool_line=$(tool_identity_line "${PORTAGEQ}")
     [[ $(${READLINK} -- "${SELECTOR}") == "${DURABLE}" ]] || die 'offline restore requires the exact activated selector'
     activation_sha=$(publish_activation_receipt)
     validate_activated_state
@@ -2807,6 +3411,8 @@ finalize_offline_restore_supervised() {
     archive_path=${DURABLE}/${archive_relative}; validate_regular_trusted_file "${archive_path}" 0
     archive_sha=$(${SHA256SUM} -- "${archive_path}"); archive_sha=${archive_sha%% *}
     archive_size=$(${STAT} -c %s -- "${archive_path}") || die 'cannot stat selected restore archive size'
+    original_archive_sha=${archive_sha}
+    original_archive_size=${archive_size}
     while IFS=$'\t' read -r manifest_cpv manifest_relative manifest_size manifest_sha; do
         [[ ${manifest_cpv} != cpv ]] || continue
         if [[ ${manifest_cpv} == "${RESTORE_CPV}" ]]; then
@@ -2825,6 +3431,7 @@ finalize_offline_restore_supervised() {
             archive_relative_path:$relative,archive_sha256:$archive_sha}' >"${partial}"
         ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
         sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${binpkg}"
+        sync_paths "${binpkg}" "${restore_dir}"
     fi
     binpkg_sha=$(${SHA256SUM} -- "${binpkg}"); binpkg_sha=${binpkg_sha%% *}
     if path_absent "${command}"; then
@@ -2838,52 +3445,286 @@ finalize_offline_restore_supervised() {
             attempt=${retry_count}
             ((attempt += 1))
         fi
+        if ((attempt == 0)); then
+            preparation_intent=${command_intent}
+        else
+            printf -v retry_path '%s/retry-intent-%03d.json' "${restore_dir}" "${attempt}"
+            preparation_intent=${retry_path}
+        fi
+        reconcile_incomplete_restore_preparation "${attempt}" "${preparation_intent}"
         printf -v before '%s/vdb.before.%03d.tsv' "${restore_dir}" "${attempt}"
         printf -v after '%s/vdb.after.%03d.tsv' "${restore_dir}" "${attempt}"
         capture_vdb_manifest "${before}"; before_sha=$(${SHA256SUM} -- "${before}"); before_sha=${before_sha%% *}
         printf -v current_report '%s/pre-command-verifier.%03d.json' "${restore_dir}" "${attempt}"
         verify_exact_final "${DURABLE}" "${current_report}"
         pre_sha=$(${SHA256SUM} -- "${current_report}"); pre_sha=${pre_sha%% *}
-        tool_line=$(tool_identity_line "${EMERGE}"); started_at=$(timestamp); started_ns=$(${DATE} -u '+%s%N')
+        printf -v containment_preflight '%s/containment-preflight.%03d.json' "${restore_dir}" "${attempt}"
+        preflight_containment_primitives "${containment_preflight}"
+        containment_sha=$(${SHA256SUM} -- "${containment_preflight}"); containment_sha=${containment_sha%% *}
+        printf -v selected_before '%s/selected-sets.before.%03d.tsv' "${restore_dir}" "${attempt}"
+        printf -v selected_after '%s/selected-sets.after.%03d.tsv' "${restore_dir}" "${attempt}"
+        capture_selected_sets_state "${selected_before}"
+        selected_before_sha=$(${SHA256SUM} -- "${selected_before}"); selected_before_sha=${selected_before_sha%% *}
+        printf -v pkgdir_before '%s/pkgdir.before.%03d.tsv' "${restore_dir}" "${attempt}"
+        printf -v pkgdir_after '%s/pkgdir.after.%03d.tsv' "${restore_dir}" "${attempt}"
+        capture_tree_metadata_manifest "${DURABLE}" "${pkgdir_before}"
+        pkgdir_before_sha=$(${SHA256SUM} -- "${pkgdir_before}"); pkgdir_before_sha=${pkgdir_before_sha%% *}
+        if ((attempt > 0)); then
+            transaction_vdb_before=$(${JQ} -r '.vdb_before.path' "${command_intent}")
+            transaction_vdb_before_sha=$(${JQ} -r '.vdb_before.sha256' "${command_intent}")
+            transaction_selected_before=$(${JQ} -r '.selected_sets_before.path' "${command_intent}")
+            transaction_selected_before_sha=$(${JQ} -r '.selected_sets_before.sha256' "${command_intent}")
+            transaction_pkgdir_before=$(${JQ} -r '.pkgdir_before.path' "${command_intent}")
+            transaction_pkgdir_before_sha=$(${JQ} -r '.pkgdir_before.sha256' "${command_intent}")
+            for existing in "${transaction_vdb_before}" "${transaction_selected_before}" \
+                "${transaction_pkgdir_before}"; do
+                require_direct_child "${existing}" "${restore_dir}" \
+                    'restore transaction baseline path before retry'
+                validate_regular_trusted_file "${existing}" 0
+            done
+            baseline_current_sha=$(${SHA256SUM} -- "${transaction_vdb_before}")
+            baseline_current_sha=${baseline_current_sha%% *}
+            [[ ${baseline_current_sha} == "${transaction_vdb_before_sha}" ]] || \
+                die 'restore transaction VDB baseline changed before retry'
+            baseline_current_sha=$(${SHA256SUM} -- "${transaction_selected_before}")
+            baseline_current_sha=${baseline_current_sha%% *}
+            [[ ${baseline_current_sha} == "${transaction_selected_before_sha}" ]] || \
+                die 'restore transaction selected-set baseline changed before retry'
+            baseline_current_sha=$(${SHA256SUM} -- "${transaction_pkgdir_before}")
+            baseline_current_sha=${baseline_current_sha%% *}
+            [[ ${baseline_current_sha} == "${transaction_pkgdir_before_sha}" ]] || \
+                die 'restore transaction PKGDIR baseline changed before retry'
+            if ! ${CMP} -s -- "${transaction_vdb_before}" "${before}"; then
+                validate_vdb_transition_confined \
+                    "${transaction_vdb_before}" "${before}" "${RESTORE_CPV}"
+            fi
+            ${CMP} -- "${transaction_selected_before}" "${selected_before}" || \
+                die 'offline restore selected/world state differs from the first attempt baseline before retry'
+            ${CMP} -- "${transaction_pkgdir_before}" "${pkgdir_before}" || \
+                die 'offline restore PKGDIR differs from the first attempt baseline before retry'
+        fi
+        printf -v portage_match_stdout '%s/portage-match.%03d.stdout' "${restore_dir}" "${attempt}"
+        printf -v portage_match_stderr '%s/portage-match.%03d.stderr' "${restore_dir}" "${attempt}"
+        run_tracked "${portage_match_stdout}" "${portage_match_stderr}" 5m \
+            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+            "${PORTAGEQ}" match / sys-apps/portage
+        [[ ${TRACKED_STATUS} -eq 0 && ! -s ${portage_match_stderr} && \
+           $(<"${portage_match_stdout}") == "${PORTAGE_CPV}" ]] || \
+            die 'Portage package identity changed before offline restore'
+        portage_match_sha=$(${SHA256SUM} -- "${portage_match_stdout}"); portage_match_sha=${portage_match_sha%% *}
+        portage_match_stderr_sha=$(${SHA256SUM} -- "${portage_match_stderr}"); portage_match_stderr_sha=${portage_match_stderr_sha%% *}
+        printf -v portage_qcheck_before_stdout '%s/portage-qcheck.before.%03d.stdout' "${restore_dir}" "${attempt}"
+        printf -v portage_qcheck_before_stderr '%s/portage-qcheck.before.%03d.stderr' "${restore_dir}" "${attempt}"
+        run_tracked "${portage_qcheck_before_stdout}" "${portage_qcheck_before_stderr}" 30m \
+            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+            "${QCHECK}" "=${PORTAGE_CPV}"
+        [[ ${TRACKED_STATUS} -eq 0 ]] || die 'Portage package integrity failed before offline restore'
+        portage_qcheck_before_stdout_sha=$(${SHA256SUM} -- "${portage_qcheck_before_stdout}"); portage_qcheck_before_stdout_sha=${portage_qcheck_before_stdout_sha%% *}
+        portage_qcheck_before_stderr_sha=$(${SHA256SUM} -- "${portage_qcheck_before_stderr}"); portage_qcheck_before_stderr_sha=${portage_qcheck_before_stderr_sha%% *}
+        printf -v pretend_stdout '%s/emerge.pretend.stdout.%03d' "${restore_dir}" "${attempt}"
+        printf -v pretend_stderr '%s/emerge.pretend.stderr.%03d' "${restore_dir}" "${attempt}"
+        run_tracked "${pretend_stdout}" "${pretend_stderr}" 30m --network-isolated \
+            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
+            PKGDIR="${DURABLE}" TZ=UTC PORTAGE_BINHOST= GENTOO_MIRRORS= \
+            FETCHCOMMAND=/bin/false RESUMECOMMAND=/bin/false EPYTHON="${EMERGE_EPYTHON}" \
+            "${EMERGE}" "${RESTORE_EMERGE_OPTIONS[@]}" --pretend "${archive_path}"
+        [[ ${TRACKED_STATUS} -eq 0 && ! -s ${pretend_stderr} ]] || \
+            die 'offline restore pretend preflight failed'
+        pretend_summary_count=0; pretend_binary_count=0
+        while IFS= read -r line; do
+            [[ ${line} == 'Total: 1 package (1 reinstall, 1 binary), Size of downloads: 0 KiB' ]] && \
+                ((pretend_summary_count += 1))
+            [[ ${line} == \[binary*R*\]* ]] && ((pretend_binary_count += 1))
+        done <"${pretend_stdout}"
+        [[ ${pretend_summary_count} -eq 1 && ${pretend_binary_count} -eq 1 ]] || \
+            die 'offline restore pretend did not prove one binary reinstall and zero downloads'
+        pretend_stdout_sha=$(${SHA256SUM} -- "${pretend_stdout}"); pretend_stdout_sha=${pretend_stdout_sha%% *}
+        pretend_stderr_sha=$(${SHA256SUM} -- "${pretend_stderr}"); pretend_stderr_sha=${pretend_stderr_sha%% *}
+        archive_size=$(${STAT} -c %s -- "${archive_path}") || die 'cannot re-stat selected archive before restore'
+        archive_sha=$(${SHA256SUM} -- "${archive_path}"); archive_sha=${archive_sha%% *}
+        [[ ${archive_size} == "${original_archive_size}" && ${archive_sha} == "${original_archive_sha}" ]] || \
+            die 'selected archive changed before offline restore'
+        crash_point after-offline-preparation
+        tool_line=$(tool_identity_line "${EMERGE}")
+        qcheck_tool_line=$(tool_identity_line "${QCHECK}")
+        started_at=$(timestamp); started_ns=$(${DATE} -u '+%s%N')
         if ((attempt == 0)); then
             partial=${command_intent}.partial
             ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg at "${started_at}" --arg ns "${started_ns}" \
                 --arg tool "${tool_line}" --arg pkgdir "${DURABLE}" --arg cpv "${RESTORE_CPV}" \
                 --arg binpkg_sha "${binpkg_sha}" --arg before "${before}" --arg before_sha "${before_sha}" \
                 --arg pre "${current_report}" --arg pre_sha "${pre_sha}" \
-                --arg emerge "${EMERGE}" --arg home "${HOME_DIR}" '{schema_version:1,checkpoint_id:$id,
+                --arg emerge "${EMERGE}" --arg home "${HOME_DIR}" --arg path "${PATH_VALUE}" \
+                --arg epython "${EMERGE_EPYTHON}" --arg emerge_python "${EMERGE_PYTHON}" \
+                --arg emerge_python_tool "${emerge_python_tool_line}" \
+                --arg emerge_implementation "${EMERGE_IMPLEMENTATION}" \
+                --arg emerge_implementation_tool "${emerge_implementation_tool_line}" \
+                --arg portage_cpv "${PORTAGE_CPV}" --arg portageq "${PORTAGEQ}" \
+                --arg portageq_tool "${portageq_tool_line}" --arg qcheck "${QCHECK}" \
+                --arg qcheck_tool "${qcheck_tool_line}" --arg match_stdout "${portage_match_stdout}" \
+                --arg match_stdout_sha "${portage_match_sha}" --arg match_stderr "${portage_match_stderr}" \
+                --arg match_stderr_sha "${portage_match_stderr_sha}" \
+                --arg portage_qcheck_stdout "${portage_qcheck_before_stdout}" \
+                --arg portage_qcheck_stdout_sha "${portage_qcheck_before_stdout_sha}" \
+                --arg portage_qcheck_stderr "${portage_qcheck_before_stderr}" \
+                --arg portage_qcheck_stderr_sha "${portage_qcheck_before_stderr_sha}" \
+                --arg archive "${archive_path}" --arg relative "${archive_relative}" \
+                --argjson archive_size "${archive_size}" --arg archive_sha "${archive_sha}" \
+                --arg selected_sets "${selected_before}" --arg selected_sets_sha "${selected_before_sha}" \
+                --arg pkgdir_before "${pkgdir_before}" --arg pkgdir_before_sha "${pkgdir_before_sha}" \
+                --arg pretend_stdout "${pretend_stdout}" --arg pretend_stdout_sha "${pretend_stdout_sha}" \
+                --arg pretend_stderr "${pretend_stderr}" --arg pretend_stderr_sha "${pretend_stderr_sha}" \
+                --arg unshare "${UNSHARE}" \
+                --arg unshare_tool "${unshare_tool_line}" --arg containment "${containment_preflight}" \
+                --arg containment_sha "${containment_sha}" '{schema_version:3,checkpoint_id:$id,
                 status:"supervised-command-pending",started_at:$at,started_at_unix_ns:$ns,
-                emerge_tool_identity:$tool,environment:{HOME:$home,LANG:"C",LC_ALL:"C",TZ:"UTC",PKGDIR:$pkgdir},
-                argv:[$emerge,"--ignore-default-opts","--offline","--usepkgonly","--getbinpkg=n","--nodeps","--oneshot",("="+$cpv)],
+                emerge_tool_identity:$tool,environment:{HOME:$home,LANG:"C",LC_ALL:"C",PATH:$path,TZ:"UTC",PKGDIR:$pkgdir,
+                  PORTAGE_BINHOST:"",GENTOO_MIRRORS:"",FETCHCOMMAND:"/bin/false",RESUMECOMMAND:"/bin/false",EPYTHON:$epython},
+                argv:[$emerge,"--ignore-default-opts","--ask=n","--autounmask=n","--autounmask-write=n",
+                  "--buildpkg=n","--getbinpkg=n","--usepkgonly","--binpkg-changed-deps=n",
+                  "--binpkg-respect-use=n","--use-ebuild-visibility=n","--nodeps","--oneshot","--verbose",$archive],
+                containment:{network_namespace:true,pid_namespace:true,mount_proc:true,
+                  launcher:[$unshare,"--pid","--net","--fork","--kill-child=KILL","--mount-proc","--"],
+                  unshare_tool_identity:$unshare_tool,preflight:{path:$containment,sha256:$containment_sha}},
+                portage_implementation:{cpv:$portage_cpv,epython:$epython,
+                  python:{path:$emerge_python,tool_identity:$emerge_python_tool},
+                  emerge:{path:$emerge_implementation,tool_identity:$emerge_implementation_tool},
+                  package_match:{tool:"portageq",tool_identity:$portageq_tool,
+                    argv:[$portageq,"match","/","sys-apps/portage"],exit_status:0,
+                    stdout:{path:$match_stdout,sha256:$match_stdout_sha},
+                    stderr:{path:$match_stderr,sha256:$match_stderr_sha}},
+                  package_check_before:{tool:"qcheck",tool_identity:$qcheck_tool,
+                    argv:[$qcheck,("="+$portage_cpv)],exit_status:0,
+                    stdout:{path:$portage_qcheck_stdout,sha256:$portage_qcheck_stdout_sha},
+                    stderr:{path:$portage_qcheck_stderr,sha256:$portage_qcheck_stderr_sha}}},
+                selected_archive:{path:$archive,relative_path:$relative,size:$archive_size,sha256:$archive_sha},
+                selected_sets_before:{path:$selected_sets,sha256:$selected_sets_sha},
+                pkgdir_before:{path:$pkgdir_before,sha256:$pkgdir_before_sha},
+                pretend:{argv:[$emerge,"--ignore-default-opts","--ask=n","--autounmask=n","--autounmask-write=n",
+                    "--buildpkg=n","--getbinpkg=n","--usepkgonly","--binpkg-changed-deps=n",
+                    "--binpkg-respect-use=n","--use-ebuild-visibility=n","--nodeps","--oneshot","--verbose",
+                    "--pretend",$archive],exit_status:0,
+                  summary:{packages:1,reinstall:1,binary:1,download_kib:0},
+                  logs:{stdout:{path:$pretend_stdout,sha256:$pretend_stdout_sha},
+                    stderr:{path:$pretend_stderr,sha256:$pretend_stderr_sha}}},
                 binpkg_evidence_sha256:$binpkg_sha,vdb_before:{path:$before,sha256:$before_sha},
                 pre_command_verifier:{path:$pre,sha256:$pre_sha}}' >"${partial}"
             ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
             sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${command_intent}"
+            sync_paths "${command_intent}" "${restore_dir}"
         else
             printf -v retry_path '%s/retry-intent-%03d.json' "${restore_dir}" "${attempt}"
             partial=${retry_path}.partial
             command_intent_sha=$(${SHA256SUM} -- "${command_intent}"); command_intent_sha=${command_intent_sha%% *}
             ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg at "${started_at}" --arg ns "${started_ns}" \
                 --argjson attempt "${attempt}" --arg intent_sha "${command_intent_sha}" \
+                --arg binpkg_sha "${binpkg_sha}" \
                 --arg before "${before}" --arg before_sha "${before_sha}" \
-                --arg pre "${current_report}" --arg pre_sha "${pre_sha}" '{schema_version:1,
+                --arg pre "${current_report}" --arg pre_sha "${pre_sha}" \
+                --arg tool "${tool_line}" --arg pkgdir "${DURABLE}" --arg emerge "${EMERGE}" \
+                --arg home "${HOME_DIR}" --arg path "${PATH_VALUE}" --arg epython "${EMERGE_EPYTHON}" \
+                --arg emerge_python "${EMERGE_PYTHON}" --arg emerge_python_tool "${emerge_python_tool_line}" \
+                --arg emerge_implementation "${EMERGE_IMPLEMENTATION}" \
+                --arg emerge_implementation_tool "${emerge_implementation_tool_line}" \
+                --arg portage_cpv "${PORTAGE_CPV}" --arg portageq "${PORTAGEQ}" \
+                --arg portageq_tool "${portageq_tool_line}" --arg qcheck "${QCHECK}" \
+                --arg qcheck_tool "${qcheck_tool_line}" --arg match_stdout "${portage_match_stdout}" \
+                --arg match_stdout_sha "${portage_match_sha}" --arg match_stderr "${portage_match_stderr}" \
+                --arg match_stderr_sha "${portage_match_stderr_sha}" \
+                --arg portage_qcheck_stdout "${portage_qcheck_before_stdout}" \
+                --arg portage_qcheck_stdout_sha "${portage_qcheck_before_stdout_sha}" \
+                --arg portage_qcheck_stderr "${portage_qcheck_before_stderr}" \
+                --arg portage_qcheck_stderr_sha "${portage_qcheck_before_stderr_sha}" \
+                --arg archive "${archive_path}" --arg relative "${archive_relative}" \
+                --argjson archive_size "${archive_size}" --arg archive_sha "${archive_sha}" \
+                --arg selected_sets "${selected_before}" --arg selected_sets_sha "${selected_before_sha}" \
+                --arg pkgdir_before "${pkgdir_before}" --arg pkgdir_before_sha "${pkgdir_before_sha}" \
+                --arg pretend_stdout "${pretend_stdout}" --arg pretend_stdout_sha "${pretend_stdout_sha}" \
+                --arg pretend_stderr "${pretend_stderr}" --arg pretend_stderr_sha "${pretend_stderr_sha}" \
+                --arg unshare "${UNSHARE}" --arg unshare_tool "${unshare_tool_line}" \
+                --arg containment "${containment_preflight}" --arg containment_sha "${containment_sha}" \
+                '{schema_version:2,
                 checkpoint_id:$id,status:"operator-authorized-retry",authorized_at:$at,
                 authorized_at_unix_ns:$ns,attempt:$attempt,command_intent_sha256:$intent_sha,
+                binpkg_evidence_sha256:$binpkg_sha,
+                emerge_tool_identity:$tool,environment:{HOME:$home,LANG:"C",LC_ALL:"C",PATH:$path,TZ:"UTC",PKGDIR:$pkgdir,
+                  PORTAGE_BINHOST:"",GENTOO_MIRRORS:"",FETCHCOMMAND:"/bin/false",RESUMECOMMAND:"/bin/false",EPYTHON:$epython},
+                argv:[$emerge,"--ignore-default-opts","--ask=n","--autounmask=n","--autounmask-write=n",
+                  "--buildpkg=n","--getbinpkg=n","--usepkgonly","--binpkg-changed-deps=n",
+                  "--binpkg-respect-use=n","--use-ebuild-visibility=n","--nodeps","--oneshot","--verbose",$archive],
+                containment:{network_namespace:true,pid_namespace:true,mount_proc:true,
+                  launcher:[$unshare,"--pid","--net","--fork","--kill-child=KILL","--mount-proc","--"],
+                  unshare_tool_identity:$unshare_tool,preflight:{path:$containment,sha256:$containment_sha}},
+                portage_implementation:{cpv:$portage_cpv,epython:$epython,
+                  python:{path:$emerge_python,tool_identity:$emerge_python_tool},
+                  emerge:{path:$emerge_implementation,tool_identity:$emerge_implementation_tool},
+                  package_match:{tool:"portageq",tool_identity:$portageq_tool,
+                    argv:[$portageq,"match","/","sys-apps/portage"],exit_status:0,
+                    stdout:{path:$match_stdout,sha256:$match_stdout_sha},
+                    stderr:{path:$match_stderr,sha256:$match_stderr_sha}},
+                  package_check_before:{tool:"qcheck",tool_identity:$qcheck_tool,
+                    argv:[$qcheck,("="+$portage_cpv)],exit_status:0,
+                    stdout:{path:$portage_qcheck_stdout,sha256:$portage_qcheck_stdout_sha},
+                    stderr:{path:$portage_qcheck_stderr,sha256:$portage_qcheck_stderr_sha}}},
+                selected_archive:{path:$archive,relative_path:$relative,size:$archive_size,sha256:$archive_sha},
+                selected_sets_before:{path:$selected_sets,sha256:$selected_sets_sha},
+                pkgdir_before:{path:$pkgdir_before,sha256:$pkgdir_before_sha},
+                pretend:{argv:[$emerge,"--ignore-default-opts","--ask=n","--autounmask=n","--autounmask-write=n",
+                    "--buildpkg=n","--getbinpkg=n","--usepkgonly","--binpkg-changed-deps=n",
+                    "--binpkg-respect-use=n","--use-ebuild-visibility=n","--nodeps","--oneshot","--verbose",
+                    "--pretend",$archive],exit_status:0,
+                  summary:{packages:1,reinstall:1,binary:1,download_kib:0},
+                  logs:{stdout:{path:$pretend_stdout,sha256:$pretend_stdout_sha},
+                    stderr:{path:$pretend_stderr,sha256:$pretend_stderr_sha}}},
                 vdb_before:{path:$before,sha256:$before_sha},
                 pre_command_verifier:{path:$pre,sha256:$pre_sha}}' >"${partial}"
             ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
             sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${retry_path}"
+            sync_paths "${retry_path}" "${restore_dir}"
             retry_sha=$(${SHA256SUM} -- "${retry_path}"); retry_sha=${retry_sha%% *}
         fi
         crash_point before-offline-command
         printf -v stdout '%s/emerge.stdout.%03d' "${restore_dir}" "${attempt}"
         printf -v stderr '%s/emerge.stderr.%03d' "${restore_dir}" "${attempt}"
-        run_tracked "${stdout}" "${stderr}" 4h "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C \
-            PATH="${PATH_VALUE}" PKGDIR="${DURABLE}" TZ=UTC "${EMERGE}" --ignore-default-opts --offline \
-            --usepkgonly --getbinpkg=n --nodeps --oneshot "=${RESTORE_CPV}"
+        run_tracked "${stdout}" "${stderr}" 4h --network-isolated \
+            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
+            PKGDIR="${DURABLE}" TZ=UTC PORTAGE_BINHOST= GENTOO_MIRRORS= \
+            FETCHCOMMAND=/bin/false RESUMECOMMAND=/bin/false EPYTHON="${EMERGE_EPYTHON}" \
+            "${EMERGE}" "${RESTORE_EMERGE_OPTIONS[@]}" "${archive_path}"
         [[ ${TRACKED_STATUS} -eq 0 ]] || die "supervised offline emerge failed with status ${TRACKED_STATUS}"
+        emerge_binary_count=0; emerge_source_count=0
+        while IFS= read -r line; do
+            [[ ${line} == '>>> Emerging binary ('* ]] && ((emerge_binary_count += 1))
+            if [[ ${line} == '>>> Emerging ('* && ${line} != '>>> Emerging binary ('* ]]; then
+                ((emerge_source_count += 1))
+            fi
+        done <"${stdout}"
+        [[ ${emerge_binary_count} -eq 1 && ${emerge_source_count} -eq 0 ]] || \
+            die 'emerge log does not prove one binary-only restore'
         crash_point after-offline-command
         completed_at=$(timestamp); completed_ns=$(${DATE} -u '+%s%N')
+        archive_size_after=$(${STAT} -c %s -- "${archive_path}") || die 'cannot stat selected archive after restore'
+        archive_sha_after=$(${SHA256SUM} -- "${archive_path}"); archive_sha_after=${archive_sha_after%% *}
+        [[ ${archive_size_after} == "${original_archive_size}" && \
+           ${archive_sha_after} == "${original_archive_sha}" ]] || \
+            die 'selected archive changed during offline restore'
+        capture_tree_metadata_manifest "${DURABLE}" "${pkgdir_after}"
+        pkgdir_after_sha=$(${SHA256SUM} -- "${pkgdir_after}"); pkgdir_after_sha=${pkgdir_after_sha%% *}
+        ${CMP} -- "${pkgdir_before}" "${pkgdir_after}" || \
+            die 'PKGDIR content or metadata changed during offline restore'
+        capture_selected_sets_state "${selected_after}"
+        selected_after_sha=$(${SHA256SUM} -- "${selected_after}"); selected_after_sha=${selected_after_sha%% *}
+        ${CMP} -- "${selected_before}" "${selected_after}" || \
+            die 'Portage selected/world set state changed during oneshot restore'
+        printf -v portage_qcheck_after_stdout '%s/portage-qcheck.after.%03d.stdout' "${restore_dir}" "${attempt}"
+        printf -v portage_qcheck_after_stderr '%s/portage-qcheck.after.%03d.stderr' "${restore_dir}" "${attempt}"
+        run_tracked "${portage_qcheck_after_stdout}" "${portage_qcheck_after_stderr}" 30m \
+            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+            "${QCHECK}" "=${PORTAGE_CPV}"
+        [[ ${TRACKED_STATUS} -eq 0 ]] || die 'Portage package integrity failed after offline restore'
+        portage_qcheck_after_stdout_sha=$(${SHA256SUM} -- "${portage_qcheck_after_stdout}"); portage_qcheck_after_stdout_sha=${portage_qcheck_after_stdout_sha%% *}
+        portage_qcheck_after_stderr_sha=$(${SHA256SUM} -- "${portage_qcheck_after_stderr}"); portage_qcheck_after_stderr_sha=${portage_qcheck_after_stderr_sha%% *}
+        revalidate_all_tool_identities
         capture_vdb_manifest "${after}"; after_sha=$(${SHA256SUM} -- "${after}"); after_sha=${after_sha%% *}
         validate_vdb_transition_confined "${before}" "${after}" "${RESTORE_CPV}"
         printf -v qstdout '%s/qcheck.stdout.%03d' "${restore_dir}" "${attempt}"
@@ -2894,31 +3735,131 @@ finalize_offline_restore_supervised() {
         stdout_sha=$(${SHA256SUM} -- "${stdout}"); stdout_sha=${stdout_sha%% *}; stderr_sha=$(${SHA256SUM} -- "${stderr}"); stderr_sha=${stderr_sha%% *}
         qstdout_sha=$(${SHA256SUM} -- "${qstdout}"); qstdout_sha=${qstdout_sha%% *}; qstderr_sha=$(${SHA256SUM} -- "${qstderr}"); qstderr_sha=${qstderr_sha%% *}
         qcheck_tool_line=$(tool_identity_line "${QCHECK}")
+        transaction_vdb_before=$(${JQ} -r '.vdb_before.path' "${command_intent}")
+        transaction_vdb_before_sha=$(${JQ} -r '.vdb_before.sha256' "${command_intent}")
+        transaction_selected_before=$(${JQ} -r '.selected_sets_before.path' "${command_intent}")
+        transaction_selected_before_sha=$(${JQ} -r '.selected_sets_before.sha256' "${command_intent}")
+        transaction_pkgdir_before=$(${JQ} -r '.pkgdir_before.path' "${command_intent}")
+        transaction_pkgdir_before_sha=$(${JQ} -r '.pkgdir_before.sha256' "${command_intent}")
+        for existing in "${transaction_vdb_before}" "${transaction_selected_before}" "${transaction_pkgdir_before}"; do
+            require_direct_child "${existing}" "${restore_dir}" 'restore transaction baseline path'
+            validate_regular_trusted_file "${existing}" 0
+        done
+        baseline_current_sha=$(${SHA256SUM} -- "${transaction_vdb_before}"); baseline_current_sha=${baseline_current_sha%% *}
+        [[ ${baseline_current_sha} == "${transaction_vdb_before_sha}" ]] || \
+            die 'restore transaction VDB baseline changed'
+        baseline_current_sha=$(${SHA256SUM} -- "${transaction_selected_before}"); baseline_current_sha=${baseline_current_sha%% *}
+        [[ ${baseline_current_sha} == "${transaction_selected_before_sha}" ]] || \
+            die 'restore transaction selected-set baseline changed'
+        baseline_current_sha=$(${SHA256SUM} -- "${transaction_pkgdir_before}"); baseline_current_sha=${baseline_current_sha%% *}
+        [[ ${baseline_current_sha} == "${transaction_pkgdir_before_sha}" ]] || \
+            die 'restore transaction PKGDIR baseline changed'
+        validate_vdb_transition_confined "${transaction_vdb_before}" "${after}" "${RESTORE_CPV}"
+        ${CMP} -- "${transaction_selected_before}" "${selected_after}" || \
+            die 'offline restore changed selected/world state relative to the first attempt'
+        ${CMP} -- "${transaction_pkgdir_before}" "${pkgdir_after}" || \
+            die 'offline restore changed PKGDIR relative to the first attempt'
         command_intent_sha=$(${SHA256SUM} -- "${command_intent}"); command_intent_sha=${command_intent_sha%% *}; partial=${command}.partial
         ${JQ} -n --arg id "${CHECKPOINT_ID}" --argjson attempt "${attempt}" --arg start "${started_at}" \
             --arg start_ns "${started_ns}" --arg end "${completed_at}" --arg end_ns "${completed_ns}" \
             --arg snapshot "${DURABLE}" --arg vdb "${VDB}" --arg cpv "${RESTORE_CPV}" --arg binpkg_sha "${binpkg_sha}" \
-            --arg tool "${tool_line}" --arg emerge "${EMERGE}" --arg home "${HOME_DIR}" --arg intent_sha "${command_intent_sha}" \
+            --arg tool "${tool_line}" --arg emerge "${EMERGE}" --arg home "${HOME_DIR}" --arg path "${PATH_VALUE}" \
+            --arg epython "${EMERGE_EPYTHON}" --arg intent_sha "${command_intent_sha}" \
             --arg retry "${retry_path}" --arg retry_sha "${retry_sha}" --arg before "${before}" --arg before_sha "${before_sha}" \
             --arg pre "${current_report}" --arg pre_sha "${pre_sha}" \
             --arg after "${after}" --arg after_sha "${after_sha}" --arg stdout "${stdout}" --arg stdout_sha "${stdout_sha}" \
             --arg stderr "${stderr}" --arg stderr_sha "${stderr_sha}" --arg qstdout "${qstdout}" --arg qstdout_sha "${qstdout_sha}" \
-            --arg qstderr "${qstderr}" --arg qstderr_sha "${qstderr_sha}" --arg qcheck_tool "${qcheck_tool_line}" \
-            '{schema_version:2,sequence:2,
+            --arg qstderr "${qstderr}" --arg qstderr_sha "${qstderr_sha}" --arg qcheck "${QCHECK}" \
+            --arg qcheck_tool "${qcheck_tool_line}" \
+            --arg emerge_python "${EMERGE_PYTHON}" --arg emerge_python_tool "${emerge_python_tool_line}" \
+            --arg emerge_implementation "${EMERGE_IMPLEMENTATION}" \
+            --arg emerge_implementation_tool "${emerge_implementation_tool_line}" \
+            --arg portage_cpv "${PORTAGE_CPV}" --arg portageq "${PORTAGEQ}" \
+            --arg portageq_tool "${portageq_tool_line}" --arg match_stdout "${portage_match_stdout}" \
+            --arg match_stdout_sha "${portage_match_sha}" --arg match_stderr "${portage_match_stderr}" \
+            --arg match_stderr_sha "${portage_match_stderr_sha}" \
+            --arg portage_qcheck_before_stdout "${portage_qcheck_before_stdout}" \
+            --arg portage_qcheck_before_stdout_sha "${portage_qcheck_before_stdout_sha}" \
+            --arg portage_qcheck_before_stderr "${portage_qcheck_before_stderr}" \
+            --arg portage_qcheck_before_stderr_sha "${portage_qcheck_before_stderr_sha}" \
+            --arg portage_qcheck_after_stdout "${portage_qcheck_after_stdout}" \
+            --arg portage_qcheck_after_stdout_sha "${portage_qcheck_after_stdout_sha}" \
+            --arg portage_qcheck_after_stderr "${portage_qcheck_after_stderr}" \
+            --arg portage_qcheck_after_stderr_sha "${portage_qcheck_after_stderr_sha}" \
+            --arg archive "${archive_path}" --arg relative "${archive_relative}" \
+            --argjson archive_size_before "${archive_size}" --arg archive_sha_before "${archive_sha}" \
+            --argjson archive_size_after "${archive_size_after}" --arg archive_sha_after "${archive_sha_after}" \
+            --arg selected_before "${selected_before}" --arg selected_before_sha "${selected_before_sha}" \
+            --arg selected_after "${selected_after}" --arg selected_after_sha "${selected_after_sha}" \
+            --arg pkgdir_before "${pkgdir_before}" --arg pkgdir_before_sha "${pkgdir_before_sha}" \
+            --arg pkgdir_after "${pkgdir_after}" --arg pkgdir_after_sha "${pkgdir_after_sha}" \
+            --arg transaction_vdb_before "${transaction_vdb_before}" \
+            --arg transaction_vdb_before_sha "${transaction_vdb_before_sha}" \
+            --arg transaction_selected_before "${transaction_selected_before}" \
+            --arg transaction_selected_before_sha "${transaction_selected_before_sha}" \
+            --arg transaction_pkgdir_before "${transaction_pkgdir_before}" \
+            --arg transaction_pkgdir_before_sha "${transaction_pkgdir_before_sha}" \
+            --arg pretend_stdout "${pretend_stdout}" --arg pretend_stdout_sha "${pretend_stdout_sha}" \
+            --arg pretend_stderr "${pretend_stderr}" --arg pretend_stderr_sha "${pretend_stderr_sha}" \
+            --arg unshare "${UNSHARE}" --arg unshare_tool "${unshare_tool_line}" \
+            --arg containment "${containment_preflight}" --arg containment_sha "${containment_sha}" \
+            '{schema_version:4,sequence:2,
             checkpoint_id:$id,attempt:$attempt,started_at:$start,started_at_unix_ns:$start_ns,
-            completed_at:$end,completed_at_unix_ns:$end_ns,exit_status:0,offline:true,usepkgonly:true,
+            completed_at:$end,completed_at_unix_ns:$end_ns,exit_status:0,offline:true,network_isolated:true,usepkgonly:true,
             getbinpkg:false,nodeps:true,selected_snapshot:$snapshot,pkgdir:$snapshot,vdb:$vdb,restored_cpv:$cpv,
             binpkg_evidence_sha256:$binpkg_sha,command_intent_sha256:$intent_sha,
             retry_authorization:(if $retry == "-" then null else {path:$retry,sha256:$retry_sha} end),
-            emerge_tool_identity:$tool,environment:{HOME:$home,LANG:"C",LC_ALL:"C",TZ:"UTC",PKGDIR:$snapshot},
-            command:[$emerge,"--ignore-default-opts","--offline","--usepkgonly","--getbinpkg=n","--nodeps","--oneshot",("="+$cpv)],
+            emerge_tool_identity:$tool,environment:{HOME:$home,LANG:"C",LC_ALL:"C",PATH:$path,TZ:"UTC",PKGDIR:$snapshot,
+              PORTAGE_BINHOST:"",GENTOO_MIRRORS:"",FETCHCOMMAND:"/bin/false",RESUMECOMMAND:"/bin/false",EPYTHON:$epython},
+            containment:{network_namespace:true,pid_namespace:true,mount_proc:true,
+              launcher:[$unshare,"--pid","--net","--fork","--kill-child=KILL","--mount-proc","--"],
+              unshare_tool_identity:$unshare_tool,preflight:{path:$containment,sha256:$containment_sha}},
+            portage_implementation:{cpv:$portage_cpv,epython:$epython,
+              python:{path:$emerge_python,tool_identity:$emerge_python_tool},
+              emerge:{path:$emerge_implementation,tool_identity:$emerge_implementation_tool},
+              package_match:{tool:"portageq",tool_identity:$portageq_tool,
+                argv:[$portageq,"match","/","sys-apps/portage"],exit_status:0,
+                stdout:{path:$match_stdout,sha256:$match_stdout_sha},
+                stderr:{path:$match_stderr,sha256:$match_stderr_sha}},
+              package_check_before:{tool:"qcheck",tool_identity:$qcheck_tool,
+                argv:[$qcheck,("="+$portage_cpv)],exit_status:0,
+                stdout:{path:$portage_qcheck_before_stdout,sha256:$portage_qcheck_before_stdout_sha},
+                stderr:{path:$portage_qcheck_before_stderr,sha256:$portage_qcheck_before_stderr_sha}},
+              package_check_after:{tool:"qcheck",tool_identity:$qcheck_tool,
+                argv:[$qcheck,("="+$portage_cpv)],exit_status:0,
+                stdout:{path:$portage_qcheck_after_stdout,sha256:$portage_qcheck_after_stdout_sha},
+                stderr:{path:$portage_qcheck_after_stderr,sha256:$portage_qcheck_after_stderr_sha}}},
+            selected_archive:{path:$archive,relative_path:$relative,size_before:$archive_size_before,
+              sha256_before:$archive_sha_before,size_after:$archive_size_after,sha256_after:$archive_sha_after,unchanged:true},
+            selected_sets_transition:{before:{path:$selected_before,sha256:$selected_before_sha},
+              after:{path:$selected_after,sha256:$selected_after_sha},unchanged:true},
+            pkgdir_transition:{before:{path:$pkgdir_before,sha256:$pkgdir_before_sha},
+              after:{path:$pkgdir_after,sha256:$pkgdir_after_sha},unchanged:true},
+            transaction_baseline_transition:{
+              vdb:{before:{path:$transaction_vdb_before,sha256:$transaction_vdb_before_sha},
+                after:{path:$after,sha256:$after_sha},confined_to_restored_cpv:true},
+              selected_sets:{before:{path:$transaction_selected_before,sha256:$transaction_selected_before_sha},
+                after:{path:$selected_after,sha256:$selected_after_sha},unchanged:true},
+              pkgdir:{before:{path:$transaction_pkgdir_before,sha256:$transaction_pkgdir_before_sha},
+                after:{path:$pkgdir_after,sha256:$pkgdir_after_sha},unchanged:true}},
+            pretend:{argv:[$emerge,"--ignore-default-opts","--ask=n","--autounmask=n","--autounmask-write=n",
+                "--buildpkg=n","--getbinpkg=n","--usepkgonly","--binpkg-changed-deps=n",
+                "--binpkg-respect-use=n","--use-ebuild-visibility=n","--nodeps","--oneshot","--verbose",
+                "--pretend",$archive],exit_status:0,
+              summary:{packages:1,reinstall:1,binary:1,download_kib:0},
+              logs:{stdout:{path:$pretend_stdout,sha256:$pretend_stdout_sha},
+                stderr:{path:$pretend_stderr,sha256:$pretend_stderr_sha}}},
+            command:[$emerge,"--ignore-default-opts","--ask=n","--autounmask=n","--autounmask-write=n",
+              "--buildpkg=n","--getbinpkg=n","--usepkgonly","--binpkg-changed-deps=n",
+              "--binpkg-respect-use=n","--use-ebuild-visibility=n","--nodeps","--oneshot","--verbose",$archive],
             vdb_transition:{before:{path:$before,sha256:$before_sha},after:{path:$after,sha256:$after_sha},changed:true},
             pre_command_verifier:{path:$pre,sha256:$pre_sha},
             logs:{stdout:{path:$stdout,sha256:$stdout_sha},stderr:{path:$stderr,sha256:$stderr_sha}},
-            package_check:{tool:"qcheck",tool_identity:$qcheck_tool,argv:["qcheck",("="+$cpv)],exit_status:0,
+            package_check:{tool:"qcheck",tool_identity:$qcheck_tool,argv:[$qcheck,("="+$cpv)],exit_status:0,
               stdout:{path:$qstdout,sha256:$qstdout_sha},stderr:{path:$qstderr,sha256:$qstderr_sha}}}' >"${partial}"
         ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
         sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${command}"
+        sync_paths "${command}" "${restore_dir}"
     fi
     ((RETRY_INTERRUPTED_RESTORE == 0 || attempt > 0)) || die 'retry authorization was not consumed'
     command_sha=$(${SHA256SUM} -- "${command}"); command_sha=${command_sha%% *}
@@ -2934,6 +3875,7 @@ finalize_offline_restore_supervised() {
             verifier:{path:$verifier,sha256:$verifier_sha},report:$report[0]}' >"${partial}"
         ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
         sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${post}"
+        sync_paths "${post}" "${restore_dir}"
     fi
     post_sha=$(${SHA256SUM} -- "${post}"); post_sha=${post_sha%% *}; crash_point after-offline-evidence
     if path_absent "${attempt_ledger}"; then
@@ -2943,13 +3885,20 @@ finalize_offline_restore_supervised() {
             "${restore_dir}"/pre-command-verifier.*.json* "${restore_dir}"/vdb.before.*.tsv* \
             "${restore_dir}"/vdb.after.*.tsv* "${restore_dir}"/post-verifier-report.json \
             "${restore_dir}"/post-verifier-report.json.stderr "${restore_dir}"/emerge.stdout.* \
-            "${restore_dir}"/emerge.stderr.* "${restore_dir}"/qcheck.stdout.* \
-            "${restore_dir}"/qcheck.stderr.*; do
+            "${restore_dir}"/emerge.stderr.* "${restore_dir}"/emerge.pretend.stdout.* \
+            "${restore_dir}"/emerge.pretend.stderr.* "${restore_dir}"/qcheck.stdout.* \
+            "${restore_dir}"/qcheck.stderr.* "${restore_dir}"/containment-preflight.*.json \
+            "${restore_dir}"/selected-sets.before.*.tsv "${restore_dir}"/selected-sets.after.*.tsv \
+            "${restore_dir}"/pkgdir.before.*.tsv "${restore_dir}"/pkgdir.after.*.tsv \
+            "${restore_dir}"/portage-match.*.stdout "${restore_dir}"/portage-match.*.stderr \
+            "${restore_dir}"/portage-qcheck.before.*.stdout "${restore_dir}"/portage-qcheck.before.*.stderr \
+            "${restore_dir}"/portage-qcheck.after.*.stdout "${restore_dir}"/portage-qcheck.after.*.stderr; do
             [[ -f ${existing} && ! -L ${existing} ]] || continue
             ${SHA256SUM} -- "${existing}" >>"${partial}"
         done
         ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
         sync_paths "${partial}" "${restore_dir}"; safe_publish_noreplace "${partial}" "${attempt_ledger}"
+        sync_paths "${attempt_ledger}" "${restore_dir}"
     fi
     ledger_sha=$(${SHA256SUM} -- "${attempt_ledger}"); ledger_sha=${ledger_sha%% *}
     validate_hash_manifest "${attempt_ledger}" 'offline restore attempt ledger'
@@ -2965,6 +3914,7 @@ finalize_offline_restore_supervised() {
             attempt_ledger:{path:"offline-restore/attempt-ledger.sha256",sha256:$ledger_sha}}}' >"${partial}"
         ${CHMOD} 0600 -- "${partial}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${partial}"
         sync_paths "${partial}" "${REPORT}"; safe_publish_noreplace "${partial}" "${receipt}"
+        sync_paths "${receipt}" "${REPORT}"
     fi
     crash_point after-offline-receipt
     receipt_sha=$(validate_offline_restore_evidence)
@@ -3038,7 +3988,7 @@ SELF=$(${READLINK} -e -- "$0") || die 'cannot resolve checkpoint script'
 [[ -n ${VERIFIER} ]] || VERIFIER=${SELF%/*}/verify-binpkg-snapshot.py
 for path in "${VDB}" "${CACHE_PARENT}" "${DURABLE_PARENT}" "${REPORT_PARENT}" \
     "${STATE_PARENT}" "${LOCK_PATH}" "${SELECTOR}" "${VERIFIER}" \
-    "${MAKE_CONF}" "${EXPECTED_SOURCE_TARGET}" "${FIXTURE_ROOT}" \
+    "${MAKE_CONF}" "${EXPECTED_SOURCE_TARGET}" "${FIXTURE_ROOT}" "${PORTAGE_STATE_PARENT}" \
     "${FRAMEWORK_LOCK_PATH}" "${PROJECT_LOCK_PATH}" "${GENERATION_LOCK_PATH}"; do
     require_absolute_canonical "${path}" 'configured path'
 done
@@ -3048,6 +3998,7 @@ validate_ancestor_chain "${CACHE_PARENT}"
 validate_ancestor_chain "${DURABLE_PARENT}"
 validate_ancestor_chain "${REPORT_PARENT}"
 validate_ancestor_chain "${STATE_PARENT}"
+validate_ancestor_chain "${PORTAGE_STATE_PARENT}"
 validate_ancestor_chain "${LOCK_PATH%/*}"
 validate_ancestor_chain "${SELECTOR%/*}"
 validate_regular_trusted_file "${VERIFIER}" 0
@@ -3077,6 +4028,8 @@ for tool_name in "${TOOL_NAMES[@]}"; do
 done
 TOOL_IDENTITY_LINES+=("$(tool_identity_line "${VERIFIER}")")
 TOOL_IDENTITY_LINES+=("$(tool_identity_line "${SELF}")")
+TOOL_IDENTITY_LINES+=("$(tool_identity_line "${EMERGE_PYTHON}")")
+TOOL_IDENTITY_LINES+=("$(tool_identity_line "${EMERGE_IMPLEMENTATION}")")
 expected_bash=$(${READLINK} -e -- "${BASH_TOOL}") || die 'cannot resolve trusted Bash interpreter'
 [[ /proc/${COORDINATOR_PID}/exe -ef ${expected_bash} ]] || \
     die "checkpoint is not running under the trusted Bash interpreter: ${expected_bash}"
@@ -3169,6 +4122,7 @@ fi
 if [[ ${ACTION} == finalize ]]; then
     REPORT_READY=1
     revalidate_all_tool_identities
+    bind_portage_implementation
     finalize_offline_restore_supervised
     trap - EXIT HUP INT TERM
     printf 'PASS: checkpoint=%s action=finalize-offline-restore state=%s evidence=%s\n' \
@@ -3209,7 +4163,7 @@ for lock_pair in \
 done
 sync_paths "${REPORT}/tool-identities.tsv" "${REPORT}"
 preflight_containment_primitives
-journal_event tools-validated 'tools, stable framework locks, PID namespace, kill-child, and pidfd primitives recorded'
+bind_portage_implementation
 
 validate_ancestor_chain "${EXPECTED_SOURCE_TARGET}"
 [[ -d ${EXPECTED_SOURCE_TARGET} && ! -L ${EXPECTED_SOURCE_TARGET} ]] || \
@@ -3232,6 +4186,8 @@ selector_target=$(${READLINK} -- "${SELECTOR}")
 EXPECTED_SOURCE_IDENTITY=$(stat_fields "${EXPECTED_SOURCE_TARGET}") || die 'cannot record source directory identity'
 EXPECTED_SOURCE_PACKAGES_IDENTITY=$(stat_fields "${EXPECTED_SOURCE_TARGET}/Packages") || \
     die 'cannot record source Packages identity'
+preflight_emerge_restore_cli
+journal_event tools-validated 'tools, stable framework locks, trusted restore PKGDIR, PID/network namespaces, restore CLI, kill-child, and pidfd primitives recorded'
 printf '%s\n' "${EXPECTED_SELECTOR_IDENTITY}" >"${REPORT}/source-selector.identity"
 printf '%s\n' "${EXPECTED_SOURCE_IDENTITY}" >"${REPORT}/source-directory.identity"
 printf '%s  %s\n' "${EXPECTED_SOURCE_PACKAGES_SHA256}" \

@@ -99,15 +99,51 @@ clean and commit it while the live Phase 2 boxes remain open. For B, first
 commit the truthful plan migration and canonical claim markers after A has
 passed. There must be no later plan-only commit for either recorded run.
 
+Start one clean reviewed operator shell first, keep that same shell open, and
+run every source, bundle, and bootstrap block below inside it. The Git helper
+uses a private environment and bounds every Git observation or mutation with a
+ten-minute TERM/KILL deadline. A timeout returns nonzero and is a hard stop; it
+does not authorize reusing a partial path.
+
+The reviewed host-tool manifest binds `/usr/bin/doas` with the noninteractive
+functional probe `-n /usr/bin/id -u`, which must exit zero and print exactly
+`0`; this OpenDoas entry point has no successful version-printing option. The
+operator transaction uses that exact entry point everywhere and never relies on
+a PATH-selected privilege escalator.
+
+```sh
+OPERATOR=$(/usr/bin/id -un)
+/usr/bin/env -i \
+  HOME="$HOME" USER="$OPERATOR" LOGNAME="$OPERATOR" SHELL=/bin/bash \
+  LANG=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
+  /usr/bin/bash --noprofile --norc
+```
+
 ```sh
 set -Eeuo pipefail
-git status --short
-git diff --check
-COMMIT=$(git rev-parse --verify 'HEAD^{commit}')
-WORKTREE_STATUS=$(git status --porcelain=v1 --untracked-files=all)
-GITLINK_STATUS=$(git ls-files -s | awk '$1 == 160000 { print }')
-test -z "$WORKTREE_STATUS"
-test -z "$GITLINK_STATUS"
+[[ ${BASH} == /usr/bin/bash ]]
+[[ ${PATH} == /usr/bin:/bin ]]
+readonly GIT_TIMEOUT_SECONDS=600
+readonly GIT_KILL_AFTER_SECONDS=10
+
+user_git() {
+  /usr/bin/env -i \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 \
+    HOME=/nonexistent LANG=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
+    /usr/bin/timeout --signal=TERM \
+    --kill-after="${GIT_KILL_AFTER_SECONDS}" "${GIT_TIMEOUT_SECONDS}" \
+    /usr/bin/git --no-pager --no-replace-objects \
+    -c core.hooksPath=/dev/null -c core.fsmonitor=false \
+    -c core.attributesFile=/dev/null -c diff.external= "$@"
+}
+
+user_git status --short
+user_git diff --check
+COMMIT=$(user_git rev-parse --verify 'HEAD^{commit}')
+WORKTREE_STATUS=$(user_git status --porcelain=v1 --untracked-files=all)
+GITLINK_STATUS=$(user_git ls-files -s | /usr/bin/awk '$1 == 160000 { print }')
+[[ -z ${WORKTREE_STATUS} ]]
+[[ -z ${GITLINK_STATUS} ]]
 printf '%s\n' "$COMMIT"
 ```
 
@@ -117,61 +153,84 @@ exact original commit and Git metadata needed by the installer tests.
 
 ```sh
 set -Eeuo pipefail
-SHORT=$(printf '%s' "$COMMIT" | cut -c1-12)
-UTC_RUN_ID=$(date -u +%Y%m%dT%H%M%SZ)
+[[ ${BASH} == /usr/bin/bash ]]
+[[ ${PATH} == /usr/bin:/bin ]]
+declare -F user_git >/dev/null
+SHORT=$(printf '%s' "$COMMIT" | /usr/bin/cut -c1-12)
+UTC_RUN_ID=$(/usr/bin/date -u +%Y%m%dT%H%M%SZ)
 RUN_ID=phase2-${SHORT}-${UTC_RUN_ID}
 BUNDLE_USER=/var/tmp/gentoo-${RUN_ID}.bundle.user
 BUNDLE=/var/lib/gentoo-optimization/bootstrap/source-bundles/${RUN_ID}.bundle
 SOURCE=/var/lib/gentoo-optimization/bootstrap/source-checkouts/${RUN_ID}
 ROOT_GIT_HOME=/var/lib/gentoo-optimization/bootstrap/git-homes/${RUN_ID}
 
-OBSERVED_COMMIT=$(git rev-parse --verify 'HEAD^{commit}')
-test "$OBSERVED_COMMIT" = "$COMMIT"
-test ! -e "$BUNDLE_USER"
-git bundle create "$BUNDLE_USER" HEAD
-BUNDLE_SHA256=$(sha256sum "$BUNDLE_USER" | awk '{print $1}')
-git bundle verify "$BUNDLE_USER"
-BUNDLE_HEAD=$(git bundle list-heads "$BUNDLE_USER" |
-  awk '$2 == "HEAD" {print $1}')
-test "$BUNDLE_HEAD" = "$COMMIT"
+OBSERVED_COMMIT=$(user_git rev-parse --verify 'HEAD^{commit}')
+[[ ${OBSERVED_COMMIT} == "${COMMIT}" ]]
+[[ ! -e ${BUNDLE_USER} && ! -L ${BUNDLE_USER} ]]
+user_git bundle create "$BUNDLE_USER" HEAD
+BUNDLE_SHA256=$(/usr/bin/sha256sum "$BUNDLE_USER" | /usr/bin/awk '{print $1}')
+user_git bundle verify "$BUNDLE_USER"
+BUNDLE_HEAD=$(user_git bundle list-heads "$BUNDLE_USER" |
+  /usr/bin/awk '$2 == "HEAD" {print $1}')
+[[ ${BUNDLE_HEAD} == "${COMMIT}" ]]
 
-doas install -d -o root -g root -m 0700 \
+root_run() {
+  if [[ $# -eq 0 || $1 != /* ]]; then
+    printf 'root_run requires an absolute command path\n' >&2
+    return 64
+  fi
+  /usr/bin/doas /usr/bin/env -i \
+    HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
+    LANG=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC "$@"
+}
+
+root_absent() {
+  root_run /usr/bin/bash --noprofile --norc -c \
+    '[[ ! -e $1 && ! -L $1 ]]' bash "$1"
+}
+
+root_run /usr/bin/install -d -o root -g root -m 0700 \
   "${BUNDLE%/*}" "${SOURCE%/*}" "${ROOT_GIT_HOME%/*}"
-doas test ! -e "$ROOT_GIT_HOME"
-doas install -d -o root -g root -m 0700 "$ROOT_GIT_HOME"
-doas test ! -e "$BUNDLE"
-doas test ! -e "${BUNDLE}.partial"
-doas test ! -e "$SOURCE"
-doas test ! -e "${SOURCE}.partial"
-doas install -o root -g root -m 0600 -T "$BUNDLE_USER" "${BUNDLE}.partial"
-COPIED_BUNDLE_SHA256=$(doas sha256sum "${BUNDLE}.partial" | awk '{print $1}')
-test "$COPIED_BUNDLE_SHA256" = "$BUNDLE_SHA256"
-doas mv --no-clobber --no-copy -T "${BUNDLE}.partial" "$BUNDLE"
-doas test ! -e "${BUNDLE}.partial"
-doas sync -f "${BUNDLE%/*}"
+root_absent "$ROOT_GIT_HOME"
+root_run /usr/bin/install -d -o root -g root -m 0700 "$ROOT_GIT_HOME"
+root_absent "$BUNDLE"
+root_absent "${BUNDLE}.partial"
+root_absent "$SOURCE"
+root_absent "${SOURCE}.partial"
+root_run /usr/bin/install -o root -g root -m 0600 -T \
+  "$BUNDLE_USER" "${BUNDLE}.partial"
+COPIED_BUNDLE_SHA256=$(root_run /usr/bin/sha256sum "${BUNDLE}.partial" |
+  /usr/bin/awk '{print $1}')
+[[ ${COPIED_BUNDLE_SHA256} == "${BUNDLE_SHA256}" ]]
+root_run /usr/bin/mv --no-clobber --no-copy -T "${BUNDLE}.partial" "$BUNDLE"
+root_absent "${BUNDLE}.partial"
+root_run /usr/bin/sync -f "${BUNDLE%/*}"
 
 root_git() {
-  doas /usr/bin/env -i \
+  /usr/bin/doas /usr/bin/env -i \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 \
     HOME="$ROOT_GIT_HOME" \
     LANG=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
-    /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false \
-    -c core.attributesFile=/dev/null "$@"
+    /usr/bin/timeout --signal=TERM \
+    --kill-after="${GIT_KILL_AFTER_SECONDS}" "${GIT_TIMEOUT_SECONDS}" \
+    /usr/bin/git --no-pager --no-replace-objects \
+    -c core.hooksPath=/dev/null -c core.fsmonitor=false \
+    -c core.attributesFile=/dev/null -c diff.external= "$@"
 }
 
 ROOT_BUNDLE_HEAD=$(root_git bundle list-heads "$BUNDLE" |
-  awk '$2 == "HEAD" {print $1}')
-test "$ROOT_BUNDLE_HEAD" = "$COMMIT"
+  /usr/bin/awk '$2 == "HEAD" {print $1}')
+[[ ${ROOT_BUNDLE_HEAD} == "${COMMIT}" ]]
 root_git clone --no-checkout "$BUNDLE" "${SOURCE}.partial"
 root_git -C "${SOURCE}.partial" checkout --detach "$COMMIT"
 ROOT_WORKTREE_STATUS=$(root_git -C "${SOURCE}.partial" \
   status --porcelain=v1 --untracked-files=all)
-doas test -z "$ROOT_WORKTREE_STATUS"
-doas mv --no-clobber --no-copy -T "${SOURCE}.partial" "$SOURCE"
-doas test ! -e "${SOURCE}.partial"
-doas sync -f "$SOURCE" "${SOURCE%/*}"
+[[ -z ${ROOT_WORKTREE_STATUS} ]]
+root_run /usr/bin/mv --no-clobber --no-copy -T "${SOURCE}.partial" "$SOURCE"
+root_absent "${SOURCE}.partial"
+root_run /usr/bin/sync -f "$SOURCE" "${SOURCE%/*}"
 ROOT_SOURCE_COMMIT=$(root_git -C "$SOURCE" rev-parse --verify 'HEAD^{commit}')
-test "$ROOT_SOURCE_COMMIT" = "$COMMIT"
+[[ ${ROOT_SOURCE_COMMIT} == "${COMMIT}" ]]
 root_git -C "$SOURCE" bundle verify "$BUNDLE"
 ```
 
@@ -189,19 +248,25 @@ executing it:
 
 ```sh
 set -Eeuo pipefail
+[[ ${BASH} == /usr/bin/bash ]]
+[[ ${PATH} == /usr/bin:/bin ]]
+declare -F root_run >/dev/null
+declare -F root_absent >/dev/null
 BOOTSTRAP=/var/lib/gentoo-optimization/bootstrap/install-framework.sh
-SOURCE_BOOTSTRAP_SHA256=$(doas sha256sum \
-  "$SOURCE/scripts/optimization/install-framework.sh" | awk '{print $1}')
-doas install -o root -g root -m 0755 -T \
+SOURCE_BOOTSTRAP_SHA256=$(root_run /usr/bin/sha256sum \
+  "$SOURCE/scripts/optimization/install-framework.sh" | /usr/bin/awk '{print $1}')
+root_absent "${BOOTSTRAP}.partial"
+root_run /usr/bin/install -o root -g root -m 0755 -T \
   "$SOURCE/scripts/optimization/install-framework.sh" "${BOOTSTRAP}.partial"
-COPIED_BOOTSTRAP_SHA256=$(doas sha256sum "${BOOTSTRAP}.partial" | awk '{print $1}')
-test "$COPIED_BOOTSTRAP_SHA256" = "$SOURCE_BOOTSTRAP_SHA256"
-doas mv -T "${BOOTSTRAP}.partial" "$BOOTSTRAP"
-doas sync -f "${BOOTSTRAP%/*}"
+COPIED_BOOTSTRAP_SHA256=$(root_run /usr/bin/sha256sum "${BOOTSTRAP}.partial" |
+  /usr/bin/awk '{print $1}')
+[[ ${COPIED_BOOTSTRAP_SHA256} == "${SOURCE_BOOTSTRAP_SHA256}" ]]
+root_run /usr/bin/mv --no-copy -T "${BOOTSTRAP}.partial" "$BOOTSTRAP"
+root_run /usr/bin/sync -f "${BOOTSTRAP%/*}"
 
-doas "$BOOTSTRAP" --source-root "$SOURCE"
-doas "$BOOTSTRAP" --source-root "$SOURCE" --check
-doas readlink -e /var/lib/gentoo-optimization/framework-current
+root_run "$BOOTSTRAP" --source-root "$SOURCE"
+root_run "$BOOTSTRAP" --source-root "$SOURCE" --check
+root_run /usr/bin/readlink -e /var/lib/gentoo-optimization/framework-current
 ```
 
 Also prove containment and recover any earlier interrupted transaction before

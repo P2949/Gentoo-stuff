@@ -114,6 +114,10 @@ class OptimizationPolicyTests(unittest.TestCase):
         self.assertEqual(len(uses), 2)
         for reference in uses:
             self.assertRegex(reference, r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$")
+        self.assertEqual(
+            re.findall(r"^\s*timeout-minutes:\s*([0-9]+)\s*$", workflow, re.MULTILINE),
+            ["75"],
+        )
 
     def test_phase2_evidence_binds_checkpoint_and_runtime_primitives(self) -> None:
         policy = self.load("phase2-evidence-policy.json")
@@ -135,6 +139,7 @@ class OptimizationPolicyTests(unittest.TestCase):
             "zstd",
         }
         framework_primitives = {"systemd-tmpfiles"}
+        operator_primitives = {"cut", "doas"}
         self.assertEqual(required_tools, sorted(required_tools))
         self.assertEqual(manifest_names, required_tools)
         self.assertEqual(
@@ -156,9 +161,56 @@ class OptimizationPolicyTests(unittest.TestCase):
         )
         self.assertLessEqual(set(test_execution_tools), set(required_tools))
         self.assertLessEqual(
-            checkpoint_primitives | framework_primitives,
+            checkpoint_primitives | framework_primitives | operator_primitives,
             set(required_tools),
         )
+        manifest_by_name = {
+            cast(str, entry["name"]): entry for entry in manifest_tools
+        }
+        self.assertEqual(
+            manifest_by_name["cut"],
+            {
+                "name": "cut",
+                "path": "/usr/bin/cut",
+                "version_args": ["--version"],
+            },
+        )
+        self.assertEqual(
+            manifest_by_name["doas"],
+            {
+                "name": "doas",
+                "path": "/usr/bin/doas",
+                "version_args": ["-n", "/usr/bin/id", "-u"],
+            },
+        )
+
+        production_runbook = (
+            REPOSITORY_ROOT / "docs/phase2-production-profile-transaction.md"
+        ).read_text(encoding="utf-8")
+        materialization_boundary = production_runbook.split(
+            "## Create the candidate's immutable source snapshot", 1
+        )[1].split(
+            "Also prove containment and recover any earlier interrupted transaction",
+            1,
+        )[0]
+        for required_fragment in (
+            "PATH=/usr/bin:/bin",
+            "/usr/bin/cut",
+            "/usr/bin/doas",
+            "/usr/bin/git",
+            "/usr/bin/timeout --signal=TERM",
+            "[[ ! -e $1 && ! -L $1 ]]",
+        ):
+            with self.subTest(required_fragment=required_fragment):
+                self.assertIn(required_fragment, materialization_boundary)
+        self.assertGreaterEqual(
+            materialization_boundary.count("/usr/bin/timeout --signal=TERM"), 2
+        )
+        self.assertNotRegex(
+            materialization_boundary,
+            r"(?m)^\s*(?:doas|git|test|cut|date|sha256sum|awk)\b",
+        )
+        self.assertNotRegex(materialization_boundary, r"\|\s*(?:awk|cut)\b")
 
         required_sources = set(cast(list[str], policy["required_sources"]))
         self.assertLessEqual(

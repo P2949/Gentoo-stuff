@@ -1157,27 +1157,80 @@ if invoked == "emaint":
     raise SystemExit(0)
 
 if invoked == "emerge":
-    expected = ["--ignore-default-opts", "--offline", "--usepkgonly", "--getbinpkg=n", "--nodeps", "--oneshot", "=cat/new-2"]
+    expected_options = [
+        "--ignore-default-opts",
+        "--ask=n",
+        "--autounmask=n",
+        "--autounmask-write=n",
+        "--buildpkg=n",
+        "--getbinpkg=n",
+        "--usepkgonly",
+        "--binpkg-changed-deps=n",
+        "--binpkg-respect-use=n",
+        "--use-ebuild-visibility=n",
+        "--nodeps",
+        "--oneshot",
+        "--verbose",
+    ]
+    expected_environment = {
+        "PORTAGE_BINHOST": "",
+        "GENTOO_MIRRORS": "",
+        "FETCHCOMMAND": "/bin/false",
+        "RESUMECOMMAND": "/bin/false",
+        "EPYTHON": "python3.15",
+    }
+    observed_environment = {name: os.environ.get(name) for name in expected_environment}
+    if observed_environment != expected_environment:
+        raise SystemExit(f"unexpected emerge isolation environment: {observed_environment!r}")
+    pkgdir = Path(os.environ["PKGDIR"])
+    if sys.argv[1:] == [*expected_options, "--help"]:
+        print("fixture emerge help: --usepkgonly --getbinpkg --use-ebuild-visibility")
+        raise SystemExit(0)
+    archive = pkgdir / "cat/new/new-2.gpkg.tar"
+    if sys.argv[1:] == [*expected_options, "--pretend", str(archive)]:
+        print("[binary   R    ] cat/new-2::fixture 0 KiB")
+        print("Total: 1 package (1 reinstall, 1 binary), Size of downloads: 0 KiB")
+        raise SystemExit(0)
+    expected = [*expected_options, str(archive)]
     if sys.argv[1:] != expected:
         raise SystemExit(f"unexpected emerge arguments: {sys.argv[1:]!r}")
-    pkgdir = Path(os.environ["PKGDIR"])
     if pkgdir.name != "critical-fixture":
         raise SystemExit("emerge PKGDIR is not the activated durable checkpoint")
     target = root / "var/db/pkg/cat/new-2/BUILD_TIME"
     restore_log = control / "restore-ran"
     attempt = len(restore_log.read_text().splitlines()) if restore_log.exists() else 0
+    print("\n>>> Emerging binary (1 of 1) cat/new-2::fixture")
     target.write_text(f"restored-by-binpkg-{attempt}\n", encoding="utf-8")
+    if attempt == 0 and (control / "mutate-foreign-vdb-during-restore").exists():
+        (root / "var/db/pkg/cat/base-1/BUILD_TIME").write_text(
+            "foreign-offline-restore-mutation\n", encoding="utf-8"
+        )
+    if attempt == 0 and (control / "mutate-selected-set-during-restore").exists():
+        (root / "var/lib/portage/world").write_text(
+            "cat/foreign-selected-package\n", encoding="utf-8"
+        )
+    if attempt == 0 and (control / "mutate-pkgdir-during-restore").exists():
+        # Change a nested, still trusted directory so the complete PKGDIR
+        # metadata manifest observes drift without changing the activated
+        # selector target directory identity or invalidating archive payloads.
+        (pkgdir / "cat").chmod(0o700)
     with restore_log.open("a", encoding="utf-8") as stream:
         stream.write("=cat/new-2\n")
     raise SystemExit(0)
 
 if invoked == "qcheck":
+    if sys.argv[1:] == ["=sys-apps/portage-3.0.81.1"]:
+        print("sys-apps/portage-3.0.81.1: 0 out of 1 files failed")
+        raise SystemExit(0)
     if sys.argv[1:] != ["=cat/new-2"]:
         raise SystemExit(f"unexpected qcheck arguments: {sys.argv[1:]!r}")
     print("cat/new-2: 0 out of 1 files failed")
     raise SystemExit(0)
 
 if invoked == "portageq":
+    if sys.argv[1:] == ["match", "/", "sys-apps/portage"]:
+        print("sys-apps/portage-3.0.81.1")
+        raise SystemExit(0)
     if sys.argv[1:] != ["envvar", "FEATURES"]:
         raise SystemExit("unexpected portageq arguments")
     if (control / "mutate-vdb-late").exists():
@@ -1491,7 +1544,11 @@ import subprocess
 import sys
 import time
 
-arguments = list(sys.argv[1:])
+original_arguments = list(sys.argv[1:])
+fixture_root = Path(__file__).resolve().parents[3]
+with (fixture_root / "control/unshare-invocations.jsonl").open("a", encoding="utf-8") as stream:
+    stream.write(json.dumps(original_arguments) + "\n")
+arguments = list(original_arguments)
 while arguments and arguments[0] != "--":
     arguments.pop(0)
 if not arguments or arguments.pop(0) != "--" or not arguments:
@@ -2114,11 +2171,13 @@ class CheckpointFixture:
             self.state_parent,
             self.tool_root / "usr/bin",
             self.tool_root / "usr/lib/python-exec",
+            self.tool_root / "usr/lib/python-exec/python3.15",
             self.tool_root / "usr/sbin",
             self.tool_root / "sbin",
             self.tool_root / "bin",
             self.script.parent,
             root / "root",
+            root / "var/lib/portage",
             root / "etc/portage",
             root / "run/gentoo-optimization",
         ):
@@ -2162,6 +2221,8 @@ class CheckpointFixture:
             raise unittest.SkipTest("/usr/bin/python3 is absent")
         shutil.copy2(python.resolve(), destination / "python3")
         (destination / "python3").chmod(0o755)
+        shutil.copy2(python.resolve(), destination / "python3.15")
+        (destination / "python3.15").chmod(0o755)
 
         shutil.copy2(Path("/usr/bin/mv").resolve(), destination / "mv.real")
         (destination / "mv.real").chmod(0o755)
@@ -2186,6 +2247,9 @@ class CheckpointFixture:
         dispatcher = self.tool_root / "usr/lib/python-exec/python-exec2"
         dispatcher.write_text(FAKE_PORTAGE, encoding="utf-8")
         dispatcher.chmod(0o755)
+        implementation = self.tool_root / "usr/lib/python-exec/python3.15/emerge"
+        implementation.write_text(FAKE_PORTAGE, encoding="utf-8")
+        implementation.chmod(0o755)
         (destination / "quickpkg").symlink_to("../lib/python-exec/python-exec2")
         (destination / "emaint").symlink_to("../lib/python-exec/python-exec2")
         (destination / "portageq").symlink_to("../lib/python-exec/python-exec2")
@@ -3053,7 +3117,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
         self.assertIn([str(durable), "1", str(self.fixture.tool_root / "usr/bin/zstd")], calls)
         self.assertEqual(
             (self.fixture.control / "frontends.log").read_text().splitlines(),
-            ["quickpkg", "emaint", "emaint", "portageq"],
+            ["portageq", "qcheck", "emerge", "quickpkg", "emaint", "emaint", "portageq"],
         )
         clone_policy = json.loads((self.report() / "clone-policy.json").read_text())
         containment = json.loads(
@@ -3062,7 +3126,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
         self.assertEqual(
             containment,
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "emulated": True,
                 "direct_pidfd_sigterm": {
                     "exact_child_gone": True,
@@ -3076,7 +3140,16 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                     "escaped_private_process_group_gone": True,
                     "escaped_setsid_descendant_gone": True,
                     "exact_namespace_child_gone": True,
+                    "ipv4_errno": "ENETUNREACH",
+                    "ipv4_external_unreachable": True,
+                    "ipv6_errno": "EADDRNOTAVAIL",
+                    "ipv6_external_unreachable": True,
                     "kill_child_signal": "SIGKILL",
+                    "mount_proc": True,
+                    "namespace_interfaces": ["lo"],
+                    "namespace_pid": 1,
+                    "network_namespace": True,
+                    "network_namespace_distinct": True,
                     "pid_namespace": True,
                     "private_process_group_gone": True,
                     "supervisor_pidfd_open": True,
@@ -3395,6 +3468,87 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
         options = self.offline_evidence_options()
         finalized = self.fixture.run(action="finalize", extra_options=options)
         self.assertEqual(finalized.returncode, 0, finalized.stderr)
+        command = json.loads((self.report() / "offline-restore/command.json").read_text())
+        self.assertEqual(command["schema_version"], 4)
+        self.assertTrue(command["offline"])
+        self.assertTrue(command["network_isolated"])
+        self.assertEqual(
+            command["command"],
+            [
+                str(self.fixture.tool_root / "usr/bin/emerge"),
+                "--ignore-default-opts",
+                "--ask=n",
+                "--autounmask=n",
+                "--autounmask-write=n",
+                "--buildpkg=n",
+                "--getbinpkg=n",
+                "--usepkgonly",
+                "--binpkg-changed-deps=n",
+                "--binpkg-respect-use=n",
+                "--use-ebuild-visibility=n",
+                "--nodeps",
+                "--oneshot",
+                "--verbose",
+                str(
+                    self.fixture.durable_parent
+                    / "critical-fixture/cat/new/new-2.gpkg.tar"
+                ),
+            ],
+        )
+        self.assertEqual(
+            command["environment"],
+            {
+                "HOME": str(self.fixture.root / "root"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "PATH": ":".join(
+                    str(self.fixture.tool_root / suffix)
+                    for suffix in ("usr/sbin", "usr/bin", "sbin", "bin")
+                ),
+                "TZ": "UTC",
+                "PKGDIR": str(self.fixture.durable_parent / "critical-fixture"),
+                "PORTAGE_BINHOST": "",
+                "GENTOO_MIRRORS": "",
+                "FETCHCOMMAND": "/bin/false",
+                "RESUMECOMMAND": "/bin/false",
+                "EPYTHON": "python3.15",
+            },
+        )
+        self.assertEqual(command["pretend"]["summary"], {
+            "packages": 1,
+            "reinstall": 1,
+            "binary": 1,
+            "download_kib": 0,
+        })
+        self.assertTrue(command["selected_archive"]["unchanged"])
+        self.assertTrue(command["selected_sets_transition"]["unchanged"])
+        self.assertTrue(command["pkgdir_transition"]["unchanged"])
+        self.assertEqual(command["portage_implementation"]["cpv"], "sys-apps/portage-3.0.81.1")
+        self.assertEqual(
+            command["containment"]["launcher"],
+            [
+                str(self.fixture.tool_root / "usr/bin/unshare"),
+                "--pid",
+                "--net",
+                "--fork",
+                "--kill-child=KILL",
+                "--mount-proc",
+                "--",
+            ],
+        )
+        unshare_invocations = [
+            json.loads(line)
+            for line in (self.fixture.control / "unshare-invocations.jsonl").read_text().splitlines()
+        ]
+        self.assertTrue(
+            any(
+                invocation[:6]
+                == ["--pid", "--net", "--fork", "--kill-child=KILL", "--mount-proc", "--"]
+                and str(self.fixture.tool_root / "usr/bin/emerge") in invocation
+                for invocation in unshare_invocations
+            ),
+            unshare_invocations,
+        )
         state_path = self.fixture.state_parent / "binpkg-checkpoint-fixture.json"
         terminal_path = (
             self.fixture.state_parent
@@ -3510,6 +3664,24 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                 self.assertEqual(list(restore_dir.glob("*.partial*")), [])
 
     def test_ambiguous_offline_command_crashes_require_explicit_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = CheckpointFixture(Path(directory).resolve())
+            self.assertEqual(fixture.run().returncode, 0)
+            options = ("--restore-cpv", "cat/new-2")
+            fixture.marker("crash-after-offline-preparation")
+            first = fixture.run(action="finalize", extra_options=options)
+            self.assertEqual(first.returncode, -signal.SIGKILL, first.stderr)
+            restore_dir = fixture.report_parent / "checkpoint-fixture/offline-restore"
+            self.assertFalse((restore_dir / "command-intent.json").exists())
+            self.assertTrue((restore_dir / "emerge.pretend.stdout.000").is_file())
+            (fixture.control / "crash-after-offline-preparation").unlink()
+            recovered = fixture.run(action="finalize", extra_options=options)
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertIn("reconciled", recovered.stderr)
+            command = json.loads((restore_dir / "command.json").read_text())
+            self.assertEqual(command["attempt"], 0)
+            self.assertIsNone(command["retry_authorization"])
+
         for crash in ("before-offline-command", "after-offline-command"):
             with self.subTest(crash=crash), tempfile.TemporaryDirectory() as directory:
                 fixture = CheckpointFixture(Path(directory).resolve())
@@ -3532,6 +3704,43 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
                 )
                 self.assertEqual(command["attempt"], 1)
                 self.assertIsNotNone(command["retry_authorization"])
+
+        for marker, diagnostic in (
+            (
+                "mutate-foreign-vdb-during-restore",
+                "VDB transition escaped restored CPV",
+            ),
+            (
+                "mutate-selected-set-during-restore",
+                "selected/world state differs from the first attempt baseline before retry",
+            ),
+            (
+                "mutate-pkgdir-during-restore",
+                "PKGDIR differs from the first attempt baseline before retry",
+            ),
+        ):
+            with self.subTest(marker=marker), tempfile.TemporaryDirectory() as directory:
+                fixture = CheckpointFixture(Path(directory).resolve())
+                self.assertEqual(fixture.run().returncode, 0)
+                options = ("--restore-cpv", "cat/new-2")
+                fixture.marker(marker)
+                fixture.marker("crash-after-offline-command")
+                first = fixture.run(action="finalize", extra_options=options)
+                self.assertEqual(first.returncode, -signal.SIGKILL, first.stderr)
+                (fixture.control / "crash-after-offline-command").unlink()
+                rejected = fixture.run(
+                    action="finalize",
+                    extra_options=options + ("--retry-interrupted-offline-restore",),
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn(diagnostic, rejected.stderr)
+                restore_dir = fixture.report_parent / "checkpoint-fixture/offline-restore"
+                self.assertFalse((restore_dir / "command.json").exists())
+                self.assertFalse((restore_dir / "retry-intent-001.json").exists())
+                self.assertEqual(
+                    (fixture.control / "restore-ran").read_text().splitlines(),
+                    ["=cat/new-2"],
+                )
 
     def test_receipt_and_state_tampering_are_rejected_during_reconciliation(self) -> None:
         for object_name in (
@@ -5278,6 +5487,19 @@ class CheckpointHostCapabilityTest(unittest.TestCase):
             """\
             import os
             import signal
+            import socket
+            import sys
+
+            parent_network_namespace = (int(sys.argv[1]), int(sys.argv[2]))
+            current_network_stat = os.stat("/proc/self/ns/net")
+            current_network_namespace = (
+                current_network_stat.st_dev,
+                current_network_stat.st_ino,
+            )
+            if current_network_namespace == parent_network_namespace:
+                raise SystemExit("network namespace was not isolated")
+            if sorted(name for _index, name in socket.if_nameindex()) != ["lo"]:
+                raise SystemExit("isolated network namespace has a non-loopback interface")
 
             descendant = os.fork()
             if descendant == 0:
@@ -5288,11 +5510,13 @@ class CheckpointHostCapabilityTest(unittest.TestCase):
             raise SystemExit(91)
             """
         )
+        parent_network_stat = os.stat("/proc/self/ns/net")
         with tempfile.TemporaryFile() as stderr_file:
             supervisor = subprocess.Popen(
                 [
                     "/usr/bin/unshare",
                     "--pid",
+                    "--net",
                     "--fork",
                     "--kill-child=KILL",
                     "--mount-proc",
@@ -5302,6 +5526,8 @@ class CheckpointHostCapabilityTest(unittest.TestCase):
                     "-B",
                     "-c",
                     namespace_code,
+                    str(parent_network_stat.st_dev),
+                    str(parent_network_stat.st_ino),
                 ],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
@@ -5340,6 +5566,20 @@ class CheckpointHostCapabilityTest(unittest.TestCase):
                 assert child_identity is not None
                 self.assertEqual(child_identity.ppid, supervisor.pid)
                 self.assertEqual(child_identity.process_group, supervisor.pid)
+                child_network_stat = os.stat(f"/proc/{child_pid}/ns/net")
+                self.assertNotEqual(
+                    (child_network_stat.st_dev, child_network_stat.st_ino),
+                    (parent_network_stat.st_dev, parent_network_stat.st_ino),
+                )
+                network_devices = Path(f"/proc/{child_pid}/net/dev").read_text(
+                    encoding="ascii"
+                )
+                interfaces = sorted(
+                    line.split(":", 1)[0].strip()
+                    for line in network_devices.splitlines()
+                    if ":" in line
+                )
+                self.assertEqual(interfaces, ["lo"])
                 while time.monotonic() < deadline:
                     descendants = self._children(child_pid)
                     if descendants is not None and len(descendants) > 1:

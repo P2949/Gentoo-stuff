@@ -72,6 +72,7 @@ AUTHORITATIVE=${GENTOO_OPT_AUTHORITATIVE:-0}
 TEST_CASE_TIMEOUT_SECONDS=${TEST_CASE_TIMEOUT_SECONDS:-1800}
 TEST_CASE_KILL_AFTER_SECONDS=${TEST_CASE_KILL_AFTER_SECONDS:-10}
 CHECKPOINT_SMOKE_TIMEOUT_SECONDS=${CHECKPOINT_SMOKE_TIMEOUT_SECONDS:-600}
+RECOVERY_SUITE_TIMEOUT_SECONDS=${RECOVERY_SUITE_TIMEOUT_SECONDS:-2700}
 
 declare -A SELECTED_CAPABILITIES=()
 readonly -a ALL_CAPABILITIES=(clang-ir clang-sample gcc rust go bolt)
@@ -152,6 +153,7 @@ Environment:
   TEST_CASE_TIMEOUT_SECONDS=1800
   TEST_CASE_KILL_AFTER_SECONDS=10
   CHECKPOINT_SMOKE_TIMEOUT_SECONDS=600
+  RECOVERY_SUITE_TIMEOUT_SECONDS=2700
   GENTOO_OPT_AUTHORITATIVE=0|1
 
 Each case receives a private GENTOO_OPT_SUBTEST_RESULTS fragment path.  A
@@ -165,6 +167,9 @@ failure.
 Per-capability deadlines override the global values by appending the normalized
 capability name, for example TEST_CASE_TIMEOUT_SECONDS_CLANG_IR or
 TEST_CASE_KILL_AFTER_SECONDS_BOLT. Values are positive integer seconds.
+The complete recovery unittest case has the separately reviewed
+RECOVERY_SUITE_TIMEOUT_SECONDS deadline; checkpoint-smoke retains its own
+shorter CHECKPOINT_SMOKE_TIMEOUT_SECONDS deadline.
 
 Fixture-specific tool and iteration overrides (for example CLANGXX,
 LLVM_PROFDATA, CLANG_SAMPLE_ITERATIONS, RUST_PGO_ITERATIONS,
@@ -464,6 +469,8 @@ validate_positive_seconds TEST_CASE_TIMEOUT_SECONDS "${TEST_CASE_TIMEOUT_SECONDS
 validate_positive_seconds TEST_CASE_KILL_AFTER_SECONDS "${TEST_CASE_KILL_AFTER_SECONDS}"
 validate_positive_seconds CHECKPOINT_SMOKE_TIMEOUT_SECONDS \
     "${CHECKPOINT_SMOKE_TIMEOUT_SECONDS}"
+validate_positive_seconds RECOVERY_SUITE_TIMEOUT_SECONDS \
+    "${RECOVERY_SUITE_TIMEOUT_SECONDS}"
 for capability in "${ALL_CAPABILITIES[@]}"; do
     capability_suffix=${capability^^}
     capability_suffix=${capability_suffix//-/_}
@@ -1503,10 +1510,20 @@ else
                 unittest_arguments=(--exclude-id-prefix test_phase2_evidence. \
                     "${unittest_arguments[@]}")
             fi
-            run_case_in_repository "python-unit-tests:${relative_directory}" \
-                "${unittest_environment[@]}" \
-                "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" \
-                "${unittest_arguments[@]}"
+            if [[ ${relative_directory} == tests/optimization/recovery ]]; then
+                run_case_in_repository_with_deadline \
+                    "python-unit-tests:${relative_directory}" \
+                    "${RECOVERY_SUITE_TIMEOUT_SECONDS}" \
+                    "${TEST_CASE_KILL_AFTER_SECONDS}" \
+                    "${unittest_environment[@]}" \
+                    "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" \
+                    "${unittest_arguments[@]}"
+            else
+                run_case_in_repository "python-unit-tests:${relative_directory}" \
+                    "${unittest_environment[@]}" \
+                    "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" \
+                    "${unittest_arguments[@]}"
+            fi
         done
         if [[ ${MODE} != stress && ${MODE} != authoritative ]]; then
             skip_case production-profile-lock-crash-stress \

@@ -29,28 +29,45 @@ and the displaced old selector immediately after exchange, and the third is
 the immutable displaced-selector witness. Any other combination is foreign and
 reconciliation fails closed.
 
-## 1. Enter a clean root shell and publish immutable bootstrap inputs
+## 1. Materialize immutable source, then enter a clean root shell
 
-Enter the clean root shell before publishing any bootstrap object. The same
-shell and exact operator paths remain in force for the complete transaction;
-do not return to the caller's ambient environment between sections.
+As the desktop user, first complete **Create the candidate's immutable source
+snapshot** in `docs/phase2-production-profile-transaction.md`. That procedure
+creates and verifies the user-owned bundle before any root operation, then
+publishes a root-owned bundle and exact detached checkout without executing
+from the mutable desktop checkout. Do not enter the checkpoint root shell
+until that complete procedure has produced the reviewed `COMMIT` and `SOURCE`.
+
+Then enter the clean root shell. Re-enter the two reviewed literal values,
+change to the immutable checkout explicitly, and keep this shell and these
+exact operator paths for the complete transaction. Do not return to the
+caller's ambient environment between sections.
 
 ```bash
 /usr/bin/doas /usr/bin/env -i HOME=/root USER=root LOGNAME=root \
   SHELL=/bin/bash PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
   LANG=C LC_ALL=C TZ=UTC /bin/bash --noprofile --norc
 set -Eeuo pipefail
 umask 077
 test "$EUID" -eq 0
+COMMIT=REVIEWED_COMMIT
+SOURCE=/var/lib/gentoo-optimization/bootstrap/source-checkouts/REVIEWED_RUN_ID
+test -d "$SOURCE"
+test ! -L "$SOURCE"
+cd "$SOURCE"
+test "$PWD" = "$SOURCE"
+test "$(/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false \
+  -c core.attributesFile=/dev/null rev-parse --verify 'HEAD^{commit}')" = "$COMMIT"
+test -z "$(/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false \
+  -c core.attributesFile=/dev/null status --porcelain=v1 --untracked-files=all)"
 ```
 
-Materialize the reviewed commit through the root-owned, ambient-config-isolated
-Git bundle procedure. Then publish both reviewed files as one new private
-directory. Refuse both existing objects and broken symlinks; never copy over an
-old bootstrap.
+Publish both reviewed files from that immutable checkout as one new private
+directory. Refuse both existing objects and broken symlinks; never copy over
+an old bootstrap.
 
 ```bash
-COMMIT=REVIEWED_COMMIT
 PARENT=/var/lib/gentoo-optimization/bootstrap
 DEST=$PARENT/binpkg-checkpoint-$COMMIT
 STAGE=$PARENT/.binpkg-checkpoint-$COMMIT.partial.$$
@@ -101,17 +118,57 @@ false permission-denied results.
 
 ```bash
 ID=pre-candidate-a-deps-YYYYMMDDTHHMMSSZ
-COMMIT=REVIEWED_COMMIT
 BOOTSTRAP=/var/lib/gentoo-optimization/bootstrap/binpkg-checkpoint-$COMMIT
 EVIDENCE=/root/checkpoint-evidence-$ID
+CHECKPOINT_CACHE=/var/cache/gentoo-optimization/binpkgs/snapshot-$ID
+CHECKPOINT_DURABLE=/var/lib/gentoo-optimization/recovery/binpkgs/critical-$ID
+CHECKPOINT_REPORT=/var/lib/gentoo-optimization/reports/checkpoint-$ID
+CHECKPOINT_STATE=/var/lib/gentoo-optimization/state/project/binpkg-checkpoint-$ID.json
+CHECKPOINT_PREPARED_STATE=/var/lib/gentoo-optimization/state/project/binpkg-checkpoint-$ID.prepared.json
+CHECKPOINT_ACTIVATED_STATE=/var/lib/gentoo-optimization/state/project/binpkg-checkpoint-$ID.selector-activated-offline-restore-pending.json
+CHECKPOINT_RESTORED_STATE=/var/lib/gentoo-optimization/state/project/binpkg-checkpoint-$ID.offline-restore-proven.json
+PREPARED_SELECTOR=/var/cache/gentoo-optimization/binpkgs/critical-current.prepared-$ID
+SELECTOR_WITNESS=/var/cache/gentoo-optimization/binpkgs/critical-current.previous-$ID
+for path in \
+  "$EVIDENCE" "$CHECKPOINT_CACHE" "$CHECKPOINT_DURABLE" "$CHECKPOINT_REPORT" \
+  "$CHECKPOINT_STATE" "$CHECKPOINT_PREPARED_STATE" \
+  "$CHECKPOINT_ACTIVATED_STATE" "$CHECKPOINT_RESTORED_STATE" \
+  "$PREPARED_SELECTOR" "$SELECTOR_WITNESS"; do
+  test ! -e "$path"
+  test ! -L "$path"
+done
 /usr/bin/install -d -o root -g root -m 0700 "$EVIDENCE"
 ```
 
 Reject any visible package mutation before capturing inputs:
 
 ```bash
-if pgrep -af '(^|/)(emerge|ebuild|ebuild\.sh|emaint|quickpkg)( |$)' \
-    >"$EVIDENCE/portage-processes.preflight.txt"; then
+scan_portage_processes() {
+  local output=$1 proc pid comm argument matched
+  : >"$output"
+  for proc in /proc/[0-9]*; do
+    test -d "$proc" || continue
+    pid=${proc##*/}
+    test "$pid" != "$$" || continue
+    comm=
+    IFS= read -r comm <"$proc/comm" 2>/dev/null || continue
+    matched=0
+    case $comm in
+      emerge|ebuild|ebuild.sh|emaint|quickpkg) matched=1 ;;
+    esac
+    if test -r "$proc/cmdline"; then
+      while IFS= read -r -d '' argument; do
+        case ${argument##*/} in
+          emerge|ebuild|ebuild.sh|emaint|quickpkg) matched=1 ;;
+        esac
+      done <"$proc/cmdline"
+    fi
+    test "$matched" -eq 0 || printf '%s\t%s\n' "$pid" "$comm" >>"$output"
+  done
+}
+scan_portage_processes "$EVIDENCE/portage-processes.preflight.txt"
+if test -s "$EVIDENCE/portage-processes.preflight.txt"; then
+  /usr/bin/cat "$EVIDENCE/portage-processes.preflight.txt" >&2
   printf '%s\n' 'ERROR: a Portage mutation process is active' >&2
   exit 1
 fi
@@ -342,21 +399,79 @@ a new checkpoint ID is used.
 
 ## 5. Prove one supervised offline binary-only restoration
 
-Choose exactly one CPV from the bound delta. The checkpoint program, not the
-operator, selects and hashes the matching archive, captures the VDB before and
-after, runs the exact trusted command below, proves that only the selected CPV's
-VDB subtree changed, runs `qcheck`, reruns the complete GPKG verifier, and
-publishes the immutable attempt ledger and terminal receipt.
+Choose exactly one explicit CPV from the bound delta. For the 1,220-CPV
+pre-dependency checkpoint, use the smallest reviewed delta package,
+`dev-util/ftjam-2.5.3_rc2-r3`; do not depend on atom-file ordering. For a later
+checkpoint, replace it with one explicitly reviewed CPV from that checkpoint's
+bound delta. The checkpoint program, not the operator, selects and hashes the
+matching archive, captures the VDB before and after, proves that only the
+selected CPV's VDB subtree changed, runs `qcheck`, reruns the complete GPKG
+verifier, and publishes the immutable attempt ledger and terminal receipt.
+
+Portage 3.0.81.1 has no `emerge --offline` option. Literal network isolation is
+provided by the already pidfd-bound launcher using a fresh PID and network
+namespace with a private `/proc`; its functional preflight proves a distinct
+network namespace, only loopback, and unreachable IPv4 and IPv6. The contained
+command also clears binhosts and mirrors, replaces both fetch commands with
+`/bin/false`, disables remote binpkg retrieval, and permits only the exact local
+binary package. For the reviewed pre-dependency restoration, derive that one
+canonical archive path from the immutable verification report (the finalizer
+performs and binds the same selection):
+
+```bash
+RESTORE_CPV=dev-util/ftjam-2.5.3_rc2-r3
+mapfile -t RESTORE_RELATIVES < <(/usr/bin/jq -er --arg cpv "$RESTORE_CPV" \
+  '.archives[] | select(.cpv == $cpv) | .path' \
+  "$CHECKPOINT_REPORT/durable-final-verification.json")
+test "${#RESTORE_RELATIVES[@]}" -eq 1
+ARCHIVE_PATH=$CHECKPOINT_DURABLE/${RESTORE_RELATIVES[0]}
+test -f "$ARCHIVE_PATH"
+test ! -L "$ARCHIVE_PATH"
+```
+
+The resulting contained mutation command is exactly:
 
 ```text
-/usr/bin/emerge --ignore-default-opts --offline --usepkgonly \
-  --getbinpkg=n --nodeps --oneshot =CATEGORY/PACKAGE-VERSION
+/usr/bin/unshare --pid --net --fork --kill-child=KILL --mount-proc --
+  /usr/bin/env -i HOME=/root LANG=C LC_ALL=C \
+    PATH=/usr/sbin:/usr/bin:/sbin:/bin TZ=UTC \
+    PKGDIR=/var/lib/gentoo-optimization/recovery/binpkgs/critical-ID \
+    PORTAGE_BINHOST= GENTOO_MIRRORS= \
+    FETCHCOMMAND=/bin/false RESUMECOMMAND=/bin/false EPYTHON=python3.15 \
+    /usr/bin/emerge --ignore-default-opts --ask=n --autounmask=n \
+      --autounmask-write=n --buildpkg=n --getbinpkg=n --usepkgonly \
+      --binpkg-changed-deps=n --binpkg-respect-use=n \
+      --use-ebuild-visibility=n --nodeps --oneshot --verbose \
+      "$ARCHIVE_PATH"
 ```
+
+The implementation's parent-death-bound Python launcher wraps `unshare`, and
+the private PID/network namespace runs a bounded `timeout` before the clean
+`env`; `command-intent.json` and `command.json` bind the exact unshare argv,
+tool identity, containment-preflight hash,
+environment, selected absolute `.gpkg.tar` path, and Portage argv. It forces and
+binds `EPYTHON=python3.15`, `/usr/bin/python3.15`, the selected
+`/usr/lib/python-exec/python3.15/emerge`, and the exact installed
+`sys-apps/portage` CPV. Immediately before mutation it reruns the functional
+containment proof, runs the same exact archive command with `--pretend`, and
+requires exactly one binary reinstall with zero downloads. It also requires
+`qcheck` of the bound Portage CPV before and after the attempt, rehashes the
+selected archive before and after, proves the complete `PKGDIR` tree did not
+change, and proves `/var/lib/portage/world` and `world_sets` retained their exact
+absence/type, ownership, mode, link count, timestamps, size, and content hash.
+Before publishing any retry intent or invoking `emerge` again, it requires the
+current VDB to be either unchanged from attempt zero or changed only inside the
+exact restore CPV, and requires selected-set and `PKGDIR` state to equal the
+attempt-zero baselines.
+After any ambiguous attempt, terminal validation compares the final VDB,
+selected sets, and `PKGDIR` against attempt zero's authoritative baselines—not
+only against the successful retry's pre-state.
 
 Run the finalizer with no externally created evidence envelopes:
 
 ```bash
-RESTORE_CPV=${DELTA_ATOMS[0]#=}
+RESTORE_CPV=dev-util/ftjam-2.5.3_rc2-r3
+printf '%s\n' "${DELTA_ATOMS[@]}" | /usr/bin/grep -Fqx -- "=$RESTORE_CPV"
 "$BOOTSTRAP/create-binpkg-checkpoint.sh" \
   --finalize-offline-restore \
   --restore-cpv "$RESTORE_CPV" \
@@ -374,7 +489,8 @@ logs, and current VDB, and only then authorize a new complete attempt:
 
 ```bash
 test -f "/var/lib/gentoo-optimization/reports/checkpoint-$ID/offline-restore/command-intent.json"
-! pgrep -af '(^|/)(emerge|ebuild|ebuild\.sh|emaint|quickpkg)( |$)'
+scan_portage_processes "$EVIDENCE/portage-processes.retry.txt"
+test ! -s "$EVIDENCE/portage-processes.retry.txt"
 "$BOOTSTRAP/create-binpkg-checkpoint.sh" \
   --finalize-offline-restore \
   --retry-interrupted-offline-restore \
