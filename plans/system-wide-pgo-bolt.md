@@ -2,7 +2,7 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. The current branch head is the latest committed Candidate-A implementation revision; it is non-authorizing until one exact clean commit passes the complete portable, live-host, and supervised production precheck. The working tree may contain the next Candidate-A corrections while that boundary is being stabilized. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active.
+- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. The current branch head includes the bounded execution-identity, supervisor, receipt-publication, and live-policy corrections; it remains non-authorizing pending the exact clean portable, CI, live-host, and supervised production gates. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
@@ -10,7 +10,7 @@
 - **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-07-26 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This is live progress evidence, not the frozen Phase 3 inventory.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-07-30; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is the rejected predecessor, not the final candidate: its exact GitHub Actions run `30226349306` failed the portable boundary. The current working tree contains the bounded tool-execution, supervisor, receipt-publication, and live-policy observation corrections for the next Candidate-A commit, but no clean exact-SHA portable and CI pass exists yet. The complete plan was re-read after the current repository validation checkpoint and must be re-read again after the exact clean portable/CI gates and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-08-02; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is a rejected predecessor: its exact GitHub Actions run `30226349306` failed the portable boundary. Commit `44ead3d66670a1ee8a9d3aace8fc0945cbb2d130` subsequently passed its exact-SHA portable workflow but is superseded, non-authorizing predecessor evidence after the current source-coherence corrections. The current branch head remains non-authorizing pending a fresh exact clean portable and CI boundary plus the live-host and supervised production gates. The complete plan was re-read after this source-coherence update and must be re-read again after the exact clean portable/CI gates and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -591,7 +591,7 @@ The classifier must examine installed contents rather than relying only on packa
 
 - Live evidence is rooted at `/var/lib/gentoo-optimization`; caches and recovery artifacts are under `/var/cache/gentoo-optimization`. The Phase 0 top-level roots were root-owned mode `0755`; security-sensitive descendants deliberately use stricter `0700`, `0750`, `0640`, `0440`, and `0550` policies. No profile pool is world-writable.
 - A Phase 2 root-trust audit on 2026-07-13 found that the live filesystem root and `/etc` had drifted to root-owned mode `0777`, which made any root-owned `/etc/portage` publication replaceable by an unprivileged local user. Both were immediately restored to the standard mode `0755` before any framework publication. The root-owned before/after report is `/var/lib/gentoo-optimization/reports/phase-2-root-trust-ancestor-remediation-20260713.log` (SHA-256 `054da0a00e57c3951f2cc4cfb1ee486147e5c4d8c8cbb3ef0a18464d498b58a4`); project state is `/var/lib/gentoo-optimization/state/project/root-trust-ancestor-remediation.json` (SHA-256 `51cf57b9378dad41ef7cac29098d9fdfe248e6fdaffc85dfb7cc62884c9eddf5`) with zero pending, unknown, or failed items for this remediation. The framework installer now treats every root-owned destination ancestor as a fail-closed trust condition; this remediation does not replace its per-run checks.
-- At Phase 0, `/etc/portage` was a live symlink to this repository's `portage/` tree; the starting archive is `/var/lib/gentoo-optimization/reports/phase-0-live-etc-portage.tar.zst` with SHA-256 `1f4c812aa2c26e700f4181d3bea550266ec0aa6d4433b41feb318b6d108e4b1f`. It now resolves through `/var/lib/gentoo-optimization/framework-current/portage`; the selected installed candidate predates Candidate A and cannot validate the current working tree.
+- At Phase 0, `/etc/portage` was a live symlink to this repository's `portage/` tree; the starting archive is `/var/lib/gentoo-optimization/reports/phase-0-live-etc-portage.tar.zst` with SHA-256 `1f4c812aa2c26e700f4181d3bea550266ec0aa6d4433b41feb318b6d108e4b1f`. It now resolves through `/var/lib/gentoo-optimization/framework-current/portage`; the selected installed candidate predates Candidate A and cannot validate the current source revision.
 - The ESP is mounted at `/efi`, not `/boot`. Its starting raw image is `/var/cache/gentoo-optimization/binpkgs/esp-starting-20260710.img.zst` (verified by `zstd -t`, SHA-256 `83b3f46cc843427e9058cbcb07418c5e93ec943a3f176af60eebe75e81a33447`).
 - NVRAM entry `Boot0200` originally referenced `7.1.2-cachyos2` `-old` paths that were absent. Exact hash-matching copies now occupy those managed paths, but they remain rotatable and are not the authoritative independent recovery generation; the uniquely named `Boot0004`/`Boot0005` generation below supersedes them.
 - The active kernel is `7.1.2-cachyos2`; its recorded config SHA-256 is `cc8c2e2c90cc47720e027c0bf5b7fc8d438a183efa30f15e6bf77c5083ebe6a6` and enables `CONFIG_AUTOFDO_CLANG`, `CONFIG_PROPELLER_CLANG`, and perf events.
@@ -829,8 +829,8 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
 ### 2026-07-26 Candidate-A pre-activation checkpoint
 
 - Candidate A is repository/pre-activation implementation only. The current
-  branch head is the latest committed implementation revision, and any current
-  working-tree corrections belong to the next candidate boundary. No Candidate-A revision has been
+  branch head is the latest committed implementation revision; every later
+  source correction creates a new candidate boundary. No Candidate-A revision has been
   installed as the live candidate or accepted by the complete host and
   production sample-PGO gates.
 - No current detached Phase 2 evidence index exists. The four sample-profile
@@ -937,7 +937,7 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   `2bcd4a21b69e2234d4fcdc09ee42ddd613c6ac959a70cb89d97e1585feb18fc4`,
   and `7b7222cb6798c7d7e3379e8544f3dc11625e3bb868be5f933406d7ddb84ed533`.
   The regenerated tracked contract exactly matches discovery. These are
-  current working-tree topology facts, not an exact-commit authorization.
+  current source-topology facts, not an exact-commit authorization.
 - Current non-authorizing validation passed all 36 evidence tests with no
   skips, and the isolated current-tree mirror completed all 201 main tests with
   194 required passes, six exact reviewed required host skips, and one
@@ -1214,6 +1214,25 @@ bounded isolated execution boundary. The workflow invokes `/usr/bin/bash` and
 `/usr/bin/python3` explicitly and uploads the successful result, subtest,
 summary, contract, and provenance evidence as well as failure evidence.
 
+A read-only 2026-08-02 live-host PATH preflight used the reviewed authoritative
+`/usr/bin:/usr/lib/llvm/22/bin:/bin` order and proved that all 69 manifest tools
+whose requested path basename is their command name resolve to that exact
+manifest entry point (`failures=0`); all declared version probes also passed.
+The root-owned 25-file preflight is retained at
+`/var/tmp/gentoo-optimization/candidate-a-source-preflight-20260802/live-tool-preflight-44ead3d`;
+its relative `CONTENT-SHA256SUMS` verifies and has SHA-256
+`e0625f66807a8455387e59c028980de2b112da1075436240efc0c94c97efab30`.
+The complete path-resolution TSV is
+`/var/tmp/gentoo-optimization/candidate-a-source-preflight-20260802/full-manifest-path.tsv`
+with SHA-256
+`98008e7f6d880d2ee9a482bcc022cf2a7164839c29d92093a8b4f6a707323c0b`; the
+focused LLVM/core TSV is
+`/var/tmp/gentoo-optimization/candidate-a-source-preflight-20260802/focused-path.tsv`
+with SHA-256
+`33cde6f50941cdbec916d8648bfbb0fd95d8dee89f5125abb3765f7eef82fa2e`.
+This is a non-mutating current-host coherence observation only; it does not
+substitute for the fresh exact-candidate authoritative or Candidate-B gates.
+
 The Candidate-A correction removes raw `os.fork()` and process-wide child-
 subreaper mutation from the multi-test unittest process. A dedicated
 `checkpoint_process_supervisor.py` remains in the driver's exact case process
@@ -1271,8 +1290,31 @@ subtest passes, zero required failures, and zero mandatory internal skips. Its
 and `6170906cfad5e069be03a589f0df4667a0e9dc1d4bc14b6d26ad684144470b44`.
 Its four supervisor, nine fake-namespace terminal/watchdog, and five
 state-machine/process-group methods all passed through the exact project
-driver of that working-tree revision. The current exact-driver
-`checkpoint-smoke` and complete clean `portable-complete` runs remain pending.
+driver of that superseded source revision.
+
+Commit `44ead3d66670a1ee8a9d3aace8fc0945cbb2d130` then passed exact-SHA GitHub
+Actions run `30565522289` (`portable-complete`) on 2026-07-30 from
+17:20:22Z through 17:43:21Z. The retained artifact reports 77 top-level passes,
+zero failures, 14 reviewed portable skips, 379 required subtest passes, zero
+required subtest failures, 23 reviewed required skips, nine mandatory internal
+skips, one diagnostic internal skip, and exit status zero. SHA-256 values for
+`results.tsv`, `subtests.tsv`, `summary.txt`, the contract log, and provenance
+are respectively
+`c75637997db3eb50aca200971b253393aff3c9c2ee07511568687edc3345ed81`,
+`c26bfa7d890a54da2f0639d563d049ee46eedcd2ebd80f3dfdaee01c42d1a8b4`,
+`4d49b0bf0e641086f37d1e73a07e34c23ca173ff9ef14b722e45b84322ef3bb0`,
+`94603fd460ca913eec48fbdb14cdeeb1a9da62aaefc0e5b9332c418e21cd092c`,
+and `eb51aa3d58410bfedaf90e39fa9f8942d3a6af0a9312ee2152cd377b40eac2c3`.
+The root-owned retained artifact is
+`/var/tmp/gentoo-optimization/ci/44ead3d66670a1ee8a9d3aace8fc0945cbb2d130/run-30565522289`
+(`root:root`, directory mode `0750`, file mode `0640`). Its location-independent
+`CONTENT-SHA256SUMS` covers 199 files and verifies; that manifest's SHA-256 is
+`b760c7dcb750a319c648c24718226be71b78e07608245178f3174e24f0aee627`.
+This proves that predecessor's portable boundary only; it is superseded by the
+current plan, runbook, and workflow corrections and never passed the live-host
+or supervised production gates. The current branch head therefore requires a
+fresh exact-driver `checkpoint-smoke`, complete clean `portable-complete`, and
+exact-SHA CI run.
 
 The first complete current-tree diagnostic at
 `/tmp/gentoo-opt-portable-complete-candidate-a-20260729-v6` proved all 198 main
@@ -1287,8 +1329,8 @@ candidate as an unexpected error. Its `summary.txt`, `results.tsv`, and
 and `ce1ebb56ca77b1a1d64ce17cb44eb185cc6797e0f6c6665b8b2067ff5ae63963`.
 The residue is removed, and a direct rerun of the corrected production-
 environment fixture exits zero while publishing the reviewed required
-`live-portage.policy` skip. The complete corrected portable boundary and exact
-clean-commit CI result remain pending.
+`live-portage.policy` skip. The complete portable boundary and exact-clean-
+commit CI result for the current branch head remain pending.
 
 The following non-authorizing 2026-07-26 checkpoint is retained as historical
 evidence for the superseded in-process child-subreaper harness; its evidence
@@ -1351,7 +1393,7 @@ complete root/ancestor check. The dispatcher subsequently passed all 45 cases
 both in the live checkout and a fresh `/tmp` mirror. This earlier failed run is
 diagnostic only. The subsequent exact source mirror at
 `/tmp/gentoo-candidate-a-mirror-20260726-v2` was created by applying the
-working-tree patch whose source and applied-copy SHA-256 values both equal
+then-uncommitted source patch whose source and applied-copy SHA-256 values both equal
 `cdb08db28802cfff7900eb188d7c8ff9bfb69e03f296e163ae29c6a295dabbbb`.
 Its complete `portable-complete` run at
 `/tmp/gentoo-opt-portable-complete-candidate-a-mirror-v2` passed with 78

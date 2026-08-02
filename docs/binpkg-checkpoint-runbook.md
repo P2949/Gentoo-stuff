@@ -29,7 +29,20 @@ and the displaced old selector immediately after exchange, and the third is
 the immutable displaced-selector witness. Any other combination is foreign and
 reconciliation fails closed.
 
-## 1. Publish immutable bootstrap inputs without replacement
+## 1. Enter a clean root shell and publish immutable bootstrap inputs
+
+Enter the clean root shell before publishing any bootstrap object. The same
+shell and exact operator paths remain in force for the complete transaction;
+do not return to the caller's ambient environment between sections.
+
+```bash
+/usr/bin/doas /usr/bin/env -i HOME=/root USER=root LOGNAME=root \
+  SHELL=/bin/bash PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+  LANG=C LC_ALL=C TZ=UTC /bin/bash --noprofile --norc
+set -Eeuo pipefail
+umask 077
+test "$EUID" -eq 0
+```
 
 Materialize the reviewed commit through the root-owned, ambient-config-isolated
 Git bundle procedure. Then publish both reviewed files as one new private
@@ -41,34 +54,34 @@ COMMIT=REVIEWED_COMMIT
 PARENT=/var/lib/gentoo-optimization/bootstrap
 DEST=$PARENT/binpkg-checkpoint-$COMMIT
 STAGE=$PARENT/.binpkg-checkpoint-$COMMIT.partial.$$
-doas test ! -e "$DEST"
-doas test ! -L "$DEST"
-doas test ! -e "$STAGE"
-doas test ! -L "$STAGE"
-doas install -d -o root -g root -m 0700 "$STAGE"
-doas install -o root -g root -m 0755 \
+test ! -e "$DEST"
+test ! -L "$DEST"
+test ! -e "$STAGE"
+test ! -L "$STAGE"
+/usr/bin/install -d -o root -g root -m 0700 "$STAGE"
+/usr/bin/install -o root -g root -m 0755 \
   scripts/optimization/recovery/create-binpkg-checkpoint.sh "$STAGE/"
-doas install -o root -g root -m 0755 \
+/usr/bin/install -o root -g root -m 0755 \
   scripts/optimization/recovery/verify-binpkg-snapshot.py "$STAGE/"
-SCRIPT_SHA=$(sha256sum scripts/optimization/recovery/create-binpkg-checkpoint.sh | awk '{print $1}')
-VERIFIER_SHA=$(sha256sum scripts/optimization/recovery/verify-binpkg-snapshot.py | awk '{print $1}')
-test "$SCRIPT_SHA" = "$(doas sha256sum "$STAGE/create-binpkg-checkpoint.sh" | awk '{print $1}')"
-test "$VERIFIER_SHA" = "$(doas sha256sum "$STAGE/verify-binpkg-snapshot.py" | awk '{print $1}')"
-doas sync -f "$STAGE/create-binpkg-checkpoint.sh"
-doas sync -f "$STAGE/verify-binpkg-snapshot.py"
-doas sync -f "$STAGE"
-doas mv --no-clobber --no-copy -T -- "$STAGE" "$DEST"
-if doas test -e "$STAGE" || doas test -L "$STAGE"; then
-  test "$SCRIPT_SHA" = "$(doas sha256sum "$DEST/create-binpkg-checkpoint.sh" | awk '{print $1}')"
-  test "$VERIFIER_SHA" = "$(doas sha256sum "$DEST/verify-binpkg-snapshot.py" | awk '{print $1}')"
-  doas rm -rf -- "$STAGE"
+SCRIPT_SHA=$(/usr/bin/sha256sum scripts/optimization/recovery/create-binpkg-checkpoint.sh | /usr/bin/awk '{print $1}')
+VERIFIER_SHA=$(/usr/bin/sha256sum scripts/optimization/recovery/verify-binpkg-snapshot.py | /usr/bin/awk '{print $1}')
+test "$SCRIPT_SHA" = "$(/usr/bin/sha256sum "$STAGE/create-binpkg-checkpoint.sh" | /usr/bin/awk '{print $1}')"
+test "$VERIFIER_SHA" = "$(/usr/bin/sha256sum "$STAGE/verify-binpkg-snapshot.py" | /usr/bin/awk '{print $1}')"
+/usr/bin/sync -f "$STAGE/create-binpkg-checkpoint.sh"
+/usr/bin/sync -f "$STAGE/verify-binpkg-snapshot.py"
+/usr/bin/sync -f "$STAGE"
+/usr/bin/mv --no-clobber --no-copy -T -- "$STAGE" "$DEST"
+if test -e "$STAGE" || test -L "$STAGE"; then
+  test "$SCRIPT_SHA" = "$(/usr/bin/sha256sum "$DEST/create-binpkg-checkpoint.sh" | /usr/bin/awk '{print $1}')"
+  test "$VERIFIER_SHA" = "$(/usr/bin/sha256sum "$DEST/verify-binpkg-snapshot.py" | /usr/bin/awk '{print $1}')"
+  /usr/bin/rm -rf -- "$STAGE"
 fi
-doas test ! -e "$STAGE" && doas test ! -L "$STAGE"
-doas test -d "$DEST"
-test "$SCRIPT_SHA" = "$(doas sha256sum "$DEST/create-binpkg-checkpoint.sh" | awk '{print $1}')"
-test "$VERIFIER_SHA" = "$(doas sha256sum "$DEST/verify-binpkg-snapshot.py" | awk '{print $1}')"
-doas sync -f "$DEST"
-doas sync -f "$PARENT"
+test ! -e "$STAGE" && test ! -L "$STAGE"
+test -d "$DEST"
+test "$SCRIPT_SHA" = "$(/usr/bin/sha256sum "$DEST/create-binpkg-checkpoint.sh" | /usr/bin/awk '{print $1}')"
+test "$VERIFIER_SHA" = "$(/usr/bin/sha256sum "$DEST/verify-binpkg-snapshot.py" | /usr/bin/awk '{print $1}')"
+/usr/bin/sync -f "$DEST"
+/usr/bin/sync -f "$PARENT"
 ```
 
 The script binds its Bash interpreter, every external tool, the verifier,
@@ -82,20 +95,16 @@ directory, file, symlink, payload, owner, mode, or link count fails closed.
 
 ## 2. Bind the source and exact live delta
 
-Enter a clean root shell and create a private evidence directory. Every later
-command in this runbook runs in that shell, so root-private existence checks do
-not accidentally become false permission-denied results.
+Continue in the clean root shell from section 1 and create a private evidence
+directory. Root-private existence checks therefore cannot accidentally become
+false permission-denied results.
 
 ```bash
-doas env -i HOME=/root PATH=/usr/sbin:/usr/bin:/sbin:/bin \
-  LANG=C LC_ALL=C TZ=UTC /bin/bash --noprofile --norc
-set -Eeuo pipefail
-umask 077
 ID=pre-candidate-a-deps-YYYYMMDDTHHMMSSZ
 COMMIT=REVIEWED_COMMIT
 BOOTSTRAP=/var/lib/gentoo-optimization/bootstrap/binpkg-checkpoint-$COMMIT
 EVIDENCE=/root/checkpoint-evidence-$ID
-install -d -o root -g root -m 0700 "$EVIDENCE"
+/usr/bin/install -d -o root -g root -m 0700 "$EVIDENCE"
 ```
 
 Reject any visible package mutation before capturing inputs:
@@ -127,7 +136,7 @@ source-to-live delta. Then materialize the exact atom file:
 
 ```bash
 set +e
-python3 -I -B "$VERIFIER" \
+/usr/bin/python3 -I -B "$VERIFIER" \
   --snapshot "$SOURCE" --vdb /var/db/pkg --zstd /usr/bin/zstd \
   --format json --validate-gpkg \
   >"$EVIDENCE/source-verification.json" \
@@ -445,7 +454,7 @@ find "$REPORT" -xdev \( -type f -o -type l \) -print0 >"$EVIDENCE/final-report.p
 find "$STATE_PARENT" -maxdepth 1 \( -name "binpkg-checkpoint-$ID.json" -o \
   -name "binpkg-checkpoint-$ID.*.json" \) \( -type f -o -type l \) -print0 \
   >>"$EVIDENCE/final-report.paths0"
-python3 -I -B - "$EVIDENCE/final-report.paths0" \
+/usr/bin/python3 -I -B - "$EVIDENCE/final-report.paths0" \
   >"$EVIDENCE/final-evidence-manifest.json" <<'PY'
 import hashlib, json, os, stat, sys
 from pathlib import Path

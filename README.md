@@ -25,14 +25,15 @@ Start with:
 For non-mutating repository validation, run:
 
 ```sh
-tests/run-optimization-tests.sh --mode smoke
-tests/run-optimization-tests.sh --mode checkpoint-smoke
-tests/run-optimization-tests.sh --mode portable-complete
+PATH=/usr/bin:/bin /usr/bin/bash tests/run-optimization-tests.sh --mode smoke
+PATH=/usr/bin:/bin /usr/bin/bash tests/run-optimization-tests.sh --mode checkpoint-smoke
+PATH=/usr/bin:/bin /usr/bin/bash tests/run-optimization-tests.sh --mode portable-complete
 ```
 
-Smoke is the short feedback gate. Checkpoint-smoke adds bounded timeout and
-fast-reparent harness-cleanup regressions plus four recovery state-machine
-paths without running the complete recovery matrix.
+Smoke is the short feedback gate. Checkpoint-smoke selects 18 exact methods:
+four supervisor containment/release paths, nine portable fake-`unshare`
+terminal/watchdog paths, and five checkpoint state-machine/process-group paths,
+without running the complete recovery matrix.
 Portable-complete runs the complete portable non-capability, non-stress suite
 and reports reason-bearing environment skips; it is not an authoritative
 Gentoo-host pass.

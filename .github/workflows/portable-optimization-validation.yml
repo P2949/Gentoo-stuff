@@ -55,6 +55,7 @@ jobs:
 
       - name: Run the portable-complete gate
         env:
+          PATH: /usr/bin:/bin
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           set -Eeuo pipefail

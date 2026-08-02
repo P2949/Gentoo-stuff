@@ -79,7 +79,7 @@ as follows:
 
 ```sh
 set -Eeuo pipefail
-python3 scripts/optimization/verify/phase2-evidence.py plan-marker \
+/usr/bin/python3 -I -B scripts/optimization/verify/phase2-evidence.py plan-marker \
   --repository-root "$PWD" \
   --claim-id phase2-dispatcher \
   --checkbox-line <LINE> [--checkbox-line <LINE> ...]
