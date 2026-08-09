@@ -311,6 +311,50 @@ class OptimizationPolicyTests(unittest.TestCase):
             claims["phase2-framework"],
         )
 
+        checkpoint_runbook = (
+            REPOSITORY_ROOT / "docs/binpkg-checkpoint-runbook.md"
+        ).read_text(encoding="utf-8")
+        for required_fragment in (
+            "CHECKOUT_SOURCE=/var/lib/gentoo-optimization/bootstrap/source-checkouts/",
+            "BINPKG_SOURCE=$(readlink -e /var/cache/gentoo-optimization/binpkgs/critical-current)",
+            "--buildpkg=y",
+            "--getbinpkg=n",
+            "--usepkg=n",
+            "pretend selected a non-new or non-source action",
+            "installed-cpvs.before.txt",
+            "installed-cpvs.after.txt",
+            "selected-sets.before.json",
+            "selected-sets.after.json",
+            "from portage.getbinpkg import PackageIndex",
+            "ebuild-provenance.before.json",
+            "ebuild-provenance.after.json",
+            "run_schema_probe /usr/bin/python3 active-python3",
+            "run_schema_probe /usr/bin/python3.15 portage-python3.15",
+            "POST_CHECKPOINT_ID=post-candidate-a-jsonschema-",
+            "expected-delta-atoms.txt",
+            "JSONSCHEMA_RESTORE_CPVS",
+            "publish_checkpoint_operator_evidence \"$POST_CHECKPOINT_ID\" \"$EVIDENCE\"",
+            "/root/checkpoint-evidence-ID",
+            "/var/lib/gentoo-optimization/reports/checkpoint-ID-operator-evidence",
+        ):
+            with self.subTest(required_fragment=required_fragment):
+                self.assertIn(required_fragment, checkpoint_runbook)
+        self.assertNotRegex(checkpoint_runbook, r"(?m)^SOURCE=")
+        self.assertNotIn("force_reindex=True", checkpoint_runbook)
+        self.assertGreaterEqual(
+            checkpoint_runbook.count("--finalize-offline-restore"), 5
+        )
+        self.assertLess(
+            checkpoint_runbook.index("PRE_CHECKPOINT_TERMINAL=$CHECKPOINT_RESTORED_STATE"),
+            checkpoint_runbook.index("SOURCE_EMERGE_COMMAND=("),
+        )
+        self.assertLess(
+            checkpoint_runbook.index("SOURCE_EMERGE_COMMAND=("),
+            checkpoint_runbook.index(
+                "POST_CHECKPOINT_ID=post-candidate-a-jsonschema-"
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
