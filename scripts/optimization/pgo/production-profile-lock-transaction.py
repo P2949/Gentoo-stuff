@@ -29,7 +29,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, NoReturn, Sequence
+from typing import Any, Callable, Iterator, NoReturn, Sequence
 
 
 FRAMEWORK_LOCK = Path("/run/gentoo-optimization/framework-install.lock")
@@ -172,6 +172,22 @@ FAILPOINT_EXIT = {
     "child-sidecar-after-partial-fsync": 99,
     "authorization-after-partial-fsync": 102,
 }
+TRANSACTION_SIGNALS = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+TEST_SIGNAL_PAUSE_STAGES = (
+    "handler-before-arm",
+    "arm-after-journal",
+    "child-before-spawn",
+    "child-after-spawn",
+    "child-after-sidecar",
+    "child-after-authorization",
+    "child-before-release",
+    "child-after-wait",
+    "child-after-token-scan",
+    "finalize-before-receipt",
+    "receipt-after-partial-fsync",
+    "receipt-after-final-rename",
+    "interrupt-after-claim",
+)
 PRODUCTION_CHILD_ENVIRONMENT = {
     "HOME": "/root",
     "LANG": "C",
@@ -195,11 +211,70 @@ class TransactionError(Exception):
 
 
 class TransactionInterrupted(Exception):
-    """The coordinator received a signal while supervising its child."""
+    """The coordinator received a signal during its live transaction."""
 
     def __init__(self, signum: int) -> None:
         super().__init__(f"interrupted by signal {signum}")
         self.signum = signum
+
+
+@contextlib.contextmanager
+def blocked_transaction_signals(label: str) -> Iterator[set[signal.Signals]]:
+    """Block the complete transaction signal set for one atomic boundary."""
+
+    pthread_sigmask = getattr(signal, "pthread_sigmask", None)
+    if not callable(pthread_sigmask):
+        fail("transaction signal lifecycle requires pthread_sigmask")
+    try:
+        previous_mask = pthread_sigmask(signal.SIG_BLOCK, TRANSACTION_SIGNALS)
+    except OSError as error:
+        fail(f"cannot block transaction signals during {label}: {error}")
+    try:
+        yield previous_mask
+    finally:
+        try:
+            pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        except OSError as error:
+            fail(f"cannot restore the signal mask after {label}: {error}")
+
+
+def install_transaction_signal_handlers(
+    handler: Callable[[int, object], None],
+    previous_handlers: dict[signal.Signals, Any],
+) -> None:
+    """Install the complete transaction signal set before it can be observed."""
+
+    with blocked_transaction_signals(
+        "transaction handler installation"
+    ) as previous_mask:
+        inherited_blocked = sorted(
+            set(previous_mask).intersection(TRANSACTION_SIGNALS), key=int
+        )
+        if inherited_blocked:
+            fail(
+                "production-lock coordinator inherited blocked transaction "
+                "signals: "
+                + ", ".join(signal.Signals(signum).name for signum in inherited_blocked)
+            )
+        for transaction_signal in TRANSACTION_SIGNALS:
+            previous_handlers[transaction_signal] = signal.getsignal(
+                transaction_signal
+            )
+        for transaction_signal in TRANSACTION_SIGNALS:
+            signal.signal(transaction_signal, handler)
+
+
+def restore_transaction_signal_handlers(
+    previous_handlers: dict[signal.Signals, Any],
+) -> None:
+    """Restore the pre-transaction dispositions under one blocked signal set."""
+
+    # The receipt/journal state is terminal before this handoff.  Signals that
+    # arrive after the old dispositions are restored are outside the managed
+    # transaction lifecycle and retain the caller's original semantics.
+    with blocked_transaction_signals("transaction handler restoration"):
+        for transaction_signal, handler in previous_handlers.items():
+            signal.signal(transaction_signal, handler)
 
 
 def fail(message: str) -> NoReturn:
@@ -2309,6 +2384,9 @@ def publish_production_receipt(
     document: dict[str, object],
     journal: dict[str, object],
     failpoint: str | None,
+    *,
+    pre_commit_hook: Callable[[], None] | None = None,
+    commit_callback: Callable[[], None] | None = None,
 ) -> Path:
     receipt, partial, abandoned = receipt_paths
     validate_receipt_document(document, journal)
@@ -2337,8 +2415,13 @@ def publish_production_receipt(
         descriptor = -1
         inspect_journal_file(partial, paths, "transaction receipt partial")
         trigger_failpoint(failpoint, "receipt-after-partial-fsync")
-        os.replace(partial, receipt)
-        fsync_directory(receipt.parent)
+        if pre_commit_hook is not None:
+            pre_commit_hook()
+        with blocked_transaction_signals("durable receipt commit"):
+            os.replace(partial, receipt)
+            fsync_directory(receipt.parent)
+            if commit_callback is not None:
+                commit_callback()
         trigger_failpoint(failpoint, "receipt-after-final-rename")
         loaded, _identity = load_receipt_file(
             receipt, paths, journal, "transaction receipt"
@@ -2577,6 +2660,7 @@ def arm_transaction(
     child_contract: dict[str, object],
     timeout: float,
     failpoint: str | None,
+    post_journal_hook: Callable[[], None] | None = None,
 ) -> dict[str, object]:
     expected_payload = canonical_payload(generation)
     with generation_locks(paths, timeout) as (project, generation_lock):
@@ -2611,6 +2695,8 @@ def arm_transaction(
             },
         )
         write_journal(paths, document)
+        if post_journal_hook is not None:
+            post_journal_hook()
         write_descriptor(
             project_descriptor,
             expected_payload,
@@ -2686,6 +2772,110 @@ def test_pre_arm_pause(arguments: argparse.Namespace, paths: Paths) -> None:
     fsync_directory(pause.parent)
 
 
+def test_signal_pause(
+    arguments: argparse.Namespace,
+    paths: Paths,
+    stage: str,
+    *,
+    child_pid: int | None = None,
+    stop_requested: Callable[[], bool] | None = None,
+) -> None:
+    """Expose one deterministic signal boundary only in explicit test mode."""
+
+    selected_stage = arguments.test_signal_pause_stage
+    pause = arguments.test_signal_pause_file
+    if selected_stage is None and pause is None:
+        return
+    if selected_stage is None or pause is None:
+        fail("test signal pause requires both its stage and marker path")
+    if selected_stage != stage:
+        return
+    if not paths.test_mode or paths.test_root is None:
+        fail("the signal pause is available only with explicit test mode")
+    pause = require_safe_path(pause, "test signal pause")
+    path_below(pause, paths.test_root, "test signal pause")
+    if pause in {
+        paths.framework,
+        paths.project,
+        paths.generation,
+        paths.journal,
+        paths.partial_journal,
+        paths.child_identity,
+        paths.partial_child_identity,
+    }:
+        fail("test signal pause collides with a transaction path")
+    validate_parent(pause, paths, "test signal pause")
+    partial = pause.with_name(f"{pause.name}.partial.{os.getpid()}")
+    path_below(partial, paths.test_root, "test signal pause partial")
+    validate_parent(partial, paths, "test signal pause partial")
+    if pause.exists() or pause.is_symlink():
+        fail("test signal pause marker already exists")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    identity: FileIdentity | None = None
+    partial_created = False
+    try:
+        try:
+            descriptor = os.open(partial, flags, JOURNAL_MODE)
+            partial_created = True
+        except OSError as error:
+            fail(f"cannot create test signal pause partial: {error}")
+        try:
+            identity = FileIdentity.from_stat(os.fstat(descriptor))
+            payload = canonical_json(
+                {
+                    "child_pid": child_pid,
+                    "coordinator_pid": os.getpid(),
+                    "stage": stage,
+                }
+            )
+            if os.write(descriptor, payload) != len(payload):
+                fail("short write while creating test signal pause")
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+            descriptor = -1
+        os.replace(partial, pause)
+        partial_created = False
+        fsync_directory(pause.parent)
+        deadline = time.monotonic() + min(arguments.child_timeout_seconds, 30.0)
+        while True:
+            if stop_requested is not None and stop_requested():
+                break
+            try:
+                observed = FileIdentity.from_stat(pause.lstat())
+            except FileNotFoundError:
+                break
+            except OSError as error:
+                fail(f"cannot revalidate test signal pause: {error}")
+            if observed != identity:
+                fail("test signal pause inode or metadata changed")
+            if time.monotonic() >= deadline:
+                fail("timed out waiting for test signal pause release")
+            time.sleep(0.02)
+    finally:
+        if descriptor >= 0:
+            with contextlib.suppress(OSError):
+                os.close(descriptor)
+        cleanup_candidates = (
+            (pause, identity is not None),
+            (partial, partial_created),
+        )
+        for candidate, created in cleanup_candidates:
+            if not created:
+                continue
+            try:
+                if identity is not None and FileIdentity.from_stat(
+                    candidate.lstat()
+                ) != identity:
+                    fail("test signal pause changed before cleanup")
+                candidate.unlink()
+                fsync_directory(candidate.parent)
+            except FileNotFoundError:
+                pass
+
+
 def existing_abandoned_receipt_evidence(
     abandoned: Path,
     paths: Paths,
@@ -2721,6 +2911,9 @@ def publish_or_reconcile_receipt_locked(
     authorization: dict[str, object] | None,
     token_scan: dict[str, object] | None,
     failpoint: str | None,
+    abandon_uncommitted_partial: bool = False,
+    pre_commit_hook: Callable[[], None] | None = None,
+    commit_callback: Callable[[], None] | None = None,
 ) -> Path:
     generation = validate_generation(journal["generation"], "journal generation")
     receipt_paths = production_receipt_paths(paths, generation)
@@ -2732,19 +2925,19 @@ def publish_or_reconcile_receipt_locked(
         fail("final transaction receipt and its partial are simultaneously visible")
 
     if receipt_exists:
-        document, _identity = load_receipt_file(
-            receipt, paths, journal, "transaction receipt"
-        )
-        validate_receipt_artifacts(paths, receipt_paths, document)
-    elif partial_exists:
-        try:
+        with blocked_transaction_signals("existing receipt commit recognition"):
             document, _identity = load_receipt_file(
-                partial, paths, journal, "transaction receipt partial"
+                receipt, paths, journal, "transaction receipt"
             )
-        except TransactionError:
+            validate_receipt_artifacts(paths, receipt_paths, document)
+            fsync_directory(receipt.parent)
+            if commit_callback is not None:
+                commit_callback()
+    elif partial_exists:
+        if abandon_uncommitted_partial:
             if abandoned_exists:
                 fail(
-                    "both malformed and previously abandoned receipt partials exist"
+                    "both interrupted and previously abandoned receipt partials exist"
                 )
             abandoned_evidence = preserve_abandoned_receipt_partial(
                 partial, abandoned, paths
@@ -2757,23 +2950,64 @@ def publish_or_reconcile_receipt_locked(
                 status="recovered-interrupted",
                 child_exit_status=None,
                 child_identity_sha256=child_identity_sha256,
-                authorization=None,
+                authorization=authorization,
                 token_scan=None,
                 abandoned_receipt_partial=abandoned_evidence,
             )
             receipt = publish_production_receipt(
-                paths, receipt_paths, document, journal, failpoint
+                paths,
+                receipt_paths,
+                document,
+                journal,
+                failpoint,
+                commit_callback=commit_callback,
             )
         else:
-            validate_receipt_artifacts(paths, receipt_paths, document)
-            os.replace(partial, receipt)
-            fsync_directory(receipt.parent)
-            trigger_failpoint(failpoint, "receipt-after-final-rename")
-            loaded, _identity = load_receipt_file(
-                receipt, paths, journal, "promoted transaction receipt"
-            )
-            if loaded != document:
-                fail("promoted transaction receipt changed during publication")
+            try:
+                document, _identity = load_receipt_file(
+                    partial, paths, journal, "transaction receipt partial"
+                )
+            except TransactionError:
+                if abandoned_exists:
+                    fail(
+                        "both malformed and previously abandoned receipt partials exist"
+                    )
+                abandoned_evidence = preserve_abandoned_receipt_partial(
+                    partial, abandoned, paths
+                )
+                document = receipt_document(
+                    journal,
+                    framework_identity,
+                    project_identity,
+                    generation_identity,
+                    status="recovered-interrupted",
+                    child_exit_status=None,
+                    child_identity_sha256=child_identity_sha256,
+                    authorization=None,
+                    token_scan=None,
+                    abandoned_receipt_partial=abandoned_evidence,
+                )
+                receipt = publish_production_receipt(
+                    paths,
+                    receipt_paths,
+                    document,
+                    journal,
+                    failpoint,
+                    commit_callback=commit_callback,
+                )
+            else:
+                validate_receipt_artifacts(paths, receipt_paths, document)
+                with blocked_transaction_signals("durable receipt partial promotion"):
+                    os.replace(partial, receipt)
+                    fsync_directory(receipt.parent)
+                    if commit_callback is not None:
+                        commit_callback()
+                trigger_failpoint(failpoint, "receipt-after-final-rename")
+                loaded, _identity = load_receipt_file(
+                    receipt, paths, journal, "promoted transaction receipt"
+                )
+                if loaded != document:
+                    fail("promoted transaction receipt changed during publication")
     else:
         abandoned_evidence_value: dict[str, object] | None = (
             existing_abandoned_receipt_evidence(abandoned, paths)
@@ -2793,7 +3027,13 @@ def publish_or_reconcile_receipt_locked(
             abandoned_receipt_partial=abandoned_evidence_value,
         )
         receipt = publish_production_receipt(
-            paths, receipt_paths, document, journal, failpoint
+            paths,
+            receipt_paths,
+            document,
+            journal,
+            failpoint,
+            pre_commit_hook=pre_commit_hook,
+            commit_callback=commit_callback,
         )
 
     if child_identity_sha256 is not None:
@@ -2813,6 +3053,7 @@ def recover_transaction_locked(
     failpoint: str | None,
     *,
     allow_owner_pid: int | None,
+    finalize_owner_interruption: bool = False,
 ) -> bool:
     journal_exists = paths.journal.exists() or paths.journal.is_symlink()
     partial_exists = paths.partial_journal.exists() or paths.partial_journal.is_symlink()
@@ -2912,6 +3153,8 @@ def recover_transaction_locked(
         and journal_owner["pid"] == allow_owner_pid
         and journal_owner["start_ticks"] == process_start_ticks(allow_owner_pid)
     )
+    if finalize_owner_interruption and not owner_allowed:
+        fail("only the exact transaction owner may finalize its interruption")
     if owner_is_live(document) and not owner_allowed:
         fail(
             "production-lock transaction owner is still active: "
@@ -3014,7 +3257,7 @@ def recover_transaction_locked(
             or read_descriptor(generation_descriptor, "generation lock") != b""
         ):
             fail("production generation locks were not restored to exact emptiness")
-        if owner_allowed:
+        if owner_allowed and not finalize_owner_interruption:
             return True
         publish_or_reconcile_receipt_locked(
             paths,
@@ -3028,6 +3271,7 @@ def recover_transaction_locked(
             authorization=recovered_authorization,
             token_scan=None,
             failpoint=failpoint,
+            abandon_uncommitted_partial=finalize_owner_interruption,
         )
         remove_journal(paths, journal_identity)
         trigger_failpoint(failpoint, "receipt-after-journal-removal")
@@ -3050,6 +3294,9 @@ def finalize_owned_transaction_locked(
     expected_child_identity_sha256: str,
     authorization: dict[str, object],
     token_scan: dict[str, object],
+    pre_commit_hook: Callable[[], None] | None = None,
+    commit_callback: Callable[[], None] | None = None,
+    post_receipt_hook: Callable[[], None] | None = None,
 ) -> Path:
     document, journal_identity = load_journal(paths)
     if validate_framework_context(document["framework_context"]) != framework_context:
@@ -3095,7 +3342,11 @@ def finalize_owned_transaction_locked(
             authorization=authorization,
             token_scan=token_scan,
             failpoint=failpoint,
+            pre_commit_hook=pre_commit_hook,
+            commit_callback=commit_callback,
         )
+        if post_receipt_hook is not None:
+            post_receipt_hook()
         remove_journal(paths, journal_identity)
         trigger_failpoint(failpoint, "receipt-after-journal-removal")
         remove_child_identity(paths, child_identity)
@@ -4259,18 +4510,9 @@ def run_child(
         fail("internal error: child argv is invalid")
     command = list(command_value)
     process: subprocess.Popen[bytes] | None = None
-    caught_signal: int | None = None
-    previous_handlers: dict[signal.Signals, Any] = {}
     read_descriptor_fd = -1
     write_descriptor_fd = -1
     child_identity_sha256: str | None = None
-
-    def interrupted(signum: int, _frame: object) -> NoReturn:
-        raise TransactionInterrupted(signum)
-
-    for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
-        previous_handlers[signum] = signal.getsignal(signum)
-        signal.signal(signum, interrupted)
     try:
         token_sha256 = hashlib.sha256(authorization_token.encode("ascii")).hexdigest()
         if journal.get("authorization_token_sha256") != token_sha256:
@@ -4302,6 +4544,7 @@ def run_child(
             "--",
             *command,
         ]
+        test_signal_pause(arguments, paths, "child-before-spawn")
         process = subprocess.Popen(
             barrier_command,
             start_new_session=True,
@@ -4317,6 +4560,9 @@ def run_child(
             or process.poll() is not None
         ):
             fail("child barrier exited before its identity could be recorded")
+        test_signal_pause(
+            arguments, paths, "child-after-spawn", child_pid=process.pid
+        )
         trigger_failpoint(arguments.failpoint, "child-after-spawn")
         sidecar = write_child_identity(
             paths,
@@ -4329,11 +4575,20 @@ def run_child(
             arguments.failpoint,
         )
         child_identity_sha256 = hashlib.sha256(canonical_json(sidecar)).hexdigest()
+        test_signal_pause(
+            arguments, paths, "child-after-sidecar", child_pid=process.pid
+        )
         trigger_failpoint(arguments.failpoint, "child-after-sidecar")
         authorization_evidence = publish_transaction_authorization(
             paths, journal, child_identity_sha256, arguments.failpoint
         )
+        test_signal_pause(
+            arguments, paths, "child-after-authorization", child_pid=process.pid
+        )
         prepare_gate_work_root(paths, journal)
+        test_signal_pause(
+            arguments, paths, "child-before-release", child_pid=process.pid
+        )
         if os.write(write_descriptor_fd, b"G") != 1:
             fail("child barrier release grant was not written atomically")
         os.close(write_descriptor_fd)
@@ -4344,16 +4599,15 @@ def run_child(
         except subprocess.TimeoutExpired:
             terminate_process_group(process, arguments.kill_after_seconds)
             child_status = 124
-        except TransactionInterrupted as error:
-            caught_signal = error.signum
-            terminate_process_group(process, arguments.kill_after_seconds)
-            child_status = min(255, 128 + error.signum)
         else:
             child_status = normalize_child_status(returncode)
         if process_group_exists(process.pid):
             terminate_process_group(process, arguments.kill_after_seconds)
             if child_status == 0:
                 fail("child exited successfully while its process group remained alive")
+        test_signal_pause(
+            arguments, paths, "child-after-wait", child_pid=process.pid
+        )
         revalidate_child_contract(contract, paths)
         scanner_status, token_scan_evidence = run_authorization_token_scan(
             contract,
@@ -4364,6 +4618,9 @@ def run_child(
         )
         if scanner_status != 0 and child_status == 0:
             child_status = scanner_status
+        test_signal_pause(
+            arguments, paths, "child-after-token-scan", child_pid=process.pid
+        )
         revalidate_transaction_authorization(
             authorization_evidence, paths, journal, child_identity_sha256
         )
@@ -4374,18 +4631,12 @@ def run_child(
             token_scan_evidence,
         )
     finally:
-        for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
-            signal.signal(signum, signal.SIG_IGN)
         if process is not None:
             terminate_process_group(process, arguments.kill_after_seconds)
         for descriptor in (read_descriptor_fd, write_descriptor_fd):
             if descriptor >= 0:
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
-        for signum, handler in previous_handlers.items():
-            signal.signal(signum, handler)
-        if caught_signal is not None:
-            print(f"INTERRUPTED: signal={caught_signal}", file=sys.stderr)
 
 
 def validate_timeouts(arguments: argparse.Namespace) -> None:
@@ -4449,6 +4700,30 @@ def run_command(arguments: argparse.Namespace) -> int:
     authorization_evidence: dict[str, object] | None = None
     token_scan_evidence: dict[str, object] | None = None
     armed_journal: dict[str, object] | None = None
+    caught_signal: int | None = None
+    receipt_committed = False
+    previous_handlers: dict[signal.Signals, Any] = {}
+
+    def mark_receipt_committed() -> None:
+        nonlocal receipt_committed
+        receipt_committed = True
+
+    def interrupted(signum: int, _frame: object) -> None:
+        nonlocal caught_signal
+        if caught_signal is None:
+            caught_signal = signum
+        # Once rename plus parent-directory fsync has committed the final
+        # receipt, cancellation is post-commit: retain the terminal receipt and
+        # let bounded journal/sidecar cleanup finish.  Every earlier stage
+        # transfers control to transaction-scoped interruption recovery.
+        if receipt_committed:
+            return
+        first_signal = caught_signal
+        with blocked_transaction_signals("first interruption ownership"):
+            for transaction_signal in TRANSACTION_SIGNALS:
+                signal.signal(transaction_signal, signal.SIG_IGN)
+        raise TransactionInterrupted(first_signal)
+
     with framework_lock(paths, arguments.lock_timeout_seconds) as (_descriptor, identity):
         framework_context = active_framework_context(paths)
         recover_transaction_locked(
@@ -4461,87 +4736,142 @@ def run_command(arguments: argparse.Namespace) -> int:
             allow_owner_pid=None,
         )
         reject_existing_receipt_state(paths, generation)
-        test_pre_arm_pause(arguments, paths)
         try:
-            armed_journal = arm_transaction(
+            install_transaction_signal_handlers(interrupted, previous_handlers)
+            try:
+                test_pre_arm_pause(arguments, paths)
+                test_signal_pause(arguments, paths, "handler-before-arm")
+                armed_journal = arm_transaction(
+                    paths,
+                    identity,
+                    framework_context,
+                    authorization_token_sha256,
+                    gate_run_id,
+                    generation,
+                    child_contract,
+                    arguments.lock_timeout_seconds,
+                    arguments.failpoint,
+                    post_journal_hook=lambda: test_signal_pause(
+                        arguments, paths, "arm-after-journal"
+                    ),
+                )
+                (
+                    child_status,
+                    child_identity_sha256,
+                    authorization_evidence,
+                    token_scan_evidence,
+                ) = run_child(arguments, authorization_token, paths, armed_journal)
+            finally:
+                if armed_journal is not None and caught_signal is None:
+                    if active_framework_context(paths) != framework_context:
+                        fail(
+                            "active framework context changed during the "
+                            "production-lock gate"
+                        )
+                    recover_transaction_locked(
+                        paths,
+                        identity,
+                        framework_context,
+                        arguments.lock_timeout_seconds,
+                        arguments.kill_after_seconds,
+                        arguments.failpoint,
+                        allow_owner_pid=os.getpid(),
+                    )
+                    if child_identity_sha256 is None:
+                        if (
+                            paths.child_identity.exists()
+                            and not paths.child_identity.is_symlink()
+                        ):
+                            durable_child, _durable_child_identity = (
+                                load_child_identity(paths, armed_journal)
+                            )
+                            child_identity_sha256 = hashlib.sha256(
+                                canonical_json(durable_child)
+                            ).hexdigest()
+                        else:
+                            fail(
+                                "child failed before a durable identity was available; "
+                                "run explicit recovery"
+                            )
+                    if authorization_evidence is None:
+                        authorization_evidence = publish_transaction_authorization(
+                            paths, armed_journal, child_identity_sha256
+                        )
+                    if token_scan_evidence is None:
+                        try:
+                            scanner_status, token_scan_evidence = (
+                                run_authorization_token_scan(
+                                    child_contract,
+                                    authorization_token,
+                                    paths,
+                                    arguments.token_scan_timeout_seconds,
+                                    arguments.kill_after_seconds,
+                                )
+                            )
+                        except TransactionError:
+                            token_scan_evidence = recover_token_scan_evidence(
+                                child_contract, paths
+                            )
+                            scanner_status = 125
+                        if scanner_status != 0 and child_status == 0:
+                            child_status = scanner_status
+                    test_signal_pause(
+                        arguments,
+                        paths,
+                        "finalize-before-receipt",
+                    )
+                    receipt_path = finalize_owned_transaction_locked(
+                        paths,
+                        identity,
+                        framework_context,
+                        arguments.lock_timeout_seconds,
+                        arguments.kill_after_seconds,
+                        arguments.failpoint,
+                        child_exit_status=child_status,
+                        expected_child_identity_sha256=child_identity_sha256,
+                        authorization=authorization_evidence,
+                        token_scan=token_scan_evidence,
+                        pre_commit_hook=lambda: test_signal_pause(
+                            arguments,
+                            paths,
+                            "receipt-after-partial-fsync",
+                        ),
+                        commit_callback=mark_receipt_committed,
+                        post_receipt_hook=lambda: test_signal_pause(
+                            arguments,
+                            paths,
+                            "receipt-after-final-rename",
+                            stop_requested=lambda: caught_signal is not None,
+                        ),
+                    )
+        except TransactionInterrupted as error:
+            if caught_signal is None:
+                caught_signal = error.signum
+            child_status = min(255, 128 + caught_signal)
+            test_signal_pause(arguments, paths, "interrupt-after-claim")
+            if active_framework_context(paths) != framework_context:
+                fail("active framework context changed during signal recovery")
+            recover_transaction_locked(
                 paths,
                 identity,
                 framework_context,
-                authorization_token_sha256,
-                gate_run_id,
-                generation,
-                child_contract,
                 arguments.lock_timeout_seconds,
+                arguments.kill_after_seconds,
                 arguments.failpoint,
+                allow_owner_pid=os.getpid(),
+                finalize_owner_interruption=True,
             )
-            (
-                child_status,
-                child_identity_sha256,
-                authorization_evidence,
-                token_scan_evidence,
-            ) = run_child(arguments, authorization_token, paths, armed_journal)
+            candidate_receipt = production_receipt_paths(paths, generation)[0]
+            if candidate_receipt.exists() and not candidate_receipt.is_symlink():
+                receipt_path = candidate_receipt
         finally:
-            if armed_journal is not None:
-                if active_framework_context(paths) != framework_context:
-                    fail("active framework context changed during the production-lock gate")
-                recover_transaction_locked(
-                    paths,
-                    identity,
-                    framework_context,
-                    arguments.lock_timeout_seconds,
-                    arguments.kill_after_seconds,
-                    arguments.failpoint,
-                    allow_owner_pid=os.getpid(),
-                )
-                if child_identity_sha256 is None:
-                    if paths.child_identity.exists() and not paths.child_identity.is_symlink():
-                        durable_child, _durable_child_identity = load_child_identity(
-                            paths, armed_journal
-                        )
-                        child_identity_sha256 = hashlib.sha256(
-                            canonical_json(durable_child)
-                        ).hexdigest()
-                    else:
-                        fail(
-                            "child failed before a durable identity was available; "
-                            "run explicit recovery"
-                        )
-                if authorization_evidence is None:
-                    authorization_evidence = publish_transaction_authorization(
-                        paths, armed_journal, child_identity_sha256
-                    )
-                if token_scan_evidence is None:
-                    try:
-                        scanner_status, token_scan_evidence = (
-                            run_authorization_token_scan(
-                                child_contract,
-                                authorization_token,
-                                paths,
-                                arguments.token_scan_timeout_seconds,
-                                arguments.kill_after_seconds,
-                            )
-                        )
-                    except TransactionError:
-                        token_scan_evidence = recover_token_scan_evidence(
-                            child_contract, paths
-                        )
-                        scanner_status = 125
-                    if scanner_status != 0 and child_status == 0:
-                        child_status = scanner_status
-                receipt_path = finalize_owned_transaction_locked(
-                    paths,
-                    identity,
-                    framework_context,
-                    arguments.lock_timeout_seconds,
-                    arguments.kill_after_seconds,
-                    arguments.failpoint,
-                    child_exit_status=child_status,
-                    expected_child_identity_sha256=child_identity_sha256,
-                    authorization=authorization_evidence,
-                    token_scan=token_scan_evidence,
-                )
+            if previous_handlers:
+                restore_transaction_signal_handlers(previous_handlers)
     if receipt_path is not None:
         print(f"RECEIPT: {receipt_path}")
+    if caught_signal is not None:
+        print(f"INTERRUPTED: signal={caught_signal}", file=sys.stderr)
+        return min(255, 128 + caught_signal)
     return child_status
 
 
@@ -4762,6 +5092,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--inventory-sha256", required=True)
     run.add_argument("--gate-run-id", required=True)
     run.add_argument("--test-pre-arm-pause-file", type=Path, help=argparse.SUPPRESS)
+    run.add_argument(
+        "--test-signal-pause-stage",
+        choices=TEST_SIGNAL_PAUSE_STAGES,
+        help=argparse.SUPPRESS,
+    )
+    run.add_argument("--test-signal-pause-file", type=Path, help=argparse.SUPPRESS)
     run.add_argument("--child-timeout-seconds", type=float, default=3600.0)
     run.add_argument("--token-scan-timeout-seconds", type=float, default=600.0)
     run.add_argument("--token-scanner", required=True, type=Path)

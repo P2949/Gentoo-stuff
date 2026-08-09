@@ -24,11 +24,21 @@ jobs:
 
       - name: Install portable validation dependencies
         run: |
+          set -Eeuo pipefail
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             attr binutils clang curl file jq libc++-dev libc++abi-dev \
             libcap2-bin pax-utils python3-jsonschema ripgrep util-linux \
             xz-utils zstd
+          test -x /usr/sbin/runuser
+          dpkg-query --search /usr/sbin/runuser |
+            grep -Fx 'util-linux: /usr/sbin/runuser'
+          if [[ ! -e /usr/bin/runuser && ! -L /usr/bin/runuser ]]; then
+            sudo ln --symbolic -- /usr/sbin/runuser /usr/bin/runuser
+          fi
+          test "$(readlink --canonicalize-existing /usr/bin/runuser)" = \
+            /usr/sbin/runuser
+          /usr/bin/runuser --version
 
       - name: Install the reviewed ShellCheck 0.11.0 binary
         run: |
@@ -74,6 +84,8 @@ jobs:
           test -f "$output/test-run-provenance.json"
           test -f "$output/test-contract-static-check.log"
           test -f "$output/test-contract.log"
+          grep -Eq '^PASS[[:space:]]+framework-installer[[:space:]]+' \
+            "$output/results.tsv"
 
       - name: Upload portable evidence
         if: always()

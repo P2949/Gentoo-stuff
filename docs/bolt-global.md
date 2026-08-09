@@ -5,10 +5,10 @@
 > but they must not deploy package-managed files. Phase 2 replaces them with
 > exact pre-strip capture and fail-closed `${ED}` deployment hooks.
 
-This repository makes packages BOLT-ready globally by adding line-table debug
-mapping, relocation metadata, and build ids to the default aggressive tier.
-BOLT execution still happens after build, so it is handled by scripts rather
-than normal compiler flags.
+The retired prototype made packages BOLT-ready globally by adding line-table
+debug mapping, relocation metadata, and build ids to the default aggressive
+tier. BOLT execution happened after build, so the prototype handled it with
+scripts rather than normal compiler flags.
 
 ## Workflow
 

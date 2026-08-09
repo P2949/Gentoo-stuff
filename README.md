@@ -5,6 +5,12 @@ BOLT project. The project is currently in Phase 2. No optimization generation
 is authorized or active, the Phase 3 installed-package inventory is not frozen,
 and none of the repository-only fixtures constitute live-system coverage.
 
+Phase 2 is scope-frozen until Candidate B authorization. Do not add a new
+subsystem, optimization-policy axis, evidence category, or broad refactor
+unless an existing required Phase 2 gate exposes a reproducible blocker that
+cannot be fixed within the current architecture. This freeze does not permit
+skipping or weakening an existing safeguard.
+
 The default is intentionally risky and bleeding edge. Packages should start at
 the most aggressive tier, then be demoted one axis at a time through
 `portage/package.env` only when a real build failure, runtime bug, or
@@ -21,6 +27,9 @@ Start with:
   for the profile and ELF identity contracts.
 - [`portage/env/README`](portage/env/README) for the compiler-flag fallback
   ladder and local Portage policy notes.
+- [`docs/commit-history-map.md`](docs/commit-history-map.md) for additive
+  descriptions of generically named evidence-bearing ancestors and the rule
+  prohibiting history rewrites.
 
 For non-mutating repository validation, run:
 

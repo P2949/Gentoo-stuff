@@ -250,13 +250,13 @@
       "test": "production-profile-lock-crash-stress"
     },
     {
-      "expected_count": 201,
-      "subtest_names_sha256": "2bcd4a21b69e2234d4fcdc09ee42ddd613c6ac959a70cb89d97e1585feb18fc4",
+      "expected_count": 206,
+      "subtest_names_sha256": "7c95b508cc1d5d271358c6da73d0631e15c9fada25c1584dcb2c791a744a31a7",
       "test": "python-unit-tests:tests/optimization"
     },
     {
-      "expected_count": 70,
-      "subtest_names_sha256": "7b7222cb6798c7d7e3379e8544f3dc11625e3bb868be5f933406d7ddb84ed533",
+      "expected_count": 79,
+      "subtest_names_sha256": "778339462268073b3435c4de8f8a60124e3bd8e83d5bc5b886217684b74cbe65",
       "test": "python-unit-tests:tests/optimization/recovery"
     }
   ]

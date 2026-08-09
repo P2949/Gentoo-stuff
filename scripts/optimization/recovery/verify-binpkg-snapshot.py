@@ -13,11 +13,15 @@ import hashlib
 import json
 import os
 import re
+import selectors
+import signal
 import shutil
 import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -27,6 +31,11 @@ from typing import IO, Callable, Iterable, Protocol, cast
 SCHEMA_VERSION = 1
 BUFFER_SIZE = 1024 * 1024
 MAX_MANIFEST_SIZE = 16 * 1024 * 1024
+ZSTD_TEST_TIMEOUT_SECONDS = 30.0
+ZSTD_TEST_KILL_AFTER_SECONDS = 2.0
+ZSTD_TEST_MAX_STDERR = 64 * 1024
+ZSTD_TEST_DRAIN_MAX_BYTES = 256 * 1024
+ZSTD_TEST_DRAIN_MAX_READS = 8
 CPV_RE = re.compile(r"^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$")
 HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
 INNER_ARCHIVE_RE = {
@@ -543,54 +552,309 @@ def _hash_tar_member(
     return size, {name: digest.hexdigest() for name, digest in hashes.items()}
 
 
+def _process_group_has_live_members(process_group: int) -> bool:
+    """Return conservatively whether a Linux process group can still execute."""
+    try:
+        entries = list(Path("/proc").iterdir())
+    except OSError:
+        return True
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            line = (entry / "stat").read_bytes()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return True
+        separator = line.rfind(b") ")
+        if separator < 0:
+            return True
+        fields = line[separator + 2 :].split()
+        if len(fields) < 3:
+            return True
+        try:
+            member_process_group = int(fields[2])
+        except ValueError:
+            return True
+        if member_process_group == process_group and fields[0] not in {
+            b"Z",
+            b"X",
+            b"x",
+        }:
+            return True
+    return False
+
+
+def _terminate_process_group(
+    process: subprocess.Popen[bytes],
+    kill_after_seconds: float,
+    drain: Callable[[], None],
+) -> str | None:
+    """TERM/KILL one private process group and boundedly reap its leader."""
+
+    # A completed wait releases the numeric PID/PGID identity.  Never signal
+    # that number again, including if an asynchronous exception arrived in the
+    # narrow caller window between wait() and its cleanup-complete assignment.
+    if process.returncode is not None:
+        return None
+
+    def signal_group(signum: signal.Signals) -> None:
+        try:
+            os.killpg(process.pid, signum)
+        except ProcessLookupError:
+            pass
+
+    def drain_until(limit: float) -> None:
+        while time.monotonic() < limit:
+            drain()
+            if not _process_group_has_live_members(process.pid):
+                return
+            time.sleep(min(0.02, max(0.0, limit - time.monotonic())))
+
+    signal_group(signal.SIGTERM)
+    drain_until(time.monotonic() + kill_after_seconds)
+    if _process_group_has_live_members(process.pid):
+        signal_group(signal.SIGKILL)
+        drain_until(time.monotonic() + kill_after_seconds)
+    drain()
+    if _process_group_has_live_members(process.pid):
+        return "zstd process group survived SIGKILL"
+    try:
+        process.wait(timeout=kill_after_seconds)
+    except subprocess.TimeoutExpired:
+        return "cannot reap zstd after SIGTERM/SIGKILL"
+    return None
+
+
 def _test_zstd_member(
     container: tarfile.TarFile,
     member: tarfile.TarInfo,
     zstd_program: str,
+    *,
+    timeout_seconds: float = ZSTD_TEST_TIMEOUT_SECONDS,
+    kill_after_seconds: float = ZSTD_TEST_KILL_AFTER_SECONDS,
+    temporary_directory: Path | None = None,
 ) -> tuple[bool, int | None, str]:
+    """Boundedly test one image stream without trusting zstd to consume stdin.
+
+    The member is first copied into a private temporary regular file and its
+    exact tar-declared size is checked before zstd receives the path.  That
+    prevents a zstd process which never opens its input from blocking the
+    verifier in a pipe write.  One deadline is checked between every synchronous
+    local staging read/write/flush and throughout child supervision.  It cannot
+    interrupt an individual local filesystem syscall which never returns.  The
+    child owns a private process group; timeout and exceptional cleanup signal
+    that same group with TERM and then KILL before reaping the direct child.
+    Each stderr-drain pass is bounded by the same deadline, a byte quota, and a
+    read-count quota; only a bounded prefix is retained.  The reviewed
+    production zstd is not expected to fork or escape this session; this is not
+    containment for an adversarial executable which deliberately does so.
+    """
+    if timeout_seconds <= 0:
+        raise ValueError("zstd timeout must be positive")
+    if kill_after_seconds <= 0:
+        raise ValueError("zstd kill-after timeout must be positive")
+
+    deadline = time.monotonic() + timeout_seconds
     extracted = container.extractfile(member)
     if extracted is None:
         return False, None, "tar reader did not return an image stream"
-    try:
-        process = subprocess.Popen(
-            [zstd_program, "--quiet", "--test", "-"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-    except OSError as exc:
-        extracted.close()
-        return False, None, f"cannot execute zstd: {exc}"
 
-    broken_pipe = False
+    temporary_path: Path | None = None
+    staged = None
+    descriptor: int | None = None
+    process: subprocess.Popen[bytes] | None = None
+    process_cleanup_complete = False
+    selector: selectors.BaseSelector | None = None
     try:
-        assert process.stdin is not None
+        descriptor, raw_path = tempfile.mkstemp(
+            prefix=".gentoo-binpkg-zstd-",
+            dir=temporary_directory,
+        )
+        temporary_path = Path(raw_path)
+        staged = os.fdopen(descriptor, "w+b")
+        descriptor = None
+        staged_size = 0
         with extracted:
             while True:
+                if time.monotonic() >= deadline:
+                    return (
+                        False,
+                        None,
+                        f"zstd test timed out after {timeout_seconds:g} seconds "
+                        "while staging the image stream",
+                    )
                 chunk = extracted.read(BUFFER_SIZE)
+                if time.monotonic() >= deadline:
+                    return (
+                        False,
+                        None,
+                        f"zstd test timed out after {timeout_seconds:g} seconds "
+                        "while staging the image stream",
+                    )
                 if not chunk:
                     break
-                try:
-                    process.stdin.write(chunk)
-                except BrokenPipeError:
-                    broken_pipe = True
-                    break
-        try:
-            process.stdin.close()
-        except BrokenPipeError:
-            broken_pipe = True
-        assert process.stderr is not None
-        stderr = process.stderr.read().decode("utf-8", errors="replace").strip()
-        returncode = process.wait()
-    finally:
-        if process.poll() is None:  # pragma: no cover - defensive cleanup
-            process.kill()
-            process.wait()
+                staged.write(chunk)
+                staged_size += len(chunk)
+                if time.monotonic() >= deadline:
+                    return (
+                        False,
+                        None,
+                        f"zstd test timed out after {timeout_seconds:g} seconds "
+                        "while staging the image stream",
+                    )
+        if staged_size != member.size:
+            return (
+                False,
+                None,
+                "staged image stream size mismatch: "
+                f"read {staged_size} bytes, expected {member.size}",
+            )
+        if time.monotonic() >= deadline:
+            return (
+                False,
+                None,
+                f"zstd test timed out after {timeout_seconds:g} seconds "
+                "while staging the image stream",
+            )
+        staged.flush()
+        if time.monotonic() >= deadline:
+            return (
+                False,
+                None,
+                f"zstd test timed out after {timeout_seconds:g} seconds "
+                "while staging the image stream",
+            )
 
-    if returncode == 0 and not broken_pipe:
-        return True, returncode, ""
-    first_line = stderr.splitlines()[0] if stderr else "zstd rejected the stream"
-    return False, returncode, first_line
+        try:
+            process = subprocess.Popen(
+                [zstd_program, "--quiet", "--test", os.fspath(temporary_path)],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            return False, None, f"cannot execute zstd: {exc}"
+
+        assert process.stderr is not None
+        stderr_descriptor = process.stderr.fileno()
+        os.set_blocking(stderr_descriptor, False)
+        selector = selectors.DefaultSelector()
+        selector.register(stderr_descriptor, selectors.EVENT_READ)
+        stderr_prefix = bytearray()
+        stderr_truncated = False
+        stderr_eof = False
+
+        def drain_stderr(wait_seconds: float) -> None:
+            nonlocal stderr_eof, stderr_truncated
+            if stderr_eof:
+                remaining_time = deadline - time.monotonic()
+                if remaining_time > 0 and wait_seconds > 0:
+                    time.sleep(min(wait_seconds, remaining_time))
+                return
+            remaining_time = deadline - time.monotonic()
+            if remaining_time <= 0:
+                return
+            events = selector.select(min(wait_seconds, remaining_time))
+            drained_bytes = 0
+            read_count = 0
+            for key, _mask in events:
+                while (
+                    read_count < ZSTD_TEST_DRAIN_MAX_READS
+                    and drained_bytes < ZSTD_TEST_DRAIN_MAX_BYTES
+                    and time.monotonic() < deadline
+                ):
+                    try:
+                        data = os.read(
+                            key.fd,
+                            min(
+                                ZSTD_TEST_MAX_STDERR,
+                                ZSTD_TEST_DRAIN_MAX_BYTES - drained_bytes,
+                            ),
+                        )
+                    except BlockingIOError:
+                        break
+                    read_count += 1
+                    drained_bytes += len(data)
+                    if not data:
+                        stderr_eof = True
+                        selector.unregister(key.fd)
+                        break
+                    remaining = ZSTD_TEST_MAX_STDERR - len(stderr_prefix)
+                    if remaining > 0:
+                        stderr_prefix.extend(data[:remaining])
+                    if len(data) > max(remaining, 0):
+                        stderr_truncated = True
+
+        timed_out = False
+        cleanup_error: str | None = None
+        try:
+            while True:
+                group_live = _process_group_has_live_members(process.pid)
+                if not group_live and stderr_eof:
+                    returncode = process.wait(timeout=kill_after_seconds)
+                    process_cleanup_complete = True
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    cleanup_error = _terminate_process_group(
+                        process, kill_after_seconds, lambda: drain_stderr(0)
+                    )
+                    process_cleanup_complete = cleanup_error is None
+                    returncode = process.returncode
+                    break
+                drain_stderr(min(0.05, remaining))
+        except BaseException:
+            exceptional_cleanup_error = _terminate_process_group(
+                process, kill_after_seconds, lambda: drain_stderr(0)
+            )
+            process_cleanup_complete = exceptional_cleanup_error is None
+            raise
+        finally:
+            selector.close()
+            selector = None
+            process.stderr.close()
+
+        stderr = bytes(stderr_prefix).decode("utf-8", errors="replace").strip()
+        stderr = stderr.replace(os.fspath(temporary_path), "<staged-image>")
+        if stderr_truncated:
+            stderr = f"{stderr}\n[stderr truncated]" if stderr else "[stderr truncated]"
+        if cleanup_error is not None:
+            return False, returncode, cleanup_error
+        if timed_out:
+            return (
+                False,
+                returncode,
+                f"zstd test timed out after {timeout_seconds:g} seconds",
+            )
+        if returncode == 0:
+            return True, returncode, ""
+        first_line = stderr.splitlines()[0] if stderr else "zstd rejected the stream"
+        if len(first_line) > 400:
+            first_line = f"{first_line[:400]} [diagnostic truncated]"
+        elif stderr_truncated:
+            first_line = f"{first_line} [stderr truncated]"
+        return False, returncode, first_line
+    except OSError as exc:
+        return False, None, f"cannot stage image stream for zstd: {exc}"
+    finally:
+        if process is not None and not process_cleanup_complete:
+            _terminate_process_group(process, kill_after_seconds, lambda: None)
+        if selector is not None:
+            selector.close()
+        extracted.close()
+        if descriptor is not None:
+            os.close(descriptor)
+        if staged is not None:
+            staged.close()
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def validate_gpkg(

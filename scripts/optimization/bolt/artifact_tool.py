@@ -99,6 +99,7 @@ PRODUCTION_MERGE_FDATA = "/usr/lib/llvm/22/bin/merge-fdata"
 PRODUCTION_INVENTORY_VALIDATOR = (
     "/usr/local/libexec/gentoo-optimization/scripts/optimization/verify/reconcile-state.py"
 )
+INVENTORY_VALIDATOR_PYTHON = ("/usr/bin/python3", "-I", "-B")
 FRAMEWORK_LOCK = Path("/run/gentoo-optimization/framework-install.lock")
 PROJECT_LOCK = Path("/run/gentoo-optimization/project.lock")
 GENERATION_LOCK = Path("/run/gentoo-optimization/generation.lock")
@@ -1507,14 +1508,14 @@ def inventory_proof(
     if test_mode:
         validator_path = Path(__file__).resolve().parents[3] / "scripts/optimization/verify/reconcile-state.py"
         validator_arguments = [
-            "/usr/bin/python3", "-I", str(validator_path),
+            *INVENTORY_VALIDATOR_PYTHON, str(validator_path),
             "--validate-inventory-only", "--inventory", evidence["path"],
             "--fixture-roots",
         ]
     else:
         validator_path = Path(PRODUCTION_INVENTORY_VALIDATOR)
         validator_arguments = [
-            "/usr/bin/python3", "-I", str(validator_path),
+            *INVENTORY_VALIDATOR_PYTHON, str(validator_path),
             "--validate-inventory-only", "--inventory", evidence["path"],
         ]
         validate_root_owned_nonwritable_chain(validator_path, "frozen inventory validator")

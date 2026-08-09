@@ -24,6 +24,12 @@ SPEC.loader.exec_module(TOOL)
 
 
 class ProductionTrustTests(unittest.TestCase):
+    def test_inventory_validator_disables_bytecode_before_loading_state(self) -> None:
+        self.assertEqual(
+            TOOL.INVENTORY_VALIDATOR_PYTHON,
+            ("/usr/bin/python3", "-I", "-B"),
+        )
+
     def test_arbitrary_evidence_path_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="bolt-untrusted-evidence.") as temporary:
             evidence = Path(temporary) / "evidence.json"

@@ -463,9 +463,13 @@ doas "$BOOTSTRAP" --source-root "$SOURCE" --check
 
 If the coordinator, terminal, kernel, or machine is interrupted, do not rerun
 the child. Run the clean-environment `recover` command from the preflight
-section, inspect the `recovered-interrupted` receipt, confirm no process remains,
-allocate a new run ID and all-new artifact paths, and restart from preflight.
-Never reuse partial profiles or evidence.
+section and inspect the resulting terminal receipt. An interruption before
+durable receipt rename plus parent-directory fsync produces
+`recovered-interrupted`; an interruption after that commit boundary preserves
+the already truthful `passed` or `failed` receipt and exact child status even
+though the coordinator itself returns `128 + signal`. In either case, confirm
+that no process remains, allocate a new run ID and all-new artifact paths, and
+restart from preflight. Never reuse partial profiles or evidence.
 
 ## Component states and detached evidence index
 

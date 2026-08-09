@@ -5,6 +5,7 @@ import re
 import unittest
 from pathlib import Path
 from typing import cast
+from urllib.parse import unquote, urlsplit
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -105,6 +106,65 @@ class OptimizationPolicyTests(unittest.TestCase):
             },
         )
 
+        # Local Markdown links are part of the reviewed repository interface.
+        # Resolve every inline target relative to its source file so stale
+        # legacy documentation cannot silently point at a removed path.
+        repository = REPOSITORY_ROOT.resolve(strict=True)
+        inline_link = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)")
+        for markdown in sorted(REPOSITORY_ROOT.rglob("*.md")):
+            if markdown.is_symlink():
+                continue
+            text = markdown.read_text(encoding="utf-8")
+            for raw_target in inline_link.findall(text):
+                parsed = urlsplit(raw_target)
+                if parsed.scheme or raw_target.startswith("#") or not parsed.path:
+                    continue
+                relative = Path(unquote(parsed.path))
+                with self.subTest(
+                    markdown=markdown.relative_to(REPOSITORY_ROOT).as_posix(),
+                    target=raw_target,
+                ):
+                    self.assertFalse(relative.is_absolute())
+                    target = (markdown.parent / relative).resolve(strict=True)
+                    self.assertTrue(target.is_relative_to(repository))
+
+        history_map = (
+            REPOSITORY_ROOT / "docs/commit-history-map.md"
+        ).read_text(encoding="utf-8")
+        for historical_commit in (
+            "d8a90a41f78c20e18a83bab3f4f1a7dd418856cc",
+            "19a46b78acafcc96df6a4f4c54b0880109734354",
+        ):
+            with self.subTest(historical_commit=historical_commit):
+                self.assertIn(historical_commit, history_map)
+        self.assertIn("Evidence-bearing ancestors are immutable.", history_map)
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Phase 2 is scope-frozen until Candidate B authorization.", readme)
+        bolt_legacy = (
+            REPOSITORY_ROOT / "docs/bolt-global.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("The retired prototype made packages BOLT-ready globally", bolt_legacy)
+        self.assertNotIn("This repository makes packages BOLT-ready globally", bolt_legacy)
+
+        for wrapper_name, command in (
+            ("capture-input.sh", "capture"),
+            ("deploy-output.sh", "deploy"),
+            ("register-output.sh", "register-output"),
+        ):
+            wrapper = (
+                REPOSITORY_ROOT / "scripts/optimization/bolt" / wrapper_name
+            ).read_text(encoding="utf-8")
+            with self.subTest(wrapper=wrapper_name):
+                self.assertIn(
+                    'exec /usr/bin/python3 -I -B "${SCRIPT_DIR}/artifact_tool.py" '
+                    f'{command} "$@"',
+                    wrapper,
+                )
+                self.assertNotIn(
+                    'exec /usr/bin/python3 -I "${SCRIPT_DIR}/artifact_tool.py"',
+                    wrapper,
+                )
+
     def test_portable_ci_actions_are_pinned_to_immutable_commits(self) -> None:
         workflow = (
             REPOSITORY_ROOT
@@ -118,6 +178,15 @@ class OptimizationPolicyTests(unittest.TestCase):
             re.findall(r"^\s*timeout-minutes:\s*([0-9]+)\s*$", workflow, re.MULTILINE),
             ["75"],
         )
+        for required_fragment in (
+            "test -x /usr/sbin/runuser",
+            "grep -Fx 'util-linux: /usr/sbin/runuser'",
+            "sudo ln --symbolic -- /usr/sbin/runuser /usr/bin/runuser",
+            "readlink --canonicalize-existing /usr/bin/runuser",
+            "^PASS[[:space:]]+framework-installer[[:space:]]+",
+        ):
+            with self.subTest(required_fragment=required_fragment):
+                self.assertIn(required_fragment, workflow)
 
     def test_phase2_evidence_binds_checkpoint_and_runtime_primitives(self) -> None:
         policy = self.load("phase2-evidence-policy.json")

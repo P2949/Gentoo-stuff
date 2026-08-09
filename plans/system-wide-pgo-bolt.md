@@ -2,15 +2,15 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. The current branch head includes the bounded execution-identity, supervisor, receipt-publication, and live-policy corrections; it remains non-authorizing pending the exact clean portable, CI, live-host, and supervised production gates. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active.
+- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. The current branch head is the latest Candidate-A implementation revision under repository-boundary correction; it remains non-authorizing pending the exact clean portable, CI, live-host, and supervised production gates. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active. Phase 2 is scope-frozen until Candidate B authorization: no new subsystem, optimization-policy axis, evidence category, or broad refactor may be added unless an existing required gate exposes a reproducible blocker that cannot be fixed within the current architecture.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
-- **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-07-26 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This is live progress evidence, not the frozen Phase 3 inventory.
+- **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-08-09 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This unchanged observation is live progress evidence, not the frozen Phase 3 inventory, and must be recomputed immediately before the first live mutation.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-08-02; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is a rejected predecessor: its exact GitHub Actions run `30226349306` failed the portable boundary. Commit `44ead3d66670a1ee8a9d3aace8fc0945cbb2d130` subsequently passed its exact-SHA portable workflow but is superseded, non-authorizing predecessor evidence after the current source-coherence corrections. The current branch head remains non-authorizing pending a fresh exact clean portable and CI boundary plus the live-host and supervised production gates. The complete plan was re-read after this source-coherence update and must be re-read again after the exact clean portable/CI gates and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-08-09; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is a rejected predecessor whose exact GitHub Actions run `30226349306` failed. Commit `44ead3d66670a1ee8a9d3aace8fc0945cbb2d130` then passed its exact-SHA portable workflow but is superseded, non-authorizing predecessor evidence. Commit `1729e9a26bcf6d3fff466e05e04dc80c8dc0fbba` is the latest rejected predecessor: exact run `30747706125` exposed a transaction SIGTERM readiness race and skipped the portable framework-installer fixture. The current branch head contains the bounded corrections but remains non-authorizing pending a fresh exact clean portable and CI boundary plus the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -936,10 +936,11 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   `99dbe6b4806232fcb55e043b38a940d720b28775d387824f2cd98aeed4e65c84`,
   `2bcd4a21b69e2234d4fcdc09ee42ddd613c6ac959a70cb89d97e1585feb18fc4`,
   and `7b7222cb6798c7d7e3379e8544f3dc11625e3bb868be5f933406d7ddb84ed533`.
-  The regenerated tracked contract exactly matches discovery. These are
-  current source-topology facts, not an exact-commit authorization.
-- Current non-authorizing validation passed all 36 evidence tests with no
-  skips, and the isolated current-tree mirror completed all 201 main tests with
+  The regenerated tracked contract exactly matched discovery. These were
+  source-topology facts at that checkpoint, not an exact-commit authorization.
+- That checkpoint's non-authorizing validation passed all 36 evidence tests
+  with no skips, and the isolated then-current-tree mirror completed all 201
+  main tests with
   194 required passes, six exact reviewed required host skips, and one
   diagnostic stress skip. Its 73-test production-transaction subset contains
   71 required passes, one reviewed root-only PID-namespace skip, and the one
@@ -977,6 +978,191 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
 - No §11.4 or §11.7 checkbox is closed by this checkpoint. No framework was
   installed, no package was emerged, no optimization generation was activated,
   and the Phase 3 inventory remains unfrozen.
+
+### 2026-08-09 Candidate-A repository-boundary closure checkpoint
+
+- Commit `1a00db30048b999d7f093b008714d9266f7dbb28` passed exact-SHA GitHub
+  Actions run `30725879325` with 77 top-level passes, zero failures, 14
+  reviewed portable skips, 379 required-subtest passes, zero required-subtest
+  failures, 23 reviewed required skips, nine mandatory portable skips, and one
+  diagnostic skip. Its root-owned 194-file retained artifact is
+  `/var/tmp/gentoo-optimization/ci/1a00db30048b999d7f093b008714d9266f7dbb28/run-30725879325`;
+  verified `CONTENT-SHA256SUMS` SHA-256 is
+  `e21bd3f512b7c13f183a2a98b95596052afdbcf10a0db887de9ffc3ada6793fe`.
+  That green repository boundary is superseded and non-authorizing because it
+  predates the exact Portage-3.0.81.1 offline-restore and recovery-timeout
+  corrections in its descendant.
+- Exact descendant `1729e9a26bcf6d3fff466e05e04dc80c8dc0fbba` was tested by
+  GitHub Actions run `30747706125` from 2026-08-02 12:23:08Z through
+  12:44:02Z and is rejected. The run recorded 76 top-level passes, one
+  failure, 14 skips, 377 required-subtest passes, two required-subtest
+  failures, 23 required skips, nine mandatory internal skips, one diagnostic
+  skip, 403 total subtests, and exit status one. Its 201-test main suite had
+  one failure and four reviewed skips; pinned ShellCheck passed; the complete
+  70-test recovery suite passed. The failure was exact: journal visibility was
+  used as readiness even though SIGTERM ownership still began inside
+  `run_child`, so the coordinator received the default disposition and
+  returned raw `-15` instead of the handled exit `143`. The portable
+  `framework-installer` fixture also skipped because Ubuntu exposes `runuser`
+  at `/usr/sbin/runuser` while the evidence PATH selected `/usr/bin:/bin`.
+- The rejected run is durably retained at
+  `/var/tmp/gentoo-optimization/ci/1729e9a26bcf6d3fff466e05e04dc80c8dc0fbba/run-30747706125`
+  as `root:root`, directory mode `0750`, file mode `0640`. Its 196-row
+  `CONTENT-SHA256SUMS` verifies all other files and has SHA-256
+  `7ac952778cfad9db440a4bc4fe371a6f84efbc4b873b0a0eb3ea98a61f162e55`.
+  SHA-256 values for `summary.txt`, `results.tsv`, `subtests.tsv`,
+  `test-contract.log`, `test-run-provenance.json`, the main-suite log, and the
+  recovery-suite log are respectively
+  `c39e25b2e719de5a8ace5ad957cb9e65286eb66043ea17722017d939b960c108`,
+  `3602ee3dc127059322fa8c4e58e8a2fa502ace267470ff5b761e8fa56b60dbcb`,
+  `0f452deaf5d77ce3fe345097aff9cbee643c0dd7dbbea1e238a6ddfa3b77b2cb`,
+  `1c0b95479700f26507417e169ef8114bcf1e9d4230e5467fb62030332558fda1`,
+  `6ff5973fe3e8a2127ee57ae4c5873a979e19305b4d61793698fea6799b23b8fb`,
+  `bc060c09192d3a4bc5d556f089516a09cd151a0fee7d135d8232d64de5ffaa16`,
+  and `d35b489efbaeec353a0c3d2a5ee8485a40d7cf6926a79dc12f98e28b72ea48bc`.
+  This is rejected-predecessor evidence and has no authorization effect.
+- The repository correction moves HUP/INT/TERM ownership to the complete
+  transaction. It blocks the complete signal set with `pthread_sigmask` while
+  installing and restoring dispositions before any pre-arm pause or journal
+  publication, and rejects an inherited mask that already blocks any managed
+  signal. A pre-commit interruption terminates the exact supervised child,
+  restores the exact lock state, preserves any valid prepared passed receipt
+  as abandoned evidence, publishes a deterministic `recovered-interrupted`
+  receipt when a journal exists, removes journal and child sidecars, and
+  returns `128 + signal` (`143` for SIGTERM). Only final receipt rename plus
+  parent-directory fsync is masked; the committed state is recorded before
+  unmasking, so a pending signal after that boundary is explicitly post-commit
+  and bounded cleanup retains the truthful child result. First-signal ownership
+  is itself masked and deterministic. Test boundaries cover pre-arm,
+  child-before-spawn, post-spawn, child sidecar, authorization, release, wait,
+  token scan, receipt partial fsync, final rename, and terminal cleanup. The
+  manifest-selected `/usr/bin/python3` suite completes 77
+  production-transaction methods: 75 pass and two are the reviewed
+  diagnostic/root-host skips. The original journal-visible race also passes 50
+  consecutive focused repetitions.
+- The recovery verifier no longer streams a GPKG member through an unbounded
+  `zstd` pipe. It stages each member in a private `0600` regular file, verifies
+  the exact tar-declared size, and runs `zstd --quiet --test FILE` in a private
+  session. One monotonic deadline is checked between every synchronous local
+  tar/file staging operation and continuously during child supervision; no
+  userspace timeout can interrupt a local filesystem syscall which never
+  returns. Each stderr drain is deadline-, byte-, and read-count-bounded while
+  retaining at most 64 KiB, including continuously writing and early-closed
+  stderr cases. Timeout and exceptional cleanup use same-session process-group
+  TERM, KILL, bounded reap, and residue checks for the exact reviewed `zstd`;
+  the random temporary path is removed from diagnostics and unlinked on every
+  outcome. All 19 verifier tests pass independently with `ResourceWarning`
+  promoted to an error under both available Python 3.14 and 3.15 lanes. Nine
+  new cases cover success, malformed input, pre- and post-consumption hangs, a
+  TERM-ignoring parent and descendant, finite and unbounded stderr writers, an
+  early-closed stderr hang, and staging-time deadline cleanup.
+- Portable CI now verifies that Ubuntu's `util-linux` owns
+  `/usr/sbin/runuser`, publishes and verifies the reviewed
+  `/usr/bin/runuser` entry point, and requires an explicit
+  `framework-installer` `PASS` row. Repository policy also verifies local
+  Markdown links; the broken legacy PGO link is corrected; BOLT prototype
+  wording is historical; `docs/commit-history-map.md` gives additive
+  descriptions to generically named evidence-bearing ancestors and forbids
+  rewriting them. The BOLT inventory validator now invokes its trusted Python
+  entry point as `/usr/bin/python3 -I -B`; isolated mode alone ignores
+  `PYTHONDONTWRITEBYTECODE` and had left a hidden `__pycache__` in the source
+  tree during the hook fixture. The three current BOLT wrappers also use
+  `-I -B`, while the byte-exact deployed-v1 migration fixture remains
+  historical. Focused artifact-tool and repository-policy regressions bind the
+  exact no-bytecode argv. The installed pre-Candidate framework still has the
+  historical deployed-v1 handoff; it currently has no bytecode residue, but no
+  legacy helper may be executed as root before the atomic v2 migration. The
+  tracked deterministic contract now binds 206 main tests
+  with identity SHA-256
+  `7c95b508cc1d5d271358c6da73d0631e15c9fada25c1584dcb2c791a744a31a7`
+  and 79 recovery tests with identity SHA-256
+  `778339462268073b3435c4de8f8a60124e3bd8e83d5bc5b886217684b74cbe65`;
+  the other topology identities remain unchanged. This is working-tree
+  implementation evidence only until the complete exact-clean local and
+  exact-SHA CI boundaries pass.
+- The first complete dirty-tree portable attempt used the driver's default
+  2,700-second recovery-case deadline and failed safely when that deadline
+  expired while the 57th of 79 recovery methods was running. It recorded 77
+  top-level passes, one timeout failure, 13 reviewed skips, 369 required
+  subtest passes, one required failure, 23 required skips, ten mandatory
+  portable skips, one diagnostic skip, 394 total subtests, and exit status one.
+  No functional assertion had failed; the exact recovery process group was
+  terminated, the result row recorded
+  `process_group_cleanup=terminated-residual`, and the partial result was
+  rejected. The root-owned retained tree
+  is
+  `/var/lib/gentoo-optimization/reports/candidate-a-closure-precommit-timeout-20260809`;
+  its 195-row `CONTENT-SHA256SUMS` verifies and has SHA-256
+  `3e6e9cb67f1e411c38940fee16abb7e74cf08bc78e0c74026164b71afb1aed91`.
+  SHA-256 values for `summary.txt`, `results.tsv`, `subtests.tsv`, and the
+  incomplete recovery log are respectively
+  `0008bd031de77a1563e5c157f25086ff2379a388299d56b29855746c59015176`,
+  `150bdd2277908797ffdde69a93c2bd3d2935bac6c9015b63b15b66645335a861`,
+  `07976623bf92dec16b71e1ded11fafd5955d8ce90b882e5859796dceb7cfb119`,
+  and `22a585cd47b530681dff417fef346a4195d3e8480949d67ee10b900ae7d79888`.
+  This is rejected deadline evidence, not a test pass or authorization.
+- A subsequent dirty-tree complete precheck gave the recovery case a bounded
+  7,200-second diagnostic deadline and completed it in 1,277 seconds. The full
+  driver recorded 78 top-level passes, zero failures, 13 reviewed skips, 394
+  required-subtest passes, zero required failures, 23 required skips, ten
+  mandatory portable skips, one diagnostic skip, 418 total subtests, and exit
+  status zero. All 206 main methods completed in 49 seconds with five reviewed
+  skips; all 79 recovery methods completed with three reviewed host skips; the
+  framework-installer, pinned ShellCheck 0.11.0, and complete BOLT-hook fixture
+  passed. Its `summary.txt`, `results.tsv`, `subtests.tsv`, main-suite log,
+  recovery-suite log, framework-installer log, and BOLT-hook log have SHA-256
+  values
+  `897adac696a4370a597c63bc15b1caf6b27a9da85de0f27d7402bb6a7dba077a`,
+  `91bae396633266856edf57d36d644bc378a0c767cd37dfeac2d440a0e352e5b0`,
+  `15d50496f0e7d7325a7127e2fd5b7a84e1b9cc388816c0d266fabed78a380c3d`,
+  `1f4ffca1e4250eb942d02b57026349de6c1ed03c5abcac2965514318279f0474`,
+  `9bc9959641832e06026975f272989166ee69cf4fdf59dc926fad3c61cac78317`,
+  `fd48a5e05fcf216fbe69590d32260ceb3677a28f131a85c43c9a5bb2bf2a0429`,
+  and `b435e9ea6e057bcbb80c8fe5efa44d13884f1486c4c2811545e336e54d96f9cf`.
+  The exact contract and static-contract logs have SHA-256
+  `a8bda87cfbc5e2b4ba50838dd5013a5f98efdb62fac2141bbeeb5ed574223061`
+  and `0cfdd89b45877f22c328cf8d9a1b3cc89443225e9af81e6d88da78fdba16c050`.
+- The current-tree smoke and 18-method checkpoint-smoke reruns also completed
+  with zero failures and zero mandatory internal skips. Smoke recorded
+  61 passes and nine reviewed mode/provenance skips; its summary, results, and
+  subtest SHA-256 values are
+  `08ae81573b313ee646ed0a64dfc4fb2255d69705e1062ab44f76397794d7613d`,
+  `fd68f95c49ca4db3a6c81570645f98234bcdb1d87d3b15a3e0c25a8c4988e1fb`,
+  and `942eb99bca290126a29137292fd375bf8adcc179e09f50fe8a094150cd7b9970`.
+  Checkpoint-smoke recorded 62 passes, eight reviewed skips, 81 required
+  subtest passes, and no required failure; its corresponding hashes are
+  `75ab305383568ff0312164c131f9ec3978168cd75548cb6f1066db298885c749`,
+  `4583f0ff98846b9c33c852fd2cda091dd86514f3461b13dd2890c00988f93110`,
+  and `6170906cfad5e069be03a589f0df4667a0e9dc1d4bc14b6d26ad684144470b44`.
+  No matching process or repository bytecode residue survived either run.
+- Those three green outputs are sealed byte-for-byte below the root-owned
+  mode-`0750` tree
+  `/var/lib/gentoo-optimization/reports/candidate-a-closure-precommit-20260809`;
+  files are mode `0640`, all objects are `root:root`, and its 504-row
+  location-independent `CONTENT-SHA256SUMS` verifies with SHA-256
+  `68f66d1cc4c8fff5fc0068216a94256f365d89fc0359180f1b0bc17d086cf2fc`.
+  `NONAUTHORIZING.txt` explicitly records the dirty source state and has
+  SHA-256
+  `21bfe0c521fbd1e6c1a0cf53f9f1bd0d58174b3e5ab6a98a119a95c6cc13d631`.
+  These are explicitly dirty-tree, non-authorizing implementation diagnostics.
+  The complete portable run preceded the final plan/runbook wording and this
+  evidence update, and none of the runs has clean-commit provenance. They do
+  not substitute for the fresh exact-clean local rerun or exact-SHA CI gate.
+- A read-only 2026-08-09 refresh observed the same 1,220 live CPVs and sorted
+  CPV-list SHA-256
+  `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`,
+  no active Portage mutation, and the old protected 1,217-package selector.
+  The reviewed `jsonschema` closure remains absent. No package, framework,
+  selector, project state, optimization generation, or frozen inventory was
+  changed. The complete live observation must run again immediately before
+  checkpoint mutation.
+- No §11.4 or §11.7 checkbox is closed by this checkpoint. The exact-clean
+  contract/provenance check, smoke, checkpoint-smoke, complete portable gate,
+  exact-SHA GitHub workflow,
+  two live recovery checkpoints with two exact offline
+  restoration/finalization proofs, installed Candidate-A gate,
+  supervised sample-PGO transaction, frozen Candidate B, and detached index
+  remain required.
 
 ## 11.1 Remove the unsafe global consumer
 
@@ -1170,7 +1356,7 @@ The test driver has distinct `smoke`, `checkpoint-smoke`, `portable-complete`,
 `stress`, `capabilities`, and `authoritative` modes. `checkpoint-smoke` selects
 18 exact methods: four supervisor containment/release paths, nine portable
 fake-`unshare` terminal/watchdog paths, and five checkpoint state-machine/
-process-group paths. The complete 70-method recovery matrix remains part of
+process-group paths. The complete 79-method recovery matrix remains part of
 `portable-complete`. Every top-level case publishes a
 structured completion row; every conditional shell branch and every Python
 `unittest` method publishes its own required/diagnostic row. Atomic shell
@@ -1215,10 +1401,14 @@ bounded isolated execution boundary. The workflow invokes `/usr/bin/bash` and
 summary, contract, and provenance evidence as well as failure evidence.
 
 A read-only 2026-08-02 live-host PATH preflight used the reviewed authoritative
-`/usr/bin:/usr/lib/llvm/22/bin:/bin` order and proved that all 69 manifest tools
-whose requested path basename is their command name resolve to that exact
-manifest entry point (`failures=0`); all declared version probes also passed.
-The root-owned 25-file preflight is retained at
+`/usr/bin:/usr/lib/llvm/22/bin:/bin` order and proved that all 69
+basename-addressable tools in predecessor `44ead3d`'s 77-entry manifest
+resolved to that exact requested entry point (`failures=0`). Its focused nine
+version probes passed; it did not execute every declared manifest version
+probe. The current manifest has 79 entries and 71 basename-addressable tools
+after adding the `/bin/bash` bootstrap and `/usr/bin/tr`; it requires a fresh
+exact-candidate preflight rather than inheriting this predecessor observation.
+The root-owned 25-file historical preflight is retained at
 `/var/tmp/gentoo-optimization/candidate-a-source-preflight-20260802/live-tool-preflight-44ead3d`;
 its relative `CONTENT-SHA256SUMS` verifies and has SHA-256
 `e0625f66807a8455387e59c028980de2b112da1075436240efc0c94c97efab30`.
@@ -1230,7 +1420,7 @@ focused LLVM/core TSV is
 `/var/tmp/gentoo-optimization/candidate-a-source-preflight-20260802/focused-path.tsv`
 with SHA-256
 `33cde6f50941cdbec916d8648bfbb0fd95d8dee89f5125abb3765f7eef82fa2e`.
-This is a non-mutating current-host coherence observation only; it does not
+This is a non-mutating historical-host coherence observation only; it does not
 substitute for the fresh exact-candidate authoritative or Candidate-B gates.
 
 The Candidate-A correction removes raw `os.fork()` and process-wide child-
@@ -1274,11 +1464,11 @@ requires a green exact-SHA workflow run.
 
 The current non-authorizing deterministic contract check discovers 33
 top-level cases, 58 shell sources, 36 evidence tests, one dedicated stress
-test, 201 main tests, and 70 recovery tests. The exact unittest identity hashes
+test, 206 main tests, and 79 recovery tests. The exact unittest identity hashes
 are `cc631c2bba201c6b754ac6344ee167adde640d6caac083b20fa0bf027f3f7f06`,
 `99dbe6b4806232fcb55e043b38a940d720b28775d387824f2cd98aeed4e65c84`,
-`2bcd4a21b69e2234d4fcdc09ee42ddd613c6ac959a70cb89d97e1585feb18fc4`,
-and `7b7222cb6798c7d7e3379e8544f3dc11625e3bb868be5f933406d7ddb84ed533`
+`7c95b508cc1d5d271358c6da73d0631e15c9fada25c1584dcb2c791a744a31a7`,
+and `778339462268073b3435c4de8f8a60124e3bd8e83d5bc5b886217684b74cbe65`
 for evidence, stress, main, and recovery respectively. The superseded
 pre-execution-identity 18-method `checkpoint-smoke` run at
 `/tmp/gentoo-opt-checkpoint-smoke-candidate-a-20260729-v8` passed with 62
@@ -1316,7 +1506,7 @@ or supervised production gates. The current branch head therefore requires a
 fresh exact-driver `checkpoint-smoke`, complete clean `portable-complete`, and
 exact-SHA CI run.
 
-The first complete current-tree diagnostic at
+The first complete superseded-tree diagnostic at
 `/tmp/gentoo-opt-portable-complete-candidate-a-20260729-v6` proved all 198 main
 and all 68 recovery tests, the framework installer, evidence contract, BOLT
 hooks, and the remaining executed fixtures, but correctly remained failed and
@@ -1414,18 +1604,33 @@ the root-owned durable tree
 `/var/lib/gentoo-optimization/reports/candidate-a-repository-precheck-20260726`;
 the individual hashes above continue to identify the preserved payloads.
 
-The system Python does not yet contain that closure, so an exact 1,220-CPV
-recovery checkpoint must precede its source installation; the post-install CPV
-set then requires another exact checkpoint and an offline restoration proof.
+The system Python does not yet contain that closure, so an exact current-CPV
+recovery checkpoint must precede its source installation. Checkpoint creation
+has no retirement transition and deliberately ends at
+`selector-activated-offline-restore-pending`; therefore the pre-install
+checkpoint must complete its own exact offline binary restoration and reach
+`offline-restore-proven` before the closure is installed. The post-install CPV
+set then requires a second independently verified checkpoint and a second exact
+offline restoration/finalization. Both canonical checkpoint states must report
+`pending_total=0`, `unknown_total=0`, and `failed_total=0`; restoring only the
+post-install checkpoint would leave the pre-install state nonterminal and is
+forbidden.
 
 Repository authorization commands no longer use visual hash comparison.
 Immutable bundle and installer copies are compared programmatically, root Git
 materialization runs with no system configuration and a private empty HOME,
 and root-owned state/cache/evidence existence checks run through `doas`. A
 portable GitHub Actions workflow is configured to run the exact
-portable-complete contract; a green run for the final Candidate-A commit is
-required before live installation. The 300-cycle crash workload is confined to
-`stress` and `authoritative` modes.
+portable-complete contract. The rejected `1729e9a` run skipped the hermetic
+framework installer because the runner's forced PATH did not expose Ubuntu's
+`/usr/sbin/runuser`; the current workflow correction verifies that package
+identity, exposes the reviewed `/usr/bin/runuser` entry point, and makes a
+`framework-installer` `PASS` row mandatory. A green run proving that correction
+for the final Candidate-A commit is required before live installation. Mutable
+Ubuntu package versions and the current Node action-runtime deprecation warning
+remain deferred CI-maintenance issues, not permission to weaken or skip this
+gate. The 300-cycle crash workload is confined to `stress` and `authoritative`
+modes.
 All of this remains non-authorizing until one clean Candidate A passes live and
 one frozen Candidate B reruns the complete gate into its detached index.
 

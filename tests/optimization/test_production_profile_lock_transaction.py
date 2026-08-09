@@ -440,6 +440,8 @@ raise SystemExit(child.returncode)
         failpoint: str | None = None,
         child_timeout: float = 10,
         pre_arm_pause: pathlib.Path | None = None,
+        signal_pause_stage: str | None = None,
+        signal_pause_file: pathlib.Path | None = None,
         token_scanner: pathlib.Path | None = None,
         test_pid_namespace: bool = False,
     ) -> list[str]:
@@ -479,6 +481,17 @@ raise SystemExit(child.returncode)
             arguments.extend(("--failpoint", failpoint))
         if pre_arm_pause is not None:
             arguments.extend(("--test-pre-arm-pause-file", os.fspath(pre_arm_pause)))
+        if signal_pause_stage is not None or signal_pause_file is not None:
+            if signal_pause_stage is None or signal_pause_file is None:
+                raise ValueError("signal pause requires both a stage and marker")
+            arguments.extend(
+                (
+                    "--test-signal-pause-stage",
+                    signal_pause_stage,
+                    "--test-signal-pause-file",
+                    os.fspath(signal_pause_file),
+                )
+            )
         if test_pid_namespace:
             arguments.append("--test-pid-namespace")
         arguments.append("--")
@@ -2108,10 +2121,46 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         self.fixture.assert_restored(self)
 
     def test_live_owner_blocks_a_second_recovery(self) -> None:
-        # A pause child keeps the coordinator and journal live after arming.
+        # The deterministic boundary is immediately after the journal becomes
+        # durable and before either generation payload is written.  SIGTERM
+        # here used to race the run_child-only handler and terminate the
+        # coordinator directly with returncode -15.
+        signal_pause = self.fixture.root / "signal-pause-live-owner"
         child = subprocess.Popen(
             self.fixture.run_arguments(
-                [sys.executable, "-c", "import time; time.sleep(30)"]
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                signal_pause_stage="arm-after-journal",
+                signal_pause_file=signal_pause,
+            ),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        try:
+            deadline = time.monotonic() + 5
+            while not signal_pause.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(signal_pause.exists())
+            self.assertTrue(self.fixture.journal.exists())
+            second = self.completed(self.fixture.recover_arguments())
+            self.assertEqual(second.returncode, 1)
+            self.assertIn("owner is still active", second.stderr)
+        finally:
+            child.send_signal(signal.SIGTERM)
+            stdout, stderr = child.communicate(timeout=5)
+        self.assertEqual(child.returncode, 143, f"{stdout}\n{stderr}")
+        self.assertFalse(signal_pause.exists())
+        self.assertIn("INTERRUPTED: signal=15", stderr)
+        self.fixture.assert_restored(self)
+
+    def test_first_transaction_signal_wins_during_bounded_recovery(self) -> None:
+        claim = self.fixture.root / "signal-first-owner-claim"
+        process = subprocess.Popen(
+            self.fixture.run_arguments(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                signal_pause_stage="interrupt-after-claim",
+                signal_pause_file=claim,
             ),
             text=True,
             stdout=subprocess.PIPE,
@@ -2121,15 +2170,34 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         try:
             deadline = time.monotonic() + 5
             while not self.fixture.journal.exists() and time.monotonic() < deadline:
+                if process.poll() is not None:
+                    break
                 time.sleep(0.02)
             self.assertTrue(self.fixture.journal.exists())
-            second = self.completed(self.fixture.recover_arguments())
-            self.assertEqual(second.returncode, 1)
-            self.assertIn("owner is still active", second.stderr)
+            process.send_signal(signal.SIGTERM)
+            deadline = time.monotonic() + 5
+            while not claim.exists() and time.monotonic() < deadline:
+                if process.poll() is not None:
+                    break
+                time.sleep(0.02)
+            self.assertTrue(claim.exists())
+            payload = json.loads(claim.read_text(encoding="utf-8"))
+            self.assertEqual(payload["stage"], "interrupt-after-claim")
+            process.send_signal(signal.SIGHUP)
+            claim.unlink()
+            stdout, stderr = process.communicate(timeout=10)
         finally:
-            child.send_signal(signal.SIGTERM)
-            stdout, stderr = child.communicate(timeout=5)
-        self.assertEqual(child.returncode, 143, f"{stdout}\n{stderr}")
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
+        self.assertEqual(process.returncode, 143, f"{stdout}\n{stderr}")
+        self.assertIn("INTERRUPTED: signal=15", stderr)
+        self.assertNotIn("INTERRUPTED: signal=1\n", stderr)
+        self.assertFalse(claim.exists())
         self.fixture.assert_restored(self)
 
     def test_framework_shared_lock_is_held_and_generation_writers_are_released(self) -> None:
@@ -2249,6 +2317,193 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
         )
         self.fixture.assert_restored(self)
         self.assert_processes_gone([child_pid])
+
+    def test_transaction_signal_handler_swap_is_masked_as_one_boundary(self) -> None:
+        events: list[tuple[object, ...]] = []
+        prior_mask = frozenset({signal.SIGUSR1})
+        original_handlers = {
+            signum: object() for signum in coordinator.TRANSACTION_SIGNALS
+        }
+
+        def pthread_sigmask(how: int, mask: object) -> frozenset[signal.Signals]:
+            events.append(("mask", how, frozenset(mask)))
+            return prior_mask
+
+        def getsignal(signum: signal.Signals) -> object:
+            events.append(("get", signum))
+            return original_handlers[signum]
+
+        def set_signal(signum: signal.Signals, handler: object) -> None:
+            events.append(("set", signum, handler))
+
+        def handler(_signum: int, _frame: object) -> None:
+            return None
+
+        previous: dict[signal.Signals, object] = {}
+        with (
+            mock.patch.object(
+                coordinator.signal, "pthread_sigmask", side_effect=pthread_sigmask
+            ),
+            mock.patch.object(coordinator.signal, "getsignal", side_effect=getsignal),
+            mock.patch.object(coordinator.signal, "signal", side_effect=set_signal),
+        ):
+            coordinator.install_transaction_signal_handlers(handler, previous)
+            coordinator.restore_transaction_signal_handlers(previous)
+
+        self.assertEqual(previous, original_handlers)
+        block_events = [
+            index
+            for index, event in enumerate(events)
+            if event[:2] == ("mask", signal.SIG_BLOCK)
+        ]
+        restore_events = [
+            index
+            for index, event in enumerate(events)
+            if event[:2] == ("mask", signal.SIG_SETMASK)
+        ]
+        self.assertEqual(len(block_events), 2)
+        self.assertEqual(len(restore_events), 2)
+        self.assertLess(block_events[0], restore_events[0])
+        self.assertLess(restore_events[0], block_events[1])
+        self.assertLess(block_events[1], restore_events[1])
+        for signum in coordinator.TRANSACTION_SIGNALS:
+            install_index = events.index(("set", signum, handler))
+            restore_index = events.index(
+                ("set", signum, original_handlers[signum])
+            )
+            self.assertLess(block_events[0], install_index)
+            self.assertLess(install_index, restore_events[0])
+            self.assertLess(block_events[1], restore_index)
+            self.assertLess(restore_index, restore_events[1])
+            self.assertNotIn(("set", signum, signal.SIG_IGN), events)
+
+    def test_inherited_blocked_transaction_signal_is_rejected_before_arm(self) -> None:
+        original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+        try:
+            blocked_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+            previous_handlers: dict[signal.Signals, object] = {}
+
+            def handler(_signum: int, _frame: object) -> None:
+                return None
+
+            with self.assertRaisesRegex(
+                coordinator.TransactionError,
+                "inherited blocked transaction signals: SIGTERM",
+            ):
+                coordinator.install_transaction_signal_handlers(
+                    handler, previous_handlers
+                )
+            observed_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+            self.assertEqual(observed_mask, blocked_mask)
+            self.assertFalse(previous_handlers)
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, original_mask)
+
+        environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        environment.pop("GENTOO_OPT_COORDINATOR_CRASH_STRESS", None)
+        completed = subprocess.run(
+            self.fixture.run_arguments(),
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+            preexec_fn=lambda: signal.pthread_sigmask(
+                signal.SIG_BLOCK, {signal.SIGTERM}
+            ),
+        )
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertIn("inherited blocked transaction signals: SIGTERM", completed.stderr)
+        self.fixture.assert_restored(self)
+
+    def test_signal_lifecycle_covers_every_durable_transaction_boundary(self) -> None:
+        stages = (
+            "handler-before-arm",
+            "arm-after-journal",
+            "child-before-spawn",
+            "child-after-spawn",
+            "child-after-sidecar",
+            "child-after-authorization",
+            "child-before-release",
+            "child-after-wait",
+            "child-after-token-scan",
+            "finalize-before-receipt",
+            "receipt-after-partial-fsync",
+            "receipt-after-final-rename",
+        )
+        post_wait_stages = {
+            "child-after-wait",
+            "child-after-token-scan",
+            "finalize-before-receipt",
+            "receipt-after-partial-fsync",
+            "receipt-after-final-rename",
+        }
+        for stage in stages:
+            with self.subTest(stage=stage):
+                marker = self.fixture.root / f"signal-pause-{stage}"
+                child_code = (
+                    "raise SystemExit(0)"
+                    if stage in post_wait_stages
+                    else "import time; time.sleep(30)"
+                )
+                process = subprocess.Popen(
+                    self.fixture.run_arguments(
+                        [sys.executable, "-c", child_code],
+                        signal_pause_stage=stage,
+                        signal_pause_file=marker,
+                    ),
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                )
+                try:
+                    deadline = time.monotonic() + 10
+                    while not marker.exists() and time.monotonic() < deadline:
+                        if process.poll() is not None:
+                            break
+                        time.sleep(0.02)
+                    self.assertTrue(marker.exists(), f"missing boundary marker: {stage}")
+                    boundary = json.loads(marker.read_text(encoding="utf-8"))
+                    self.assertEqual(boundary["stage"], stage)
+                    self.assertEqual(boundary["coordinator_pid"], process.pid)
+                    child_pid = boundary["child_pid"]
+                    process.send_signal(signal.SIGTERM)
+                    stdout, stderr = process.communicate(timeout=10)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait(timeout=5)
+                    if process.stdout is not None:
+                        process.stdout.close()
+                    if process.stderr is not None:
+                        process.stderr.close()
+                self.assertEqual(process.returncode, 143, f"{stage}\n{stdout}\n{stderr}")
+                self.assertIn("INTERRUPTED: signal=15", stderr)
+                self.assertFalse(marker.exists())
+                if stage == "handler-before-arm":
+                    self.assertFalse(self.fixture.receipt.exists())
+                else:
+                    receipt = json.loads(
+                        self.fixture.receipt.read_text(encoding="utf-8")
+                    )
+                    if stage == "receipt-after-final-rename":
+                        self.assertEqual(receipt["status"], "passed")
+                        self.assertEqual(receipt["child_exit_status"], 0)
+                    else:
+                        self.assertEqual(receipt["status"], "recovered-interrupted")
+                        self.assertIsNone(receipt["child_exit_status"])
+                        if stage == "receipt-after-partial-fsync":
+                            self.assertEqual(
+                                receipt["authorization"]["path"],
+                                os.fspath(self.fixture.authorization),
+                            )
+                            self.assertIsNotNone(
+                                receipt["abandoned_receipt_partial"]
+                            )
+                self.fixture.assert_restored(self)
+                if child_pid is not None:
+                    self.assert_processes_gone([child_pid])
 
     def test_timeout_path_never_signals_reused_numeric_process_group(self) -> None:
         process = mock.Mock()

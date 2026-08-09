@@ -6,7 +6,7 @@ an error; none may be used to collect, merge, locate, list, or consume a
 profile.
 
 The exact replacement is documented in
-[`optimization/pgo/README.md`](../optimization/pgo/README.md). It separates
+[`scripts/optimization/pgo/README.md`](../scripts/optimization/pgo/README.md). It separates
 Clang IR, Clang sample, GCC, Rust, and Go profile families and binds profiles
 to the exact CPV, slot, repository, ebuild, compiler, ABI, flags, environment
 stack, and build fingerprint. `portage/bashrc` activates only an explicit
