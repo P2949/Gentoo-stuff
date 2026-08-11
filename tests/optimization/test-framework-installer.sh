@@ -7,7 +7,58 @@ umask 077
 export LC_ALL=C
 
 SOURCE_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
+AUTHORITATIVE=${GENTOO_OPT_AUTHORITATIVE:-0}
+[[ ${AUTHORITATIVE} == 0 || ${AUTHORITATIVE} == 1 ]] || {
+    printf 'FAIL: GENTOO_OPT_AUTHORITATIVE must be exactly 0 or 1\n' >&2
+    exit 2
+}
+FIXTURE_EXCHANGE_TOOL_SOURCE=${SOURCE_ROOT}/tests/optimization/fixtures/rename-exchange-mv.py
+[[ -f ${FIXTURE_EXCHANGE_TOOL_SOURCE} && ! -L ${FIXTURE_EXCHANGE_TOOL_SOURCE} &&
+   -x ${FIXTURE_EXCHANGE_TOOL_SOURCE} ]] || {
+    printf 'FAIL: fixture atomic-exchange adapter is unavailable\n' >&2
+    exit 1
+}
 WORK=$(mktemp -d /tmp/gentoo-optimization-framework-installer.XXXXXXXX)
+FIXTURE_TOOL_DIRECTORY=${WORK}/fixture-tools
+mkdir -m 0700 -- "${FIXTURE_TOOL_DIRECTORY}"
+FIXTURE_EXCHANGE_TOOL_SOURCE_SHA_BEFORE=$(sha256sum -- \
+    "${FIXTURE_EXCHANGE_TOOL_SOURCE}")
+FIXTURE_EXCHANGE_TOOL_SOURCE_SHA_BEFORE=${FIXTURE_EXCHANGE_TOOL_SOURCE_SHA_BEFORE%% *}
+install -m 0700 -T -- "${FIXTURE_EXCHANGE_TOOL_SOURCE}" \
+    "${FIXTURE_TOOL_DIRECTORY}/rename-exchange-mv.py"
+FIXTURE_EXCHANGE_TOOL_SOURCE_SHA_AFTER=$(sha256sum -- \
+    "${FIXTURE_EXCHANGE_TOOL_SOURCE}")
+FIXTURE_EXCHANGE_TOOL_SOURCE_SHA_AFTER=${FIXTURE_EXCHANGE_TOOL_SOURCE_SHA_AFTER%% *}
+FIXTURE_EXCHANGE_TOOL_SNAPSHOT_SHA=$(sha256sum -- \
+    "${FIXTURE_TOOL_DIRECTORY}/rename-exchange-mv.py")
+FIXTURE_EXCHANGE_TOOL_SNAPSHOT_SHA=${FIXTURE_EXCHANGE_TOOL_SNAPSHOT_SHA%% *}
+[[ ${FIXTURE_EXCHANGE_TOOL_SOURCE_SHA_BEFORE} == \
+   "${FIXTURE_EXCHANGE_TOOL_SOURCE_SHA_AFTER}" && \
+   ${FIXTURE_EXCHANGE_TOOL_SOURCE_SHA_AFTER} == \
+   "${FIXTURE_EXCHANGE_TOOL_SNAPSHOT_SHA}" ]] || {
+    printf 'FAIL: fixture atomic-exchange adapter source changed or snapshot differs\n' >&2
+    exit 1
+}
+[[ $(stat -c '%u:%g:%a' -- "${FIXTURE_TOOL_DIRECTORY}") == \
+   "$(id -u):$(id -g):700" && \
+   $(stat -c '%u:%g:%a:%h' -- \
+       "${FIXTURE_TOOL_DIRECTORY}/rename-exchange-mv.py") == \
+   "$(id -u):$(id -g):700:1" ]] || {
+    printf 'FAIL: fixture atomic-exchange adapter snapshot metadata is unsafe\n' >&2
+    exit 1
+}
+if ((AUTHORITATIVE == 1)); then
+    EXCHANGE_TOOL=/usr/bin/mv
+    EXCHANGE_TOOL_KIND=production-mv
+    unset GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL
+else
+    EXCHANGE_TOOL=${FIXTURE_TOOL_DIRECTORY}/rename-exchange-mv.py
+    EXCHANGE_TOOL_KIND=portable-fixture-adapter
+    export GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL=${EXCHANGE_TOOL}
+fi
+EXCHANGE_TOOL_SHA256=$(sha256sum -- "${EXCHANGE_TOOL}")
+EXCHANGE_TOOL_SHA256=${EXCHANGE_TOOL_SHA256%% *}
+readonly EXCHANGE_TOOL EXCHANGE_TOOL_KIND EXCHANGE_TOOL_SHA256
 REPOSITORY=${WORK}/repository
 TARGET=${WORK}/target
 LOG=${WORK}/installer.log
@@ -112,13 +163,11 @@ probe_fixture_atomic_exchange() {
     mkdir -- "${probe}" "${probe}/left" "${probe}/right"
     printf 'left\n' >"${probe}/left/identity"
     printf 'right\n' >"${probe}/right/identity"
-    if ! /usr/bin/mv --exchange --no-copy -T -- \
+    if ! "${EXCHANGE_TOOL}" --exchange --no-copy -T -- \
         "${probe}/left" "${probe}/right" 2>"${probe}/error"; then
         reason=$(tr '\n' ' ' <"${probe}/error" 2>/dev/null || true)
         rm -rf -- "${probe}"
-        printf 'SKIP: fixture filesystem lacks required atomic exchange%s\n' \
-            "${reason:+ (${reason})}"
-        exit 77
+        fail "${EXCHANGE_TOOL_KIND} lacks required atomic exchange${reason:+ (${reason})}"
     fi
     [[ $(<"${probe}/left/identity") == right && \
         $(<"${probe}/right/identity") == left ]] || \
@@ -127,6 +176,8 @@ probe_fixture_atomic_exchange() {
 }
 
 probe_fixture_atomic_exchange
+record_required_subtest PASS installer.atomic-exchange-tool \
+    "kind=${EXCHANGE_TOOL_KIND};path=${EXCHANGE_TOOL};sha256=${EXCHANGE_TOOL_SHA256}"
 
 run_installer() {
     GENTOO_OPT_INSTALLER_TEST_MODE=1 \
@@ -826,6 +877,9 @@ PROFILE_TRANSACTION_CHILD_COMMAND=${PROFILE_TRANSACTION_FIXTURE}/installer-check
 PROFILE_TRANSACTION_AUTHORIZATION=${TARGET}/generation-state/${PROFILE_TRANSACTION_GENERATION}/phase2-sample-gate-${PROFILE_TRANSACTION_RUN}/transaction.authorization
 PROFILE_TRANSACTION_SCAN=${PROFILE_TRANSACTION_AUTHORIZATION%/*}/coordinator-token-scan.tsv
 PROFILE_TRANSACTION_RECEIPT=${PROFILE_TRANSACTION_JOURNAL%/*}/phase-2-production-profile-locks-${PROFILE_TRANSACTION_GENERATION}.receipt.json
+PROFILE_TRANSACTION_EXCHANGE_OVERRIDE=
+((AUTHORITATIVE == 1)) || \
+    PROFILE_TRANSACTION_EXCHANGE_OVERRIDE=${EXCHANGE_TOOL}
 mkdir -m 0700 -- "${PROFILE_TRANSACTION_FIXTURE}" \
     "${PROFILE_TRANSACTION_ARTIFACTS}" "${PROFILE_TRANSACTION_PROFILES}" \
     "${PROFILE_TRANSACTION_EVIDENCE}" "${TARGET}/generation-state"
@@ -839,6 +893,12 @@ token=\${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN}
 authorization=\${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION}
 unset GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN \
     GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION
+exchange_override=${PROFILE_TRANSACTION_EXCHANGE_OVERRIDE@Q}
+if [[ -n \${exchange_override} ]]; then
+    export GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL=\${exchange_override}
+else
+    unset GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL
+fi
 run_check() {
     local supplied_token=\$1 supplied_authorization=\$2
     GENTOO_OPT_INSTALLER_TEST_MODE=1 \

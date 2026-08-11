@@ -60,8 +60,12 @@ cd "$CHECKOUT_SOURCE"
 test "$PWD" = "$CHECKOUT_SOURCE"
 test "$(/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false \
   -c core.attributesFile=/dev/null rev-parse --verify 'HEAD^{commit}')" = "$COMMIT"
-test -z "$(/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false \
-  -c core.attributesFile=/dev/null status --porcelain=v1 --untracked-files=all)"
+if ! CHECKOUT_STATUS=$(/usr/bin/git -c core.hooksPath=/dev/null \
+  -c core.fsmonitor=false -c core.attributesFile=/dev/null \
+  status --porcelain=v1 --untracked-files=all); then
+  exit 1
+fi
+test -z "$CHECKOUT_STATUS"
 ```
 
 Publish both reviewed files from that immutable checkout as one new private
@@ -567,8 +571,12 @@ for NAME in command binpkg post_verifier attempt_ledger; do
 done
 test ! -e "/var/cache/gentoo-optimization/binpkgs/critical-current.prepared-$ID"
 test ! -L "/var/cache/gentoo-optimization/binpkgs/critical-current.prepared-$ID"
-test -z "$(find /var/cache/gentoo-optimization/binpkgs -maxdepth 1 \
-  -name ".critical-current.exchange-preflight-$ID-*" -print -quit)"
+if ! EXCHANGE_RESIDUE=$(/usr/bin/find \
+  /var/cache/gentoo-optimization/binpkgs -maxdepth 1 \
+  -name ".critical-current.exchange-preflight-$ID-*" -print -quit); then
+  exit 1
+fi
+test -z "$EXCHANGE_RESIDUE"
 find "$REPORT" -xdev \( -type f -o -type l \) -print0 >"$EVIDENCE/final-report.paths0"
 find "$STATE_PARENT" -maxdepth 1 \( -name "binpkg-checkpoint-$ID.json" -o \
   -name "binpkg-checkpoint-$ID.*.json" \) \( -type f -o -type l \) -print0 \
@@ -932,9 +940,12 @@ cpv_output.write_text(
 )
 PY
 test -s "$INSTALL_EVIDENCE/pretend-cpvs.txt"
-test -z "$(/usr/bin/comm -12 \
+if ! INSTALLED_PLAN_OVERLAP=$(/usr/bin/comm -12 \
   "$INSTALL_EVIDENCE/installed-cpvs.before.txt" \
-  "$INSTALL_EVIDENCE/pretend-cpvs.txt")"
+  "$INSTALL_EVIDENCE/pretend-cpvs.txt"); then
+  exit 1
+fi
+test -z "$INSTALLED_PLAN_OVERLAP"
 
 capture_ebuild_provenance() {
   local output=$1
@@ -1445,8 +1456,12 @@ for NAME in command binpkg post_verifier attempt_ledger; do
 done
 test ! -e "/var/cache/gentoo-optimization/binpkgs/critical-current.prepared-$ID"
 test ! -L "/var/cache/gentoo-optimization/binpkgs/critical-current.prepared-$ID"
-test -z "$(find /var/cache/gentoo-optimization/binpkgs -maxdepth 1 \
-  -name ".critical-current.exchange-preflight-$ID-*" -print -quit)"
+if ! POST_EXCHANGE_RESIDUE=$(/usr/bin/find \
+  /var/cache/gentoo-optimization/binpkgs -maxdepth 1 \
+  -name ".critical-current.exchange-preflight-$ID-*" -print -quit); then
+  exit 1
+fi
+test -z "$POST_EXCHANGE_RESIDUE"
 
 find "$CHECKPOINT_REPORT" -xdev \( -type f -o -type l \) -print0 \
   >"$EVIDENCE/final-report.paths0"

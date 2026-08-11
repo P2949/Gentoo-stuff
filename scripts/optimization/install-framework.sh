@@ -156,6 +156,25 @@ else
 fi
 readonly LOCK_GID LOCK_DIRECTORY_MODE LOCK_FILE_MODE
 
+if [[ -n ${GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL:-} ]]; then
+    [[ -n ${TEST_ROOT} ]] || {
+        printf 'ERROR: fixture atomic-exchange tool override is forbidden in production\n' >&2
+        exit 2
+    }
+    [[ ${GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL} == /* &&
+       -f ${GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL} &&
+       ! -L ${GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL} &&
+       -x ${GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL} ]] || {
+        printf 'ERROR: fixture atomic-exchange tool is not an executable regular file\n' >&2
+        exit 2
+    }
+    EXCHANGE_TOOL=${GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL}
+else
+    EXCHANGE_TOOL=/usr/bin/mv
+fi
+readonly EXCHANGE_TOOL
+unset GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL
+
 physical() {
     local logical=$1
     [[ ${logical} == /* ]] || return 1
@@ -740,7 +759,7 @@ preflight_atomic_exchange_destinations() {
         "${MANIFEST%/*}"
         "${TMPFILES_ROOT}"
     )
-    [[ -x /usr/bin/mv ]] || fail 'required atomic-exchange tool is absent: /usr/bin/mv'
+    [[ -x ${EXCHANGE_TOOL} ]] || fail "required atomic-exchange tool is absent: ${EXCHANGE_TOOL}"
     for destination_parent in "${destination_parents[@]}"; do
         existing=$(nearest_existing_destination_ancestor "${destination_parent}")
         probe=$(mktemp -d \
@@ -756,7 +775,7 @@ preflight_atomic_exchange_destinations() {
             ${GENTOO_OPT_INSTALLER_FORCE_EXCHANGE_UNSUPPORTED:-0} == 1 ]]; then
             printf 'forced unsupported exchange for fixture validation\n' >"${error}"
             exchange_failed=1
-        elif ! /usr/bin/mv --exchange --no-copy -T -- \
+        elif ! "${EXCHANGE_TOOL}" --exchange --no-copy -T -- \
             "${probe}/left" "${probe}/right" 2>"${error}"; then
             exchange_failed=1
         fi
@@ -2326,7 +2345,7 @@ atomic_publish_entry() {
     parent=${destination%/*}
     [[ ${prepared%/*} == "${parent}" ]] || fail 'atomic publication staging entry is not in the destination directory'
     if [[ -e ${destination} || -L ${destination} ]]; then
-        /usr/bin/mv --exchange --no-copy -T -- "${prepared}" "${destination}"
+        "${EXCHANGE_TOOL}" --exchange --no-copy -T -- "${prepared}" "${destination}"
     else
         /usr/bin/mv --no-copy -T -- "${prepared}" "${destination}"
     fi
@@ -2717,6 +2736,17 @@ if [[ ${PREVIOUS_TARGET} != none && -f ${PREVIOUS_TARGET}/install.manifest ]] &&
     )
     if [[ -n ${TEST_ROOT} ]]; then
         REEXEC_ARGS+=(--test-root "${TEST_ROOT}")
+    fi
+    if [[ -n ${TEST_ROOT} ]]; then
+        # The portable installer fixture may select a fixture-owned spelling
+        # of renameat2(RENAME_EXCHANGE).  Preserve that exact selection across
+        # the install-to-check re-exec; otherwise a host whose /usr/bin/mv
+        # predates --exchange would exercise a different tool on the second
+        # half of one transaction.  Production never has TEST_ROOT and can
+        # therefore never carry this override across the boundary.
+        exec env -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
+            GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL="${EXCHANGE_TOOL}" \
+            "${REEXEC_ARGS[@]}"
     fi
     exec env -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
         "${REEXEC_ARGS[@]}"

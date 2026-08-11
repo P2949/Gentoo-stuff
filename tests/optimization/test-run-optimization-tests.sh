@@ -189,6 +189,8 @@ grep -Fq 'TEST_CASE_KILL_AFTER_SECONDS=10' "${FIXTURE}/help.txt" || \
     fail 'help omits the per-case forced-kill grace period'
 grep -Fq 'CHECKPOINT_SMOKE_TIMEOUT_SECONDS=600' "${FIXTURE}/help.txt" || \
     fail 'help omits the checkpoint-smoke deadline'
+grep -Fq 'CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS=90' "${FIXTURE}/help.txt" || \
+    fail 'help omits the checkpoint-smoke per-identity deadline'
 grep -Fq 'RECOVERY_SUITE_TIMEOUT_SECONDS=2700' "${FIXTURE}/help.txt" || \
     fail 'help omits the complete recovery-suite deadline'
 grep -Fq 'TEST_CASE_TIMEOUT_SECONDS_CLANG_IR' "${FIXTURE}/help.txt" || \
@@ -287,6 +289,15 @@ grep -Fq \
     'CHECKPOINT_SMOKE_TIMEOUT_SECONDS must be a positive integer number of seconds' \
     "${FIXTURE}/bad-checkpoint-timeout.log" || \
     fail 'invalid checkpoint-smoke timeout lacks a visible diagnostic'
+
+if CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS=0 bash -- "${DRIVER}" \
+    --mode checkpoint-smoke >"${FIXTURE}/bad-checkpoint-method-timeout.log" 2>&1; then
+    fail 'zero checkpoint-smoke per-identity timeout unexpectedly succeeded'
+fi
+grep -Fq \
+    'CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS must be a positive integer number of seconds' \
+    "${FIXTURE}/bad-checkpoint-method-timeout.log" || \
+    fail 'invalid checkpoint-smoke per-identity timeout lacks a visible diagnostic'
 
 if RECOVERY_SUITE_TIMEOUT_SECONDS=0 bash -- "${DRIVER}" --mode smoke \
     >"${FIXTURE}/bad-recovery-timeout.log" 2>&1; then
@@ -931,6 +942,7 @@ PYTHON_BIN_ROOT=${FIXTURE}/python-bin
 PYTHON_DRIVER=${PYTHON_ROOT}/tests/run-optimization-tests.sh
 PYTHON_UNITTEST_RUNNER=${PYTHON_ROOT}/scripts/optimization/verify/run-unittest-suite.py
 PYTHON_TEST_DIR=${PYTHON_ROOT}/tests/unit
+PYTHON_OPTIMIZATION_TEST_DIR=${PYTHON_ROOT}/tests/optimization
 PYTHON_RECOVERY_TEST_DIR=${PYTHON_ROOT}/tests/optimization/recovery
 PYTHON_OUTPUT=${FIXTURE}/python-output
 PYTHON_ENV_MARKER=${FIXTURE}/python-unittest-environment.txt
@@ -979,6 +991,20 @@ printf '%s\n' \
     '            os.environ.get("GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES"), "1"' \
     '        )' \
     >"${PYTHON_RECOVERY_TEST_DIR}/test_checkpoint_host_opt_in.py"
+printf '%s\n' \
+    'import os' \
+    'import unittest' \
+    '' \
+    '@unittest.skipUnless(' \
+    '    os.environ.get("GENTOO_OPT_RUN_JSONSCHEMA_HOST_CAPABILITIES") == "1",' \
+    '    "jsonschema prerequisite host primitives require the authoritative opt-in",' \
+    ')' \
+    'class JsonschemaHostOptInTest(unittest.TestCase):' \
+    '    def test_authoritative_optimization_suite_receives_opt_in(self):' \
+    '        self.assertEqual(' \
+    '            os.environ.get("GENTOO_OPT_RUN_JSONSCHEMA_HOST_CAPABILITIES"), "1"' \
+    '        )' \
+    >"${PYTHON_OPTIMIZATION_TEST_DIR}/test_jsonschema_host_opt_in.py"
 for required_python_tool in bash dirname env find mkdir realpath setsid sleep \
     sort stat tail tee timeout; do
     required_python_path=$(command -v -- "${required_python_tool}") || \
@@ -1025,6 +1051,7 @@ grep -Fq 'ERROR: unittest discovery executed zero tests' \
 PATH=${PYTHON_BIN_ROOT} \
 PYTHONPYCACHEPREFIX=/inherited-prefix-that-must-not-reach-unittest \
 GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES=1 \
+GENTOO_OPT_RUN_JSONSCHEMA_HOST_CAPABILITIES=1 \
 RECOVERY_SUITE_TIMEOUT_SECONDS=2711 \
     bash -- "${PYTHON_DRIVER}" --mode stress --output-dir "${PYTHON_OUTPUT}" \
     >"${FIXTURE}/python-driver.log" 2>&1 || {
@@ -1041,8 +1068,8 @@ find "${PYTHON_OUTPUT}/python-cache/compile" -type f -name '*.pyc' -print -quit 
     fail 'the driver recreated the removed unittest cache prefix'
 grep -Fxq 'fail=0' "${PYTHON_OUTPUT}/summary.txt" || \
     fail 'Python-environment self-test produced a driver failure'
-grep -Fxq 'mandatory_internal_skip=2' "${PYTHON_OUTPUT}/summary.txt" || \
-    fail 'Python unittest and recovery host opt-in skips were not both surfaced'
+grep -Fxq 'mandatory_internal_skip=3' "${PYTHON_OUTPUT}/summary.txt" || \
+    fail 'Python unittest, jsonschema, and recovery host opt-in skips were not all surfaced'
 PYTHON_SKIP_ROWS=0
 while IFS=$'\t' read -r subtest_status subtest_requirement subtest_test \
     subtest_name subtest_detail; do
@@ -1059,6 +1086,9 @@ done <"${PYTHON_OUTPUT}/subtests.tsv"
 grep -Fq $'SKIP\trequired\tpython-unit-tests:tests/optimization/recovery\tpython.' \
     "${PYTHON_OUTPUT}/subtests.tsv" || \
     fail 'portable recovery host-capability opt-in was not an explicit required skip'
+grep -Fq $'SKIP\trequired\tpython-unit-tests:tests/optimization\tpython.' \
+    "${PYTHON_OUTPUT}/subtests.tsv" || \
+    fail 'portable jsonschema host-capability opt-in was not an explicit required skip'
 PYTHON_RECOVERY_RESULT_ROWS=0
 while IFS=$'\t' read -r result_status result_name result_detail; do
     if [[ ${result_name} == python-unit-tests:tests/optimization/recovery ]]; then
@@ -1096,9 +1126,15 @@ grep -Fq $'FAIL\tpython-unit-tests:tests/unit\t' \
 grep -Fq $'PASS\tpython-unit-tests:tests/optimization/recovery\t' \
     "${PYTHON_AUTHORITATIVE_OUTPUT}/results.tsv" || \
     fail 'authoritative recovery suite did not execute its host-capability opt-in'
+grep -Fq $'PASS\tpython-unit-tests:tests/optimization\t' \
+    "${PYTHON_AUTHORITATIVE_OUTPUT}/results.tsv" || \
+    fail 'authoritative optimization suite did not execute its jsonschema host-capability opt-in'
 grep -Fq $'PASS\trequired\tpython-unit-tests:tests/optimization/recovery\tpython.' \
     "${PYTHON_AUTHORITATIVE_OUTPUT}/subtests.tsv" || \
     fail 'authoritative recovery host-capability subtest did not pass'
+grep -Fq $'PASS\trequired\tpython-unit-tests:tests/optimization\tpython.' \
+    "${PYTHON_AUTHORITATIVE_OUTPUT}/subtests.tsv" || \
+    fail 'authoritative jsonschema host-capability subtest did not pass'
 PROFILE_STRESS_SKIP_ROWS=0
 PROFILE_STRESS_SKIP_DETAIL=
 while IFS=$'\t' read -r result_status result_name result_detail; do
@@ -1113,6 +1149,115 @@ done <"${PYTHON_OUTPUT}/results.tsv"
 [[ ${PROFILE_STRESS_SKIP_DETAIL} == \
     'production profile-lock transaction test module is unavailable' ]] || \
     fail "profile-lock stress SKIP lacks its exact module preflight reason: ${PROFILE_STRESS_SKIP_DETAIL}"
+
+# checkpoint-smoke must not execute its 18 stateful methods inside one Python
+# interpreter.  A leaked signal mask, handler, child, descriptor, or module
+# global from one method must be unable to affect the next, and one stuck
+# method must terminate at its own reviewed deadline rather than consuming the
+# whole checkpoint-smoke case deadline.
+CHECKPOINT_ISOLATION_TEST=${PYTHON_RECOVERY_TEST_DIR}/test_create_binpkg_checkpoint.py
+CHECKPOINT_ISOLATION_MARKER=${FIXTURE}/checkpoint-isolation.tsv
+CHECKPOINT_ISOLATION_OUTPUT=${FIXTURE}/checkpoint-isolation-output
+CHECKPOINT_TIMEOUT_MARKER=${FIXTURE}/checkpoint-timeout.tsv
+CHECKPOINT_TIMEOUT_OUTPUT=${FIXTURE}/checkpoint-timeout-output
+mapfile -t CHECKPOINT_ISOLATION_IDENTITIES < <(
+    awk '
+        /^readonly -a CHECKPOINT_SMOKE_IDENTITIES=\(/ { inside = 1; next }
+        inside && /^\)/ { exit }
+        inside {
+            sub(/^[[:space:]]+/, "")
+            if (length($0)) print
+        }
+    ' "${DRIVER}"
+)
+[[ ${#CHECKPOINT_ISOLATION_IDENTITIES[@]} -eq 18 ]] || \
+    fail "self-test discovered ${#CHECKPOINT_ISOLATION_IDENTITIES[@]} checkpoint-smoke identities, expected 18"
+{
+    printf '%s\n' \
+        'import os' \
+        'import time' \
+        'from pathlib import Path' \
+        'import unittest' \
+        '' \
+        '_executed = False' \
+        '' \
+        'def exercise(label):' \
+        '    global _executed' \
+        '    if _executed:' \
+        '        raise AssertionError("checkpoint methods shared one interpreter")' \
+        '    _executed = True' \
+        '    fields = Path(f"/proc/{os.getpid()}/stat").read_text(encoding="ascii").rsplit(") ", 1)[1].split()' \
+        '    marker = Path(os.environ["CHECKPOINT_ISOLATION_MARKER"])' \
+        '    descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)' \
+        '    try:' \
+        '        os.write(descriptor, f"{label}\t{os.getpid()}\t{fields[19]}\n".encode("ascii"))' \
+        '        os.fsync(descriptor)' \
+        '    finally:' \
+        '        os.close(descriptor)' \
+        '    if os.environ.get("CHECKPOINT_SMOKE_FORCE_HANG") == label:' \
+        '        time.sleep(300)' \
+        ''
+    checkpoint_class=
+    for checkpoint_identity in "${CHECKPOINT_ISOLATION_IDENTITIES[@]}"; do
+        checkpoint_qualified=${checkpoint_identity#test_create_binpkg_checkpoint.}
+        checkpoint_next_class=${checkpoint_qualified%%.*}
+        checkpoint_method=${checkpoint_qualified##*.}
+        if [[ ${checkpoint_next_class} != "${checkpoint_class}" ]]; then
+            checkpoint_class=${checkpoint_next_class}
+            printf 'class %s(unittest.TestCase):\n' "${checkpoint_class}"
+        fi
+        printf '    def %s(self):\n' "${checkpoint_method}"
+        printf "        exercise('%s')\n\n" \
+            "${checkpoint_class}.${checkpoint_method}"
+    done
+} >"${CHECKPOINT_ISOLATION_TEST}"
+printf '%s\n' \
+    'import unittest' \
+    'class Phase2EvidenceTests(unittest.TestCase):' \
+    '    def test_exact_topology_rejects_deleted_and_unexpected_cases(self):' \
+    '        pass' \
+    >"${PYTHON_ROOT}/tests/optimization/test_phase2_evidence.py"
+
+PATH=${PYTHON_BIN_ROOT} \
+SHELLCHECK=${PYTHON_BIN_ROOT}/shellcheck \
+CHECKPOINT_ISOLATION_MARKER=${CHECKPOINT_ISOLATION_MARKER} \
+CHECKPOINT_SMOKE_TIMEOUT_SECONDS=120 \
+CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS=10 \
+    "${PYTHON_BIN_ROOT}/bash" -- "${PYTHON_DRIVER}" --mode checkpoint-smoke \
+    --output-dir "${CHECKPOINT_ISOLATION_OUTPUT}" \
+    >"${FIXTURE}/checkpoint-isolation-driver.log" 2>&1 || {
+    sed -n '1,240p' "${FIXTURE}/checkpoint-isolation-driver.log" >&2
+    fail 'checkpoint-smoke per-identity isolation fixture failed'
+}
+grep -Fxq 'fail=0' "${CHECKPOINT_ISOLATION_OUTPUT}/summary.txt" || \
+    fail 'checkpoint-smoke isolation fixture produced a driver failure'
+mapfile -t CHECKPOINT_OBSERVED_IDENTITIES < <(
+    cut -f2,3 -- "${CHECKPOINT_ISOLATION_MARKER}" | sort -u
+)
+[[ ${#CHECKPOINT_OBSERVED_IDENTITIES[@]} -eq 18 ]] || \
+    fail "checkpoint-smoke reused an interpreter identity: ${#CHECKPOINT_OBSERVED_IDENTITIES[@]} unique, expected 18"
+
+CHECKPOINT_HANG_IDENTITY=${CHECKPOINT_ISOLATION_IDENTITIES[0]#test_create_binpkg_checkpoint.}
+set +e
+PATH=${PYTHON_BIN_ROOT} \
+SHELLCHECK=${PYTHON_BIN_ROOT}/shellcheck \
+CHECKPOINT_ISOLATION_MARKER=${CHECKPOINT_TIMEOUT_MARKER} \
+CHECKPOINT_SMOKE_FORCE_HANG=${CHECKPOINT_HANG_IDENTITY} \
+CHECKPOINT_SMOKE_TIMEOUT_SECONDS=30 \
+CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS=1 \
+TEST_CASE_KILL_AFTER_SECONDS=1 \
+    "${PYTHON_BIN_ROOT}/bash" -- "${PYTHON_DRIVER}" --mode checkpoint-smoke \
+    --output-dir "${CHECKPOINT_TIMEOUT_OUTPUT}" \
+    >"${FIXTURE}/checkpoint-timeout-driver.log" 2>&1
+CHECKPOINT_TIMEOUT_STATUS=$?
+set -e
+[[ ${CHECKPOINT_TIMEOUT_STATUS} -eq 1 ]] || \
+    fail "checkpoint-smoke hung-method fixture returned ${CHECKPOINT_TIMEOUT_STATUS}, expected 1"
+grep -Fq $'FAIL\tcheckpoint-smoke\texit_status=124 ' \
+    "${CHECKPOINT_TIMEOUT_OUTPUT}/results.tsv" || \
+    fail 'checkpoint-smoke hung method did not surface its inner timeout status'
+[[ $(wc -l <"${CHECKPOINT_TIMEOUT_MARKER}") -eq 1 ]] || \
+    fail 'checkpoint-smoke continued to later identities after a method timeout'
 
 # Exercise both reason-bearing recovery ABI preflight failures while keeping
 # the rollback fixture itself hermetic and provably unexecuted.

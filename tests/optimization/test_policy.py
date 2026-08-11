@@ -281,6 +281,45 @@ class OptimizationPolicyTests(unittest.TestCase):
         )
         self.assertNotRegex(materialization_boundary, r"\|\s*(?:awk|cut)\b")
 
+        checkpoint_runbook = (
+            REPOSITORY_ROOT / "docs/binpkg-checkpoint-runbook.md"
+        ).read_text(encoding="utf-8")
+        # A failed command substitution can yield an empty string.  Wrapping
+        # it directly in `test -z` therefore turns command failure into
+        # apparent success under set -e.  Safety-critical observations must
+        # capture and check command status before testing an empty result.
+        self.assertNotRegex(
+            checkpoint_runbook,
+            r'''test\s+-z\s+["']\$\(''',
+        )
+
+        installer_source = (
+            REPOSITORY_ROOT / "scripts/optimization/install-framework.sh"
+        ).read_text(encoding="utf-8")
+        installer_fixture = (
+            REPOSITORY_ROOT / "tests/optimization/test-framework-installer.sh"
+        ).read_text(encoding="utf-8")
+        exchange_adapter = (
+            REPOSITORY_ROOT
+            / "tests/optimization/fixtures/rename-exchange-mv.py"
+        )
+        self.assertIn(
+            "fixture atomic-exchange tool override is forbidden in production",
+            installer_source,
+        )
+        self.assertIn("EXCHANGE_TOOL=/usr/bin/mv", installer_source)
+        self.assertIn(
+            'GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL="${EXCHANGE_TOOL}"',
+            installer_source,
+        )
+        self.assertIn(
+            "GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL=${EXCHANGE_TOOL}",
+            installer_fixture,
+        )
+        self.assertTrue(exchange_adapter.is_file())
+        self.assertFalse(exchange_adapter.is_symlink())
+        self.assertTrue(exchange_adapter.stat().st_mode & 0o111)
+
         required_sources = set(cast(list[str], policy["required_sources"]))
         self.assertLessEqual(
             {

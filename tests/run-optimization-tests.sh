@@ -72,6 +72,7 @@ AUTHORITATIVE=${GENTOO_OPT_AUTHORITATIVE:-0}
 TEST_CASE_TIMEOUT_SECONDS=${TEST_CASE_TIMEOUT_SECONDS:-1800}
 TEST_CASE_KILL_AFTER_SECONDS=${TEST_CASE_KILL_AFTER_SECONDS:-10}
 CHECKPOINT_SMOKE_TIMEOUT_SECONDS=${CHECKPOINT_SMOKE_TIMEOUT_SECONDS:-600}
+CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS=${CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS:-90}
 RECOVERY_SUITE_TIMEOUT_SECONDS=${RECOVERY_SUITE_TIMEOUT_SECONDS:-2700}
 
 declare -A SELECTED_CAPABILITIES=()
@@ -153,6 +154,7 @@ Environment:
   TEST_CASE_TIMEOUT_SECONDS=1800
   TEST_CASE_KILL_AFTER_SECONDS=10
   CHECKPOINT_SMOKE_TIMEOUT_SECONDS=600
+  CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS=90
   RECOVERY_SUITE_TIMEOUT_SECONDS=2700
   GENTOO_OPT_AUTHORITATIVE=0|1
 
@@ -169,7 +171,9 @@ capability name, for example TEST_CASE_TIMEOUT_SECONDS_CLANG_IR or
 TEST_CASE_KILL_AFTER_SECONDS_BOLT. Values are positive integer seconds.
 The complete recovery unittest case has the separately reviewed
 RECOVERY_SUITE_TIMEOUT_SECONDS deadline; checkpoint-smoke retains its own
-shorter CHECKPOINT_SMOKE_TIMEOUT_SECONDS deadline.
+shorter CHECKPOINT_SMOKE_TIMEOUT_SECONDS deadline and executes every selected
+identity in a fresh Python process bounded by
+CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS.
 
 Fixture-specific tool and iteration overrides (for example CLANGXX,
 LLVM_PROFDATA, CLANG_SAMPLE_ITERATIONS, RUST_PGO_ITERATIONS,
@@ -469,6 +473,8 @@ validate_positive_seconds TEST_CASE_TIMEOUT_SECONDS "${TEST_CASE_TIMEOUT_SECONDS
 validate_positive_seconds TEST_CASE_KILL_AFTER_SECONDS "${TEST_CASE_KILL_AFTER_SECONDS}"
 validate_positive_seconds CHECKPOINT_SMOKE_TIMEOUT_SECONDS \
     "${CHECKPOINT_SMOKE_TIMEOUT_SECONDS}"
+validate_positive_seconds CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS \
+    "${CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS}"
 validate_positive_seconds RECOVERY_SUITE_TIMEOUT_SECONDS \
     "${RECOVERY_SUITE_TIMEOUT_SECONDS}"
 for capability in "${ALL_CAPABILITIES[@]}"; do
@@ -1436,16 +1442,20 @@ else
                 "${TEST_CASE_KILL_AFTER_SECONDS}" \
                 "${ENV_BIN}" -u PYTHONPYCACHEPREFIX \
                 -u GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES \
+                -u GENTOO_OPT_RUN_JSONSCHEMA_HOST_CAPABILITIES \
                 PYTHONDONTWRITEBYTECODE=1 \
                 "${BASH_BIN}" -c '
                     set -Eeuo pipefail
                     python_bin=$1
                     runner=$2
-                    shift 2
+                    timeout_bin=$3
+                    method_timeout=$4
+                    kill_after=$5
+                    shift 5
                     expected=("$@")
                     filters=()
                     for identity in "${expected[@]}"; do
-                        filters+=(-k "${identity##*.}")
+                        filters+=(-k "${identity#test_create_binpkg_checkpoint.}")
                     done
                     mapfile -t actual < <(
                         "${python_bin}" "${runner}" --list-identities discover \
@@ -1466,12 +1476,20 @@ else
                             exit 2
                         fi
                     done
-                    exec "${python_bin}" "${runner}" discover \
-                        -s tests/optimization/recovery \
-                        -p test_create_binpkg_checkpoint.py -v \
-                        "${filters[@]}"
+                    for identity in "${expected[@]}"; do
+                        method=${identity#test_create_binpkg_checkpoint.}
+                        "${timeout_bin}" --foreground --signal=TERM \
+                            --kill-after="${kill_after}s" \
+                            "${method_timeout}s" \
+                            "${python_bin}" "${runner}" discover \
+                            -s tests/optimization/recovery \
+                            -p test_create_binpkg_checkpoint.py -v \
+                            -k "${method}"
+                    done
                 ' checkpoint-smoke-exact-identities \
                 "${PYTHON_BIN}" "${STRUCTURED_UNITTEST_RUNNER}" \
+                "${TIMEOUT_BIN}" "${CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS}" \
+                "${TEST_CASE_KILL_AFTER_SECONDS}" \
                 "${CHECKPOINT_SMOKE_IDENTITIES[@]}"
         fi
         skip_case production-profile-lock-crash-stress \
@@ -1490,6 +1508,7 @@ else
             relative_directory=${test_directory#"${REPOSITORY_ROOT}/"}
             unittest_environment=("${ENV_BIN}" -u PYTHONPYCACHEPREFIX \
                 -u GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES \
+                -u GENTOO_OPT_RUN_JSONSCHEMA_HOST_CAPABILITIES \
                 PYTHONDONTWRITEBYTECODE=1)
             if ((AUTHORITATIVE == 1)) && \
                 [[ ${relative_directory} == tests/optimization/recovery ]]; then
@@ -1500,6 +1519,18 @@ else
                 # isolated recovery suite.
                 unittest_environment+=(
                     GENTOO_OPT_RUN_CHECKPOINT_HOST_CAPABILITIES=1
+                )
+            fi
+            if ((AUTHORITATIVE == 1)) && \
+                [[ ${relative_directory} == tests/optimization ]]; then
+                # The jsonschema prerequisite fixture keeps its real Gemato,
+                # mount/PID/network-namespace and Portage-vardb probes behind
+                # a separate explicit opt-in. Portable execution reports the
+                # reviewed host-only methods as required skips; authoritative
+                # execution must run them and therefore cannot hide a missing
+                # primitive behind the ordinary unittest top-level result.
+                unittest_environment+=(
+                    GENTOO_OPT_RUN_JSONSCHEMA_HOST_CAPABILITIES=1
                 )
             fi
             unittest_arguments=(discover -s "${test_directory}" -p 'test_*.py' -v)
