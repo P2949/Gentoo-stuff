@@ -69,23 +69,58 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           set -Eeuo pipefail
-          /usr/bin/python3 -I -B scripts/optimization/verify/phase2-test-contract.py check \
-            --repository-root . \
-            --contract optimization/phase2-authoritative-test-contract.json
           output=/tmp/gentoo-optimization-portable-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
           test ! -e "$output"
+          mkdir --mode=0700 -- "$output"
+
+          git_home=$RUNNER_TEMP/portable-precontract-git-home
+          test ! -e "$git_home"
+          mkdir --mode=0700 -- "$git_home"
+          head_sha=$(GIT_CONFIG_NOSYSTEM=1 HOME="$git_home" \
+            /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false \
+            rev-parse --verify 'HEAD^{commit}')
+          tree_sha=$(GIT_CONFIG_NOSYSTEM=1 HOME="$git_home" \
+            /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false \
+            rev-parse --verify 'HEAD^{tree}')
+          test "$head_sha" = "$GITHUB_SHA"
+          {
+            printf 'schema=portable-precontract-provenance-v1\n'
+            printf 'repository=%s\n' "$GITHUB_REPOSITORY"
+            printf 'event_name=%s\n' "$GITHUB_EVENT_NAME"
+            printf 'ref=%s\n' "$GITHUB_REF"
+            printf 'run_id=%s\n' "$GITHUB_RUN_ID"
+            printf 'run_attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+            printf 'github_sha=%s\n' "$GITHUB_SHA"
+            printf 'head_sha=%s\n' "$head_sha"
+            printf 'tree_sha=%s\n' "$tree_sha"
+          } >"$output/workflow-provenance.txt"
+
+          contract_status=0
+          /usr/bin/python3 -I -B scripts/optimization/verify/phase2-test-contract.py check \
+            --repository-root . \
+            --contract optimization/phase2-authoritative-test-contract.json \
+            >"$output/test-contract-static-check.log" 2>&1 || contract_status=$?
+          printf 'exit_status=%d\n' "$contract_status" \
+            >"$output/test-contract-static-check.status"
+          cat -- "$output/test-contract-static-check.log"
+          if ((contract_status != 0)); then
+            exit "$contract_status"
+          fi
+
+          run_output=$output/portable-complete
+          test ! -e "$run_output"
           /usr/bin/bash tests/run-optimization-tests.sh \
             --mode portable-complete \
-            --output-dir "$output"
-          grep -Fx 'mode=portable-complete' "$output/summary.txt"
-          grep -Fx 'fail=0' "$output/summary.txt"
-          test -f "$output/results.tsv"
-          test -f "$output/subtests.tsv"
-          test -f "$output/test-run-provenance.json"
-          test -f "$output/test-contract-static-check.log"
-          test -f "$output/test-contract.log"
+            --output-dir "$run_output"
+          grep -Fx 'mode=portable-complete' "$run_output/summary.txt"
+          grep -Fx 'fail=0' "$run_output/summary.txt"
+          test -f "$run_output/results.tsv"
+          test -f "$run_output/subtests.tsv"
+          test -f "$run_output/test-run-provenance.json"
+          test -f "$run_output/test-contract-static-check.log"
+          test -f "$run_output/test-contract.log"
           grep -Eq '^PASS[[:space:]]+framework-installer[[:space:]]+' \
-            "$output/results.tsv"
+            "$run_output/results.tsv"
 
       - name: Upload portable evidence
         if: always()

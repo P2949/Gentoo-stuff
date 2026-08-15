@@ -274,7 +274,7 @@ class EvidenceFixture:
             "required_passing_test_prefixes": ["capability:"],
             "required_sources": ["plan.md", "policy.json", "src/code.py", "test-contract.json", "test-driver.sh"],
             "required_test_mode": "capabilities",
-            "required_tools": ["git", "python3", "script-tool"],
+            "required_tools": ["false", "git", "python3", "script-tool"],
             "schema": POLICY_SCHEMA,
             "source_scopes": ["plan.md", "policy.json", "src", "test-contract.json", "test-driver.sh"],
             "test_driver_path": "test-driver.sh",
@@ -284,6 +284,12 @@ class EvidenceFixture:
         tools_template = {
             "schema": TOOL_SCHEMA,
             "tools": [
+                {
+                    "name": "false",
+                    "path": "/bin/false",
+                    "version_args": ["--version"],
+                    "version_returncodes": [1],
+                },
                 {"name": "git", "path": os.fspath(self.git), "version_args": ["--version"]},
                 {
                     "name": "python3",
@@ -579,6 +585,9 @@ namespace["require_active_python_matches_reviewed_tools"](
         self.fixture.run("verify", check=True)
         document = json.loads(self.fixture.index.read_text(encoding="utf-8"))
         script = next(item for item in document["tools"] if item["name"] == "script-tool")
+        false = next(item for item in document["tools"] if item["name"] == "false")
+        self.assertEqual(false["version_status"], 1)
+        self.assertIn("false (GNU coreutils)", false["stdout"]["text"])
         self.assertEqual(script["requested_path"], os.fspath(self.fixture.script_link))
         self.assertEqual(script["resolved_path"], os.fspath(self.fixture.real_script))
         self.assertEqual(script["requested_entrypoint"]["type"], "symlink")
@@ -635,6 +644,20 @@ namespace["require_active_python_matches_reviewed_tools"](
             ).read_text(encoding="utf-8")
         )
         validate_schema(component_document, component_schema, component_schema)
+
+    def test_nonzero_version_status_is_bound_and_status_tampering_is_rejected(self) -> None:
+        self.fixture.run(check=True)
+        document = json.loads(self.fixture.index.read_text(encoding="utf-8"))
+        false = next(item for item in document["tools"] if item["name"] == "false")
+        self.assertEqual(false["version_status"], 1)
+        false["version_status"] = 0
+        self.fixture.index.write_text(
+            json.dumps(document, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        result = self.fixture.run("verify")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("observed identity differs", result.stderr)
 
     def test_mandatory_internal_skip_cannot_authorize_capture(self) -> None:
         subtests = self.fixture.evidence / "subtests.tsv"

@@ -786,20 +786,31 @@ def tool_manifest(path: Path, required_names: list[str]) -> list[dict[str, Any]]
     names: list[str] = []
     for index, raw in enumerate(require_list(document["tools"], "tools", nonempty=True)):
         item = require_object(raw, f"tools[{index}]")
+        base_keys = {"name", "path", "version_args"}
+        distribution_keys = {"python_distribution", "python_import_roots"}
+        returncode_keys = {"version_returncodes"}
         if set(item) not in (
-            {"name", "path", "version_args"},
-            {
-                "name",
-                "path",
-                "python_distribution",
-                "python_import_roots",
-                "version_args",
-            },
+            base_keys,
+            base_keys | distribution_keys,
+            base_keys | returncode_keys,
+            base_keys | distribution_keys | returncode_keys,
         ):
             fail(f"tools[{index}] keys differ from the tool manifest contract")
         name = require_string(item["name"], f"tools[{index}].name", NAME_RE)
         path_value = absolute_path(item["path"], f"tools[{index}].path")
         args = [require_string(arg, f"tools[{index}].version_args item") for arg in require_list(item["version_args"], f"tools[{index}].version_args", nonempty=True)]
+        returncodes = [
+            require_int(code, f"tools[{index}].version_returncodes item")
+            for code in require_list(
+                item.get("version_returncodes", [0]),
+                f"tools[{index}].version_returncodes",
+                nonempty=True,
+            )
+        ]
+        if returncodes != sorted(set(returncodes)) or any(
+            code > 255 for code in returncodes
+        ):
+            fail(f"tools[{index}].version_returncodes must be sorted unique bytes")
         python_distribution = item.get("python_distribution")
         if python_distribution is not None:
             python_distribution = require_string(
@@ -830,6 +841,7 @@ def tool_manifest(path: Path, required_names: list[str]) -> list[dict[str, Any]]
                 "python_distribution": python_distribution,
                 "python_import_roots": python_import_roots,
                 "version_args": args,
+                "version_returncodes": returncodes,
             }
         )
         names.append(name)
@@ -1077,7 +1089,7 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         fail(f"tool identity command failed for {name}: {error}")
-    if result.returncode != 0:
+    if result.returncode not in specification.get("version_returncodes", [0]):
         fail(f"tool identity command exited {result.returncode} for {name}")
     try:
         stdout = result.stdout.decode("utf-8")
@@ -1114,6 +1126,7 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
         "binary": binary,
         "shebang": shebang,
         "version_argv": argv,
+        "version_status": result.returncode,
         "stdout": {"text": stdout, "sha256": sha256(result.stdout)},
         "stderr": {"text": stderr, "sha256": sha256(result.stderr)},
     }

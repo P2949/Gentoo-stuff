@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import re
 import unittest
@@ -196,16 +197,58 @@ class OptimizationPolicyTests(unittest.TestCase):
         manifest_tools = cast(list[dict[str, object]], manifest["tools"])
         manifest_names = [cast(str, entry["name"]) for entry in manifest_tools]
         checkpoint_primitives = {
+            "cat",
             "date",
+            "df",
+            "du",
             "emaint",
             "emerge",
             "findmnt",
             "mount",
             "qcheck",
+            "qsize",
             "quickpkg",
             "sleep",
             "umount",
+            "wc",
             "zstd",
+        }
+        prerequisite_primitives = {
+            "bash-bootstrap",
+            "cargo",
+            "cp",
+            "emerge-python3.15",
+            "false",
+            "gemato",
+            "gemato-python3.15",
+            "git",
+            "gpep517-python3.15",
+            "gpg",
+            "gpgconf",
+            "ldconfig",
+            "maturin",
+            "meson-python3.14",
+            "mount",
+            "ninja",
+            "python3.14",
+            "python3.15",
+            "qcheck",
+            "rustc",
+            "umount",
+            "unshare",
+            "wget",
+            "zstd",
+        }
+        native_primitives = {
+            "clang",
+            "clang-cpp",
+            "clang-cxx",
+            "ld-lld",
+            "llvm-ar",
+            "llvm-nm",
+            "llvm-ranlib",
+            "llvm-strip",
+            "pkg-config",
         }
         framework_primitives = {"systemd-tmpfiles"}
         operator_primitives = {"cut", "doas"}
@@ -230,7 +273,11 @@ class OptimizationPolicyTests(unittest.TestCase):
         )
         self.assertLessEqual(set(test_execution_tools), set(required_tools))
         self.assertLessEqual(
-            checkpoint_primitives | framework_primitives | operator_primitives,
+            checkpoint_primitives
+            | prerequisite_primitives
+            | native_primitives
+            | framework_primitives
+            | operator_primitives,
             set(required_tools),
         )
         manifest_by_name = {
@@ -251,6 +298,334 @@ class OptimizationPolicyTests(unittest.TestCase):
                 "path": "/usr/bin/doas",
                 "version_args": ["-n", "/usr/bin/id", "-u"],
             },
+        )
+        self.assertEqual(
+            manifest_by_name["false"],
+            {
+                "name": "false",
+                "path": "/bin/false",
+                "version_args": ["--version"],
+                "version_returncodes": [1],
+            },
+        )
+        prerequisite_tool_rows = {
+            "cargo": {
+                "name": "cargo",
+                "path": "/usr/bin/cargo",
+                "version_args": ["--version"],
+            },
+            "clang-cpp": {
+                "name": "clang-cpp",
+                "path": "/usr/lib/llvm/22/bin/clang-cpp",
+                "version_args": ["--version"],
+            },
+            "clang-cxx": {
+                "name": "clang-cxx",
+                "path": "/usr/lib/llvm/22/bin/clang++",
+                "version_args": ["--version"],
+            },
+            "emerge-python3.15": {
+                "name": "emerge-python3.15",
+                "path": "/usr/lib/python-exec/python3.15/emerge",
+                "version_args": ["--version"],
+            },
+            "gemato-python3.15": {
+                "name": "gemato-python3.15",
+                "path": "/usr/lib/python-exec/python3.15/gemato",
+                "version_args": ["--help"],
+            },
+            "gpep517-python3.15": {
+                "name": "gpep517-python3.15",
+                "path": "/usr/lib/python-exec/python3.15/gpep517",
+                "version_args": ["--help"],
+            },
+            "ld-lld": {
+                "name": "ld-lld",
+                "path": "/usr/lib/llvm/22/bin/ld.lld",
+                "version_args": ["--version"],
+            },
+            "llvm-ar": {
+                "name": "llvm-ar",
+                "path": "/usr/lib/llvm/22/bin/llvm-ar",
+                "version_args": ["--version"],
+            },
+            "llvm-nm": {
+                "name": "llvm-nm",
+                "path": "/usr/lib/llvm/22/bin/llvm-nm",
+                "version_args": ["--version"],
+            },
+            "llvm-ranlib": {
+                "name": "llvm-ranlib",
+                "path": "/usr/lib/llvm/22/bin/llvm-ranlib",
+                "version_args": ["--version"],
+            },
+            "llvm-strip": {
+                "name": "llvm-strip",
+                "path": "/usr/lib/llvm/22/bin/llvm-strip",
+                "version_args": ["--version"],
+            },
+            "maturin": {
+                "name": "maturin",
+                "path": "/usr/bin/maturin",
+                "version_args": ["--version"],
+            },
+            "meson-python3.14": {
+                "name": "meson-python3.14",
+                "path": "/usr/lib/python-exec/python3.14/meson",
+                "version_args": ["--version"],
+            },
+            "ninja": {
+                "name": "ninja",
+                "path": "/usr/bin/ninja",
+                "version_args": ["--version"],
+            },
+            "pkg-config": {
+                "name": "pkg-config",
+                "path": "/usr/bin/pkg-config",
+                "version_args": ["--version"],
+            },
+            "python3.14": {
+                "name": "python3.14",
+                "path": "/usr/bin/python3.14",
+                "version_args": ["--version"],
+            },
+        }
+        self.assertEqual(
+            {
+                name: manifest_by_name[name]
+                for name in prerequisite_tool_rows
+            },
+            prerequisite_tool_rows,
+        )
+
+        helper_path = (
+            REPOSITORY_ROOT
+            / "scripts/optimization/recovery/install-jsonschema-prerequisite.py"
+        )
+        helper_source = helper_path.read_text(encoding="utf-8")
+        helper_tree = ast.parse(helper_source, filename=str(helper_path))
+        default_tools_functions = [
+            node
+            for node in helper_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "default_tools"
+        ]
+        self.assertEqual(len(default_tools_functions), 1)
+        default_returns = [
+            node
+            for node in default_tools_functions[0].body
+            if isinstance(node, ast.Return)
+        ]
+        self.assertEqual(len(default_returns), 1)
+        default_value = default_returns[0].value
+        self.assertIsInstance(default_value, ast.Dict)
+        assert isinstance(default_value, ast.Dict)
+        helper_external_tools: dict[str, str] = {}
+        source_bound_tools: set[str] = set()
+        for key_node, value_node in zip(
+            default_value.keys, default_value.values, strict=True
+        ):
+            self.assertIsInstance(key_node, ast.Constant)
+            assert isinstance(key_node, ast.Constant)
+            self.assertIsInstance(key_node.value, str)
+            name = cast(str, key_node.value)
+            if (
+                isinstance(value_node, ast.Call)
+                and isinstance(value_node.func, ast.Name)
+                and value_node.func.id == "tool"
+                and len(value_node.args) == 1
+                and isinstance(value_node.args[0], ast.Constant)
+                and isinstance(value_node.args[0].value, str)
+            ):
+                helper_external_tools[name] = value_node.args[0].value
+            else:
+                source_bound_tools.add(name)
+        self.assertEqual(
+            helper_external_tools,
+            {
+                "bash": "/bin/bash",
+                "cargo": "/usr/bin/cargo",
+                "cp": "/usr/bin/cp",
+                "emerge": "/usr/lib/python-exec/python3.15/emerge",
+                "false": "/bin/false",
+                "gemato": "/usr/lib/python-exec/python3.15/gemato",
+                "git": "/usr/bin/git",
+                "gpep517": "/usr/lib/python-exec/python3.15/gpep517",
+                "gpg": "/usr/bin/gpg",
+                "gpgconf": "/usr/bin/gpgconf",
+                "ldconfig": "/usr/bin/ldconfig",
+                "maturin": "/usr/bin/maturin",
+                "meson": "/usr/lib/python-exec/python3.14/meson",
+                "meson_python": "/usr/bin/python3.14",
+                "mount": "/usr/bin/mount",
+                "ninja": "/usr/bin/ninja",
+                "python": "/usr/bin/python3.15",
+                "qcheck": "/usr/bin/qcheck",
+                "rustc": "/usr/bin/rustc",
+                "sync": "/usr/bin/sync",
+                "umount": "/usr/bin/umount",
+                "unshare": "/usr/bin/unshare",
+                "wget": "/usr/bin/wget",
+                "zstd": "/usr/bin/zstd",
+            },
+        )
+        self.assertEqual(
+            source_bound_tools, {"snapshot_verifier", "transaction"}
+        )
+
+        assignments = {
+            node.target.id: ast.literal_eval(node.value)
+            for node in helper_tree.body
+            if isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id
+            in {"BUILD_VERSION_ARGUMENTS", "NATIVE_BUILD_COMMAND_DEFAULTS"}
+            and node.value is not None
+        }
+        self.assertEqual(
+            assignments["NATIVE_BUILD_COMMAND_DEFAULTS"],
+            {
+                "AR": "ar",
+                "CC": "cc",
+                "CPP": "cpp",
+                "CXX": "c++",
+                "LD": "ld",
+                "NM": "nm",
+                "PKG_CONFIG": "pkg-config",
+                "RANLIB": "ranlib",
+                "STRIP": "strip",
+            },
+        )
+        self.assertEqual(
+            assignments["BUILD_VERSION_ARGUMENTS"],
+            {
+                "cargo": ("--version",),
+                "emerge": ("--version",),
+                "gpep517": ("--help",),
+                "meson": ("--version",),
+                "maturin": ("--version",),
+                "ninja": ("--version",),
+                "python": ("--version",),
+                "rustc": ("-vV",),
+            },
+        )
+        build_manifest_names = {
+            "cargo": "cargo",
+            "emerge": "emerge-python3.15",
+            "gpep517": "gpep517-python3.15",
+            "meson": "meson-python3.14",
+            "maturin": "maturin",
+            "ninja": "ninja",
+            "python": "python3.15",
+            "rustc": "rustc",
+        }
+        for helper_name, manifest_name in build_manifest_names.items():
+            with self.subTest(build_tool=helper_name):
+                self.assertEqual(
+                    manifest_by_name[manifest_name]["version_args"],
+                    list(assignments["BUILD_VERSION_ARGUMENTS"][helper_name]),
+                )
+                self.assertNotIn(
+                    "version_returncodes", manifest_by_name[manifest_name]
+                )
+        native_manifest_names = {
+            "AR": "llvm-ar",
+            "CC": "clang",
+            "CPP": "clang-cpp",
+            "CXX": "clang-cxx",
+            "LD": "ld-lld",
+            "NM": "llvm-nm",
+            "PKG_CONFIG": "pkg-config",
+            "RANLIB": "llvm-ranlib",
+            "STRIP": "llvm-strip",
+        }
+        self.assertEqual(
+            {
+                variable: cast(str, manifest_by_name[name]["path"])
+                for variable, name in native_manifest_names.items()
+            },
+            {
+                "AR": "/usr/lib/llvm/22/bin/llvm-ar",
+                "CC": "/usr/lib/llvm/22/bin/clang",
+                "CPP": "/usr/lib/llvm/22/bin/clang-cpp",
+                "CXX": "/usr/lib/llvm/22/bin/clang++",
+                "LD": "/usr/lib/llvm/22/bin/ld.lld",
+                "NM": "/usr/lib/llvm/22/bin/llvm-nm",
+                "PKG_CONFIG": "/usr/bin/pkg-config",
+                "RANLIB": "/usr/lib/llvm/22/bin/llvm-ranlib",
+                "STRIP": "/usr/lib/llvm/22/bin/llvm-strip",
+            },
+        )
+        for variable, manifest_name in native_manifest_names.items():
+            with self.subTest(native_axis=variable):
+                self.assertEqual(
+                    manifest_by_name[manifest_name]["version_args"],
+                    ["--version"],
+                )
+                self.assertNotIn(
+                    "version_returncodes", manifest_by_name[manifest_name]
+                )
+
+        # Safety-critical executable references are closed mechanically over
+        # the reviewed manifest.  The runbook uses absolute commands only;
+        # the helper's default tool table and bootstrap publisher are scanned
+        # alongside it, so adding a new executable without tool authority is
+        # a deterministic policy failure rather than another assertIn list.
+        command_sources = "\n".join(
+            (
+                (
+                    REPOSITORY_ROOT / "docs/binpkg-checkpoint-runbook.md"
+                ).read_text(encoding="utf-8"),
+                (
+                    REPOSITORY_ROOT
+                    / "scripts/optimization/recovery/install-jsonschema-prerequisite.py"
+                ).read_text(encoding="utf-8"),
+                (
+                    REPOSITORY_ROOT
+                    / "scripts/optimization/recovery/publish-jsonschema-prerequisite-bootstrap.py"
+                ).read_text(encoding="utf-8"),
+            )
+        )
+        executable_path_pattern = re.compile(
+            r"(?<![A-Za-z0-9_.-])"
+            r"(/(?:(?:usr/)?(?:s?bin|bin)|"
+            r"usr/lib/python-exec/python[0-9]+(?:\.[0-9]+)+|"
+            r"usr/lib/llvm/[0-9]+/bin)/"
+            r"[A-Za-z0-9][A-Za-z0-9._+-]*)"
+        )
+        referenced_executables = set(executable_path_pattern.findall(command_sources))
+        reviewed_executables = {
+            cast(str, entry["path"]) for entry in manifest_tools
+        }
+        self.assertEqual(referenced_executables - reviewed_executables, set())
+        self.assertLessEqual(
+            set(helper_external_tools.values()), reviewed_executables
+        )
+        # The generic python-exec dispatchers remain reviewed for other Phase
+        # 2 paths, but they cannot stand in for this transaction's selected
+        # implementations.
+        self.assertNotEqual(
+            manifest_by_name["emerge"]["path"],
+            manifest_by_name["emerge-python3.15"]["path"],
+        )
+        self.assertNotEqual(
+            manifest_by_name["gemato"]["path"],
+            manifest_by_name["gemato-python3.15"]["path"],
+        )
+
+        runbook_bash = "\n".join(
+            re.findall(
+                r"```bash\n(.*?)```",
+                (
+                    REPOSITORY_ROOT / "docs/binpkg-checkpoint-runbook.md"
+                ).read_text(encoding="utf-8"),
+                re.DOTALL,
+            )
+        )
+        self.assertNotRegex(
+            runbook_bash,
+            r"(?m)(?:^|[|;(]\s*|\$\()"
+            r"(?:awk|cat|comm|cut|df|du|find|findmnt|grep|jq|qsize|"
+            r"readlink|sha256sum|sort|stat|wc)(?=\s)",
         )
 
         production_runbook = (
@@ -326,7 +701,13 @@ class OptimizationPolicyTests(unittest.TestCase):
                 "docs/binpkg-checkpoint-runbook.md",
                 "optimization/tmpfiles/gentoo-optimization.conf",
                 "scripts/optimization/recovery/create-binpkg-checkpoint.sh",
+                "scripts/optimization/recovery/install-jsonschema-prerequisite.py",
+                "scripts/optimization/recovery/publish-jsonschema-prerequisite-bootstrap.py",
+                "scripts/optimization/recovery/verify-binpkg-snapshot.py",
+                "tests/optimization/fixtures/rename-exchange-mv.py",
                 "tests/optimization/recovery/test_create_binpkg_checkpoint.py",
+                "tests/optimization/test_jsonschema_prerequisite.py",
+                "tests/optimization/test_jsonschema_prerequisite_bootstrap.py",
             },
             required_sources,
         )
@@ -341,12 +722,21 @@ class OptimizationPolicyTests(unittest.TestCase):
             {
                 "docs/binpkg-checkpoint-runbook.md",
                 "scripts/optimization/recovery/create-binpkg-checkpoint.sh",
+                "scripts/optimization/recovery/install-jsonschema-prerequisite.py",
+                "scripts/optimization/recovery/publish-jsonschema-prerequisite-bootstrap.py",
+                "scripts/optimization/recovery/verify-binpkg-snapshot.py",
                 "tests/optimization/recovery/test_create_binpkg_checkpoint.py",
+                "tests/optimization/test_jsonschema_prerequisite.py",
+                "tests/optimization/test_jsonschema_prerequisite_bootstrap.py",
             },
             claims["phase2-automation"],
         )
         self.assertIn(
             "optimization/tmpfiles/gentoo-optimization.conf",
+            claims["phase2-framework"],
+        )
+        self.assertIn(
+            "tests/optimization/fixtures/rename-exchange-mv.py",
             claims["phase2-framework"],
         )
 
@@ -355,20 +745,22 @@ class OptimizationPolicyTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         for required_fragment in (
             "CHECKOUT_SOURCE=/var/lib/gentoo-optimization/bootstrap/source-checkouts/",
-            "BINPKG_SOURCE=$(readlink -e /var/cache/gentoo-optimization/binpkgs/critical-current)",
-            "--buildpkg=y",
-            "--getbinpkg=n",
-            "--usepkg=n",
-            "pretend selected a non-new or non-source action",
-            "installed-cpvs.before.txt",
-            "installed-cpvs.after.txt",
-            "selected-sets.before.json",
-            "selected-sets.after.json",
-            "from portage.getbinpkg import PackageIndex",
-            "ebuild-provenance.before.json",
-            "ebuild-provenance.after.json",
-            "run_schema_probe /usr/bin/python3 active-python3",
-            "run_schema_probe /usr/bin/python3.15 portage-python3.15",
+            "BINPKG_SOURCE=$(/usr/bin/readlink -e /var/cache/gentoo-optimization/binpkgs/critical-current)",
+            '"$PREREQUISITE_PUBLISHER_SOURCE" publish',
+            "gentoo-optimization-jsonschema-prerequisite-bootstrap-v1",
+            "VERIFIED_PREREQUISITE_BOOTSTRAP=",
+            "LIVE_PREPARATION_ENABLED",
+            "LIVE_MUTATION_ENABLED",
+            "stop before prepare",
+            '"${PREREQUISITE_EXEC[@]}" prepare "$INSTALL_ID"',
+            '"${PREREQUISITE_EXEC[@]}" run "$INSTALL_ID"',
+            '"${PREREQUISITE_EXEC[@]}" recover "$INSTALL_ID"',
+            '"${PREREQUISITE_EXEC[@]}" verify "$INSTALL_ID"',
+            "INSTALL_ATTEMPT=/var/lib/gentoo-optimization/state/project/",
+            "start a fresh clean root shell exactly as",
+            "Do not rerun `publish`, `prepare`, or",
+            "accepts only the four public commands `prepare`, `run`,",
+            ".phase == \"success\"",
             "POST_CHECKPOINT_ID=post-candidate-a-jsonschema-",
             "expected-delta-atoms.txt",
             "JSONSCHEMA_RESTORE_CPVS",
@@ -378,6 +770,15 @@ class OptimizationPolicyTests(unittest.TestCase):
         ):
             with self.subTest(required_fragment=required_fragment):
                 self.assertIn(required_fragment, checkpoint_runbook)
+        for retired_fragment in (
+            "SOURCE_EMERGE_COMMAND",
+            "capture_ebuild_provenance",
+            "installed-cpvs.before.txt",
+            "from portage.getbinpkg import PackageIndex",
+            "repository_commit",
+        ):
+            with self.subTest(retired_fragment=retired_fragment):
+                self.assertNotIn(retired_fragment, checkpoint_runbook)
         self.assertNotRegex(checkpoint_runbook, r"(?m)^SOURCE=")
         self.assertNotIn("force_reindex=True", checkpoint_runbook)
         self.assertGreaterEqual(
@@ -385,14 +786,45 @@ class OptimizationPolicyTests(unittest.TestCase):
         )
         self.assertLess(
             checkpoint_runbook.index("PRE_CHECKPOINT_TERMINAL=$CHECKPOINT_RESTORED_STATE"),
-            checkpoint_runbook.index("SOURCE_EMERGE_COMMAND=("),
+            checkpoint_runbook.index("PREREQUISITE_PUBLISHER_SOURCE="),
         )
         self.assertLess(
-            checkpoint_runbook.index("SOURCE_EMERGE_COMMAND=("),
+            checkpoint_runbook.index("PREREQUISITE_GATE=$("),
+            checkpoint_runbook.index("PREREQUISITE_BOOTSTRAP=$("),
+        )
+        self.assertLess(
+            checkpoint_runbook.index("PREREQUISITE_GATE=$("),
+            checkpoint_runbook.index("INSTALL_ID=jsonschema-source-"),
+        )
+        self.assertLess(
+            checkpoint_runbook.index('"${PREREQUISITE_EXEC[@]}" run "$INSTALL_ID"'),
             checkpoint_runbook.index(
                 "POST_CHECKPOINT_ID=post-candidate-a-jsonschema-"
             ),
         )
+
+        publisher_source = (
+            REPOSITORY_ROOT
+            / "scripts/optimization/recovery/publish-jsonschema-prerequisite-bootstrap.py"
+        ).read_text(encoding="utf-8")
+        for invariant in (
+            'git_bytes(repository, "ls-tree", "-z", "HEAD"',
+            'git_bytes(repository, "cat-file", "blob"',
+            "worktree source differs byte-for-byte from HEAD blob",
+            "status = git_command(",
+            '"--ignored=matching"',
+            "validate_tree(authority.parent, Path(\"/\"), 0, 0)",
+            "expected_mode = 0o755 if authority.production else 0o700",
+            "validate_public_helper_command(command)",
+            "ABSOLUTE_CANONICAL_PATH",
+            "RENAME_NOREPLACE",
+            "fsync_directory(stage)",
+            "fsync_directory(parent)",
+            "exec must be invoked through the published bootstrap publisher",
+            "verify must be invoked through the published bootstrap publisher",
+        ):
+            with self.subTest(publisher_invariant=invariant):
+                self.assertIn(invariant, publisher_source)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-#!/usr/bin/python3 -IB
+#!/usr/bin/python3.15 -IB
 """Authority and state core for the Phase-2 jsonschema prerequisite transaction.
 
 This program is deliberately separate from the general PGO transaction and
@@ -37,7 +37,9 @@ import importlib.util
 import json
 import os
 import pty
+import pwd
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -94,6 +96,20 @@ LIVE_MUTATION_ENABLED = False
 CONTROL_SCHEMA = "gentoo-optimization-jsonschema-control-v1"
 CONTROL_MAX_FRAME = 1024 * 1024
 CONTROL_SESSION_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+TRANSACTION_PATH = "/usr/bin:/usr/lib/llvm/22/bin:/bin:/usr/sbin:/sbin"
+PHASE_STATE_MAX_BYTES = 64 * 1024 * 1024
+LOCKED_AUTHORITY_MAX_BYTES = 512 * 1024 * 1024
+RECOVERY_EVIDENCE_MAX_BYTES = 512 * 1024 * 1024
+RECOVERY_FAILED_REMEDIATION = {
+    "method": "operator-supervised-checkpoint-and-payload-reconciliation",
+    "pre_dependency_checkpoint_restore_required": True,
+    "exact_admitted_payload_and_residue_reconciliation_required": True,
+    "separately_reviewed_terminal_restoration_proof_required": True,
+    "project_must_remain_stopped": True,
+    "automatic_source_retry": False,
+    "automatic_vdb_only_rollback": False,
+    "whole_host_byte_identity_claim": False,
+}
 
 
 class TransactionError(RuntimeError):
@@ -205,6 +221,10 @@ class FileIdentity:
     @classmethod
     def observe(cls, path: Path, *, follow: bool = False) -> "FileIdentity":
         metadata = path.stat() if follow else path.lstat()
+        return cls.from_stat(metadata)
+
+    @classmethod
+    def from_stat(cls, metadata: os.stat_result) -> "FileIdentity":
         return cls(
             device=metadata.st_dev,
             inode=metadata.st_ino,
@@ -422,6 +442,8 @@ def publish_state(paths: "Paths", value: dict[str, Any]) -> tuple[Path, str]:
     phase = str(validated["phase"])
     destination = state_path(paths, phase)
     payload = canonical_json(validated)
+    if len(payload) > PHASE_STATE_MAX_BYTES:
+        fail("transaction state exceeds its reviewed 64 MiB schema bound")
     digest = atomic_publish_noreplace(destination, payload)
     atomic_replace_canonical(paths.canonical_state, destination)
     return destination, digest
@@ -429,14 +451,26 @@ def publish_state(paths: "Paths", value: dict[str, Any]) -> tuple[Path, str]:
 
 def load_phase_state(paths: "Paths", phase: str) -> tuple[dict[str, Any], str]:
     path = state_path(paths, phase)
-    value = validate_state(read_json_regular(path, f"{phase} transaction state"))
+    value = validate_state(
+        read_json_regular(
+            path,
+            f"{phase} transaction state",
+            PHASE_STATE_MAX_BYTES,
+        )
+    )
     if value["transaction_id"] != paths.transaction_id or value["phase"] != phase:
         fail(f"{phase} state identity differs from its path")
     return value, sha256_file(path)
 
 
 def load_current_state(paths: "Paths") -> tuple[dict[str, Any], str]:
-    value = validate_state(read_json_regular(paths.canonical_state, "canonical transaction state"))
+    value = validate_state(
+        read_json_regular(
+            paths.canonical_state,
+            "canonical transaction state",
+            PHASE_STATE_MAX_BYTES,
+        )
+    )
     phase = str(value["phase"])
     phase_value, phase_sha = load_phase_state(paths, phase)
     if value != phase_value or FileIdentity.observe(paths.canonical_state) != FileIdentity.observe(state_path(paths, phase)):
@@ -454,7 +488,13 @@ def reconcile_state_chain(
         path = state_path(paths, phase)
         if not path_exists(path):
             continue
-        value = validate_state(read_json_regular(path, f"{phase} transaction state"))
+        value = validate_state(
+            read_json_regular(
+                path,
+                f"{phase} transaction state",
+                PHASE_STATE_MAX_BYTES,
+            )
+        )
         if value["transaction_id"] != paths.transaction_id or value["phase"] != phase:
             fail(f"durable {phase} state identity differs from its path")
         records[phase] = (value, sha256_file(path), path)
@@ -493,7 +533,13 @@ def reconcile_state_chain(
     latest = chain[-1]
     latest_path = records[latest][2]
     if path_exists(paths.canonical_state):
-        canonical = validate_state(read_json_regular(paths.canonical_state, "canonical transaction state"))
+        canonical = validate_state(
+            read_json_regular(
+                paths.canonical_state,
+                "canonical transaction state",
+                PHASE_STATE_MAX_BYTES,
+            )
+        )
         canonical_phase = canonical["phase"]
         if canonical_phase not in records:
             fail("canonical state names a phase outside the durable chain")
@@ -587,12 +633,28 @@ class Paths:
         return self.state_parent / f"jsonschema-prerequisite-{self.transaction_id}.json"
 
     @property
+    def preparation_attempt(self) -> Path:
+        return self.state_parent / (
+            f"jsonschema-prerequisite-{self.transaction_id}.preparation-attempt.json"
+        )
+
+    @property
+    def locked_authority(self) -> Path:
+        return self.state_parent / (
+            f"jsonschema-prerequisite-{self.transaction_id}.locked-authority.json"
+        )
+
+    @property
     def child_sidecar(self) -> Path:
         return self.report / "child.json"
 
     @property
     def child_completion(self) -> Path:
         return self.report / "child-completion.json"
+
+    @property
+    def recovery_failure(self) -> Path:
+        return self.report / "recovery-failed-evidence.json"
 
     @property
     def recovery_child_sidecar(self) -> Path:
@@ -617,6 +679,10 @@ class Paths:
     @property
     def vdb(self) -> Path:
         return self.rooted("/var/db/pkg")
+
+    @property
+    def vdb_lockfile(self) -> Path:
+        return self.rooted("/var/db/.pkg.portage_lockfile")
 
     @property
     def portage_config(self) -> Path:
@@ -646,11 +712,246 @@ class Paths:
         require_direct_child(self.authority, self.authority_parent, "authority path")
         require_direct_child(self.cache, self.cache_parent, "cache path")
         require_direct_child(self.canonical_state, self.state_parent, "canonical state path")
+        require_direct_child(
+            self.preparation_attempt,
+            self.state_parent,
+            "preparation-attempt path",
+        )
+        require_direct_child(
+            self.locked_authority,
+            self.state_parent,
+            "locked-authority path",
+        )
         require_direct_child(self.child_sidecar, self.report, "child sidecar path")
         require_direct_child(self.child_completion, self.report, "child completion path")
         require_direct_child(
+            self.recovery_failure, self.report, "recovery-failed evidence path"
+        )
+        require_direct_child(
             self.recovery_child_sidecar, self.report, "recovery child sidecar path"
         )
+
+
+def _stable_parent_identity(path: Path) -> dict[str, int]:
+    return _stable_file_identity(FileIdentity.observe(path))
+
+
+def _stable_file_identity(identity: FileIdentity) -> dict[str, int]:
+    return {
+        "device": identity.device,
+        "inode": identity.inode,
+        "uid": identity.uid,
+        "gid": identity.gid,
+        "mode": identity.mode,
+    }
+
+
+def publish_locked_authority(
+    paths: Paths, initial_locked_window: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Externalize the one bulky held-lock snapshot used by every phase."""
+
+    artifact = {
+        "schema": "gentoo-optimization-jsonschema-locked-authority-v1",
+        "transaction_id": paths.transaction_id,
+        "initial_locked_window": dict(initial_locked_window),
+    }
+    payload = canonical_json(artifact)
+    if len(payload) > LOCKED_AUTHORITY_MAX_BYTES:
+        fail("locked authority exceeds its reviewed 512 MiB schema bound")
+    digest = atomic_publish_noreplace(paths.locked_authority, payload, 0o600)
+    expected_uid = os.geteuid() if paths.fixture_mode else 0
+    expected_gid = os.getegid() if paths.fixture_mode else 0
+    identity = validate_trusted_regular(
+        paths.locked_authority,
+        expected_uid,
+        expected_gid,
+        one_link=True,
+    )
+    if identity.mode != 0o600 or identity.size != len(payload):
+        fail("published locked authority has invalid mode or size")
+    return {
+        "schema": "gentoo-optimization-jsonschema-locked-authority-reference-v1",
+        "path": os.fspath(paths.locked_authority),
+        "sha256": digest,
+        "size": len(payload),
+        "identity": identity.as_json(),
+        "parent_identity": _stable_parent_identity(paths.locked_authority.parent),
+    }
+
+
+def load_locked_authority(
+    reference: object, transaction_id: str, expected_path: Path
+) -> dict[str, Any]:
+    """Reopen an immutable bulky authority through its exact parent descriptor."""
+
+    if (
+        not isinstance(reference, dict)
+        or set(reference)
+        != {"schema", "path", "sha256", "size", "identity", "parent_identity"}
+        or reference.get("schema")
+        != "gentoo-optimization-jsonschema-locked-authority-reference-v1"
+        or not isinstance(reference.get("path"), str)
+        or type(reference.get("size")) is not int
+        or not 0 <= int(reference["size"]) <= LOCKED_AUTHORITY_MAX_BYTES
+        or not isinstance(reference.get("identity"), dict)
+        or not isinstance(reference.get("parent_identity"), dict)
+    ):
+        fail("locked-authority reference has an invalid schema")
+    require_safe_id(transaction_id, "locked-authority transaction ID")
+    path = Path(reference["path"])
+    require_absolute(path, "locked-authority path")
+    if (
+        path != expected_path
+        or path.name
+        != f"jsonschema-prerequisite-{transaction_id}.locked-authority.json"
+    ):
+        fail("locked-authority path has a foreign transaction identity")
+    require_direct_child(path, expected_path.parent, "locked-authority path")
+    expected_parent = cast(dict[str, Any], reference["parent_identity"])
+    if set(expected_parent) != {"device", "inode", "uid", "gid", "mode"}:
+        fail("locked-authority parent identity has an invalid schema")
+    expected_file = cast(dict[str, Any], reference["identity"])
+    if set(expected_file) != {
+        "device",
+        "inode",
+        "uid",
+        "gid",
+        "mode",
+        "nlink",
+        "size",
+    }:
+        fail("locked-authority file identity has an invalid schema")
+    if (
+        expected_file.get("mode") != 0o600
+        or expected_file.get("nlink") != 1
+        or expected_file.get("size") != reference["size"]
+    ):
+        fail("locked-authority file identity is not immutable")
+    production_parent = Path("/var/lib/gentoo-optimization/state/project")
+    if expected_path.parent == production_parent and (
+        expected_file.get("uid") != 0
+        or expected_file.get("gid") != 0
+        or expected_parent.get("uid") != 0
+        or expected_parent.get("gid") != 0
+    ):
+        fail("production locked authority is not root-owned")
+    try:
+        parent_fd = os.open(
+            path.parent,
+            os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_DIRECTORY", 0),
+        )
+    except OSError as error:
+        fail(f"cannot open locked-authority parent: {error}")
+    descriptor = -1
+    try:
+        if _stable_file_identity(
+            FileIdentity.from_stat(os.fstat(parent_fd))
+        ) != expected_parent:
+            fail("locked-authority parent identity changed")
+        try:
+            descriptor = os.open(
+                path.name,
+                os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=parent_fd,
+            )
+        except OSError as error:
+            fail(f"cannot open locked-authority file: {error}")
+        metadata = os.fstat(descriptor)
+        if FileIdentity.from_stat(metadata).as_json() != expected_file:
+            fail("locked-authority file identity changed")
+        chunks: list[bytes] = []
+        remaining = int(reference["size"]) + 1
+        while remaining:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        if len(payload) != reference["size"]:
+            fail("locked-authority size differs from its reference")
+        if FileIdentity.from_stat(os.fstat(descriptor)).as_json() != expected_file:
+            fail("locked-authority file changed while it was read")
+        if _stable_file_identity(
+            FileIdentity.from_stat(os.fstat(parent_fd))
+        ) != expected_parent:
+            fail("locked-authority parent changed while it was read")
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        os.close(parent_fd)
+    if sha256_bytes(payload) != require_sha256(
+        reference.get("sha256"), "locked-authority digest"
+    ):
+        fail("locked-authority digest differs from its reference")
+    try:
+        value = json.loads(payload)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        fail(f"locked-authority JSON is invalid: {error}")
+    if canonical_json(value) != payload:
+        fail("locked-authority JSON is not exact canonical encoding")
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"schema", "transaction_id", "initial_locked_window"}
+        or value.get("schema")
+        != "gentoo-optimization-jsonschema-locked-authority-v1"
+        or value.get("transaction_id") != transaction_id
+        or not isinstance(value.get("initial_locked_window"), dict)
+    ):
+        fail("locked-authority artifact has an invalid schema")
+    return cast(dict[str, Any], value)
+
+
+def prepared_locked_window(prepared: Mapping[str, Any]) -> dict[str, Any]:
+    resolver = prepared.get("resolver")
+    if not isinstance(resolver, dict):
+        fail("prepared state lacks resolver authority")
+    evidence = prepared.get("evidence")
+    if (
+        "locked_authority" not in resolver
+        and (
+            not isinstance(evidence, dict)
+            or evidence.get("proc_root") != "/proc"
+        )
+    ):
+        legacy = resolver.get("initial_locked_window")
+        if isinstance(legacy, dict):
+            return legacy
+        fallback = {
+            "vdb": resolver.get("vdb_before"),
+            "selected_sets": resolver.get("selected_sets_before"),
+            "mtimedb": resolver.get("mtimedb_before"),
+            "counter": resolver.get("live_counter_before"),
+            "loader_directories": resolver.get("loader_before"),
+        }
+        if any(value is not None for value in fallback.values()):
+            return fallback
+    transaction_id = str(prepared.get("transaction_id", ""))
+    proc_root_value = evidence.get("proc_root") if isinstance(evidence, dict) else None
+    if not isinstance(proc_root_value, str):
+        fail("prepared state lacks proc-root authority")
+    proc_root = Path(proc_root_value)
+    fixture_mode = proc_root != Path("/proc")
+    root = proc_root.parent if fixture_mode else Path("/")
+    expected_path = Paths(transaction_id, root, fixture_mode).locked_authority
+    return load_locked_authority(
+        resolver.get("locked_authority"), transaction_id, expected_path
+    )["initial_locked_window"]
+
+
+def prepared_vdb(prepared: Mapping[str, Any]) -> dict[str, Any]:
+    value = prepared_locked_window(prepared).get("vdb")
+    if not isinstance(value, dict):
+        fail("locked authority lacks VDB observation")
+    return value
+
+
+def prepared_locked_value(prepared: Mapping[str, Any], key: str) -> dict[str, Any]:
+    value = prepared_locked_window(prepared).get(key)
+    if not isinstance(value, dict):
+        fail(f"locked authority lacks {key}")
+    return value
 
 
 @dataclasses.dataclass(frozen=True)
@@ -962,6 +1263,24 @@ def install_parent_death_signal(parent_pid: int, parent_start_ticks: int) -> Non
         fail("coordinator disappeared while child installed parent-death binding")
 
 
+def exact_xattrs(path: Path, *, follow_symlinks: bool = False) -> list[dict[str, str]]:
+    """Bind all extended attributes, including ACLs and file capabilities."""
+
+    try:
+        names = sorted(os.listxattr(path, follow_symlinks=follow_symlinks))
+        return [
+            {
+                "name": name,
+                "value_hex": os.getxattr(
+                    path, name, follow_symlinks=follow_symlinks
+                ).hex(),
+            }
+            for name in names
+        ]
+    except OSError as error:
+        fail(f"cannot observe extended attributes for {path}: {error}")
+
+
 def tree_manifest(root: Path, *, ignore_names: frozenset[str] = frozenset()) -> dict[str, Any]:
     """Return a deterministic content/metadata manifest without volatile timestamps."""
 
@@ -979,16 +1298,22 @@ def tree_manifest(root: Path, *, ignore_names: frozenset[str] = frozenset()) -> 
             "uid": metadata.st_uid,
             "gid": metadata.st_gid,
             "mode": stat.S_IMODE(metadata.st_mode),
+            "xattrs": exact_xattrs(path, follow_symlinks=False),
         }
         if stat.S_ISREG(metadata.st_mode):
-            base.update(type="file", size=metadata.st_size, sha256=sha256_file(path))
+            base.update(
+                type="file",
+                size=metadata.st_size,
+                nlink=metadata.st_nlink,
+                sha256=sha256_file(path),
+            )
         elif stat.S_ISDIR(metadata.st_mode):
             base.update(type="directory")
         elif stat.S_ISLNK(metadata.st_mode):
             target = os.readlink(path)
             if "\0" in target or "\n" in target or "\r" in target:
                 fail(f"unsafe symlink target in tree: {path}")
-            base.update(type="symlink", target=target)
+            base.update(type="symlink", nlink=metadata.st_nlink, target=target)
         else:
             fail(f"unsupported object in tree manifest: {path}")
         rows.append(base)
@@ -1040,7 +1365,10 @@ def clean_environment(extra: Mapping[str, str] | None = None) -> dict[str, str]:
         "LANG": "C",
         "LC_ALL": "C",
         "LOGNAME": "root",
-        "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
+        # The frozen live configuration selects unversioned clang/LLVM tool
+        # names, whose reviewed providers are under the LLVM 22 prefix.  Keep
+        # the traditional sbin roots only for Portage's root-only helpers.
+        "PATH": TRANSACTION_PATH,
         "SHELL": "/bin/bash",
         "TZ": "UTC",
         "USER": "root",
@@ -1152,33 +1480,36 @@ def installed_cpvs(vdb: Path) -> set[str]:
 
 
 def vdb_manifest(vdb: Path) -> dict[str, Any]:
-    """Bind every installed package subtree without volatile VDB lock state.
-
-    Category directories are intentionally excluded.  Adding and later
-    removing the only package in a previously absent category may leave an
-    empty category directory, which is not installed-package authority.  Each
-    package subtree, including its repository, SLOT, USE, dependency and
-    CONTENTS metadata, remains bound in full.
-    """
+    """Bind the complete live VDB, including category and dot-file residue."""
 
     cpvs = sorted(installed_cpvs(vdb))
     packages = []
+    counters: list[int] = []
     for cpv in cpvs:
         package_root = vdb / cpv
         manifest = tree_manifest(package_root)
+        counter = read_counter(package_root / "COUNTER", f"{cpv} COUNTER")
+        counters.append(counter)
         packages.append(
             {
                 "cpv": cpv,
+                "counter": counter,
                 "tree": manifest,
                 "tree_sha256": sha256_bytes(canonical_json(manifest)),
             }
         )
+    complete_tree = tree_manifest(vdb)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "root_identity": FileIdentity.observe(vdb).as_json(),
+        "root_xattrs": exact_xattrs(vdb, follow_symlinks=False),
+        "complete_tree": complete_tree,
+        "complete_tree_sha256": sha256_bytes(canonical_json(complete_tree)),
         "cpvs": cpvs,
         "cpvs_sha256": sha256_bytes(("\n".join(cpvs) + "\n").encode()),
         "packages": packages,
         "packages_sha256": sha256_bytes(canonical_json(packages)),
+        "maximum_installed_counter": max(counters),
     }
 
 
@@ -1192,7 +1523,11 @@ def file_observation(path: Path) -> dict[str, Any]:
         metadata = path.lstat()
     except FileNotFoundError:
         return {"path": os.fspath(path), "type": "absent"}
-    base: dict[str, Any] = {"path": os.fspath(path), **FileIdentity.observe(path).as_json()}
+    base: dict[str, Any] = {
+        "path": os.fspath(path),
+        **FileIdentity.observe(path).as_json(),
+        "xattrs": exact_xattrs(path, follow_symlinks=False),
+    }
     if stat.S_ISREG(metadata.st_mode):
         base.update(type="file", sha256=sha256_file(path))
     elif stat.S_ISLNK(metadata.st_mode):
@@ -1209,10 +1544,47 @@ def file_observation(path: Path) -> dict[str, Any]:
     return base
 
 
-def selected_sets_authority(paths: Paths) -> dict[str, Any]:
+def object_observation(path: Path) -> dict[str, Any]:
+    """Observe one object only, without recursively expanding directories."""
+
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return {"path": os.fspath(path), "type": "absent"}
+    base: dict[str, Any] = {
+        "path": os.fspath(path),
+        **FileIdentity.observe(path).as_json(),
+        "xattrs": exact_xattrs(path, follow_symlinks=False),
+    }
+    if stat.S_ISREG(metadata.st_mode):
+        base.update(type="file", sha256=sha256_file(path))
+    elif stat.S_ISLNK(metadata.st_mode):
+        base.update(type="symlink", target=os.readlink(path))
+    elif stat.S_ISDIR(metadata.st_mode):
+        base.update(type="directory")
+    else:
+        fail(f"unsupported authority object: {path}")
+    return base
+
+
+def selected_sets_authority(
+    paths: Paths, *, ignored_cache_names: frozenset[str] = frozenset()
+) -> dict[str, Any]:
     preserved = paths.var_lib_portage / "preserved_libs_registry"
     require_semantically_empty_preserved_registry(preserved)
+    var_lib_tree = tree_manifest(paths.var_lib_portage)
+    cache_tree = tree_manifest_without_top_level(
+        paths.cache_edb, {"counter", *ignored_cache_names}
+    )
     return {
+        "var_lib_portage": {
+            "root": object_observation(paths.var_lib_portage),
+            "rows_sha256": var_lib_tree["rows_sha256"],
+        },
+        "cache_edb_without_counter": {
+            "root": object_observation(paths.cache_edb),
+            "rows_sha256": cache_tree["rows_sha256"],
+        },
         "world": file_observation(paths.var_lib_portage / "world"),
         "world_sets": file_observation(paths.var_lib_portage / "world_sets"),
         "mtimedb": file_observation(paths.cache_edb / "mtimedb"),
@@ -1220,9 +1592,60 @@ def selected_sets_authority(paths: Paths) -> dict[str, Any]:
     }
 
 
-def verify_selected_sets(paths: Paths, expected: object) -> None:
-    if selected_sets_authority(paths) != expected:
+def verify_selected_sets(
+    paths: Paths,
+    expected: object,
+    *,
+    ignored_cache_names: frozenset[str] = frozenset(),
+) -> None:
+    if selected_sets_authority(
+        paths, ignored_cache_names=ignored_cache_names
+    ) != expected:
         fail("selected sets or Portage resume authority changed")
+
+
+def mtimedb_authority(path: Path) -> dict[str, Any]:
+    value = read_json_regular(path, "Portage mtimedb")
+    if not isinstance(value, dict):
+        fail("Portage mtimedb is not a JSON object")
+    resume = value.get("resume")
+    if resume not in (None, {}, []):
+        fail("Portage mtimedb contains unresolved resume state")
+    stable = {
+        key: item
+        for key, item in value.items()
+        if key not in {"resume", "resume_backup"}
+    }
+    return {
+        "observation": file_observation(path),
+        "stable": stable,
+        "stable_sha256": sha256_bytes(canonical_json(stable)),
+        "resume_present": "resume" in value,
+        "resume_backup": value.get("resume_backup"),
+        "resume_backup_sha256": sha256_bytes(
+            canonical_json(value.get("resume_backup"))
+        ),
+    }
+
+
+def verify_mtimedb_transition(before: object, path: Path) -> dict[str, Any]:
+    if not isinstance(before, dict) or not isinstance(before.get("stable"), dict):
+        fail("prepared mtimedb authority is invalid")
+    after = mtimedb_authority(path)
+    if (
+        after["stable"] != before["stable"]
+        or after["stable_sha256"] != before.get("stable_sha256")
+    ):
+        fail("Portage mtimedb changed outside resume bookkeeping")
+    return {
+        "stable_sha256": after["stable_sha256"],
+        "resume_present": after["resume_present"],
+        "resume_backup_before_sha256": before.get("resume_backup_sha256"),
+        "resume_backup_after_sha256": after["resume_backup_sha256"],
+        "after_observation_sha256": sha256_bytes(
+            canonical_json(after["observation"])
+        ),
+    }
 
 
 def require_semantically_empty_preserved_registry(path: Path) -> None:
@@ -1236,15 +1659,479 @@ def private_portage_outputs(private_roots: Mapping[str, str]) -> dict[str, Any]:
     if not isinstance(root_value, str):
         fail("private Portage root is absent")
     root = Path(root_value)
+    preserved = root / "preserved_libs_registry"
+    require_semantically_empty_preserved_registry(preserved)
+    complete = tree_manifest(root)
     return {
-        name: file_observation(root / name)
-        for name in ("config", "preserved_libs_registry", "repo_revisions", "world", "world_sets")
+        "complete_var_lib_portage": {
+            "root": object_observation(root),
+            "rows_sha256": complete["rows_sha256"],
+        },
+        "config": file_observation(root / "config"),
+        "preserved_libs_registry": file_observation(preserved),
+        "repo_revisions": file_observation(root / "repo_revisions"),
+        "world": file_observation(root / "world"),
+        "world_sets": file_observation(root / "world_sets"),
     }
 
 
 def verify_private_portage_outputs(private_roots: Mapping[str, str], expected: object) -> None:
     if private_portage_outputs(private_roots) != expected:
         fail("private Portage config/sets/preserved-library authority changed")
+
+
+def _manifest_rows(value: object, label: str) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict) or not isinstance(value.get("rows"), list):
+        fail(f"{label} tree manifest is invalid")
+    rows: dict[str, dict[str, Any]] = {}
+    for row in value["rows"]:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            fail(f"{label} tree manifest row is invalid")
+        path = row["path"]
+        if path in rows:
+            fail(f"{label} tree manifest repeats {path}")
+        rows[path] = row
+    return rows
+
+
+def manifest_transition(
+    before: object,
+    after: object,
+    *,
+    allowed_changed: Callable[[str], bool],
+    label: str,
+) -> dict[str, Any]:
+    before_rows = _manifest_rows(before, f"{label} before")
+    after_rows = _manifest_rows(after, f"{label} after")
+    removed = sorted(set(before_rows) - set(after_rows))
+    added = sorted(set(after_rows) - set(before_rows))
+    changed = sorted(
+        path
+        for path in set(before_rows) & set(after_rows)
+        if before_rows[path] != after_rows[path]
+    )
+    unauthorized = sorted(
+        path for path in [*removed, *added, *changed] if not allowed_changed(path)
+    )
+    if unauthorized:
+        fail(f"{label} changed outside its declared authority: {unauthorized}")
+    return {
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+        "after_rows_sha256": after.get("rows_sha256") if isinstance(after, dict) else None,
+    }
+
+
+def loader_directory_authority(settings: Mapping[str, Any], root: Path) -> dict[str, Any]:
+    candidates: set[Path] = set()
+    for pattern in ("usr/lib*", "lib*"):
+        for path in root.glob(pattern):
+            if path.name != "libexec" and path.is_dir() and not path.is_symlink():
+                candidates.add(path.resolve(strict=True))
+    for item in str(settings.get("LDPATH", "")).split(":"):
+        if not item:
+            continue
+        candidate = root / item.lstrip("/")
+        if candidate.is_dir() and not candidate.is_symlink():
+            candidates.add(candidate.resolve(strict=True))
+    rows = []
+    for path in sorted(candidates, key=os.fspath):
+        observation = object_observation(path)
+        children = [
+            object_observation(child)
+            for child in sorted(path.iterdir(), key=lambda item: item.name)
+        ]
+        metadata = path.lstat()
+        rows.append(
+            {
+                "path": os.fspath(path),
+                "mtime_ns": metadata.st_mtime_ns,
+                "observation": observation,
+                "immediate_children": children,
+                "immediate_children_sha256": sha256_bytes(canonical_json(children)),
+            }
+        )
+    return {
+        "schema_version": 1,
+        "rows": rows,
+        "rows_sha256": sha256_bytes(canonical_json(rows)),
+    }
+
+
+def restore_loader_directory_times(value: object) -> None:
+    if not isinstance(value, dict) or not isinstance(value.get("rows"), list):
+        fail("loader authority is invalid")
+    for row in value["rows"]:
+        if (
+            not isinstance(row, dict)
+            or not isinstance(row.get("path"), str)
+            or type(row.get("mtime_ns")) is not int
+        ):
+            fail("loader authority row is invalid")
+        path = Path(row["path"])
+        if not path.is_dir() or path.is_symlink():
+            fail(f"loader directory disappeared before metadata restoration: {path}")
+        os.utime(
+            path,
+            ns=(path.lstat().st_atime_ns, row["mtime_ns"]),
+            follow_symlinks=False,
+        )
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
+def _contents_paths(
+    vdb: Path, cpvs: Iterable[str], *, include_parents: bool = True
+) -> set[str]:
+    result: set[str] = set()
+    for cpv in cpvs:
+        path = vdb / cpv / "CONTENTS"
+        try:
+            lines = path.read_text(encoding="utf-8", errors="strict").splitlines()
+        except (OSError, UnicodeError) as error:
+            fail(f"cannot read exact CONTENTS for {cpv}: {error}")
+        for line in lines:
+            if line.startswith("dir "):
+                item = line[4:]
+            elif line.startswith("obj "):
+                fields = line[4:].rsplit(" ", 2)
+                if len(fields) != 3:
+                    fail(f"invalid obj CONTENTS row for {cpv}")
+                item = fields[0]
+            elif line.startswith("sym "):
+                fields = line[4:].rsplit(" ", 1)
+                if len(fields) != 2 or " -> " not in fields[0]:
+                    fail(f"invalid sym CONTENTS row for {cpv}")
+                item = fields[0].split(" -> ", 1)[0]
+            else:
+                fail(f"unsupported CONTENTS row for {cpv}: {line!r}")
+            if not item.startswith("/") or "\0" in item or "\n" in item:
+                fail(f"unsafe CONTENTS path for {cpv}: {item!r}")
+            normalized = os.path.normpath(item)
+            if normalized != item:
+                fail(f"noncanonical CONTENTS path for {cpv}: {item!r}")
+            result.add(item)
+            if include_parents:
+                parent = Path(item).parent
+                while parent != Path("/"):
+                    result.add(os.fspath(parent))
+                    parent = parent.parent
+    return result
+
+
+def verify_vdb_transition(
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+    plan: Mapping[str, Any],
+    *,
+    outcome: str,
+) -> dict[str, Any]:
+    delta = classify_vdb_delta(dict(before), dict(after), plan)
+    if outcome == "rolled-back":
+        if before != after:
+            fail("rolled-back VDB differs from the complete prepared authority")
+        return delta
+    if outcome != "success" or not delta["exact_success_delta"]:
+        fail("successful VDB transition lacks the exact planned CPV delta")
+    before_packages = {row["cpv"]: row for row in before.get("packages", [])}
+    after_packages = {row["cpv"]: row for row in after.get("packages", [])}
+    for cpv, row in before_packages.items():
+        if after_packages.get(cpv) != row:
+            fail(f"pre-existing VDB package authority changed: {cpv}")
+    for key in ("device", "inode", "uid", "gid", "mode"):
+        if after.get("root_identity", {}).get(key) != before.get(
+            "root_identity", {}
+        ).get(key):
+            fail(f"live VDB root {key} authority changed")
+    if after.get("root_xattrs") != before.get("root_xattrs"):
+        fail("live VDB root xattrs changed")
+    planned_cpvs = {str(row["cpv"]) for row in plan.get("rows", [])}
+    before_rows = _manifest_rows(before.get("complete_tree"), "complete VDB before")
+    after_rows = _manifest_rows(after.get("complete_tree"), "complete VDB after")
+
+    # Every object that existed before arming is immutable.  In particular an
+    # existing category directory is not a disposable scaffold: its metadata
+    # and membership are part of the prepared VDB authority.  Portage's
+    # ``.*.portage_lockfile`` objects are likewise never successful output;
+    # only an identical pre-existing row can remain.
+    missing = sorted(set(before_rows) - set(after_rows))
+    changed = sorted(
+        relative
+        for relative in set(before_rows) & set(after_rows)
+        if before_rows[relative] != after_rows[relative]
+    )
+    if missing or changed:
+        fail(
+            "successful VDB transition changed pre-existing authority: "
+            f"missing={missing}, changed={changed}"
+        )
+
+    planned_prefixes = tuple(sorted(planned_cpvs))
+    planned_categories = {cpv.split("/", 1)[0] for cpv in planned_cpvs}
+
+    def is_planned_addition(relative: str) -> bool:
+        if relative in planned_categories and relative not in before_rows:
+            return True
+        return any(
+            relative == prefix or relative.startswith(prefix + "/")
+            for prefix in planned_prefixes
+        )
+
+    foreign = sorted(
+        relative
+        for relative in set(after_rows) - set(before_rows)
+        if not is_planned_addition(relative)
+    )
+    lock_residue = sorted(
+        relative
+        for relative in set(after_rows) - set(before_rows)
+        if Path(relative).name.endswith(".portage_lockfile")
+    )
+    if foreign or lock_residue:
+        fail(
+            "successful VDB transition contains undeclared residue: "
+            f"foreign={foreign}, lock_residue={lock_residue}"
+        )
+    return delta
+
+
+PRIVATE_ETC_ENV_UPDATE_PATHS = frozenset(
+    {
+        "csh.env",
+        "environment.d",
+        "environment.d/10-gentoo-env.conf",
+        "ld.so.cache",
+        "ld.so.conf",
+        "profile.env",
+    }
+)
+PRIVATE_EDB_MUTABLE_PREFIXES = frozenset(
+    {
+        "counter",
+        "dep",
+        "mtimedb",
+        "vdb_blockers.pickle",
+        "vdb_metadata.pickle",
+        "vdb_metadata_delta.json",
+    }
+)
+
+
+def _copy_before_observation(prepared: Mapping[str, Any], key: str) -> dict[str, Any]:
+    window = prepared_locked_window(prepared)
+    copies = window.get("copies")
+    if not isinstance(copies, dict) or not isinstance(copies.get("rows"), dict):
+        fail("prepared resolver lacks locked private authority copies")
+    row = copies["rows"].get(key)
+    if not isinstance(row, dict):
+        fail(f"prepared resolver lacks locked {key} copy")
+    return _expanded_locked_copy_observation(row, "copy_root")
+
+
+def _expanded_locked_copy_observation(
+    row: Mapping[str, Any], root_key: str
+) -> dict[str, Any]:
+    root = row.get(root_key)
+    tree = row.get("tree")
+    tree_sha = row.get("tree_sha256")
+    if (
+        not isinstance(root, dict)
+        or not isinstance(tree, dict)
+        or tree_sha != sha256_bytes(canonical_json(tree))
+    ):
+        fail("locked private-copy authority is invalid")
+    return {**root, "tree": tree, "tree_sha256": tree_sha}
+
+
+def verify_declared_post_emerge_authority(
+    *,
+    paths: Paths,
+    prepared: Mapping[str, Any],
+    outcome: str,
+    verify_live_views: bool = True,
+    terminal_durability: object | None = None,
+) -> dict[str, Any]:
+    """Validate the exact host/private/VDB recovery claim at a terminal boundary."""
+
+    if outcome not in {"success", "rolled-back"}:
+        fail(f"unsupported post-emerge outcome: {outcome}")
+    private_roots = prepared["private_roots"]
+    initial_window = prepared_locked_window(prepared)
+    copies = initial_window.get("copies", {}).get("rows", {})
+    etc_row = copies.get("etc") if isinstance(copies, dict) else None
+    if not isinstance(etc_row, dict):
+        fail("prepared resolver lacks live /etc authority")
+    etc_source_before = _expanded_locked_copy_observation(
+        etc_row, "source_root"
+    )
+    live_etc = (
+        file_observation(paths.rooted("/etc"))
+        if verify_live_views
+        else etc_source_before
+    )
+    if verify_live_views and live_etc != etc_source_before:
+        fail("live /etc changed despite the private transaction view")
+    private_etc_before = _copy_before_observation(prepared, "etc")
+    private_etc_after = file_observation(Path(private_roots["etc"]))
+    private_cache_before = _copy_before_observation(prepared, "cache_edb")
+    private_cache_after = file_observation(Path(private_roots["cache_edb"]))
+    etc_allowed = (
+        (lambda _path: False)
+        if outcome == "rolled-back"
+        else (lambda path: path in PRIVATE_ETC_ENV_UPDATE_PATHS)
+    )
+    etc_delta = manifest_transition(
+        private_etc_before.get("tree"),
+        private_etc_after.get("tree"),
+        allowed_changed=etc_allowed,
+        label="private /etc",
+    )
+    cache_delta = manifest_transition(
+        private_cache_before.get("tree"),
+        private_cache_after.get("tree"),
+        allowed_changed=lambda path: path.split("/", 1)[0]
+        in PRIVATE_EDB_MUTABLE_PREFIXES,
+        label="private Portage EDB",
+    )
+    mtimedb_delta = verify_mtimedb_transition(
+        initial_window.get("mtimedb"),
+        Path(private_roots["cache_edb"]) / "mtimedb",
+    )
+    private_root_authority = private_roots_terminal_authority(
+        private_roots,
+        outcome=outcome,
+        portage_identity=prepared["resolver"].get("portage_build_identity"),
+    )
+    vdb_after = vdb_manifest(paths.vdb)
+    vdb_delta = verify_vdb_transition(
+        prepared_vdb(prepared),
+        vdb_after,
+        prepared["plan"],
+        outcome=outcome,
+    )
+    loader_before = initial_window.get("loader_directories")
+    if not isinstance(loader_before, dict) or not isinstance(loader_before.get("rows"), list):
+        fail("prepared resolver lacks loader-directory authority")
+    contents = _contents_paths(
+        paths.vdb,
+        [row["cpv"] for row in prepared["plan"]["rows"]]
+        if outcome == "success"
+        else [],
+    )
+    loader_rows: list[dict[str, Any]] = []
+    for row in loader_before["rows"]:
+        path = Path(row["path"])
+        after = object_observation(path)
+        after_children = [
+            object_observation(child)
+            for child in sorted(path.iterdir(), key=lambda item: item.name)
+        ]
+        root = os.fspath(path)
+        before_object = row["observation"]
+        for key in ("device", "inode", "uid", "gid", "mode", "type"):
+            if after.get(key) != before_object.get(key):
+                fail(f"loader directory object authority changed: {path}")
+        if outcome == "rolled-back" and after != before_object:
+            fail(f"rolled-back loader directory stat differs: {path}")
+        before_children = {
+            Path(str(item["path"])).name: item for item in row["immediate_children"]
+        }
+        current_children = {
+            Path(str(item["path"])).name: item for item in after_children
+        }
+        removed = sorted(set(before_children) - set(current_children))
+        changed = sorted(
+            name
+            for name in set(before_children) & set(current_children)
+            if before_children[name] != current_children[name]
+        )
+        added = sorted(set(current_children) - set(before_children))
+        unauthorized_added = [
+            name for name in added if root.rstrip("/") + "/" + name not in contents
+        ]
+        if removed or changed or (outcome == "rolled-back" and added) or unauthorized_added:
+            fail(f"loader directory immediate authority changed: {path}")
+        transition = {"added": added, "removed": removed, "changed": changed}
+        metadata = path.lstat()
+        if outcome == "rolled-back" and metadata.st_mtime_ns != row["mtime_ns"]:
+            fail(f"rolled-back loader directory mtime differs: {path}")
+        loader_rows.append(
+            {
+                "path": root,
+                "mtime_ns": metadata.st_mtime_ns,
+                "transition": transition,
+                "observation_sha256": sha256_bytes(canonical_json(after)),
+            }
+        )
+    verify_private_portage_outputs(
+        private_roots, prepared["resolver"]["private_portage_outputs_before"]
+    )
+    if verify_live_views:
+        verify_selected_sets(paths, initial_window["selected_sets"])
+    durability = (
+        validate_terminal_durability_barrier(
+            paths=paths,
+            prepared=prepared,
+            value=terminal_durability,
+        )
+        if terminal_durability is not None
+        else None
+    )
+    return {
+        "schema_version": 1,
+        "outcome": outcome,
+        "live_etc_sha256": sha256_bytes(canonical_json(live_etc)),
+        "private_etc": etc_delta,
+        "private_cache_edb": cache_delta,
+        "private_mtimedb": mtimedb_delta,
+        "private_roots": private_root_authority,
+        "vdb": vdb_delta,
+        "loader_directories": loader_rows,
+        "terminal_durability": durability,
+        "rows_sha256": sha256_bytes(
+            canonical_json(
+                {
+                    "live_etc": live_etc,
+                    "private_etc": private_etc_after,
+                    "private_cache_edb": private_cache_after,
+                    "private_mtimedb": mtimedb_delta,
+                    "private_roots": private_root_authority,
+                    "vdb": vdb_after,
+                    "loader": loader_rows,
+                    "terminal_durability": durability,
+                }
+            )
+        ),
+    }
+
+
+def inline_authority(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind a structured terminal observation to its canonical digest."""
+
+    payload = dict(value)
+    return {
+        "value": payload,
+        "sha256": sha256_bytes(canonical_json(payload)),
+    }
+
+
+def validate_inline_authority(value: object, label: str) -> dict[str, Any]:
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"value", "sha256"}
+        or not isinstance(value.get("value"), dict)
+        or require_sha256(value.get("sha256"), f"{label} digest")
+        != sha256_bytes(canonical_json(value["value"]))
+    ):
+        fail(f"{label} has an invalid canonical binding")
+    return cast(dict[str, Any], value)
 
 
 def directory_authority(path: Path, label: str) -> dict[str, Any]:
@@ -1362,7 +2249,7 @@ def verify_rsync_clone(repository: RepositorySpec, clone: Path) -> dict[str, Any
     key_identity = file_observation(repository.key_path)
     runner: Runner = SubprocessRunner()
     command = [
-        "/usr/bin/gemato",
+        "/usr/lib/python-exec/python3.15/gemato",
         "verify",
         "--quiet",
         "--openpgp-key",
@@ -1380,7 +2267,13 @@ def verify_rsync_clone(repository: RepositorySpec, clone: Path) -> dict[str, Any
     ]
     verification = runner.run(
         command,
-        environment=clean_environment({"GNUPG": "/usr/bin/gpg", "GNUPGCONF": "/usr/bin/gpgconf"}),
+        environment=clean_environment(
+            {
+                "EPYTHON": "python3.15",
+                "GNUPG": "/usr/bin/gpg",
+                "GNUPGCONF": "/usr/bin/gpgconf",
+            }
+        ),
         timeout=8 * 3600,
     )
     if verification.status != 0:
@@ -1447,10 +2340,68 @@ def python_module_authority(name: str) -> dict[str, Any]:
     }
 
 
+def external_python_module_authority(
+    name: str, interpreter: Path
+) -> dict[str, Any]:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", name):
+        fail(f"unsafe external Python module authority name: {name}")
+    program = (
+        "import importlib.util,json,sys; "
+        "s=importlib.util.find_spec(sys.argv[1]); "
+        "assert s is not None and s.submodule_search_locations; "
+        "print(json.dumps(sorted(s.submodule_search_locations)))"
+    )
+    result = subprocess.run(
+        [os.fspath(interpreter), "-I", "-B", "-c", program, name],
+        env=clean_environment(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=60,
+        check=False,
+    )
+    if result.returncode != 0 or result.stderr:
+        fail(f"external Python package authority is unavailable: {name}")
+    try:
+        raw_roots = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        fail(f"external Python package authority returned invalid JSON: {error}")
+    if not isinstance(raw_roots, list) or not raw_roots:
+        fail(f"external Python package authority has no roots: {name}")
+    manifests = []
+    for value in raw_roots:
+        if not isinstance(value, str):
+            fail("external Python package authority returned a foreign root")
+        root = Path(value).resolve(strict=True)
+        validate_ancestor_chain(root, 0, 0, Path("/"))
+        manifest = tree_manifest(root)
+        manifests.append(
+            {
+                "path": os.fspath(root),
+                "manifest": manifest,
+                "manifest_sha256": sha256_bytes(canonical_json(manifest)),
+            }
+        )
+    return {
+        "name": name,
+        "interpreter": os.fspath(interpreter),
+        "interpreter_identity": inspect_executable(interpreter),
+        "roots": manifests,
+        "roots_sha256": sha256_bytes(canonical_json(manifests)),
+    }
+
+
 def revalidate_python_module_authority(value: object) -> None:
     if not isinstance(value, dict) or not isinstance(value.get("name"), str):
         fail("Python package authority row is invalid")
-    if python_module_authority(value["name"]) != value:
+    current = (
+        external_python_module_authority(
+            value["name"], Path(str(value["interpreter"]))
+        )
+        if isinstance(value.get("interpreter"), str)
+        else python_module_authority(value["name"])
+    )
+    if current != value:
         fail(f"Python package authority changed: {value['name']}")
 
 
@@ -1720,11 +2671,16 @@ def base_state(
             "source_emerge_may_never_be_retried_after_armed": True,
             "live_edb_counter_is_monotonic_nonrollback_axis": True,
             "authorities": [
-                "installed-cpv-set",
-                "pre-existing-vdb-package-subtrees",
-                "world",
-                "world_sets",
-                "live-pkgdir-distdir-tmpdir-logdir-ccache-nonuse",
+                "complete-live-vdb-including-category-and-dot-residue",
+                "immutable-external-held-lock-authority-reference",
+                "full-var-lib-portage-and-cache-edb-inputs",
+                "world-and-world_sets",
+                "semantic-empty-preserved-libraries-registry",
+                "private-etc-and-private-edb-declared-delta",
+                "live-etc-unchanged",
+                "preexisting-loader-content-and-declared-loader-metadata",
+                "private-pkgdir-distdir-tmpdir-logdir-ccache-thinlto-cargo-rustup-roots",
+                "exact-eapi-defined-phases-ebuild-and-setup-eclasses",
             ],
         },
         "evidence": {"directory": os.fspath(paths.report), "proc_root": os.fspath(paths.proc_root)},
@@ -1752,6 +2708,198 @@ def classify_vdb_delta(before: dict[str, Any], after: dict[str, Any], plan: obje
     }
 
 
+def _observed_or_error(observer: Callable[[], object]) -> dict[str, Any]:
+    """Capture evidence even when ambiguity itself prevents interpretation."""
+
+    try:
+        return {"status": "observed", "value": observer()}
+    except (OSError, TransactionError) as error:
+        return {
+            "status": "unobservable",
+            "error_type": type(error).__name__,
+            "error": str(error),
+        }
+
+
+def raw_vdb_residue_authority(paths: Paths) -> dict[str, Any]:
+    observed = file_observation(paths.vdb)
+    tree = observed.get("tree")
+    rows = _manifest_rows(tree, "raw recovery VDB")
+    suspicious = sorted(
+        relative
+        for relative in rows
+        if any(part.startswith("-MERGING-") for part in Path(relative).parts)
+        or Path(relative).name.endswith(".portage_lockfile")
+    )
+    return {
+        "observation": observed,
+        "suspicious_rows": suspicious,
+        "observation_sha256": sha256_bytes(canonical_json(observed)),
+    }
+
+
+def new_vdb_crash_residue(
+    paths: Paths, prepared_vdb: Mapping[str, Any]
+) -> list[str]:
+    current = raw_vdb_residue_authority(paths)["observation"]
+    current_rows = _manifest_rows(current.get("tree"), "current raw VDB")
+    before_rows = _manifest_rows(
+        prepared_vdb.get("complete_tree"), "prepared raw VDB"
+    )
+    return sorted(
+        relative
+        for relative, row in current_rows.items()
+        if (
+            any(part.startswith("-MERGING-") for part in Path(relative).parts)
+            or Path(relative).name.endswith(".portage_lockfile")
+        )
+        and before_rows.get(relative) != row
+    )
+
+
+def counter_partial_paths(live_edb: Path) -> list[str]:
+    return sorted(
+        os.fspath(path)
+        for path in live_edb.iterdir()
+        if path.name.startswith(".counter.") or path.name.startswith("counter.partial.")
+    )
+
+
+def publish_recovery_failed(
+    *,
+    paths: Paths,
+    rollback_state: dict[str, Any],
+    rollback_sha: str,
+    prepared: Mapping[str, Any],
+    prepared_sha: str,
+    reason: str,
+) -> tuple[dict[str, Any], str]:
+    """Durably stop an ambiguous armed transaction and require checkpoint repair."""
+
+    if rollback_state.get("phase") != "rollback-in-progress":
+        fail("recovery-failed publication requires rollback-in-progress authority")
+    child = rollback_state.get("child")
+    control_digest = child.get("control_session_sha256") if isinstance(child, dict) else None
+    payload_receipts = _observed_or_error(
+        lambda: load_existing_payload_admission_references(
+            prepared=prepared,
+            prepared_sha256=prepared_sha,
+            control_session_sha256=require_sha256(
+                control_digest, "failed transaction control-session digest"
+            ),
+        )
+    )
+    evidence = {
+        "schema": "gentoo-optimization-jsonschema-recovery-failed-v1",
+        "transaction_id": paths.transaction_id,
+        "recorded_at": utc_now(),
+        "prepared_state_sha256": require_sha256(
+            prepared_sha, "failed transaction prepared digest"
+        ),
+        "rollback_state_sha256": require_sha256(
+            rollback_sha, "failed transaction rollback digest"
+        ),
+        "reason": reason,
+        "reason_sha256": sha256_bytes(reason.encode("utf-8")),
+        "armed_child": child,
+        "raw_vdb": _observed_or_error(lambda: raw_vdb_residue_authority(paths)),
+        "payload_admissions": payload_receipts,
+        "live_cache_edb": _observed_or_error(
+            lambda: file_observation(paths.cache_edb)
+        ),
+        "counter_partials": _observed_or_error(
+            lambda: counter_partial_paths(paths.cache_edb)
+        ),
+        "private_roots": _observed_or_error(
+            lambda: {
+                key: file_observation(Path(value))
+                for key, value in sorted(prepared["private_roots"].items())
+                if isinstance(value, str) and path_exists(Path(value))
+            }
+        ),
+        "required_remediation": dict(RECOVERY_FAILED_REMEDIATION),
+    }
+    if path_exists(paths.recovery_failure):
+        existing = read_json_regular(
+            paths.recovery_failure,
+            "recovery-failed evidence",
+            RECOVERY_EVIDENCE_MAX_BYTES,
+        )
+        if (
+            not isinstance(existing, dict)
+            or existing.get("schema") != evidence["schema"]
+            or existing.get("transaction_id") != paths.transaction_id
+            or existing.get("prepared_state_sha256") != prepared_sha
+            or existing.get("rollback_state_sha256") != rollback_sha
+        ):
+            fail("existing recovery-failed evidence has foreign authority")
+        evidence = existing
+        evidence_sha = sha256_file(paths.recovery_failure)
+    else:
+        evidence_payload = canonical_json(evidence)
+        if len(evidence_payload) > RECOVERY_EVIDENCE_MAX_BYTES:
+            fail("recovery-failed evidence exceeds its reviewed 512 MiB bound")
+        evidence_sha = atomic_publish_noreplace(
+            paths.recovery_failure, evidence_payload
+        )
+    failed = next_state(
+        rollback_state,
+        rollback_sha,
+        "recovery-failed",
+        child=rollback_state.get("child"),
+        outcome={
+            "reason": evidence["reason"],
+            "recovery_evidence": {
+                "path": os.fspath(paths.recovery_failure),
+                "sha256": evidence_sha,
+            },
+            "operator_supervised_restoration_required": True,
+            "separately_reviewed_terminal_restoration_proof_required": True,
+            "project_must_remain_stopped": True,
+            "rolled_back_claim": False,
+        },
+    )
+    return publish_state(paths, failed)
+
+
+def verify_recovery_failed_state(
+    paths: Paths, state: Mapping[str, Any], prepared_sha: str
+) -> None:
+    outcome = state.get("outcome")
+    if (
+        not isinstance(outcome, dict)
+        or outcome.get("operator_supervised_restoration_required") is not True
+        or outcome.get("separately_reviewed_terminal_restoration_proof_required")
+        is not True
+        or outcome.get("project_must_remain_stopped") is not True
+        or outcome.get("rolled_back_claim") is not False
+    ):
+        fail("recovery-failed state lacks its fail-closed remediation contract")
+    reference = outcome.get("recovery_evidence")
+    verify_evidence_reference(reference, "path", "sha256")
+    if Path(str(reference["path"])) != paths.recovery_failure:
+        fail("recovery-failed state names a foreign evidence path")
+    evidence = read_json_regular(
+        Path(str(reference["path"])),
+        "recovery-failed evidence",
+        RECOVERY_EVIDENCE_MAX_BYTES,
+    )
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("schema")
+        != "gentoo-optimization-jsonschema-recovery-failed-v1"
+        or evidence.get("transaction_id") != paths.transaction_id
+        or evidence.get("prepared_state_sha256") != prepared_sha
+        or evidence.get("rollback_state_sha256")
+        != state.get("previous_state_sha256")
+        or evidence.get("reason") != outcome.get("reason")
+        or evidence.get("reason_sha256")
+        != sha256_bytes(str(evidence.get("reason", "")).encode("utf-8"))
+        or evidence.get("required_remediation") != RECOVERY_FAILED_REMEDIATION
+    ):
+        fail("recovery-failed evidence has an invalid authority binding")
+
+
 def rollback_order(plan: object, installed_added: Iterable[str]) -> list[str]:
     added = set(installed_added)
     atoms = exact_plan_atoms(plan)
@@ -1764,12 +2912,12 @@ def rollback_order(plan: object, installed_added: Iterable[str]) -> list[str]:
 
 def read_counter(path: Path, label: str) -> int:
     try:
-        payload = path.read_text(encoding="ascii").strip()
+        payload = path.read_bytes()
     except OSError as error:
         fail(f"cannot read {label}: {error}")
-    if not payload.isdecimal():
-        fail(f"{label} is not a nonnegative decimal counter")
-    return int(payload)
+    if re.fullmatch(rb"(?:0|[1-9][0-9]*)", payload) is None:
+        fail(f"{label} is not a canonical nonnegative decimal counter")
+    return int(payload.decode("ascii"))
 
 
 def reconcile_counter_locked(
@@ -1779,15 +2927,16 @@ def reconcile_counter_locked(
     vdb: Path,
     prepared: Mapping[str, Any],
     outcome: str,
+    fault: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """Advance, never restore, Portage's counter under the exact VDB lock."""
+    """Advance Portage's counter through an attributable crash-safe intent."""
 
     live_path = live_edb / "counter"
     private_path = private_edb / "counter"
     current_vdb = vdb_manifest(vdb)
     if outcome == "success":
         delta = classify_vdb_delta(
-            prepared["resolver"]["vdb_before"], current_vdb, prepared["plan"]
+            prepared_vdb(prepared), current_vdb, prepared["plan"]
         )
         if not delta["exact_success_delta"]:
             fail("cannot reconcile success counter without the exact installed delta")
@@ -1796,7 +2945,7 @@ def reconcile_counter_locked(
             for row in prepared["plan"]["rows"]
         ]
     elif outcome == "rolled-back":
-        compare_vdb(prepared["resolver"]["vdb_before"], current_vdb)
+        compare_vdb(prepared_vdb(prepared), current_vdb)
         package_values = []
     else:
         fail(f"unsupported EDB counter reconciliation outcome: {outcome}")
@@ -1806,35 +2955,195 @@ def reconcile_counter_locked(
     metadata = live_path.lstat()
     if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
         fail("live EDB counter is not a regular file")
-    if selected != before:
-        partial = live_path.with_name(f".{live_path.name}.partial.{os.getpid()}")
-        descriptor = os.open(
-            partial,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
-            stat.S_IMODE(metadata.st_mode),
-        )
-        try:
-            # Portage's canonical counter payload is a decimal with no newline.
-            payload = str(selected).encode("ascii")
-            if os.write(descriptor, payload) != len(payload):
-                fail("short write during live EDB counter reconciliation")
-            os.fchown(descriptor, metadata.st_uid, metadata.st_gid)
-            os.fchmod(descriptor, stat.S_IMODE(metadata.st_mode))
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-        os.replace(partial, live_path)
-        fsync_directory(live_path.parent)
-    after = read_counter(live_path, "reconciled live EDB counter")
-    if after != selected:
-        fail("live EDB counter reconciliation did not publish the selected value")
-    return {
+    prepared_sha = sha256_bytes(canonical_json(prepared))
+    report = Path(str(prepared["evidence"]["directory"]))
+    token = sha256_bytes(
+        f"{prepared['transaction_id']}\0{prepared_sha}\0{outcome}".encode("utf-8")
+    )
+    partial = live_edb / f".counter.gentoo-opt.{token}.partial"
+    intent_path = report / f"counter-reconciliation-{outcome}.intent.json"
+    completion_path = report / f"counter-reconciliation-{outcome}.complete.json"
+    payload = str(selected).encode("ascii")
+    intent = {
+        "schema": "gentoo-optimization-jsonschema-counter-intent-v1",
+        "transaction_id": prepared["transaction_id"],
+        "prepared_state_sha256": prepared_sha,
         "outcome": outcome,
+        "live_path": os.fspath(live_path),
+        "partial_path": os.fspath(partial),
         "before": before,
         "private": private,
         "package_max": max(package_values) if package_values else None,
-        "after": after,
+        "selected": selected,
+        "payload_sha256": sha256_bytes(payload),
+        "live_identity_before": FileIdentity.observe(live_path).as_json(),
     }
+    if path_exists(intent_path):
+        recorded = read_json_regular(intent_path, "counter reconciliation intent")
+        if recorded != intent:
+            # A completed replace legitimately changes only the current live
+            # value/identity.  All decision fields remain bound by the intent.
+            stable_keys = set(intent) - {"before", "live_identity_before"}
+            recorded_before = recorded.get("before") if isinstance(recorded, dict) else None
+            recorded_selected = (
+                recorded.get("selected") if isinstance(recorded, dict) else None
+            )
+            expected_recorded_selected = (
+                max([recorded_before, private, *package_values])
+                if isinstance(recorded_before, int)
+                and not isinstance(recorded_before, bool)
+                and recorded_before >= 0
+                else None
+            )
+            if (
+                not isinstance(recorded, dict)
+                or any(recorded.get(key) != intent[key] for key in stable_keys)
+                or recorded_selected != expected_recorded_selected
+                or before not in {recorded_before, recorded_selected}
+            ):
+                fail("existing counter intent differs from exact reconciliation")
+            intent = recorded
+            before = int(intent["before"])
+    else:
+        atomic_publish_noreplace(intent_path, canonical_json(intent))
+    if fault is not None:
+        fault("after-intent")
+
+    selected = int(intent["selected"])
+    payload = str(selected).encode("ascii")
+    current = read_counter(live_path, "live EDB counter during reconciliation")
+    if current not in {int(intent["before"]), selected}:
+        fail("live EDB counter differs from both intent endpoints")
+    if current != selected:
+        if path_exists(partial):
+            partial_metadata = partial.lstat()
+            if (
+                not stat.S_ISREG(partial_metadata.st_mode)
+                or stat.S_IMODE(partial_metadata.st_mode)
+                != stat.S_IMODE(metadata.st_mode)
+                or partial_metadata.st_uid != metadata.st_uid
+                or partial_metadata.st_gid != metadata.st_gid
+                or partial_metadata.st_nlink != 1
+                or partial.read_bytes() != payload
+            ):
+                # SIGKILL can land after O_EXCL creation or a short write.  The
+                # exact state-bound name is attributable, live still equals the
+                # intent's before endpoint, and replacement has not happened;
+                # remove and durably recreate it.  Any differently named row is
+                # rejected below as foreign residue.
+                partial.unlink()
+                fsync_directory(partial.parent)
+        if not path_exists(partial):
+            descriptor = os.open(
+                partial,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | os.O_CLOEXEC
+                | getattr(os, "O_NOFOLLOW", 0),
+                stat.S_IMODE(metadata.st_mode),
+            )
+            try:
+                if fault is not None:
+                    fault("after-create")
+                if os.write(descriptor, payload) != len(payload):
+                    fail("short write during live EDB counter reconciliation")
+                if fault is not None:
+                    fault("after-write")
+                os.fchown(descriptor, metadata.st_uid, metadata.st_gid)
+                os.fchmod(descriptor, stat.S_IMODE(metadata.st_mode))
+                os.fsync(descriptor)
+                if fault is not None:
+                    fault("after-file-fsync")
+            finally:
+                os.close(descriptor)
+        if partial.read_bytes() != payload:
+            fail("counter partial payload changed before publication")
+        os.replace(partial, live_path)
+        if fault is not None:
+            fault("after-replace")
+        fsync_directory(live_path.parent)
+        if fault is not None:
+            fault("after-directory-fsync")
+    elif path_exists(partial):
+        fail("counter partial remains after the selected value is visible")
+
+    foreign_partials = sorted(
+        os.fspath(path)
+        for path in live_edb.iterdir()
+        if (
+            path.name.startswith(".counter.gentoo-opt.")
+            or path.name.startswith(".counter.partial.")
+            or path.name.startswith("counter.partial.")
+        )
+        and path != partial
+    )
+    if foreign_partials:
+        fail("foreign counter publication residue is present: " + ", ".join(foreign_partials))
+
+    after = read_counter(live_path, "reconciled live EDB counter")
+    if after != selected:
+        fail("live EDB counter reconciliation did not publish the selected value")
+    completion = {
+        "schema": "gentoo-optimization-jsonschema-counter-completion-v1",
+        "transaction_id": prepared["transaction_id"],
+        "prepared_state_sha256": prepared_sha,
+        "outcome": outcome,
+        "intent_path": os.fspath(intent_path),
+        "intent_sha256": sha256_file(intent_path),
+        "after": after,
+        "live_observation": file_observation(live_path),
+    }
+    if path_exists(completion_path):
+        if read_json_regular(completion_path, "counter completion") != completion:
+            fail("counter completion differs from current exact authority")
+    else:
+        atomic_publish_noreplace(completion_path, canonical_json(completion))
+    if fault is not None:
+        fault("after-completion")
+    return {
+        "outcome": outcome,
+        "before": int(intent["before"]),
+        "private": private,
+        "package_max": max(package_values) if package_values else None,
+        "after": after,
+        "intent_path": os.fspath(intent_path),
+        "intent_sha256": sha256_file(intent_path),
+        "completion_path": os.fspath(completion_path),
+        "completion_sha256": sha256_file(completion_path),
+    }
+
+
+def attributable_counter_partial_names(
+    prepared: Mapping[str, Any], live_edb: Path
+) -> frozenset[str]:
+    """Return only state-bound counter residue names backed by immutable intents."""
+
+    report = Path(str(prepared["evidence"]["directory"]))
+    prepared_sha = sha256_bytes(canonical_json(prepared))
+    names: set[str] = set()
+    for intent_path in sorted(
+        report.glob("counter-reconciliation-*.intent.json"),
+        key=lambda path: path.name,
+    ):
+        intent = read_json_regular(intent_path, "counter reconciliation intent")
+        if (
+            not isinstance(intent, dict)
+            or intent.get("schema")
+            != "gentoo-optimization-jsonschema-counter-intent-v1"
+            or intent.get("transaction_id") != prepared["transaction_id"]
+            or intent.get("prepared_state_sha256") != prepared_sha
+            or intent.get("outcome") not in {"success", "rolled-back"}
+            or not isinstance(intent.get("partial_path"), str)
+        ):
+            fail("counter intent has foreign transaction authority")
+        partial = Path(intent["partial_path"])
+        if partial.parent != live_edb or not partial.name.startswith(
+            ".counter.gentoo-opt."
+        ) or not partial.name.endswith(".partial"):
+            fail("counter intent names an unsafe partial path")
+        names.add(partial.name)
+    return frozenset(names)
 
 
 def tree_manifest_without_top_level(root: Path, excluded: set[str]) -> dict[str, Any]:
@@ -1894,7 +3203,8 @@ def reconcile_counter_with_reseal(
 
     if not is_read_only(live_edb):
         fail("live EDB counter view is writable before reconciliation")
-    before = tree_manifest_without_top_level(live_edb, {"counter"})
+    ignored = attributable_counter_partial_names(prepared, live_edb)
+    before = tree_manifest_without_top_level(live_edb, {"counter", *ignored})
     reconciliation: dict[str, Any] | None = None
     primary_error: BaseException | None = None
     try:
@@ -1920,7 +3230,7 @@ def reconcile_counter_with_reseal(
             + (f" after {primary_error}" if primary_error is not None else "")
             + f": {reseal_error}"
         )
-    after = tree_manifest_without_top_level(live_edb, {"counter"})
+    after = tree_manifest_without_top_level(live_edb, {"counter", *ignored})
     if after != before:
         fail("live EDB authority outside counter changed during reconciliation")
     if primary_error is not None:
@@ -1941,13 +3251,22 @@ def default_tools(root: Path = Path("/")) -> dict[str, Path]:
     return {
         "bash": tool("/bin/bash"),
         "cp": tool("/usr/bin/cp"),
-        "emerge": tool("/usr/bin/emerge"),
+        "emerge": tool("/usr/lib/python-exec/python3.15/emerge"),
         "false": tool("/bin/false"),
-        "gemato": tool("/usr/bin/gemato"),
+        "gemato": tool("/usr/lib/python-exec/python3.15/gemato"),
         "git": tool("/usr/bin/git"),
         "gpg": tool("/usr/bin/gpg"),
         "gpgconf": tool("/usr/bin/gpgconf"),
         "mount": tool("/usr/bin/mount"),
+        "ldconfig": tool("/usr/bin/ldconfig"),
+        "sync": tool("/usr/bin/sync"),
+        "cargo": tool("/usr/bin/cargo"),
+        "rustc": tool("/usr/bin/rustc"),
+        "meson": tool("/usr/lib/python-exec/python3.14/meson"),
+        "meson_python": tool("/usr/bin/python3.14"),
+        "maturin": tool("/usr/bin/maturin"),
+        "ninja": tool("/usr/bin/ninja"),
+        "gpep517": tool("/usr/lib/python-exec/python3.15/gpep517"),
         "python": tool("/usr/bin/python3.15"),
         "qcheck": tool("/usr/bin/qcheck"),
         "umount": tool("/usr/bin/umount"),
@@ -1983,8 +3302,19 @@ def acquire_flock(
     expected_uid: int | None = None,
     expected_gid: int | None = None,
     expected_mode: int | None = None,
+    expected_parent_uid: int | None = None,
+    expected_parent_gid: int | None = None,
+    expected_parent_mode: int | None = None,
     validate_ancestors: bool = False,
 ) -> int:
+    parent_before = FileIdentity.observe(path.parent)
+    if (
+        (expected_parent_uid is not None and parent_before.uid != expected_parent_uid)
+        or (expected_parent_gid is not None and parent_before.gid != expected_parent_gid)
+        or (expected_parent_mode is not None and parent_before.mode != expected_parent_mode)
+        or parent_before.nlink < 2
+    ):
+        fail(f"stable transaction lock parent is absent or foreign: {path.parent}")
     try:
         metadata = path.lstat()
     except FileNotFoundError:
@@ -2011,21 +3341,565 @@ def acquire_flock(
     except OSError:
         os.close(descriptor)
         raise
-    if FileIdentity.observe(path) != FileIdentity.observe(Path(f"/proc/self/fd/{descriptor}"), follow=True):
+    opened_identity = FileIdentity.from_stat(os.fstat(descriptor))
+    if (
+        FileIdentity.observe(path) != opened_identity
+        or FileIdentity.observe(path.parent) != parent_before
+    ):
         os.close(descriptor)
-        fail(f"stable transaction lock path/fd identity changed: {path}")
+        fail(f"stable transaction lock path/fd/parent identity changed: {path}")
     return descriptor
 
 
+PORTAGE_PROCESS_NAMES = frozenset(
+    {"emerge", "ebuild", "ebuild.sh", "emaint", "quickpkg", "portageq"}
+)
+
+
+def _path_is_within(value: str, roots: Sequence[Path]) -> bool:
+    value = value.removesuffix(" (deleted)")
+    if not value.startswith("/"):
+        return False
+    candidate = Path(os.path.normpath(value))
+    return any(candidate == root or candidate.is_relative_to(root) for root in roots)
+
+
+def scan_package_manager_activity(
+    *,
+    proc_root: Path,
+    protected_roots: Sequence[Path],
+    excluded: Sequence[Mapping[str, int | str]] = (),
+    strict_unreadable: bool = True,
+) -> dict[str, Any]:
+    """Find exact competing Portage processes and protected-path handles."""
+
+    roots = tuple(
+        path.resolve(strict=True)
+        if path_exists(path)
+        else path.parent.resolve(strict=True) / path.name
+        for path in protected_roots
+    )
+    excluded_keys = {
+        (int(row["pid"]), int(row["start_ticks"]))
+        for row in excluded
+        if "pid" in row and "start_ticks" in row
+    }
+    rows: list[dict[str, Any]] = []
+    try:
+        proc_entries = sorted(
+            (entry for entry in proc_root.iterdir() if entry.name.isdecimal()),
+            key=lambda entry: int(entry.name),
+        )
+    except OSError as error:
+        fail(f"cannot enumerate process authority: {error}")
+    for entry in proc_entries:
+        pid = int(entry.name)
+        identity = process_identity(pid, proc_root)
+        if identity is None:
+            if strict_unreadable and entry.exists():
+                fail(f"cannot bind stable process identity during exclusion scan: {pid}")
+            continue
+        if (pid, int(identity["start_ticks"])) in excluded_keys:
+            continue
+        reasons: set[str] = set()
+        unreadable: set[str] = set()
+        command_rows: list[str] = []
+        try:
+            comm = (entry / "comm").read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            comm = ""
+            unreadable.add("comm")
+        if comm in PORTAGE_PROCESS_NAMES:
+            reasons.add(f"comm:{comm}")
+        try:
+            command_rows = [
+                item.decode("utf-8", errors="surrogateescape")
+                for item in (entry / "cmdline").read_bytes().split(b"\0")
+                if item
+            ]
+        except OSError:
+            command_rows = []
+            unreadable.add("cmdline")
+        for argument in command_rows:
+            if Path(argument).name in PORTAGE_PROCESS_NAMES:
+                reasons.add(f"argv:{Path(argument).name}")
+        try:
+            environment = (entry / "environ").read_bytes().split(b"\0")
+        except OSError:
+            environment = []
+            unreadable.add("environ")
+        for item in environment:
+            key = item.split(b"=", 1)[0]
+            if key in {
+                b"EBUILD_PHASE",
+                b"PORTAGE_BIN_PATH",
+                b"PORTAGE_BUILDDIR",
+                b"PORTAGE_CONFIGROOT",
+                b"PORTAGE_TMPDIR",
+            }:
+                reasons.add(f"environment:{key.decode('ascii')}")
+        for name in ("cwd", "root"):
+            try:
+                target = os.readlink(entry / name)
+            except OSError:
+                if (entry / name).exists() or entry.exists():
+                    unreadable.add(name)
+                continue
+            if _path_is_within(target, roots):
+                reasons.add(f"{name}:{target}")
+        fd_root = entry / "fd"
+        try:
+            descriptors = sorted(fd_root.iterdir(), key=lambda item: item.name)
+        except OSError:
+            descriptors = []
+            unreadable.add("fd")
+        for descriptor in descriptors:
+            try:
+                target = os.readlink(descriptor)
+            except OSError:
+                if descriptor.exists():
+                    unreadable.add(f"fd/{descriptor.name}")
+                continue
+            if _path_is_within(target, roots):
+                reasons.add(f"fd/{descriptor.name}:{target}")
+        try:
+            maps = (entry / "maps").read_text(
+                encoding="utf-8", errors="surrogateescape"
+            ).splitlines()
+        except OSError:
+            maps = []
+            unreadable.add("maps")
+        for line in maps:
+            path = line.split(maxsplit=5)[-1] if len(line.split(maxsplit=5)) == 6 else ""
+            if _path_is_within(path, roots):
+                reasons.add(f"maps:{path}")
+            if "/site-packages/portage/" in path or "/site-packages/_emerge/" in path:
+                reasons.add(f"portage-module:{path}")
+        final_identity = process_identity(pid, proc_root)
+        if final_identity is None:
+            if entry.exists() and strict_unreadable:
+                fail(f"cannot revalidate stable process identity during exclusion scan: {pid}")
+            continue
+        if final_identity != identity:
+            fail(f"process identity changed during exclusion scan: {pid}")
+        if strict_unreadable and unreadable:
+            reasons.update(f"unreadable:{name}" for name in sorted(unreadable))
+        if reasons:
+            rows.append(
+                {
+                    "identity": identity,
+                    "comm": comm,
+                    "argv": command_rows,
+                    "reasons": sorted(reasons),
+                }
+            )
+    return {
+        "schema_version": 1,
+        "protected_roots": [os.fspath(path) for path in roots],
+        "rows": rows,
+        "rows_sha256": sha256_bytes(canonical_json(rows)),
+    }
+
+
+def require_no_package_manager_activity(
+    *,
+    paths: Paths,
+    excluded: Sequence[Mapping[str, int | str]] = (),
+) -> dict[str, Any]:
+    observation = scan_package_manager_activity(
+        proc_root=paths.proc_root,
+        protected_roots=(
+            paths.vdb,
+            paths.vdb_lockfile,
+            paths.var_lib_portage,
+            paths.cache_edb,
+        ),
+        excluded=excluded,
+    )
+    if observation["rows"]:
+        fail("a competing Portage process or protected-path handle is active")
+    return observation
+
+
+@dataclasses.dataclass(frozen=True)
+class LockedPortageAuthority:
+    config: Any
+    vardb: Any
+    preserved_registry: Any
+    target: str
+    vdb_path: Path
+
+
+def require_locked_empty_preserved_registry(vardb: Any) -> None:
+    registry = vardb._plib_registry
+    registry.lock()
+    try:
+        registry.load()
+        path = Path(str(registry._filename))
+        require_semantically_empty_preserved_registry(path)
+        if registry.hasEntries() or registry.getPreservedLibs() != {}:
+            fail("held Portage preserved-libraries registry is not empty")
+    finally:
+        registry.unlock()
+
+
+def plan_metadata_authority(
+    *,
+    locked: LockedPortageAuthority,
+    plan: Mapping[str, Any],
+    repositories: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Admit exact frozen EAPI/phase/eclass authority before live mutation."""
+
+    portdb = locked.config.trees[locked.target]["porttree"].dbapi
+    repository_rows = {
+        str(row.get("name")): row for row in repositories if isinstance(row, Mapping)
+    }
+    forbidden_root_phases = {"pretend", "preinst", "postinst", "prerm", "postrm"}
+    rows: list[dict[str, Any]] = []
+    for plan_row in plan.get("rows", []):
+        cpv = str(plan_row["cpv"])
+        expected_repository = str(plan_row["repository"])
+        try:
+            eapi, phase_text, inherited_text, observed_repository = portdb.aux_get(
+                cpv, ["EAPI", "DEFINED_PHASES", "INHERITED", "repository"]
+            )
+            ebuild = Path(portdb.findname(cpv, myrepo=expected_repository)).resolve(
+                strict=True
+            )
+        except (KeyError, OSError, TypeError, ValueError) as error:
+            fail(f"cannot bind frozen package metadata for {cpv}: {error}")
+        phases = sorted(set(str(phase_text).split()))
+        inherited = sorted(set(str(inherited_text).split()))
+        if str(eapi) != "8" or str(observed_repository) != expected_repository:
+            fail(f"package metadata EAPI/repository is outside the reviewed closure: {cpv}")
+        if forbidden_root_phases & set(phases):
+            fail(f"package defines an unreviewed root-side phase: {cpv}")
+        setup_eclasses: list[dict[str, Any]] = []
+        if "setup" in phases:
+            if (
+                not cpv.startswith("dev-python/rpds-py-")
+                or not {"cargo", "rust"} <= set(inherited)
+            ):
+                fail(f"package has an unreviewed setup phase: {cpv}")
+            for eclass_name in ("cargo", "rust"):
+                matches = []
+                for repository in repositories:
+                    source = repository.get("source_location")
+                    materialized = repository.get("materialized_location")
+                    if not isinstance(source, str) or not isinstance(materialized, str):
+                        continue
+                    source_path = Path(source) / "eclass" / f"{eclass_name}.eclass"
+                    if source_path.is_file() and not source_path.is_symlink():
+                        matches.append(
+                            (
+                                source_path.resolve(strict=True),
+                                Path(materialized) / "eclass" / f"{eclass_name}.eclass",
+                            )
+                        )
+                if not matches:
+                    fail(f"reviewed setup eclass is absent: {eclass_name}")
+                source_path, frozen_path = matches[0]
+                if not frozen_path.is_file() or sha256_file(source_path) != sha256_file(
+                    frozen_path
+                ):
+                    fail(f"frozen setup eclass differs: {eclass_name}")
+                setup_eclasses.append(
+                    {
+                        "name": eclass_name,
+                        "source_path": os.fspath(source_path),
+                        "source_sha256": sha256_file(source_path),
+                        "frozen_path": os.fspath(frozen_path),
+                        "frozen_sha256": sha256_file(frozen_path),
+                    }
+                )
+        repository = repository_rows.get(expected_repository)
+        if not isinstance(repository, Mapping):
+            fail(f"planned repository lacks frozen authority: {expected_repository}")
+        source_root = Path(str(repository.get("source_location"))).resolve(strict=True)
+        frozen_root = Path(str(repository.get("materialized_location"))).resolve(strict=True)
+        if not ebuild.is_relative_to(source_root):
+            fail(f"planned ebuild escapes its configured repository: {cpv}")
+        frozen_ebuild = frozen_root / ebuild.relative_to(source_root)
+        if not frozen_ebuild.is_file() or frozen_ebuild.is_symlink():
+            fail(f"planned frozen ebuild is absent or foreign: {cpv}")
+        if sha256_file(ebuild) != sha256_file(frozen_ebuild):
+            fail(f"planned frozen ebuild differs from discovery: {cpv}")
+        try:
+            ebuild_text = frozen_ebuild.read_text(encoding="utf-8", errors="strict")
+        except (OSError, UnicodeError) as error:
+            fail(f"cannot read frozen ebuild backend authority for {cpv}: {error}")
+        backend_matches = re.findall(
+            r"(?m)^\s*DISTUTILS_USE_PEP517=(?:\"([^\"]+)\"|'([^']+)'|([^\s#]+))",
+            ebuild_text,
+        )
+        backend_values = {
+            next(value for value in match if value) for match in backend_matches
+        }
+        if len(backend_values) > 1:
+            fail(f"planned ebuild has ambiguous PEP517 backend authority: {cpv}")
+        pep517_backend = next(iter(backend_values), "setuptools-default")
+        if cpv.startswith("dev-python/rpds-py-") and pep517_backend != "maturin":
+            fail("reviewed rpds-py closure no longer uses the exact maturin backend")
+        rows.append(
+            {
+                "cpv": cpv,
+                "repository": expected_repository,
+                "eapi": str(eapi),
+                "defined_phases": phases,
+                "inherited": inherited,
+                "ebuild_path": os.fspath(ebuild),
+                "ebuild_sha256": sha256_file(ebuild),
+                "frozen_ebuild_path": os.fspath(frozen_ebuild),
+                "frozen_ebuild_sha256": sha256_file(frozen_ebuild),
+                "reviewed_setup_eclasses": setup_eclasses,
+                "pep517_backend": pep517_backend,
+            }
+        )
+    rows.sort(key=lambda row: row["cpv"])
+    return {
+        "schema_version": 1,
+        "rows": rows,
+        "rows_sha256": sha256_bytes(canonical_json(rows)),
+    }
+
+
+def verify_plan_metadata_authority(prepared: Mapping[str, Any]) -> None:
+    value = prepared.get("resolver", {}).get("plan_metadata")
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != 1
+        or not isinstance(value.get("rows"), list)
+        or value.get("rows_sha256")
+        != sha256_bytes(canonical_json(value.get("rows")))
+    ):
+        fail("prepared package metadata authority is invalid")
+    expected_cpvs = sorted(str(row["cpv"]) for row in prepared["plan"]["rows"])
+    observed_cpvs: list[str] = []
+    for row in value["rows"]:
+        if not isinstance(row, dict):
+            fail("prepared package metadata row is invalid")
+        cpv = str(row.get("cpv", ""))
+        observed_cpvs.append(cpv)
+        backend = row.get("pep517_backend")
+        if not isinstance(backend, str) or not re.fullmatch(
+            r"[A-Za-z0-9_.+-]+", backend
+        ):
+            fail(f"prepared package metadata has an unsafe PEP517 backend: {cpv}")
+        if cpv.startswith("dev-python/rpds-py-") and backend != "maturin":
+            fail("prepared rpds-py backend differs from reviewed maturin closure")
+        phases = set(row.get("defined_phases", []))
+        if row.get("eapi") != "8" or phases & {
+            "pretend",
+            "preinst",
+            "postinst",
+            "prerm",
+            "postrm",
+        }:
+            fail(f"prepared package metadata no longer has admitted phases: {cpv}")
+        if "setup" in phases and (
+            not cpv.startswith("dev-python/rpds-py-")
+            or {item.get("name") for item in row.get("reviewed_setup_eclasses", [])}
+            != {"cargo", "rust"}
+        ):
+            fail(f"prepared package metadata has an unreviewed setup phase: {cpv}")
+        for path_key, digest_key in (
+            ("ebuild_path", "ebuild_sha256"),
+            ("frozen_ebuild_path", "frozen_ebuild_sha256"),
+        ):
+            verify_evidence_reference(row, path_key, digest_key)
+        for eclass in row.get("reviewed_setup_eclasses", []):
+            if not isinstance(eclass, dict):
+                fail("prepared setup eclass authority row is invalid")
+            for path_key, digest_key in (
+                ("source_path", "source_sha256"),
+                ("frozen_path", "frozen_sha256"),
+            ):
+                verify_evidence_reference(eclass, path_key, digest_key)
+    if sorted(observed_cpvs) != expected_cpvs:
+        fail("prepared package metadata CPV vector differs from its plan")
+
+
 @contextlib.contextmanager
-def transaction_locks(paths: Paths) -> Iterator[None]:
+def loaded_portage_authority_lock(paths: Paths) -> Iterator[LockedPortageAuthority]:
+    """Load once and hold the exact VDB plus registry objects for one window."""
+
+    try:
+        import _emerge.actions as actions
+    except ImportError as error:
+        fail(f"Portage preparation API is unavailable: {error}")
+    config = actions.load_emerge_config(
+        action=None,
+        args=[],
+        opts={"--ignore-default-opts": True},
+        env=clean_environment(),
+    )
+    target = config.trees._target_eroot
+    if target != "/":
+        fail(f"Portage preparation target EROOT is not exact live root: {target!r}")
+    vardb = config.trees[target]["vartree"].dbapi
+    if config.target_config.trees["vartree"].dbapi is not vardb:
+        fail("Portage preparation target does not share one vardb object")
+    vdb_path = Path(str(vardb._dbroot)).resolve(strict=True)
+    if vdb_path != paths.vdb.resolve(strict=True):
+        fail(f"Portage preparation vardb root differs: {vdb_path}")
+    registry = vardb._plib_registry
+    registry_path = Path(str(registry._filename)).resolve(strict=True)
+    expected_registry = (
+        paths.var_lib_portage / "preserved_libs_registry"
+    ).resolve(strict=True)
+    if registry_path != expected_registry:
+        fail("Portage preserved-libraries registry path differs")
+    vardb.lock()
+    registry_locked = False
+    try:
+        registry.lock()
+        registry_locked = True
+        registry.load()
+        require_semantically_empty_preserved_registry(expected_registry)
+        if registry.hasEntries() or registry.getPreservedLibs() != {}:
+            fail("locked Portage preserved-libraries registry is not empty")
+        yield LockedPortageAuthority(config, vardb, registry, target, vdb_path)
+    finally:
+        if registry_locked:
+            registry.unlock()
+        vardb.unlock()
+        for root_trees in config.trees.values():
+            if "porttree" not in root_trees.lazy_items:
+                root_trees["porttree"].dbapi.close_caches()
+
+
+def preparation_locked_snapshot(
+    *,
+    paths: Paths,
+    private_roots: Mapping[str, str] | None,
+    runner: Runner | None,
+    tools: Mapping[str, Path] | None,
+    publisher: Callable[[dict[str, Any]], None] | None = None,
+    plan: Mapping[str, Any] | None = None,
+    repositories: Sequence[Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Observe/copy/reobserve every live package-manager authority under lock."""
+
+    coordinator = process_identity(os.getpid(), paths.proc_root)
+    if coordinator is None:
+        fail("cannot bind preparation coordinator process identity")
+    scan_before = require_no_package_manager_activity(paths=paths, excluded=(coordinator,))
+    with loaded_portage_authority_lock(paths) as locked:
+        if locked.vardb is not locked.config.trees[locked.target]["vartree"].dbapi:
+            fail("Portage preparation replaced its locked vardb object")
+        scan_after_lock = require_no_package_manager_activity(
+            paths=paths, excluded=(coordinator,)
+        )
+        vdb_before = vdb_manifest(paths.vdb)
+        selected_before = selected_sets_authority(paths)
+        mtimedb_before = mtimedb_authority(paths.cache_edb / "mtimedb")
+        counter_before = file_observation(paths.cache_edb / "counter")
+        live_etc_before = file_observation(paths.rooted("/etc"))
+        counter_value = read_counter(paths.cache_edb / "counter", "live EDB counter")
+        if counter_value < vdb_before["maximum_installed_counter"]:
+            fail("live EDB counter is below the maximum installed package counter")
+        copies = None
+        if private_roots is not None:
+            if runner is None or tools is None:
+                fail("locked preparation copy lacks its exact runner/tool authority")
+            copies = copy_live_private_authorities_locked(
+                paths=paths,
+                locked=locked,
+                private_roots=private_roots,
+                runner=runner,
+                tools=tools,
+            )
+        vdb_after = vdb_manifest(paths.vdb)
+        selected_after = selected_sets_authority(paths)
+        counter_after = file_observation(paths.cache_edb / "counter")
+        live_etc_after = file_observation(paths.rooted("/etc"))
+        if (
+            vdb_after != vdb_before
+            or selected_after != selected_before
+            or counter_after != counter_before
+            or live_etc_after != live_etc_before
+        ):
+            fail("live package-manager authority changed during held-lock observation")
+        scan_after = require_no_package_manager_activity(
+            paths=paths, excluded=(coordinator,)
+        )
+        plan_metadata = None
+        if plan is not None:
+            if repositories is None:
+                fail("plan metadata admission lacks frozen repositories")
+            plan_metadata = plan_metadata_authority(
+                locked=locked, plan=plan, repositories=repositories
+            )
+        result = {
+            "schema_version": 1,
+            "vdb": vdb_before,
+            "selected_sets": selected_before,
+            "mtimedb": mtimedb_before,
+            "counter": counter_before,
+            "counter_value": counter_value,
+            "live_etc": live_etc_before,
+            "copies": copies,
+            "loader_directories": loader_directory_authority(
+                locked.config.target_config.settings, paths.rooted("/")
+            ),
+            "effective_portage_policy": effective_portage_policy(
+                locked.config.target_config.settings
+            ),
+            "native_toolchain": native_toolchain_authority(
+                locked.config.target_config.settings
+            ),
+            "plan_metadata": plan_metadata,
+            "process_exclusion": {
+                "before_lock": scan_before,
+                "after_lock": scan_after_lock,
+                "after_snapshot": scan_after,
+            },
+        }
+        if publisher is not None:
+            publisher(result)
+        return result
+
+
+@dataclasses.dataclass(frozen=True)
+class HeldStableLock:
+    path: Path
+    descriptor: int
+    identity: FileIdentity
+    parent_descriptor: int
+    parent_identity: dict[str, int]
+
+
+@dataclasses.dataclass(frozen=True)
+class HeldStableLocks:
+    rows: tuple[HeldStableLock, ...]
+
+    def revalidate(self) -> None:
+        for row in self.rows:
+            if (
+                FileIdentity.observe(row.path) != row.identity
+                or FileIdentity.from_stat(os.fstat(row.descriptor)) != row.identity
+                or _stable_parent_identity(row.path.parent) != row.parent_identity
+                or _stable_file_identity(
+                    FileIdentity.from_stat(os.fstat(row.parent_descriptor))
+                )
+                != row.parent_identity
+            ):
+                fail(f"held stable-lock authority changed: {row.path}")
+
+
+@contextlib.contextmanager
+def transaction_locks(paths: Paths) -> Iterator[HeldStableLocks]:
     descriptors: list[int] = []
+    held_rows: list[HeldStableLock] = []
     uid = os.geteuid() if paths.fixture_mode else 0
     fixture_gid = os.getegid()
     portage_gid = fixture_gid if paths.fixture_mode else grp.getgrnam("portage").gr_gid
     root_gid = fixture_gid if paths.fixture_mode else 0
     strict_ancestors = not paths.fixture_mode
     shared_lock_mode = 0o600 if paths.fixture_mode else 0o640
+    shared_parent_mode = 0o700 if paths.fixture_mode else 0o750
+    transaction_parent_mode = 0o700
     try:
         for path, exclusive, gid, mode in (
             (paths.framework_lock, False, portage_gid, shared_lock_mode),
@@ -2033,17 +3907,48 @@ def transaction_locks(paths: Paths) -> Iterator[None]:
             (paths.generation_lock, False, portage_gid, shared_lock_mode),
             (paths.transaction_lock, True, root_gid, 0o600),
         ):
-            descriptors.append(
-                acquire_flock(
+            descriptor = acquire_flock(
                     path,
                     exclusive=exclusive,
                     expected_uid=uid,
                     expected_gid=gid,
                     expected_mode=mode,
+                    expected_parent_uid=uid,
+                    expected_parent_gid=portage_gid if path != paths.transaction_lock else root_gid,
+                    expected_parent_mode=(
+                        transaction_parent_mode
+                        if path == paths.transaction_lock
+                        else shared_parent_mode
+                    ),
                     validate_ancestors=strict_ancestors,
                 )
+            descriptors.append(descriptor)
+            parent_descriptor = os.open(
+                path.parent,
+                os.O_RDONLY
+                | os.O_CLOEXEC
+                | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
             )
-        yield
+            descriptors.append(parent_descriptor)
+            parent_identity = _stable_file_identity(
+                FileIdentity.from_stat(os.fstat(parent_descriptor))
+            )
+            if _stable_parent_identity(path.parent) != parent_identity:
+                fail(f"stable lock parent changed during acquisition: {path.parent}")
+            held_rows.append(
+                HeldStableLock(
+                    path=path,
+                    descriptor=descriptor,
+                    identity=FileIdentity.from_stat(os.fstat(descriptor)),
+                    parent_descriptor=parent_descriptor,
+                    parent_identity=parent_identity,
+                )
+            )
+        held = HeldStableLocks(tuple(held_rows))
+        held.revalidate()
+        yield held
+        held.revalidate()
     except BlockingIOError:
         fail("another framework, project, generation, or prerequisite transaction is active")
     finally:
@@ -2218,6 +4123,121 @@ def prepare_directories(paths: Paths, fixture_mode: bool) -> None:
         fail("stable prerequisite transaction lock has an invalid mode")
 
 
+def allocated_tree_bytes(path: Path) -> int:
+    path = path.resolve(strict=True)
+    if not path.is_dir() or path.is_symlink():
+        fail(f"capacity source is not a real directory: {path}")
+    total = path.lstat().st_blocks * 512
+    for entry in path.rglob("*"):
+        metadata = entry.lstat()
+        total += metadata.st_blocks * 512
+    return total
+
+
+def capacity_preflight(
+    *,
+    paths: Paths,
+    repositories: Sequence[RepositorySpec],
+    fixed_authority_reserve: int = 2 * 1024**3,
+    fixed_cache_reserve: int = 8 * 1024**3,
+) -> dict[str, Any]:
+    """Prove per-filesystem capacity before any transaction-scoped materialization."""
+
+    if fixed_authority_reserve < 0 or fixed_cache_reserve < 0:
+        fail("capacity reserve is negative")
+    authority_sources = [repository.location for repository in repositories]
+    authority_sources.extend((paths.portage_config, paths.portage_global_config))
+    cache_sources = [
+        paths.var_lib_portage,
+        paths.cache_edb,
+        paths.rooted("/etc"),
+    ]
+    requirements = {
+        paths.authority_parent: sum(allocated_tree_bytes(path) for path in authority_sources)
+        + fixed_authority_reserve,
+        paths.cache_parent: sum(allocated_tree_bytes(path) for path in cache_sources)
+        + fixed_cache_reserve,
+        # One recovery evidence object plus one child completion can each
+        # reach the reviewed authority bound.  The state filesystem retains
+        # one bulky locked-authority artifact and at most four immutable phase
+        # records; the canonical state is a hardlink, not another allocation.
+        paths.report_parent: 2 * RECOVERY_EVIDENCE_MAX_BYTES,
+        paths.state_parent: LOCKED_AUTHORITY_MAX_BYTES + PHASE_STATE_MAX_BYTES * 4,
+    }
+    devices: dict[int, dict[str, Any]] = {}
+    for target, raw_required in requirements.items():
+        target = target.resolve(strict=True)
+        metadata = target.stat()
+        filesystem = os.statvfs(target)
+        required = max(raw_required + raw_required // 4, raw_required + 1024**3)
+        available = filesystem.f_bavail * filesystem.f_frsize
+        row = devices.setdefault(
+            metadata.st_dev,
+            {
+                "device": metadata.st_dev,
+                "targets": [],
+                "required_bytes": 0,
+                "available_bytes": available,
+            },
+        )
+        if row["available_bytes"] != available:
+            fail("capacity observations disagree for one filesystem device")
+        row["targets"].append(os.fspath(target))
+        row["required_bytes"] += required
+    rows = sorted(devices.values(), key=lambda row: row["device"])
+    for row in rows:
+        row["targets"].sort()
+        if row["available_bytes"] < row["required_bytes"]:
+            fail(
+                f"insufficient prerequisite transaction capacity on device "
+                f"{row['device']}: required={row['required_bytes']} "
+                f"available={row['available_bytes']}"
+            )
+    return {
+        "schema_version": 1,
+        "rows": rows,
+        "rows_sha256": sha256_bytes(canonical_json(rows)),
+    }
+
+
+def transaction_attempt_objects(paths: Paths) -> list[str]:
+    candidates = {
+        paths.report,
+        paths.authority,
+        paths.cache,
+        paths.canonical_state,
+        paths.preparation_attempt,
+        paths.locked_authority,
+    }
+    candidates.update(paths.state_parent.glob(f"jsonschema-prerequisite-{paths.transaction_id}.*"))
+    return sorted(os.fspath(path) for path in candidates if path_exists(path))
+
+
+def publish_preparation_attempt(
+    paths: Paths,
+    *,
+    capacity: Mapping[str, Any],
+    checkpoint: Mapping[str, Any],
+) -> str:
+    existing = transaction_attempt_objects(paths)
+    if existing:
+        fail(
+            "transaction ID was already used or has an abandoned preparation: "
+            + ", ".join(existing)
+        )
+    value = {
+        "schema": "gentoo-optimization-jsonschema-preparation-attempt-v1",
+        "transaction_id": paths.transaction_id,
+        "recorded_at": utc_now(),
+        "boot_id": boot_id(paths.proc_root),
+        "capacity": dict(capacity),
+        "pre_dependency_checkpoint": dict(checkpoint),
+        "reuse_policy": "immutable-attempt-never-reuse-id",
+        "status": "preparation-started-or-abandoned-until-prepared-is-durable",
+    }
+    return atomic_publish_noreplace(paths.preparation_attempt, canonical_json(value))
+
+
 def prepare_private_roots(paths: Paths) -> dict[str, Any]:
     roots = {
         "pkgdir": paths.cache / "pkgdir",
@@ -2226,8 +4246,12 @@ def prepare_private_roots(paths: Paths) -> dict[str, Any]:
         "portage_tmpdir": paths.cache / "tmp",
         "portage_logdir": paths.cache / "logs",
         "ccache_dir": paths.cache / "ccache",
+        "thinlto_cache": paths.cache / "thinlto-cache",
+        "cargo_home": paths.cache / "cargo-home",
+        "rustup_home": paths.cache / "rustup-home",
         "var_lib_portage": paths.cache / "var-lib-portage",
         "cache_edb": paths.cache / "cache-edb",
+        "etc": paths.cache / "etc",
         "home": paths.cache / "home",
         "xdg_cache": paths.cache / "xdg-cache",
         "live_cache_edb_view": paths.cache / "live-cache-edb-view",
@@ -2235,11 +4259,27 @@ def prepare_private_roots(paths: Paths) -> dict[str, Any]:
     paths.cache.mkdir(mode=0o700)
     portage_gid = os.getegid() if paths.fixture_mode else grp.getgrnam("portage").gr_gid
     for key, root in roots.items():
+        if key in {"var_lib_portage", "cache_edb", "etc"}:
+            # These exact authority copies are created only while the live
+            # VDB and preserved-libraries registry locks are held.
+            continue
         if key == "portage_tmpdir":
             mode, gid = 0o1777, 0 if not paths.fixture_mode else os.getegid()
-        elif key in {"distdir_staging", "distdir_runtime", "portage_logdir", "ccache_dir"}:
+        elif key in {
+            "distdir_staging",
+            "distdir_runtime",
+            "portage_logdir",
+            "ccache_dir",
+            "thinlto_cache",
+        }:
             mode, gid = 0o2775, portage_gid
-        elif key in {"home", "xdg_cache", "live_cache_edb_view"}:
+        elif key in {
+            "home",
+            "xdg_cache",
+            "cargo_home",
+            "rustup_home",
+            "live_cache_edb_view",
+        }:
             mode, gid = 0o700, 0 if not paths.fixture_mode else os.getegid()
         else:
             mode, gid = 0o755, 0 if not paths.fixture_mode else os.getegid()
@@ -2247,16 +4287,84 @@ def prepare_private_roots(paths: Paths) -> dict[str, Any]:
         os.chmod(root, mode)
         if not paths.fixture_mode:
             os.chown(root, 0, gid)
-    shutil.copytree(paths.var_lib_portage, roots["var_lib_portage"], symlinks=True, dirs_exist_ok=True)
-    shutil.copytree(paths.cache_edb, roots["cache_edb"], symlinks=True, dirs_exist_ok=True)
     result = {key: os.fspath(value) for key, value in roots.items()}
     result.update(
         {
             "live_var_lib_portage": os.fspath(paths.var_lib_portage.resolve(strict=True)),
             "live_cache_edb": os.fspath(paths.cache_edb.resolve(strict=True)),
+            "live_etc": os.fspath(paths.rooted("/etc").resolve(strict=True)),
+            "live_thinlto_cache": os.fspath(
+                paths.rooted("/var/tmp/thinlto-cache").resolve(strict=True)
+            ),
         }
     )
     return result
+
+
+def copy_live_private_authorities_locked(
+    *,
+    paths: Paths,
+    locked: LockedPortageAuthority,
+    private_roots: Mapping[str, str],
+    runner: Runner,
+    tools: Mapping[str, Path],
+) -> dict[str, Any]:
+    """Copy all mutable Portage/loader authorities during one held-lock window."""
+
+    if (
+        locked.vdb_path != paths.vdb.resolve(strict=True)
+        or locked.vardb is not locked.config.trees[locked.target]["vartree"].dbapi
+        or int(getattr(locked.vardb, "_lock_count", 0)) < 1
+        or getattr(locked.preserved_registry, "_lock", None) is None
+    ):
+        fail("private authority copy is not inside the exact held Portage locks")
+
+    rows: dict[str, Any] = {}
+    for key, source in (
+        ("var_lib_portage", paths.var_lib_portage),
+        ("cache_edb", paths.cache_edb),
+        ("etc", paths.rooted("/etc")),
+    ):
+        destination_value = private_roots.get(key)
+        if not isinstance(destination_value, str):
+            fail(f"private-root vector lacks locked authority {key}")
+        destination = Path(destination_value)
+        before = file_observation(source)
+        copy_tree(source, destination, runner, tools)
+        after = file_observation(source)
+        copied = file_observation(destination)
+        if before != after:
+            fail(f"live {key} authority changed during its held-lock copy")
+        before_tree = before.get("tree")
+        copied_tree = copied.get("tree")
+        if (
+            not isinstance(before_tree, dict)
+            or not isinstance(copied_tree, dict)
+            or before_tree.get("rows") != copied_tree.get("rows")
+            or before_tree.get("rows_sha256") != copied_tree.get("rows_sha256")
+        ):
+            fail(f"private {key} copy differs from the held live authority")
+        source_root = {
+            axis: value
+            for axis, value in before.items()
+            if axis not in {"tree", "tree_sha256"}
+        }
+        copy_root = {
+            axis: value
+            for axis, value in copied.items()
+            if axis not in {"tree", "tree_sha256"}
+        }
+        rows[key] = {
+            "source_root": source_root,
+            "copy_root": copy_root,
+            "tree": before_tree,
+            "tree_sha256": before["tree_sha256"],
+        }
+    return {
+        "schema_version": 1,
+        "rows": rows,
+        "rows_sha256": sha256_bytes(canonical_json(rows)),
+    }
 
 
 def private_roots_baseline(private_roots: Mapping[str, str]) -> dict[str, Any]:
@@ -2269,10 +4377,14 @@ def private_roots_baseline(private_roots: Mapping[str, str]) -> dict[str, Any]:
         "portage_tmpdir",
         "portage_logdir",
         "ccache_dir",
+        "thinlto_cache",
+        "cargo_home",
+        "rustup_home",
         "home",
         "xdg_cache",
         "var_lib_portage",
         "cache_edb",
+        "etc",
     ):
         value = private_roots.get(key)
         if not isinstance(value, str):
@@ -2281,11 +4393,21 @@ def private_roots_baseline(private_roots: Mapping[str, str]) -> dict[str, Any]:
         manifest = tree_manifest(root)
         rows[key] = {
             "path": value,
-            "manifest": manifest,
             "manifest_sha256": sha256_bytes(canonical_json(manifest)),
+            "row_count": len(_manifest_rows(manifest, f"prepared private {key}")),
         }
-    for key in ("pkgdir", "distdir_runtime", "portage_tmpdir", "ccache_dir", "home", "xdg_cache"):
-        if rows[key]["manifest"]["rows"]:
+    for key in (
+        "pkgdir",
+        "distdir_runtime",
+        "portage_tmpdir",
+        "ccache_dir",
+        "thinlto_cache",
+        "cargo_home",
+        "rustup_home",
+        "home",
+        "xdg_cache",
+    ):
+        if rows[key]["row_count"]:
             fail(f"prepared private root is not empty: {key}")
     return {"schema_version": 1, "rows": rows, "rows_sha256": sha256_bytes(canonical_json(rows))}
 
@@ -2300,35 +4422,306 @@ def verify_private_roots_baseline(value: object) -> None:
         manifest = tree_manifest(Path(row["path"]))
         current[key] = {
             "path": row["path"],
-            "manifest": manifest,
             "manifest_sha256": sha256_bytes(canonical_json(manifest)),
+            "row_count": len(_manifest_rows(manifest, f"prepared private {key}")),
         }
     if current != value["rows"] or sha256_bytes(canonical_json(current)) != value.get("rows_sha256"):
         fail("a prepared private root changed before transaction arming")
+
+
+def private_roots_terminal_authority(
+    private_roots: Mapping[str, str],
+    *,
+    outcome: str,
+    portage_identity: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Apply an explicit terminal policy to every isolated mutable root."""
+
+    if outcome not in {"success", "rolled-back"}:
+        fail("private-root terminal policy has an invalid outcome")
+    policies = {
+        "pkgdir": "retained-package-evidence",
+        "distdir_runtime": "verified-prefetch-derived",
+        "portage_tmpdir": "empty-portage-prefix-only",
+        "portage_logdir": "retained-log-evidence",
+        "ccache_dir": "must-be-empty",
+        "thinlto_cache": "retained-build-evidence",
+        "cargo_home": "retained-build-evidence",
+        "rustup_home": "retained-build-evidence",
+        "home": "must-be-empty",
+        "xdg_cache": "must-be-empty",
+    }
+    authority_root_value = private_roots.get("distdir_authority")
+    if not isinstance(authority_root_value, str):
+        fail("private roots lack distfile authority")
+    authority_rows = _manifest_rows(
+        tree_manifest(Path(authority_root_value)), "distfile authority"
+    )
+    rows: dict[str, Any] = {}
+    for key, policy in policies.items():
+        value = private_roots.get(key)
+        if not isinstance(value, str):
+            fail(f"private roots lack terminal policy root {key}")
+        manifest = tree_manifest(Path(value))
+        manifest_rows = _manifest_rows(manifest, f"terminal private {key}")
+        if policy == "must-be-empty" and manifest_rows:
+            fail(f"terminal private root is not empty: {key}")
+        if policy == "empty-portage-prefix-only":
+            if set(manifest_rows) not in (set(), {"portage"}):
+                fail("terminal PORTAGE_TMPDIR contains undeclared residue")
+            if manifest_rows:
+                prefix = manifest_rows["portage"]
+                expected_uid = (
+                    portage_identity.get("uid")
+                    if isinstance(portage_identity, Mapping)
+                    else None
+                )
+                expected_gid = (
+                    portage_identity.get("gid")
+                    if isinstance(portage_identity, Mapping)
+                    else None
+                )
+                if (
+                    prefix.get("type") != "directory"
+                    or prefix.get("xattrs") != []
+                    or prefix.get("mode") not in {0o755, 0o770, 0o775}
+                    or (
+                        expected_uid is not None
+                        and prefix.get("uid") not in {0, expected_uid}
+                    )
+                    or (
+                        expected_gid is not None
+                        and prefix.get("gid") not in {0, expected_gid}
+                    )
+                ):
+                    fail("terminal PORTAGE_TMPDIR prefix metadata is foreign")
+        if policy == "verified-prefetch-derived":
+            for relative, row in manifest_rows.items():
+                if row.get("type") == "directory":
+                    continue
+                expected = authority_rows.get(relative)
+                if expected is None:
+                    fail("runtime DISTDIR contains a foreign object: " + relative)
+                for axis in ("type", "size", "sha256", "target", "xattrs"):
+                    if row.get(axis) != expected.get(axis):
+                        fail(
+                            f"runtime DISTDIR {axis} differs from frozen authority: {relative}"
+                        )
+        rows[key] = {
+            "path": value,
+            "policy": policy,
+            "manifest": manifest,
+            "manifest_sha256": sha256_bytes(canonical_json(manifest)),
+        }
+    result = {
+        "schema_version": 1,
+        "outcome": outcome,
+        "rows": rows,
+    }
+    result["rows_sha256"] = sha256_bytes(canonical_json(rows))
+    return result
+
+
+def _terminal_durability_candidates(
+    paths: Paths,
+    prepared: Mapping[str, Any],
+    *,
+    require_mounted_views: bool,
+) -> list[dict[str, Any]]:
+    """Describe one stable syncfs anchor for every possibly mutated device."""
+
+    private_roots = prepared.get("private_roots")
+    if not isinstance(private_roots, dict):
+        fail("prepared state lacks private roots for its durability barrier")
+    initial = prepared_locked_window(prepared)
+    copies = initial.get("copies", {}).get("rows", {})
+    cache_copy = copies.get("cache_edb") if isinstance(copies, dict) else None
+    cache_source = cache_copy.get("source_root") if isinstance(cache_copy, dict) else None
+    live_edb_device = cache_source.get("device") if isinstance(cache_source, dict) else None
+    if type(live_edb_device) is not int:
+        fail("prepared state lacks the live EDB device authority")
+
+    raw: list[tuple[str, Path, Path, int | None]] = [
+        ("live-payload-root", paths.rooted("/usr"), paths.rooted("/usr"), None),
+        ("live-vdb", paths.vdb, paths.vdb, None),
+        (
+            "live-edb-counter",
+            Path(str(private_roots.get("live_cache_edb_view", ""))),
+            paths.cache_edb,
+            live_edb_device,
+        ),
+    ]
+    for key in (
+        "pkgdir",
+        "distdir_runtime",
+        "portage_tmpdir",
+        "portage_logdir",
+        "ccache_dir",
+        "thinlto_cache",
+        "cargo_home",
+        "rustup_home",
+        "var_lib_portage",
+        "cache_edb",
+        "etc",
+        "home",
+        "xdg_cache",
+    ):
+        value = private_roots.get(key)
+        if not isinstance(value, str):
+            fail(f"prepared state lacks durability root {key}")
+        raw.append((f"private-{key}", Path(value), Path(value), None))
+    loader = initial.get("loader_directories")
+    if not isinstance(loader, dict) or not isinstance(loader.get("rows"), list):
+        fail("prepared state lacks loader durability authority")
+    for index, row in enumerate(loader["rows"]):
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            fail("prepared loader durability row is invalid")
+        path = Path(row["path"])
+        raw.append((f"loader-{index:03d}", path, path, None))
+
+    candidates: list[dict[str, Any]] = []
+    for label, sync_path, authority_path, bound_device in raw:
+        if not sync_path.is_dir() or sync_path.is_symlink():
+            fail(f"terminal durability sync root is not a directory: {sync_path}")
+        if not authority_path.is_dir() or authority_path.is_symlink():
+            fail(
+                f"terminal durability authority root is not a directory: {authority_path}"
+            )
+        device = authority_path.stat().st_dev if bound_device is None else bound_device
+        if (
+            (bound_device is None or not require_mounted_views)
+            and authority_path.stat().st_dev != device
+        ):
+            fail(f"terminal durability authority device differs for {label}")
+        if require_mounted_views and sync_path.stat().st_dev != device:
+            fail(f"terminal durability mount device differs for {label}")
+        candidates.append(
+            {
+                "label": label,
+                "sync_path": os.fspath(sync_path),
+                "authority_path": os.fspath(authority_path),
+                "device": device,
+            }
+        )
+    selected: dict[int, dict[str, Any]] = {}
+    for row in sorted(candidates, key=lambda item: str(item["label"])):
+        selected.setdefault(int(row["device"]), row)
+    return [selected[device] for device in sorted(selected)]
+
+
+def perform_terminal_durability_barrier(
+    *,
+    paths: Paths,
+    prepared: Mapping[str, Any],
+    tools: Mapping[str, Path],
+    runner: Runner,
+) -> dict[str, Any]:
+    """Run bounded syncfs barriers before terminal evidence is published."""
+
+    sync_tool = tools.get("sync")
+    if sync_tool is None:
+        fail("tool authority lacks sync for the terminal durability barrier")
+    tool_identity = inspect_executable(sync_tool)
+    rows: list[dict[str, Any]] = []
+    for candidate in _terminal_durability_candidates(
+        paths, prepared, require_mounted_views=True
+    ):
+        argv = [os.fspath(sync_tool), "-f", "--", str(candidate["sync_path"])]
+        result = runner.run(
+            argv,
+            environment=clean_environment(),
+            timeout=120,
+        )
+        if result.status != 0:
+            fail(
+                "terminal durability barrier failed for "
+                f"{candidate['label']}: status={result.status}"
+            )
+        rows.append(
+            {
+                **candidate,
+                "argv_sha256": sha256_bytes(canonical_json(argv)),
+                "status": result.status,
+                "stdout_sha256": sha256_bytes(result.stdout),
+                "stderr_sha256": sha256_bytes(result.stderr),
+            }
+        )
+    result = {
+        "schema_version": 1,
+        "sync_tool": tool_identity,
+        "rows": rows,
+    }
+    result["rows_sha256"] = sha256_bytes(canonical_json(rows))
+    return result
+
+
+def validate_terminal_durability_barrier(
+    *,
+    paths: Paths,
+    prepared: Mapping[str, Any],
+    value: object,
+) -> dict[str, Any]:
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != 1
+        or not isinstance(value.get("rows"), list)
+    ):
+        fail("terminal durability barrier has an invalid schema")
+    tools = tools_from_manifest(prepared["authority"]["tools"])
+    if value.get("sync_tool") != inspect_executable(tools["sync"]):
+        fail("terminal durability barrier used a foreign sync executable")
+    expected = _terminal_durability_candidates(
+        paths, prepared, require_mounted_views=False
+    )
+    rows = value["rows"]
+    if len(rows) != len(expected):
+        fail("terminal durability barrier device coverage differs")
+    empty_sha = sha256_bytes(b"")
+    for recorded, candidate in zip(rows, expected, strict=True):
+        argv = [os.fspath(tools["sync"]), "-f", "--", str(candidate["sync_path"])]
+        if (
+            not isinstance(recorded, dict)
+            or {key: recorded.get(key) for key in candidate} != candidate
+            or recorded.get("argv_sha256") != sha256_bytes(canonical_json(argv))
+            or recorded.get("status") != 0
+            or recorded.get("stdout_sha256") != empty_sha
+            or recorded.get("stderr_sha256") != empty_sha
+        ):
+            fail("terminal durability barrier row differs from exact authority")
+    if value.get("rows_sha256") != sha256_bytes(canonical_json(rows)):
+        fail("terminal durability barrier digest differs")
+    return cast(dict[str, Any], value)
 
 
 def plan_environment(private_roots: Mapping[str, str], *, offline: bool) -> dict[str, str]:
     environment = clean_environment(
         {
             "CCACHE_DIR": private_roots["ccache_dir"],
+            "CARGO_HOME": private_roots["cargo_home"],
             "DISTDIR": private_roots["distdir_runtime"] if offline else private_roots["distdir_staging"],
             "EMERGE_LOG_DIR": private_roots["portage_logdir"],
             "EPYTHON": "python3.15",
+            "AUTOCLEAN": "no",
             # FEATURES is incremental in Portage.  Negative tokens remove only
             # external/compiler caches and concurrent package installation;
             # normal sandbox, userpriv, network-sandbox and pid-sandbox policy
             # remains sourced from the frozen configuration authority.
             "FEATURES": (
                 "-assume-digests -binpkg-signing -ccache -distcc "
-                "-icecream -parallel-install"
+                "-icecream -parallel-install -preserve-libs -unmerge-orphans noinfo "
+                "collision-protect protect-owned sandbox userpriv usersandbox "
+                "network-sandbox pid-sandbox merge-sync"
             ),
             "NOCOLOR": "1",
             "PKGDIR": private_roots["pkgdir"],
             "PORTAGE_BINHOST": "",
             "PORTAGE_LOGDIR": private_roots["portage_logdir"],
+            "PORTAGE_ELOG_SYSTEM": "echo",
             "PORTAGE_TMPDIR": private_roots["portage_tmpdir"],
+            "UNINSTALL_IGNORE": "",
             "TERM": "dumb",
             "HOME": private_roots["home"],
+            "RUSTUP_HOME": private_roots["rustup_home"],
             "TMPDIR": private_roots["portage_tmpdir"],
             "TMP": private_roots["portage_tmpdir"],
             "TEMP": private_roots["portage_tmpdir"],
@@ -2345,6 +4738,125 @@ def plan_environment(private_roots: Mapping[str, str], *, offline: bool) -> dict
             }
         )
     return environment
+
+
+def validate_frozen_portage_policy(authority: Mapping[str, Any]) -> None:
+    row = authority.get("portage_config")
+    if not isinstance(row, dict) or not isinstance(row.get("materialized_location"), str):
+        fail("prepared authority lacks frozen Portage configuration")
+    config_root = Path(row["materialized_location"])
+    post_emerge = config_root / "bin/post_emerge"
+    if path_exists(post_emerge):
+        fail("frozen Portage configuration contains a post_emerge hook")
+
+
+def effective_portage_policy(settings: Mapping[str, Any]) -> dict[str, Any]:
+    features = set(str(settings.get("FEATURES", "")).split())
+    required = {
+        "collision-protect",
+        "network-sandbox",
+        "pid-sandbox",
+        "protect-owned",
+        "sandbox",
+        "merge-sync",
+        "userpriv",
+        "usersandbox",
+    }
+    forbidden = {
+        "assume-digests",
+        "binpkg-signing",
+        "parallel-install",
+        "preserve-libs",
+        "unmerge-orphans",
+    }
+    if not required <= features or forbidden & features:
+        fail(
+            "effective Portage FEATURES differ from the transaction policy: "
+            f"missing={sorted(required - features)} "
+            f"forbidden={sorted(forbidden & features)}"
+        )
+    if str(settings.get("AUTOCLEAN", "")).strip().lower() != "no":
+        fail("effective Portage AUTOCLEAN is not exactly disabled")
+    if str(settings.get("UNINSTALL_IGNORE", "")).strip():
+        fail("effective Portage UNINSTALL_IGNORE is not empty")
+    return {
+        "schema_version": 1,
+        "features": sorted(features),
+        "autoclean": "no",
+        "uninstall_ignore": "",
+        "install_mask": str(settings.get("INSTALL_MASK", "")),
+        "config_protect": str(settings.get("CONFIG_PROTECT", "")),
+        "config_protect_mask": str(settings.get("CONFIG_PROTECT_MASK", "")),
+    }
+
+
+NATIVE_BUILD_COMMAND_DEFAULTS: dict[str, str] = {
+    "AR": "ar",
+    "CC": "cc",
+    "CPP": "cpp",
+    "CXX": "c++",
+    "LD": "ld",
+    "NM": "nm",
+    "PKG_CONFIG": "pkg-config",
+    "RANLIB": "ranlib",
+    "STRIP": "strip",
+}
+
+
+def native_toolchain_authority(settings: Mapping[str, Any]) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for variable, default in sorted(NATIVE_BUILD_COMMAND_DEFAULTS.items()):
+        configured = str(settings.get(variable, "") or default)
+        words = shlex.split(configured)
+        if len(words) != 1 or "\0" in words[0]:
+            fail(f"effective Portage {variable} is not one exact executable")
+        resolved_value = shutil.which(words[0], path=clean_environment()["PATH"])
+        if resolved_value is None:
+            fail(f"effective Portage {variable} executable is unavailable: {words[0]}")
+        resolved = Path(resolved_value).resolve(strict=True)
+        result = subprocess.run(
+            [os.fspath(resolved), "--version"],
+            env=clean_environment(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=60,
+            check=False,
+        )
+        if result.returncode != 0:
+            fail(f"cannot observe effective Portage {variable} version")
+        rows.append(
+            {
+                "variable": variable,
+                "configured": configured,
+                "resolved": os.fspath(resolved),
+                "executable": inspect_executable(resolved),
+                "stdout": result.stdout.decode("utf-8", errors="strict"),
+                "stderr": result.stderr.decode("utf-8", errors="strict"),
+            }
+        )
+    return {
+        "schema_version": 1,
+        "execution_path": TRANSACTION_PATH,
+        "rows": rows,
+        "rows_sha256": sha256_bytes(canonical_json(rows)),
+    }
+
+
+def revalidate_native_toolchain(value: object) -> None:
+    if (
+        not isinstance(value, dict)
+        or value.get("execution_path") != TRANSACTION_PATH
+        or not isinstance(value.get("rows"), list)
+    ):
+        fail("native build-tool authority is invalid")
+    settings = {
+        str(row.get("variable")): str(row.get("configured"))
+        for row in value["rows"]
+        if isinstance(row, dict)
+    }
+    if native_toolchain_authority(settings) != value:
+        fail("effective native build-tool authority changed")
 
 
 def emerge_options() -> list[str]:
@@ -2386,6 +4898,105 @@ def tools_from_manifest(value: object) -> dict[str, Path]:
     return tools
 
 
+BUILD_VERSION_ARGUMENTS: dict[str, tuple[str, ...]] = {
+    "cargo": ("--version",),
+    "emerge": ("--version",),
+    "gpep517": ("--help",),
+    "meson": ("--version",),
+    "maturin": ("--version",),
+    "ninja": ("--version",),
+    "python": ("--version",),
+    "rustc": ("-vV",),
+}
+
+
+def build_tool_version_authority(
+    tools: Mapping[str, Path], runner: Runner
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for name, arguments in sorted(BUILD_VERSION_ARGUMENTS.items()):
+        path = tools.get(name)
+        if path is None:
+            fail(f"build-tool authority lacks {name}")
+        result = runner.run(
+            [os.fspath(path), *arguments],
+            environment=clean_environment({"EPYTHON": "python3.15"}),
+            timeout=60,
+        )
+        if result.status != 0:
+            fail(f"cannot observe exact {name} version: status={result.status}")
+        rows.append(
+            {
+                "name": name,
+                "path": os.fspath(path),
+                "arguments": list(arguments),
+                "stdout": result.stdout.decode("utf-8", errors="strict"),
+                "stderr": result.stderr.decode("utf-8", errors="strict"),
+                "executable": inspect_executable(path),
+            }
+        )
+    return {
+        "schema_version": 1,
+        "rows": rows,
+        "rows_sha256": sha256_bytes(canonical_json(rows)),
+    }
+
+
+def revalidate_build_tool_versions(value: object) -> None:
+    if not isinstance(value, dict) or not isinstance(value.get("rows"), list):
+        fail("build-tool version authority is invalid")
+    tools = {
+        str(row.get("name")): Path(str(row.get("path")))
+        for row in value["rows"]
+        if isinstance(row, dict)
+    }
+    current = build_tool_version_authority(tools, SubprocessRunner())
+    if current != value:
+        fail("build-tool binary or reported version changed")
+
+
+def build_execution_scope(
+    plan_metadata: Mapping[str, Any], tools: Mapping[str, Path]
+) -> dict[str, Any]:
+    inherited = sorted(
+        {
+            str(eclass)
+            for row in plan_metadata.get("rows", [])
+            for eclass in row.get("inherited", [])
+        }
+    )
+    required = {"emerge", "gpep517", "python"}
+    if {"cargo", "rust", "maturin"} & set(inherited):
+        required.update({"cargo", "rustc"})
+    if {"meson", "meson-python", "meson-r1"} & set(inherited):
+        required.update({"meson", "ninja"})
+    backends = {
+        str(row.get("pep517_backend")) for row in plan_metadata.get("rows", [])
+    }
+    if "maturin" in backends:
+        required.add("maturin")
+    missing = sorted(required - set(tools))
+    if missing:
+        fail("derived build-tool scope is unavailable: " + ", ".join(missing))
+    rows = [
+        {"name": name, "path": os.fspath(tools[name])}
+        for name in sorted(required)
+    ]
+    return {
+        "schema_version": 1,
+        "derived_from_inherited_eclasses": inherited,
+        "declared_pep517_backends": sorted(backends),
+        "reviewed_tools": rows,
+        "reviewed_tools_sha256": sha256_bytes(canonical_json(rows)),
+        "scope": (
+            "explicit coordinator and eclass-derived build tools; arbitrary ebuild "
+            "commands remain authorized only by the complete frozen repository, "
+            "ebuild, eclass, sandbox, and admitted-payload authorities"
+        ),
+        "claims_exhaustive_runtime_exec_closure": False,
+    }
+
+
 def authority_mount_bindings(
     authority: Mapping[str, Any], private_roots: Mapping[str, str]
 ) -> list[MountBinding]:
@@ -2395,6 +5006,14 @@ def authority_mount_bindings(
     if not isinstance(repositories, list) or not repositories:
         fail("prepared authority has no repository vector")
     bindings: list[MountBinding] = []
+    private_etc = private_roots.get("etc")
+    live_etc = private_roots.get("live_etc")
+    if not isinstance(private_etc, str) or not isinstance(live_etc, str):
+        fail("private roots lack complete /etc authority")
+    # Expose a private writable /etc first, then seal the durable source path.
+    # Nested configuration binds below therefore land inside the private view.
+    bindings.append(MountBinding(Path(private_etc), Path(live_etc), False))
+    bindings.append(MountBinding(Path(private_etc), Path(private_etc), True))
     for repository in repositories:
         if not isinstance(repository, dict):
             fail("prepared repository authority row is invalid")
@@ -2450,6 +5069,14 @@ def authority_mount_bindings(
         if not isinstance(source, str) or not isinstance(target, str):
             fail(f"private root authority lacks {key} mount endpoints")
         bindings.append(MountBinding(Path(source), Path(target), False))
+        bindings.append(MountBinding(Path(source), Path(source), True))
+    thinlto, live_thinlto = private_roots.get("thinlto_cache"), private_roots.get(
+        "live_thinlto_cache"
+    )
+    if not isinstance(thinlto, str) or not isinstance(live_thinlto, str):
+        fail("private roots lack ThinLTO cache mount endpoints")
+    bindings.append(MountBinding(Path(thinlto), Path(live_thinlto), False))
+    bindings.append(MountBinding(Path(thinlto), Path(thinlto), True))
     targets = [binding.target.resolve(strict=True) for binding in bindings]
     if len(targets) != len(set(targets)):
         fail("contained Portage authority repeats a mount target")
@@ -2734,6 +5361,8 @@ def publish_child_completion(
     vdb: Mapping[str, Any],
     logs: Mapping[str, Any],
     checks: Mapping[str, Any],
+    payload_admissions: Sequence[Mapping[str, Any]],
+    post_emerge_authority: Mapping[str, Any],
 ) -> tuple[dict[str, Any], str]:
     if outcome not in {"success", "rolled-back"}:
         fail(f"invalid child-completion outcome: {outcome}")
@@ -2764,8 +5393,13 @@ def publish_child_completion(
         "vdb_sha256": sha256_bytes(canonical_json(vdb)),
         "logs": dict(logs),
         "checks": dict(checks),
+        "payload_admissions": [dict(row) for row in payload_admissions],
+        "post_emerge_authority": dict(post_emerge_authority),
     }
-    digest = atomic_publish_noreplace(paths.child_completion, canonical_json(record))
+    payload = canonical_json(record)
+    if len(payload) > RECOVERY_EVIDENCE_MAX_BYTES:
+        fail("child-completion evidence exceeds its reviewed 512 MiB bound")
+    digest = atomic_publish_noreplace(paths.child_completion, payload)
     return record, digest
 
 
@@ -2793,6 +5427,8 @@ def validate_child_completion(
         "vdb_sha256",
         "logs",
         "checks",
+        "payload_admissions",
+        "post_emerge_authority",
     }
     if (
         not isinstance(value, dict)
@@ -2806,11 +5442,16 @@ def validate_child_completion(
         or not isinstance(value.get("counter"), dict)
         or not isinstance(value.get("logs"), dict)
         or not isinstance(value.get("checks"), dict)
+        or not isinstance(value.get("payload_admissions"), list)
+        or not isinstance(value.get("post_emerge_authority"), dict)
     ):
         fail("child-completion authority has an invalid schema or binding")
     require_sha256(value.get("control_session_sha256"), "control session digest")
     require_sha256(value.get("decision_state_sha256"), "decision state digest")
     require_sha256(value.get("vdb_sha256"), "completion VDB digest")
+    validate_inline_authority(
+        value.get("post_emerge_authority"), "child-completion post-emerge authority"
+    )
     source_status = value.get("source_status")
     rollback_status = value.get("rollback_status")
     if type(source_status) is not int or not 0 <= source_status <= 255:
@@ -2830,6 +5471,8 @@ def verify_child_completion_evidence(value: Mapping[str, Any]) -> None:
     ):
         verify_evidence_reference(logs, path_key, digest_key)
     checks = value["checks"]
+    for row in value["payload_admissions"]:
+        verify_evidence_reference(row, "path", "sha256")
     if value["outcome"] == "success":
         qcheck = checks.get("qcheck")
         if not isinstance(qcheck, list):
@@ -2840,6 +5483,10 @@ def verify_child_completion_evidence(value: Mapping[str, Any]) -> None:
             checks,
             "private_pkgdir_report",
             "private_pkgdir_report_sha256",
+        )
+        validate_inline_authority(
+            checks.get("payload_authority"),
+            "child-completion success payload authority",
         )
 
 
@@ -2860,7 +5507,7 @@ def await_exact_portage_prompt(
         if displayed.count(prompt) == 1 and displayed.endswith(prompt):
             plan = parse_pretend_output(
                 displayed.decode("utf-8", errors="strict"),
-                set(prepared["resolver"]["vdb_before"]["cpvs"]),
+                set(prepared_vdb(prepared)["cpvs"]),
             )
             compare_plans(prepared["plan"], plan)
             return plan, displayed
@@ -2977,6 +5624,7 @@ def run_armed_source_child(
     tools: Mapping[str, Path],
     runner: Runner,
     timeout: float,
+    held_locks: HeldStableLocks,
 ) -> tuple[CommandResult, dict[str, Any], dict[str, Any], str]:
     """Authorize the displayed in-memory graph, then grant exact execution."""
 
@@ -3062,7 +5710,7 @@ def run_armed_source_child(
                     canonical_json(expected_emerge_arguments)
                 ),
                 "vdb_sha256": sha256_bytes(
-                    canonical_json(prepared["resolver"]["vdb_before"])
+                    canonical_json(prepared_vdb(prepared))
                 ),
                 "vardb_root": os.fspath(paths.vdb),
             }:
@@ -3081,12 +5729,18 @@ def run_armed_source_child(
                 prepared["private_roots"],
                 prepared["resolver"]["private_portage_outputs_before"],
             )
-            compare_vdb(prepared["resolver"]["vdb_before"], vdb_manifest(paths.vdb))
-            if file_observation(paths.cache_edb / "counter") != prepared["resolver"].get(
-                "live_counter_before"
+            compare_vdb(prepared_vdb(prepared), vdb_manifest(paths.vdb))
+            if file_observation(paths.cache_edb / "counter") != prepared_locked_value(
+                prepared, "counter"
             ):
                 fail("live EDB counter changed before transaction arming")
-            verify_selected_sets(paths, prepared["resolver"]["selected_sets_before"])
+            verify_selected_sets(
+                paths,
+                prepared_locked_value(prepared, "selected_sets"),
+                ignored_cache_names=attributable_counter_partial_names(
+                    prepared, paths.cache_edb
+                ),
+            )
             armed = next_state(
                 prepared,
                 prepared_sha,
@@ -3097,6 +5751,7 @@ def run_armed_source_child(
                     "displayed_prefix_sha256": sha256_bytes(displayed),
                 },
             )
+            held_locks.revalidate()
             _armed_path, armed_sha = publish_state(paths, armed)
             if os.write(pty_master, b"Yes\n") != 4:
                 fail("short exact Portage authorization grant")
@@ -3111,7 +5766,7 @@ def run_armed_source_child(
             if type(status) is not int or not 0 <= status <= 255:
                 fail("Portage action control status is invalid")
             delta = classify_vdb_delta(
-                prepared["resolver"]["vdb_before"],
+                prepared_vdb(prepared),
                 vdb_manifest(paths.vdb),
                 prepared["plan"],
             )
@@ -3120,12 +5775,10 @@ def run_armed_source_child(
             if status == 0 and delta["exact_success_delta"]:
                 try:
                     verify_frozen_authorities(paths, prepared)
-                    verify_private_portage_outputs(
-                        prepared["private_roots"],
-                        prepared["resolver"]["private_portage_outputs_before"],
-                    )
-                    verify_selected_sets(
-                        paths, prepared["resolver"]["selected_sets_before"]
+                    verify_declared_post_emerge_authority(
+                        paths=paths,
+                        prepared=prepared,
+                        outcome="success",
                     )
                     checks = verify_success_artifacts(
                         paths=paths,
@@ -3158,6 +5811,8 @@ def run_armed_source_child(
                         "source_status": status,
                         "postcheck_error": postcheck_error,
                         "delta": delta,
+                        "source_action_completed": True,
+                        "authenticated_action_complete": True,
                     },
                 )
                 _rollback_path, rollback_sha = publish_state(paths, rollback)
@@ -3182,6 +5837,8 @@ def run_armed_source_child(
                 "vdb_sha256",
                 "stdout_size",
                 "stderr_size",
+                "payload_admissions",
+                "post_emerge_authority",
             }
             if (
                 set(terminal_ready) != required_terminal_keys
@@ -3191,6 +5848,8 @@ def run_armed_source_child(
                 or not isinstance(terminal_ready.get("counter"), dict)
                 or type(terminal_ready.get("stdout_size")) is not int
                 or type(terminal_ready.get("stderr_size")) is not int
+                or not isinstance(terminal_ready.get("payload_admissions"), list)
+                or not isinstance(terminal_ready.get("post_emerge_authority"), dict)
             ):
                 fail("held-lock terminal control authority is invalid")
             if expected_outcome == "success":
@@ -3198,6 +5857,40 @@ def run_armed_source_child(
                     fail("successful child unexpectedly reported rollback status")
             elif terminal_ready.get("rollback_status") != 0:
                 fail("held-lock rollback did not report exact success")
+            payload_admissions = terminal_ready["payload_admissions"]
+            planned_cpvs = sorted(row["cpv"] for row in prepared["plan"]["rows"])
+            admitted_cpvs = sorted(
+                str(row.get("cpv", ""))
+                for row in payload_admissions
+                if isinstance(row, dict)
+            )
+            if expected_outcome == "success" and admitted_cpvs != planned_cpvs:
+                fail("successful child lacks one exact payload admission per planned CPV")
+            for row in payload_admissions:
+                verify_evidence_reference(row, "path", "sha256")
+            if expected_outcome == "success":
+                if checks is None:
+                    fail("successful source action lacks artifact checks")
+                checks = dict(checks)
+                checks["payload_authority"] = inline_authority(
+                    verify_success_payload_authority(
+                        references=payload_admissions,
+                        prepared=prepared,
+                        prepared_sha256=prepared_sha,
+                        control_session_sha256=sha256_bytes(
+                            parent_control.session.encode("ascii")
+                        ),
+                        vdb=paths.vdb,
+                    )
+                )
+            else:
+                verify_payload_rollback_authorities(
+                    payload_admissions, prepared["plan"]
+                )
+            child_post_emerge = validate_inline_authority(
+                terminal_ready["post_emerge_authority"],
+                "held-lock child post-emerge authority",
+            )
             current_vdb = vdb_manifest(paths.vdb)
             if terminal_ready.get("vdb_sha256") != sha256_bytes(
                 canonical_json(current_vdb)
@@ -3220,28 +5913,26 @@ def run_armed_source_child(
                 "counter_reconciliation": terminal_ready["counter"],
                 "postcheck_error": postcheck_error,
             }
-            if expected_outcome == "success":
-                verify_frozen_authorities(paths, prepared)
-                verify_private_portage_outputs(
-                    prepared["private_roots"],
-                    prepared["resolver"]["private_portage_outputs_before"],
+            verify_frozen_authorities(paths, prepared)
+            child_durability = child_post_emerge["value"].get(
+                "terminal_durability"
+            )
+            post_emerge_authority = inline_authority(
+                verify_declared_post_emerge_authority(
+                    paths=paths,
+                    prepared=prepared,
+                    outcome=expected_outcome,
+                    terminal_durability=child_durability,
                 )
-                verify_selected_sets(paths, prepared["resolver"]["selected_sets_before"])
-                final_delta = classify_vdb_delta(
-                    prepared["resolver"]["vdb_before"], current_vdb, prepared["plan"]
+            )
+            if child_post_emerge != post_emerge_authority:
+                fail(
+                    "held-lock child and coordinator post-emerge authorities differ"
                 )
-                if not final_delta["exact_success_delta"]:
-                    fail("success delta changed before terminal publication")
-            else:
-                compare_vdb(prepared["resolver"]["vdb_before"], current_vdb)
-                verify_private_portage_outputs(
-                    prepared["private_roots"],
-                    prepared["resolver"]["private_portage_outputs_before"],
-                )
-                verify_selected_sets(paths, prepared["resolver"]["selected_sets_before"])
-                final_delta = classify_vdb_delta(
-                    prepared["resolver"]["vdb_before"], current_vdb, prepared["plan"]
-                )
+            final_delta = cast(
+                dict[str, Any],
+                post_emerge_authority["value"]["vdb"],
+            )
             completion, completion_sha = publish_child_completion(
                 paths=paths,
                 prepared_sha=prepared_sha,
@@ -3256,6 +5947,8 @@ def run_armed_source_child(
                 vdb=current_vdb,
                 logs=log_evidence,
                 checks=checks or {},
+                payload_admissions=payload_admissions,
+                post_emerge_authority=post_emerge_authority,
             )
             completion_ref = {
                 "path": os.fspath(paths.child_completion),
@@ -3271,6 +5964,7 @@ def run_armed_source_child(
                         "source": evidence,
                         "delta": final_delta,
                         "checks": checks,
+                        "post_emerge_authority": post_emerge_authority,
                         "child_completion": completion_ref,
                     },
                 )
@@ -3283,9 +5977,11 @@ def run_armed_source_child(
                     outcome={
                         "source": evidence,
                         "delta": final_delta,
+                        "post_emerge_authority": post_emerge_authority,
                         "child_completion": completion_ref,
                     },
                 )
+            held_locks.revalidate()
             terminal_path, terminal_sha = publish_state(paths, terminal_state)
             parent_control.send(
                 "FINALIZE",
@@ -3370,6 +6066,516 @@ def rollback_emerge_arguments(atoms: Sequence[str]) -> list[str]:
     ]
 
 
+def admit_merge_image_payload(
+    *,
+    mergeroot: Path,
+    cpv: str,
+    prepared: Mapping[str, Any],
+    observed_destinations: dict[str, dict[str, Any]],
+    prepared_sha256: str,
+    control_session: str,
+) -> dict[str, Any]:
+    """Inspect the completed image immediately before Portage can touch live ROOT."""
+
+    if cpv not in {str(row["cpv"]) for row in prepared["plan"]["rows"]}:
+        fail(f"Portage attempted to merge an object outside the exact plan: {cpv}")
+    manifest = tree_manifest(mergeroot)
+    loader_roots = {
+        Path(str(row["path"]))
+        for row in prepared_locked_value(prepared, "loader_directories")["rows"]
+    }
+    forbidden_prefixes = (
+        Path("/etc/env.d"),
+        Path("/run"),
+        Path("/var/cache/edb"),
+        Path("/var/db/pkg"),
+        Path("/var/lib/gentoo-optimization"),
+        Path("/var/lib/portage"),
+    )
+    paths: list[str] = []
+    for row in manifest["rows"]:
+        destination = Path("/") / str(row["path"])
+        if any(
+            destination == prefix or destination.is_relative_to(prefix)
+            for prefix in forbidden_prefixes
+        ):
+            fail(f"planned image targets transaction authority: {cpv}: {destination}")
+        if row.get("xattrs") != []:
+            fail(f"planned image contains unreviewed extended attributes: {cpv}: {destination}")
+        if int(row.get("mode", 0)) & (stat.S_ISUID | stat.S_ISGID):
+            fail(f"planned image contains set-id metadata: {cpv}: {destination}")
+        if row.get("type") == "file" and row.get("nlink") != 1:
+            fail(f"planned image contains a hard-linked regular file: {cpv}: {destination}")
+        live_destination = object_observation(destination)
+        if live_destination.get("type") != "absent":
+            if (
+                row.get("type") != "directory"
+                or live_destination.get("type") != "directory"
+            ):
+                fail(
+                    f"planned image collides with a pre-existing object: {cpv}: {destination}"
+                )
+            for key in ("uid", "gid", "mode"):
+                if row.get(key) != live_destination.get(key):
+                    fail(
+                        f"planned directory scaffold metadata differs: {cpv}: {destination}"
+                    )
+            if live_destination.get("xattrs") != []:
+                fail(
+                    f"planned directory scaffold has unreviewed xattrs: {cpv}: {destination}"
+                )
+        if destination in loader_roots or destination.parent in loader_roots:
+            if (
+                row.get("type") != "directory"
+                or live_destination.get("type") != "directory"
+            ):
+                fail(
+                    f"planned image directly targets a loader directory: {cpv}: {destination}"
+                )
+            for key in ("uid", "gid", "mode"):
+                if row.get(key) != live_destination.get(key):
+                    fail(
+                        f"planned loader scaffold metadata differs: {cpv}: {destination}"
+                    )
+        paths.append(os.fspath(destination))
+    new_observations: list[dict[str, Any]] = []
+    for value in sorted(set(paths)):
+        destination = Path(value)
+        candidates = [destination]
+        parent = destination.parent
+        while parent != Path("/"):
+            candidates.append(parent)
+            parent = parent.parent
+        for candidate in reversed(candidates):
+            key = os.fspath(candidate)
+            if key not in observed_destinations:
+                observation = object_observation(candidate)
+                observed_destinations[key] = observation
+                new_observations.append(observation)
+    destination_paths = sorted(set(paths))
+    record = {
+        "schema": "gentoo-optimization-jsonschema-payload-admission-v1",
+        "transaction_id": prepared["transaction_id"],
+        "prepared_state_sha256": require_sha256(
+            prepared_sha256, "payload admission prepared digest"
+        ),
+        "control_session_sha256": sha256_bytes(control_session.encode("ascii")),
+        "cpv": cpv,
+        "mergeroot": os.fspath(mergeroot.resolve(strict=True)),
+        "manifest": manifest,
+        "manifest_sha256": sha256_bytes(canonical_json(manifest)),
+        "preexisting_destinations": new_observations,
+        "preexisting_destinations_sha256": sha256_bytes(
+            canonical_json(new_observations)
+        ),
+        "destination_paths": destination_paths,
+        "destination_paths_sha256": sha256_bytes(
+            ("\n".join(destination_paths) + "\n").encode()
+        ),
+    }
+    report = Path(str(prepared["evidence"]["directory"]))
+    destination = report / (
+        "payload-admission-" + sha256_bytes(cpv.encode("utf-8")) + ".json"
+    )
+    digest = atomic_publish_noreplace(destination, canonical_json(record))
+    return {
+        "cpv": cpv,
+        "path": os.fspath(destination),
+        "sha256": digest,
+        "manifest_sha256": record["manifest_sha256"],
+        "preexisting_destinations_sha256": record[
+            "preexisting_destinations_sha256"
+        ],
+    }
+
+
+def validate_payload_admission_record(
+    *,
+    record: object,
+    path: Path,
+    prepared: Mapping[str, Any],
+    prepared_sha256: str,
+    control_session_sha256: str,
+) -> dict[str, Any]:
+    required = {
+        "schema",
+        "transaction_id",
+        "prepared_state_sha256",
+        "control_session_sha256",
+        "cpv",
+        "mergeroot",
+        "manifest",
+        "manifest_sha256",
+        "preexisting_destinations",
+        "preexisting_destinations_sha256",
+        "destination_paths",
+        "destination_paths_sha256",
+    }
+    planned = {str(row["cpv"]) for row in prepared["plan"]["rows"]}
+    if (
+        not isinstance(record, dict)
+        or set(record) != required
+        or record.get("schema")
+        != "gentoo-optimization-jsonschema-payload-admission-v1"
+        or record.get("transaction_id") != prepared["transaction_id"]
+        or record.get("prepared_state_sha256") != prepared_sha256
+        or record.get("control_session_sha256") != control_session_sha256
+        or record.get("cpv") not in planned
+        or not isinstance(record.get("manifest"), dict)
+        or not isinstance(record.get("preexisting_destinations"), list)
+        or not isinstance(record.get("destination_paths"), list)
+    ):
+        fail("durable payload admission has an invalid schema or binding")
+    cpv = str(record["cpv"])
+    expected_path = path.parent / (
+        "payload-admission-" + sha256_bytes(cpv.encode("utf-8")) + ".json"
+    )
+    if (
+        path.parent != Path(str(prepared["evidence"]["directory"]))
+        or path != expected_path
+    ):
+        fail("payload admission path differs from its exact CPV identity")
+    manifest = cast(dict[str, Any], record["manifest"])
+    rows = _manifest_rows(manifest, "payload image")
+    if (
+        manifest.get("rows_sha256")
+        != sha256_bytes(canonical_json(manifest.get("rows")))
+        or record.get("manifest_sha256")
+        != sha256_bytes(canonical_json(manifest))
+    ):
+        fail("payload admission image manifest digest differs")
+    destinations = sorted("/" + relative for relative in rows)
+    if (
+        record.get("destination_paths") != destinations
+        or record.get("destination_paths_sha256")
+        != sha256_bytes(("\n".join(destinations) + "\n").encode())
+        or record.get("preexisting_destinations_sha256")
+        != sha256_bytes(canonical_json(record["preexisting_destinations"]))
+    ):
+        fail("payload admission destination authority digest differs")
+    observed_paths: set[str] = set()
+    for observation in record["preexisting_destinations"]:
+        if (
+            not isinstance(observation, dict)
+            or not isinstance(observation.get("path"), str)
+            or observation["path"] in observed_paths
+            or not Path(observation["path"]).is_absolute()
+        ):
+            fail("payload admission contains an invalid destination observation")
+        observed_paths.add(observation["path"])
+    if not set(destinations) <= observed_paths:
+        fail("payload admission lacks an observation for an image destination")
+    return record
+
+
+def load_payload_admission_references(
+    *,
+    prepared: Mapping[str, Any],
+    prepared_sha256: str,
+    control_session: str,
+) -> list[dict[str, Any]]:
+    report = Path(str(prepared["evidence"]["directory"]))
+    rows: list[dict[str, Any]] = []
+    for path in sorted(report.glob("payload-admission-*.json"), key=lambda item: item.name):
+        record = read_json_regular(path, "durable payload admission")
+        record = validate_payload_admission_record(
+            record=record,
+            path=path,
+            prepared=prepared,
+            prepared_sha256=prepared_sha256,
+            control_session_sha256=sha256_bytes(control_session.encode("ascii")),
+        )
+        rows.append(
+            {
+                "cpv": record["cpv"],
+                "path": os.fspath(path),
+                "sha256": sha256_file(path),
+                "manifest_sha256": record.get("manifest_sha256"),
+                "preexisting_destinations_sha256": record.get(
+                    "preexisting_destinations_sha256"
+                ),
+            }
+        )
+    if len({row["cpv"] for row in rows}) != len(rows):
+        fail("durable payload admissions repeat one planned CPV")
+    return sorted(rows, key=lambda row: row["cpv"])
+
+
+def load_existing_payload_admission_references(
+    *,
+    prepared: Mapping[str, Any],
+    prepared_sha256: str,
+    control_session_sha256: str,
+) -> list[dict[str, Any]]:
+    require_sha256(control_session_sha256, "payload control-session digest")
+    report = Path(str(prepared["evidence"]["directory"]))
+    rows: list[dict[str, Any]] = []
+    for path in sorted(report.glob("payload-admission-*.json"), key=lambda item: item.name):
+        record = read_json_regular(path, "durable payload admission")
+        record = validate_payload_admission_record(
+            record=record,
+            path=path,
+            prepared=prepared,
+            prepared_sha256=prepared_sha256,
+            control_session_sha256=control_session_sha256,
+        )
+        rows.append(
+            {
+                "cpv": record["cpv"],
+                "path": os.fspath(path),
+                "sha256": sha256_file(path),
+                "manifest_sha256": record.get("manifest_sha256"),
+                "preexisting_destinations_sha256": record.get(
+                    "preexisting_destinations_sha256"
+                ),
+            }
+        )
+    if len({row["cpv"] for row in rows}) != len(rows):
+        fail("existing payload admissions repeat one CPV")
+    return sorted(rows, key=lambda row: row["cpv"])
+
+
+def verify_payload_rollback_authorities(rows: object, plan: Mapping[str, Any]) -> None:
+    if not isinstance(rows, list):
+        fail("payload-admission authority is not a list")
+    seen_cpvs: set[str] = set()
+    references: dict[str, Mapping[str, Any]] = {}
+    observations_by_path: dict[str, list[dict[str, Any]]] = {}
+    for reference in rows:
+        if (
+            not isinstance(reference, dict)
+            or not isinstance(reference.get("cpv"), str)
+            or reference["cpv"] in seen_cpvs
+        ):
+            fail("payload-admission reference is invalid or duplicated")
+        seen_cpvs.add(reference["cpv"])
+        references[reference["cpv"]] = reference
+        verify_evidence_reference(reference, "path", "sha256")
+        record = read_json_regular(Path(reference["path"]), "payload admission")
+        if (
+            not isinstance(record, dict)
+            or record.get("schema")
+            != "gentoo-optimization-jsonschema-payload-admission-v1"
+            or record.get("cpv") != reference["cpv"]
+            or record.get("manifest_sha256") != reference.get("manifest_sha256")
+            or record.get("preexisting_destinations_sha256")
+            != reference.get("preexisting_destinations_sha256")
+            or record.get("preexisting_destinations_sha256")
+            != sha256_bytes(canonical_json(record.get("preexisting_destinations")))
+        ):
+            fail("payload-admission record differs from its durable reference")
+        for observation in record["preexisting_destinations"]:
+            if not isinstance(observation, dict) or not isinstance(
+                observation.get("path"), str
+            ):
+                fail("payload-admission destination observation is invalid")
+            observations_by_path.setdefault(observation["path"], []).append(
+                observation
+            )
+
+    planned = {atom[1:].split("::", 1)[0] for atom in exact_plan_atoms(plan)}
+    if not seen_cpvs <= planned:
+        fail("payload admission names a package outside the reviewed plan")
+
+    # MergeProcess is forked by Portage.  Receipt publication is durable, but
+    # an in-memory list cannot establish an ordering across those children.
+    # Therefore never guess which of two differing non-absent observations was
+    # the original.  An absent observation is unambiguous (the path did not
+    # exist before at least one package created it); otherwise all observations
+    # must agree exactly before a rolled-back claim is possible.
+    original_observations: dict[str, dict[str, Any]] = {}
+    for path, candidates in observations_by_path.items():
+        absent = [row for row in candidates if row.get("type") == "absent"]
+        if absent:
+            original_observations[path] = absent[0]
+            continue
+        first = candidates[0]
+        comparable_first = (
+            _stable_directory_observation(first)
+            if first.get("type") == "directory"
+            else first
+        )
+        if any(
+            (
+                _stable_directory_observation(candidate)
+                if candidate.get("type") == "directory"
+                else candidate
+            )
+            != comparable_first
+            for candidate in candidates[1:]
+        ):
+            fail(
+                "payload admissions contain ambiguous pre-merge authority: " + path
+            )
+        original_observations[path] = first
+
+    for path, observation in original_observations.items():
+        current = object_observation(Path(path))
+        matches = (
+            _stable_directory_observation(current)
+            == _stable_directory_observation(observation)
+            if observation.get("type") == "directory"
+            else current == observation
+        )
+        if not matches:
+            fail(
+                "rolled-back payload destination differs from pre-merge authority: "
+                + path
+            )
+
+
+def _stable_directory_observation(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value.get(key)
+        for key in ("path", "type", "device", "inode", "uid", "gid", "mode", "xattrs")
+    }
+
+
+def verify_success_payload_authority(
+    *,
+    references: object,
+    prepared: Mapping[str, Any],
+    prepared_sha256: str,
+    control_session_sha256: str,
+    vdb: Path,
+) -> dict[str, Any]:
+    """Prove installed objects against the exact fork-child image receipts."""
+
+    if not isinstance(references, list):
+        fail("successful payload authority is not a reference vector")
+    planned = {str(row["cpv"]) for row in prepared["plan"]["rows"]}
+    records: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for reference in references:
+        if not isinstance(reference, dict):
+            fail("successful payload reference is not an object")
+        verify_evidence_reference(reference, "path", "sha256")
+        path = Path(str(reference["path"]))
+        record = validate_payload_admission_record(
+            record=read_json_regular(path, "successful payload admission"),
+            path=path,
+            prepared=prepared,
+            prepared_sha256=prepared_sha256,
+            control_session_sha256=control_session_sha256,
+        )
+        cpv = str(record["cpv"])
+        if cpv in seen:
+            fail("successful payload admission repeats one planned CPV")
+        seen.add(cpv)
+        records.append(record)
+    if seen != planned:
+        fail("successful payload admissions do not equal the exact plan")
+
+    image_rows: dict[str, dict[str, Any]] = {}
+    original_rows: dict[str, list[dict[str, Any]]] = {}
+    per_cpv_paths: dict[str, list[str]] = {}
+    for record in records:
+        cpv = str(record["cpv"])
+        per_cpv_paths[cpv] = list(record["destination_paths"])
+        for relative, row in _manifest_rows(
+            record["manifest"], f"{cpv} admitted image"
+        ).items():
+            destination = "/" + relative
+            existing = image_rows.get(destination)
+            if existing is not None:
+                if row.get("type") != "directory" or existing.get("type") != "directory":
+                    fail("planned package images overlap a non-directory object: " + destination)
+                for key in ("type", "uid", "gid", "mode", "xattrs"):
+                    if row.get(key) != existing.get(key):
+                        fail("planned package images disagree on directory metadata: " + destination)
+            else:
+                image_rows[destination] = row
+        for observation in record["preexisting_destinations"]:
+            original_rows.setdefault(str(observation["path"]), []).append(observation)
+
+    observations: dict[str, dict[str, Any]] = {}
+    for path, candidates in original_rows.items():
+        absent = [candidate for candidate in candidates if candidate.get("type") == "absent"]
+        if absent:
+            observations[path] = absent[0]
+            continue
+        stable = _stable_directory_observation(candidates[0])
+        if any(
+            _stable_directory_observation(candidate) != stable
+            for candidate in candidates[1:]
+        ):
+            fail("successful payload receipts disagree on pre-existing authority: " + path)
+        observations[path] = candidates[0]
+
+    installed_rows: list[dict[str, Any]] = []
+    for destination, expected in sorted(image_rows.items()):
+        current = object_observation(Path(destination))
+        expected_type = expected.get("type")
+        if current.get("type") != expected_type:
+            fail("installed payload object type differs: " + destination)
+        for key in ("uid", "gid", "mode", "xattrs"):
+            if current.get(key) != expected.get(key):
+                fail(f"installed payload {key} differs: {destination}")
+        if expected_type == "file":
+            for key in ("size", "sha256", "nlink"):
+                if current.get(key) != expected.get(key):
+                    fail(f"installed payload {key} differs: {destination}")
+        elif expected_type == "symlink":
+            for key in ("target", "nlink"):
+                if current.get(key) != expected.get(key):
+                    fail(f"installed payload {key} differs: {destination}")
+        elif expected_type == "directory":
+            original = observations.get(destination)
+            if original is None:
+                fail("payload admission lacks its directory observation: " + destination)
+            if original.get("type") == "directory" and _stable_directory_observation(
+                current
+            ) != _stable_directory_observation(original):
+                fail("pre-existing payload directory authority changed: " + destination)
+        else:
+            fail("payload image contains an unsupported installed object type")
+        installed_rows.append(
+            {
+                "path": destination,
+                "observation_sha256": sha256_bytes(canonical_json(current)),
+            }
+        )
+
+    contents = _contents_paths(vdb, planned, include_parents=False)
+    image_paths = set(image_rows)
+    non_directories = {
+        path for path, row in image_rows.items() if row.get("type") != "directory"
+    }
+    if not non_directories <= contents or not contents <= image_paths:
+        fail(
+            "installed VDB CONTENTS differs from admitted package images: "
+            f"missing_objects={sorted(non_directories - contents)}, "
+            f"foreign_contents={sorted(contents - image_paths)}"
+        )
+    for record in records:
+        cpv = str(record["cpv"])
+        package_rows = {
+            "/" + relative: row
+            for relative, row in _manifest_rows(
+                record["manifest"], f"{cpv} admitted image"
+            ).items()
+        }
+        package_contents = _contents_paths(vdb, [cpv], include_parents=False)
+        package_objects = {
+            path
+            for path, row in package_rows.items()
+            if row.get("type") != "directory"
+        }
+        if not package_objects <= package_contents or not package_contents <= set(
+            package_rows
+        ):
+            fail(f"installed CONTENTS differs from the admitted image for {cpv}")
+    result = {
+        "schema_version": 1,
+        "cpvs": sorted(planned),
+        "per_cpv_paths": {key: per_cpv_paths[key] for key in sorted(per_cpv_paths)},
+        "installed_rows": installed_rows,
+        "contents_paths": sorted(contents),
+    }
+    result["rows_sha256"] = sha256_bytes(canonical_json(result))
+    return result
+
+
 def portage_action_command(arguments: argparse.Namespace) -> int:
     """Hold one Portage config/vardb lock through exact action or rollback."""
 
@@ -3387,17 +6593,22 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
     endpoint = socket.socket(fileno=arguments.control_fd)
     channel = ControlChannel(endpoint, arguments.control_session)
     command = arguments.command[1:]
-    if command[0] != "/usr/bin/emerge":
-        fail("internal Portage action has an unexpected command identity")
-    emerge_arguments = command[1:]
     prepared = validate_state(
-        read_json_regular(arguments.prepared_state, "prepared state for Portage action")
+        read_json_regular(
+            arguments.prepared_state,
+            "prepared state for Portage action",
+            PHASE_STATE_MAX_BYTES,
+        )
     )
     if (
         prepared["phase"] != "prepared"
         or sha256_file(arguments.prepared_state) != arguments.prepared_sha256
     ):
         fail("internal Portage action is not bound to the exact prepared state")
+    prepared_tools = tools_from_manifest(prepared["authority"]["tools"])
+    if command[0] != os.fspath(prepared_tools["emerge"]):
+        fail("internal Portage action has an unexpected command identity")
+    emerge_arguments = command[1:]
     expected_atoms = exact_plan_atoms(prepared["plan"])
     expected_arguments = [*emerge_options(), "--ask=y", *expected_atoms]
     if emerge_arguments != expected_arguments:
@@ -3405,6 +6616,7 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
     try:
         import _emerge.actions as actions
         from _emerge.main import parse_opts
+        import portage.dbapi.vartree as vartree_module
     except ImportError as error:
         fail(f"internal Portage API is unavailable: {error}")
     action, options, atoms = parse_opts(emerge_arguments, silent=True)
@@ -3423,39 +6635,66 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
     target_path = Path(target)
     vdb_path = target_path / "var/db/pkg"
     settings = config.target_config.settings
-    features = set(str(settings.get("FEATURES", "")).split())
-    if str(settings.get("AUTOCLEAN", "")).strip().lower() != "no":
-        fail("frozen Portage AUTOCLEAN must be exactly disabled")
-    forbidden_features = {"assume-digests", "parallel-install", "binpkg-signing"}
-    if forbidden_features & features:
-        fail(
-            "frozen Portage FEATURES retains transaction-forbidden behavior: "
-            + ", ".join(sorted(forbidden_features & features))
-        )
-    require_semantically_empty_preserved_registry(
-        target_path / "var/lib/portage/preserved_libs_registry"
+    policy = effective_portage_policy(settings)
+    expected_policy = prepared["resolver"]["final_locked_window"].get(
+        "effective_portage_policy"
     )
+    if policy != expected_policy:
+        fail("effective Portage action policy differs from prepared authority")
+    if native_toolchain_authority(settings) != prepared["resolver"][
+        "final_locked_window"
+    ].get("native_toolchain"):
+        fail("effective native action toolchain differs from prepared authority")
+    validate_frozen_portage_policy(prepared["authority"])
     vardb = config.trees[target]["vartree"].dbapi
     if config.target_config.trees["vartree"].dbapi is not vardb:
         fail("Portage target configuration does not share the selected vardb object")
     original_loader = actions.load_emerge_config
+    original_merge = vartree_module.dblink.merge
+    payload_admissions: list[dict[str, Any]] = []
 
     def reject_reload(*_args: object, **_kwargs: object) -> NoReturn:
         fail("Portage attempted to reload configuration after VDB lock acquisition")
+
+    def guarded_merge(link: Any, mergeroot: str, *args: Any, **kwargs: Any) -> Any:
+        cpv = str(link.mycpv)
+        # This callback runs in Portage's forked MergeProcess.  The receipt is
+        # the authority; mutating a parent-process Python list here would be a
+        # false synchronization primitive.
+        admit_merge_image_payload(
+            mergeroot=Path(mergeroot),
+            cpv=cpv,
+            prepared=prepared,
+            observed_destinations={},
+            prepared_sha256=arguments.prepared_sha256,
+            control_session=arguments.control_session,
+        )
+        return original_merge(link, mergeroot, *args, **kwargs)
 
     source_status = 125
     rollback_status: int | None = None
     vardb.lock()
     try:
-        compare_vdb(prepared["resolver"]["vdb_before"], vdb_manifest(vdb_path))
+        require_locked_empty_preserved_registry(vardb)
+        compare_vdb(prepared_vdb(prepared), vdb_manifest(vdb_path))
+        observed_metadata = plan_metadata_authority(
+            locked=LockedPortageAuthority(
+                config, vardb, vardb._plib_registry, target, vdb_path
+            ),
+            plan=prepared["plan"],
+            repositories=prepared["authority"]["repositories"],
+        )
+        if observed_metadata != prepared["resolver"]["plan_metadata"]:
+            fail("Portage action package metadata differs from prepared authority")
         actions.load_emerge_config = reject_reload
+        vartree_module.dblink.merge = guarded_merge
         channel.send(
             "LOCK_HELD",
             {
                 "prepared_state_sha256": arguments.prepared_sha256,
                 "emerge_arguments_sha256": sha256_bytes(canonical_json(emerge_arguments)),
                 "vdb_sha256": sha256_bytes(
-                    canonical_json(prepared["resolver"]["vdb_before"])
+                    canonical_json(prepared_vdb(prepared))
                 ),
                 "vardb_root": os.fspath(vdb_path),
             },
@@ -3463,6 +6702,12 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
         source_status = int(actions.run_action(config))
         if config.trees[target]["vartree"].dbapi is not vardb:
             fail("Portage replaced the locked vardb object during the source action")
+        require_locked_empty_preserved_registry(vardb)
+        payload_admissions = load_payload_admission_references(
+            prepared=prepared,
+            prepared_sha256=arguments.prepared_sha256,
+            control_session=arguments.control_session,
+        )
         channel.send("ACTION_COMPLETE", {"status": source_status})
         decision = channel.receive("DECISION", 30 * 60)
         requested = decision.get("outcome")
@@ -3473,14 +6718,14 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
             if source_status != 0:
                 fail("coordinator attempted to commit a failed Portage action")
             delta = classify_vdb_delta(
-                prepared["resolver"]["vdb_before"], vdb_manifest(vdb_path), prepared["plan"]
+                prepared_vdb(prepared), vdb_manifest(vdb_path), prepared["plan"]
             )
             if not delta["exact_success_delta"]:
                 fail("coordinator attempted to commit a non-exact VDB delta")
             terminal_outcome = "success"
         elif requested == "rolled-back":
             delta = classify_vdb_delta(
-                prepared["resolver"]["vdb_before"], vdb_manifest(vdb_path), prepared["plan"]
+                prepared_vdb(prepared), vdb_manifest(vdb_path), prepared["plan"]
             )
             if not delta["rollback_eligible"]:
                 fail("source VDB delta is not eligible for exact rollback")
@@ -3506,7 +6751,9 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
                 fail("Portage replaced the locked vardb object during rollback")
             if rollback_status != 0:
                 fail(f"exact held-lock Portage rollback failed with status {rollback_status}")
-            compare_vdb(prepared["resolver"]["vdb_before"], vdb_manifest(vdb_path))
+            compare_vdb(prepared_vdb(prepared), vdb_manifest(vdb_path))
+            require_locked_empty_preserved_registry(vardb)
+            verify_payload_rollback_authorities(payload_admissions, prepared["plan"])
             terminal_outcome = "rolled-back"
         else:
             fail("coordinator supplied an invalid held-lock decision")
@@ -3522,6 +6769,26 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
                 path, read_only, tools["mount"]
             ),
         )
+        if terminal_outcome == "rolled-back":
+            restore_loader_directory_times(
+                prepared_locked_value(prepared, "loader_directories")
+            )
+        terminal_paths = Paths(prepared["transaction_id"])
+        durability = perform_terminal_durability_barrier(
+            paths=terminal_paths,
+            prepared=prepared,
+            tools=tools,
+            runner=SubprocessRunner(),
+        )
+        post_emerge_authority = inline_authority(
+            verify_declared_post_emerge_authority(
+                paths=terminal_paths,
+                prepared=prepared,
+                outcome=terminal_outcome,
+                verify_live_views=False,
+                terminal_durability=durability,
+            )
+        )
         sealed = seal_standard_output()
         channel.send(
             "TERMINAL_READY",
@@ -3532,6 +6799,8 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
                 "decision_state_sha256": decision_state_sha,
                 "counter": counter,
                 "vdb_sha256": sha256_bytes(canonical_json(vdb_manifest(vdb_path))),
+                "payload_admissions": payload_admissions,
+                "post_emerge_authority": post_emerge_authority,
                 **sealed,
             },
         )
@@ -3579,6 +6848,7 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
         )
     finally:
         actions.load_emerge_config = original_loader
+        vartree_module.dblink.merge = original_merge
         vardb.unlock()
         channel.close()
         for root_trees in config.trees.values():
@@ -3602,10 +6872,18 @@ def portage_recovery_command(arguments: argparse.Namespace) -> int:
     endpoint = socket.socket(fileno=arguments.control_fd)
     channel = ControlChannel(endpoint, arguments.control_session)
     prepared = validate_state(
-        read_json_regular(arguments.prepared_state, "prepared state for Portage recovery")
+        read_json_regular(
+            arguments.prepared_state,
+            "prepared state for Portage recovery",
+            PHASE_STATE_MAX_BYTES,
+        )
     )
     rollback_state = validate_state(
-        read_json_regular(arguments.rollback_state, "rollback state for Portage recovery")
+        read_json_regular(
+            arguments.rollback_state,
+            "rollback state for Portage recovery",
+            PHASE_STATE_MAX_BYTES,
+        )
     )
     if (
         prepared["phase"] != "prepared"
@@ -3631,11 +6909,16 @@ def portage_recovery_command(arguments: argparse.Namespace) -> int:
     target_path = Path(target)
     vdb_path = target_path / "var/db/pkg"
     settings = config.target_config.settings
-    features = set(str(settings.get("FEATURES", "")).split())
-    if str(settings.get("AUTOCLEAN", "")).strip().lower() != "no":
-        fail("frozen Portage AUTOCLEAN must be exactly disabled during recovery")
-    if {"assume-digests", "parallel-install", "binpkg-signing"} & features:
-        fail("frozen Portage recovery FEATURES retain forbidden behavior")
+    policy = effective_portage_policy(settings)
+    if policy != prepared["resolver"]["final_locked_window"].get(
+        "effective_portage_policy"
+    ):
+        fail("effective Portage recovery policy differs from prepared authority")
+    if native_toolchain_authority(settings) != prepared["resolver"][
+        "final_locked_window"
+    ].get("native_toolchain"):
+        fail("effective native recovery toolchain differs from prepared authority")
+    validate_frozen_portage_policy(prepared["authority"])
     vardb = config.trees[target]["vartree"].dbapi
     if config.target_config.trees["vartree"].dbapi is not vardb:
         fail("Portage recovery target does not share the selected vardb object")
@@ -3646,9 +6929,10 @@ def portage_recovery_command(arguments: argparse.Namespace) -> int:
 
     vardb.lock()
     try:
+        require_locked_empty_preserved_registry(vardb)
         actions.load_emerge_config = reject_reload
         delta = classify_vdb_delta(
-            prepared["resolver"]["vdb_before"], vdb_manifest(vdb_path), prepared["plan"]
+            prepared_vdb(prepared), vdb_manifest(vdb_path), prepared["plan"]
         )
         if not delta["rollback_eligible"]:
             fail("recovery VDB delta is not eligible for exact rollback")
@@ -3691,7 +6975,19 @@ def portage_recovery_command(arguments: argparse.Namespace) -> int:
             fail("Portage replaced the locked vardb object during recovery")
         if rollback_status != 0:
             fail(f"held-lock recovery unmerge failed with status {rollback_status}")
-        compare_vdb(prepared["resolver"]["vdb_before"], vdb_manifest(vdb_path))
+        require_locked_empty_preserved_registry(vardb)
+        original_child = rollback_state.get("child")
+        if not isinstance(original_child, dict) or not isinstance(
+            original_child.get("control_session_sha256"), str
+        ):
+            fail("held-lock recovery lacks original control-session authority")
+        payload_admissions = load_existing_payload_admission_references(
+            prepared=prepared,
+            prepared_sha256=arguments.prepared_sha256,
+            control_session_sha256=original_child["control_session_sha256"],
+        )
+        verify_payload_rollback_authorities(payload_admissions, prepared["plan"])
+        compare_vdb(prepared_vdb(prepared), vdb_manifest(vdb_path))
         tools = tools_from_manifest(prepared["authority"]["tools"])
         counter = reconcile_counter_with_reseal(
             live_edb=Path(prepared["private_roots"]["live_cache_edb_view"]),
@@ -3703,6 +6999,25 @@ def portage_recovery_command(arguments: argparse.Namespace) -> int:
                 path, read_only, tools["mount"]
             ),
         )
+        restore_loader_directory_times(
+            prepared_locked_value(prepared, "loader_directories")
+        )
+        terminal_paths = Paths(prepared["transaction_id"])
+        durability = perform_terminal_durability_barrier(
+            paths=terminal_paths,
+            prepared=prepared,
+            tools=tools,
+            runner=SubprocessRunner(),
+        )
+        post_emerge_authority = inline_authority(
+            verify_declared_post_emerge_authority(
+                paths=terminal_paths,
+                prepared=prepared,
+                outcome="rolled-back",
+                verify_live_views=False,
+                terminal_durability=durability,
+            )
+        )
         sealed = seal_standard_output()
         channel.send(
             "TERMINAL_READY",
@@ -3712,6 +7027,8 @@ def portage_recovery_command(arguments: argparse.Namespace) -> int:
                 "decision_state_sha256": arguments.rollback_sha256,
                 "counter": counter,
                 "vdb_sha256": sha256_bytes(canonical_json(vdb_manifest(vdb_path))),
+                "payload_admissions": payload_admissions,
+                "post_emerge_authority": post_emerge_authority,
                 **sealed,
             },
         )
@@ -3851,7 +7168,24 @@ def verify_stage_evidence(row: object) -> None:
 
 
 def verify_frozen_authorities(paths: Paths, prepared: Mapping[str, Any]) -> None:
+    prepared_locked_window(prepared)
+    final_window = prepared["resolver"].get("final_locked_window")
+    locked_reference = prepared["resolver"].get("locked_authority")
+    if (
+        not isinstance(final_window, dict)
+        or not isinstance(locked_reference, dict)
+        or final_window.get("locked_authority_sha256")
+        != locked_reference.get("sha256")
+        or final_window.get("plan_metadata_sha256")
+        != sha256_bytes(canonical_json(prepared["resolver"].get("plan_metadata")))
+    ):
+        fail("final locked window differs from external authority references")
+    validate_frozen_portage_policy(prepared["authority"])
     revalidate_tool_manifest(prepared["authority"]["tools"])
+    revalidate_build_tool_versions(prepared["authority"].get("build_tool_versions"))
+    revalidate_native_toolchain(
+        final_window.get("native_toolchain")
+    )
     revalidate_pre_checkpoint_authority(
         prepared["authority"].get("pre_dependency_checkpoint")
     )
@@ -3872,6 +7206,79 @@ def verify_frozen_authorities(paths: Paths, prepared: Mapping[str, Any]) -> None
         fail("prepared resolver lacks prefetch authority")
     verify_manifest(Path(prefetch["authority"]), Path(prefetch["tree_manifest_path"]))
     verify_framework_authority(paths, prepared["authority"].get("framework"))
+    verify_plan_metadata_authority(prepared)
+    if build_execution_scope(
+        prepared["resolver"]["plan_metadata"],
+        tools_from_manifest(prepared["authority"]["tools"]),
+    ) != prepared["authority"].get("build_execution_scope"):
+        fail("derived build-execution scope changed")
+    attempt = prepared["authority"].get("preparation_attempt")
+    verify_evidence_reference(attempt, "path", "sha256")
+
+
+def verify_terminal_post_emerge_binding(
+    *,
+    paths: Paths,
+    state: Mapping[str, Any],
+    prepared: Mapping[str, Any],
+    outcome: str,
+) -> dict[str, Any]:
+    state_outcome = state.get("outcome")
+    if not isinstance(state_outcome, dict):
+        fail("terminal state lacks its outcome authority")
+    recorded = validate_inline_authority(
+        state_outcome.get("post_emerge_authority"),
+        "terminal post-emerge authority",
+    )
+    terminal_durability = recorded["value"].get("terminal_durability")
+    if terminal_durability is None:
+        fail("terminal post-emerge authority lacks its durability barrier")
+    current = inline_authority(
+        verify_declared_post_emerge_authority(
+            paths=paths,
+            prepared=prepared,
+            outcome=outcome,
+            terminal_durability=terminal_durability,
+        )
+    )
+    if recorded != current:
+        fail("terminal post-emerge authority differs from current state")
+    completion_ref = state_outcome.get("child_completion")
+    verify_evidence_reference(completion_ref, "path", "sha256")
+    completion = read_json_regular(
+        Path(str(completion_ref["path"])),
+        "terminal child completion",
+        RECOVERY_EVIDENCE_MAX_BYTES,
+    )
+    if (
+        not isinstance(completion, dict)
+        or completion.get("outcome") != outcome
+        or completion.get("post_emerge_authority") != recorded
+    ):
+        fail("terminal child completion differs from post-emerge authority")
+    payload_references = completion.get("payload_admissions")
+    if outcome == "success":
+        payload_authority = inline_authority(
+            verify_success_payload_authority(
+                references=payload_references,
+                prepared=prepared,
+                prepared_sha256=sha256_bytes(canonical_json(prepared)),
+                control_session_sha256=require_sha256(
+                    completion.get("control_session_sha256"),
+                    "terminal completion control-session digest",
+                ),
+                vdb=paths.vdb,
+            )
+        )
+        checks = completion.get("checks")
+        if (
+            not isinstance(checks, dict)
+            or checks.get("payload_authority") != payload_authority
+        ):
+            fail("terminal payload authority differs from installed state")
+    else:
+        verify_payload_rollback_authorities(payload_references, prepared["plan"])
+    return cast(dict[str, Any], current["value"])
 
 
 def verify_command(paths: Paths) -> int:
@@ -3898,33 +7305,30 @@ def verify_command(paths: Paths) -> int:
         verify_private_portage_outputs(
             prepared["private_roots"], prepared["resolver"].get("private_portage_outputs_before")
         )
-        compare_vdb(prepared["resolver"]["vdb_before"], vdb_manifest(paths.vdb))
-        if file_observation(paths.cache_edb / "counter") != prepared["resolver"].get(
-            "live_counter_before"
+        compare_vdb(prepared_vdb(prepared), vdb_manifest(paths.vdb))
+        if file_observation(paths.cache_edb / "counter") != prepared_locked_value(
+            prepared, "counter"
         ):
             fail("live EDB counter changed after transaction preparation")
-        verify_selected_sets(paths, prepared["resolver"]["selected_sets_before"])
-    elif phase == "rolled-back":
-        verify_private_portage_outputs(
-            prepared["private_roots"], prepared["resolver"].get("private_portage_outputs_before")
+        verify_selected_sets(
+            paths, prepared_locked_value(prepared, "selected_sets")
         )
-        compare_vdb(prepared["resolver"]["vdb_before"], vdb_manifest(paths.vdb))
-        verify_selected_sets(paths, prepared["resolver"]["selected_sets_before"])
-    elif phase == "success":
-        verify_private_portage_outputs(
-            prepared["private_roots"], prepared["resolver"].get("private_portage_outputs_before")
+    elif phase in {"rolled-back", "success"}:
+        verify_terminal_post_emerge_binding(
+            paths=paths,
+            state=state,
+            prepared=prepared,
+            outcome=phase,
         )
-        delta = classify_vdb_delta(
-            prepared["resolver"]["vdb_before"], vdb_manifest(paths.vdb), prepared["plan"]
-        )
-        if not delta["exact_success_delta"]:
-            fail("successful state no longer has its exact installed VDB delta")
-    return 0
+    elif phase == "recovery-failed":
+        verify_recovery_failed_state(paths, state, prepared_sha)
+    return 1 if phase == "recovery-failed" else 0
 
 
 def verify_entrypoint(paths: Paths) -> int:
     paths.validate()
-    with transaction_locks(paths):
+    with transaction_locks(paths) as held_locks:
+        held_locks.revalidate()
         return verify_command(paths)
 
 
@@ -3943,7 +7347,11 @@ def freeze_tree_authority(
     mount_target = mount_target.resolve(strict=True)
     if not source.is_dir() or source.is_symlink() or not mount_target.is_dir() or mount_target.is_symlink():
         fail(f"{label} authority endpoints are not real directories")
+    source_before = file_observation(source)
     copy_tree(source, destination, runner, tools)
+    source_after = file_observation(source)
+    if source_before != source_after:
+        fail(f"{label} changed during authority materialization")
     normalize_tree_ownership(destination, uid, gid)
     manifest = tree_manifest(destination)
     manifest_path = destination.parent / f"{destination.name}.manifest.json"
@@ -3954,6 +7362,8 @@ def freeze_tree_authority(
         "materialized_location": os.fspath(destination),
         "tree_manifest_path": os.fspath(manifest_path),
         "tree_manifest_sha256": manifest_sha,
+        "source_before": source_before,
+        "source_after": source_after,
     }
 
 
@@ -4076,6 +7486,41 @@ def verify_frozen_repository_vector(
     return {**evidence, "repositories": observed}
 
 
+def validate_final_locked_window(
+    *,
+    initial_locked_window: Mapping[str, Any],
+    final_locked_window: Mapping[str, Any],
+    locked_authority: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind the second held-lock observation to the first immutable snapshot."""
+
+    for key in ("vdb", "selected_sets", "mtimedb", "counter", "live_etc"):
+        if final_locked_window.get(key) != initial_locked_window.get(key):
+            fail(f"final locked {key} authority differs from initial preparation")
+    for key, label in (
+        ("loader_directories", "loader-directory"),
+        ("effective_portage_policy", "effective Portage policy"),
+        ("native_toolchain", "native build-tool authority"),
+    ):
+        if final_locked_window.get(key) != initial_locked_window.get(key):
+            fail(f"{label} changed between locked windows")
+    plan_metadata = final_locked_window.get("plan_metadata")
+    if not isinstance(plan_metadata, dict):
+        fail("final locked window lacks exact package metadata admission")
+    locked_digest = require_sha256(
+        locked_authority.get("sha256"), "locked-authority artifact digest"
+    )
+    return {
+        "schema_version": 1,
+        "locked_authority_sha256": locked_digest,
+        "effective_portage_policy": final_locked_window[
+            "effective_portage_policy"
+        ],
+        "native_toolchain": final_locked_window["native_toolchain"],
+        "plan_metadata_sha256": sha256_bytes(canonical_json(plan_metadata)),
+    }
+
+
 def prepare_command(arguments: argparse.Namespace, paths: Paths) -> int:
     """Freeze every input, derive an exact plan, prefetch, and publish prepared."""
 
@@ -4091,14 +7536,24 @@ def prepare_command(arguments: argparse.Namespace, paths: Paths) -> int:
             "process/handle exclusion around authority snapshots is not yet implemented"
         )
     prepare_directories(paths, paths.fixture_mode)
-    with transaction_locks(paths):
+    with transaction_locks(paths) as held_locks:
+        held_locks.revalidate()
         reconciled = reconcile_state_chain(paths)
         if reconciled is not None:
             fail(f"transaction already has durable phase {reconciled[0]['phase']}")
-        for candidate in (paths.report, paths.authority, paths.cache, paths.canonical_state):
-            if path_exists(candidate):
-                fail(f"transaction object already exists: {candidate}")
+        existing = transaction_attempt_objects(paths)
+        if existing:
+            fail(
+                "transaction ID was already used or has an abandoned preparation: "
+                + ", ".join(existing)
+            )
         checkpoint = validate_pre_checkpoint(arguments.pre_checkpoint_state, enforce_root_trust=True)
+        repository_specs = discover_repositories()
+        capacity = capacity_preflight(paths=paths, repositories=repository_specs)
+        publish_preparation_attempt(
+            paths, capacity=capacity, checkpoint=checkpoint
+        )
+        held_locks.revalidate()
         paths.report.mkdir(mode=0o700)
         paths.authority.mkdir(mode=0o700)
         repositories_root = paths.authority / "repositories"
@@ -4106,14 +7561,27 @@ def prepare_command(arguments: argparse.Namespace, paths: Paths) -> int:
         tools = default_tools(paths.root if paths.fixture_mode else Path("/"))
         tools["transaction"] = Path(__file__).resolve(strict=True)
         tools_value = tool_manifest(tools)
+        runner: Runner = SubprocessRunner()
+        build_tool_versions = build_tool_version_authority(tools, runner)
         python_modules = [
             python_module_authority("_emerge"),
             python_module_authority("gemato"),
+            python_module_authority("flit_core"),
+            python_module_authority("gpep517"),
+            python_module_authority("hatchling"),
+            python_module_authority("installer"),
+            python_module_authority("maturin"),
+            external_python_module_authority(
+                "mesonbuild", tools["meson_python"]
+            ),
+            python_module_authority("packaging"),
             python_module_authority("portage"),
+            python_module_authority("pyproject_hooks"),
+            python_module_authority("scikit_build_core"),
+            python_module_authority("setuptools"),
+            python_module_authority("wheel"),
         ]
-        runner: Runner = SubprocessRunner()
         repositories: list[dict[str, Any]] = []
-        repository_specs = discover_repositories()
         for repository in repository_specs:
             destination = repositories_root / repository.name
             repositories.append(
@@ -4144,9 +7612,20 @@ def prepare_command(arguments: argparse.Namespace, paths: Paths) -> int:
             gid=gid,
         )
         private_roots = prepare_private_roots(paths)
-        vdb_before = vdb_manifest(paths.vdb)
-        selected_before = selected_sets_authority(paths)
-        live_counter_before = file_observation(paths.cache_edb / "counter")
+        initial_locked_window = preparation_locked_snapshot(
+            paths=paths,
+            private_roots=private_roots,
+            runner=runner,
+            tools=tools,
+        )
+        external_locked_window = dict(initial_locked_window)
+        # The locked /etc copy row already carries the one complete tree plus
+        # exact live/copy root identities.  Do not embed the same tree again.
+        external_locked_window.pop("live_etc", None)
+        locked_authority = publish_locked_authority(
+            paths, external_locked_window
+        )
+        vdb_before = initial_locked_window["vdb"]
         authority: dict[str, Any] = {
             "tools": tools_value,
             "python_modules": python_modules,
@@ -4155,7 +7634,14 @@ def prepare_command(arguments: argparse.Namespace, paths: Paths) -> int:
             "portage_global_config": global_config,
             "pre_dependency_checkpoint": checkpoint,
             "framework": framework_authority(paths),
+            "capacity_preflight": capacity,
+            "build_tool_versions": build_tool_versions,
+            "preparation_attempt": {
+                "path": os.fspath(paths.preparation_attempt),
+                "sha256": sha256_file(paths.preparation_attempt),
+            },
         }
+        validate_frozen_portage_policy(authority)
         private_roots["distdir_authority"] = private_roots["distdir_staging"]
         frozen_repositories = verify_frozen_repository_vector(
             expected=repository_specs,
@@ -4209,14 +7695,19 @@ def prepare_command(arguments: argparse.Namespace, paths: Paths) -> int:
             installed=set(vdb_before["cpvs"]),
         )
         compare_plans(initial_plan, offline_plan)
-        compare_vdb(vdb_before, vdb_manifest(paths.vdb))
-        verify_selected_sets(paths, selected_before)
-        resolver = {
+        portage_build_identity = {
+            "uid": os.geteuid()
+            if paths.fixture_mode
+            else pwd.getpwnam("portage").pw_uid,
+            "gid": os.getegid()
+            if paths.fixture_mode
+            else grp.getgrnam("portage").gr_gid,
+        }
+        resolver_base = {
             "target": arguments.target,
             "frozen_repository_observation": frozen_repositories,
-            "vdb_before": vdb_before,
-            "selected_sets_before": selected_before,
-            "live_counter_before": live_counter_before,
+            "locked_authority": locked_authority,
+            "portage_build_identity": portage_build_identity,
             "initial_pretend": initial_evidence,
             "exact_repretend_before_prefetch": exact_evidence,
             "prefetch": prefetch_evidence,
@@ -4224,14 +7715,41 @@ def prepare_command(arguments: argparse.Namespace, paths: Paths) -> int:
             "private_roots_before": private_roots_baseline(private_roots),
             "private_portage_outputs_before": private_portage_outputs(private_roots),
         }
-        prepared = base_state(
-            paths,
-            authority=authority,
-            resolver=resolver,
+
+        def publish_prepared(final_locked_window: dict[str, Any]) -> None:
+            compact_final_window = validate_final_locked_window(
+                initial_locked_window=initial_locked_window,
+                final_locked_window=final_locked_window,
+                locked_authority=locked_authority,
+            )
+            authority["build_execution_scope"] = build_execution_scope(
+                final_locked_window["plan_metadata"], tools
+            )
+            resolver = {
+                **resolver_base,
+                "final_locked_window": compact_final_window,
+                "plan_metadata": final_locked_window["plan_metadata"],
+            }
+            prepared = base_state(
+                paths,
+                authority=authority,
+                resolver=resolver,
+                plan=initial_plan,
+                private_roots=private_roots,
+            )
+            verify_frozen_authorities(paths, prepared)
+            publish_state(paths, prepared)
+
+        preparation_locked_snapshot(
+            paths=paths,
+            private_roots=None,
+            runner=None,
+            tools=None,
             plan=initial_plan,
-            private_roots=private_roots,
+            repositories=repositories,
+            publisher=publish_prepared,
         )
-        publish_state(paths, prepared)
+        held_locks.revalidate()
         return 0
 
 
@@ -4334,6 +7852,7 @@ def run_held_lock_recovery(
     rollback_state: dict[str, Any],
     rollback_sha: str,
     tools: Mapping[str, Path],
+    held_locks: HeldStableLocks,
 ) -> int:
     """Run exact reverse unmerge and terminal publication under one VDB lock."""
 
@@ -4415,7 +7934,7 @@ def run_held_lock_recovery(
             lock_held = parent_control.receive("LOCK_HELD", 30 * 60)
             current_vdb = vdb_manifest(paths.vdb)
             delta = classify_vdb_delta(
-                prepared["resolver"]["vdb_before"], current_vdb, prepared["plan"]
+                prepared_vdb(prepared), current_vdb, prepared["plan"]
             )
             exact_atoms = rollback_order(prepared["plan"], delta["added"])
             if lock_held != {
@@ -4431,7 +7950,13 @@ def run_held_lock_recovery(
                 prepared["private_roots"],
                 prepared["resolver"]["private_portage_outputs_before"],
             )
-            verify_selected_sets(paths, prepared["resolver"]["selected_sets_before"])
+            verify_selected_sets(
+                paths,
+                prepared_locked_value(prepared, "selected_sets"),
+                ignored_cache_names=attributable_counter_partial_names(
+                    prepared, paths.cache_edb
+                ),
+            )
             parent_control.send(
                 "DECISION",
                 {
@@ -4451,6 +7976,8 @@ def run_held_lock_recovery(
                     "vdb_sha256",
                     "stdout_size",
                     "stderr_size",
+                    "payload_admissions",
+                    "post_emerge_authority",
                 }
                 or terminal_ready.get("outcome") != "rolled-back"
                 or terminal_ready.get("rollback_status") != 0
@@ -4458,10 +7985,11 @@ def run_held_lock_recovery(
                 or not isinstance(terminal_ready.get("counter"), dict)
                 or type(terminal_ready.get("stdout_size")) is not int
                 or type(terminal_ready.get("stderr_size")) is not int
+                or not isinstance(terminal_ready.get("payload_admissions"), list)
+                or not isinstance(terminal_ready.get("post_emerge_authority"), dict)
             ):
                 fail("recovery terminal control authority is invalid")
             current_vdb = vdb_manifest(paths.vdb)
-            compare_vdb(prepared["resolver"]["vdb_before"], current_vdb)
             if terminal_ready.get("vdb_sha256") != sha256_bytes(
                 canonical_json(current_vdb)
             ):
@@ -4476,11 +8004,22 @@ def run_held_lock_recovery(
                 expected_sizes=terminal_ready,
             )
             verify_frozen_authorities(paths, prepared)
-            verify_private_portage_outputs(
-                prepared["private_roots"],
-                prepared["resolver"]["private_portage_outputs_before"],
+            post_emerge_authority = inline_authority(
+                verify_declared_post_emerge_authority(
+                    paths=paths,
+                    prepared=prepared,
+                    outcome="rolled-back",
+                    terminal_durability=validate_inline_authority(
+                        terminal_ready["post_emerge_authority"],
+                        "recovery child post-emerge authority",
+                    )["value"].get("terminal_durability"),
+                )
             )
-            verify_selected_sets(paths, prepared["resolver"]["selected_sets_before"])
+            if validate_inline_authority(
+                terminal_ready["post_emerge_authority"],
+                "recovery child post-emerge authority",
+            ) != post_emerge_authority:
+                fail("recovery child and coordinator post-emerge authorities differ")
             source_status_value = rollback_state.get("outcome", {}).get(
                 "source_status", 125
             )
@@ -4503,6 +8042,8 @@ def run_held_lock_recovery(
                 vdb=current_vdb,
                 logs=log_evidence,
                 checks={},
+                payload_admissions=terminal_ready["payload_admissions"],
+                post_emerge_authority=post_emerge_authority,
             )
             completion_ref = {
                 "path": os.fspath(paths.child_completion),
@@ -4517,9 +8058,11 @@ def run_held_lock_recovery(
                     "recovered": True,
                     "logs": log_evidence,
                     "counter": terminal_ready["counter"],
+                    "post_emerge_authority": post_emerge_authority,
                     "child_completion": completion_ref,
                 },
             )
+            held_locks.revalidate()
             terminal_path, terminal_sha = publish_state(paths, rolled_back)
             parent_control.send(
                 "FINALIZE",
@@ -4562,7 +8105,8 @@ def run_command(_arguments: argparse.Namespace, paths: Paths) -> int:
             "live jsonschema mutation is disabled: preparation concurrency and "
             "post-emerge authority closure are not yet proven"
         )
-    with transaction_locks(paths):
+    with transaction_locks(paths) as held_locks:
+        held_locks.revalidate()
         if reconcile_state_chain(paths) is None:
             fail("run requires a durable prepared transaction")
         state, prepared_sha = load_current_state(paths)
@@ -4574,8 +8118,10 @@ def run_command(_arguments: argparse.Namespace, paths: Paths) -> int:
         prepared = state
         tools = tools_from_manifest(prepared["authority"]["tools"])
         runner: Runner = SubprocessRunner()
-        compare_vdb(prepared["resolver"]["vdb_before"], vdb_manifest(paths.vdb))
-        verify_selected_sets(paths, prepared["resolver"]["selected_sets_before"])
+        compare_vdb(prepared_vdb(prepared), vdb_manifest(paths.vdb))
+        verify_selected_sets(
+            paths, prepared_locked_value(prepared, "selected_sets")
+        )
         _result, _source_evidence, terminal, _terminal_sha = run_armed_source_child(
             paths=paths,
             prepared=prepared,
@@ -4584,6 +8130,7 @@ def run_command(_arguments: argparse.Namespace, paths: Paths) -> int:
             tools=tools,
             runner=runner,
             timeout=12 * 3600,
+            held_locks=held_locks,
         )
         if terminal["phase"] not in {"success", "rolled-back"}:
             fail(f"source child returned unexpected terminal phase {terminal['phase']}")
@@ -4601,7 +8148,11 @@ def finalize_from_child_completion(
 ) -> int:
     completion = validate_child_completion(
         paths,
-        read_json_regular(paths.child_completion, "child-completion authority"),
+        read_json_regular(
+            paths.child_completion,
+            "child-completion authority",
+            RECOVERY_EVIDENCE_MAX_BYTES,
+        ),
         prepared_sha=prepared_sha,
         armed_sha=armed_sha,
     )
@@ -4625,24 +8176,37 @@ def finalize_from_child_completion(
     ) != counter_after:
         fail("child-completion live EDB counter authority changed")
     verify_frozen_authorities(paths, prepared)
-    verify_private_portage_outputs(
-        prepared["private_roots"],
-        prepared["resolver"]["private_portage_outputs_before"],
+    post_emerge_authority = inline_authority(
+        verify_declared_post_emerge_authority(
+            paths=paths,
+            prepared=prepared,
+            outcome=expected_outcome,
+            terminal_durability=validate_inline_authority(
+                completion["post_emerge_authority"],
+                "child-completion post-emerge authority",
+            )["value"].get("terminal_durability"),
+        )
     )
-    verify_selected_sets(paths, prepared["resolver"]["selected_sets_before"])
+    if completion["post_emerge_authority"] != post_emerge_authority:
+        fail("child-completion post-emerge authority differs from live state")
     if expected_outcome == "success":
-        delta = classify_vdb_delta(
-            prepared["resolver"]["vdb_before"], current_vdb, prepared["plan"]
+        payload_authority = inline_authority(
+            verify_success_payload_authority(
+                references=completion["payload_admissions"],
+                prepared=prepared,
+                prepared_sha256=prepared_sha,
+                control_session_sha256=completion["control_session_sha256"],
+                vdb=paths.vdb,
+            )
         )
-        if not delta["exact_success_delta"]:
-            fail("completed success no longer has its exact VDB delta")
-        phase = "success"
+        if completion["checks"].get("payload_authority") != payload_authority:
+            fail("child-completion payload authority differs from installed state")
     else:
-        compare_vdb(prepared["resolver"]["vdb_before"], current_vdb)
-        delta = classify_vdb_delta(
-            prepared["resolver"]["vdb_before"], current_vdb, prepared["plan"]
+        verify_payload_rollback_authorities(
+            completion["payload_admissions"], prepared["plan"]
         )
-        phase = "rolled-back"
+    delta = cast(dict[str, Any], post_emerge_authority["value"]["vdb"])
+    phase = expected_outcome
     terminal = next_state(
         state,
         state_sha,
@@ -4653,6 +8217,7 @@ def finalize_from_child_completion(
             "delta": delta,
             "checks": completion["checks"],
             "logs": completion["logs"],
+            "post_emerge_authority": post_emerge_authority,
             "child_completion": {
                 "path": os.fspath(paths.child_completion),
                 "sha256": sha256_file(paths.child_completion),
@@ -4670,7 +8235,8 @@ def recover_command(_arguments: argparse.Namespace, paths: Paths) -> int:
             "live jsonschema recovery is disabled: preparation concurrency, "
             "held-lock crash recovery, and post-emerge closure are not yet proven"
         )
-    with transaction_locks(paths):
+    with transaction_locks(paths) as held_locks:
+        held_locks.revalidate()
         if reconcile_state_chain(paths) is None:
             fail("recover requires a durable transaction")
         state, state_sha = load_current_state(paths)
@@ -4685,43 +8251,87 @@ def recover_command(_arguments: argparse.Namespace, paths: Paths) -> int:
                     fail("pre-arm abort evidence already exists")
                 os.replace(paths.child_sidecar, aborted)
                 fsync_directory(paths.report)
-            return 0
+            return verify_command(paths)
         if state["phase"] in TERMINAL_PHASES:
             return verify_command(paths)
         prepared, prepared_sha = load_phase_state(paths, "prepared")
+        prepared_locked_window(prepared)
         armed, armed_sha = load_phase_state(paths, "armed")
         tools = tools_from_manifest(prepared["authority"]["tools"])
         if path_exists(paths.child_completion):
-            return finalize_from_child_completion(
-                paths=paths,
-                state=state,
-                state_sha=state_sha,
-                prepared=prepared,
-                prepared_sha=prepared_sha,
-                armed_sha=armed_sha,
-            )
+            try:
+                return finalize_from_child_completion(
+                    paths=paths,
+                    state=state,
+                    state_sha=state_sha,
+                    prepared=prepared,
+                    prepared_sha=prepared_sha,
+                    armed_sha=armed_sha,
+                )
+            except TransactionInterrupted:
+                raise
+            except TransactionError as error:
+                child = state.get("child")
+                if isinstance(child, dict):
+                    quiesce_recorded_child(child, paths.proc_root)
+                if state["phase"] == "armed":
+                    rollback = next_state(
+                        state,
+                        state_sha,
+                        "rollback-in-progress",
+                        child=child,
+                        outcome={
+                            "recovered": True,
+                            "source_status": 125,
+                            "source_action_completed": False,
+                            "authenticated_action_complete": False,
+                            "completion_error": str(error),
+                        },
+                    )
+                    _path, rollback_sha = publish_state(paths, rollback)
+                    state, state_sha = rollback, rollback_sha
+                publish_recovery_failed(
+                    paths=paths,
+                    rollback_state=state,
+                    rollback_sha=state_sha,
+                    prepared=prepared,
+                    prepared_sha=prepared_sha,
+                    reason="authenticated child completion could not be finalized: "
+                    + str(error),
+                )
+                return 1
         if state["phase"] == "armed":
             child = state.get("child")
             if not isinstance(child, dict):
                 fail("armed transaction has no exact child identity")
             quiesce_recorded_child(child, paths.proc_root)
-            delta = classify_vdb_delta(
-                prepared["resolver"]["vdb_before"], vdb_manifest(paths.vdb), prepared["plan"]
-            )
-            # If the coordinator died before publishing terminal success, the
-            # held-lock commit/counter handshake is incomplete.  Never infer
-            # success from installed CPVs alone; conservatively roll back.
-            if not delta["rollback_eligible"]:
-                fail("crashed source transaction has a non-rollback-eligible VDB delta")
+            # Portage can copy payload into ROOT before renaming its
+            # ``-MERGING-*`` VDB directory.  Without an authenticated terminal
+            # completion, a CPV-set comparison cannot distinguish that state
+            # from a clean pre-merge VDB.  Never guess or rerun source emerge.
             rollback = next_state(
                 state,
                 state_sha,
                 "rollback-in-progress",
                 child=state.get("child"),
-                outcome={"recovered": True, "source_status": 125, "delta": delta},
+                outcome={
+                    "recovered": True,
+                    "source_status": 125,
+                    "source_action_completed": False,
+                    "authenticated_action_complete": False,
+                    "reason": "armed child died without authenticated completion",
+                },
             )
             _rollback_path, rollback_sha = publish_state(paths, rollback)
-            state, state_sha = rollback, rollback_sha
+            publish_recovery_failed(
+                paths=paths,
+                rollback_state=rollback,
+                rollback_sha=rollback_sha,
+                prepared=prepared,
+                prepared_sha=prepared_sha,
+                reason="armed child died without authenticated terminal completion",
+            )
+            return 1
         if state["phase"] == "rollback-in-progress":
             child = state.get("child")
             if isinstance(child, dict):
@@ -4741,15 +8351,76 @@ def recover_command(_arguments: argparse.Namespace, paths: Paths) -> int:
                     paths.report / f"recovery-child-aborted-{attempt:03d}.json",
                 )
                 fsync_directory(paths.report)
-            return run_held_lock_recovery(
-                paths=paths,
-                prepared=prepared,
-                prepared_sha=prepared_sha,
-                armed_sha=armed_sha,
-                rollback_state=state,
-                rollback_sha=state_sha,
-                tools=tools,
+            decision = state.get("outcome")
+            if (
+                not isinstance(decision, dict)
+                or decision.get("source_action_completed") is not True
+                or decision.get("authenticated_action_complete") is not True
+            ):
+                publish_recovery_failed(
+                    paths=paths,
+                    rollback_state=state,
+                    rollback_sha=state_sha,
+                    prepared=prepared,
+                    prepared_sha=prepared_sha,
+                    reason="rollback state lacks authenticated source-action completion",
+                )
+                return 1
+            residue = new_vdb_crash_residue(
+                paths, prepared_vdb(prepared)
             )
+            if residue:
+                publish_recovery_failed(
+                    paths=paths,
+                    rollback_state=state,
+                    rollback_sha=state_sha,
+                    prepared=prepared,
+                    prepared_sha=prepared_sha,
+                    reason="partial Portage VDB residue requires checkpoint restoration: "
+                    + ", ".join(residue),
+                )
+                return 1
+            try:
+                return run_held_lock_recovery(
+                    paths=paths,
+                    prepared=prepared,
+                    prepared_sha=prepared_sha,
+                    armed_sha=armed_sha,
+                    rollback_state=state,
+                    rollback_sha=state_sha,
+                    tools=tools,
+                    held_locks=held_locks,
+                )
+            except TransactionInterrupted:
+                raise
+            except TransactionError as error:
+                reconciled = reconcile_state_chain(paths)
+                if reconciled is not None and reconciled[0]["phase"] in TERMINAL_PHASES:
+                    return verify_command(paths)
+                if path_exists(paths.child_completion):
+                    try:
+                        return finalize_from_child_completion(
+                            paths=paths,
+                            state=state,
+                            state_sha=state_sha,
+                            prepared=prepared,
+                            prepared_sha=prepared_sha,
+                            armed_sha=armed_sha,
+                        )
+                    except TransactionInterrupted:
+                        raise
+                    except TransactionError:
+                        pass
+                publish_recovery_failed(
+                    paths=paths,
+                    rollback_state=state,
+                    rollback_sha=state_sha,
+                    prepared=prepared,
+                    prepared_sha=prepared_sha,
+                    reason="held-lock rollback could not prove exact restoration: "
+                    + str(error),
+                )
+                return 1
         fail(f"recovery refuses unknown transaction phase {state['phase']}")
 
 

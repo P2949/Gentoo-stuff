@@ -280,7 +280,7 @@
     "tool_identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "requested_entrypoint", "requested_path", "resolved_path", "binary", "shebang", "python_distribution", "version_argv", "stdout", "stderr"],
+      "required": ["name", "requested_entrypoint", "requested_path", "resolved_path", "binary", "shebang", "python_distribution", "version_argv", "version_status", "stdout", "stderr"],
       "properties": {
         "name": {"$ref": "#/$defs/safe_name"},
         "requested_entrypoint": {
@@ -316,6 +316,7 @@
           }
         },
         "version_argv": {"type": "array", "minItems": 2, "items": {"type": "string"}},
+        "version_status": {"type": "integer", "minimum": 0, "maximum": 255},
         "stdout": {"type": "object", "additionalProperties": false, "required": ["text", "sha256"], "properties": {"text": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}}},
         "stderr": {"type": "object", "additionalProperties": false, "required": ["text", "sha256"], "properties": {"text": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}}}
       }

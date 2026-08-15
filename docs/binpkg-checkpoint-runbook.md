@@ -182,10 +182,10 @@ fi
 Capture the absolute selector target and exact input hashes:
 
 ```bash
-BINPKG_SOURCE=$(readlink -e /var/cache/gentoo-optimization/binpkgs/critical-current)
-BINPKG_SOURCE_PACKAGES_SHA256=$(sha256sum "$BINPKG_SOURCE/Packages" | cut -d' ' -f1)
+BINPKG_SOURCE=$(/usr/bin/readlink -e /var/cache/gentoo-optimization/binpkgs/critical-current)
+BINPKG_SOURCE_PACKAGES_SHA256=$(/usr/bin/sha256sum "$BINPKG_SOURCE/Packages" | /usr/bin/cut -d' ' -f1)
 VERIFIER=$BOOTSTRAP/verify-binpkg-snapshot.py
-VERIFIER_SHA256=$(sha256sum "$VERIFIER" | cut -d' ' -f1)
+VERIFIER_SHA256=$(/usr/bin/sha256sum "$VERIFIER" | /usr/bin/cut -d' ' -f1)
 printf '%s\n' "$BINPKG_SOURCE" >"$EVIDENCE/source-target.txt"
 printf '%s  %s\n' "$BINPKG_SOURCE_PACKAGES_SHA256" "$BINPKG_SOURCE/Packages" \
   >"$EVIDENCE/source-Packages.sha256"
@@ -206,7 +206,7 @@ set +e
 VERIFY_STATUS=$?
 set -e
 test "$VERIFY_STATUS" -eq 1
-jq -e '
+/usr/bin/jq -e '
   .schema_version == 1 and .status == "fail" and
   .counts.missing_live_cpvs > 0 and
   .counts.errors == .counts.missing_live_cpvs and
@@ -214,11 +214,11 @@ jq -e '
   .counts.unindexed_gpkg_archives == 0 and
   ([.issues[].code] | all(. == "live_cpv_missing_archive"))
 ' "$EVIDENCE/source-verification.json" >/dev/null
-jq -r '.coverage.missing_live_cpvs[] | "=" + .' \
-  "$EVIDENCE/source-verification.json" | LC_ALL=C sort -u \
+/usr/bin/jq -r '.coverage.missing_live_cpvs[] | "=" + .' \
+  "$EVIDENCE/source-verification.json" | LC_ALL=C /usr/bin/sort -u \
   >"$EVIDENCE/delta-atoms.txt"
-test "$(wc -l <"$EVIDENCE/delta-atoms.txt")" -eq \
-  "$(jq -r '.counts.missing_live_cpvs' "$EVIDENCE/source-verification.json")"
+test "$(/usr/bin/wc -l <"$EVIDENCE/delta-atoms.txt")" -eq \
+  "$(/usr/bin/jq -r '.counts.missing_live_cpvs' "$EVIDENCE/source-verification.json")"
 mapfile -t DELTA_ATOMS <"$EVIDENCE/delta-atoms.txt"
 test "${#DELTA_ATOMS[@]}" -gt 0
 ```
@@ -231,11 +231,11 @@ free-space pool. When they are on different filesystems, one complete
 generation must fit independently on each filesystem:
 
 ```bash
-SOURCE_BYTES=$(du -sx --block-size=1 "$BINPKG_SOURCE" | awk '{print $1}')
-qsize -q -b -f -S "${DELTA_ATOMS[@]}" \
+SOURCE_BYTES=$(/usr/bin/du -sx --block-size=1 "$BINPKG_SOURCE" | /usr/bin/awk '{print $1}')
+/usr/bin/qsize -q -b -f -S "${DELTA_ATOMS[@]}" \
   >"$EVIDENCE/qsize.stdout" 2>"$EVIDENCE/qsize.stderr"
 mapfile -t DELTA_SIZE_VALUES < <(
-  awk '/^[[:space:]]*Totals:/ {print $(NF-1)}' "$EVIDENCE/qsize.stdout"
+  /usr/bin/awk '/^[[:space:]]*Totals:/ {print $(NF-1)}' "$EVIDENCE/qsize.stdout"
 )
 test "${#DELTA_SIZE_VALUES[@]}" -eq 1
 [[ ${DELTA_SIZE_VALUES[0]} =~ ^[0-9]+$ ]]
@@ -247,12 +247,12 @@ DURABLE_PARENT=/var/lib/gentoo-optimization/recovery/binpkgs
 test -d "$CACHE_PARENT"
 test -d "$DURABLE_PARENT"
 
-CACHE_DEVICE=$(stat -Lc '%d' -- "$CACHE_PARENT")
-DURABLE_DEVICE=$(stat -Lc '%d' -- "$DURABLE_PARENT")
-CACHE_AVAILABLE_BYTES=$(df --output=avail --block-size=1 "$CACHE_PARENT" |
-  awk 'NR == 2 {print $1}')
-DURABLE_AVAILABLE_BYTES=$(df --output=avail --block-size=1 "$DURABLE_PARENT" |
-  awk 'NR == 2 {print $1}')
+CACHE_DEVICE=$(/usr/bin/stat -Lc '%d' -- "$CACHE_PARENT")
+DURABLE_DEVICE=$(/usr/bin/stat -Lc '%d' -- "$DURABLE_PARENT")
+CACHE_AVAILABLE_BYTES=$(/usr/bin/df --output=avail --block-size=1 "$CACHE_PARENT" |
+  /usr/bin/awk 'NR == 2 {print $1}')
+DURABLE_AVAILABLE_BYTES=$(/usr/bin/df --output=avail --block-size=1 "$DURABLE_PARENT" |
+  /usr/bin/awk 'NR == 2 {print $1}')
 [[ $CACHE_DEVICE =~ ^[0-9]+$ ]]
 [[ $DURABLE_DEVICE =~ ^[0-9]+$ ]]
 [[ $CACHE_AVAILABLE_BYTES =~ ^[0-9]+$ ]]
@@ -313,12 +313,12 @@ fi
 } >"$EVIDENCE/space-preflight.txt"
 
 {
-  stat -Lc 'path=%n device=%d mode=%a owner=%u group=%g' -- \
+  /usr/bin/stat -Lc 'path=%n device=%d mode=%a owner=%u group=%g' -- \
     "$CACHE_PARENT" "$DURABLE_PARENT"
-  df --block-size=1 -- "$CACHE_PARENT" "$DURABLE_PARENT"
-  findmnt --target "$CACHE_PARENT" \
+  /usr/bin/df --block-size=1 -- "$CACHE_PARENT" "$DURABLE_PARENT"
+  /usr/bin/findmnt --target "$CACHE_PARENT" \
     --output TARGET,SOURCE,FSTYPE,OPTIONS --noheadings
-  findmnt --target "$DURABLE_PARENT" \
+  /usr/bin/findmnt --target "$DURABLE_PARENT" \
     --output TARGET,SOURCE,FSTYPE,OPTIONS --noheadings
 } >"$EVIDENCE/filesystem-preflight.txt"
 
@@ -542,19 +542,19 @@ REPORT=/var/lib/gentoo-optimization/reports/checkpoint-$ID
 CANONICAL=$STATE_PARENT/binpkg-checkpoint-$ID.json
 TERMINAL=$STATE_PARENT/binpkg-checkpoint-$ID.offline-restore-proven.json
 WITNESS=/var/cache/gentoo-optimization/binpkgs/critical-current.previous-$ID
-test "$(stat -c '%d:%i' "$CANONICAL")" = "$(stat -c '%d:%i' "$TERMINAL")"
-test "$(readlink /var/cache/gentoo-optimization/binpkgs/critical-current)" = \
+test "$(/usr/bin/stat -c '%d:%i' "$CANONICAL")" = "$(/usr/bin/stat -c '%d:%i' "$TERMINAL")"
+test "$(/usr/bin/readlink /var/cache/gentoo-optimization/binpkgs/critical-current)" = \
   "/var/lib/gentoo-optimization/recovery/binpkgs/critical-$ID"
 test -L "$WITNESS"
-test "$(readlink "$WITNESS")" = "$BINPKG_SOURCE"
-WITNESS_FIELDS=$(stat -c '%d:%i:%u:%g:%a:%h:%F' "$WITNESS")
-WITNESS_TARGET=$(readlink "$WITNESS")
-WITNESS_RESOLVED=$(readlink -e "$WITNESS")
-WITNESS_TARGET_FIELDS=$(stat -c '%d:%i:%u:%g:%a:%h:%F' "$WITNESS_RESOLVED")
-WITNESS_PACKAGES_SHA=$(sha256sum "$WITNESS_RESOLVED/Packages" | awk '{print $1}')
+test "$(/usr/bin/readlink "$WITNESS")" = "$BINPKG_SOURCE"
+WITNESS_FIELDS=$(/usr/bin/stat -c '%d:%i:%u:%g:%a:%h:%F' "$WITNESS")
+WITNESS_TARGET=$(/usr/bin/readlink "$WITNESS")
+WITNESS_RESOLVED=$(/usr/bin/readlink -e "$WITNESS")
+WITNESS_TARGET_FIELDS=$(/usr/bin/stat -c '%d:%i:%u:%g:%a:%h:%F' "$WITNESS_RESOLVED")
+WITNESS_PACKAGES_SHA=$(/usr/bin/sha256sum "$WITNESS_RESOLVED/Packages" | /usr/bin/awk '{print $1}')
 WITNESS_IDENTITY="$WITNESS_FIELDS|$WITNESS_TARGET|$WITNESS_RESOLVED|$WITNESS_TARGET_FIELDS|$WITNESS_PACKAGES_SHA"
-test "$WITNESS_IDENTITY" = "$(jq -r '.displaced_selector_identity' "$REPORT/activation-receipt.json")"
-jq -e '
+test "$WITNESS_IDENTITY" = "$(/usr/bin/jq -r '.displaced_selector_identity' "$REPORT/activation-receipt.json")"
+/usr/bin/jq -e '
   .status == "offline-restore-proven" and
   .offline_restoration_tested == true and
   .pending_total == 0 and .unknown_total == 0 and .failed_total == 0 and
@@ -562,12 +562,12 @@ jq -e '
   ([.offline_restore.evidence[]] | length == 4)
 ' "$CANONICAL" >/dev/null
 RESTORE_RECEIPT=$REPORT/offline-restore-receipt.json
-test "$(sha256sum "$RESTORE_RECEIPT" | cut -d' ' -f1)" = \
-  "$(jq -r '.offline_restore.receipt_sha256' "$CANONICAL")"
+test "$(/usr/bin/sha256sum "$RESTORE_RECEIPT" | /usr/bin/cut -d' ' -f1)" = \
+  "$(/usr/bin/jq -r '.offline_restore.receipt_sha256' "$CANONICAL")"
 for NAME in command binpkg post_verifier attempt_ledger; do
-  REL=$(jq -r --arg name "$NAME" '.evidence[$name].path' "$RESTORE_RECEIPT")
-  EXPECTED=$(jq -r --arg name "$NAME" '.evidence[$name].sha256' "$RESTORE_RECEIPT")
-  test "$EXPECTED" = "$(sha256sum "$REPORT/$REL" | cut -d' ' -f1)"
+  REL=$(/usr/bin/jq -r --arg name "$NAME" '.evidence[$name].path' "$RESTORE_RECEIPT")
+  EXPECTED=$(/usr/bin/jq -r --arg name "$NAME" '.evidence[$name].sha256' "$RESTORE_RECEIPT")
+  test "$EXPECTED" = "$(/usr/bin/sha256sum "$REPORT/$REL" | /usr/bin/cut -d' ' -f1)"
 done
 test ! -e "/var/cache/gentoo-optimization/binpkgs/critical-current.prepared-$ID"
 test ! -L "/var/cache/gentoo-optimization/binpkgs/critical-current.prepared-$ID"
@@ -577,8 +577,8 @@ if ! EXCHANGE_RESIDUE=$(/usr/bin/find \
   exit 1
 fi
 test -z "$EXCHANGE_RESIDUE"
-find "$REPORT" -xdev \( -type f -o -type l \) -print0 >"$EVIDENCE/final-report.paths0"
-find "$STATE_PARENT" -maxdepth 1 \( -name "binpkg-checkpoint-$ID.json" -o \
+/usr/bin/find "$REPORT" -xdev \( -type f -o -type l \) -print0 >"$EVIDENCE/final-report.paths0"
+/usr/bin/find "$STATE_PARENT" -maxdepth 1 \( -name "binpkg-checkpoint-$ID.json" -o \
   -name "binpkg-checkpoint-$ID.*.json" \) \( -type f -o -type l \) -print0 \
   >>"$EVIDENCE/final-report.paths0"
 /usr/bin/python3 -I -B - "$EVIDENCE/final-report.paths0" \
@@ -744,15 +744,13 @@ test -d "/root/checkpoint-evidence-$ID"
 test -d "/var/lib/gentoo-optimization/reports/checkpoint-$ID-operator-evidence"
 ```
 
-## 7. Install the reviewed `jsonschema` closure from source only
+## 7. Install the reviewed `jsonschema` closure through the prerequisite transaction
 
-The first checkpoint must be terminal and durably preserved before installing
-the schema-validation dependency. Continue in the same clean root shell. This
-block accepts only new source ebuilds, binds the exact pretend selection and
-ebuild/repository identities, imposes one deadline on the real emerge, and
-requires the installed CPV delta to equal the pretend selection exactly. A
-timeout or ordinary failure is not permission to start the post-install
-checkpoint.
+The first checkpoint and its supervised offline restore must already be
+terminal.  The prerequisite transaction is a separate, durable state machine;
+it does not authorize Phase 2 and it never permits an armed source transaction
+to be rerun.  Continue in the same clean root shell and first revalidate the
+terminal checkpoint and its retained operator evidence:
 
 ```bash
 PRE_CHECKPOINT_ID=$ID
@@ -760,509 +758,237 @@ PRE_CHECKPOINT_DURABLE=$CHECKPOINT_DURABLE
 PRE_CHECKPOINT_TERMINAL=$CHECKPOINT_RESTORED_STATE
 test -f "$PRE_CHECKPOINT_TERMINAL"
 test ! -L "$PRE_CHECKPOINT_TERMINAL"
-jq -e '
+/usr/bin/jq -e '
   .status == "offline-restore-proven" and
   .pending_total == 0 and .unknown_total == 0 and .failed_total == 0
 ' "$PRE_CHECKPOINT_TERMINAL" >/dev/null
-test "$(readlink -e /var/cache/gentoo-optimization/binpkgs/critical-current)" = \
+test "$(/usr/bin/readlink -e \
+  /var/cache/gentoo-optimization/binpkgs/critical-current)" = \
   "$PRE_CHECKPOINT_DURABLE"
 checkpoint_evidence_manifest \
   "/var/lib/gentoo-optimization/reports/checkpoint-$PRE_CHECKPOINT_ID-operator-evidence" \
   verify \
   "/var/lib/gentoo-optimization/reports/checkpoint-$PRE_CHECKPOINT_ID-operator-evidence/operator-evidence.manifest.json"
-
-INSTALL_ID=jsonschema-source-YYYYMMDDTHHMMSSZ
-INSTALL_EVIDENCE=/root/jsonschema-source-install-$INSTALL_ID
-INSTALL_DURABLE=/var/lib/gentoo-optimization/reports/jsonschema-source-install-$INSTALL_ID-evidence
-test ! -e "$INSTALL_EVIDENCE"
-test ! -L "$INSTALL_EVIDENCE"
-test ! -e "$INSTALL_DURABLE"
-test ! -L "$INSTALL_DURABLE"
-/usr/bin/install -d -o root -g root -m 0700 "$INSTALL_EVIDENCE"
-
-scan_portage_processes "$INSTALL_EVIDENCE/portage-processes.preflight.txt"
-test ! -s "$INSTALL_EVIDENCE/portage-processes.preflight.txt"
-
-capture_installed_cpvs() {
-  local output=$1
-  /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-    PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
-    EPYTHON=python3.15 /usr/bin/python3.15 -I -B - >"$output" <<'PY'
-import portage
-
-cpvs = sorted(str(cpv) for cpv in portage.db["/"]["vartree"].dbapi.cpv_all())
-if not cpvs or len(cpvs) != len(set(cpvs)):
-    raise SystemExit("installed CPV observation is empty or duplicated")
-print("\n".join(cpvs))
-PY
-  test -s "$output"
-  test "$(( $(/usr/bin/wc -l <"$output") ))" -gt 0
-  test "$(LC_ALL=C /usr/bin/sort -u "$output" | /usr/bin/sha256sum | \
-    /usr/bin/cut -d' ' -f1)" = \
-    "$(/usr/bin/sha256sum "$output" | /usr/bin/cut -d' ' -f1)"
-}
-
-capture_installed_cpvs "$INSTALL_EVIDENCE/installed-cpvs.before.txt"
-/usr/bin/sha256sum "$INSTALL_EVIDENCE/installed-cpvs.before.txt" \
-  >"$INSTALL_EVIDENCE/installed-cpvs.before.sha256"
-
-capture_selected_sets() {
-  local output=$1
-  /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-    PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
-    /usr/bin/python3 -I -B - "$output" <<'PY'
-import hashlib
-import json
-import os
-import stat
-import sys
-from pathlib import Path
-
-rows = []
-for path in (Path("/var/lib/portage/world"), Path("/var/lib/portage/world_sets")):
-    try:
-        value = path.lstat()
-    except FileNotFoundError:
-        rows.append({"path": str(path), "type": "absent"})
-        continue
-    row = {"path": str(path), "uid": value.st_uid, "gid": value.st_gid,
-           "mode": stat.S_IMODE(value.st_mode), "nlink": value.st_nlink,
-           "mtime_ns": value.st_mtime_ns, "size": value.st_size}
-    if stat.S_ISREG(value.st_mode):
-        row.update(type="file", sha256=hashlib.sha256(path.read_bytes()).hexdigest())
-    elif stat.S_ISLNK(value.st_mode):
-        row.update(type="symlink", target=os.readlink(path))
-    else:
-        raise SystemExit(f"untrusted selected-set object: {path}")
-    rows.append(row)
-Path(sys.argv[1]).write_text(
-    json.dumps({"schema_version": 1, "rows": rows}, indent=2, sort_keys=True) + "\n",
-    encoding="utf-8",
-)
-PY
-}
-
-capture_selected_sets "$INSTALL_EVIDENCE/selected-sets.before.json"
-
-: >"$INSTALL_EVIDENCE/tool-identities.txt"
-for tool in /usr/bin/emerge /usr/bin/git /usr/bin/python3 \
-  /usr/bin/python3.15 /usr/bin/qcheck /usr/bin/tar /usr/bin/timeout; do
-  resolved=$(/usr/bin/readlink -e "$tool")
-  test -n "$resolved"
-  test -f "$resolved"
-  test ! -L "$resolved"
-  /usr/bin/stat -Lc \
-    'path=%n device=%d inode=%i uid=%u gid=%g mode=%a size=%s' \
-    "$resolved" >>"$INSTALL_EVIDENCE/tool-identities.txt"
-  printf 'sha256=%s\n' \
-    "$(/usr/bin/sha256sum "$resolved" | /usr/bin/cut -d' ' -f1)" \
-    >>"$INSTALL_EVIDENCE/tool-identities.txt"
-done
-
-EMERGE_OPTIONS=(
-  --ignore-default-opts
-  --verbose
-  --tree
-  --oneshot
-  --with-bdeps=y
-  --autounmask=n
-  --autounmask-write=n
-  --buildpkg=y
-  --getbinpkg=n
-  --usepkg=n
-)
-PRETEND_COMMAND=(
-  /usr/bin/emerge "${EMERGE_OPTIONS[@]}" --pretend dev-python/jsonschema
-)
-SOURCE_EMERGE_COMMAND=(
-  /usr/bin/emerge "${EMERGE_OPTIONS[@]}" --ask=n dev-python/jsonschema
-)
-printf '%s\0' /usr/bin/timeout --signal=TERM --kill-after=60s 600s \
-  /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-  PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
-  EPYTHON=python3.15 NOCOLOR=1 TERM=dumb \
-  "${PRETEND_COMMAND[@]}" >"$INSTALL_EVIDENCE/pretend-command.argv0"
-set +e
-/usr/bin/timeout --signal=TERM --kill-after=60s 600s \
-  /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-  PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
-  EPYTHON=python3.15 NOCOLOR=1 TERM=dumb \
-  "${PRETEND_COMMAND[@]}" \
-  >"$INSTALL_EVIDENCE/pretend.stdout" \
-  2>"$INSTALL_EVIDENCE/pretend.stderr"
-PRETEND_STATUS=$?
-set -e
-printf '%s\n' "$PRETEND_STATUS" >"$INSTALL_EVIDENCE/pretend.status"
-scan_portage_processes "$INSTALL_EVIDENCE/portage-processes.post-pretend.txt"
-{
-  printf 'status=%s\n' "$PRETEND_STATUS"
-  printf 'portage_residue_rows=%s\n' \
-    "$(/usr/bin/wc -l <"$INSTALL_EVIDENCE/portage-processes.post-pretend.txt")"
-} >"$INSTALL_EVIDENCE/pretend-outcome.txt"
-test ! -s "$INSTALL_EVIDENCE/portage-processes.post-pretend.txt"
-test "$PRETEND_STATUS" -eq 0
-
-/usr/bin/python3 -I -B - \
-  "$INSTALL_EVIDENCE/pretend.stdout" \
-  "$INSTALL_EVIDENCE/pretend-selection.json" \
-  "$INSTALL_EVIDENCE/pretend-cpvs.txt" <<'PY'
-import json
-import re
-import sys
-from pathlib import Path
-
-source, json_output, cpv_output = map(Path, sys.argv[1:])
-exact = re.compile(r"^\[ebuild\s+N\s*\]\s+(\S+?)::([A-Za-z0-9_.+-]+)(?:\s|$)")
-scheduled = re.compile(r"^\[[A-Za-z]")
-rows = []
-for raw in source.read_text(encoding="utf-8").splitlines():
-    line = raw.lstrip()
-    if not scheduled.match(line):
-        continue
-    match = exact.match(line)
-    if match is None:
-        raise SystemExit(f"pretend selected a non-new or non-source action: {raw}")
-    cpv, repository = match.groups()
-    if "/" not in cpv or not re.search(r"-[0-9]", cpv):
-        raise SystemExit(f"invalid selected CPV: {cpv}")
-    rows.append({"cpv": cpv, "repository": repository})
-if not rows or len({row["cpv"] for row in rows}) != len(rows):
-    raise SystemExit("pretend selection is empty or duplicated")
-if sum(row["cpv"].startswith("dev-python/jsonschema-") for row in rows) != 1:
-    raise SystemExit("pretend did not select exactly one jsonschema CPV")
-rows.sort(key=lambda row: row["cpv"])
-json_output.write_text(
-    json.dumps({"schema_version": 1, "rows": rows}, indent=2, sort_keys=True) + "\n",
-    encoding="utf-8",
-)
-cpv_output.write_text(
-    "".join(f"{row['cpv']}\n" for row in rows), encoding="utf-8"
-)
-PY
-test -s "$INSTALL_EVIDENCE/pretend-cpvs.txt"
-if ! INSTALLED_PLAN_OVERLAP=$(/usr/bin/comm -12 \
-  "$INSTALL_EVIDENCE/installed-cpvs.before.txt" \
-  "$INSTALL_EVIDENCE/pretend-cpvs.txt"); then
-  exit 1
-fi
-test -z "$INSTALLED_PLAN_OVERLAP"
-
-capture_ebuild_provenance() {
-  local output=$1
-  /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-    PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
-    EPYTHON=python3.15 /usr/bin/python3.15 -I -B - \
-    "$INSTALL_EVIDENCE/pretend-selection.json" >"$output" <<'PY'
-import hashlib
-import json
-import os
-import stat
-import subprocess
-import sys
-from pathlib import Path
-
-import portage
-
-selection = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["rows"]
-portdb = portage.db["/"]["porttree"].dbapi
-repositories = portage.settings.repositories
-repository_heads = {}
-rows = []
-for selected in selection:
-    cpv = selected["cpv"]
-    repository = selected["repository"]
-    config = repositories[repository]
-    configured_location = Path(config.location)
-    if configured_location.is_symlink():
-        raise SystemExit(f"symlinked repository location: {configured_location}")
-    location = configured_location.resolve(strict=True)
-    if not location.is_dir():
-        raise SystemExit(f"untrusted repository location: {location}")
-    configured_ebuild = Path(portdb.findname(cpv, myrepo=repository))
-    if configured_ebuild.is_symlink():
-        raise SystemExit(f"symlinked ebuild path: {configured_ebuild}")
-    ebuild = configured_ebuild.resolve(strict=True)
-    if not ebuild.is_file() or not ebuild.is_relative_to(location):
-        raise SystemExit(f"untrusted ebuild path: {ebuild}")
-    if repository not in repository_heads:
-        result = subprocess.run(
-            ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c",
-             "core.fsmonitor=false", "-c", "core.attributesFile=/dev/null",
-             "-C", str(location), "rev-parse", "--verify", "HEAD^{commit}"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True, timeout=60,
-            check=True, env={"HOME": "/root", "LANG": "C", "LC_ALL": "C",
-                             "PATH": "/usr/bin:/bin", "TZ": "UTC",
-                             "GIT_CONFIG_GLOBAL": "/dev/null",
-                             "GIT_CONFIG_NOSYSTEM": "1"},
-        )
-        head = result.stdout.strip()
-        if not __import__("re").fullmatch(r"[0-9a-f]{40}", head):
-            raise SystemExit("invalid repository commit identity")
-        repository_heads[repository] = head
-    value = ebuild.stat()
-    rows.append({
-        "cpv": cpv,
-        "repository": repository,
-        "repository_location": str(location),
-        "repository_commit": repository_heads[repository],
-        "ebuild_path": str(ebuild),
-        "ebuild_device": value.st_dev,
-        "ebuild_inode": value.st_ino,
-        "ebuild_mode": stat.S_IMODE(value.st_mode),
-        "ebuild_sha256": hashlib.sha256(ebuild.read_bytes()).hexdigest(),
-    })
-print(json.dumps({"schema_version": 1, "rows": rows}, indent=2, sort_keys=True))
-PY
-}
-
-capture_ebuild_provenance \
-  "$INSTALL_EVIDENCE/ebuild-provenance.before.json"
-
-capture_selected_binpkg_state() {
-  local output=$1
-  /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-    PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
-    EPYTHON=python3.15 /usr/bin/python3.15 -I -B - \
-    "$INSTALL_EVIDENCE/pretend-cpvs.txt" >"$output" <<'PY'
-import hashlib
-import json
-import os
-import stat
-import sys
-from pathlib import Path
-
-import portage
-from portage.getbinpkg import PackageIndex
-
-selected = set(Path(sys.argv[1]).read_text(encoding="utf-8").splitlines())
-if not selected:
-    raise SystemExit("selected CPV set is empty")
-pkgdir = Path(portage.settings["PKGDIR"]).resolve(strict=True)
-packages_path = pkgdir / "Packages"
-if packages_path.is_symlink() or not packages_path.is_file():
-    raise SystemExit("trusted binary package index is absent")
-index = PackageIndex()
-with packages_path.open("r", encoding="utf-8") as input_file:
-    index.read(input_file)
-rows = []
-for package in index.packages:
-    cpv = package.get("CPV")
-    if cpv not in selected:
-        continue
-    relative = package.get("PATH")
-    if not isinstance(relative, str) or not relative:
-        raise SystemExit(f"indexed binary package has no path: {cpv}")
-    candidate = pkgdir / relative
-    if candidate.is_symlink():
-        raise SystemExit(f"symlinked binary package: {candidate}")
-    path = candidate.resolve(strict=True)
-    value = path.lstat()
-    if path.is_symlink() or not stat.S_ISREG(value.st_mode):
-        raise SystemExit(f"untrusted binary package: {path}")
-    if not path.is_relative_to(pkgdir) or not path.name.endswith(".gpkg.tar"):
-        raise SystemExit(f"unexpected binary package path: {path}")
-    rows.append({
-        "cpv": cpv,
-        "build_id": package.get("BUILD_ID"),
-        "repository": package.get("REPO"),
-        "path": str(path),
-        "device": value.st_dev,
-        "inode": value.st_ino,
-        "mode": stat.S_IMODE(value.st_mode),
-        "size": value.st_size,
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-    })
-rows.sort(key=lambda row: (row["cpv"], row["path"]))
-print(json.dumps({"schema_version": 1, "pkgdir": str(pkgdir),
-                  "packages_path": str(packages_path),
-                  "packages_device": packages_path.stat().st_dev,
-                  "packages_inode": packages_path.stat().st_ino,
-                  "packages_mode": stat.S_IMODE(packages_path.stat().st_mode),
-                  "packages_size": packages_path.stat().st_size,
-                  "packages_sha256": hashlib.sha256(packages_path.read_bytes()).hexdigest(),
-                  "rows": rows}, indent=2, sort_keys=True))
-PY
-}
-
-capture_selected_binpkg_state "$INSTALL_EVIDENCE/binpkgs.before.json"
-jq -e '.schema_version == 1 and (.rows | length) == 0' \
-  "$INSTALL_EVIDENCE/binpkgs.before.json" >/dev/null
-
-scan_portage_processes "$INSTALL_EVIDENCE/portage-processes.pre-emerge.txt"
-test ! -s "$INSTALL_EVIDENCE/portage-processes.pre-emerge.txt"
-printf '%s\0' /usr/bin/timeout --signal=TERM --kill-after=120s 21600s \
-  /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-  PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
-  EPYTHON=python3.15 NOCOLOR=1 TERM=dumb "${SOURCE_EMERGE_COMMAND[@]}" \
-  >"$INSTALL_EVIDENCE/source-emerge-command.argv0"
-set +e
-/usr/bin/timeout --signal=TERM --kill-after=120s 21600s \
-  /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-  PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
-  EPYTHON=python3.15 NOCOLOR=1 TERM=dumb \
-  "${SOURCE_EMERGE_COMMAND[@]}" \
-  >"$INSTALL_EVIDENCE/source-emerge.stdout" \
-  2>"$INSTALL_EVIDENCE/source-emerge.stderr"
-EMERGE_STATUS=$?
-set -e
-printf '%s\n' "$EMERGE_STATUS" >"$INSTALL_EVIDENCE/source-emerge.status"
-scan_portage_processes "$INSTALL_EVIDENCE/portage-processes.post-emerge.txt"
-{
-  printf 'status=%s\n' "$EMERGE_STATUS"
-  printf 'portage_residue_rows=%s\n' \
-    "$(/usr/bin/wc -l <"$INSTALL_EVIDENCE/portage-processes.post-emerge.txt")"
-} >"$INSTALL_EVIDENCE/source-emerge-outcome.txt"
-test ! -s "$INSTALL_EVIDENCE/portage-processes.post-emerge.txt"
-test "$EMERGE_STATUS" -eq 0
-
-capture_installed_cpvs "$INSTALL_EVIDENCE/installed-cpvs.after.txt"
-capture_selected_sets "$INSTALL_EVIDENCE/selected-sets.after.json"
-/usr/bin/cmp --silent \
-  "$INSTALL_EVIDENCE/selected-sets.before.json" \
-  "$INSTALL_EVIDENCE/selected-sets.after.json"
-/usr/bin/comm -13 \
-  "$INSTALL_EVIDENCE/installed-cpvs.before.txt" \
-  "$INSTALL_EVIDENCE/installed-cpvs.after.txt" \
-  >"$INSTALL_EVIDENCE/installed-cpvs.added.txt"
-/usr/bin/comm -23 \
-  "$INSTALL_EVIDENCE/installed-cpvs.before.txt" \
-  "$INSTALL_EVIDENCE/installed-cpvs.after.txt" \
-  >"$INSTALL_EVIDENCE/installed-cpvs.removed.txt"
-test ! -s "$INSTALL_EVIDENCE/installed-cpvs.removed.txt"
-/usr/bin/cmp --silent \
-  "$INSTALL_EVIDENCE/pretend-cpvs.txt" \
-  "$INSTALL_EVIDENCE/installed-cpvs.added.txt"
-/usr/bin/sha256sum "$INSTALL_EVIDENCE/installed-cpvs.after.txt" \
-  >"$INSTALL_EVIDENCE/installed-cpvs.after.sha256"
-
-: >"$INSTALL_EVIDENCE/qcheck.stdout"
-: >"$INSTALL_EVIDENCE/qcheck.stderr"
-while IFS= read -r cpv; do
-  if ! /usr/bin/qcheck -q -v "=$cpv" \
-      >>"$INSTALL_EVIDENCE/qcheck.stdout" \
-      2>>"$INSTALL_EVIDENCE/qcheck.stderr"; then
-    printf 'qcheck failed for %s\n' "$cpv" >&2
-    exit 1
-  fi
-done <"$INSTALL_EVIDENCE/installed-cpvs.added.txt"
-
-capture_ebuild_provenance \
-  "$INSTALL_EVIDENCE/ebuild-provenance.after.json"
-/usr/bin/cmp --silent \
-  "$INSTALL_EVIDENCE/ebuild-provenance.before.json" \
-  "$INSTALL_EVIDENCE/ebuild-provenance.after.json"
-
-capture_selected_binpkg_state "$INSTALL_EVIDENCE/binpkgs.after.json"
-jq -e --slurpfile selected "$INSTALL_EVIDENCE/pretend-selection.json" '
-  .schema_version == 1 and
-  (.rows | length) == ($selected[0].rows | length) and
-  ([.rows[].cpv] | sort) == ([$selected[0].rows[].cpv] | sort) and
-  ([.rows[].cpv] | length) == ([.rows[].cpv] | unique | length) and
-  ([.rows[] | select(
-    (.sha256 | test("^[0-9a-f]{64}$") | not) or
-    (.size <= 0) or (.mode != 420)
-  )] | length) == 0
-' "$INSTALL_EVIDENCE/binpkgs.after.json" >/dev/null
-test "$(jq -r '.packages_sha256' "$INSTALL_EVIDENCE/binpkgs.before.json")" != \
-  "$(jq -r '.packages_sha256' "$INSTALL_EVIDENCE/binpkgs.after.json")"
-: >"$INSTALL_EVIDENCE/binpkg-tar.stdout"
-: >"$INSTALL_EVIDENCE/binpkg-tar.stderr"
-while IFS= read -r archive; do
-  if ! /usr/bin/tar --list --file "$archive" \
-      >>"$INSTALL_EVIDENCE/binpkg-tar.stdout" \
-      2>>"$INSTALL_EVIDENCE/binpkg-tar.stderr"; then
-    printf 'GPKG tar validation failed for %s\n' "$archive" >&2
-    exit 1
-  fi
-done < <(jq -er '.rows[].path' "$INSTALL_EVIDENCE/binpkgs.after.json")
-
-/usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-  PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
-  EPYTHON=python3.15 /usr/bin/python3.15 -I -B - \
-  "$INSTALL_EVIDENCE/pretend-selection.json" \
-  >"$INSTALL_EVIDENCE/installed-vdb-provenance.json" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-import portage
-
-selection = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["rows"]
-vartree = portage.db["/"]["vartree"].dbapi
-rows = []
-for selected in selection:
-    cpv = selected["cpv"]
-    values = vartree.aux_get(cpv, ["repository", "EAPI", "SLOT", "BUILD_TIME"])
-    repository, eapi, slot, build_time = values
-    if repository != selected["repository"]:
-        raise SystemExit(f"installed repository mismatch for {cpv}")
-    if not eapi or not slot or not build_time.isdigit():
-        raise SystemExit(f"incomplete installed metadata for {cpv}")
-    rows.append({"cpv": cpv, "repository": repository, "eapi": eapi,
-                 "slot": slot, "build_time": int(build_time)})
-print(json.dumps({"schema_version": 1, "rows": rows}, indent=2, sort_keys=True))
-PY
-
-run_schema_probe() {
-  local interpreter=$1 label=$2 resolved
-  test -x "$interpreter"
-  resolved=$(/usr/bin/readlink -e "$interpreter")
-  test -n "$resolved"
-  test -f "$resolved"
-  test ! -L "$resolved"
-  {
-    printf 'requested=%s\n' "$interpreter"
-    printf 'resolved=%s\n' "$resolved"
-    /usr/bin/stat -Lc 'device=%d inode=%i uid=%u gid=%g mode=%a size=%s' \
-      "$resolved"
-    printf 'sha256=%s\n' \
-      "$(/usr/bin/sha256sum "$resolved" | /usr/bin/cut -d' ' -f1)"
-    "$interpreter" --version
-  } >"$INSTALL_EVIDENCE/python-$label.identity.txt" 2>&1
-  /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
-    PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C TZ=UTC \
-    "$interpreter" -I -B - \
-    >"$INSTALL_EVIDENCE/draft-2020-12-$label.stdout" \
-    2>"$INSTALL_EVIDENCE/draft-2020-12-$label.stderr" <<'PY'
-from jsonschema import Draft202012Validator, ValidationError
-
-schema = {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "type": "object",
-    "properties": {"value": {"type": "integer"}},
-    "required": ["value"],
-    "additionalProperties": False,
-}
-Draft202012Validator.check_schema(schema)
-validator = Draft202012Validator(schema)
-validator.validate({"value": 1})
-try:
-    validator.validate({"value": "not-an-integer"})
-except ValidationError:
-    pass
-else:
-    raise SystemExit("negative Draft 2020-12 probe unexpectedly passed")
-print("Draft 2020-12 positive and negative probes passed")
-PY
-}
-
-run_schema_probe /usr/bin/python3 active-python3
-run_schema_probe /usr/bin/python3.15 portage-python3.15
-
-printf '%s\n' \
-  'source-only: --usepkg=n --getbinpkg=n --buildpkg=y' \
-  >"$INSTALL_EVIDENCE/source-only-policy.txt"
-publish_operator_evidence "$INSTALL_EVIDENCE" "$INSTALL_DURABLE"
-checkpoint_evidence_manifest \
-  "$INSTALL_DURABLE" verify "$INSTALL_DURABLE/operator-evidence.manifest.json"
 ```
 
-Retain both `/root/jsonschema-source-install-$INSTALL_ID` and the verified
-durable copy through Candidate B authorization. If any command above fails,
-stop before section 8, keep the root evidence directory unchanged, and publish
-it to a distinct reviewed failure-evidence destination before attempting any
-remediation; never overwrite the successful destination named above.
+The current reviewed source intentionally sets both
+`LIVE_PREPARATION_ENABLED` and `LIVE_MUTATION_ENABLED` to `False`.  Check those
+literal gates in the exact clean checkout **before** publishing anything.  The
+gate therefore exits today without modifying the bootstrap parent, Portage,
+the VDB, or any package.  Do not change the constants on the host.  Continue
+only after a new reviewed exact candidate enables both gates and passes its
+updated portable, host-capability and authoritative contracts.
+
+```bash
+PREREQUISITE_PUBLISHER_SOURCE=$CHECKOUT_SOURCE/scripts/optimization/recovery/publish-jsonschema-prerequisite-bootstrap.py
+PREREQUISITE_HELPER_SOURCE=$CHECKOUT_SOURCE/scripts/optimization/recovery/install-jsonschema-prerequisite.py
+for path in "$PREREQUISITE_PUBLISHER_SOURCE" "$PREREQUISITE_HELPER_SOURCE"; do
+  test -f "$path"
+  test ! -L "$path"
+done
+if ! PREREQUISITE_GATE=$(
+  /usr/bin/python3.15 -I -B - "$PREREQUISITE_HELPER_SOURCE" <<'PY'
+import ast
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+tree = ast.parse(path.read_bytes(), filename=str(path))
+values = {}
+for node in tree.body:
+    if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+        continue
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    value = node.value
+    for target in targets:
+        if isinstance(target, ast.Name) and target.id in {
+            "LIVE_PREPARATION_ENABLED", "LIVE_MUTATION_ENABLED"
+        }:
+            if not isinstance(value, ast.Constant) or type(value.value) is not bool:
+                raise SystemExit(f"non-literal live gate: {target.id}")
+            values[target.id] = value.value
+if values != {
+    "LIVE_PREPARATION_ENABLED": True,
+    "LIVE_MUTATION_ENABLED": True,
+}:
+    print("live prerequisite preparation/mutation remains disabled")
+    raise SystemExit(77)
+print("live prerequisite preparation/mutation enabled")
+PY
+); then
+  printf 'ERROR: %s; stop before prepare; bootstrap publication is forbidden\n' \
+    "$PREREQUISITE_GATE" >&2
+  exit 1
+fi
+test "$PREREQUISITE_GATE" = \
+  'live prerequisite preparation/mutation enabled'
+```
+
+Bootstrap publication is itself a bounded live filesystem mutation.  After
+the source gate succeeds, publish from the same checkout bound in section 1.
+The trust anchor is not a bare `git status`: the publisher requires root-owned,
+non-group/world-writable directories from `/` through the canonical checkout,
+its private `.git` directory, and the canonical
+`/var/lib/gentoo-optimization/bootstrap` parent (which is exactly
+`root:root 0755`).  It rejects tracked changes, ordinary untracked files, and
+ignored worktree residue; binds the exact HEAD commit, tree, `100755` path,
+blob object ID, blob size and blob SHA-256 for every payload; and compares each
+worktree file byte-for-byte with that blob.
+
+Each new payload and the exact-schema manifest is fsynced, the complete
+private `0700` directory is published with `RENAME_NOREPLACE`, and the `0755`
+parent is fsynced.  Publication never overwrites or reuses a destination.
+
+```bash
+PREREQUISITE_BOOTSTRAP=$(
+  /usr/bin/python3.15 -I -B "$PREREQUISITE_PUBLISHER_SOURCE" publish \
+    --repository-root "$CHECKOUT_SOURCE" --commit "$COMMIT"
+)
+test "$PREREQUISITE_BOOTSTRAP" = \
+  "/var/lib/gentoo-optimization/bootstrap/jsonschema-prerequisite-$COMMIT"
+test -d "$PREREQUISITE_BOOTSTRAP"
+test ! -L "$PREREQUISITE_BOOTSTRAP"
+PREREQUISITE_PUBLISHER=$PREREQUISITE_BOOTSTRAP/publish-jsonschema-prerequisite-bootstrap.py
+PREREQUISITE_HELPER=$PREREQUISITE_BOOTSTRAP/install-jsonschema-prerequisite.py
+PREREQUISITE_VERIFIER=$PREREQUISITE_BOOTSTRAP/verify-binpkg-snapshot.py
+PREREQUISITE_MANIFEST=$PREREQUISITE_BOOTSTRAP/bootstrap-manifest.json
+for path in \
+  "$PREREQUISITE_PUBLISHER" "$PREREQUISITE_HELPER" \
+  "$PREREQUISITE_VERIFIER" "$PREREQUISITE_MANIFEST"; do
+  test -f "$path"
+  test ! -L "$path"
+done
+VERIFIED_PREREQUISITE_BOOTSTRAP=$(
+  /usr/bin/python3.15 -I -B "$PREREQUISITE_PUBLISHER" verify \
+    --commit "$COMMIT"
+)
+test "$VERIFIED_PREREQUISITE_BOOTSTRAP" = "$PREREQUISITE_BOOTSTRAP"
+/usr/bin/jq -e --arg commit "$COMMIT" \
+  --arg checkout "$CHECKOUT_SOURCE" \
+  --arg destination "$PREREQUISITE_BOOTSTRAP" '
+  .schema == "gentoo-optimization-jsonschema-prerequisite-bootstrap-v1" and
+  (keys | sort) == ([
+    "commit", "destination", "files", "python", "repository_git_config",
+    "repository_root", "repository_root_identity", "schema", "tree"
+  ] | sort) and
+  .commit == $commit and .repository_root == $checkout and
+  .destination == $destination and
+  (.tree | test("^[0-9a-f]{40}$")) and
+  .python.path == "/usr/bin/python3.15" and
+  .python.uid == 0 and .python.gid == 0 and .python.mode == 493 and
+  (.python.sha256 | test("^[0-9a-f]{64}$")) and
+  ([.files[].relative] | sort) == [
+    "install-jsonschema-prerequisite.py",
+    "publish-jsonschema-prerequisite-bootstrap.py",
+    "verify-binpkg-snapshot.py"
+  ] and
+  ([.files[] | select(
+    (.git.path !=
+      ("scripts/optimization/recovery/" + .relative)) or
+    (.source.path != ($checkout + "/" + .git.path)) or
+    (.source.uid != 0) or (.source.gid != 0) or
+    (.source.mode != 493) or (.source.nlink != 1) or
+    (.source.sha256 | test("^[0-9a-f]{64}$") | not) or
+    (.git.mode != "100755") or
+    (.git.blob_oid | test("^[0-9a-f]{40}$") | not) or
+    (.git.blob_sha256 | test("^[0-9a-f]{64}$") | not) or
+    (.git.blob_sha256 != .source.sha256) or
+    (.git.blob_size != .source.size) or
+    (.published.uid != 0) or (.published.gid != 0) or
+    (.published.mode != 493) or (.published.nlink != 1) or
+    (.published.sha256 != .source.sha256)
+  )] | length) == 0
+' "$PREREQUISITE_MANIFEST" >/dev/null
+```
+
+The published publisher is the only allowed execution path.  It revalidates
+the complete manifest and every published identity before replacing itself
+with `/usr/bin/python3.15 -I -B` and the published transaction helper.  Never
+execute the helper from `CHECKOUT_SOURCE` or call the helper directly.  Its
+`exec` boundary accepts only the four public commands `prepare`, `run`,
+`recover`, and `verify`; all fixture/internal helper entrypoints are rejected.
+
+After those gates are enabled by a later reviewed candidate, use only this
+exact CLI.  `prepare` freezes and revalidates repository, Portage
+configuration, VDB/private state, tools, exact source-only plan, distfiles and
+private mutable roots before publishing `prepared`.  `run` may start only from
+that state.  On any nonzero or interrupted run, invoke `recover` once; never
+invoke `prepare` or `run` again for the same transaction ID.
+
+```bash
+INSTALL_ID=jsonschema-source-YYYYMMDDTHHMMSSZ
+INSTALL_STATE=/var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-$INSTALL_ID.json
+INSTALL_ATTEMPT=/var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-$INSTALL_ID.preparation-attempt.json
+INSTALL_REPORT=/var/lib/gentoo-optimization/reports/jsonschema-prerequisite-$INSTALL_ID
+INSTALL_AUTHORITY=/var/lib/gentoo-optimization/recovery/prerequisite-authorities/$INSTALL_ID
+INSTALL_CACHE=/var/cache/gentoo-optimization/prerequisite-transactions/$INSTALL_ID
+for path in \
+  "$INSTALL_STATE" "$INSTALL_ATTEMPT" "$INSTALL_REPORT" \
+  "$INSTALL_AUTHORITY" "$INSTALL_CACHE"; do
+  test ! -e "$path"
+  test ! -L "$path"
+done
+PREREQUISITE_EXEC=(
+  /usr/bin/python3.15 -I -B "$PREREQUISITE_PUBLISHER" exec
+  --commit "$COMMIT" --
+)
+"${PREREQUISITE_EXEC[@]}" prepare "$INSTALL_ID" \
+  --pre-checkpoint-state "$PRE_CHECKPOINT_TERMINAL"
+"${PREREQUISITE_EXEC[@]}" verify "$INSTALL_ID"
+
+set +e
+"${PREREQUISITE_EXEC[@]}" run "$INSTALL_ID"
+INSTALL_STATUS=$?
+set -e
+if test "$INSTALL_STATUS" -ne 0; then
+  "${PREREQUISITE_EXEC[@]}" recover "$INSTALL_ID"
+fi
+"${PREREQUISITE_EXEC[@]}" verify "$INSTALL_ID"
+/usr/bin/jq -e '
+  .phase == "success" and
+  .pending_total == 0 and .unknown_total == 0 and .failed_total == 0
+' "$INSTALL_STATE" >/dev/null
+```
+
+After coordinator death or reboot, start a fresh clean root shell exactly as
+shown at the beginning of section 1.  Do not rerun `publish`, `prepare`, or
+`run`, and do not depend on functions or variables inherited from the dead
+shell.  Re-enter the reviewed values explicitly, revalidate the existing
+published bootstrap, reconstruct only the public execution vector, and use
+only `recover` followed by `verify`:
+
+```bash
+set -Eeuo pipefail
+umask 077
+test "$EUID" -eq 0
+COMMIT=REVIEWED_COMMIT
+INSTALL_ID=jsonschema-source-ORIGINAL_TIMESTAMPZ
+PREREQUISITE_BOOTSTRAP=/var/lib/gentoo-optimization/bootstrap/jsonschema-prerequisite-$COMMIT
+PREREQUISITE_PUBLISHER=$PREREQUISITE_BOOTSTRAP/publish-jsonschema-prerequisite-bootstrap.py
+INSTALL_STATE=/var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-$INSTALL_ID.json
+INSTALL_ATTEMPT=/var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-$INSTALL_ID.preparation-attempt.json
+test -f "$PREREQUISITE_PUBLISHER"
+test ! -L "$PREREQUISITE_PUBLISHER"
+test -f "$INSTALL_ATTEMPT"
+test ! -L "$INSTALL_ATTEMPT"
+test "$(/usr/bin/python3.15 -I -B "$PREREQUISITE_PUBLISHER" verify \
+  --commit "$COMMIT")" = "$PREREQUISITE_BOOTSTRAP"
+PREREQUISITE_EXEC=(
+  /usr/bin/python3.15 -I -B "$PREREQUISITE_PUBLISHER" exec
+  --commit "$COMMIT" --
+)
+"${PREREQUISITE_EXEC[@]}" recover "$INSTALL_ID"
+"${PREREQUISITE_EXEC[@]}" verify "$INSTALL_ID"
+```
+
+A recovered `rolled-back` or `recovery-failed` state is terminal evidence but
+is not permission to enter section 8.  Preserve the bootstrap manifest, every
+immutable transaction state, `INSTALL_REPORT`, `INSTALL_AUTHORITY`, and
+`INSTALL_CACHE` through Candidate B authorization.  Allocate a new ID after a
+failed pre-`prepared` attempt.  The immutable preparation-attempt object means
+an ID is consumed before repository/config/VDB preparation begins: never
+delete forensic residue, republish its bootstrap, or reuse that ID for any
+command.
 
 ## 8. Create, replay, and finalize the post-install checkpoint
 
@@ -1297,7 +1023,7 @@ done
 scan_portage_processes "$EVIDENCE/portage-processes.preflight.txt"
 test ! -s "$EVIDENCE/portage-processes.preflight.txt"
 
-BINPKG_SOURCE=$(readlink -e /var/cache/gentoo-optimization/binpkgs/critical-current)
+BINPKG_SOURCE=$(/usr/bin/readlink -e /var/cache/gentoo-optimization/binpkgs/critical-current)
 test "$BINPKG_SOURCE" = "$PRE_CHECKPOINT_DURABLE"
 BINPKG_SOURCE_PACKAGES_SHA256=$(
   /usr/bin/sha256sum "$BINPKG_SOURCE/Packages" | /usr/bin/cut -d' ' -f1
@@ -1319,7 +1045,7 @@ set +e
 VERIFY_STATUS=$?
 set -e
 test "$VERIFY_STATUS" -eq 1
-jq -e '
+/usr/bin/jq -e '
   .schema_version == 1 and .status == "fail" and
   .counts.missing_live_cpvs > 0 and
   .counts.errors == .counts.missing_live_cpvs and
@@ -1327,12 +1053,26 @@ jq -e '
   .counts.unindexed_gpkg_archives == 0 and
   ([.issues[].code] | all(. == "live_cpv_missing_archive"))
 ' "$EVIDENCE/source-verification.json" >/dev/null
-jq -r '.coverage.missing_live_cpvs[] | "=" + .' \
+/usr/bin/jq -r '.coverage.missing_live_cpvs[] | "=" + .' \
   "$EVIDENCE/source-verification.json" | LC_ALL=C /usr/bin/sort -u \
   >"$EVIDENCE/delta-atoms.txt"
 test "$(/usr/bin/wc -l <"$EVIDENCE/delta-atoms.txt")" -eq \
-  "$(jq -r '.counts.missing_live_cpvs' "$EVIDENCE/source-verification.json")"
-/usr/bin/sed 's/^/=/' "$INSTALL_EVIDENCE/installed-cpvs.added.txt" \
+  "$(/usr/bin/jq -r '.counts.missing_live_cpvs' "$EVIDENCE/source-verification.json")"
+test -f "$INSTALL_STATE"
+test ! -L "$INSTALL_STATE"
+/usr/bin/jq -e '
+  .phase == "success" and
+  .pending_total == 0 and .unknown_total == 0 and .failed_total == 0
+' "$INSTALL_STATE" >/dev/null
+/usr/bin/sha256sum "$INSTALL_STATE" \
+  >"$EVIDENCE/jsonschema-prerequisite-state.sha256"
+/usr/bin/jq -er '.plan.rows[].cpv' "$INSTALL_STATE" | \
+  LC_ALL=C /usr/bin/sort -u \
+  >"$EVIDENCE/jsonschema-prerequisite-added-cpvs.txt"
+test "$(/usr/bin/wc -l \
+  <"$EVIDENCE/jsonschema-prerequisite-added-cpvs.txt")" -eq \
+  "$(/usr/bin/jq -er '.plan.rows | length' "$INSTALL_STATE")"
+/usr/bin/sed 's/^/=/' "$EVIDENCE/jsonschema-prerequisite-added-cpvs.txt" \
   >"$EVIDENCE/expected-delta-atoms.txt"
 /usr/bin/cmp --silent \
   "$EVIDENCE/expected-delta-atoms.txt" "$EVIDENCE/delta-atoms.txt"
@@ -1378,7 +1118,7 @@ restoration/finalization:
 ```bash
 mapfile -t JSONSCHEMA_RESTORE_CPVS < <(
   /usr/bin/grep -E '^dev-python/jsonschema-[0-9]' \
-    "$INSTALL_EVIDENCE/installed-cpvs.added.txt"
+    "$EVIDENCE/jsonschema-prerequisite-added-cpvs.txt"
 )
 test "${#JSONSCHEMA_RESTORE_CPVS[@]}" -eq 1
 RESTORE_CPV=${JSONSCHEMA_RESTORE_CPVS[0]}
@@ -1418,41 +1158,41 @@ the terminal pre-install generation:
 ```bash
 POST_CANONICAL=/var/lib/gentoo-optimization/state/project/binpkg-checkpoint-$POST_CHECKPOINT_ID.json
 POST_TERMINAL=/var/lib/gentoo-optimization/state/project/binpkg-checkpoint-$POST_CHECKPOINT_ID.offline-restore-proven.json
-test "$(stat -c '%d:%i' "$POST_CANONICAL")" = \
-  "$(stat -c '%d:%i' "$POST_TERMINAL")"
+test "$(/usr/bin/stat -c '%d:%i' "$POST_CANONICAL")" = \
+  "$(/usr/bin/stat -c '%d:%i' "$POST_TERMINAL")"
 for state in "$PRE_CHECKPOINT_TERMINAL" "$POST_TERMINAL"; do
-  jq -e '
+  /usr/bin/jq -e '
     .status == "offline-restore-proven" and
     .offline_restoration_tested == true and
     .pending_total == 0 and .unknown_total == 0 and .failed_total == 0
   ' "$state" >/dev/null
 done
-test "$(readlink -e /var/cache/gentoo-optimization/binpkgs/critical-current)" = \
+test "$(/usr/bin/readlink -e /var/cache/gentoo-optimization/binpkgs/critical-current)" = \
   "$CHECKPOINT_DURABLE"
 POST_WITNESS=/var/cache/gentoo-optimization/binpkgs/critical-current.previous-$POST_CHECKPOINT_ID
 test -L "$POST_WITNESS"
-test "$(readlink -e "$POST_WITNESS")" = "$PRE_CHECKPOINT_DURABLE"
-POST_WITNESS_FIELDS=$(stat -c '%d:%i:%u:%g:%a:%h:%F' "$POST_WITNESS")
-POST_WITNESS_TARGET=$(readlink "$POST_WITNESS")
-POST_WITNESS_RESOLVED=$(readlink -e "$POST_WITNESS")
-POST_WITNESS_TARGET_FIELDS=$(stat -c '%d:%i:%u:%g:%a:%h:%F' \
+test "$(/usr/bin/readlink -e "$POST_WITNESS")" = "$PRE_CHECKPOINT_DURABLE"
+POST_WITNESS_FIELDS=$(/usr/bin/stat -c '%d:%i:%u:%g:%a:%h:%F' "$POST_WITNESS")
+POST_WITNESS_TARGET=$(/usr/bin/readlink "$POST_WITNESS")
+POST_WITNESS_RESOLVED=$(/usr/bin/readlink -e "$POST_WITNESS")
+POST_WITNESS_TARGET_FIELDS=$(/usr/bin/stat -c '%d:%i:%u:%g:%a:%h:%F' \
   "$POST_WITNESS_RESOLVED")
 POST_WITNESS_PACKAGES_SHA=$(
-  sha256sum "$POST_WITNESS_RESOLVED/Packages" | awk '{print $1}'
+  /usr/bin/sha256sum "$POST_WITNESS_RESOLVED/Packages" | /usr/bin/awk '{print $1}'
 )
 POST_WITNESS_IDENTITY="$POST_WITNESS_FIELDS|$POST_WITNESS_TARGET|$POST_WITNESS_RESOLVED|$POST_WITNESS_TARGET_FIELDS|$POST_WITNESS_PACKAGES_SHA"
 test "$POST_WITNESS_IDENTITY" = \
-  "$(jq -r '.displaced_selector_identity' "$CHECKPOINT_REPORT/activation-receipt.json")"
+  "$(/usr/bin/jq -r '.displaced_selector_identity' "$CHECKPOINT_REPORT/activation-receipt.json")"
 POST_RESTORE_RECEIPT=$CHECKPOINT_REPORT/offline-restore-receipt.json
-test "$(sha256sum "$POST_RESTORE_RECEIPT" | cut -d' ' -f1)" = \
-  "$(jq -r '.offline_restore.receipt_sha256' "$POST_CANONICAL")"
+test "$(/usr/bin/sha256sum "$POST_RESTORE_RECEIPT" | /usr/bin/cut -d' ' -f1)" = \
+  "$(/usr/bin/jq -r '.offline_restore.receipt_sha256' "$POST_CANONICAL")"
 for NAME in command binpkg post_verifier attempt_ledger; do
-  REL=$(jq -r --arg name "$NAME" '.evidence[$name].path' \
+  REL=$(/usr/bin/jq -r --arg name "$NAME" '.evidence[$name].path' \
     "$POST_RESTORE_RECEIPT")
-  EXPECTED=$(jq -r --arg name "$NAME" '.evidence[$name].sha256' \
+  EXPECTED=$(/usr/bin/jq -r --arg name "$NAME" '.evidence[$name].sha256' \
     "$POST_RESTORE_RECEIPT")
   test "$EXPECTED" = \
-    "$(sha256sum "$CHECKPOINT_REPORT/$REL" | cut -d' ' -f1)"
+    "$(/usr/bin/sha256sum "$CHECKPOINT_REPORT/$REL" | /usr/bin/cut -d' ' -f1)"
 done
 test ! -e "/var/cache/gentoo-optimization/binpkgs/critical-current.prepared-$ID"
 test ! -L "/var/cache/gentoo-optimization/binpkgs/critical-current.prepared-$ID"
@@ -1463,9 +1203,9 @@ if ! POST_EXCHANGE_RESIDUE=$(/usr/bin/find \
 fi
 test -z "$POST_EXCHANGE_RESIDUE"
 
-find "$CHECKPOINT_REPORT" -xdev \( -type f -o -type l \) -print0 \
+/usr/bin/find "$CHECKPOINT_REPORT" -xdev \( -type f -o -type l \) -print0 \
   >"$EVIDENCE/final-report.paths0"
-find /var/lib/gentoo-optimization/state/project -maxdepth 1 \
+/usr/bin/find /var/lib/gentoo-optimization/state/project -maxdepth 1 \
   \( -name "binpkg-checkpoint-$ID.json" -o \
      -name "binpkg-checkpoint-$ID.*.json" \) \
   \( -type f -o -type l \) -print0 >>"$EVIDENCE/final-report.paths0"

@@ -10,7 +10,7 @@
 - **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-08-09 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This unchanged observation is live progress evidence, not the frozen Phase 3 inventory, and must be recomputed immediately before the first live mutation.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-08-09; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is a rejected predecessor whose exact GitHub Actions run `30226349306` failed. Commit `44ead3d66670a1ee8a9d3aace8fc0945cbb2d130` then passed its exact-SHA portable workflow but is superseded, non-authorizing predecessor evidence. Commit `1729e9a26bcf6d3fff466e05e04dc80c8dc0fbba` is the latest rejected predecessor: exact run `30747706125` exposed a transaction SIGTERM readiness race and skipped the portable framework-installer fixture. The current branch head contains the bounded corrections but remains non-authorizing pending a fresh exact clean portable and CI boundary plus the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-08-14; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is a rejected predecessor whose exact GitHub Actions run `30226349306` failed. Commit `44ead3d66670a1ee8a9d3aace8fc0945cbb2d130` then passed its exact-SHA portable workflow but is superseded, non-authorizing predecessor evidence. Commit `1729e9a26bcf6d3fff466e05e04dc80c8dc0fbba` is a rejected predecessor: exact run `30747706125` exposed a transaction SIGTERM readiness race and skipped the portable framework-installer fixture. Commit `03e8917dc69a1cda1e9d7063e16b6a2ce0ff61fa` is the latest rejected predecessor: exact GitHub Actions run `31543998224` stopped before `portable-complete` because its tracked authoritative contract expected 206 main tests while deterministic discovery found 256 with identity SHA-256 `e3471337c6119f38534dbeaf89e4c301ca22924d41403bd3e7742464bb3a523a`. No live mutation, Candidate-A acceptance, Phase 2 authorization, optimization generation, or frozen inventory resulted. The current working tree contains bounded corrections but remains non-authorizing pending a coherent successor contract, fresh exact clean portable and CI boundary, and the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -1163,6 +1163,42 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   restoration/finalization proofs, installed Candidate-A gate,
   supervised sample-PGO transaction, frozen Candidate B, and detached index
   remain required.
+
+### 2026-08-14 rejected predecessor and prerequisite-integration review
+
+- Commit `03e8917dc69a1cda1e9d7063e16b6a2ce0ff61fa` is a rejected
+  predecessor. Its exact GitHub Actions run `31543998224` completed checkout,
+  portable dependency and reviewed ShellCheck installation, and the Ubuntu
+  `runuser` compatibility proof, then stopped before `portable-complete` at the
+  authoritative contract check. The tracked contract expected 206 main tests;
+  deterministic discovery found 256 with identity SHA-256
+  `e3471337c6119f38534dbeaf89e4c301ca22924d41403bd3e7742464bb3a523a`.
+  This is a deterministic repository-boundary rejection, not a flaky result.
+  The contract must be regenerated only after the prerequisite transaction and
+  its test topology reach their intended final source shape.
+- That revision implemented substantial but deliberately non-live
+  prerequisite machinery in
+  `scripts/optimization/recovery/install-jsonschema-prerequisite.py`: durable
+  transaction states and reconciliation groundwork, frozen Git/rsync/local
+  repository authorities, exact resolver plans, private mutable package roots,
+  namespace/PTTY containment, authenticated child control, rollback/recovery
+  groundwork, and a semantic fixture suite. Its
+  `LIVE_PREPARATION_ENABLED = False` and `LIVE_MUTATION_ENABLED = False` gates
+  remain intentional. The old inline runbook path must not be treated as a
+  substitute; one completed, immutable, evidence-bound helper path is required
+  before any live prerequisite operation.
+- The exact run produced no live mutation and no Candidate-A or Phase 2
+  authorization. No package, framework, selector, project state, optimization
+  generation, or frozen Phase 3 inventory was changed. All four §11.4 boxes
+  and all three §11.7 boxes remain open. The plan still contains 80 checked and
+  69 open boxes; this implementation/review checkpoint changes no checkbox.
+- Portable CI must create an evidence root and exact checkout provenance before
+  its static contract check, retain the combined contract diagnostic and exit
+  status there, and always upload that root. This preserves evidence for an
+  exact SHA even when the driver cannot start. A future green successor still
+  must retain the exact checkout, reviewed tools and ShellCheck, Ubuntu
+  `runuser` compatibility proof, mandatory framework-installer pass, complete
+  portable gate, and exact-SHA provenance.
 
 ## 11.1 Remove the unsafe global consumer
 
