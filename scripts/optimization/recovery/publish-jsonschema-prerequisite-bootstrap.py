@@ -284,12 +284,14 @@ def git_command(repository: Path, *arguments: str, valid: tuple[int, ...] = (0,)
 
 
 def validate_repository(
-    repository: Path, commit: str, uid: int, gid: int
+    repository: Path, commit: str, authority: RuntimeAuthority
 ) -> tuple[str, Identity]:
+    uid = authority.uid
+    gid = authority.gid
     resolved_exact(repository, "repository root")
     validate_directory(repository, uid, gid)
-    if uid == 0 and gid == 0:
-        validate_tree(repository, Path("/"), uid, gid)
+    if authority.production:
+        validate_tree(repository, Path("/"), 0, 0)
     top = git_command(repository, "rev-parse", "--show-toplevel").strip()
     if top != os.fspath(repository):
         fail("Git top-level differs from the reviewed repository root")
@@ -654,7 +656,7 @@ def publish(arguments: argparse.Namespace, authority: RuntimeAuthority) -> int:
     if not COMMIT_PATTERN.fullmatch(commit):
         fail("reviewed commit is not a lowercase 40-character Git object ID")
     repository = resolved_exact(arguments.repository_root, "repository root")
-    tree, git_config_identity = validate_repository(repository, commit, uid, gid)
+    tree, git_config_identity = validate_repository(repository, commit, authority)
     bound_python = python_identity(authority.python)
     validate_runtime_parent(authority)
     final = destination(parent, commit)
@@ -697,7 +699,7 @@ def publish(arguments: argparse.Namespace, authority: RuntimeAuthority) -> int:
                 }
             )
         current_tree, current_git_config = validate_repository(
-            repository, commit, uid, gid
+            repository, commit, authority
         )
         if current_tree != tree or current_git_config != git_config_identity:
             fail("repository tree changed during bootstrap publication")

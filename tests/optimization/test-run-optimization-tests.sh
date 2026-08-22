@@ -211,6 +211,8 @@ grep -Fq 'portage-config-cleanup' "${FIXTURE}/list.txt" || \
     fail 'suite list omits reviewed Portage configuration cleanup'
 grep -Fq 'framework-installer' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the hermetic framework installer transaction gate'
+grep -Fq 'no-legacy-bolt' "${FIXTURE}/list.txt" || \
+    fail 'suite list omits the retired legacy BOLT gate'
 grep -Fq 'no-legacy-pgo' "${FIXTURE}/list.txt" || \
     fail 'suite list omits the retired legacy PGO gate'
 grep -Fq 'pgo-dispatcher' "${FIXTURE}/list.txt" || \
@@ -242,6 +244,9 @@ for capability in clang-ir clang-sample gcc rust go bolt; do
         "${FIXTURE}/list.txt" || fail "suite list omits ${capability}"
 done
 bash -- "${DRIVER}" --contract-topology >"${FIXTURE}/contract-topology.tsv"
+grep -Fxq $'top-level\tno-legacy-bolt' \
+    "${FIXTURE}/contract-topology.tsv" || \
+    fail 'contract topology omits the retired legacy BOLT gate'
 grep -Fxq $'top-level\tphase2-evidence-contract' \
     "${FIXTURE}/contract-topology.tsv" || \
     fail 'contract topology omits the distinct Phase 2 evidence identity'
@@ -1376,6 +1381,14 @@ mkdir -p -- "${PORTABLE_TOOL_ROOT}" "${PORTABLE_TOOL_BIN}"
     cd -- "${PORTABLE_TOOL_ROOT}"
     tar --extract --file=-
 )
+# The retirement regression is a newly added source in the candidate working
+# tree and therefore is not visible to git ls-files until the correction is
+# committed.  Copy it explicitly so this pre-commit driver boundary exercises
+# the same required-source policy as the eventual clean commit.
+cp -- "${REPOSITORY_ROOT}/tests/optimization/test-no-legacy-bolt.sh" \
+    "${PORTABLE_TOOL_ROOT}/tests/optimization/test-no-legacy-bolt.sh"
+chmod 0755 -- \
+    "${PORTABLE_TOOL_ROOT}/tests/optimization/test-no-legacy-bolt.sh"
 printf '%s\n' '#!/usr/bin/bash' 'exit 0' \
     >"${PORTABLE_TOOL_ROOT}/tests/optimization/test-run-optimization-tests.sh"
 chmod 0755 -- \

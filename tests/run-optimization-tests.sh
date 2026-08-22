@@ -205,6 +205,7 @@ portable suites (smoke runs only the initial static/core subset):
   package-env-portage-semantic (explicit SKIP when the live Portage universe is unavailable)
   portage-config-cleanup (reviewed package.mask and shared O3 baseline)
   framework-installer (hermetic snapshot, trust, transaction, and rollback gate)
+  no-legacy-bolt (retired identity-free BOLT helpers remain unusable)
   no-legacy-pgo (retired weak paths/helpers remain unusable)
   pgo-dispatcher (strict backend/ABI/fingerprint and stage-hook fixture)
   portage-qa-hook-state (lost/mismatched active state and marker invalidation)
@@ -216,7 +217,7 @@ portable suites (smoke runs only the initial static/core subset):
   portage-sample-pgo-live-policy-integration (the same complete pipeline with
                                   resolved live sandbox/userpriv/PID/network/IPC
                                   policy; root-only and opt-in with clang-sample)
-  bolt-command-policy (exact static layout policy in both BOLT command producers)
+  bolt-command-policy (exact production/capability BOLT layout policy)
   bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
   bolt-pre-strip-hooks (hermetic capture/register/deploy and rollback fixture)
   driver-cli-self-test
@@ -276,6 +277,7 @@ emit_contract_topology() {
         capability:rust
         driver-cli-self-test
         framework-installer
+        no-legacy-bolt
         no-legacy-pgo
         package-env-duplicate-policy
         package-env-portage-semantic
@@ -1641,6 +1643,15 @@ else
     run_case framework-installer "${ENV_BIN}" \
         TEST_CASE_TIMEOUT_SECONDS="${TEST_CASE_TIMEOUT_SECONDS}" \
         "${BASH_BIN}" -- "${FRAMEWORK_INSTALLER_FIXTURE}"
+fi
+
+NO_LEGACY_BOLT_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-no-legacy-bolt.sh
+if [[ ! -f ${NO_LEGACY_BOLT_FIXTURE} ]]; then
+    skip_case no-legacy-bolt "fixture is absent: ${NO_LEGACY_BOLT_FIXTURE}"
+elif ! require_commands bash cmp grep mktemp rm; then
+    skip_case no-legacy-bolt "${PREFLIGHT_REASON}"
+else
+    run_case no-legacy-bolt "${BASH_BIN}" -- "${NO_LEGACY_BOLT_FIXTURE}"
 fi
 
 NO_LEGACY_PGO_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-no-legacy-pgo.sh

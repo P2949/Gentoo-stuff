@@ -6,11 +6,14 @@ from __future__ import annotations
 import argparse
 import copy
 import contextlib
+import errno
 import io
 import importlib.util
+import inspect
 import os
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -18,7 +21,7 @@ import time
 import unittest
 import unittest.mock
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence, cast
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -199,6 +202,190 @@ class FakePromptProcess:
         return self.status
 
 
+class ManagedSignalBoundaryTests(unittest.TestCase):
+    def test_hup_int_and_term_map_to_exact_interruption(self) -> None:
+        for signum in TOOL.TRANSACTION_SIGNALS:
+            with self.subTest(signum=signal.Signals(signum).name):
+                with self.assertRaises(TOOL.TransactionInterrupted) as raised:
+                    TOOL.raise_transaction_interrupted(signum, None)
+                self.assertEqual(raised.exception.signum, signum)
+
+        with self.assertRaisesRegex(
+            TOOL.TransactionError, "unmanaged signal reached transaction handler"
+        ):
+            TOOL.raise_transaction_interrupted(signal.SIGUSR1, None)
+
+    def test_handler_install_and_restore_are_atomic_signal_boundaries(self) -> None:
+        events: list[tuple[object, ...]] = []
+        prior_mask = {signal.SIGUSR1}
+        originals = {signum: object() for signum in TOOL.TRANSACTION_SIGNALS}
+
+        def pthread_sigmask(how: int, mask: object) -> set[signal.Signals]:
+            events.append(
+                (
+                    "mask",
+                    how,
+                    frozenset(cast(Iterable[signal.Signals], mask)),
+                )
+            )
+            return set(prior_mask)
+
+        def getsignal(signum: signal.Signals) -> object:
+            events.append(("get", signum))
+            return originals[signum]
+
+        def set_signal(signum: signal.Signals, handler: object) -> None:
+            events.append(("set", signum, handler))
+
+        previous: dict[signal.Signals, object] = {}
+        with (
+            unittest.mock.patch.object(
+                TOOL.signal, "pthread_sigmask", side_effect=pthread_sigmask
+            ),
+            unittest.mock.patch.object(
+                TOOL.signal, "getsignal", side_effect=getsignal
+            ),
+            unittest.mock.patch.object(
+                TOOL.signal, "signal", side_effect=set_signal
+            ),
+        ):
+            TOOL.install_transaction_signal_handlers(
+                TOOL.raise_transaction_interrupted, previous
+            )
+            TOOL.restore_transaction_signal_handlers(previous)
+
+        self.assertEqual(previous, originals)
+        block_indexes = [
+            index
+            for index, event in enumerate(events)
+            if event[:2] == ("mask", signal.SIG_BLOCK)
+        ]
+        restore_indexes = [
+            index
+            for index, event in enumerate(events)
+            if event[:2] == ("mask", signal.SIG_SETMASK)
+        ]
+        self.assertEqual(len(block_indexes), 2)
+        self.assertEqual(len(restore_indexes), 2)
+        self.assertLess(block_indexes[0], restore_indexes[0])
+        self.assertLess(restore_indexes[0], block_indexes[1])
+        self.assertLess(block_indexes[1], restore_indexes[1])
+        for signum in TOOL.TRANSACTION_SIGNALS:
+            install = events.index(
+                ("set", signum, TOOL.raise_transaction_interrupted)
+            )
+            restore = events.index(("set", signum, originals[signum]))
+            self.assertLess(block_indexes[0], install)
+            self.assertLess(install, restore_indexes[0])
+            self.assertLess(block_indexes[1], restore)
+            self.assertLess(restore, restore_indexes[1])
+
+    def test_scope_restores_dispositions_after_interruption(self) -> None:
+        originals = {signum: object() for signum in TOOL.TRANSACTION_SIGNALS}
+        installed: dict[signal.Signals, object] = {}
+
+        def pthread_sigmask(_how: int, _mask: object) -> set[signal.Signals]:
+            return set()
+
+        def set_signal(signum: signal.Signals, handler: object) -> None:
+            installed[signum] = handler
+
+        with (
+            unittest.mock.patch.object(
+                TOOL.signal, "pthread_sigmask", side_effect=pthread_sigmask
+            ),
+            unittest.mock.patch.object(
+                TOOL.signal,
+                "getsignal",
+                side_effect=lambda signum: originals[signum],
+            ),
+            unittest.mock.patch.object(
+                TOOL.signal, "signal", side_effect=set_signal
+            ),
+        ):
+            with self.assertRaises(TOOL.TransactionInterrupted) as raised:
+                with TOOL.transaction_signal_scope():
+                    handler = cast(
+                        Callable[[int, object], object],
+                        installed[signal.SIGTERM],
+                    )
+                    self.assertIs(handler, TOOL.raise_transaction_interrupted)
+                    handler(signal.SIGTERM, None)
+            self.assertEqual(raised.exception.signum, signal.SIGTERM)
+
+        self.assertEqual(installed, originals)
+
+    def test_inherited_blocked_managed_signal_is_rejected(self) -> None:
+        pthread_sigmask = getattr(signal, "pthread_sigmask", None)
+        if not callable(pthread_sigmask):
+            self.skipTest("pthread_sigmask is unavailable")
+        original_mask = pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+        try:
+            previous: dict[signal.Signals, object] = {}
+            with self.assertRaisesRegex(
+                TOOL.TransactionError,
+                "inherited blocked managed signals: SIGTERM",
+            ):
+                TOOL.install_transaction_signal_handlers(
+                    TOOL.raise_transaction_interrupted, previous
+                )
+            self.assertFalse(previous)
+            self.assertIn(
+                signal.SIGTERM, pthread_sigmask(signal.SIG_BLOCK, set())
+            )
+        finally:
+            pthread_sigmask(signal.SIG_SETMASK, original_mask)
+
+    def test_managed_scope_is_only_the_terminal_child_reap_boundary(self) -> None:
+        self.assertEqual(
+            TOOL.MANAGED_SIGNAL_BOUNDARY, "terminal-child-reap-only"
+        )
+        events: list[object] = []
+
+        @contextlib.contextmanager
+        def managed_scope() -> Any:
+            events.append("scope-enter")
+            try:
+                yield
+            finally:
+                events.append("scope-exit")
+
+        class Process:
+            def wait(self, *, timeout: float) -> None:
+                events.append(("wait", timeout))
+
+        with unittest.mock.patch.object(
+            TOOL, "transaction_signal_scope", side_effect=managed_scope
+        ):
+            TOOL.wait_for_terminal_child(Process(), timeout=17.0)
+        self.assertEqual(
+            events, ["scope-enter", ("wait", 17.0), "scope-exit"]
+        )
+
+        helper_source = inspect.getsource(TOOL.wait_for_terminal_child)
+        self.assertEqual(helper_source.count("transaction_signal_scope"), 1)
+        for function in (
+            TOOL.run_armed_source_child,
+            TOOL.run_held_lock_recovery,
+        ):
+            source = inspect.getsource(function)
+            self.assertEqual(source.count("wait_for_terminal_child"), 1)
+            self.assertNotIn("transaction_signal_scope", source)
+            self.assertLess(
+                source.rfind("publish_state("),
+                source.index("wait_for_terminal_child"),
+            )
+
+        for function in (
+            TOOL.prepare_command,
+            TOOL.run_command,
+            TOOL.recover_command,
+        ):
+            self.assertNotIn(
+                "transaction_signal_scope", inspect.getsource(function)
+            )
+
+
 class PlanContractTests(unittest.TestCase):
     def test_parse_pretend_preserves_displayed_atom_order_and_sorts_rows(self) -> None:
         plan = fixture_plan(tuple(reversed(PRETEND_LINES)))
@@ -336,7 +523,7 @@ class StateMachineTests(unittest.TestCase):
             ["source_emerge_may_never_be_retried_after_armed"]
         )
 
-    def test_live_entrypoints_remain_fail_closed_without_lock_and_counter_handshakes(self) -> None:
+    def test_live_entrypoints_remain_fail_closed_pending_final_candidate_a_proof(self) -> None:
         self.assertIs(TOOL.LIVE_PREPARATION_ENABLED, False)
         self.assertIs(TOOL.LIVE_MUTATION_ENABLED, False)
 
@@ -1285,11 +1472,11 @@ class CounterCrashAuthorityTests(unittest.TestCase):
         root.mkdir()
         paths = make_fixture_paths(root, transaction_id)
         paths.report.mkdir(parents=True)
-        live_edb = root / "live-edb"
+        live_edb = paths.cache_edb
         private_edb = root / "private-edb"
         vdb = root / "vdb"
         for directory in (live_edb, private_edb, vdb):
-            directory.mkdir()
+            directory.mkdir(parents=True)
         (live_edb / "counter").write_bytes(b"5")
         (private_edb / "counter").write_bytes(b"7")
         prepared = make_base_state(paths)
@@ -1302,6 +1489,31 @@ class CounterCrashAuthorityTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
+
+    def _set_user_xattr(self, path: Path) -> None:
+        if not hasattr(os, "setxattr"):
+            if os.environ.get("GENTOO_OPT_RUN_JSONSCHEMA_HOST_CAPABILITIES") == "1":
+                self.fail("authoritative host lacks the user-xattr Python API")
+            self.skipTest("fixture platform lacks the user-xattr Python API")
+        try:
+            os.setxattr(path, "user.gentoo-opt-counter-test", b"foreign")
+        except OSError as error:
+            unsupported = {
+                value
+                for value in (
+                    getattr(errno, "ENOTSUP", None),
+                    getattr(errno, "EOPNOTSUPP", None),
+                )
+                if value is not None
+            }
+            if error.errno not in unsupported:
+                raise
+            if os.environ.get("GENTOO_OPT_RUN_JSONSCHEMA_HOST_CAPABILITIES") == "1":
+                self.fail(
+                    "authoritative host fixture filesystem lacks user xattrs: "
+                    f"{error}"
+                )
+            self.skipTest(f"fixture filesystem lacks user xattrs: {error}")
 
     def test_every_counter_publication_fault_is_idempotently_reconciled(self) -> None:
         stages = (
@@ -1365,6 +1577,138 @@ class CounterCrashAuthorityTests(unittest.TestCase):
                     prepared=prepared,
                     outcome="rolled-back",
                 )
+
+    def test_counter_reconciliation_rejects_hardlinked_live_counter(self) -> None:
+        paths, prepared, live, private, vdb = self._fixture("hardlinked-counter")
+        alias = live / "counter-alias"
+        os.link(live / "counter", alias)
+        with unittest.mock.patch.object(
+            TOOL,
+            "vdb_manifest",
+            return_value={"cpvs": ["sys-apps/base-1"]},
+        ):
+            with self.assertRaisesRegex(
+                TOOL.TransactionError, "not a single-link regular file"
+            ):
+                TOOL.reconcile_counter_locked(
+                    live_edb=live,
+                    private_edb=private,
+                    vdb=vdb,
+                    prepared=prepared,
+                    outcome="rolled-back",
+                )
+        self.assertEqual((live / "counter").read_bytes(), b"5")
+        self.assertEqual(alias.read_bytes(), b"5")
+        self.assertEqual(list(paths.report.iterdir()), [])
+
+    def test_counter_reconciliation_rejects_live_counter_xattrs(self) -> None:
+        paths, prepared, live, private, vdb = self._fixture("xattr-counter")
+        self._set_user_xattr(live / "counter")
+        with unittest.mock.patch.object(
+            TOOL,
+            "vdb_manifest",
+            return_value={"cpvs": ["sys-apps/base-1"]},
+        ):
+            with self.assertRaisesRegex(
+                TOOL.TransactionError, "has unreviewed extended attributes"
+            ):
+                TOOL.reconcile_counter_locked(
+                    live_edb=live,
+                    private_edb=private,
+                    vdb=vdb,
+                    prepared=prepared,
+                    outcome="rolled-back",
+                )
+        self.assertEqual((live / "counter").read_bytes(), b"5")
+        self.assertEqual(list(paths.report.iterdir()), [])
+
+    def test_counter_authority_is_revalidated_after_read_only_reseal(self) -> None:
+        _paths, prepared, live, private, vdb = self._fixture("reseal-xattr")
+        probe = live / "xattr-probe"
+        probe.write_bytes(b"probe")
+        self._set_user_xattr(probe)
+        os.removexattr(probe, "user.gentoo-opt-counter-test")
+        probe.unlink()
+        mount_state = {"read_only": True}
+
+        def remount(_path: Path, read_only: bool) -> None:
+            mount_state["read_only"] = read_only
+            if read_only:
+                os.setxattr(
+                    live / "counter",
+                    "user.gentoo-opt-counter-test",
+                    b"after-publication",
+                )
+
+        with unittest.mock.patch.object(
+            TOOL,
+            "vdb_manifest",
+            return_value={"cpvs": ["sys-apps/base-1"]},
+        ):
+            with self.assertRaisesRegex(
+                TOOL.TransactionError,
+                "resealed live EDB counter has unreviewed extended attributes",
+            ):
+                TOOL.reconcile_counter_with_reseal(
+                    live_edb=live,
+                    private_edb=private,
+                    vdb=vdb,
+                    prepared=prepared,
+                    outcome="rolled-back",
+                    remount=remount,
+                    is_read_only=lambda _path: mount_state["read_only"],
+                )
+
+    def test_terminal_counter_authority_rejects_value_inode_link_and_xattr_drift(self) -> None:
+        for drift in ("value", "inode", "hardlink", "xattr"):
+            with self.subTest(drift=drift):
+                paths, prepared, live, private, vdb = self._fixture(
+                    "terminal-" + drift
+                )
+                mount_state = {"read_only": True}
+
+                def remount(_path: Path, read_only: bool) -> None:
+                    mount_state["read_only"] = read_only
+
+                with unittest.mock.patch.object(
+                    TOOL,
+                    "vdb_manifest",
+                    return_value={"cpvs": ["sys-apps/base-1"]},
+                ):
+                    authority = TOOL.reconcile_counter_with_reseal(
+                        live_edb=live,
+                        private_edb=private,
+                        vdb=vdb,
+                        prepared=prepared,
+                        outcome="rolled-back",
+                        remount=remount,
+                        is_read_only=lambda _path: mount_state["read_only"],
+                    )
+                TOOL.validate_counter_reconciliation_authority(
+                    paths=paths,
+                    value=authority,
+                    expected_outcome="rolled-back",
+                    verify_current=True,
+                )
+                counter = live / "counter"
+                if drift == "value":
+                    counter.write_bytes(b"8")
+                elif drift == "inode":
+                    replacement = live / "counter-replacement"
+                    replacement.write_bytes(counter.read_bytes())
+                    replacement.chmod(counter.stat().st_mode & 0o7777)
+                    os.replace(replacement, counter)
+                elif drift == "hardlink":
+                    os.link(counter, live / "counter-alias")
+                else:
+                    self._set_user_xattr(counter)
+                with self.assertRaises(TOOL.TransactionError):
+                    TOOL.validate_counter_reconciliation_authority(
+                        paths=paths,
+                        value=authority,
+                        expected_outcome="rolled-back",
+                        verify_current=True,
+                    )
 
 
 class RecoveryFailedAuthorityTests(unittest.TestCase):
@@ -1589,6 +1933,9 @@ class PayloadAdmissionAuthorityTests(unittest.TestCase):
         self.image_rows = {
             "/" + str(row["path"]): row for row in manifest["rows"]
         }
+        self.prepared["resolver"]["payload_root"] = self.observation(
+            Path("/usr")
+        )
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -1638,6 +1985,177 @@ class PayloadAdmissionAuthorityTests(unittest.TestCase):
         )
         self.assertEqual([row["cpv"] for row in references], [self.cpv])
 
+    def test_non_usr_distinct_device_payload_is_rejected_before_observation(self) -> None:
+        mergeroot = self.root / "foreign-device-image"
+        payload = mergeroot / "opt/jsonschema-prerequisite/foreign.py"
+        payload.parent.mkdir(parents=True)
+        payload.write_text("foreign-device\n", encoding="utf-8")
+        observer = unittest.mock.Mock(
+            return_value={
+                "path": "/opt",
+                "type": "directory",
+                "device": 999_999,
+                "inode": 1,
+                "uid": os.getuid(),
+                "gid": os.getgid(),
+                "mode": 0o755,
+                "xattrs": [],
+            }
+        )
+        with unittest.mock.patch.object(
+            TOOL, "object_observation", observer
+        ):
+            with self.assertRaisesRegex(
+                TOOL.TransactionError,
+                "escapes the reviewed /usr durability root",
+            ):
+                TOOL.admit_merge_image_payload(
+                    mergeroot=mergeroot,
+                    cpv=self.cpv,
+                    prepared=self.prepared,
+                    observed_destinations={},
+                    prepared_sha256=self.prepared_sha,
+                    control_session=self.control,
+                )
+        observer.assert_not_called()
+        self.assertEqual(list(self.report.iterdir()), [])
+
+    def test_under_usr_distinct_device_payload_is_rejected_before_receipt(self) -> None:
+        def split_device(path: Path) -> dict[str, Any]:
+            observation = self.observation(path)
+            if os.fspath(path) == "/usr/lib":
+                observation = {**observation, "device": 999_999}
+            return observation
+
+        with unittest.mock.patch.object(
+            TOOL, "object_observation", side_effect=split_device
+        ):
+            with self.assertRaisesRegex(
+                TOOL.TransactionError, "different device from /usr"
+            ):
+                TOOL.admit_merge_image_payload(
+                    mergeroot=self.mergeroot,
+                    cpv=self.cpv,
+                    prepared=self.prepared,
+                    observed_destinations={},
+                    prepared_sha256=self.prepared_sha,
+                    control_session=self.control,
+                )
+        self.assertEqual(list(self.report.iterdir()), [])
+
+    def test_rehashed_payload_record_cannot_introduce_non_usr_path(self) -> None:
+        with unittest.mock.patch.object(
+            TOOL, "object_observation", side_effect=self.observation
+        ):
+            reference = TOOL.admit_merge_image_payload(
+                mergeroot=self.mergeroot,
+                cpv=self.cpv,
+                prepared=self.prepared,
+                observed_destinations={},
+                prepared_sha256=self.prepared_sha,
+                control_session=self.control,
+            )
+        path = Path(reference["path"])
+        record = TOOL.read_json_regular(path, "payload fixture")
+        self.assertIsInstance(record, dict)
+        record = cast(dict[str, Any], record)
+        manifest = cast(dict[str, Any], record["manifest"])
+        rows = cast(list[dict[str, Any]], manifest["rows"])
+        rows[0]["path"] = "opt"
+        manifest["rows_sha256"] = TOOL.sha256_bytes(TOOL.canonical_json(rows))
+        record["manifest_sha256"] = TOOL.sha256_bytes(
+            TOOL.canonical_json(manifest)
+        )
+        destinations = sorted("/" + str(row["path"]) for row in rows)
+        record["destination_paths"] = destinations
+        record["destination_paths_sha256"] = TOOL.sha256_bytes(
+            ("\n".join(destinations) + "\n").encode()
+        )
+        path.write_bytes(TOOL.canonical_json(record))
+
+        with self.assertRaisesRegex(
+            TOOL.TransactionError,
+            "escapes the reviewed /usr durability root",
+        ):
+            TOOL.validate_payload_admission_record(
+                record=record,
+                path=path,
+                prepared=self.prepared,
+                prepared_sha256=self.prepared_sha,
+                control_session_sha256=TOOL.sha256_bytes(
+                    self.control.encode("ascii")
+                ),
+            )
+
+    def test_rehashed_payload_record_rejects_traversal_and_device_drift(self) -> None:
+        with unittest.mock.patch.object(
+            TOOL, "object_observation", side_effect=self.observation
+        ):
+            reference = TOOL.admit_merge_image_payload(
+                mergeroot=self.mergeroot,
+                cpv=self.cpv,
+                prepared=self.prepared,
+                observed_destinations={},
+                prepared_sha256=self.prepared_sha,
+                control_session=self.control,
+            )
+        path = Path(reference["path"])
+        original = cast(
+            dict[str, Any], TOOL.read_json_regular(path, "payload fixture")
+        )
+
+        traversal = copy.deepcopy(original)
+        traversal_manifest = cast(dict[str, Any], traversal["manifest"])
+        traversal_rows = cast(list[dict[str, Any]], traversal_manifest["rows"])
+        traversal_rows[0]["path"] = "usr/../etc"
+        traversal_manifest["rows_sha256"] = TOOL.sha256_bytes(
+            TOOL.canonical_json(traversal_rows)
+        )
+        traversal["manifest_sha256"] = TOOL.sha256_bytes(
+            TOOL.canonical_json(traversal_manifest)
+        )
+        traversal_destinations = sorted(
+            "/" + str(row["path"]) for row in traversal_rows
+        )
+        traversal["destination_paths"] = traversal_destinations
+        traversal["destination_paths_sha256"] = TOOL.sha256_bytes(
+            ("\n".join(traversal_destinations) + "\n").encode()
+        )
+        with self.assertRaisesRegex(
+            TOOL.TransactionError, "noncanonical relative path"
+        ):
+            TOOL.validate_payload_admission_record(
+                record=traversal,
+                path=path,
+                prepared=self.prepared,
+                prepared_sha256=self.prepared_sha,
+                control_session_sha256=TOOL.sha256_bytes(
+                    self.control.encode("ascii")
+                ),
+            )
+
+        device_drift = copy.deepcopy(original)
+        observations = cast(
+            list[dict[str, Any]], device_drift["preexisting_destinations"]
+        )
+        lib = next(row for row in observations if row["path"] == "/usr/lib")
+        lib["device"] = 999_999
+        device_drift["preexisting_destinations_sha256"] = TOOL.sha256_bytes(
+            TOOL.canonical_json(observations)
+        )
+        with self.assertRaisesRegex(
+            TOOL.TransactionError, "different device from /usr"
+        ):
+            TOOL.validate_payload_admission_record(
+                record=device_drift,
+                path=path,
+                prepared=self.prepared,
+                prepared_sha256=self.prepared_sha,
+                control_session_sha256=TOOL.sha256_bytes(
+                    self.control.encode("ascii")
+                ),
+            )
+
     def test_success_payload_proof_detects_live_content_drift(self) -> None:
         with unittest.mock.patch.object(
             TOOL, "object_observation", side_effect=self.observation
@@ -1665,7 +2183,7 @@ class PayloadAdmissionAuthorityTests(unittest.TestCase):
                 return {"path": os.fspath(path), "type": "absent"}
             if expected.get("type") == "directory":
                 return self.observation(path)
-            return {"path": os.fspath(path), **expected}
+            return {"path": os.fspath(path), "device": 1, **expected}
 
         with unittest.mock.patch.object(
             TOOL, "object_observation", side_effect=installed
@@ -1705,6 +2223,237 @@ class PayloadAdmissionAuthorityTests(unittest.TestCase):
                         vdb=self.root / "vdb",
                     )
 
+            def device_drifted(path: Path) -> dict[str, Any]:
+                row = installed(path)
+                if os.fspath(path) == content_path:
+                    row = {**row, "device": 999_999}
+                return row
+
+            with unittest.mock.patch.object(
+                TOOL, "object_observation", side_effect=device_drifted
+            ):
+                with self.assertRaisesRegex(
+                    TOOL.TransactionError, "installed payload object device differs"
+                ):
+                    TOOL.verify_success_payload_authority(
+                        references=references,
+                        prepared=self.prepared,
+                        prepared_sha256=self.prepared_sha,
+                        control_session_sha256=TOOL.sha256_bytes(
+                            self.control.encode("ascii")
+                        ),
+                        vdb=self.root / "vdb",
+                    )
+
+
+class BoundedLoadedPortageLockTests(unittest.TestCase):
+    class Contended(Exception):
+        pass
+
+    def _objects(self, events: list[object]) -> tuple[Any, Any]:
+        class Vardb:
+            _dbroot = "/fixture/vdb"
+            _lock: object | None = None
+            _lock_count = 0
+
+            def unlock(self) -> None:
+                events.append("vardb-unlock")
+                if self._lock is None or self._lock_count != 1:
+                    raise AssertionError("vardb unlock lacks exact held state")
+                self._lock = None
+                self._lock_count = 0
+
+        class Registry:
+            _filename = "/fixture/preserved_libs_registry"
+            _lock: object | None = None
+
+            def unlock(self) -> None:
+                events.append("registry-unlock")
+                if self._lock is None:
+                    raise AssertionError("registry unlock lacks exact held state")
+                self._lock = None
+
+        return Vardb(), Registry()
+
+    def test_exact_pinned_nonblocking_api_identity_is_bound(self) -> None:
+        def lockdir(*_args: Any, **_kwargs: Any) -> object:
+            return object()
+
+        def lockfile(*_args: Any, **_kwargs: Any) -> object:
+            return object()
+
+        class TryAgain(Exception):
+            pass
+
+        lockdir.__module__ = "portage.locks"
+        lockfile.__module__ = "portage.locks"
+        TryAgain.__module__ = "portage.exception"
+        authority = TOOL.portage_lock_api_authority(
+            lockdir, lockfile, TryAgain
+        )
+        self.assertEqual(authority["lockdir_name"], "lockdir")
+        self.assertEqual(authority["contention_error_name"], "TryAgain")
+
+        lockfile.__module__ = "fixture.foreign"
+        with self.assertRaisesRegex(
+            TOOL.TransactionError, "API identity differs from policy"
+        ):
+            TOOL.portage_lock_api_authority(lockdir, lockfile, TryAgain)
+
+    def test_lock_order_and_reverse_unlock_survive_body_error(self) -> None:
+        events: list[object] = []
+        vardb, registry = self._objects(events)
+
+        def lockdir(path: str, *, flags: int) -> object:
+            events.append(("vardb-lock", path, flags))
+            return object()
+
+        def lockfile(path: str, *, flags: int) -> object:
+            events.append(("registry-lock", path, flags))
+            return object()
+
+        with self.assertRaisesRegex(RuntimeError, "injected held-body error"):
+            with TOOL.hold_loaded_portage_locks_nonblocking(
+                vardb=vardb,
+                registry=registry,
+                lockdir=lockdir,
+                lockfile=lockfile,
+                contention_error=self.Contended,
+            ):
+                events.append("body")
+                self.assertIsNotNone(vardb._lock)
+                self.assertEqual(vardb._lock_count, 1)
+                self.assertIsNotNone(registry._lock)
+                raise RuntimeError("injected held-body error")
+        self.assertEqual(
+            events,
+            [
+                ("vardb-lock", "/fixture/vdb", os.O_NONBLOCK),
+                (
+                    "registry-lock",
+                    "/fixture/preserved_libs_registry",
+                    os.O_NONBLOCK,
+                ),
+                "body",
+                "registry-unlock",
+                "vardb-unlock",
+            ],
+        )
+        self.assertIsNone(vardb._lock)
+        self.assertEqual(vardb._lock_count, 0)
+        self.assertIsNone(registry._lock)
+
+    def test_registry_contention_releases_vardb_before_bounded_retry(self) -> None:
+        events: list[object] = []
+        vardb, registry = self._objects(events)
+        clock = [0.0]
+        registry_attempts = 0
+
+        def lockdir(_path: str, *, flags: int) -> object:
+            self.assertEqual(flags, os.O_NONBLOCK)
+            events.append("vardb-lock")
+            return object()
+
+        def lockfile(_path: str, *, flags: int) -> object:
+            nonlocal registry_attempts
+            self.assertEqual(flags, os.O_NONBLOCK)
+            registry_attempts += 1
+            events.append("registry-lock")
+            if registry_attempts == 1:
+                raise self.Contended()
+            return object()
+
+        def sleep(duration: float) -> None:
+            events.append(("sleep", duration))
+            clock[0] += duration
+
+        with TOOL.hold_loaded_portage_locks_nonblocking(
+            vardb=vardb,
+            registry=registry,
+            lockdir=lockdir,
+            lockfile=lockfile,
+            contention_error=self.Contended,
+            timeout_seconds=1.0,
+            retry_seconds=0.1,
+            monotonic=lambda: clock[0],
+            sleeper=sleep,
+        ):
+            events.append("body")
+        self.assertEqual(
+            events,
+            [
+                "vardb-lock",
+                "registry-lock",
+                "vardb-unlock",
+                ("sleep", 0.1),
+                "vardb-lock",
+                "registry-lock",
+                "body",
+                "registry-unlock",
+                "vardb-unlock",
+            ],
+        )
+        self.assertIsNone(vardb._lock)
+        self.assertEqual(vardb._lock_count, 0)
+        self.assertIsNone(registry._lock)
+
+    def test_contended_vardb_expires_at_exact_bound_without_leaking_state(self) -> None:
+        events: list[object] = []
+        vardb, registry = self._objects(events)
+        clock = [10.0]
+
+        def lockdir(_path: str, *, flags: int) -> object:
+            self.assertEqual(flags, os.O_NONBLOCK)
+            events.append("attempt")
+            raise self.Contended()
+
+        def sleep(duration: float) -> None:
+            events.append(("sleep", duration))
+            clock[0] += duration
+
+        with self.assertRaisesRegex(
+            TOOL.TransactionError, "bounded 0.2-second acquisition window"
+        ):
+            with TOOL.hold_loaded_portage_locks_nonblocking(
+                vardb=vardb,
+                registry=registry,
+                lockdir=lockdir,
+                lockfile=lambda *_args, **_kwargs: object(),
+                contention_error=self.Contended,
+                timeout_seconds=0.2,
+                retry_seconds=0.05,
+                monotonic=lambda: clock[0],
+                sleeper=sleep,
+            ):
+                self.fail("contended lock unexpectedly entered held body")
+        self.assertLessEqual(clock[0], 10.2 + 1e-9)
+        self.assertLessEqual(events.count("attempt"), 6)
+        self.assertIsNone(vardb._lock)
+        self.assertEqual(vardb._lock_count, 0)
+        self.assertIsNone(registry._lock)
+
+    def test_registry_acquisition_error_releases_exact_vardb_object(self) -> None:
+        events: list[object] = []
+        vardb, registry = self._objects(events)
+
+        def broken_registry(_path: str, *, flags: int) -> object:
+            self.assertEqual(flags, os.O_NONBLOCK)
+            raise RuntimeError("injected registry API failure")
+
+        with self.assertRaisesRegex(RuntimeError, "registry API failure"):
+            with TOOL.hold_loaded_portage_locks_nonblocking(
+                vardb=vardb,
+                registry=registry,
+                lockdir=lambda _path, *, flags: object(),
+                lockfile=broken_registry,
+                contention_error=self.Contended,
+            ):
+                self.fail("broken registry unexpectedly entered held body")
+        self.assertEqual(events, ["vardb-unlock"])
+        self.assertIsNone(vardb._lock)
+        self.assertEqual(vardb._lock_count, 0)
+        self.assertIsNone(registry._lock)
+
 
 class PreparationLockedBoundaryTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -1737,10 +2486,12 @@ class PreparationLockedBoundaryTests(unittest.TestCase):
             preserved_registry=object(),
             target="/",
             vdb_path=self.paths.vdb,
+            lock_api={"fixture": "nonblocking"},
         )
 
         @contextlib.contextmanager
-        def held() -> Any:
+        def held(actual_paths: Any) -> Any:
+            self.assertIs(actual_paths, self.paths)
             events.append("lock-enter")
             try:
                 yield locked
@@ -1789,7 +2540,24 @@ class PreparationLockedBoundaryTests(unittest.TestCase):
             ("native_toolchain_authority", {"native": "stable"}),
         ):
             stack.enter_context(unittest.mock.patch.object(TOOL, name, return_value=value))
-        stack.enter_context(unittest.mock.patch.object(TOOL, "read_counter", return_value=5))
+        stack.enter_context(
+            unittest.mock.patch.object(
+                TOOL,
+                "read_counter_authority",
+                return_value=(5, {"file": "stable"}),
+            )
+        )
+        stack.enter_context(
+            unittest.mock.patch.object(
+                TOOL,
+                "object_observation",
+                return_value={
+                    "path": os.fspath(self.paths.rooted("/usr")),
+                    "type": "directory",
+                    "device": 1,
+                },
+            )
+        )
         return stack
 
     def test_two_windows_scan_before_and_inside_lock_and_publish_under_final_lock(self) -> None:
@@ -1856,13 +2624,37 @@ class PreparationLockedBoundaryTests(unittest.TestCase):
                 )
         publisher.assert_not_called()
 
+    def test_preparation_requires_exact_counter_authority_before_publication(self) -> None:
+        events: list[str] = []
+        publisher = unittest.mock.Mock()
+        with self._patches(events), unittest.mock.patch.object(
+            TOOL,
+            "read_counter_authority",
+            side_effect=TOOL.TransactionError(
+                "live EDB counter is not a single-link regular file"
+            ),
+        ):
+            with self.assertRaisesRegex(
+                TOOL.TransactionError, "not a single-link regular file"
+            ):
+                TOOL.preparation_locked_snapshot(
+                    paths=self.paths,
+                    private_roots=None,
+                    runner=None,
+                    tools=None,
+                    publisher=publisher,
+                )
+        publisher.assert_not_called()
+
     def test_second_window_must_match_first_before_compact_binding(self) -> None:
         initial = {
+            "portage_lock_api": {"api": 1},
             "vdb": {"v": 1},
             "selected_sets": {"s": 1},
             "mtimedb": {"m": 1},
             "counter": {"c": 1},
             "live_etc": {"e": 1},
+            "payload_root": {"type": "directory", "device": 1},
             "loader_directories": {"l": 1},
             "effective_portage_policy": {"p": 1},
             "native_toolchain": {"n": 1},
@@ -2093,6 +2885,9 @@ class PostEmergeAuthorityTests(unittest.TestCase):
             "counter": TOOL.file_observation(self.paths.cache_edb / "counter"),
             "counter_value": 1,
             "live_etc": TOOL.file_observation(self.paths.rooted("/etc")),
+            "payload_root": TOOL.object_observation(
+                self.paths.rooted("/usr")
+            ),
             "copies": {
                 "schema_version": 1,
                 "rows": copies,
@@ -2163,7 +2958,10 @@ class PostEmergeAuthorityTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "success")
         self.assertEqual(result["private_etc"]["added"], ["profile.env"])
         self.assertTrue(result["vdb"]["exact_success_delta"])
-        self.assertEqual(result["private_mtimedb"]["stable_sha256"], TOOL.sha256_bytes(b"{}"))
+        self.assertEqual(
+            result["private_mtimedb"]["stable_sha256"],
+            TOOL.sha256_bytes(TOOL.canonical_json({})),
+        )
 
         (private_etc / "foreign.conf").write_text("foreign\n", encoding="utf-8")
         with self.assertRaisesRegex(TOOL.TransactionError, "private /etc changed outside"):
@@ -2352,9 +3150,21 @@ class AuthoritativeHostCapabilityTests(unittest.TestCase):
     def test_live_tools_and_package_manager_paths_are_root_trusted(self) -> None:
         self.require_root()
         tools = TOOL.default_tools()
-        manifest = TOOL.tool_manifest(tools)
+        # The transaction and snapshot verifier are Candidate-A bootstrap
+        # payloads, not independently installed host tools.  Their root-owned
+        # immutable publication is proved by the bootstrap fixture; a dirty
+        # developer checkout must not be mistaken for that production
+        # authority by this host-capability proof.
+        bootstrap_payloads = {"transaction", "snapshot_verifier"}
+        self.assertEqual(bootstrap_payloads, bootstrap_payloads & set(tools))
+        host_tools = {
+            name: path
+            for name, path in tools.items()
+            if name not in bootstrap_payloads
+        }
+        manifest = TOOL.tool_manifest(host_tools)
         self.assertEqual(
-            [row["name"] for row in manifest["rows"]], sorted(tools)
+            [row["name"] for row in manifest["rows"]], sorted(host_tools)
         )
         for row in manifest["rows"]:
             self.assertEqual(row["uid"], 0, row["name"])
@@ -2368,7 +3178,11 @@ class AuthoritativeHostCapabilityTests(unittest.TestCase):
             Path("/var/cache/edb"),
         ):
             resolved = path.resolve(strict=True)
-            TOOL.validate_trusted_directory(resolved, 0, 0)
+            metadata = resolved.lstat()
+            self.assertTrue(stat.S_ISDIR(metadata.st_mode), resolved)
+            self.assertFalse(stat.S_ISLNK(metadata.st_mode), resolved)
+            self.assertEqual(metadata.st_uid, 0, resolved)
+            self.assertEqual(stat.S_IMODE(metadata.st_mode) & 0o022, 0, resolved)
 
     def test_real_rsync_repository_clone_passes_full_recursive_gemato(self) -> None:
         self.require_root()
@@ -2381,6 +3195,35 @@ class AuthoritativeHostCapabilityTests(unittest.TestCase):
         repository = repositories[0]
         self.assertEqual(repository.sync_type, "rsync")
         self.assertIsNotNone(repository.key_path)
+        production_max_age_days = repository.max_age_days
+        self.assertGreater(
+            production_max_age_days,
+            0,
+            "production rsync authority must retain a finite freshness bound",
+        )
+        fixture_max_age_days = 36_500
+        self.assertGreater(fixture_max_age_days, production_max_age_days)
+
+        def full_recursive_fixture_verifier(
+            configured_repository: TOOL.RepositorySpec,
+            clone: Path,
+        ) -> dict[str, Any]:
+            # Materialization must still receive the configured production
+            # authority.  Only this read-only capability fixture substitutes
+            # a reviewed, deliberately broad age window so a stale local
+            # mirror cannot hide whether recursive Gemato verification works.
+            self.assertEqual(configured_repository, repository)
+            fixture_repository = TOOL.RepositorySpec(
+                name=configured_repository.name,
+                location=configured_repository.location,
+                sync_type=configured_repository.sync_type,
+                masters=configured_repository.masters,
+                key_path=configured_repository.key_path,
+                max_age_days=fixture_max_age_days,
+            )
+            fixture_repository.validate()
+            return TOOL.verify_rsync_clone(fixture_repository, clone)
+
         parent = Path(
             os.environ.get(
                 "GENTOO_OPT_JSONSCHEMA_HOST_TMPDIR",
@@ -2397,8 +3240,12 @@ class AuthoritativeHostCapabilityTests(unittest.TestCase):
                     root / "gentoo",
                     runner=TOOL.SubprocessRunner(),
                     tools=TOOL.default_tools(),
+                    rsync_verifier=full_recursive_fixture_verifier,
                 )
                 self.assertTrue(result["rsync"]["full_recursive_verification"])
+                self.assertEqual(
+                    repository.max_age_days, production_max_age_days
+                )
                 TOOL.verify_manifest(
                     root / "gentoo", Path(result["tree_manifest_path"])
                 )
@@ -2478,7 +3325,10 @@ class AuthoritativeHostCapabilityTests(unittest.TestCase):
                     self.assertIsNotNone(child_identity)
                     pidfd = os.pidfd_open(process.pid, 0)
                     try:
-                        signal.pidfd_send_signal(pidfd, signal.SIGTERM, None, 0)
+                        # SIGKILL proves the kill-child parent-death contract:
+                        # the unshare supervisor cannot defer or handle it,
+                        # and its namespace child must then receive KILL.
+                        signal.pidfd_send_signal(pidfd, signal.SIGKILL, None, 0)
                     finally:
                         os.close(pidfd)
                     process.wait(timeout=10.0)
@@ -2517,20 +3367,62 @@ class AuthoritativeHostCapabilityTests(unittest.TestCase):
                                 finally:
                                     os.close(pidfd)
 
-    def test_real_portage_vardb_object_can_be_locked_and_released(self) -> None:
+    def test_real_portage_lock_objects_accept_nonblocking_tokens_and_release(self) -> None:
         self.require_root()
         program = (
+            "import os, subprocess, sys\n"
             "from _emerge.actions import load_emerge_config\n"
+            "from portage.exception import TryAgain\n"
+            "from portage.locks import lockdir, lockfile\n"
+            "assert lockdir.__module__ == 'portage.locks'\n"
+            "assert lockfile.__module__ == 'portage.locks'\n"
+            "assert TryAgain.__module__ == 'portage.exception'\n"
             "config = load_emerge_config(action=None, args=[], "
             "opts={'--ignore-default-opts': True})\n"
             "target = config.trees._target_eroot\n"
             "vardb = config.trees[target]['vartree'].dbapi\n"
             "assert config.target_config.trees['vartree'].dbapi is vardb\n"
-            "vardb.lock()\n"
+            "registry = vardb._plib_registry\n"
+            "assert vardb._lock is None and vardb._lock_count == 0\n"
+            "assert registry._lock is None\n"
+            "vardb._lock = lockdir(vardb._dbroot, flags=os.O_NONBLOCK)\n"
+            "vardb._lock_count = 1\n"
             "try:\n"
-            "    print('GENTOO_OPT_VDB_LOCKED=1', flush=True)\n"
+            "    registry._lock = lockfile(registry._filename, flags=os.O_NONBLOCK)\n"
+            "    try:\n"
+            "        vardb_token = vardb._lock\n"
+            "        registry_token = registry._lock\n"
+            "        contender = (\n"
+            "            'import os, sys\\n'\n"
+            "            'from portage.exception import TryAgain\\n'\n"
+            "            'from portage.locks import lockdir, lockfile, unlockdir, unlockfile\\n'\n"
+            "            'for name, acquire, release, path in ((\\\"vardb\\\", lockdir, unlockdir, sys.argv[1]), (\\\"registry\\\", lockfile, unlockfile, sys.argv[2])):\\n'\n"
+            "            '    try:\\n'\n"
+            "            '        token = acquire(path, flags=os.O_NONBLOCK)\\n'\n"
+            "            '    except TryAgain:\\n'\n"
+            "            '        print(\\\"CONTENDED_\\\" + name, flush=True)\\n'\n"
+            "            '    else:\\n'\n"
+            "            '        release(token)\\n'\n"
+            "            '        raise SystemExit(\\\"unexpectedly acquired \\\" + name)\\n'\n"
+            "        )\n"
+            "        result = subprocess.run(\n"
+            "            [sys.executable, '-I', '-B', '-c', contender, str(vardb._dbroot), str(registry._filename)],\n"
+            "            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,\n"
+            "            env=dict(os.environ), timeout=10, check=False,\n"
+            "        )\n"
+            "        assert result.returncode == 0, result.stderr.decode(errors='replace')\n"
+            "        assert result.stdout.count(b'CONTENDED_') == 2, result.stdout\n"
+            "        assert b'CONTENDED_vardb' in result.stdout\n"
+            "        assert b'CONTENDED_registry' in result.stdout\n"
+            "        assert vardb._lock is vardb_token and vardb._lock_count == 1\n"
+            "        assert registry._lock is registry_token\n"
+            "        print('GENTOO_OPT_VDB_REGISTRY_LOCKED=1', flush=True)\n"
+            "    finally:\n"
+            "        registry.unlock()\n"
             "finally:\n"
             "    vardb.unlock()\n"
+            "assert vardb._lock is None and vardb._lock_count == 0\n"
+            "assert registry._lock is None\n"
         )
         result = TOOL.SubprocessRunner().run(
             ["/usr/bin/python3.15", "-I", "-B", "-c", program],
@@ -2542,7 +3434,7 @@ class AuthoritativeHostCapabilityTests(unittest.TestCase):
             0,
             result.stderr.decode("utf-8", errors="replace"),
         )
-        self.assertIn(b"GENTOO_OPT_VDB_LOCKED=1", result.stdout)
+        self.assertIn(b"GENTOO_OPT_VDB_REGISTRY_LOCKED=1", result.stdout)
 
 
 if __name__ == "__main__":

@@ -145,7 +145,10 @@ class OptimizationPolicyTests(unittest.TestCase):
             REPOSITORY_ROOT / "docs/bolt-global.md"
         ).read_text(encoding="utf-8")
         self.assertIn("The retired prototype made packages BOLT-ready globally", bolt_legacy)
+        self.assertIn("The prototype is permanently disabled.", bolt_legacy)
         self.assertNotIn("This repository makes packages BOLT-ready globally", bolt_legacy)
+        self.assertNotRegex(bolt_legacy, r"(?m)^```(?:bash|sh|shell)?$")
+        self.assertNotRegex(bolt_legacy, r"/opt/bolt-test|/var/tmp/bolt-profiles")
 
         for wrapper_name, command in (
             ("capture-input.sh", "capture"),
@@ -696,6 +699,15 @@ class OptimizationPolicyTests(unittest.TestCase):
         self.assertTrue(exchange_adapter.stat().st_mode & 0o111)
 
         required_sources = set(cast(list[str], policy["required_sources"]))
+        legacy_bolt_sources = {
+            "docs/bolt-global.md",
+            "scripts/bolt/bolt-package-binaries.sh",
+            "scripts/bolt/collect-profile.sh",
+            "scripts/bolt/list-package-binaries.sh",
+            "scripts/bolt/optimize-binary.sh",
+            "tests/optimization/test-bolt-command-policy.sh",
+            "tests/optimization/test-no-legacy-bolt.sh",
+        }
         self.assertLessEqual(
             {
                 "docs/binpkg-checkpoint-runbook.md",
@@ -710,6 +722,12 @@ class OptimizationPolicyTests(unittest.TestCase):
                 "tests/optimization/test_jsonschema_prerequisite_bootstrap.py",
             },
             required_sources,
+        )
+        self.assertLessEqual(legacy_bolt_sources, required_sources)
+        self.assertIn("scripts/bolt", cast(list[str], policy["source_scopes"]))
+        self.assertIn(
+            "no-legacy-bolt",
+            cast(list[str], policy["required_passing_test_names"]),
         )
 
         claims = {
@@ -730,6 +748,18 @@ class OptimizationPolicyTests(unittest.TestCase):
                 "tests/optimization/test_jsonschema_prerequisite_bootstrap.py",
             },
             claims["phase2-automation"],
+        )
+        self.assertLessEqual(legacy_bolt_sources, claims["phase2-bolt-hooks"])
+        bolt_component = next(
+            component
+            for component in cast(
+                list[dict[str, object]], policy["required_component_states"]
+            )
+            if component["name"] == "bolt-hooks"
+        )
+        self.assertIn(
+            "no-legacy-bolt",
+            cast(list[str], bolt_component["required_test_names"]),
         )
         self.assertIn(
             "optimization/tmpfiles/gentoo-optimization.conf",

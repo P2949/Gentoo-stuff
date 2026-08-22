@@ -10,7 +10,7 @@
 - **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-08-09 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This unchanged observation is live progress evidence, not the frozen Phase 3 inventory, and must be recomputed immediately before the first live mutation.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-08-14; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is a rejected predecessor whose exact GitHub Actions run `30226349306` failed. Commit `44ead3d66670a1ee8a9d3aace8fc0945cbb2d130` then passed its exact-SHA portable workflow but is superseded, non-authorizing predecessor evidence. Commit `1729e9a26bcf6d3fff466e05e04dc80c8dc0fbba` is a rejected predecessor: exact run `30747706125` exposed a transaction SIGTERM readiness race and skipped the portable framework-installer fixture. Commit `03e8917dc69a1cda1e9d7063e16b6a2ce0ff61fa` is the latest rejected predecessor: exact GitHub Actions run `31543998224` stopped before `portable-complete` because its tracked authoritative contract expected 206 main tests while deterministic discovery found 256 with identity SHA-256 `e3471337c6119f38534dbeaf89e4c301ca22924d41403bd3e7742464bb3a523a`. No live mutation, Candidate-A acceptance, Phase 2 authorization, optimization generation, or frozen inventory resulted. The current working tree contains bounded corrections but remains non-authorizing pending a coherent successor contract, fresh exact clean portable and CI boundary, and the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-08-22; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is a rejected predecessor whose exact GitHub Actions run `30226349306` failed. Commit `44ead3d66670a1ee8a9d3aace8fc0945cbb2d130` then passed its exact-SHA portable workflow but is superseded, non-authorizing predecessor evidence. Commit `1729e9a26bcf6d3fff466e05e04dc80c8dc0fbba` is a rejected predecessor: exact run `30747706125` exposed a transaction SIGTERM readiness race and skipped the portable framework-installer fixture. Commit `03e8917dc69a1cda1e9d7063e16b6a2ce0ff61fa` and its run `31543998224` are superseded rejected predecessor evidence. Commit `dcc6b8fc76e1bff20a25a06cda4aadda580b3885` is the latest rejected predecessor: exact GitHub Actions run `31880559624` stopped before `portable-complete` because the tracked contract expected 36 evidence and 206 main tests while deterministic discovery found 37 and 290. Separate direct review—not that aborted CI run—found three prerequisite fixture failures/errors, a root-fixture bootstrap trust defect, incomplete prerequisite signal-transition proof, absent Candidate-B prerequisite-chain semantics, and mechanically runnable legacy BOLT prototypes. No live mutation, Candidate-A acceptance, Phase 2 authorization, optimization generation, or frozen inventory resulted. The current working tree contains bounded corrections but remains non-authorizing pending a coherent successor contract, fresh exact clean portable and CI boundary, and the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -1200,6 +1200,101 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   `runuser` compatibility proof, mandatory framework-installer pass, complete
   portable gate, and exact-SHA provenance.
 
+### 2026-08-22 rejected predecessor and final prerequisite-boundary review
+
+- Commit `dcc6b8fc76e1bff20a25a06cda4aadda580b3885` is the latest rejected
+  predecessor. Its broad prerequisite/bootstrap/evidence scope is recorded
+  additively in `docs/commit-history-map.md`; the misleading narrow commit
+  subject is historical evidence and must not be amended or rebased.
+- Exact GitHub Actions run `31880559624` stopped at the static authoritative
+  contract check before `portable-complete` ran. The tracked contract expected
+  36 evidence tests and 206 main tests; deterministic discovery found 37 and
+  290. That run proves only stale topology. Separate direct testing—not CI—
+  found two obsolete held-lock mock signatures, one obsolete raw-JSON hash
+  expectation, a root-fixture/production bootstrap trust conflation, missing
+  prerequisite signal-transition proof, absent Candidate-B prerequisite-chain
+  semantics, and mechanically executable retired BOLT prototypes.
+- The correction boundary is deliberately narrow: make the prerequisite and
+  root bootstrap fixtures exact, define and test managed signal cancellation,
+  bind pre-checkpoint -> prerequisite success -> post-checkpoint evidence into
+  the existing `automation` component, and replace the four legacy BOLT
+  entrypoints with fail-closed stubs plus an authoritative regression. The
+  authoritative contract is regenerated only after that topology is final.
+- `LIVE_PREPARATION_ENABLED` and `LIVE_MUTATION_ENABLED` remain false until the
+  final invariant audit classifies each prerequisite property as implemented,
+  hermetically proven, host-proof pending, or missing, and every missing item
+  is closed. The real pidfd/PID-namespace detached-session teardown, XFS
+  exchange, privileged metadata, Gemato/Portage locking, and four-class BOLT
+  primitives were the remaining host-capability lanes; their exact results are
+  recorded below. Installed-candidate lock integration, disposable/live
+  Portage phase identity, authoritative zero-skip execution, and supervised
+  production behavior still require the immutable Candidate-A framework.
+- The bounded prerequisite correction now has 92 deterministic test identities:
+  88 portable passes and four intentional authoritative-host skips. The same
+  four host identities pass under an actual-root clean environment and prove
+  trusted host tools, pidfd plus PID/network namespace kill-child teardown,
+  exact nonblocking VDB and preserved-library-registry lock contention and
+  unwind, and full recursive Gemato verification of a copied rsync authority.
+  An independent post-fix audit found no remaining P0/P1 defect in the managed
+  signal, exact counter, Portage-lock, payload-device, durability, or
+  recovery-failed closures. Both live gates remain false, so these results are
+  implementation and prerequisite-capability evidence, not a live transaction
+  or Candidate-A acceptance.
+- The bootstrap publisher fixture now distinguishes explicit production
+  authority from effective UID/GID. Its 11 identities pass both unprivileged
+  and under an actual-root clean environment while production ancestry trust
+  remains strict. The four retired `scripts/bolt/*.sh` entrypoints are now
+  fail-closed stubs; the new `no-legacy-bolt` fixture and the current BOLT
+  command-policy fixture both pass. These source and test identities must be
+  included in the final authoritative contract after the remaining evidence
+  semantics stop changing.
+- The exact real-host detached-session containment regression
+  `test_pid_namespace_kills_escaped_setsid_descendant_before_scan` passes. This
+  closes the previously sandbox-only uncertainty for that primitive, but does
+  not replace the later installed-framework authoritative gate.
+- The actual Gentoo-host checkpoint boundary passes all three opt-in methods
+  for file/directory durability, pidfd signaling, and PID/network namespace
+  kill-child teardown, and the session/subreaper harness passes all eight
+  methods. The two production-profile pidfd and escaped-`setsid` containment
+  methods also pass. The corresponding log SHA-256 values are
+  `83e65fff562640e52071da04b1d46b7d6404fa61db2d79044e63924294a094bc`,
+  `677ee2e850c0aac6e4c160db828ab4af19c26a7a17be46c3501ee8920fbaf8ae`,
+  `b66892832c30fd55727f0e6ff8a8ba76409cf5bddaef9d4c41bfa318063de149`,
+  and `49b943d806fafd0fa10b909cc4734ecb2d8cc02e03c37f51bc7a3f47699566da`.
+- Root preflight exercised `/usr/bin/mv --exchange --no-copy -T` plus `sync -f`
+  at all six exact production destination parents on XFS device 66307, with no
+  residue; its evidence SHA-256 is
+  `d1a1d248df6e0ca8b17dd03f7480814ee447986497dab360446f0bb23b099aba`.
+  The authoritative fake-root installer fixture separately passed its two
+  required rows with zero skips while using the same production `mv` path.
+- The privileged BOLT metadata transaction passes all three root-only methods
+  for file capabilities, setuid/setgid hardlink groups, xattrs, deployment and
+  rollback. The full root BOLT hook fixture passes user-xattr,
+  file-capability, and mixed-ABI rows; its sole reviewed skip is the
+  Candidate-A framework-lock integration which cannot execute before that
+  framework is installed. The real four-class gate passes ET_EXEC, dynamic
+  PIE, static PIE, and DSO with all 36 bounded stages at status zero and all
+  479 evidence hashes verified. The metadata, hook-fragment, validation,
+  timeout, and complete BOLT evidence-manifest SHA-256 values are respectively
+  `0d18cf3017a83f41e7c1d30435734192f752f6ae1adef13386e6cf27f731c2bf`,
+  `6220976283463a301409a0989b7382c9e4d8ed08787130900cdcf9a31fdf61aa`,
+  `47ae2f5c42c9437d1677e77d01a7ca55d69920856d20b435f1cf818d42f888d4`,
+  `a24210bb51f240f661ef9cc2bfe5043398068e30a23a94e3369b13f3fc0cc79d`,
+  and `f1768ae63a2b86855e8117c784f4d54bf15ff079acfe19beed3414d67e621cce`.
+  These dirty-tree host proofs close capability uncertainty only; they do not
+  authorize Candidate A or Phase 2.
+- The live `::gentoo` rsync authority remains dated 2026-07-11, older than the
+  prerequisite helper's reviewed three-day signed-repository age limit. The
+  helper correctly fails closed. Before live prerequisite preparation, perform
+  a separately reviewed Phase-2 prerequisite source refresh, then repeat full
+  Gemato verification, dependency resolution, VDB/config/tool/activity and
+  capacity checks. That refresh is not the Phase-3 repository-sync checkbox and
+  grants no permission to begin Phase 3.
+- This review changes no checkbox. All four Section 11.4 live sample-profile
+  claims and all three Section 11.7 acceptance/authorization claims remain
+  open; no package, selector, framework, optimization generation, or frozen
+  inventory was changed.
+
 ## 11.1 Remove the unsafe global consumer
 
 - [x] Delete or disable `portage/package.env/50-global-pgo` in its current form.
@@ -1441,9 +1536,11 @@ A read-only 2026-08-02 live-host PATH preflight used the reviewed authoritative
 basename-addressable tools in predecessor `44ead3d`'s 77-entry manifest
 resolved to that exact requested entry point (`failures=0`). Its focused nine
 version probes passed; it did not execute every declared manifest version
-probe. The current manifest has 79 entries and 71 basename-addressable tools
-after adding the `/bin/bash` bootstrap and `/usr/bin/tr`; it requires a fresh
-exact-candidate preflight rather than inheriting this predecessor observation.
+probe. The successor manifest at the 2026-08-09 checkpoint had 79 entries and
+71 basename-addressable tools after adding the `/bin/bash` bootstrap and
+`/usr/bin/tr`; later prerequisite/tool-authority work changed that boundary
+again. The final exact candidate requires a fresh complete preflight rather
+than inheriting either historical observation.
 The root-owned 25-file historical preflight is retained at
 `/var/tmp/gentoo-optimization/candidate-a-source-preflight-20260802/live-tool-preflight-44ead3d`;
 its relative `CONTENT-SHA256SUMS` verifies and has SHA-256
@@ -1498,9 +1595,10 @@ and checks the exact reported version before running the driver. Local success
 with both 0.9.0 and 0.11.0 is diagnostic only; the final clean candidate still
 requires a green exact-SHA workflow run.
 
-The current non-authorizing deterministic contract check discovers 33
-top-level cases, 58 shell sources, 36 evidence tests, one dedicated stress
-test, 206 main tests, and 79 recovery tests. The exact unittest identity hashes
+The superseded pre-prerequisite deterministic contract at that checkpoint
+discovered 33 top-level cases, 58 shell sources, 36 evidence tests, one
+dedicated stress test, 206 main tests, and 79 recovery tests. The exact unittest
+identity hashes
 are `cc631c2bba201c6b754ac6344ee167adde640d6caac083b20fa0bf027f3f7f06`,
 `99dbe6b4806232fcb55e043b38a940d720b28775d387824f2cd98aeed4e65c84`,
 `7c95b508cc1d5d271358c6da73d0631e15c9fada25c1584dcb2c791a744a31a7`,

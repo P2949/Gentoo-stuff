@@ -1,18 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 2 ]]; then
-    echo "usage: $0 <output-perf.data> <command> [args...]" >&2
-    exit 2
-fi
-
-out="$1"
-shift
-
-mkdir -p "$(dirname "${out}")"
-
-perf record \
-    -e cycles:u \
-    -j any,u \
-    -o "${out}" \
-    -- "$@"
+printf '%s\n' \
+    'ERROR: this legacy BOLT prototype entry point is permanently disabled.' \
+    'Use the exact Phase 2 pre-strip capture, registered-output, and ${ED} deployment lane.' \
+    >&2
+exit 1

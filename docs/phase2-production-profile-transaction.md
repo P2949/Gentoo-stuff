@@ -514,7 +514,13 @@ doas install -o root -g root -m 0600 -T "$BUNDLE" \
 doas sync -f "$EVIDENCE_ROOT"
 ```
 
-Generate the deterministic state files. The framework component binds the
+Generate the deterministic state files. The automation component binds the
+immutable Candidate-A bootstrap plus the complete pre-checkpoint, prerequisite
+success, and post-checkpoint chain. Its semantic verifier replays every durable
+reference, requires both checkpoint lanes to be `offline-restore-proven` at
+`0/0/0`, proves the prerequisite plan is the post-checkpoint delta, and proves
+the Candidate-A bootstrap commit is an ancestor whose three executable payloads
+are byte- and mode-identical in Candidate B. The framework component binds the
 installed candidate manifest. The sample component additionally binds the
 coordinator receipt, token-persistence scan, publication context, child
 identity, and the exact retained validation-inventory JSON whose path, commit,
@@ -536,6 +542,18 @@ FRAMEWORK_TARGET=$(doas readlink -e /var/lib/gentoo-optimization/framework-curre
 FRAMEWORK_MANIFEST=$FRAMEWORK_TARGET/install.manifest
 PUBLICATION_CONTEXT=$PRODUCTION_EVIDENCE/publication-context.tsv
 CHILD_IDENTITY=$PRODUCTION_EVIDENCE/transaction-child-identity.json
+: "${PREREQUISITE_SOURCE_COMMIT:?re-enter the exact Candidate-A bootstrap commit}"
+: "${PRE_CHECKPOINT_ID:?re-enter the terminal pre-dependency checkpoint ID}"
+: "${JSONSCHEMA_INSTALL_ID:?re-enter the successful prerequisite transaction ID}"
+: "${POST_CHECKPOINT_ID:?re-enter the terminal post-dependency checkpoint ID}"
+JSONSCHEMA_BOOTSTRAP_MANIFEST=/var/lib/gentoo-optimization/bootstrap/jsonschema-prerequisite-$PREREQUISITE_SOURCE_COMMIT/bootstrap-manifest.json
+JSONSCHEMA_PRE_CHECKPOINT_TERMINAL=/var/lib/gentoo-optimization/state/project/binpkg-checkpoint-$PRE_CHECKPOINT_ID.offline-restore-proven.json
+JSONSCHEMA_PRE_CHECKPOINT_RECEIPT=/var/lib/gentoo-optimization/reports/checkpoint-$PRE_CHECKPOINT_ID/offline-restore-receipt.json
+JSONSCHEMA_PRE_CHECKPOINT_OPERATOR_MANIFEST=/var/lib/gentoo-optimization/reports/checkpoint-$PRE_CHECKPOINT_ID-operator-evidence/operator-evidence.manifest.json
+JSONSCHEMA_PREREQUISITE_SUCCESS=/var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-$JSONSCHEMA_INSTALL_ID.success.json
+JSONSCHEMA_POST_CHECKPOINT_TERMINAL=/var/lib/gentoo-optimization/state/project/binpkg-checkpoint-$POST_CHECKPOINT_ID.offline-restore-proven.json
+JSONSCHEMA_POST_CHECKPOINT_RECEIPT=/var/lib/gentoo-optimization/reports/checkpoint-$POST_CHECKPOINT_ID/offline-restore-receipt.json
+JSONSCHEMA_POST_CHECKPOINT_OPERATOR_MANIFEST=/var/lib/gentoo-optimization/reports/checkpoint-$POST_CHECKPOINT_ID-operator-evidence/operator-evidence.manifest.json
 doas install -d -o root -g root -m 0700 "$COMPONENT_PARENT"
 doas test ! -e "$COMPONENT_ROOT"
 doas install -d -o root -g root -m 0700 "$COMPONENT_ROOT"
@@ -547,7 +565,23 @@ phase2_evidence_tool() {
     "$EVIDENCE_PY" -I -B "$EVIDENCE_TOOL" "$@"
 }
 
-for component in automation bolt-hooks capability-bolt capability-clang-ir \
+doas test ! -e "$COMPONENT_ROOT/automation.json"
+phase2_evidence_tool component-state --production \
+  --repository-root "$SOURCE" --component automation --run-id "$RUN_ID" \
+  --evidence-root "$EVIDENCE_ROOT" --provenance "$PROVENANCE" \
+  --results "$RESULTS" --subtests "$SUBTESTS" --summary "$SUMMARY" \
+  --git /usr/bin/git \
+  --external-evidence jsonschema-bootstrap-manifest="$JSONSCHEMA_BOOTSTRAP_MANIFEST" \
+  --external-evidence jsonschema-post-checkpoint-offline-restore-receipt="$JSONSCHEMA_POST_CHECKPOINT_RECEIPT" \
+  --external-evidence jsonschema-post-checkpoint-operator-manifest="$JSONSCHEMA_POST_CHECKPOINT_OPERATOR_MANIFEST" \
+  --external-evidence jsonschema-post-checkpoint-terminal-state="$JSONSCHEMA_POST_CHECKPOINT_TERMINAL" \
+  --external-evidence jsonschema-pre-checkpoint-offline-restore-receipt="$JSONSCHEMA_PRE_CHECKPOINT_RECEIPT" \
+  --external-evidence jsonschema-pre-checkpoint-operator-manifest="$JSONSCHEMA_PRE_CHECKPOINT_OPERATOR_MANIFEST" \
+  --external-evidence jsonschema-pre-checkpoint-terminal-state="$JSONSCHEMA_PRE_CHECKPOINT_TERMINAL" \
+  --external-evidence jsonschema-prerequisite-success-state="$JSONSCHEMA_PREREQUISITE_SUCCESS" \
+  --output "$COMPONENT_ROOT/automation.json"
+
+for component in bolt-hooks capability-bolt capability-clang-ir \
   capability-clang-sample capability-gcc capability-go capability-rust \
   dispatcher; do
   doas test ! -e "$COMPONENT_ROOT/${component}.json"

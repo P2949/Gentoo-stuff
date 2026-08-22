@@ -202,6 +202,15 @@ class JsonschemaPrerequisiteBootstrapTests(unittest.TestCase):
             'validate_tree(authority.parent, Path("/"), 0, 0)',
             source,
         )
+        self.assertIn(
+            "repository: Path, commit: str, authority: RuntimeAuthority",
+            source,
+        )
+        self.assertIn(
+            'if authority.production:\n        validate_tree(repository, Path("/"), 0, 0)',
+            source,
+        )
+        self.assertNotIn("if uid == 0 and gid == 0:", source)
         result = subprocess.run(
             [
                 os.fspath(PYTHON),

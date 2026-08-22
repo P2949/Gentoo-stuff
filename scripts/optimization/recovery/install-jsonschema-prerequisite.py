@@ -15,11 +15,13 @@ Production phases are::
 
 Once ``armed`` is visible, the source emerge may never be executed again.
 
-The live preparation and mutation entry points intentionally remain disabled
-until their Portage VDB exclusion, same-object rollback, and monotonic counter
-protocols are complete.  Hermetic tests exercise the authority, plan,
-containment-contract, and durable-state primitives without touching a live
-Gentoo installation.
+The live preparation and mutation entry points intentionally remain disabled.
+The implementation now includes Portage/VDB exclusion, held-lock authority
+snapshots, exact post-emerge authority, rollback, counter reconciliation, and
+terminal durability.  Hermetic tests exercise those mechanics without touching
+a live Gentoo installation; the remaining Candidate-A work is to finish their
+reviewed proof boundary and run the explicitly separated authoritative Gentoo
+host capability checks before enabling either live gate.
 """
 
 from __future__ import annotations
@@ -84,13 +86,22 @@ NEW_SOURCE_LINE = re.compile(
     r"::(?P<repository>[A-Za-z0-9+_.-]+)(?:\s|$)"
 )
 TRANSACTION_SIGNALS = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+# Managed Python cancellation is deliberately limited to reaping an already
+# finalized direct child.  Preparation, arming, Portage mutation, rollback,
+# and durable publication retain the caller's original signal dispositions:
+# process death in those windows is reconciled from durable state on re-entry.
+# Expanding this boundary requires a new state-transition audit.
+MANAGED_SIGNAL_BOUNDARY = "terminal-child-reap-only"
 PR_SET_PDEATHSIG = 1
+PORTAGE_LOCK_ACQUIRE_TIMEOUT_SECONDS = 5.0
+PORTAGE_LOCK_RETRY_SECONDS = 0.05
 # Candidate-A safety gates.  The authority/state implementation is executable
 # for hermetic tests, but neither live preparation nor installed-package
-# mutation is authorized yet.  Preparation still needs the standard Portage
-# vardb lock plus pre/post process-and-handle exclusion around every live
-# VDB/private-state snapshot.  Mutation additionally needs a same-object,
-# held-vardb-lock rollback and monotonic counter remount/reseal handshake.
+# mutation is authorized yet.  VDB/preserved-registry locking, process/handle
+# exclusion, two held snapshot windows, post-emerge authority, held-lock
+# rollback, counter reconciliation/reseal, and terminal durability are
+# implemented.  Their final invariant audit and authoritative Gentoo-host
+# capability proofs remain prerequisites to changing either value.
 LIVE_PREPARATION_ENABLED = False
 LIVE_MUTATION_ENABLED = False
 CONTROL_SCHEMA = "gentoo-optimization-jsonschema-control-v1"
@@ -924,6 +935,7 @@ def prepared_locked_window(prepared: Mapping[str, Any]) -> dict[str, Any]:
             "mtimedb": resolver.get("mtimedb_before"),
             "counter": resolver.get("live_counter_before"),
             "loader_directories": resolver.get("loader_before"),
+            "payload_root": resolver.get("payload_root"),
         }
         if any(value is not None for value in fallback.values()):
             return fallback
@@ -2920,6 +2932,199 @@ def read_counter(path: Path, label: str) -> int:
     return int(payload.decode("ascii"))
 
 
+def read_counter_authority(
+    path: Path, label: str
+) -> tuple[int, dict[str, Any]]:
+    """Read one canonical counter through exact single-inode authority."""
+
+    observation = file_observation(path)
+    if observation.get("type") != "file" or observation.get("nlink") != 1:
+        fail(f"{label} is not a single-link regular file")
+    if observation.get("xattrs") != []:
+        fail(f"{label} has unreviewed extended attributes")
+    value = read_counter(path, label)
+    reobserved = file_observation(path)
+    if reobserved != observation:
+        fail(f"{label} changed during exact observation")
+    return value, observation
+
+
+def stable_counter_observation(value: object, label: str) -> dict[str, Any]:
+    """Validate one counter observation while excluding only its bind-view path."""
+
+    required = {
+        "path",
+        "device",
+        "inode",
+        "uid",
+        "gid",
+        "mode",
+        "nlink",
+        "size",
+        "xattrs",
+        "type",
+        "sha256",
+    }
+    if (
+        not isinstance(value, dict)
+        or set(value) != required
+        or not isinstance(value.get("path"), str)
+        or not Path(str(value["path"])).is_absolute()
+        or value.get("type") != "file"
+        or value.get("nlink") != 1
+        or value.get("xattrs") != []
+        or any(
+            type(value.get(key)) is not int or int(value[key]) < 0
+            for key in ("device", "inode", "uid", "gid", "mode", "size")
+        )
+    ):
+        fail(f"{label} is not exact single-inode counter authority")
+    require_sha256(value.get("sha256"), f"{label} content digest")
+    return {key: value[key] for key in sorted(required - {"path"})}
+
+
+def validate_counter_reconciliation_authority(
+    *,
+    paths: Paths,
+    value: object,
+    expected_outcome: str,
+    verify_current: bool,
+) -> dict[str, Any]:
+    """Validate one durable counter result and optionally its current live inode."""
+
+    required = {
+        "outcome",
+        "before",
+        "private",
+        "package_max",
+        "after",
+        "intent_path",
+        "intent_sha256",
+        "completion_path",
+        "completion_sha256",
+        "live_observation",
+        "non_counter_manifest_sha256",
+        "resealed_read_only",
+    }
+    if (
+        not isinstance(value, dict)
+        or set(value) != required
+        or value.get("outcome") != expected_outcome
+        or expected_outcome not in {"success", "rolled-back"}
+        or value.get("resealed_read_only") is not True
+    ):
+        fail("counter reconciliation authority has an invalid schema or outcome")
+    for key in ("before", "private", "after"):
+        if type(value.get(key)) is not int or int(value[key]) < 0:
+            fail(f"counter reconciliation {key} is invalid")
+    package_max = value.get("package_max")
+    if package_max is not None and (
+        type(package_max) is not int or int(package_max) < 0
+    ):
+        fail("counter reconciliation package maximum is invalid")
+    if expected_outcome == "rolled-back" and package_max is not None:
+        fail("rolled-back counter authority unexpectedly has a package maximum")
+    endpoints = [int(value["before"]), int(value["private"])]
+    if package_max is not None:
+        endpoints.append(int(package_max))
+    if value["after"] != max(endpoints):
+        fail("counter reconciliation selected value differs from its endpoints")
+    live_stable = stable_counter_observation(
+        value.get("live_observation"), "recorded live EDB counter"
+    )
+    expected_payload_sha = sha256_bytes(str(value["after"]).encode("ascii"))
+    if live_stable.get("sha256") != expected_payload_sha:
+        fail("recorded live EDB counter content differs from its selected value")
+    for path_key, digest_key, label in (
+        ("intent_path", "intent_sha256", "counter reconciliation intent"),
+        (
+            "completion_path",
+            "completion_sha256",
+            "counter reconciliation completion",
+        ),
+    ):
+        path_value = value.get(path_key)
+        if not isinstance(path_value, str):
+            fail(f"{label} path is invalid")
+        path = Path(path_value)
+        require_absolute(path, f"{label} path")
+        require_direct_child(path, paths.report, f"{label} path")
+        expected = require_sha256(value.get(digest_key), f"{label} digest")
+        if not path.is_file() or path.is_symlink() or sha256_file(path) != expected:
+            fail(f"{label} changed")
+    intent = read_json_regular(
+        Path(str(value["intent_path"])), "counter reconciliation intent"
+    )
+    completion = read_json_regular(
+        Path(str(value["completion_path"])), "counter reconciliation completion"
+    )
+    if (
+        not isinstance(intent, dict)
+        or intent.get("schema")
+        != "gentoo-optimization-jsonschema-counter-intent-v1"
+        or intent.get("transaction_id") != paths.transaction_id
+        or intent.get("outcome") != expected_outcome
+        or intent.get("before") != value["before"]
+        or intent.get("private") != value["private"]
+        or intent.get("package_max") != package_max
+        or intent.get("selected") != value["after"]
+        or intent.get("payload_sha256") != expected_payload_sha
+    ):
+        fail("counter reconciliation intent differs from its terminal authority")
+    if (
+        not isinstance(completion, dict)
+        or set(completion)
+        != {
+            "schema",
+            "transaction_id",
+            "prepared_state_sha256",
+            "outcome",
+            "intent_path",
+            "intent_sha256",
+            "after",
+            "live_observation",
+        }
+        or completion.get("schema")
+        != "gentoo-optimization-jsonschema-counter-completion-v1"
+        or completion.get("transaction_id") != paths.transaction_id
+        or completion.get("outcome") != expected_outcome
+        or completion.get("intent_path") != value["intent_path"]
+        or completion.get("intent_sha256") != value["intent_sha256"]
+        or completion.get("after") != value["after"]
+        or stable_counter_observation(
+            completion.get("live_observation"),
+            "counter completion live observation",
+        )
+        != live_stable
+    ):
+        fail("counter reconciliation completion differs from terminal authority")
+    require_sha256(
+        value.get("non_counter_manifest_sha256"),
+        "counter non-counter manifest digest",
+    )
+    if verify_current:
+        current_value, current_observation = read_counter_authority(
+            paths.cache_edb / "counter", "current live EDB counter"
+        )
+        if (
+            current_value != value["after"]
+            or stable_counter_observation(
+                current_observation, "current live EDB counter"
+            )
+            != live_stable
+        ):
+            fail("current live EDB counter differs from terminal authority")
+        current_non_counter = tree_manifest_without_top_level(
+            paths.cache_edb, {"counter"}
+        )
+        if (
+            current_non_counter["rows_sha256"]
+            != value["non_counter_manifest_sha256"]
+        ):
+            fail("current live EDB non-counter authority changed")
+    return value
+
+
 def reconcile_counter_locked(
     *,
     live_edb: Path,
@@ -2941,7 +3146,9 @@ def reconcile_counter_locked(
         if not delta["exact_success_delta"]:
             fail("cannot reconcile success counter without the exact installed delta")
         package_values = [
-            read_counter(vdb / row["cpv"] / "COUNTER", f"{row['cpv']} COUNTER")
+            read_counter_authority(
+                vdb / row["cpv"] / "COUNTER", f"{row['cpv']} COUNTER"
+            )[0]
             for row in prepared["plan"]["rows"]
         ]
     elif outcome == "rolled-back":
@@ -2949,12 +3156,13 @@ def reconcile_counter_locked(
         package_values = []
     else:
         fail(f"unsupported EDB counter reconciliation outcome: {outcome}")
-    before = read_counter(live_path, "live EDB counter")
-    private = read_counter(private_path, "private EDB counter")
+    before, live_observation_before = read_counter_authority(
+        live_path, "live EDB counter"
+    )
+    private, _private_observation = read_counter_authority(
+        private_path, "private EDB counter"
+    )
     selected = max([before, private, *package_values])
-    metadata = live_path.lstat()
-    if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
-        fail("live EDB counter is not a regular file")
     prepared_sha = sha256_bytes(canonical_json(prepared))
     report = Path(str(prepared["evidence"]["directory"]))
     token = sha256_bytes(
@@ -2976,7 +3184,11 @@ def reconcile_counter_locked(
         "package_max": max(package_values) if package_values else None,
         "selected": selected,
         "payload_sha256": sha256_bytes(payload),
-        "live_identity_before": FileIdentity.observe(live_path).as_json(),
+        "live_identity_before": {
+            key: live_observation_before[key]
+            for key in ("device", "inode", "uid", "gid", "mode", "nlink", "size")
+        },
+        "live_xattrs_before": live_observation_before["xattrs"],
     }
     if path_exists(intent_path):
         recorded = read_json_regular(intent_path, "counter reconciliation intent")
@@ -3011,19 +3223,25 @@ def reconcile_counter_locked(
 
     selected = int(intent["selected"])
     payload = str(selected).encode("ascii")
-    current = read_counter(live_path, "live EDB counter during reconciliation")
+    current, current_observation = read_counter_authority(
+        live_path, "live EDB counter during reconciliation"
+    )
     if current not in {int(intent["before"]), selected}:
         fail("live EDB counter differs from both intent endpoints")
     if current != selected:
         if path_exists(partial):
-            partial_metadata = partial.lstat()
+            partial_observation = file_observation(partial)
             if (
-                not stat.S_ISREG(partial_metadata.st_mode)
-                or stat.S_IMODE(partial_metadata.st_mode)
-                != stat.S_IMODE(metadata.st_mode)
-                or partial_metadata.st_uid != metadata.st_uid
-                or partial_metadata.st_gid != metadata.st_gid
-                or partial_metadata.st_nlink != 1
+                partial_observation.get("type") != "file"
+                or partial_observation.get("nlink") != 1
+            ):
+                fail("counter partial is not a single-link regular file")
+            if partial_observation.get("xattrs") != []:
+                fail("counter partial has unreviewed extended attributes")
+            if (
+                partial_observation["mode"] != current_observation["mode"]
+                or partial_observation["uid"] != current_observation["uid"]
+                or partial_observation["gid"] != current_observation["gid"]
                 or partial.read_bytes() != payload
             ):
                 # SIGKILL can land after O_EXCL creation or a short write.  The
@@ -3041,7 +3259,7 @@ def reconcile_counter_locked(
                 | os.O_EXCL
                 | os.O_CLOEXEC
                 | getattr(os, "O_NOFOLLOW", 0),
-                stat.S_IMODE(metadata.st_mode),
+                int(current_observation["mode"]),
             )
             try:
                 if fault is not None:
@@ -3050,15 +3268,27 @@ def reconcile_counter_locked(
                     fail("short write during live EDB counter reconciliation")
                 if fault is not None:
                     fault("after-write")
-                os.fchown(descriptor, metadata.st_uid, metadata.st_gid)
-                os.fchmod(descriptor, stat.S_IMODE(metadata.st_mode))
+                os.fchown(
+                    descriptor,
+                    int(current_observation["uid"]),
+                    int(current_observation["gid"]),
+                )
+                os.fchmod(descriptor, int(current_observation["mode"]))
                 os.fsync(descriptor)
                 if fault is not None:
                     fault("after-file-fsync")
             finally:
                 os.close(descriptor)
-        if partial.read_bytes() != payload:
-            fail("counter partial payload changed before publication")
+        partial_value, partial_observation = read_counter_authority(
+            partial, "counter partial before publication"
+        )
+        if (
+            partial_value != selected
+            or partial_observation["uid"] != current_observation["uid"]
+            or partial_observation["gid"] != current_observation["gid"]
+            or partial_observation["mode"] != current_observation["mode"]
+        ):
+            fail("counter partial authority changed before publication")
         os.replace(partial, live_path)
         if fault is not None:
             fault("after-replace")
@@ -3081,7 +3311,9 @@ def reconcile_counter_locked(
     if foreign_partials:
         fail("foreign counter publication residue is present: " + ", ".join(foreign_partials))
 
-    after = read_counter(live_path, "reconciled live EDB counter")
+    after, live_observation = read_counter_authority(
+        live_path, "reconciled live EDB counter"
+    )
     if after != selected:
         fail("live EDB counter reconciliation did not publish the selected value")
     completion = {
@@ -3092,7 +3324,7 @@ def reconcile_counter_locked(
         "intent_path": os.fspath(intent_path),
         "intent_sha256": sha256_file(intent_path),
         "after": after,
-        "live_observation": file_observation(live_path),
+        "live_observation": live_observation,
     }
     if path_exists(completion_path):
         if read_json_regular(completion_path, "counter completion") != completion:
@@ -3101,6 +3333,11 @@ def reconcile_counter_locked(
         atomic_publish_noreplace(completion_path, canonical_json(completion))
     if fault is not None:
         fault("after-completion")
+    confirmed_after, confirmed_observation = read_counter_authority(
+        live_path, "live EDB counter after completion publication"
+    )
+    if confirmed_after != after or confirmed_observation != live_observation:
+        fail("live EDB counter changed during completion publication")
     return {
         "outcome": outcome,
         "before": int(intent["before"]),
@@ -3111,6 +3348,7 @@ def reconcile_counter_locked(
         "intent_sha256": sha256_file(intent_path),
         "completion_path": os.fspath(completion_path),
         "completion_sha256": sha256_file(completion_path),
+        "live_observation": live_observation,
     }
 
 
@@ -3237,6 +3475,14 @@ def reconcile_counter_with_reseal(
         raise primary_error
     if reconciliation is None:
         fail("counter reconciliation produced no result")
+    resealed_value, resealed_observation = read_counter_authority(
+        live_edb / "counter", "resealed live EDB counter"
+    )
+    if (
+        resealed_value != reconciliation["after"]
+        or resealed_observation != reconciliation["live_observation"]
+    ):
+        fail("live EDB counter authority changed across read-only reseal")
     return {
         **reconciliation,
         "non_counter_manifest_sha256": after["rows_sha256"],
@@ -3528,6 +3774,116 @@ class LockedPortageAuthority:
     preserved_registry: Any
     target: str
     vdb_path: Path
+    lock_api: Mapping[str, str]
+
+
+def portage_lock_api_authority(
+    lockdir: Callable[..., Any],
+    lockfile: Callable[..., Any],
+    contention_error: type[BaseException],
+) -> dict[str, str]:
+    """Require the exact pinned Portage nonblocking-lock API identities."""
+
+    authority = {
+        "lockdir_module": str(getattr(lockdir, "__module__", "")),
+        "lockdir_name": str(getattr(lockdir, "__name__", "")),
+        "lockfile_module": str(getattr(lockfile, "__module__", "")),
+        "lockfile_name": str(getattr(lockfile, "__name__", "")),
+        "contention_error_module": str(
+            getattr(contention_error, "__module__", "")
+        ),
+        "contention_error_name": str(
+            getattr(contention_error, "__name__", "")
+        ),
+    }
+    expected = {
+        "lockdir_module": "portage.locks",
+        "lockdir_name": "lockdir",
+        "lockfile_module": "portage.locks",
+        "lockfile_name": "lockfile",
+        "contention_error_module": "portage.exception",
+        "contention_error_name": "TryAgain",
+    }
+    if authority != expected:
+        fail("loaded Portage nonblocking-lock API identity differs from policy")
+    return authority
+
+
+@contextlib.contextmanager
+def hold_loaded_portage_locks_nonblocking(
+    *,
+    vardb: Any,
+    registry: Any,
+    lockdir: Callable[..., Any],
+    lockfile: Callable[..., Any],
+    contention_error: type[BaseException],
+    timeout_seconds: float = PORTAGE_LOCK_ACQUIRE_TIMEOUT_SECONDS,
+    retry_seconds: float = PORTAGE_LOCK_RETRY_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> Iterator[None]:
+    """Acquire exact loaded Portage objects by bounded nonblocking retries."""
+
+    if timeout_seconds <= 0 or retry_seconds <= 0:
+        fail("Portage lock acquisition bounds are not positive")
+    if (
+        getattr(vardb, "_lock", None) is not None
+        or getattr(vardb, "_lock_count", None) != 0
+    ):
+        fail("loaded Portage vardb has pre-existing lock state")
+    if getattr(registry, "_lock", None) is not None:
+        fail("loaded Portage preserved-libraries registry is already locked")
+    deadline = monotonic() + timeout_seconds
+    vardb_locked = False
+    registry_locked = False
+
+    def retry_or_fail(label: str) -> None:
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            fail(
+                f"{label} remained contended for the bounded "
+                f"{timeout_seconds:g}-second acquisition window"
+            )
+        sleeper(min(retry_seconds, remaining))
+
+    try:
+        while not registry_locked:
+            try:
+                vardb_lock = lockdir(
+                    os.fspath(vardb._dbroot), flags=os.O_NONBLOCK
+                )
+            except contention_error:
+                retry_or_fail("Portage vardb lock")
+                continue
+            if vardb_lock is None:
+                fail("nonblocking Portage vardb lock returned no lock authority")
+            vardb._lock = vardb_lock
+            vardb._lock_count = 1
+            vardb_locked = True
+            try:
+                registry_lock = lockfile(
+                    os.fspath(registry._filename), flags=os.O_NONBLOCK
+                )
+            except contention_error:
+                vardb.unlock()
+                vardb_locked = False
+                retry_or_fail("Portage preserved-libraries registry lock")
+                continue
+            if registry_lock is None:
+                fail(
+                    "nonblocking Portage preserved-libraries registry lock returned "
+                    "no lock authority"
+                )
+            registry._lock = registry_lock
+            registry_locked = True
+        yield
+    finally:
+        try:
+            if registry_locked:
+                registry.unlock()
+        finally:
+            if vardb_locked:
+                vardb.unlock()
 
 
 def require_locked_empty_preserved_registry(vardb: Any) -> None:
@@ -3726,6 +4082,8 @@ def loaded_portage_authority_lock(paths: Paths) -> Iterator[LockedPortageAuthori
 
     try:
         import _emerge.actions as actions
+        from portage.exception import TryAgain  # type: ignore[import-untyped]
+        from portage.locks import lockdir, lockfile  # type: ignore[import-untyped]
     except ImportError as error:
         fail(f"Portage preparation API is unavailable: {error}")
     config = actions.load_emerge_config(
@@ -3750,20 +4108,23 @@ def loaded_portage_authority_lock(paths: Paths) -> Iterator[LockedPortageAuthori
     ).resolve(strict=True)
     if registry_path != expected_registry:
         fail("Portage preserved-libraries registry path differs")
-    vardb.lock()
-    registry_locked = False
+    lock_api = portage_lock_api_authority(lockdir, lockfile, TryAgain)
     try:
-        registry.lock()
-        registry_locked = True
-        registry.load()
-        require_semantically_empty_preserved_registry(expected_registry)
-        if registry.hasEntries() or registry.getPreservedLibs() != {}:
-            fail("locked Portage preserved-libraries registry is not empty")
-        yield LockedPortageAuthority(config, vardb, registry, target, vdb_path)
+        with hold_loaded_portage_locks_nonblocking(
+            vardb=vardb,
+            registry=registry,
+            lockdir=lockdir,
+            lockfile=lockfile,
+            contention_error=TryAgain,
+        ):
+            registry.load()
+            require_semantically_empty_preserved_registry(expected_registry)
+            if registry.hasEntries() or registry.getPreservedLibs() != {}:
+                fail("locked Portage preserved-libraries registry is not empty")
+            yield LockedPortageAuthority(
+                config, vardb, registry, target, vdb_path, lock_api
+            )
     finally:
-        if registry_locked:
-            registry.unlock()
-        vardb.unlock()
         for root_trees in config.trees.values():
             if "porttree" not in root_trees.lazy_items:
                 root_trees["porttree"].dbapi.close_caches()
@@ -3794,9 +4155,13 @@ def preparation_locked_snapshot(
         vdb_before = vdb_manifest(paths.vdb)
         selected_before = selected_sets_authority(paths)
         mtimedb_before = mtimedb_authority(paths.cache_edb / "mtimedb")
-        counter_before = file_observation(paths.cache_edb / "counter")
+        counter_value, counter_before = read_counter_authority(
+            paths.cache_edb / "counter", "live EDB counter"
+        )
         live_etc_before = file_observation(paths.rooted("/etc"))
-        counter_value = read_counter(paths.cache_edb / "counter", "live EDB counter")
+        payload_root_before = object_observation(paths.rooted("/usr"))
+        if payload_root_before.get("type") != "directory":
+            fail("live payload root is not an exact directory")
         if counter_value < vdb_before["maximum_installed_counter"]:
             fail("live EDB counter is below the maximum installed package counter")
         copies = None
@@ -3812,13 +4177,18 @@ def preparation_locked_snapshot(
             )
         vdb_after = vdb_manifest(paths.vdb)
         selected_after = selected_sets_authority(paths)
-        counter_after = file_observation(paths.cache_edb / "counter")
+        counter_value_after, counter_after = read_counter_authority(
+            paths.cache_edb / "counter", "live EDB counter after held observation"
+        )
         live_etc_after = file_observation(paths.rooted("/etc"))
+        payload_root_after = object_observation(paths.rooted("/usr"))
         if (
             vdb_after != vdb_before
             or selected_after != selected_before
             or counter_after != counter_before
+            or counter_value_after != counter_value
             or live_etc_after != live_etc_before
+            or payload_root_after != payload_root_before
         ):
             fail("live package-manager authority changed during held-lock observation")
         scan_after = require_no_package_manager_activity(
@@ -3833,12 +4203,14 @@ def preparation_locked_snapshot(
             )
         result = {
             "schema_version": 1,
+            "portage_lock_api": dict(locked.lock_api),
             "vdb": vdb_before,
             "selected_sets": selected_before,
             "mtimedb": mtimedb_before,
             "counter": counter_before,
             "counter_value": counter_value,
             "live_etc": live_etc_before,
+            "payload_root": payload_root_before,
             "copies": copies,
             "loader_directories": loader_directory_authority(
                 locked.config.target_config.settings, paths.rooted("/")
@@ -4540,9 +4912,24 @@ def _terminal_durability_candidates(
     live_edb_device = cache_source.get("device") if isinstance(cache_source, dict) else None
     if type(live_edb_device) is not int:
         fail("prepared state lacks the live EDB device authority")
+    payload_root = initial.get("payload_root")
+    payload_device = (
+        payload_root.get("device") if isinstance(payload_root, dict) else None
+    )
+    if (
+        not isinstance(payload_root, dict)
+        or payload_root.get("type") != "directory"
+        or type(payload_device) is not int
+    ):
+        fail("prepared state lacks the live /usr payload device authority")
 
     raw: list[tuple[str, Path, Path, int | None]] = [
-        ("live-payload-root", paths.rooted("/usr"), paths.rooted("/usr"), None),
+        (
+            "live-payload-root",
+            paths.rooted("/usr"),
+            paths.rooted("/usr"),
+            int(payload_device),
+        ),
         ("live-vdb", paths.vdb, paths.vdb, None),
         (
             "live-edb-counter",
@@ -5237,20 +5624,109 @@ def run_contained_stage(
 
 
 @contextlib.contextmanager
-def transaction_signal_scope() -> Iterator[None]:
-    previous: dict[int, Any] = {}
+def blocked_transaction_signals(label: str) -> Iterator[set[signal.Signals]]:
+    """Block every managed signal for one disposition-change boundary."""
 
-    def interrupted(signum: int, _frame: object) -> NoReturn:
-        raise TransactionInterrupted(signum)
-
+    pthread_sigmask = getattr(signal, "pthread_sigmask", None)
+    if not callable(pthread_sigmask):
+        fail("jsonschema prerequisite signal lifecycle requires pthread_sigmask")
     try:
+        previous_mask = pthread_sigmask(signal.SIG_BLOCK, TRANSACTION_SIGNALS)
+    except (OSError, ValueError) as error:
+        fail(f"cannot block managed transaction signals during {label}: {error}")
+    try:
+        yield set(previous_mask)
+    finally:
+        try:
+            pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        except (OSError, ValueError) as error:
+            fail(f"cannot restore the signal mask after {label}: {error}")
+
+
+def raise_transaction_interrupted(signum: int, _frame: object) -> NoReturn:
+    """Map one managed HUP/INT/TERM delivery to the exact shell status."""
+
+    if signum not in TRANSACTION_SIGNALS:
+        fail(f"unmanaged signal reached transaction handler: {signum}")
+    raise TransactionInterrupted(signum)
+
+
+def install_transaction_signal_handlers(
+    handler: Callable[[int, object], None],
+    previous_handlers: dict[signal.Signals, Any],
+) -> None:
+    """Install all managed dispositions atomically from signal delivery."""
+
+    if previous_handlers:
+        fail("transaction signal handler authority is not initially empty")
+    with blocked_transaction_signals(
+        "jsonschema prerequisite handler installation"
+    ) as previous_mask:
+        inherited_blocked = sorted(
+            set(previous_mask).intersection(TRANSACTION_SIGNALS), key=int
+        )
+        if inherited_blocked:
+            fail(
+                "jsonschema prerequisite coordinator inherited blocked managed "
+                "signals: "
+                + ", ".join(
+                    signal.Signals(signum).name for signum in inherited_blocked
+                )
+            )
+        originals = {
+            signum: signal.getsignal(signum) for signum in TRANSACTION_SIGNALS
+        }
+        installed: list[signal.Signals] = []
+        try:
+            for signum in TRANSACTION_SIGNALS:
+                signal.signal(signum, handler)
+                installed.append(signum)
+        except (OSError, RuntimeError, ValueError) as error:
+            for signum in reversed(installed):
+                signal.signal(signum, originals[signum])
+            fail(f"cannot install managed transaction signal handlers: {error}")
+        previous_handlers.update(originals)
+
+
+def restore_transaction_signal_handlers(
+    previous_handlers: Mapping[signal.Signals, Any],
+) -> None:
+    """Restore all caller dispositions under one blocked signal set."""
+
+    if set(previous_handlers) != set(TRANSACTION_SIGNALS):
+        fail("transaction signal handler authority is incomplete")
+    # Signals delivered during this handoff stay pending until the caller's
+    # original dispositions are back in place.  They then retain the caller's
+    # non-managed semantics outside the terminal-child reap boundary.
+    with blocked_transaction_signals(
+        "jsonschema prerequisite handler restoration"
+    ):
         for signum in TRANSACTION_SIGNALS:
-            previous[signum] = signal.getsignal(signum)
-            signal.signal(signum, interrupted)
+            signal.signal(signum, previous_handlers[signum])
+
+
+@contextlib.contextmanager
+def transaction_signal_scope() -> Iterator[None]:
+    """Manage HUP/INT/TERM only while reaping a durable-terminal child."""
+
+    previous: dict[signal.Signals, Any] = {}
+    try:
+        install_transaction_signal_handlers(
+            raise_transaction_interrupted, previous
+        )
         yield
     finally:
-        for recorded_signum, handler in previous.items():
-            signal.signal(recorded_signum, handler)
+        if previous:
+            restore_transaction_signal_handlers(previous)
+
+
+def wait_for_terminal_child(
+    process: subprocess.Popen[bytes], *, timeout: float
+) -> None:
+    """Reap after terminal publication with bounded managed cancellation."""
+
+    with transaction_signal_scope():
+        process.wait(timeout=timeout)
 
 
 def process_group_members(
@@ -5374,6 +5850,12 @@ def publish_child_completion(
         fail("child-completion rollback status is invalid")
     if not CONTROL_SESSION_PATTERN.fullmatch(control_session):
         fail("child-completion control session is invalid")
+    counter_authority = validate_counter_reconciliation_authority(
+        paths=paths,
+        value=counter,
+        expected_outcome=outcome,
+        verify_current=True,
+    )
     record = {
         "schema": "gentoo-optimization-jsonschema-child-completion-v1",
         "transaction_id": paths.transaction_id,
@@ -5389,7 +5871,7 @@ def publish_child_completion(
         "outcome": outcome,
         "source_status": source_status,
         "rollback_status": rollback_status,
-        "counter": dict(counter),
+        "counter": dict(counter_authority),
         "vdb_sha256": sha256_bytes(canonical_json(vdb)),
         "logs": dict(logs),
         "checks": dict(checks),
@@ -5460,6 +5942,12 @@ def validate_child_completion(
         type(rollback_status) is not int or not 0 <= rollback_status <= 255
     ):
         fail("child-completion rollback status is invalid")
+    validate_counter_reconciliation_authority(
+        paths=paths,
+        value=value["counter"],
+        expected_outcome=str(value["outcome"]),
+        verify_current=False,
+    )
     return value
 
 
@@ -5730,8 +6218,15 @@ def run_armed_source_child(
                 prepared["resolver"]["private_portage_outputs_before"],
             )
             compare_vdb(prepared_vdb(prepared), vdb_manifest(paths.vdb))
-            if file_observation(paths.cache_edb / "counter") != prepared_locked_value(
-                prepared, "counter"
+            live_counter_value, live_counter_observation = read_counter_authority(
+                paths.cache_edb / "counter", "live EDB counter before arming"
+            )
+            if (
+                live_counter_observation != prepared_locked_value(
+                    prepared, "counter"
+                )
+                or live_counter_value
+                != prepared_locked_window(prepared).get("counter_value")
             ):
                 fail("live EDB counter changed before transaction arming")
             verify_selected_sets(
@@ -5999,8 +6494,7 @@ def run_armed_source_child(
                 "terminal_state_sha256": terminal_sha,
             }:
                 fail("Portage child final acknowledgement differs from durable authority")
-            with transaction_signal_scope():
-                process.wait(timeout=5 * 60)
+            wait_for_terminal_child(process, timeout=5 * 60)
         except BaseException:
             terminate_direct_process(process, 5.0)
             raise
@@ -6066,6 +6560,137 @@ def rollback_emerge_arguments(atoms: Sequence[str]) -> list[str]:
     ]
 
 
+def canonical_payload_destination(relative: object, *, cpv: str) -> Path:
+    """Map one exact manifest-relative name to a canonical /usr destination."""
+
+    if (
+        not isinstance(relative, str)
+        or not relative
+        or relative.startswith("/")
+        or any(character in relative for character in ("\0", "\n", "\r"))
+    ):
+        fail(f"planned prerequisite payload has an unsafe relative path: {cpv}")
+    parts = relative.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        fail(
+            "planned prerequisite payload has a noncanonical relative path: "
+            f"{cpv}: {relative}"
+        )
+    destination = Path("/").joinpath(*parts)
+    if destination.as_posix() != "/" + relative:
+        fail(
+            "planned prerequisite payload path normalization differs: "
+            f"{cpv}: {relative}"
+        )
+    usr = Path("/usr")
+    if destination != usr and not destination.is_relative_to(usr):
+        fail(
+            "planned prerequisite payload escapes the reviewed /usr durability "
+            f"root: {cpv}: {destination}"
+        )
+    return destination
+
+
+def canonical_payload_destinations(
+    rows: Mapping[str, Mapping[str, Any]], *, cpv: str
+) -> list[Path]:
+    destinations = [
+        canonical_payload_destination(relative, cpv=cpv) for relative in rows
+    ]
+    if len(set(destinations)) != len(destinations):
+        fail(f"planned prerequisite payload repeats a canonical destination: {cpv}")
+    return sorted(destinations, key=os.fspath)
+
+
+def payload_observation_paths(destinations: Iterable[Path]) -> list[Path]:
+    """Return every destination and ancestor through the exact /usr root."""
+
+    usr = Path("/usr")
+    required: set[Path] = set()
+    for destination in destinations:
+        if destination != usr and not destination.is_relative_to(usr):
+            fail(f"payload observation destination escapes /usr: {destination}")
+        current = destination
+        while True:
+            required.add(current)
+            if current == usr:
+                break
+            current = current.parent
+            if current == Path("/"):
+                fail(f"payload observation chain escaped /usr: {destination}")
+    return sorted(required, key=lambda path: (len(path.parts), os.fspath(path)))
+
+
+def validate_payload_observation_authority(
+    *,
+    destinations: Sequence[Path],
+    observations: object,
+    cpv: str,
+    expected_payload_device: int | None = None,
+) -> tuple[int, dict[str, dict[str, Any]]]:
+    """Prove complete, symlink-free destination ancestry on one /usr device."""
+
+    if not isinstance(observations, list):
+        fail("payload admission destination observations are not a list")
+    required = payload_observation_paths(destinations)
+    required_names = {os.fspath(path) for path in required}
+    by_path: dict[str, dict[str, Any]] = {}
+    for observation in observations:
+        if not isinstance(observation, dict) or not isinstance(
+            observation.get("path"), str
+        ):
+            fail("payload admission contains an invalid destination observation")
+        raw_path = str(observation["path"])
+        path = Path(raw_path)
+        if (
+            not path.is_absolute()
+            or path.as_posix() != raw_path
+            or raw_path in by_path
+        ):
+            fail("payload admission contains a noncanonical destination observation")
+        by_path[raw_path] = observation
+    if set(by_path) != required_names:
+        fail("payload admission lacks its exact destination ancestor closure")
+    root = by_path.get("/usr")
+    if (
+        not isinstance(root, dict)
+        or root.get("type") != "directory"
+        or type(root.get("device")) is not int
+        or int(root["device"]) < 0
+    ):
+        fail("payload admission lacks an exact /usr directory device authority")
+    payload_device = int(root["device"])
+    if (
+        expected_payload_device is not None
+        and payload_device != expected_payload_device
+    ):
+        fail("payload /usr device differs from prepared authority")
+    destination_set = set(destinations)
+    for path in required:
+        observation = by_path[os.fspath(path)]
+        kind = observation.get("type")
+        is_ancestor = any(
+            destination != path and destination.is_relative_to(path)
+            for destination in destination_set
+        )
+        if kind == "absent":
+            if is_ancestor:
+                fail(f"payload destination ancestor is absent: {cpv}: {path}")
+            if set(observation) != {"path", "type"}:
+                fail(f"absent payload destination has foreign authority: {cpv}: {path}")
+            continue
+        if type(observation.get("device")) is not int:
+            fail(f"payload destination lacks device authority: {cpv}: {path}")
+        if int(observation["device"]) != payload_device:
+            fail(
+                "payload destination is on a different device from /usr: "
+                f"{cpv}: {path}"
+            )
+        if is_ancestor and kind != "directory":
+            fail(f"payload destination ancestor is not a directory: {cpv}: {path}")
+    return payload_device, by_path
+
+
 def admit_merge_image_payload(
     *,
     mergeroot: Path,
@@ -6080,6 +6705,29 @@ def admit_merge_image_payload(
     if cpv not in {str(row["cpv"]) for row in prepared["plan"]["rows"]}:
         fail(f"Portage attempted to merge an object outside the exact plan: {cpv}")
     manifest = tree_manifest(mergeroot)
+    manifest_rows = _manifest_rows(manifest, f"{cpv} payload image")
+    destinations = canonical_payload_destinations(manifest_rows, cpv=cpv)
+    required_observations = payload_observation_paths(destinations)
+    for candidate in required_observations:
+        observed_destinations[os.fspath(candidate)] = object_observation(candidate)
+    record_observations = [
+        observed_destinations[os.fspath(candidate)]
+        for candidate in required_observations
+    ]
+    prepared_payload_root = prepared_locked_value(prepared, "payload_root")
+    if prepared_payload_root.get("type") != "directory" or type(
+        prepared_payload_root.get("device")
+    ) is not int:
+        fail("prepared payload root lacks exact /usr device authority")
+    payload_device, observations_by_path = validate_payload_observation_authority(
+        destinations=destinations,
+        observations=record_observations,
+        cpv=cpv,
+        expected_payload_device=int(prepared_payload_root["device"]),
+    )
+    payload_root_observation = observations_by_path["/usr"]
+    if payload_root_observation != prepared_payload_root:
+        fail("payload /usr root identity differs from prepared authority")
     loader_roots = {
         Path(str(row["path"]))
         for row in prepared_locked_value(prepared, "loader_directories")["rows"]
@@ -6093,8 +6741,8 @@ def admit_merge_image_payload(
         Path("/var/lib/portage"),
     )
     paths: list[str] = []
-    for row in manifest["rows"]:
-        destination = Path("/") / str(row["path"])
+    for relative, row in manifest_rows.items():
+        destination = canonical_payload_destination(relative, cpv=cpv)
         if any(
             destination == prefix or destination.is_relative_to(prefix)
             for prefix in forbidden_prefixes
@@ -6106,7 +6754,7 @@ def admit_merge_image_payload(
             fail(f"planned image contains set-id metadata: {cpv}: {destination}")
         if row.get("type") == "file" and row.get("nlink") != 1:
             fail(f"planned image contains a hard-linked regular file: {cpv}: {destination}")
-        live_destination = object_observation(destination)
+        live_destination = observations_by_path[os.fspath(destination)]
         if live_destination.get("type") != "absent":
             if (
                 row.get("type") != "directory"
@@ -6138,20 +6786,6 @@ def admit_merge_image_payload(
                         f"planned loader scaffold metadata differs: {cpv}: {destination}"
                     )
         paths.append(os.fspath(destination))
-    new_observations: list[dict[str, Any]] = []
-    for value in sorted(set(paths)):
-        destination = Path(value)
-        candidates = [destination]
-        parent = destination.parent
-        while parent != Path("/"):
-            candidates.append(parent)
-            parent = parent.parent
-        for candidate in reversed(candidates):
-            key = os.fspath(candidate)
-            if key not in observed_destinations:
-                observation = object_observation(candidate)
-                observed_destinations[key] = observation
-                new_observations.append(observation)
     destination_paths = sorted(set(paths))
     record = {
         "schema": "gentoo-optimization-jsonschema-payload-admission-v1",
@@ -6164,9 +6798,11 @@ def admit_merge_image_payload(
         "mergeroot": os.fspath(mergeroot.resolve(strict=True)),
         "manifest": manifest,
         "manifest_sha256": sha256_bytes(canonical_json(manifest)),
-        "preexisting_destinations": new_observations,
+        "payload_root_observation": payload_root_observation,
+        "payload_device": payload_device,
+        "preexisting_destinations": record_observations,
         "preexisting_destinations_sha256": sha256_bytes(
-            canonical_json(new_observations)
+            canonical_json(record_observations)
         ),
         "destination_paths": destination_paths,
         "destination_paths_sha256": sha256_bytes(
@@ -6206,6 +6842,8 @@ def validate_payload_admission_record(
         "mergeroot",
         "manifest",
         "manifest_sha256",
+        "payload_root_observation",
+        "payload_device",
         "preexisting_destinations",
         "preexisting_destinations_sha256",
         "destination_paths",
@@ -6244,7 +6882,8 @@ def validate_payload_admission_record(
         != sha256_bytes(canonical_json(manifest))
     ):
         fail("payload admission image manifest digest differs")
-    destinations = sorted("/" + relative for relative in rows)
+    destination_paths = canonical_payload_destinations(rows, cpv=cpv)
+    destinations = [os.fspath(destination) for destination in destination_paths]
     if (
         record.get("destination_paths") != destinations
         or record.get("destination_paths_sha256")
@@ -6253,18 +6892,21 @@ def validate_payload_admission_record(
         != sha256_bytes(canonical_json(record["preexisting_destinations"]))
     ):
         fail("payload admission destination authority digest differs")
-    observed_paths: set[str] = set()
-    for observation in record["preexisting_destinations"]:
-        if (
-            not isinstance(observation, dict)
-            or not isinstance(observation.get("path"), str)
-            or observation["path"] in observed_paths
-            or not Path(observation["path"]).is_absolute()
-        ):
-            fail("payload admission contains an invalid destination observation")
-        observed_paths.add(observation["path"])
-    if not set(destinations) <= observed_paths:
-        fail("payload admission lacks an observation for an image destination")
+    prepared_payload_root = prepared_locked_value(prepared, "payload_root")
+    if type(prepared_payload_root.get("device")) is not int:
+        fail("prepared payload root lacks device authority")
+    payload_device, observations = validate_payload_observation_authority(
+        destinations=destination_paths,
+        observations=record["preexisting_destinations"],
+        cpv=cpv,
+        expected_payload_device=int(prepared_payload_root["device"]),
+    )
+    if (
+        record.get("payload_device") != payload_device
+        or record.get("payload_root_observation") != observations["/usr"]
+        or record.get("payload_root_observation") != prepared_payload_root
+    ):
+        fail("payload admission /usr device authority differs")
     return record
 
 
@@ -6364,6 +7006,27 @@ def verify_payload_rollback_authorities(rows: object, plan: Mapping[str, Any]) -
             != sha256_bytes(canonical_json(record.get("preexisting_destinations")))
         ):
             fail("payload-admission record differs from its durable reference")
+        manifest_rows = _manifest_rows(
+            record.get("manifest"), "rolled-back payload image"
+        )
+        destinations = canonical_payload_destinations(
+            manifest_rows, cpv=str(reference["cpv"])
+        )
+        payload_device, observed = validate_payload_observation_authority(
+            destinations=destinations,
+            observations=record.get("preexisting_destinations"),
+            cpv=str(reference["cpv"]),
+            expected_payload_device=(
+                int(record["payload_device"])
+                if type(record.get("payload_device")) is int
+                else None
+            ),
+        )
+        if (
+            record.get("payload_device") != payload_device
+            or record.get("payload_root_observation") != observed["/usr"]
+        ):
+            fail("rolled-back payload /usr device authority differs")
         for observation in record["preexisting_destinations"]:
             if not isinstance(observation, dict) or not isinstance(
                 observation.get("path"), str
@@ -6465,6 +7128,26 @@ def verify_success_payload_authority(
         records.append(record)
     if seen != planned:
         fail("successful payload admissions do not equal the exact plan")
+    payload_devices = {record.get("payload_device") for record in records}
+    payload_roots = {
+        sha256_bytes(canonical_json(record.get("payload_root_observation")))
+        for record in records
+    }
+    if (
+        len(payload_devices) != 1
+        or len(payload_roots) != 1
+        or type(next(iter(payload_devices), None)) is not int
+    ):
+        fail("successful payload admissions disagree on /usr device authority")
+    payload_device = int(next(iter(payload_devices)))
+    recorded_payload_root = records[0]["payload_root_observation"]
+    current_payload_root = object_observation(Path("/usr"))
+    if (
+        current_payload_root != recorded_payload_root
+        or current_payload_root.get("type") != "directory"
+        or current_payload_root.get("device") != payload_device
+    ):
+        fail("current /usr root differs from admitted payload device authority")
 
     image_rows: dict[str, dict[str, Any]] = {}
     original_rows: dict[str, list[dict[str, Any]]] = {}
@@ -6508,6 +7191,8 @@ def verify_success_payload_authority(
         expected_type = expected.get("type")
         if current.get("type") != expected_type:
             fail("installed payload object type differs: " + destination)
+        if current.get("device") != payload_device:
+            fail("installed payload object device differs: " + destination)
         for key in ("uid", "gid", "mode", "xattrs"):
             if current.get(key) != expected.get(key):
                 fail(f"installed payload {key} differs: {destination}")
@@ -6568,6 +7253,10 @@ def verify_success_payload_authority(
     result = {
         "schema_version": 1,
         "cpvs": sorted(planned),
+        "payload_device": payload_device,
+        "payload_root_sha256": sha256_bytes(
+            canonical_json(recorded_payload_root)
+        ),
         "per_cpv_paths": {key: per_cpv_paths[key] for key in sorted(per_cpv_paths)},
         "installed_rows": installed_rows,
         "contents_paths": sorted(contents),
@@ -6581,8 +7270,8 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
 
     if not LIVE_MUTATION_ENABLED:
         fail(
-            "internal Portage mutation is disabled: preparation concurrency and "
-            "post-emerge authority closure are not yet proven"
+            "internal Portage mutation is disabled pending the final Candidate-A "
+            "invariant audit and authoritative Gentoo-host capability proofs"
         )
     if not arguments.command or arguments.command[0] != "--" or len(arguments.command) < 2:
         fail("malformed internal Portage action command")
@@ -6679,7 +7368,15 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
         compare_vdb(prepared_vdb(prepared), vdb_manifest(vdb_path))
         observed_metadata = plan_metadata_authority(
             locked=LockedPortageAuthority(
-                config, vardb, vardb._plib_registry, target, vdb_path
+                config,
+                vardb,
+                vardb._plib_registry,
+                target,
+                vdb_path,
+                cast(
+                    Mapping[str, str],
+                    prepared_locked_window(prepared)["portage_lock_api"],
+                ),
             ),
             plan=prepared["plan"],
             repositories=prepared["authority"]["repositories"],
@@ -6862,8 +7559,8 @@ def portage_recovery_command(arguments: argparse.Namespace) -> int:
 
     if not LIVE_MUTATION_ENABLED:
         fail(
-            "internal Portage recovery is disabled: preparation concurrency and "
-            "post-emerge authority closure are not yet proven"
+            "internal Portage recovery is disabled pending the final Candidate-A "
+            "invariant audit and authoritative Gentoo-host capability proofs"
         )
     if arguments.control_fd < 0 or not CONTROL_SESSION_PATTERN.fullmatch(
         arguments.control_session
@@ -7092,19 +7789,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Build and verify the Phase-2 jsonschema prerequisite transaction contract; "
-            "live preparation and mutation currently fail closed"
+            "live preparation and mutation remain disabled pending final Candidate-A proof"
         )
     )
     parser.add_argument("--fixture-root", type=Path, help=argparse.SUPPRESS)
     subparsers = parser.add_subparsers(dest="action", required=True)
     prepare = subparsers.add_parser(
-        "prepare", help="disabled pending the live VDB snapshot exclusion boundary"
+        "prepare", help="disabled pending final invariant and authoritative-host proof"
     )
     prepare.add_argument("transaction_id")
     prepare.add_argument("--target", default="dev-python/jsonschema")
     prepare.add_argument("--pre-checkpoint-state", required=True, type=Path)
     run = subparsers.add_parser(
-        "run", help="disabled pending the held-lock rollback and counter protocol"
+        "run", help="disabled pending final invariant and authoritative-host proof"
     )
     run.add_argument("transaction_id")
     recover = subparsers.add_parser("recover", help="reconcile an armed or rollback transaction; never rerun emerge")
@@ -7256,6 +7953,12 @@ def verify_terminal_post_emerge_binding(
         or completion.get("post_emerge_authority") != recorded
     ):
         fail("terminal child completion differs from post-emerge authority")
+    validate_counter_reconciliation_authority(
+        paths=paths,
+        value=completion.get("counter"),
+        expected_outcome=outcome,
+        verify_current=True,
+    )
     payload_references = completion.get("payload_admissions")
     if outcome == "success":
         payload_authority = inline_authority(
@@ -7306,8 +8009,13 @@ def verify_command(paths: Paths) -> int:
             prepared["private_roots"], prepared["resolver"].get("private_portage_outputs_before")
         )
         compare_vdb(prepared_vdb(prepared), vdb_manifest(paths.vdb))
-        if file_observation(paths.cache_edb / "counter") != prepared_locked_value(
-            prepared, "counter"
+        live_counter_value, live_counter_observation = read_counter_authority(
+            paths.cache_edb / "counter", "live EDB counter after preparation"
+        )
+        if (
+            live_counter_observation != prepared_locked_value(prepared, "counter")
+            or live_counter_value
+            != prepared_locked_window(prepared).get("counter_value")
         ):
             fail("live EDB counter changed after transaction preparation")
         verify_selected_sets(
@@ -7494,10 +8202,18 @@ def validate_final_locked_window(
 ) -> dict[str, Any]:
     """Bind the second held-lock observation to the first immutable snapshot."""
 
-    for key in ("vdb", "selected_sets", "mtimedb", "counter", "live_etc"):
+    for key in (
+        "vdb",
+        "selected_sets",
+        "mtimedb",
+        "counter",
+        "live_etc",
+        "payload_root",
+    ):
         if final_locked_window.get(key) != initial_locked_window.get(key):
             fail(f"final locked {key} authority differs from initial preparation")
     for key, label in (
+        ("portage_lock_api", "Portage nonblocking-lock API"),
         ("loader_directories", "loader-directory"),
         ("effective_portage_policy", "effective Portage policy"),
         ("native_toolchain", "native build-tool authority"),
@@ -7532,8 +8248,8 @@ def prepare_command(arguments: argparse.Namespace, paths: Paths) -> int:
         )
     if not LIVE_PREPARATION_ENABLED:
         fail(
-            "live jsonschema preparation is disabled: Portage VDB-lock and "
-            "process/handle exclusion around authority snapshots is not yet implemented"
+            "live jsonschema preparation is disabled pending the final Candidate-A "
+            "invariant audit and authoritative Gentoo-host capability proofs"
         )
     prepare_directories(paths, paths.fixture_mode)
     with transaction_locks(paths) as held_locks:
@@ -8080,8 +8796,7 @@ def run_held_lock_recovery(
                 "terminal_state_sha256": terminal_sha,
             }:
                 fail("recovery child final acknowledgement differs from durable authority")
-            with transaction_signal_scope():
-                process.wait(timeout=5 * 60)
+            wait_for_terminal_child(process, timeout=5 * 60)
         except BaseException:
             terminate_direct_process(process, 5.0)
             raise
@@ -8102,8 +8817,8 @@ def run_command(_arguments: argparse.Namespace, paths: Paths) -> int:
     paths.validate()
     if not LIVE_MUTATION_ENABLED:
         fail(
-            "live jsonschema mutation is disabled: preparation concurrency and "
-            "post-emerge authority closure are not yet proven"
+            "live jsonschema mutation is disabled pending the final Candidate-A "
+            "invariant audit and authoritative Gentoo-host capability proofs"
         )
     with transaction_locks(paths) as held_locks:
         held_locks.revalidate()
@@ -8170,11 +8885,12 @@ def finalize_from_child_completion(
     current_vdb = vdb_manifest(paths.vdb)
     if completion["vdb_sha256"] != sha256_bytes(canonical_json(current_vdb)):
         fail("child-completion VDB identity differs from live state")
-    counter_after = completion["counter"].get("after")
-    if type(counter_after) is not int or read_counter(
-        paths.cache_edb / "counter", "live EDB counter"
-    ) != counter_after:
-        fail("child-completion live EDB counter authority changed")
+    validate_counter_reconciliation_authority(
+        paths=paths,
+        value=completion["counter"],
+        expected_outcome=expected_outcome,
+        verify_current=True,
+    )
     verify_frozen_authorities(paths, prepared)
     post_emerge_authority = inline_authority(
         verify_declared_post_emerge_authority(
@@ -8232,8 +8948,8 @@ def recover_command(_arguments: argparse.Namespace, paths: Paths) -> int:
     paths.validate()
     if not LIVE_MUTATION_ENABLED:
         fail(
-            "live jsonschema recovery is disabled: preparation concurrency, "
-            "held-lock crash recovery, and post-emerge closure are not yet proven"
+            "live jsonschema recovery is disabled pending the final Candidate-A "
+            "invariant audit and authoritative Gentoo-host capability proofs"
         )
     with transaction_locks(paths) as held_locks:
         held_locks.revalidate()

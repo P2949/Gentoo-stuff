@@ -15,6 +15,7 @@
       "source_paths": [
         ".github/workflows/portable-optimization-validation.yml",
         "docs/binpkg-checkpoint-runbook.md",
+        "docs/phase2-production-profile-transaction.md",
         "optimization/phase2-authoritative-test-contract.json",
         "scripts/optimization/recovery/create-binpkg-checkpoint.sh",
         "scripts/optimization/recovery/install-jsonschema-prerequisite.py",
@@ -34,12 +35,19 @@
     {
       "claim_id": "phase2-bolt-hooks",
       "source_paths": [
+        "docs/bolt-global.md",
         "portage/install-qa-check.d/zz-gentoo-optimization-bolt",
+        "scripts/bolt/bolt-package-binaries.sh",
+        "scripts/bolt/collect-profile.sh",
+        "scripts/bolt/list-package-binaries.sh",
+        "scripts/bolt/optimize-binary.sh",
         "scripts/optimization/bolt/artifact_tool.py",
         "scripts/optimization/bolt/capture-input.sh",
         "scripts/optimization/bolt/deploy-output.sh",
         "scripts/optimization/bolt/register-output.sh",
-        "tests/optimization/test-bolt-hooks.sh"
+        "tests/optimization/test-bolt-command-policy.sh",
+        "tests/optimization/test-bolt-hooks.sh",
+        "tests/optimization/test-no-legacy-bolt.sh"
       ]
     },
     {
@@ -54,6 +62,7 @@
     {
       "claim_id": "phase2-evidence-index",
       "source_paths": [
+        "docs/phase2-production-profile-transaction.md",
         "optimization/phase2-authoritative-test-contract.json",
         "optimization/phase2-evidence-policy.json",
         "optimization/phase2-tool-manifest.json",
@@ -99,8 +108,8 @@
   "require_all_phase_checkboxes_checked": true,
   "required_authoritative": true,
   "required_component_states": [
-    {"external_evidence_labels": [], "name": "automation", "required_test_names": ["driver-cli-self-test", "phase2-evidence-contract", "phase2-run-provenance-start", "phase2-test-contract-static", "production-profile-lock-crash-stress", "python-source-compilation", "python-unit-tests:tests/optimization", "python-unit-tests:tests/optimization/recovery", "shellcheck"], "required_test_prefixes": []},
-    {"external_evidence_labels": [], "name": "bolt-hooks", "required_test_names": ["bolt-command-policy", "bolt-pre-strip-hooks", "bolt-transaction-fixture"], "required_test_prefixes": []},
+    {"external_evidence_labels": ["jsonschema-bootstrap-manifest", "jsonschema-post-checkpoint-offline-restore-receipt", "jsonschema-post-checkpoint-operator-manifest", "jsonschema-post-checkpoint-terminal-state", "jsonschema-pre-checkpoint-offline-restore-receipt", "jsonschema-pre-checkpoint-operator-manifest", "jsonschema-pre-checkpoint-terminal-state", "jsonschema-prerequisite-success-state"], "name": "automation", "required_test_names": ["driver-cli-self-test", "phase2-evidence-contract", "phase2-run-provenance-start", "phase2-test-contract-static", "production-profile-lock-crash-stress", "python-source-compilation", "python-unit-tests:tests/optimization", "python-unit-tests:tests/optimization/recovery", "shellcheck"], "required_test_prefixes": []},
+    {"external_evidence_labels": [], "name": "bolt-hooks", "required_test_names": ["bolt-command-policy", "bolt-pre-strip-hooks", "bolt-transaction-fixture", "no-legacy-bolt"], "required_test_prefixes": []},
     {"external_evidence_labels": [], "name": "capability-bolt", "required_test_names": [], "required_test_prefixes": ["capability:bolt"]},
     {"external_evidence_labels": [], "name": "capability-clang-ir", "required_test_names": [], "required_test_prefixes": ["capability:clang-ir"]},
     {"external_evidence_labels": [], "name": "capability-clang-sample", "required_test_names": [], "required_test_prefixes": ["capability:clang-sample"]},
@@ -117,6 +126,7 @@
     "bolt-transaction-fixture",
     "driver-cli-self-test",
     "framework-installer",
+    "no-legacy-bolt",
     "no-legacy-pgo",
     "package-env-duplicate-policy",
     "package-env-portage-semantic",
@@ -151,6 +161,7 @@
   "required_sources": [
     ".github/workflows/portable-optimization-validation.yml",
     "docs/binpkg-checkpoint-runbook.md",
+    "docs/bolt-global.md",
     "docs/phase2-production-profile-transaction.md",
     "optimization/phase2-authoritative-test-contract.json",
     "optimization/phase2-evidence-policy.json",
@@ -160,6 +171,10 @@
     "optimization/tmpfiles/gentoo-optimization.conf",
     "plans/system-wide-pgo-bolt.md",
     "portage/bashrc",
+    "scripts/bolt/bolt-package-binaries.sh",
+    "scripts/bolt/collect-profile.sh",
+    "scripts/bolt/list-package-binaries.sh",
+    "scripts/bolt/optimize-binary.sh",
     "scripts/optimization/install-framework.sh",
     "scripts/optimization/pgo/authorization-token-scan.py",
     "scripts/optimization/pgo/production-profile-lock-transaction.py",
@@ -175,6 +190,8 @@
     "tests/optimization/fixtures/framework-bootstrap/deployed-v1/render.sh",
     "tests/optimization/fixtures/rename-exchange-mv.py",
     "tests/optimization/recovery/test_create_binpkg_checkpoint.py",
+    "tests/optimization/test-bolt-command-policy.sh",
+    "tests/optimization/test-no-legacy-bolt.sh",
     "tests/optimization/test-portage-sample-production-env.sh",
     "tests/optimization/test-run-optimization-tests.sh",
     "tests/optimization/test_jsonschema_prerequisite.py",
@@ -298,11 +315,13 @@
   "source_scopes": [
     ".github",
     "docs/binpkg-checkpoint-runbook.md",
+    "docs/bolt-global.md",
     "docs/phase2-production-profile-transaction.md",
     "local-overlay",
     "optimization",
     "plans/system-wide-pgo-bolt.md",
     "portage",
+    "scripts/bolt",
     "scripts/optimization",
     "tests/optimization",
     "tests/run-optimization-tests.sh"
