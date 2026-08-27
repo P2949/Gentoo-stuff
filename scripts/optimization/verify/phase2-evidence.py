@@ -18,6 +18,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import pwd
 import re
 import shlex
 import stat
@@ -45,6 +46,14 @@ SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 CHECKED_RE = re.compile(r"^\s*-\s+\[[xX]\]\s+")
 TOP_TEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,1023}$")
 SUBTEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$")
+PREREQUISITE_CPV_RE = re.compile(
+    r"^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*$"
+)
+PREREQUISITE_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+_.-]*$")
+PREREQUISITE_EXACT_ATOM_RE = re.compile(
+    r"^=(?P<cpv>[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*)"
+    r"::(?P<repository>[A-Za-z0-9][A-Za-z0-9+_.-]*)$"
+)
 
 
 class EvidenceError(RuntimeError):
@@ -5481,6 +5490,230 @@ def stable_parent_identity(path: Path) -> dict[str, int]:
     }
 
 
+def prerequisite_xattrs(path: Path) -> list[dict[str, str]]:
+    """Observe the exact xattr vector used by the prerequisite producer."""
+
+    try:
+        return [
+            {
+                "name": name,
+                "value_hex": os.getxattr(
+                    path, name, follow_symlinks=False
+                ).hex(),
+            }
+            for name in sorted(os.listxattr(path, follow_symlinks=False))
+        ]
+    except OSError as error:
+        fail(f"cannot observe prerequisite xattrs for {path}: {error}")
+
+
+def observe_prerequisite_tree_manifest(root: Path) -> dict[str, Any]:
+    """Recompute the producer's metadata-and-content tree manifest exactly."""
+
+    try:
+        resolved = root.resolve(strict=True)
+    except OSError as error:
+        fail(f"cannot resolve prerequisite tree {root}: {error}")
+    if resolved != root or root.is_symlink() or not root.is_dir():
+        fail(f"prerequisite tree is not a canonical real directory: {root}")
+    rows: list[dict[str, Any]] = []
+    try:
+        paths = sorted(
+            root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()
+        )
+    except OSError as error:
+        fail(f"cannot enumerate prerequisite tree {root}: {error}")
+    for path in paths:
+        relative = path.relative_to(root).as_posix()
+        metadata = path.lstat()
+        row: dict[str, Any] = {
+            "path": relative,
+            "uid": metadata.st_uid,
+            "gid": metadata.st_gid,
+            "mode": stat.S_IMODE(metadata.st_mode),
+            "xattrs": prerequisite_xattrs(path),
+        }
+        if stat.S_ISREG(metadata.st_mode):
+            payload, _identity = read_regular(
+                path, f"prerequisite tree file {relative}", allow_hardlinks=True
+            )
+            row.update(
+                type="file",
+                size=metadata.st_size,
+                nlink=metadata.st_nlink,
+                sha256=sha256(payload),
+            )
+        elif stat.S_ISDIR(metadata.st_mode):
+            row.update(type="directory")
+        elif stat.S_ISLNK(metadata.st_mode):
+            target = os.readlink(path)
+            if not target or "\0" in target or "\n" in target or "\r" in target:
+                fail(f"prerequisite tree has an unsafe symlink target: {path}")
+            row.update(type="symlink", nlink=metadata.st_nlink, target=target)
+        else:
+            fail(f"prerequisite tree contains an unsupported object: {path}")
+        rows.append(row)
+    result = {"schema_version": 1, "root": os.fspath(root), "rows": rows}
+    result["rows_sha256"] = sha256(canonical_json(rows))
+    return result
+
+
+def validate_prerequisite_tree_manifest(
+    value: object,
+    *,
+    root: Path,
+    label: str,
+    production: bool,
+    verify_current: bool = True,
+) -> dict[str, Any]:
+    manifest = require_object(
+        value, label, {"schema_version", "root", "rows", "rows_sha256"}
+    )
+    rows = require_list(manifest.get("rows"), f"{label} rows")
+    if (
+        manifest.get("schema_version") != 1
+        or manifest.get("root") != os.fspath(root)
+        or manifest.get("rows_sha256") != sha256(canonical_json(rows))
+    ):
+        fail(f"{label} is not canonically bound")
+    observed_paths: list[str] = []
+    for index, raw_row in enumerate(rows):
+        row = require_object(raw_row, f"{label} row {index}")
+        relative = relative_path(row.get("path"), f"{label} row {index} path")
+        kind = row.get("type")
+        base = {"path", "uid", "gid", "mode", "xattrs", "type"}
+        expected = {
+            "directory": base,
+            "file": base | {"size", "nlink", "sha256"},
+            "symlink": base | {"nlink", "target"},
+        }.get(kind)
+        if expected is None or set(row) != expected:
+            fail(f"{label} row {relative} has a foreign schema")
+        for key in ("uid", "gid", "mode"):
+            require_int(row.get(key), f"{label} row {relative} {key}")
+        if int(row["mode"]) > 0o7777:
+            fail(f"{label} row {relative} mode is outside the reviewed range")
+        xattrs = require_list(row.get("xattrs"), f"{label} row {relative} xattrs")
+        normalized_xattrs: list[tuple[str, str]] = []
+        for raw_xattr in xattrs:
+            xattr = require_object(
+                raw_xattr,
+                f"{label} row {relative} xattr",
+                {"name", "value_hex"},
+            )
+            name = require_string(
+                xattr.get("name"), f"{label} row {relative} xattr name"
+            )
+            value_hex = xattr.get("value_hex")
+            if not isinstance(value_hex, str) or re.fullmatch(
+                r"(?:[0-9a-f]{2})*", value_hex
+            ) is None:
+                fail(f"{label} row {relative} xattr value is not lowercase hex")
+            normalized_xattrs.append((name, value_hex))
+        if normalized_xattrs != sorted(set(normalized_xattrs)):
+            fail(f"{label} row {relative} xattrs are not sorted and unique")
+        if kind == "file":
+            require_int(row.get("size"), f"{label} row {relative} size")
+            require_int(row.get("nlink"), f"{label} row {relative} nlink", 1)
+            require_string(row.get("sha256"), f"{label} row {relative} digest", SHA256_RE)
+        elif kind == "symlink":
+            require_int(row.get("nlink"), f"{label} row {relative} nlink", 1)
+            target = require_string(
+                row.get("target"), f"{label} row {relative} symlink target"
+            )
+            if "\n" in target or "\r" in target:
+                fail(f"{label} row {relative} has an unsafe symlink target")
+        observed_paths.append(relative)
+    if observed_paths != sorted(set(observed_paths)):
+        fail(f"{label} rows are not sorted and unique")
+    if production:
+        validate_root_trust(root, label, directory=True)
+    if verify_current and observe_prerequisite_tree_manifest(root) != manifest:
+        fail(f"{label} differs from its materialized tree")
+    return manifest
+
+
+def validate_prerequisite_manifest_reference(
+    *,
+    root: Path,
+    path_value: object,
+    digest_value: object,
+    expected_path: Path,
+    label: str,
+    production: bool,
+) -> dict[str, Any]:
+    manifest_path, payload = read_sha256_reference(
+        {"path": path_value, "sha256": digest_value},
+        label,
+        production=production,
+        expected_path=expected_path,
+    )
+    manifest = require_object(parse_json_bytes(payload, label), label)
+    if canonical_json(manifest) != payload:
+        fail(f"{label} is not canonical compact JSON")
+    validate_prerequisite_tree_manifest(
+        manifest,
+        root=root,
+        label=label,
+        production=production,
+    )
+    if manifest_path.parent != root.parent:
+        fail(f"{label} escapes the frozen authority root")
+    return manifest
+
+
+def validate_prerequisite_file_observation(
+    value: object,
+    *,
+    label: str,
+    expected_path: Path | None = None,
+    production: bool = False,
+    verify_current: bool = False,
+) -> dict[str, Any]:
+    observation = require_object(value, label)
+    kind = observation.get("type")
+    if kind == "absent":
+        validated = validate_prerequisite_object_observation(
+            observation, label, expected_path=expected_path
+        )
+        if verify_current and Path(str(validated["path"])).exists():
+            fail(f"{label} is no longer absent")
+        return validated
+    if kind == "directory":
+        expected_keys = {
+            "path", "device", "inode", "uid", "gid", "mode", "nlink",
+            "size", "xattrs", "type", "tree", "tree_sha256",
+        }
+        if set(observation) != expected_keys:
+            fail(f"{label} directory observation has a foreign schema")
+        shallow = {key: item for key, item in observation.items() if key not in {"tree", "tree_sha256"}}
+        validated = validate_prerequisite_object_observation(
+            shallow, label, expected_path=expected_path
+        )
+        path = Path(str(validated["path"]))
+        tree = validate_prerequisite_tree_manifest(
+            observation.get("tree"),
+            root=path,
+            label=f"{label} tree",
+            production=production,
+            verify_current=verify_current,
+        )
+        if observation.get("tree_sha256") != sha256(canonical_json(tree)):
+            fail(f"{label} tree digest differs")
+    else:
+        validated = validate_prerequisite_object_observation(
+            observation, label, expected_path=expected_path
+        )
+    path = Path(str(validated["path"]))
+    if production and kind != "absent":
+        validate_root_trust(path, label, directory=kind == "directory")
+    if verify_current and kind != "directory":
+        current = observe_prerequisite_object(path)
+        if current != validated:
+            fail(f"{label} differs from the current object")
+    return observation
+
+
 def validate_locked_prerequisite_authority(
     value: object,
     *,
@@ -5627,6 +5860,191 @@ def prerequisite_plan_environment(private_roots: dict[str, Path]) -> dict[str, s
     return dict(sorted(environment.items()))
 
 
+def prerequisite_prepare_environment(
+    private_roots: dict[str, Path], *, offline: bool
+) -> dict[str, str]:
+    """Reproduce the preparation-stage Portage environment exactly."""
+
+    environment = {
+        "AUTOCLEAN": "no",
+        "CCACHE_DIR": os.fspath(private_roots["ccache_dir"]),
+        "CARGO_HOME": os.fspath(private_roots["cargo_home"]),
+        "DISTDIR": os.fspath(
+            private_roots["distdir_runtime"]
+            if offline
+            else private_roots["distdir_staging"]
+        ),
+        "EMERGE_LOG_DIR": os.fspath(private_roots["portage_logdir"]),
+        "EPYTHON": "python3.15",
+        "FEATURES": (
+            "-assume-digests -binpkg-signing -ccache -distcc "
+            "-icecream -parallel-install -preserve-libs -unmerge-orphans noinfo "
+            "collision-protect protect-owned sandbox userpriv usersandbox "
+            "network-sandbox pid-sandbox merge-sync"
+        ),
+        "HOME": os.fspath(private_roots["home"]),
+        "LANG": "C",
+        "LC_ALL": "C",
+        "LOGNAME": "root",
+        "NOCOLOR": "1",
+        "PATH": "/usr/lib/llvm/22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PKGDIR": os.fspath(private_roots["pkgdir"]),
+        "PORTAGE_BINHOST": "",
+        "PORTAGE_ELOG_SYSTEM": "echo",
+        "PORTAGE_LOGDIR": os.fspath(private_roots["portage_logdir"]),
+        "PORTAGE_TMPDIR": os.fspath(private_roots["portage_tmpdir"]),
+        "RUSTUP_HOME": os.fspath(private_roots["rustup_home"]),
+        "SHELL": "/bin/bash",
+        "TEMP": os.fspath(private_roots["portage_tmpdir"]),
+        "TERM": "dumb",
+        "TMP": os.fspath(private_roots["portage_tmpdir"]),
+        "TMPDIR": os.fspath(private_roots["portage_tmpdir"]),
+        "TZ": "UTC",
+        "UNINSTALL_IGNORE": "",
+        "USER": "root",
+        "XDG_CACHE_HOME": os.fspath(private_roots["xdg_cache"]),
+    }
+    if offline:
+        environment.update(
+            {
+                "FETCHCOMMAND": "/bin/false",
+                "GENTOO_MIRRORS": "",
+                "PORTAGE_RO_DISTDIRS": os.fspath(
+                    private_roots["distdir_authority"]
+                ),
+                "RESUMECOMMAND": "/bin/false",
+            }
+        )
+    return dict(sorted(environment.items()))
+
+
+def prerequisite_emerge_options() -> list[str]:
+    return [
+        "--ignore-default-opts",
+        "--verbose",
+        "--tree",
+        "--oneshot",
+        "--with-bdeps=y",
+        "--complete-graph=y",
+        "--autounmask=n",
+        "--autounmask-write=n",
+        "--buildpkg=y",
+        "--getbinpkg=n",
+        "--usepkg=n",
+        "--keep-going=n",
+        "--fail-clean=y",
+        "--noconfmem",
+        "--nospinner",
+        "--color=n",
+        "--jobs=1",
+        "--package-moves=n",
+    ]
+
+
+def prerequisite_mount_authority(
+    authority: dict[str, Any], private_roots: dict[str, Path]
+) -> list[dict[str, object]]:
+    mounts: list[dict[str, object]] = [
+        {
+            "source": os.fspath(private_roots["etc"]),
+            "target": os.fspath(private_roots["live_etc"]),
+            "read_only": False,
+        },
+        {
+            "source": os.fspath(private_roots["etc"]),
+            "target": os.fspath(private_roots["etc"]),
+            "read_only": True,
+        },
+    ]
+    for raw_repository in require_list(
+        authority.get("repositories"), "jsonschema frozen repositories", nonempty=True
+    ):
+        repository = require_object(raw_repository, "jsonschema frozen repository")
+        source = os.fspath(
+            absolute_path(repository.get("materialized_location"), "repository authority")
+        )
+        target = os.fspath(
+            absolute_path(repository.get("source_location"), "repository source")
+        )
+        mounts.extend(
+            [
+                {"source": source, "target": source, "read_only": True},
+                {"source": source, "target": target, "read_only": True},
+            ]
+        )
+    for key in ("portage_config", "portage_global_config"):
+        row = require_object(authority.get(key), f"jsonschema {key}")
+        source = os.fspath(absolute_path(row.get("materialized_location"), key))
+        target = os.fspath(absolute_path(row.get("mount_target"), key))
+        mounts.extend(
+            [
+                {"source": source, "target": source, "read_only": True},
+                {"source": source, "target": target, "read_only": True},
+            ]
+        )
+    for raw_module in require_list(
+        authority.get("python_modules"), "jsonschema Python authorities", nonempty=True
+    ):
+        module = require_object(raw_module, "jsonschema Python authority")
+        for raw_root in require_list(
+            module.get("roots"), "jsonschema Python authority roots", nonempty=True
+        ):
+            root = require_object(raw_root, "jsonschema Python authority root")
+            root_path = os.fspath(
+                absolute_path(root.get("path"), "Python authority root")
+            )
+            mounts.append(
+                {"source": root_path, "target": root_path, "read_only": True}
+            )
+    mounts.extend(
+        [
+            {
+                "source": os.fspath(private_roots["distdir_authority"]),
+                "target": os.fspath(private_roots["distdir_authority"]),
+                "read_only": True,
+            },
+            {
+                "source": os.fspath(private_roots["live_cache_edb"]),
+                "target": os.fspath(private_roots["live_cache_edb_view"]),
+                "read_only": True,
+            },
+            {
+                "source": os.fspath(private_roots["var_lib_portage"]),
+                "target": os.fspath(private_roots["live_var_lib_portage"]),
+                "read_only": False,
+            },
+            {
+                "source": os.fspath(private_roots["var_lib_portage"]),
+                "target": os.fspath(private_roots["var_lib_portage"]),
+                "read_only": True,
+            },
+            {
+                "source": os.fspath(private_roots["cache_edb"]),
+                "target": os.fspath(private_roots["live_cache_edb"]),
+                "read_only": False,
+            },
+            {
+                "source": os.fspath(private_roots["cache_edb"]),
+                "target": os.fspath(private_roots["cache_edb"]),
+                "read_only": True,
+            },
+            {
+                "source": os.fspath(private_roots["thinlto_cache"]),
+                "target": os.fspath(private_roots["live_thinlto_cache"]),
+                "read_only": False,
+            },
+            {
+                "source": os.fspath(private_roots["thinlto_cache"]),
+                "target": os.fspath(private_roots["thinlto_cache"]),
+                "read_only": True,
+            },
+        ]
+    )
+    if len({row["target"] for row in mounts}) != len(mounts):
+        fail("jsonschema prerequisite mount authority repeats a target")
+    return mounts
+
+
 def validate_prerequisite_execution_spec(
     payload: bytes,
     *,
@@ -5674,26 +6092,7 @@ def validate_prerequisite_execution_spec(
         tools_by_name.get("emerge", {}).get("requested_path"),
         "jsonschema source emerge path",
     )
-    emerge_options = [
-        "--ignore-default-opts",
-        "--verbose",
-        "--tree",
-        "--oneshot",
-        "--with-bdeps=y",
-        "--complete-graph=y",
-        "--autounmask=n",
-        "--autounmask-write=n",
-        "--buildpkg=y",
-        "--getbinpkg=n",
-        "--usepkg=n",
-        "--keep-going=n",
-        "--fail-clean=y",
-        "--noconfmem",
-        "--nospinner",
-        "--color=n",
-        "--jobs=1",
-        "--package-moves=n",
-    ]
+    emerge_options = prerequisite_emerge_options()
     if len(command) != 12 + len(emerge_options) + len(plan_atoms):
         fail("jsonschema source command length differs from the exact plan")
     control_fd = command[7]
@@ -5719,99 +6118,8 @@ def validate_prerequisite_execution_spec(
     ):
         fail("jsonschema source command differs from the exact held-lock action")
     mounts = require_list(spec.get("mounts"), "jsonschema source mount authority", nonempty=True)
-    expected_mounts: list[dict[str, object]] = [
-        {
-            "source": os.fspath(private_roots["etc"]),
-            "target": os.fspath(private_roots["live_etc"]),
-            "read_only": False,
-        },
-        {
-            "source": os.fspath(private_roots["etc"]),
-            "target": os.fspath(private_roots["etc"]),
-            "read_only": True,
-        },
-    ]
-    for raw_repository in require_list(
-        authority.get("repositories"), "jsonschema frozen repositories", nonempty=True
-    ):
-        repository = require_object(raw_repository, "jsonschema frozen repository")
-        source = os.fspath(
-            absolute_path(repository.get("materialized_location"), "repository authority")
-        )
-        target = os.fspath(absolute_path(repository.get("source_location"), "repository source"))
-        expected_mounts.extend(
-            [
-                {"source": source, "target": source, "read_only": True},
-                {"source": source, "target": target, "read_only": True},
-            ]
-        )
-    for key in ("portage_config", "portage_global_config"):
-        row = require_object(authority.get(key), f"jsonschema {key}")
-        source = os.fspath(absolute_path(row.get("materialized_location"), key))
-        target = os.fspath(absolute_path(row.get("mount_target"), key))
-        expected_mounts.extend(
-            [
-                {"source": source, "target": source, "read_only": True},
-                {"source": source, "target": target, "read_only": True},
-            ]
-        )
-    for raw_module in require_list(
-        authority.get("python_modules"), "jsonschema Python authorities", nonempty=True
-    ):
-        module = require_object(raw_module, "jsonschema Python authority")
-        for raw_root in require_list(
-            module.get("roots"), "jsonschema Python authority roots", nonempty=True
-        ):
-            root = require_object(raw_root, "jsonschema Python authority root")
-            root_path = os.fspath(absolute_path(root.get("path"), "Python authority root"))
-            expected_mounts.append(
-                {"source": root_path, "target": root_path, "read_only": True}
-            )
-    expected_mounts.extend(
-        [
-            {
-                "source": os.fspath(private_roots["distdir_authority"]),
-                "target": os.fspath(private_roots["distdir_authority"]),
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(private_roots["live_cache_edb"]),
-                "target": os.fspath(private_roots["live_cache_edb_view"]),
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(private_roots["var_lib_portage"]),
-                "target": os.fspath(private_roots["live_var_lib_portage"]),
-                "read_only": False,
-            },
-            {
-                "source": os.fspath(private_roots["var_lib_portage"]),
-                "target": os.fspath(private_roots["var_lib_portage"]),
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(private_roots["cache_edb"]),
-                "target": os.fspath(private_roots["live_cache_edb"]),
-                "read_only": False,
-            },
-            {
-                "source": os.fspath(private_roots["cache_edb"]),
-                "target": os.fspath(private_roots["cache_edb"]),
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(private_roots["thinlto_cache"]),
-                "target": os.fspath(private_roots["live_thinlto_cache"]),
-                "read_only": False,
-            },
-            {
-                "source": os.fspath(private_roots["thinlto_cache"]),
-                "target": os.fspath(private_roots["thinlto_cache"]),
-                "read_only": True,
-            },
-        ]
-    )
-    if mounts != expected_mounts or len({row["target"] for row in mounts}) != len(mounts):
+    expected_mounts = prerequisite_mount_authority(authority, private_roots)
+    if mounts != expected_mounts:
         fail("jsonschema source mount authority differs from the frozen transaction")
     return spec
 
@@ -6270,6 +6578,873 @@ def validate_prerequisite_pkgdir_report(
         validate_root_trust(pkgdir, "jsonschema private PKGDIR", directory=True)
         validate_root_trust(selected_vdb, "jsonschema private selected VDB", directory=True)
     return report
+
+
+def validate_prerequisite_executable_identity(
+    value: object,
+    *,
+    label: str,
+    production: bool,
+    expected_path: Path | None = None,
+) -> dict[str, Any]:
+    row = require_object(
+        value,
+        label,
+        {
+            "requested_path", "resolved_path", "device", "inode", "uid", "gid",
+            "mode", "nlink", "size", "sha256",
+        },
+    )
+    requested = absolute_path(row.get("requested_path"), f"{label} requested path")
+    resolved = absolute_path(row.get("resolved_path"), f"{label} resolved path")
+    if expected_path is not None and requested != expected_path:
+        fail(f"{label} path differs from its reviewed executable")
+    try:
+        current_resolved = requested.resolve(strict=True)
+    except OSError as error:
+        fail(f"cannot resolve {label}: {error}")
+    payload, metadata = read_regular(current_resolved, label)
+    identity = {
+        key: metadata[key]
+        for key in ("device", "inode", "uid", "gid", "mode", "nlink", "size")
+    }
+    if (
+        resolved != current_resolved
+        or any(row.get(key) != identity[key] for key in identity)
+        or row.get("sha256") != sha256(payload)
+        or not identity["mode"] & 0o111
+        or identity["mode"] & 0o022
+    ):
+        fail(f"{label} identity differs from its executable")
+    if production:
+        validate_root_trusted_entrypoint(requested, label)
+        validate_root_trust(resolved, f"{label} resolved executable")
+        if identity["uid"] != 0 or identity["gid"] != 0:
+            fail(f"{label} executable is not root owned")
+    return row
+
+
+def prerequisite_manifest_content(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for raw_row in require_list(manifest.get("rows"), "prerequisite manifest rows"):
+        row = require_object(raw_row, "prerequisite manifest row")
+        result.append(
+            {
+                key: row[key]
+                for key in ("path", "type", "size", "sha256", "target", "xattrs")
+                if key in row
+            }
+        )
+    return result
+
+
+def validate_prerequisite_directory_authority(
+    value: object,
+    *,
+    label: str,
+    production: bool,
+    expected_requested: Path | None = None,
+) -> dict[str, Any]:
+    row = require_object(
+        value,
+        label,
+        {"requested_path", "resolved_path", "manifest", "manifest_sha256"},
+    )
+    requested = absolute_path(row.get("requested_path"), f"{label} requested path")
+    resolved = absolute_path(row.get("resolved_path"), f"{label} resolved path")
+    if expected_requested is not None and requested != expected_requested:
+        fail(f"{label} requested path differs")
+    try:
+        current_resolved = requested.resolve(strict=True)
+    except OSError as error:
+        fail(f"cannot resolve {label}: {error}")
+    manifest = validate_prerequisite_tree_manifest(
+        row.get("manifest"),
+        root=resolved,
+        label=f"{label} manifest",
+        production=production,
+    )
+    if (
+        current_resolved != resolved
+        or row.get("manifest_sha256") != sha256(canonical_json(manifest))
+    ):
+        fail(f"{label} directory authority differs")
+    return row
+
+
+def validate_prerequisite_frozen_tree_authority(
+    value: object,
+    *,
+    label: str,
+    production: bool,
+    expected_source: Path | None = None,
+    expected_materialized: Path | None = None,
+) -> dict[str, Any]:
+    row = require_object(
+        value,
+        label,
+        {
+            "source_location", "mount_target", "materialized_location",
+            "tree_manifest_path", "tree_manifest_sha256", "source_before",
+            "source_after",
+        },
+    )
+    source = absolute_path(row.get("source_location"), f"{label} source")
+    target = absolute_path(row.get("mount_target"), f"{label} mount target")
+    materialized = absolute_path(
+        row.get("materialized_location"), f"{label} materialized tree"
+    )
+    if expected_source is not None and source != expected_source:
+        fail(f"{label} source path differs")
+    if expected_materialized is not None and materialized != expected_materialized:
+        fail(f"{label} materialized path differs")
+    if target != source:
+        fail(f"{label} mount target differs from its configured source")
+    before = validate_prerequisite_file_observation(
+        row.get("source_before"),
+        label=f"{label} source-before",
+        expected_path=source,
+    )
+    after = validate_prerequisite_file_observation(
+        row.get("source_after"),
+        label=f"{label} source-after",
+        expected_path=source,
+    )
+    if before != after or before.get("type") != "directory":
+        fail(f"{label} source changed while it was frozen")
+    manifest = validate_prerequisite_manifest_reference(
+        root=materialized,
+        path_value=row.get("tree_manifest_path"),
+        digest_value=row.get("tree_manifest_sha256"),
+        expected_path=materialized.parent / f"{materialized.name}.manifest.json",
+        label=f"{label} materialized manifest",
+        production=production,
+    )
+    source_tree = require_object(before.get("tree"), f"{label} source tree")
+    if prerequisite_manifest_content(source_tree) != prerequisite_manifest_content(manifest):
+        fail(f"{label} materialized content differs from its frozen source")
+    return row
+
+
+def validate_prerequisite_python_modules(
+    value: object, *, production: bool
+) -> list[dict[str, Any]]:
+    modules = require_list(value, "jsonschema Python module authorities", nonempty=True)
+    observed_names: list[str] = []
+    expected_production = [
+        "_emerge", "gemato", "flit_core", "gpep517", "hatchling", "installer",
+        "maturin", "mesonbuild", "packaging", "portage", "pyproject_hooks",
+        "scikit_build_core", "setuptools", "wheel",
+    ]
+    for raw_module in modules:
+        module = require_object(raw_module, "jsonschema Python module authority")
+        expected_keys = {"name", "roots", "roots_sha256"}
+        if "interpreter" in module or "interpreter_identity" in module:
+            expected_keys |= {"interpreter", "interpreter_identity"}
+        if set(module) != expected_keys:
+            fail("jsonschema Python module authority has a foreign schema")
+        name = require_string(
+            module.get("name"), "jsonschema Python module name",
+            re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$"),
+        )
+        roots = require_list(
+            module.get("roots"), f"jsonschema Python module {name} roots", nonempty=True
+        )
+        if module.get("roots_sha256") != sha256(canonical_json(roots)):
+            fail(f"jsonschema Python module {name} roots are not canonically bound")
+        root_paths: list[str] = []
+        for raw_root in roots:
+            root = require_object(
+                raw_root,
+                f"jsonschema Python module {name} root",
+                {"path", "manifest", "manifest_sha256"},
+            )
+            path = absolute_path(root.get("path"), f"jsonschema Python module {name} path")
+            manifest = validate_prerequisite_tree_manifest(
+                root.get("manifest"),
+                root=path,
+                label=f"jsonschema Python module {name} manifest",
+                production=production,
+            )
+            if root.get("manifest_sha256") != sha256(canonical_json(manifest)):
+                fail(f"jsonschema Python module {name} manifest digest differs")
+            root_paths.append(os.fspath(path))
+        if root_paths != sorted(set(root_paths)):
+            fail(f"jsonschema Python module {name} roots are not sorted and unique")
+        if "interpreter" in module:
+            interpreter = absolute_path(
+                module.get("interpreter"), f"jsonschema Python module {name} interpreter"
+            )
+            identity = validate_prerequisite_executable_identity(
+                module.get("interpreter_identity"),
+                label=f"jsonschema Python module {name} interpreter",
+                production=production,
+                expected_path=interpreter,
+            )
+            if identity.get("requested_path") != os.fspath(interpreter):
+                fail(f"jsonschema Python module {name} interpreter differs")
+        observed_names.append(name)
+    if len(observed_names) != len(set(observed_names)):
+        fail("jsonschema Python module vector repeats an authority")
+    if production and observed_names != expected_production:
+        fail("jsonschema production Python module vector differs")
+    return modules
+
+
+def validate_prerequisite_framework(
+    value: object,
+    *,
+    production: bool,
+) -> dict[str, Any]:
+    framework = require_object(
+        value,
+        "jsonschema framework authority",
+        {"selector", "candidate", "stable_libexec", "stable_share", "portage_resolved_target"},
+    )
+    selector_path = (
+        Path("/var/lib/gentoo-optimization/framework-current")
+        if production
+        else absolute_path(
+            require_object(framework.get("selector"), "jsonschema framework selector").get("path"),
+            "jsonschema framework selector path",
+        )
+    )
+    selector = validate_prerequisite_file_observation(
+        framework.get("selector"),
+        label="jsonschema framework selector",
+        expected_path=selector_path,
+        verify_current=True,
+    )
+    if selector.get("type") != "symlink":
+        fail("jsonschema framework selector is not a symlink")
+    if production:
+        validate_root_trust(selector_path.parent, "jsonschema framework selector parent", directory=True)
+        if selector.get("uid") != 0:
+            fail("jsonschema framework selector is not root owned")
+    candidate = validate_prerequisite_directory_authority(
+        framework.get("candidate"),
+        label="jsonschema framework candidate",
+        production=production,
+    )
+    candidate_path = Path(str(candidate["resolved_path"]))
+    if selector_path.resolve(strict=True) != candidate_path or candidate_path.parent != selector_path.parent:
+        fail("jsonschema framework selector does not name its direct candidate")
+    stable_libexec = validate_prerequisite_directory_authority(
+        framework.get("stable_libexec"),
+        label="jsonschema stable framework libexec",
+        production=production,
+        expected_requested=(
+            Path("/usr/local/libexec/gentoo-optimization") if production else None
+        ),
+    )
+    stable_share = validate_prerequisite_directory_authority(
+        framework.get("stable_share"),
+        label="jsonschema stable framework share",
+        production=production,
+        expected_requested=(
+            Path("/usr/local/share/gentoo-optimization") if production else None
+        ),
+    )
+    portage_target = absolute_path(
+        framework.get("portage_resolved_target"),
+        "jsonschema framework Portage target",
+    )
+    if production and portage_target != Path("/etc/portage").resolve(strict=True):
+        fail("jsonschema framework Portage target differs from /etc/portage")
+    if not stable_libexec or not stable_share:
+        fail("jsonschema stable framework authority is incomplete")
+    return framework
+
+
+def validate_prerequisite_capacity(
+    value: object,
+    *,
+    expected_targets: set[Path],
+) -> dict[str, Any]:
+    capacity = require_object(
+        value,
+        "jsonschema prerequisite capacity",
+        {"schema_version", "rows", "rows_sha256"},
+    )
+    rows = require_list(capacity.get("rows"), "jsonschema capacity rows", nonempty=True)
+    observed_devices: list[int] = []
+    observed_targets: set[Path] = set()
+    for raw_row in rows:
+        row = require_object(
+            raw_row,
+            "jsonschema capacity row",
+            {"device", "targets", "required_bytes", "available_bytes"},
+        )
+        device = require_int(row.get("device"), "jsonschema capacity device", 1)
+        required = require_int(row.get("required_bytes"), "jsonschema required capacity", 1)
+        available = require_int(row.get("available_bytes"), "jsonschema available capacity")
+        targets = [
+            absolute_path(item, "jsonschema capacity target")
+            for item in require_list(row.get("targets"), "jsonschema capacity targets", nonempty=True)
+        ]
+        if targets != sorted(set(targets), key=os.fspath) or available < required:
+            fail("jsonschema capacity row is not an exact successful preflight")
+        if observed_targets.intersection(targets):
+            fail("jsonschema capacity target is repeated across devices")
+        observed_targets.update(targets)
+        observed_devices.append(device)
+    if (
+        capacity.get("schema_version") != 1
+        or capacity.get("rows_sha256") != sha256(canonical_json(rows))
+        or observed_devices != sorted(set(observed_devices))
+        or observed_targets != expected_targets
+    ):
+        fail("jsonschema capacity authority differs from the transaction roots")
+    return capacity
+
+
+PREREQUISITE_BUILD_VERSION_ARGUMENTS = {
+    "cargo": ["--version"],
+    "emerge": ["--version"],
+    "gpep517": ["--help"],
+    "meson": ["--version"],
+    "maturin": ["--version"],
+    "ninja": ["--version"],
+    "python": ["--version"],
+    "rustc": ["-vV"],
+}
+
+
+def validate_prerequisite_build_tool_versions(
+    value: object,
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+    production: bool,
+) -> dict[str, Any]:
+    authority = require_object(
+        value,
+        "jsonschema build-tool versions",
+        {"schema_version", "rows", "rows_sha256"},
+    )
+    rows = require_list(authority.get("rows"), "jsonschema build-tool rows", nonempty=True)
+    names: list[str] = []
+    for raw_row in rows:
+        row = require_object(
+            raw_row,
+            "jsonschema build-tool row",
+            {"name", "path", "arguments", "stdout", "stderr", "executable"},
+        )
+        name = require_string(row.get("name"), "jsonschema build-tool name")
+        if name not in PREREQUISITE_BUILD_VERSION_ARGUMENTS:
+            fail(f"jsonschema build-tool version names foreign tool {name}")
+        tool = tools_by_name.get(name)
+        path = absolute_path(row.get("path"), f"jsonschema build-tool {name} path")
+        executable = validate_prerequisite_executable_identity(
+            row.get("executable"),
+            label=f"jsonschema build-tool {name}",
+            production=production,
+            expected_path=path,
+        )
+        if (
+            tool is None
+            or row.get("arguments") != PREREQUISITE_BUILD_VERSION_ARGUMENTS[name]
+            or not isinstance(row.get("stdout"), str)
+            or not isinstance(row.get("stderr"), str)
+            or (not row.get("stdout") and not row.get("stderr"))
+            or executable != {key: item for key, item in tool.items() if key != "name"}
+        ):
+            fail(f"jsonschema build-tool {name} version authority differs")
+        names.append(name)
+    if (
+        authority.get("schema_version") != 1
+        or authority.get("rows_sha256") != sha256(canonical_json(rows))
+        or names != sorted(PREREQUISITE_BUILD_VERSION_ARGUMENTS)
+    ):
+        fail("jsonschema build-tool version vector is not exact")
+    return authority
+
+
+def validate_prerequisite_build_execution_scope(
+    value: object,
+    *,
+    plan_metadata: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    scope = require_object(
+        value,
+        "jsonschema build execution scope",
+        {
+            "schema_version", "derived_from_inherited_eclasses",
+            "declared_pep517_backends", "reviewed_tools", "reviewed_tools_sha256",
+            "scope", "claims_exhaustive_runtime_exec_closure",
+        },
+    )
+    metadata_rows = require_list(plan_metadata.get("rows"), "jsonschema plan metadata rows")
+    inherited = sorted(
+        {
+            str(item)
+            for row in metadata_rows
+            for item in require_list(
+                require_object(row, "jsonschema plan metadata row").get("inherited"),
+                "jsonschema inherited eclasses",
+            )
+        }
+    )
+    backends = sorted(
+        {
+            require_string(
+                require_object(row, "jsonschema plan metadata row").get("pep517_backend"),
+                "jsonschema PEP517 backend",
+            )
+            for row in metadata_rows
+        }
+    )
+    required = {"emerge", "gpep517", "python"}
+    if {"cargo", "rust", "maturin"}.intersection(inherited):
+        required.update({"cargo", "rustc"})
+    if {"meson", "meson-python", "meson-r1"}.intersection(inherited):
+        required.update({"meson", "ninja"})
+    if "maturin" in backends:
+        required.add("maturin")
+    reviewed = [
+        {"name": name, "path": tools_by_name[name]["requested_path"]}
+        for name in sorted(required)
+        if name in tools_by_name
+    ]
+    expected = {
+        "schema_version": 1,
+        "derived_from_inherited_eclasses": inherited,
+        "declared_pep517_backends": backends,
+        "reviewed_tools": reviewed,
+        "reviewed_tools_sha256": sha256(canonical_json(reviewed)),
+        "scope": (
+            "explicit coordinator and eclass-derived build tools; arbitrary ebuild "
+            "commands remain authorized only by the complete frozen repository, "
+            "ebuild, eclass, sandbox, and admitted-payload authorities"
+        ),
+        "claims_exhaustive_runtime_exec_closure": False,
+    }
+    if len(reviewed) != len(required) or scope != expected:
+        fail("jsonschema build execution scope differs from the derived closure")
+    return scope
+
+
+def validate_prerequisite_private_authorities(
+    *,
+    baseline_value: object,
+    outputs_value: object,
+    private_roots: dict[str, Path],
+    locked_window: dict[str, Any],
+) -> None:
+    baseline = require_object(
+        baseline_value,
+        "jsonschema private-root baseline",
+        {"schema_version", "rows", "rows_sha256"},
+    )
+    rows = require_object(baseline.get("rows"), "jsonschema private-root baseline rows")
+    expected_keys = {
+        "pkgdir", "distdir_runtime", "portage_tmpdir", "portage_logdir",
+        "ccache_dir", "thinlto_cache", "cargo_home", "rustup_home", "home",
+        "xdg_cache", "var_lib_portage", "cache_edb", "etc",
+    }
+    if set(rows) != expected_keys:
+        fail("jsonschema private-root baseline membership differs")
+    copies = require_object(
+        require_object(locked_window.get("copies"), "jsonschema locked copies").get("rows"),
+        "jsonschema locked copy rows",
+    )
+    empty_keys = {
+        "pkgdir", "distdir_runtime", "portage_tmpdir", "ccache_dir",
+        "thinlto_cache", "cargo_home", "rustup_home", "home", "xdg_cache",
+    }
+    for key in sorted(expected_keys):
+        row = require_object(
+            rows.get(key),
+            f"jsonschema private-root baseline {key}",
+            {"path", "manifest_sha256", "row_count"},
+        )
+        if row.get("path") != os.fspath(private_roots[key]):
+            fail(f"jsonschema private-root baseline {key} path differs")
+        require_string(
+            row.get("manifest_sha256"), f"jsonschema private-root baseline {key} digest", SHA256_RE
+        )
+        row_count = require_int(row.get("row_count"), f"jsonschema private-root baseline {key} count")
+        if key in empty_keys:
+            empty_manifest = {
+                "schema_version": 1,
+                "root": os.fspath(private_roots[key]),
+                "rows": [],
+                "rows_sha256": sha256(canonical_json([])),
+            }
+            if row_count != 0 or row.get("manifest_sha256") != sha256(canonical_json(empty_manifest)):
+                fail(f"jsonschema private-root baseline {key} was not empty")
+        elif key in {"var_lib_portage", "cache_edb", "etc"}:
+            copy_row = require_object(copies.get(key), f"jsonschema locked copy {key}")
+            tree = require_object(copy_row.get("tree"), f"jsonschema locked copy {key} tree")
+            if (
+                row_count != len(require_list(tree.get("rows"), f"jsonschema locked copy {key} rows"))
+                or row.get("manifest_sha256") != sha256(canonical_json(tree))
+            ):
+                fail(f"jsonschema private-root baseline {key} differs from the locked copy")
+    if (
+        baseline.get("schema_version") != 1
+        or baseline.get("rows_sha256") != sha256(canonical_json(rows))
+    ):
+        fail("jsonschema private-root baseline is not canonically bound")
+
+    outputs = require_object(
+        outputs_value,
+        "jsonschema private Portage outputs",
+        {
+            "complete_var_lib_portage", "config", "preserved_libs_registry",
+            "repo_revisions", "world", "world_sets",
+        },
+    )
+    complete = require_object(
+        outputs.get("complete_var_lib_portage"),
+        "jsonschema complete private var-lib-portage",
+        {"root", "rows_sha256"},
+    )
+    root_observation = validate_prerequisite_object_observation(
+        complete.get("root"),
+        "jsonschema private var-lib-portage root",
+        expected_path=private_roots["var_lib_portage"],
+    )
+    var_copy = require_object(copies.get("var_lib_portage"), "jsonschema locked var-lib-portage copy")
+    var_tree = require_object(var_copy.get("tree"), "jsonschema locked var-lib-portage tree")
+    if (
+        root_observation.get("type") != "directory"
+        or complete.get("rows_sha256") != var_tree.get("rows_sha256")
+        or root_observation != var_copy.get("copy_root")
+    ):
+        fail("jsonschema private Portage outputs differ from the locked copy")
+    for name in ("config", "preserved_libs_registry", "repo_revisions", "world", "world_sets"):
+        observation = validate_prerequisite_file_observation(
+            outputs.get(name),
+            label=f"jsonschema private Portage {name}",
+            expected_path=private_roots["var_lib_portage"] / name,
+        )
+        if name == "preserved_libs_registry" and observation.get("type") != "file":
+            fail("jsonschema private preserved-libraries registry is not a file")
+
+
+def parse_prerequisite_timestamp(value: object, label: str) -> dt.datetime:
+    text = require_string(value, label)
+    try:
+        parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as error:
+        fail(f"{label} is invalid: {error}")
+    if parsed.tzinfo is None or parsed.utcoffset() != dt.timedelta(0):
+        fail(f"{label} is not an exact UTC timestamp")
+    return parsed
+
+
+def validate_prerequisite_repository_authorities(
+    value: object,
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+    recorded_at: str,
+    transaction_id: str,
+    production: bool,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    repositories = require_list(
+        value, "jsonschema frozen repository vector", nonempty=True
+    )
+    names: list[str] = []
+    authority_root = Path(
+        f"/var/lib/gentoo-optimization/recovery/prerequisite-authorities/{transaction_id}"
+    )
+    vectors: list[dict[str, Any]] = []
+    parsed_recorded_at = parse_prerequisite_timestamp(
+        recorded_at, "jsonschema prerequisite recorded_at"
+    )
+    for raw_repository in repositories:
+        repository = require_object(raw_repository, "jsonschema frozen repository")
+        base_keys = {
+            "name", "configured_location", "source_location", "materialized_location",
+            "sync_type", "masters", "tree_manifest_path", "tree_manifest_sha256",
+        }
+        variants = [name for name in ("git", "local", "rsync") if name in repository]
+        if len(variants) != 1 or set(repository) != base_keys | {variants[0]}:
+            fail("jsonschema frozen repository has a foreign provenance schema")
+        name = require_string(
+            repository.get("name"),
+            "jsonschema repository name",
+            PREREQUISITE_REPOSITORY_RE,
+        )
+        configured = absolute_path(
+            repository.get("configured_location"), f"jsonschema repository {name} configured path"
+        )
+        source = absolute_path(
+            repository.get("source_location"), f"jsonschema repository {name} source path"
+        )
+        materialized = absolute_path(
+            repository.get("materialized_location"),
+            f"jsonschema repository {name} materialized path",
+        )
+        if configured.resolve(strict=True) != source:
+            fail(f"jsonschema repository {name} configured/source paths differ")
+        if production and materialized != authority_root / "repositories" / name:
+            fail(f"jsonschema repository {name} materialized path is not canonical")
+        masters = [
+            require_string(item, f"jsonschema repository {name} master", PREREQUISITE_REPOSITORY_RE)
+            for item in require_list(repository.get("masters"), f"jsonschema repository {name} masters")
+        ]
+        if masters != list(dict.fromkeys(masters)) or name in masters:
+            fail(f"jsonschema repository {name} masters are not exact")
+        sync_type = repository.get("sync_type")
+        expected_variant = {"git": "git", "rsync": "rsync", None: "local"}.get(sync_type)
+        if expected_variant != variants[0]:
+            fail(f"jsonschema repository {name} sync type/provenance differs")
+        manifest = validate_prerequisite_manifest_reference(
+            root=materialized,
+            path_value=repository.get("tree_manifest_path"),
+            digest_value=repository.get("tree_manifest_sha256"),
+            expected_path=materialized.parent / f"{name}.manifest.json",
+            label=f"jsonschema repository {name} tree manifest",
+            production=production,
+        )
+        variant = variants[0]
+        if variant == "git":
+            git = require_object(
+                repository.get("git"), f"jsonschema repository {name} Git authority",
+                {"commit", "clean"},
+            )
+            commit = require_string(
+                git.get("commit"), f"jsonschema repository {name} Git commit", OID_RE
+            )
+            if git.get("clean") is not True:
+                fail(f"jsonschema repository {name} Git authority is not clean")
+            git_tool = tools_by_name.get("git")
+            if git_tool is None:
+                fail(f"jsonschema repository {name} lacks its Git tool authority")
+            environment = {
+                "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_OPTIONAL_LOCKS": "0",
+                "HOME": "/root",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "LOGNAME": "root",
+                "PATH": "/usr/lib/llvm/22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "SHELL": "/bin/bash",
+                "TZ": "UTC",
+                "USER": "root",
+            }
+            prefix = [
+                str(git_tool["requested_path"]), "-c", "core.hooksPath=/dev/null",
+                "-c", "core.fsmonitor=false", "-c", "core.attributesFile=/dev/null",
+            ]
+            try:
+                head = subprocess.run(
+                    [*prefix, "-C", os.fspath(materialized), "rev-parse", "--verify", "HEAD^{commit}"],
+                    env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, timeout=60, check=False,
+                )
+                clean = subprocess.run(
+                    [*prefix, "-C", os.fspath(materialized), "status", "--porcelain=v1", "--untracked-files=all"],
+                    env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, timeout=60, check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                fail(f"cannot revalidate jsonschema repository {name} Git authority: {error}")
+            if (
+                head.returncode != 0
+                or head.stdout.decode("ascii", errors="strict").strip() != commit
+                or clean.returncode != 0
+                or clean.stdout
+            ):
+                fail(f"jsonschema repository {name} Git checkout differs")
+        elif variant == "local":
+            local = require_object(
+                repository.get("local"), f"jsonschema repository {name} local authority",
+                {"full_tree_bound", "source_rows_sha256"},
+            )
+            require_string(
+                local.get("source_rows_sha256"),
+                f"jsonschema repository {name} local source digest",
+                SHA256_RE,
+            )
+            if local.get("full_tree_bound") is not True:
+                fail(f"jsonschema repository {name} local tree was not fully bound")
+        else:
+            rsync = require_object(
+                repository.get("rsync"),
+                f"jsonschema repository {name} rsync authority",
+                {
+                    "full_recursive_verification", "top_manifest_sha256", "key", "tool",
+                    "argv", "stdout_sha256", "stderr_sha256", "exit_status",
+                    "manifest_timestamp", "timestamp", "timestamp_chk", "timestamp_commit",
+                },
+            )
+            manifest_path = materialized / "Manifest"
+            manifest_payload, _manifest_metadata = read_regular(
+                manifest_path, f"jsonschema repository {name} signed Manifest"
+            )
+            timestamp_rows = [
+                line.split(maxsplit=1)[1]
+                for line in manifest_payload.decode("utf-8", errors="strict").splitlines()
+                if line.startswith("TIMESTAMP ")
+            ]
+            if len(timestamp_rows) != 1:
+                fail(f"jsonschema repository {name} signed Manifest lacks one timestamp")
+            manifest_timestamp = parse_prerequisite_timestamp(
+                require_string(
+                    rsync.get("manifest_timestamp"),
+                    f"jsonschema repository {name} Manifest timestamp",
+                ),
+                f"jsonschema repository {name} Manifest timestamp",
+            )
+            if (
+                timestamp_rows[0] != str(rsync.get("manifest_timestamp")).replace("+00:00", "Z")
+                and parse_prerequisite_timestamp(
+                    timestamp_rows[0], f"jsonschema repository {name} signed timestamp"
+                )
+                != manifest_timestamp
+            ):
+                fail(f"jsonschema repository {name} Manifest timestamp differs")
+            age = parsed_recorded_at - manifest_timestamp
+            if age < dt.timedelta(0) or age > dt.timedelta(days=3):
+                fail(f"jsonschema repository {name} signed Manifest is future or stale")
+            key = validate_prerequisite_file_observation(
+                rsync.get("key"),
+                label=f"jsonschema repository {name} signing key",
+                production=production,
+                verify_current=True,
+            )
+            if key.get("type") != "file":
+                fail(f"jsonschema repository {name} signing key is not a file")
+            gemato_tool = tools_by_name.get("gemato")
+            tool = validate_prerequisite_executable_identity(
+                rsync.get("tool"),
+                label=f"jsonschema repository {name} Gemato tool",
+                production=production,
+                expected_path=(
+                    Path(str(gemato_tool["requested_path"])) if gemato_tool else None
+                ),
+            )
+            expected_argv = [
+                str(tool["requested_path"]), "verify", "--quiet", "--openpgp-key",
+                str(key["path"]), "--no-refresh-keys", "--no-wkd", "--timeout", "30",
+                "--jobs", "1", "--one-file-system", "--require-secure-hashes",
+                "--require-signed-manifest", os.fspath(materialized),
+            ]
+            if (
+                rsync.get("full_recursive_verification") is not True
+                or rsync.get("top_manifest_sha256") != sha256(manifest_payload)
+                or rsync.get("argv") != expected_argv
+                or rsync.get("exit_status") != 0
+                or require_string(rsync.get("stdout_sha256"), "jsonschema Gemato stdout digest", SHA256_RE)
+                != rsync.get("stdout_sha256")
+                or require_string(rsync.get("stderr_sha256"), "jsonschema Gemato stderr digest", SHA256_RE)
+                != rsync.get("stderr_sha256")
+            ):
+                fail(f"jsonschema repository {name} Gemato proof differs")
+            for filename, key_name in (
+                ("timestamp", "timestamp"),
+                ("timestamp.chk", "timestamp_chk"),
+                ("timestamp.commit", "timestamp_commit"),
+            ):
+                observation = validate_prerequisite_file_observation(
+                    rsync.get(key_name),
+                    label=f"jsonschema repository {name} {filename}",
+                    expected_path=materialized / "metadata" / filename,
+                    production=production,
+                    verify_current=True,
+                )
+                if observation.get("type") != "file":
+                    fail(f"jsonschema repository {name} lacks signed {filename} authority")
+        names.append(name)
+        vectors.append(
+            {
+                "name": name,
+                "location": os.fspath(source),
+                "sync_type": sync_type,
+                "masters": masters,
+            }
+        )
+        if manifest.get("root") != os.fspath(materialized):
+            fail(f"jsonschema repository {name} manifest root differs")
+    if names != sorted(set(names)) or "gentoo" not in names:
+        fail("jsonschema repository vector is not sorted, unique, and Gentoo-complete")
+    for row in vectors:
+        if not set(row["masters"]).issubset(names):
+            fail(f"jsonschema repository {row['name']} has an unavailable master")
+    return repositories, vectors
+
+
+def validate_prerequisite_stage_authority(
+    value: object,
+    *,
+    stage: str,
+    report: Path,
+    command: list[str],
+    environment: dict[str, str],
+    mounts: list[dict[str, object]],
+    network_isolated: bool,
+    production: bool,
+    expected_plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    evidence = require_object(
+        value,
+        f"jsonschema {stage} evidence",
+        {
+            "stage", "status", "spec_path", "spec_sha256", "stdout_path",
+            "stdout_sha256", "stderr_path", "stderr_sha256",
+        },
+    )
+    if evidence.get("stage") != stage or evidence.get("status") != 0:
+        fail(f"jsonschema {stage} did not complete successfully")
+    payloads: dict[str, bytes] = {}
+    for name, suffix in (("spec", "execution.json"), ("stdout", "stdout"), ("stderr", "stderr")):
+        evidence_path, payload = read_sha256_reference(
+            {"path": evidence.get(f"{name}_path"), "sha256": evidence.get(f"{name}_sha256")},
+            f"jsonschema {stage} {name}",
+            production=production,
+            expected_path=report / f"{stage}.{suffix}",
+        )
+        if evidence_path.parent != report:
+            fail(f"jsonschema {stage} evidence escapes its report")
+        payloads[name] = payload
+    spec = require_object(
+        parse_json_bytes(payloads["spec"], f"jsonschema {stage} execution spec"),
+        f"jsonschema {stage} execution spec",
+        {"schema_version", "network_isolated", "mounts", "command", "environment", "contract_sha256"},
+    )
+    unsigned = dict(spec)
+    contract_sha = unsigned.pop("contract_sha256")
+    if (
+        canonical_json(spec) != payloads["spec"]
+        or spec.get("schema_version") != 1
+        or spec.get("network_isolated") is not network_isolated
+        or contract_sha != sha256(canonical_json(unsigned))
+        or spec.get("mounts") != mounts
+        or spec.get("command") != command
+        or spec.get("environment") != environment
+    ):
+        fail(f"jsonschema {stage} execution authority differs")
+    if expected_plan is not None:
+        try:
+            stdout = payloads["stdout"].decode("utf-8", errors="strict")
+        except UnicodeError as error:
+            fail(f"jsonschema {stage} stdout is not UTF-8: {error}")
+        plan_rows = {
+            str(row["exact_atom"]): str(row["normalized_display"])
+            for row in require_list(expected_plan.get("rows"), f"jsonschema {stage} plan rows")
+            if isinstance(row, dict)
+        }
+        expected_lines = [
+            plan_rows[str(atom)]
+            for atom in require_list(
+                expected_plan.get("ordered_exact_atoms"), f"jsonschema {stage} plan atoms"
+            )
+        ]
+        observed_lines = [
+            " ".join(line.lstrip().split())
+            for line in stdout.splitlines()
+            if re.match(r"^\s*\[[A-Za-z]", line)
+        ]
+        if observed_lines != expected_lines:
+            fail(f"jsonschema {stage} stdout plan differs from the reviewed exact plan")
+    return evidence
+
+
+def validate_prerequisite_success_state(
 
 
 def validate_prerequisite_success_state(

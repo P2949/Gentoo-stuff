@@ -174,7 +174,24 @@ class GitRunner:
         del cwd
         command = tuple(argv)
         self.calls.append(command)
-        if timeout <= 0 or environment.get("GIT_CONFIG_NOSYSTEM") != "1":
+        if timeout <= 0:
+            raise AssertionError("Git materializer did not use its bounded runner")
+        if Path(command[0]).name == "cp":
+            if environment.get("LC_ALL") != "C":
+                raise AssertionError("effective worktree copy used a foreign environment")
+            separator = command.index("--")
+            destination = Path(command[-1])
+            for value in command[separator + 1 : -1]:
+                source = Path(value)
+                target = destination / source.name
+                if source.is_dir() and not source.is_symlink():
+                    shutil.copytree(source, target, symlinks=True)
+                elif source.is_symlink():
+                    target.symlink_to(os.readlink(source))
+                else:
+                    shutil.copy2(source, target)
+            return TOOL.CommandResult(command, 0, b"", b"")
+        if environment.get("GIT_CONFIG_NOSYSTEM") != "1":
             raise AssertionError("Git materializer did not use its isolated runner")
         if "rev-parse" in command:
             self.rev_parse_calls += 1
@@ -186,10 +203,24 @@ class GitRunner:
             return TOOL.CommandResult(command, 0, (commit + "\n").encode(), b"")
         if "status" in command:
             return TOOL.CommandResult(command, 0, b"", b"")
+        if "diff" in command or "ls-files" in command:
+            return TOOL.CommandResult(command, 0, b"", b"")
         if "clone" in command:
             shutil.copytree(Path(command[-2]), Path(command[-1]), symlinks=True)
             return TOOL.CommandResult(command, 0, b"", b"")
         if "checkout" in command:
+            return TOOL.CommandResult(command, 0, b"", b"")
+        if "rm" in command:
+            destination = Path(command[command.index("-C") + 1])
+            for child in list(destination.iterdir()):
+                if child.name == ".git":
+                    continue
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            return TOOL.CommandResult(command, 0, b"", b"")
+        if "clean" in command or "reset" in command:
             return TOOL.CommandResult(command, 0, b"", b"")
         raise AssertionError(f"unexpected scripted Git command: {command}")
 

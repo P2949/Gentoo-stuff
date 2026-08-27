@@ -2461,6 +2461,7 @@ def materialize_repository(
         "masters": list(repository.masters),
     }
     if repository.sync_type == "git":
+        source_before = tree_manifest(source, ignore_names=frozenset({".git"}))
         head = runner.run(
             git_argv(tools["git"], "-C", os.fspath(source), "rev-parse", "--verify", "HEAD^{commit}"),
             environment=git_environment(),
@@ -2469,20 +2470,54 @@ def materialize_repository(
         commit = head.stdout.decode("ascii", errors="strict").strip()
         if head.status != 0 or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
             fail(f"cannot bind exact Git commit for {repository.name}")
-        source_clean = runner.run(
-            git_argv(
-                tools["git"],
-                "-C",
-                os.fspath(source),
+        observation_commands = (
+            (
                 "status",
-                "--porcelain=v1",
-                "--untracked-files=all",
+                git_argv(
+                    tools["git"],
+                    "-C",
+                    os.fspath(source),
+                    "status",
+                    "--porcelain=v1",
+                    "-z",
+                    "--untracked-files=all",
+                ),
             ),
-            environment=git_environment(),
-            timeout=60,
+            (
+                "diff",
+                git_argv(
+                    tools["git"],
+                    "-C",
+                    os.fspath(source),
+                    "diff",
+                    "--binary",
+                    "--full-index",
+                    "--no-ext-diff",
+                    "HEAD",
+                    "--",
+                ),
+            ),
+            (
+                "untracked",
+                git_argv(
+                    tools["git"],
+                    "-C",
+                    os.fspath(source),
+                    "ls-files",
+                    "--others",
+                    "--exclude-standard",
+                    "-z",
+                ),
+            ),
         )
-        if source_clean.status != 0 or source_clean.stdout:
-            fail(f"Git repository source is not exact and clean: {repository.name}")
+        source_observation: dict[str, bytes] = {}
+        for label, command in observation_commands:
+            observed = runner.run(
+                command, environment=git_environment(), timeout=60
+            )
+            if observed.status != 0 or observed.stderr:
+                fail(f"cannot bind effective Git worktree {label}: {repository.name}")
+            source_observation[label] = observed.stdout
         clone = runner.run(
             git_argv(
                 tools["git"],
@@ -2539,6 +2574,76 @@ def materialize_repository(
         )
         if repeated.status != 0 or repeated.stdout.decode().strip() != commit or clean.status != 0 or clean.stdout:
             fail(f"materialized Git repository {repository.name} is not the exact clean commit")
+        nested_git = [
+            path for path in source.rglob(".git") if path != source / ".git"
+        ]
+        if nested_git:
+            fail(f"effective Git worktree contains a nested .git authority: {repository.name}")
+        source_entries = sorted(
+            (path for path in source.iterdir() if path.name != ".git"),
+            key=lambda path: os.fsencode(path.name),
+        )
+        if not source_entries:
+            fail(f"effective Git worktree is empty: {repository.name}")
+        materialization_commands = [
+            git_argv(
+                tools["git"],
+                "-C",
+                os.fspath(destination),
+                "rm",
+                "-r",
+                "-f",
+                "--ignore-unmatch",
+                "--",
+                ".",
+            ),
+            git_argv(
+                tools["git"],
+                "-C",
+                os.fspath(destination),
+                "clean",
+                "-ffdx",
+            ),
+            [
+                os.fspath(tools["cp"]),
+                "-a",
+                "--reflink=auto",
+                "--one-file-system",
+                "--",
+                *(os.fspath(path) for path in source_entries),
+                os.fspath(destination) + "/",
+            ],
+            git_argv(
+                tools["git"],
+                "-C",
+                os.fspath(destination),
+                "reset",
+                "--mixed",
+                "--quiet",
+                "HEAD",
+            ),
+        ]
+        materialization_rows: list[dict[str, Any]] = []
+        for command in materialization_commands:
+            is_git = command[0] == os.fspath(tools["git"])
+            materialized = runner.run(
+                command,
+                environment=git_environment() if is_git else clean_environment(),
+                timeout=4 * 3600 if not is_git else 3600,
+            )
+            if materialized.status != 0:
+                fail(
+                    f"cannot freeze effective Git worktree for {repository.name}: "
+                    + materialized.stderr.decode("utf-8", errors="replace")
+                )
+            materialization_rows.append(
+                {
+                    "argv": command,
+                    "exit_status": materialized.status,
+                    "stdout_sha256": sha256_bytes(materialized.stdout),
+                    "stderr_sha256": sha256_bytes(materialized.stderr),
+                }
+            )
         source_repeated = runner.run(
             git_argv(tools["git"], "-C", os.fspath(source), "rev-parse", "--verify", "HEAD^{commit}"),
             environment=git_environment(),
@@ -2546,7 +2651,68 @@ def materialize_repository(
         )
         if source_repeated.status != 0 or source_repeated.stdout.decode().strip() != commit:
             fail(f"Git repository source moved during materialization: {repository.name}")
-        provenance["git"] = {"commit": commit, "clean": True}
+        for label, command in observation_commands:
+            repeated_observation = runner.run(
+                command, environment=git_environment(), timeout=60
+            )
+            if (
+                repeated_observation.status != 0
+                or repeated_observation.stderr
+                or repeated_observation.stdout != source_observation[label]
+            ):
+                fail(
+                    f"effective Git worktree {label} changed during materialization: "
+                    f"{repository.name}"
+                )
+        source_after = tree_manifest(source, ignore_names=frozenset({".git"}))
+        destination_effective = tree_manifest(
+            destination, ignore_names=frozenset({".git"})
+        )
+        if (
+            source_before["rows"] != source_after["rows"]
+            or source_before["rows_sha256"] != source_after["rows_sha256"]
+            or source_before["rows"] != destination_effective["rows"]
+        ):
+            fail(f"effective Git worktree changed or copied inexactly: {repository.name}")
+        destination_observation: dict[str, bytes] = {}
+        for label, source_command in observation_commands:
+            destination_command = [
+                os.fspath(destination)
+                if argument == os.fspath(source)
+                else argument
+                for argument in source_command
+            ]
+            observed = runner.run(
+                destination_command,
+                environment=git_environment(),
+                timeout=60,
+            )
+            if observed.status != 0 or observed.stderr:
+                fail(
+                    f"cannot verify frozen effective Git worktree {label}: "
+                    f"{repository.name}"
+                )
+            destination_observation[label] = observed.stdout
+        if destination_observation != source_observation:
+            fail(f"frozen effective Git worktree differs from source: {repository.name}")
+        provenance["git"] = {
+            "commit": commit,
+            "clean_checkout_verified_before_effective_materialization": True,
+            "effective_worktree_bound": True,
+            "effective_worktree_clean": source_observation["status"] == b"",
+            "status_sha256": sha256_bytes(source_observation["status"]),
+            "diff_sha256": sha256_bytes(source_observation["diff"]),
+            "untracked_sha256": sha256_bytes(source_observation["untracked"]),
+            "effective_tree_rows_sha256": source_before["rows_sha256"],
+            "effective_materialization": {
+                "tools": {
+                    "cp": inspect_executable(tools["cp"]),
+                    "git": inspect_executable(tools["git"]),
+                },
+                "rows": materialization_rows,
+                "rows_sha256": sha256_bytes(canonical_json(materialization_rows)),
+            },
+        }
     else:
         source_before = tree_manifest(source) if repository.sync_type is None else None
         copy_tree(source, destination, runner, tools)
@@ -6536,13 +6702,24 @@ def mount_exec_command(arguments: argparse.Namespace) -> int:
     return 125
 
 
+def parsed_internal_command(arguments: argparse.Namespace, label: str) -> list[str]:
+    """Validate the post-argparse shape of one REMAINDER command vector."""
+
+    value = getattr(arguments, "command", None)
+    if (
+        not isinstance(value, list)
+        or not value
+        or any(not isinstance(item, str) or not item or "\0" in item for item in value)
+        or value[0] == "--"
+        or not Path(value[0]).is_absolute()
+    ):
+        fail(f"malformed {label} command")
+    return list(value)
+
+
 def pdeath_exec_command(arguments: argparse.Namespace) -> int:
-    if not arguments.command or arguments.command[0] != "--" or len(arguments.command) < 2:
-        fail("malformed parent-death execution command")
+    command = parsed_internal_command(arguments, "parent-death execution")
     install_parent_death_signal(arguments.parent_pid, arguments.parent_start_ticks)
-    command = arguments.command[1:]
-    if not Path(command[0]).is_absolute():
-        fail("parent-death executable is not absolute")
     os.execve(command[0], command, os.environ)
     return 125
 
@@ -7273,15 +7450,13 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
             "internal Portage mutation is disabled pending the final Candidate-A "
             "invariant audit and authoritative Gentoo-host capability proofs"
         )
-    if not arguments.command or arguments.command[0] != "--" or len(arguments.command) < 2:
-        fail("malformed internal Portage action command")
+    command = parsed_internal_command(arguments, "internal Portage action")
     if arguments.control_fd < 0 or not CONTROL_SESSION_PATTERN.fullmatch(
         arguments.control_session
     ):
         fail("internal Portage control-channel identity is invalid")
     endpoint = socket.socket(fileno=arguments.control_fd)
     channel = ControlChannel(endpoint, arguments.control_session)
-    command = arguments.command[1:]
     prepared = validate_state(
         read_json_regular(
             arguments.prepared_state,
@@ -9141,16 +9316,12 @@ def recover_command(_arguments: argparse.Namespace, paths: Paths) -> int:
 
 
 def barrier_command(arguments: argparse.Namespace) -> int:
-    if not arguments.command or arguments.command[0] != "--" or len(arguments.command) < 2:
-        fail("malformed internal barrier command")
+    command = parsed_internal_command(arguments, "internal barrier")
     install_parent_death_signal(arguments.parent_pid, arguments.parent_start_ticks)
     release = os.read(arguments.barrier_fd, 1)
     os.close(arguments.barrier_fd)
     if release != b"G":
         fail("child barrier closed without an exact grant")
-    command = arguments.command[1:]
-    if not Path(command[0]).is_absolute():
-        fail("internal barrier executable is not absolute")
     os.execve(command[0], command, os.environ)
     return 125
 
