@@ -584,6 +584,12 @@ namespace["require_active_python_matches_reviewed_tools"](
 
     def automation_external_fixture(self) -> dict[str, Any]:
         namespace = runpy.run_path(os.fspath(TOOL))
+        producer = runpy.run_path(
+            os.fspath(
+                REPOSITORY
+                / "scripts/optimization/recovery/install-jsonschema-prerequisite.py"
+            )
+        )
 
         def pretty(value: object) -> bytes:
             return cast(bytes, namespace["pretty_json"](value))
@@ -614,6 +620,76 @@ namespace["require_active_python_matches_reviewed_tools"](
                 "nlink": metadata.st_nlink,
                 "size": metadata.st_size,
                 "sha256": digest(path.read_bytes()),
+            }
+
+        def producer_tree(path: Path) -> dict[str, Any]:
+            return cast(dict[str, Any], producer["tree_manifest"](path))
+
+        def compact_manifest(path: Path, manifest: dict[str, Any]) -> str:
+            payload = canonical(manifest).encode()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+            path.chmod(0o600)
+            return digest(payload)
+
+        def directory_authority(path: Path) -> dict[str, Any]:
+            resolved = path.resolve(strict=True)
+            manifest = producer_tree(resolved)
+            return {
+                "requested_path": os.fspath(path),
+                "resolved_path": os.fspath(resolved),
+                "manifest": manifest,
+                "manifest_sha256": digest(canonical(manifest).encode()),
+            }
+
+        def frozen_tree(
+            source: Path, destination: Path, *, mount_target: Path
+        ) -> dict[str, Any]:
+            before = cast(dict[str, Any], producer["file_observation"](source))
+            shutil.copytree(source, destination, symlinks=True)
+            after = cast(dict[str, Any], producer["file_observation"](source))
+            self.assertEqual(before, after)
+            manifest = producer_tree(destination)
+            manifest_path = destination.parent / f"{destination.name}.manifest.json"
+            return {
+                "source_location": os.fspath(source.resolve(strict=True)),
+                "mount_target": os.fspath(mount_target.resolve(strict=True)),
+                "materialized_location": os.fspath(destination),
+                "tree_manifest_path": os.fspath(manifest_path),
+                "tree_manifest_sha256": compact_manifest(manifest_path, manifest),
+                "source_before": before,
+                "source_after": after,
+            }
+
+        def executable_row(name: str, path: Path) -> dict[str, Any]:
+            return {
+                "name": name,
+                **cast(dict[str, Any], producer["inspect_executable"](path)),
+            }
+
+        def locked_copy(source: Path, destination: Path) -> dict[str, Any]:
+            source_value = cast(
+                dict[str, Any], producer["file_observation"](source)
+            )
+            destination_value = cast(
+                dict[str, Any], producer["file_observation"](destination)
+            )
+            self.assertEqual(
+                source_value["tree"]["rows"], destination_value["tree"]["rows"]
+            )
+            return {
+                "source_root": {
+                    key: value
+                    for key, value in source_value.items()
+                    if key not in {"tree", "tree_sha256"}
+                },
+                "copy_root": {
+                    key: value
+                    for key, value in destination_value.items()
+                    if key not in {"tree", "tree_sha256"}
+                },
+                "tree": source_value["tree"],
+                "tree_sha256": source_value["tree_sha256"],
             }
 
         recovery = self.fixture.repository / "scripts/optimization/recovery"
@@ -713,17 +789,28 @@ namespace["require_active_python_matches_reviewed_tools"](
         fixture_tools = {
             name: fixture_tool_root / name
             for name in (
+                "cargo",
                 "emerge",
                 "emerge-implementation",
+                "gemato",
+                "gpep517",
+                "maturin",
+                "meson",
+                "ninja",
                 "python3.15",
                 "qcheck",
                 "portageq",
+                "rustc",
                 "unshare",
                 "zstd",
             )
         }
         for name, tool_path in fixture_tools.items():
-            tool_path.write_text(f"fixture checkpoint tool: {name}\n", encoding="utf-8")
+            tool_path.write_text(
+                "#!/bin/sh\n"
+                f"printf '%s\\n' 'fixture {name} 1.0'\n",
+                encoding="utf-8",
+            )
             tool_path.chmod(0o755)
 
         state_parent = self.fixture.root / "state/project"
@@ -1639,33 +1726,36 @@ namespace["require_active_python_matches_reviewed_tools"](
             "checkpoint_id": pre["id"],
             "status": "offline-restore-proven",
         }
-        tool_rows = []
-        for name, tool_path in (
-            ("transaction", bootstrap / "install-jsonschema-prerequisite.py"),
-            ("snapshot_verifier", bootstrap / "verify-binpkg-snapshot.py"),
-            ("python", python),
-            ("emerge", fixture_tools["emerge"]),
-            ("qcheck", fixture_tools["qcheck"]),
-            ("zstd", fixture_tools["zstd"]),
-        ):
-            metadata = tool_path.lstat()
-            tool_rows.append(
-                {
-                    "name": name,
-                    "requested_path": os.fspath(tool_path),
-                    "resolved_path": os.fspath(tool_path.resolve(strict=True)),
-                    "device": metadata.st_dev,
-                    "inode": metadata.st_ino,
-                    "uid": metadata.st_uid,
-                    "gid": metadata.st_gid,
-                    "mode": stat.S_IMODE(metadata.st_mode),
-                    "nlink": metadata.st_nlink,
-                    "size": metadata.st_size,
-                    "sha256": digest(tool_path.read_bytes()),
-                }
-            )
-        tool_rows.sort(key=lambda row: cast(str, row["name"]))
-        prerequisite_authority_root = self.fixture.root / "prerequisite-authority"
+        git_path = Path(shutil.which("git") or "/usr/bin/git").resolve(strict=True)
+        cp_path = Path(shutil.which("cp") or "/usr/bin/cp").resolve(strict=True)
+        tool_paths = {
+            "cargo": fixture_tools["cargo"],
+            "cp": cp_path,
+            "emerge": fixture_tools["emerge"],
+            "gemato": fixture_tools["gemato"],
+            "git": git_path,
+            "gpep517": fixture_tools["gpep517"],
+            "maturin": fixture_tools["maturin"],
+            "meson": fixture_tools["meson"],
+            "ninja": fixture_tools["ninja"],
+            "python": python,
+            "qcheck": fixture_tools["qcheck"],
+            "rustc": fixture_tools["rustc"],
+            "snapshot_verifier": bootstrap / "verify-binpkg-snapshot.py",
+            "transaction": bootstrap / "install-jsonschema-prerequisite.py",
+            "zstd": fixture_tools["zstd"],
+        }
+        tool_rows = [
+            executable_row(name, tool_paths[name]) for name in sorted(tool_paths)
+        ]
+        tools_authority = {
+            "schema_version": 1,
+            "rows": tool_rows,
+            "rows_sha256": digest(canonical(tool_rows).encode()),
+        }
+
+        authority_parent = self.fixture.root / "prerequisite-authorities"
+        prerequisite_authority_root = authority_parent / transaction_id
         repository_source = self.fixture.root / "live-repository"
         repository_materialized = prerequisite_authority_root / "repositories/gentoo"
         config_source = self.fixture.root / "live-portage-config"
@@ -1673,24 +1763,210 @@ namespace["require_active_python_matches_reviewed_tools"](
         global_config_source = self.fixture.root / "live-portage-global-config"
         global_config_materialized = prerequisite_authority_root / "portage-global-config"
         python_root = self.fixture.root / "python-authority"
+        authority_parent.mkdir()
+        prerequisite_authority_root.mkdir()
+        (prerequisite_authority_root / "repositories").mkdir()
         for directory in (
             repository_source,
-            repository_materialized,
             config_source,
-            config_materialized,
             global_config_source,
-            global_config_materialized,
             python_root,
         ):
-            directory.mkdir(parents=True, exist_ok=True)
+            directory.mkdir(parents=True)
+
+        def repository_git(*arguments: str) -> subprocess.CompletedProcess[bytes]:
+            return subprocess.run(
+                [os.fspath(git_path), "-C", os.fspath(repository_source), *arguments],
+                env={
+                    **os.environ,
+                    "GIT_CONFIG_GLOBAL": "/dev/null",
+                    "GIT_CONFIG_NOSYSTEM": "1",
+                    "GIT_OPTIONAL_LOCKS": "0",
+                    "LC_ALL": "C",
+                },
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+
+        repository_git("init", "--quiet")
+        ebuild_source = repository_source / f"dev-python/jsonschema/jsonschema-{cpv.rsplit('-', 1)[1]}.ebuild"
+        ebuild_source.parent.mkdir(parents=True)
+        ebuild_source.write_text(
+            "EAPI=8\n"
+            "DISTUTILS_USE_PEP517=setuptools\n"
+            "inherit distutils-r1\n",
+            encoding="utf-8",
+        )
+        (repository_source / "profiles").mkdir()
+        (repository_source / "profiles/repo_name").write_text(
+            "gentoo\n", encoding="utf-8"
+        )
+        (repository_source / "metadata").mkdir()
+        (repository_source / "metadata/layout.conf").write_text(
+            "masters =\n", encoding="utf-8"
+        )
+        (repository_source / "obsolete").write_text("remove me\n", encoding="utf-8")
+        repository_git("add", "--all")
+        repository_git(
+            "-c",
+            "user.name=Prerequisite evidence fixture",
+            "-c",
+            "user.email=fixture.invalid@example.invalid",
+            "commit",
+            "--quiet",
+            "--message=fixture repository authority",
+        )
+        # A deleted tracked file plus one untracked file model the effective
+        # postsync-derived worktree that production must freeze, not discard.
+        (repository_source / "obsolete").unlink()
+        (repository_source / "profiles/effective-postsync.fixture").write_text(
+            "effective worktree authority\n", encoding="utf-8"
+        )
+        repository_spec = producer["RepositorySpec"](
+            name="gentoo",
+            location=repository_source,
+            sync_type="git",
+            masters=(),
+        )
+        repository_authority = cast(
+            dict[str, Any],
+            producer["materialize_repository"](
+                repository_spec,
+                repository_materialized,
+                runner=producer["SubprocessRunner"](),
+                tools={"cp": cp_path, "git": git_path},
+            ),
+        )
+
+        (config_source / "make.conf").write_text(
+            "FEATURES=\"sandbox userpriv\"\n", encoding="utf-8"
+        )
+        (config_source / "repos.conf").mkdir()
+        (config_source / "repos.conf/gentoo.conf").write_text(
+            "[gentoo]\nlocation = " + os.fspath(repository_source) + "\n",
+            encoding="utf-8",
+        )
+        (global_config_source / "make.globals").write_text(
+            "PORTAGE_BIN_PATH=/usr/lib/portage/python3.15\n", encoding="utf-8"
+        )
+        config_authority = frozen_tree(
+            config_source, config_materialized, mount_target=config_source
+        )
+        global_config_authority = frozen_tree(
+            global_config_source,
+            global_config_materialized,
+            mount_target=global_config_source,
+        )
+
+        (python_root / "__init__.py").write_text(
+            "# frozen Python module authority\n", encoding="utf-8"
+        )
+        python_manifest = producer_tree(python_root)
+        python_roots = [
+            {
+                "path": os.fspath(python_root),
+                "manifest": python_manifest,
+                "manifest_sha256": digest(canonical(python_manifest).encode()),
+            }
+        ]
+        python_modules = [
+            {
+                "name": "fixture",
+                "roots": python_roots,
+                "roots_sha256": digest(canonical(python_roots).encode()),
+            }
+        ]
+
+        framework_parent = self.fixture.root / "framework"
+        framework_candidate = framework_parent / "candidate-a"
+        stable_libexec = self.fixture.root / "stable-framework-libexec"
+        stable_share = self.fixture.root / "stable-framework-share"
+        for directory in (framework_candidate, stable_libexec, stable_share):
+            directory.mkdir(parents=True)
+            (directory / "authority.txt").write_text(
+                f"{directory.name}\n", encoding="utf-8"
+            )
+        framework_selector = framework_parent / "framework-current"
+        framework_selector.symlink_to(framework_candidate.name)
+        framework = {
+            "selector": producer["file_observation"](framework_selector),
+            "candidate": directory_authority(framework_candidate),
+            "stable_libexec": directory_authority(stable_libexec),
+            "stable_share": directory_authority(stable_share),
+            "portage_resolved_target": os.fspath(config_source.resolve(strict=True)),
+        }
+
+        cache_parent = self.fixture.root / "prerequisite-transactions"
+        private_cache = cache_parent / transaction_id
+        cache_parent.mkdir()
+        private_roots = {
+            "pkgdir": os.fspath(private_cache / "pkgdir"),
+            "distdir_staging": os.fspath(private_cache / "distfiles.staging"),
+            "distdir_runtime": os.fspath(private_cache / "distfiles.runtime"),
+            "portage_tmpdir": os.fspath(private_cache / "tmp"),
+            "portage_logdir": os.fspath(private_cache / "logs"),
+            "ccache_dir": os.fspath(private_cache / "ccache"),
+            "thinlto_cache": os.fspath(private_cache / "thinlto-cache"),
+            "cargo_home": os.fspath(private_cache / "cargo-home"),
+            "rustup_home": os.fspath(private_cache / "rustup-home"),
+            "var_lib_portage": os.fspath(private_cache / "var-lib-portage"),
+            "cache_edb": os.fspath(private_cache / "cache-edb"),
+            "etc": os.fspath(private_cache / "etc"),
+            "home": os.fspath(private_cache / "home"),
+            "xdg_cache": os.fspath(private_cache / "xdg-cache"),
+            "live_cache_edb_view": os.fspath(private_cache / "live-cache-edb-view"),
+            "live_var_lib_portage": os.fspath(self.fixture.root / "var-lib-portage"),
+            "live_cache_edb": os.fspath(self.fixture.root / "cache-edb"),
+            "live_etc": os.fspath(self.fixture.root / "etc"),
+            "live_thinlto_cache": os.fspath(self.fixture.root / "live-thinlto-cache"),
+            "distdir_authority": os.fspath(private_cache / "distfiles.staging"),
+        }
+        for private_path in {Path(value) for value in private_roots.values()}:
+            private_path.mkdir(parents=True, exist_ok=True)
+        live_var_lib = Path(private_roots["live_var_lib_portage"])
+        live_cache_edb = Path(private_roots["live_cache_edb"])
+        live_etc = Path(private_roots["live_etc"])
+        for root in (live_var_lib, Path(private_roots["var_lib_portage"])):
+            (root / "config").write_text("fixture config\n", encoding="utf-8")
+            (root / "preserved_libs_registry").write_text("{}\n", encoding="utf-8")
+            (root / "repo_revisions").write_text(
+                "gentoo\tfixture\n", encoding="utf-8"
+            )
+            (root / "world").write_text("sys-apps/portage\n", encoding="utf-8")
+            (root / "world_sets").write_text("@system\n", encoding="utf-8")
+        for root in (live_cache_edb, Path(private_roots["cache_edb"])):
+            (root / "counter").write_text("10", encoding="ascii")
+            (root / "mtimedb").write_text("{}\n", encoding="utf-8")
+        for root in (live_etc, Path(private_roots["etc"])):
+            (root / "fixture.conf").write_text("reviewed=yes\n", encoding="utf-8")
+        (Path(private_roots["distdir_authority"]) / "fixture-distfile.tar").write_bytes(
+            b"reviewed distfile\n"
+        )
+
+        capacity_targets = {
+            state_parent.resolve(strict=True),
+            reports.resolve(strict=True),
+            authority_parent.resolve(strict=True),
+            cache_parent.resolve(strict=True),
+        }
+        capacity_by_device: dict[int, list[Path]] = {}
+        for target in capacity_targets:
+            capacity_by_device.setdefault(target.stat().st_dev, []).append(target)
+        capacity_rows = [
+            {
+                "device": device,
+                "targets": sorted(os.fspath(path) for path in targets),
+                "required_bytes": len(targets),
+                "available_bytes": len(targets) + 1024,
+            }
+            for device, targets in sorted(capacity_by_device.items())
+        ]
         capacity = {
             "schema_version": 1,
-            "rows": [{"device": 1, "required_bytes": 1, "available_bytes": 2}],
-            "rows_sha256": digest(
-                canonical(
-                    [{"device": 1, "required_bytes": 1, "available_bytes": 2}]
-                ).encode()
-            ),
+            "rows": capacity_rows,
+            "rows_sha256": digest(canonical(capacity_rows).encode()),
         }
         preparation = {
             "schema": "gentoo-optimization-jsonschema-preparation-attempt-v1",
@@ -1719,32 +1995,117 @@ namespace["require_active_python_matches_reviewed_tools"](
             "type": "directory",
         }
         prepared_vdb_cpvs = snapshot_members[pre["durable"]]
-        prepared_vdb = {
-            "schema_version": 2,
-            "cpvs": prepared_vdb_cpvs,
-            "cpvs_sha256": digest(
-                ("\n".join(prepared_vdb_cpvs) + "\n").encode()
+        live_vdb = self.fixture.root / "vdb"
+        live_vdb.mkdir()
+        for index, installed_cpv in enumerate(prepared_vdb_cpvs, 1):
+            package_root = live_vdb / installed_cpv
+            package_root.mkdir(parents=True)
+            (package_root / "COUNTER").write_text(str(index), encoding="ascii")
+            (package_root / "CONTENTS").write_text("", encoding="utf-8")
+        prepared_vdb = cast(dict[str, Any], producer["vdb_manifest"](live_vdb))
+        copies_rows = {
+            "cache_edb": locked_copy(
+                live_cache_edb, Path(private_roots["cache_edb"])
             ),
+            "etc": locked_copy(live_etc, Path(private_roots["etc"])),
+            "var_lib_portage": locked_copy(
+                live_var_lib, Path(private_roots["var_lib_portage"])
+            ),
+        }
+        copies = {
+            "schema_version": 1,
+            "rows": copies_rows,
+            "rows_sha256": digest(canonical(copies_rows).encode()),
+        }
+        var_lib_tree = producer_tree(live_var_lib)
+        cache_without_counter = cast(
+            dict[str, Any],
+            producer["tree_manifest_without_top_level"](
+                live_cache_edb, {"counter"}
+            ),
+        )
+        selected_sets = {
+            "var_lib_portage": {
+                "root": producer["object_observation"](live_var_lib),
+                "rows_sha256": var_lib_tree["rows_sha256"],
+            },
+            "cache_edb_without_counter": {
+                "root": producer["object_observation"](live_cache_edb),
+                "rows_sha256": cache_without_counter["rows_sha256"],
+            },
+            "world": producer["file_observation"](live_var_lib / "world"),
+            "world_sets": producer["file_observation"](live_var_lib / "world_sets"),
+            "mtimedb": producer["file_observation"](live_cache_edb / "mtimedb"),
+            "preserved_libs_registry": producer["file_observation"](
+                live_var_lib / "preserved_libs_registry"
+            ),
+        }
+        effective_policy = cast(
+            dict[str, Any],
+            producer["effective_portage_policy"](
+                {
+                    "FEATURES": (
+                        "collision-protect merge-sync network-sandbox pid-sandbox "
+                        "protect-owned sandbox userpriv usersandbox"
+                    ),
+                    "AUTOCLEAN": "no",
+                    "UNINSTALL_IGNORE": "",
+                    "INSTALL_MASK": "",
+                    "CONFIG_PROTECT": "",
+                    "CONFIG_PROTECT_MASK": "",
+                }
+            ),
+        )
+        native_settings = {
+            variable: os.fspath(Path("/usr/bin/true").resolve(strict=True))
+            for variable in producer["NATIVE_BUILD_COMMAND_DEFAULTS"]
+        }
+        native_toolchain = cast(
+            dict[str, Any], producer["native_toolchain_authority"](native_settings)
+        )
+        empty_scan_rows: list[dict[str, Any]] = []
+        protected_roots = [
+            live_vdb,
+            self.fixture.root / "vdb.lock",
+            live_var_lib,
+            live_cache_edb,
+        ]
+        empty_scan = {
+            "schema_version": 1,
+            "protected_roots": [os.fspath(path) for path in protected_roots],
+            "rows": empty_scan_rows,
+            "rows_sha256": digest(canonical(empty_scan_rows).encode()),
         }
         locked_window = {
             "schema_version": 1,
-            "portage_lock_api": {"fixture": True},
+            "portage_lock_api": {
+                "lockdir_module": "portage.locks",
+                "lockdir_name": "lockdir",
+                "lockfile_module": "portage.locks",
+                "lockfile_name": "lockfile",
+                "contention_error_module": "portage.exception",
+                "contention_error_name": "TryAgain",
+            },
             "vdb": prepared_vdb,
-            "selected_sets": {"fixture": True},
-            "mtimedb": {"fixture": True},
-            "counter": {"fixture": True},
-            "counter_value": 1,
+            "selected_sets": selected_sets,
+            "mtimedb": producer["mtimedb_authority"](live_cache_edb / "mtimedb"),
+            "counter": producer["file_observation"](live_cache_edb / "counter"),
+            "counter_value": 10,
             "payload_root": payload_root_observation,
-            "copies": {"fixture": True},
+            "copies": copies,
             "loader_directories": {
                 "schema_version": 1,
                 "rows": [],
                 "rows_sha256": digest(canonical([]).encode()),
             },
-            "effective_portage_policy": {"fixture": True},
-            "native_toolchain": {"fixture": True},
+            "effective_portage_policy": effective_policy,
+            "native_toolchain": native_toolchain,
             "plan_metadata": None,
-            "process_exclusion": {"fixture": True},
+            "process_exclusion": {
+                "before_lock": copy.deepcopy(empty_scan),
+                "after_lock": copy.deepcopy(empty_scan),
+                "after_snapshot": copy.deepcopy(empty_scan),
+            },
         }
         locked_document = {
             "schema": "gentoo-optimization-jsonschema-locked-authority-v1",
@@ -1779,55 +2140,227 @@ namespace["require_active_python_matches_reviewed_tools"](
         }
         authority = {
             "pre_dependency_checkpoint": checkpoint_authority,
-            "tools": {
-                "schema_version": 1,
-                "rows": tool_rows,
-                "rows_sha256": digest(canonical(tool_rows).encode()),
-            },
-            "python_modules": [
-                {"name": "fixture", "roots": [{"path": os.fspath(python_root)}]}
-            ],
-            "repositories": [
-                {
-                    "name": "gentoo",
-                    "source_location": os.fspath(repository_source),
-                    "materialized_location": os.fspath(repository_materialized),
-                }
-            ],
-            "portage_config": {
-                "mount_target": os.fspath(config_source),
-                "materialized_location": os.fspath(config_materialized),
-            },
-            "portage_global_config": {
-                "mount_target": os.fspath(global_config_source),
-                "materialized_location": os.fspath(global_config_materialized),
-            },
-            "framework": {"fixture": True},
+            "tools": tools_authority,
+            "python_modules": python_modules,
+            "repositories": [repository_authority],
+            "portage_config": config_authority,
+            "portage_global_config": global_config_authority,
+            "framework": framework,
             "capacity_preflight": capacity,
-            "build_tool_versions": {"fixture": True},
+            "build_tool_versions": None,
             "preparation_attempt": {
                 "path": os.fspath(preparation_path),
                 "sha256": digest(preparation_payload),
             },
-            "build_execution_scope": {"fixture": True},
+            "build_execution_scope": None,
         }
-        plan_metadata_rows = [{"cpv": cpv, "fixture": True}]
+        frozen_ebuild = repository_materialized / ebuild_source.relative_to(repository_source)
+        plan_metadata_rows = [
+            {
+                "cpv": cpv,
+                "repository": "gentoo",
+                "eapi": "8",
+                "defined_phases": ["compile", "install"],
+                "inherited": ["distutils-r1"],
+                "ebuild_path": os.fspath(ebuild_source.resolve(strict=True)),
+                "ebuild_sha256": digest(ebuild_source.read_bytes()),
+                "frozen_ebuild_path": os.fspath(frozen_ebuild.resolve(strict=True)),
+                "frozen_ebuild_sha256": digest(frozen_ebuild.read_bytes()),
+                "reviewed_setup_eclasses": [],
+                "pep517_backend": "setuptools",
+            }
+        ]
         plan_metadata = {
             "schema_version": 1,
             "rows": plan_metadata_rows,
             "rows_sha256": digest(canonical(plan_metadata_rows).encode()),
         }
+        build_version_rows = []
+        tools_by_name = {
+            cast(str, row["name"]): row for row in tool_rows
+        }
+        version_arguments = {
+            "cargo": ["--version"],
+            "emerge": ["--version"],
+            "gpep517": ["--help"],
+            "meson": ["--version"],
+            "maturin": ["--version"],
+            "ninja": ["--version"],
+            "python": ["--version"],
+            "rustc": ["-vV"],
+        }
+        for name in sorted(version_arguments):
+            tool_row = tools_by_name[name]
+            build_version_rows.append(
+                {
+                    "name": name,
+                    "path": tool_row["requested_path"],
+                    "arguments": version_arguments[name],
+                    "stdout": f"fixture {name} version 1.0\n",
+                    "stderr": "",
+                    "executable": {
+                        key: value for key, value in tool_row.items() if key != "name"
+                    },
+                }
+            )
+        authority["build_tool_versions"] = {
+            "schema_version": 1,
+            "rows": build_version_rows,
+            "rows_sha256": digest(canonical(build_version_rows).encode()),
+        }
+        authority["build_execution_scope"] = producer["build_execution_scope"](
+            plan_metadata, tool_paths
+        )
+        private_path_map = {key: Path(value) for key, value in private_roots.items()}
+        source_mounts = namespace["prerequisite_mount_authority"](
+            authority, private_path_map
+        )
+        plan_line = (plan_rows[0]["normalized_display"] + "\n").encode()
+
+        def stage_authority(
+            stage: str,
+            *,
+            command: list[str],
+            environment: dict[str, str],
+            network_isolated: bool,
+            stdout: bytes = b"",
+        ) -> dict[str, Any]:
+            spec_path = transaction_report / f"{stage}.execution.json"
+            stdout_path = transaction_report / f"{stage}.stdout"
+            stderr_path = transaction_report / f"{stage}.stderr"
+            unsigned = {
+                "schema_version": 1,
+                "network_isolated": network_isolated,
+                "mounts": source_mounts,
+                "command": command,
+                "environment": environment,
+            }
+            spec = {
+                **unsigned,
+                "contract_sha256": digest(canonical(unsigned).encode()),
+            }
+            spec_payload = canonical(spec).encode()
+            spec_path.write_bytes(spec_payload)
+            stdout_path.write_bytes(stdout)
+            stderr_path.write_bytes(b"")
+            for stage_path in (spec_path, stdout_path, stderr_path):
+                stage_path.chmod(0o600)
+            return {
+                "stage": stage,
+                "status": 0,
+                "spec_path": os.fspath(spec_path),
+                "spec_sha256": digest(spec_payload),
+                "stdout_path": os.fspath(stdout_path),
+                "stdout_sha256": digest(stdout),
+                "stderr_path": os.fspath(stderr_path),
+                "stderr_sha256": digest(b""),
+            }
+
+        emerge_options = cast(list[str], namespace["prerequisite_emerge_options"]())
+        offline_prepare_environment = cast(
+            dict[str, str],
+            namespace["prerequisite_prepare_environment"](
+                private_path_map, offline=True
+            ),
+        )
+        online_prepare_environment = cast(
+            dict[str, str],
+            namespace["prerequisite_prepare_environment"](
+                private_path_map, offline=False
+            ),
+        )
+        repository_vector = cast(
+            list[dict[str, Any]], producer["repository_vector"]([repository_spec])
+        )
+        frozen_repository_observation = {
+            **stage_authority(
+                "frozen-repository-observation",
+                command=[
+                    os.fspath(python),
+                    "-I",
+                    "-B",
+                    os.fspath(bootstrap / "install-jsonschema-prerequisite.py"),
+                    "__observe-repositories",
+                ],
+                environment=offline_prepare_environment,
+                network_isolated=True,
+                stdout=canonical(repository_vector).encode(),
+            ),
+            "repositories": repository_vector,
+        }
+        initial_pretend = stage_authority(
+            "initial-pretend",
+            command=[
+                os.fspath(fixture_tools["emerge"]),
+                *emerge_options,
+                "--pretend",
+                "dev-python/jsonschema",
+            ],
+            environment=offline_prepare_environment,
+            network_isolated=True,
+            stdout=plan_line,
+        )
+        exact_repretend = stage_authority(
+            "exact-repretend-before-prefetch",
+            command=[
+                os.fspath(fixture_tools["emerge"]),
+                *emerge_options,
+                "--pretend",
+                *plan["ordered_exact_atoms"],
+            ],
+            environment=offline_prepare_environment,
+            network_isolated=True,
+            stdout=plan_line,
+        )
+        prefetch_stage = stage_authority(
+            "prefetch",
+            command=[
+                os.fspath(fixture_tools["emerge"]),
+                *emerge_options,
+                "--fetchonly",
+                "--ask=n",
+                *plan["ordered_exact_atoms"],
+            ],
+            environment=online_prepare_environment,
+            network_isolated=False,
+        )
+        distfile_manifest = producer_tree(Path(private_roots["distdir_authority"]))
+        distfile_manifest_path = prerequisite_authority_root / "distfiles.manifest.json"
+        prefetch = {
+            **prefetch_stage,
+            "authority": private_roots["distdir_authority"],
+            "tree_manifest_path": os.fspath(distfile_manifest_path),
+            "tree_manifest_sha256": compact_manifest(
+                distfile_manifest_path, distfile_manifest
+            ),
+        }
+        offline_repretend = stage_authority(
+            "offline-exact-repretend",
+            command=[
+                os.fspath(fixture_tools["emerge"]),
+                *emerge_options,
+                "--pretend",
+                *plan["ordered_exact_atoms"],
+            ],
+            environment=offline_prepare_environment,
+            network_isolated=True,
+            stdout=plan_line,
+        )
         resolver = {
             "target": "dev-python/jsonschema",
-            "frozen_repository_observation": {"fixture": True},
+            "frozen_repository_observation": frozen_repository_observation,
             "locked_authority": locked_reference,
-            "portage_build_identity": {"fixture": True},
-            "initial_pretend": {"fixture": True},
-            "exact_repretend_before_prefetch": {"fixture": True},
-            "prefetch": {"fixture": True},
-            "offline_exact_repretend": {"fixture": True},
-            "private_roots_before": {"fixture": True},
-            "private_portage_outputs_before": {"fixture": True},
+            "portage_build_identity": {"uid": os.geteuid(), "gid": os.getegid()},
+            "initial_pretend": initial_pretend,
+            "exact_repretend_before_prefetch": exact_repretend,
+            "prefetch": prefetch,
+            "offline_exact_repretend": offline_repretend,
+            "private_roots_before": producer["private_roots_baseline"](
+                private_roots
+            ),
+            "private_portage_outputs_before": producer["private_portage_outputs"](
+                private_roots
+            ),
             "final_locked_window": {
                 "schema_version": 1,
                 "locked_authority_sha256": digest(locked_payload),
@@ -1839,33 +2372,6 @@ namespace["require_active_python_matches_reviewed_tools"](
             },
             "plan_metadata": plan_metadata,
         }
-        private_cache = self.fixture.root / "prerequisite-private"
-        private_roots = {
-            "pkgdir": os.fspath(private_cache / "pkgdir"),
-            "distdir_staging": os.fspath(private_cache / "distfiles.staging"),
-            "distdir_runtime": os.fspath(private_cache / "distfiles.runtime"),
-            "portage_tmpdir": os.fspath(private_cache / "tmp"),
-            "portage_logdir": os.fspath(private_cache / "logs"),
-            "ccache_dir": os.fspath(private_cache / "ccache"),
-            "thinlto_cache": os.fspath(private_cache / "thinlto-cache"),
-            "cargo_home": os.fspath(private_cache / "cargo-home"),
-            "rustup_home": os.fspath(private_cache / "rustup-home"),
-            "var_lib_portage": os.fspath(private_cache / "var-lib-portage"),
-            "cache_edb": os.fspath(private_cache / "cache-edb"),
-            "etc": os.fspath(private_cache / "etc"),
-            "home": os.fspath(private_cache / "home"),
-            "xdg_cache": os.fspath(private_cache / "xdg-cache"),
-            "live_cache_edb_view": os.fspath(private_cache / "live-cache-edb-view"),
-            "live_var_lib_portage": os.fspath(self.fixture.root / "var-lib-portage"),
-            "live_cache_edb": os.fspath(self.fixture.root / "cache-edb"),
-            "live_etc": os.fspath(self.fixture.root / "etc"),
-            "live_thinlto_cache": os.fspath(self.fixture.root / "live-thinlto-cache"),
-            "distdir_authority": os.fspath(private_cache / "distfiles.staging"),
-        }
-        for private_path in {
-            Path(value) for value in private_roots.values()
-        }:
-            private_path.mkdir(parents=True, exist_ok=True)
         recovery_contract = {
             "claim": "declared-package-manager-authorities-only",
             "whole_host_byte_identity": False,

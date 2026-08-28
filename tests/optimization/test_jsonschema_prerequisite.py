@@ -153,15 +153,36 @@ class CopyRunner:
 
 
 class GitRunner:
-    """Scripted Git authority runner with an optional final source-head drift."""
+    """Scripted effective-worktree runner with injectable authority drift."""
 
     COMMIT = "a" * 40
     DRIFTED_COMMIT = "b" * 40
 
-    def __init__(self, *, drift_final_source_head: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        drift_final_source_head: bool = False,
+        mutate_source_after_copy: bool = False,
+        corrupt_destination_after_copy: bool = False,
+        observation_drift_label: str | None = None,
+        destination_observation_mismatch_label: str | None = None,
+    ) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.rev_parse_calls = 0
         self.drift_final_source_head = drift_final_source_head
+        self.mutate_source_after_copy = mutate_source_after_copy
+        self.corrupt_destination_after_copy = corrupt_destination_after_copy
+        self.observation_drift_label = observation_drift_label
+        self.destination_observation_mismatch_label = (
+            destination_observation_mismatch_label
+        )
+        self.source: Path | None = None
+        self.destination: Path | None = None
+        self.source_observation_calls = {
+            "status": 0,
+            "diff": 0,
+            "untracked": 0,
+        }
 
     def run(
         self,
@@ -190,22 +211,65 @@ class GitRunner:
                     target.symlink_to(os.readlink(source))
                 else:
                     shutil.copy2(source, target)
+            if self.mutate_source_after_copy:
+                if self.source is None:
+                    raise AssertionError("source was not observed before effective copy")
+                (self.source / "drift-after-copy").write_text(
+                    "changed\n", encoding="utf-8"
+                )
+            if self.corrupt_destination_after_copy:
+                (destination / "profiles/repo_name").write_text(
+                    "corrupt destination\n", encoding="utf-8"
+                )
             return TOOL.CommandResult(command, 0, b"", b"")
         if environment.get("GIT_CONFIG_NOSYSTEM") != "1":
             raise AssertionError("Git materializer did not use its isolated runner")
         if "rev-parse" in command:
             self.rev_parse_calls += 1
+            observed = Path(command[command.index("-C") + 1])
+            if self.source is None:
+                self.source = observed
             commit = (
                 self.DRIFTED_COMMIT
                 if self.drift_final_source_head and self.rev_parse_calls == 3
                 else self.COMMIT
             )
             return TOOL.CommandResult(command, 0, (commit + "\n").encode(), b"")
-        if "status" in command:
-            return TOOL.CommandResult(command, 0, b"", b"")
-        if "diff" in command or "ls-files" in command:
-            return TOOL.CommandResult(command, 0, b"", b"")
+        label = (
+            "status"
+            if "status" in command
+            else "diff"
+            if "diff" in command
+            else "untracked"
+            if "ls-files" in command
+            else None
+        )
+        if label is not None:
+            observed = Path(command[command.index("-C") + 1])
+            # The clean-checkout probe intentionally omits the NUL status flag.
+            if label == "status" and "-z" not in command:
+                return TOOL.CommandResult(command, 0, b"", b"")
+            if observed == self.source:
+                self.source_observation_calls[label] += 1
+                payload = (
+                    f"{label}-drift".encode()
+                    if self.observation_drift_label == label
+                    and self.source_observation_calls[label] == 2
+                    else b""
+                )
+            elif observed == self.destination:
+                payload = (
+                    f"{label}-destination-mismatch".encode()
+                    if self.destination_observation_mismatch_label == label
+                    else b""
+                )
+            else:
+                raise AssertionError(
+                    f"observation used an unknown Git worktree: {observed}"
+                )
+            return TOOL.CommandResult(command, 0, payload, b"")
         if "clone" in command:
+            self.destination = Path(command[-1])
             shutil.copytree(Path(command[-2]), Path(command[-1]), symlinks=True)
             return TOOL.CommandResult(command, 0, b"", b"")
         if "checkout" in command:
@@ -231,6 +295,71 @@ class FakePromptProcess:
 
     def poll(self) -> int | None:
         return self.status
+
+
+class InternalCommandParserTests(unittest.TestCase):
+    def test_pdeath_exec_remainder_excludes_argparse_separator(self) -> None:
+        arguments = TOOL.build_parser().parse_args(
+            [
+                "__pdeath-exec",
+                "101",
+                "202",
+                "--",
+                "/usr/bin/true",
+                "--fixture-option",
+            ]
+        )
+
+        self.assertEqual(arguments.action, "__pdeath-exec")
+        self.assertEqual(arguments.parent_pid, 101)
+        self.assertEqual(arguments.parent_start_ticks, 202)
+        self.assertEqual(
+            arguments.command, ["/usr/bin/true", "--fixture-option"]
+        )
+
+    def test_barrier_remainder_excludes_argparse_separator(self) -> None:
+        arguments = TOOL.build_parser().parse_args(
+            [
+                "__barrier",
+                "7",
+                "101",
+                "202",
+                "--",
+                "/usr/bin/true",
+                "--fixture-option",
+            ]
+        )
+
+        self.assertEqual(arguments.action, "__barrier")
+        self.assertEqual(arguments.barrier_fd, 7)
+        self.assertEqual(arguments.parent_pid, 101)
+        self.assertEqual(arguments.parent_start_ticks, 202)
+        self.assertEqual(
+            arguments.command, ["/usr/bin/true", "--fixture-option"]
+        )
+
+    def test_portage_action_remainder_excludes_argparse_separator(self) -> None:
+        arguments = TOOL.build_parser().parse_args(
+            [
+                "__portage-action",
+                "/tmp/prepared.json",
+                "a" * 64,
+                "9",
+                "fixture-session",
+                "--",
+                "/usr/bin/true",
+                "--fixture-option",
+            ]
+        )
+
+        self.assertEqual(arguments.action, "__portage-action")
+        self.assertEqual(arguments.prepared_state, Path("/tmp/prepared.json"))
+        self.assertEqual(arguments.prepared_sha256, "a" * 64)
+        self.assertEqual(arguments.control_fd, 9)
+        self.assertEqual(arguments.control_session, "fixture-session")
+        self.assertEqual(
+            arguments.command, ["/usr/bin/true", "--fixture-option"]
+        )
 
 
 class ManagedSignalBoundaryTests(unittest.TestCase):
@@ -1028,6 +1157,196 @@ class RepositoryMaterializationTests(unittest.TestCase):
         make_writable(self.root)
         self.temporary.cleanup()
 
+    def git_test_environment(self) -> dict[str, str]:
+        home = self.root / "git-home"
+        home.mkdir(mode=0o700, exist_ok=True)
+        return {**TOOL.git_environment(), "HOME": os.fspath(home)}
+
+    def run_real_git(self, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            [os.fspath(self.tools["git"]), *arguments],
+            cwd=self.source,
+            env=self.git_test_environment(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            timeout=10.0,
+        )
+
+    def initialize_real_git_repository(self) -> str:
+        if not self.tools["git"].is_file():
+            self.skipTest("portable real-Git materialization requires /usr/bin/git")
+        (self.source / ".gitignore").write_text(
+            "*.ignored\n", encoding="utf-8"
+        )
+        (self.source / "tracked-delete").write_text(
+            "delete me\n", encoding="utf-8"
+        )
+        self.run_real_git("init", "--quiet")
+        self.run_real_git("add", "--all")
+        self.run_real_git(
+            "-c",
+            "user.name=Gentoo optimization fixture",
+            "-c",
+            "user.email=fixture.invalid@example.invalid",
+            "commit",
+            "--quiet",
+            "--message=fixture authority",
+        )
+        return self.run_real_git(
+            "rev-parse", "--verify", "HEAD^{commit}"
+        ).stdout.decode("ascii").strip()
+
+    def real_git_observation(self, label: str) -> bytes:
+        arguments = {
+            "status": (
+                "-C",
+                os.fspath(self.source),
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+            ),
+            "diff": (
+                "-C",
+                os.fspath(self.source),
+                "diff",
+                "--binary",
+                "--full-index",
+                "--no-ext-diff",
+                "HEAD",
+                "--",
+            ),
+            "untracked": (
+                "-C",
+                os.fspath(self.source),
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ),
+        }[label]
+        result = subprocess.run(
+            TOOL.git_argv(self.tools["git"], *arguments),
+            env=self.git_test_environment(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            timeout=10.0,
+        )
+        self.assertEqual(result.stderr, b"")
+        return result.stdout
+
+    def materialize_real_git(self, destination: Path) -> dict[str, Any]:
+        environment = self.git_test_environment()
+        with unittest.mock.patch.object(
+            TOOL, "git_environment", return_value=environment
+        ):
+            return TOOL.materialize_repository(
+                TOOL.RepositorySpec("overlay", self.source, "git", ()),
+                destination,
+                runner=TOOL.SubprocessRunner(),
+                tools=self.tools,
+            )
+
+    def assert_effective_git_authority(
+        self,
+        *,
+        result: Mapping[str, Any],
+        destination: Path,
+        commit: str,
+        status: bytes,
+        diff: bytes,
+        untracked: bytes,
+    ) -> None:
+        git = result["git"]
+        self.assertEqual(git["commit"], commit)
+        self.assertIs(
+            git["clean_checkout_verified_before_effective_materialization"], True
+        )
+        self.assertIs(git["effective_worktree_bound"], True)
+        self.assertIs(git["effective_worktree_clean"], status == b"")
+        self.assertEqual(git["status_sha256"], TOOL.sha256_bytes(status))
+        self.assertEqual(git["diff_sha256"], TOOL.sha256_bytes(diff))
+        self.assertEqual(git["untracked_sha256"], TOOL.sha256_bytes(untracked))
+        self.assertEqual(
+            git["effective_tree_rows_sha256"],
+            TOOL.tree_manifest(
+                self.source, ignore_names=frozenset({".git"})
+            )["rows_sha256"],
+        )
+
+        materialization = git["effective_materialization"]
+        self.assertEqual(
+            materialization["tools"],
+            {
+                "cp": TOOL.inspect_executable(self.tools["cp"]),
+                "git": TOOL.inspect_executable(self.tools["git"]),
+            },
+        )
+        source_entries = sorted(
+            (path for path in self.source.iterdir() if path.name != ".git"),
+            key=lambda path: os.fsencode(path.name),
+        )
+        expected_commands = [
+            TOOL.git_argv(
+                self.tools["git"],
+                "-C",
+                os.fspath(destination),
+                "rm",
+                "-r",
+                "-f",
+                "--ignore-unmatch",
+                "--",
+                ".",
+            ),
+            TOOL.git_argv(
+                self.tools["git"],
+                "-C",
+                os.fspath(destination),
+                "clean",
+                "-ffdx",
+            ),
+            [
+                os.fspath(self.tools["cp"]),
+                "-a",
+                "--reflink=auto",
+                "--one-file-system",
+                "--",
+                *(os.fspath(path) for path in source_entries),
+                os.fspath(destination) + "/",
+            ],
+            TOOL.git_argv(
+                self.tools["git"],
+                "-C",
+                os.fspath(destination),
+                "reset",
+                "--mixed",
+                "--quiet",
+                "HEAD",
+            ),
+        ]
+        rows = materialization["rows"]
+        self.assertEqual([row["argv"] for row in rows], expected_commands)
+        self.assertTrue(all(row["exit_status"] == 0 for row in rows))
+        self.assertTrue(
+            all(
+                row["stderr_sha256"] == TOOL.sha256_bytes(b"")
+                for row in rows
+            )
+        )
+        self.assertEqual(
+            materialization["rows_sha256"],
+            TOOL.sha256_bytes(TOOL.canonical_json(rows)),
+        )
+        manifest_path = Path(result["tree_manifest_path"])
+        self.assertEqual(
+            result["tree_manifest_sha256"], TOOL.sha256_file(manifest_path)
+        )
+        TOOL.verify_manifest(destination, manifest_path)
+
     def test_rsync_materialization_requires_injected_full_verifier(self) -> None:
         (self.source / "Manifest").write_text(
             "TIMESTAMP 2026-08-11T00:00:00Z\n", encoding="utf-8"
@@ -1117,73 +1436,258 @@ class RepositoryMaterializationTests(unittest.TestCase):
             )
         self.assertEqual(runner.rev_parse_calls, 3)
 
-    def test_git_exact_commit_is_recorded_after_independent_checkout(self) -> None:
+    def test_git_clean_effective_worktree_authority_is_exactly_recorded(self) -> None:
         repository = TOOL.RepositorySpec("overlay", self.source, "git", ())
         runner = GitRunner()
+        destination = self.root / "materialized"
         result = TOOL.materialize_repository(
             repository,
-            self.root / "materialized",
+            destination,
             runner=runner,
             tools=self.tools,
         )
 
-        self.assertEqual(result["git"], {"commit": GitRunner.COMMIT, "clean": True})
-        self.assertEqual(runner.rev_parse_calls, 3)
-        TOOL.verify_manifest(
-            self.root / "materialized", Path(result["tree_manifest_path"])
+        self.assert_effective_git_authority(
+            result=result,
+            destination=destination,
+            commit=GitRunner.COMMIT,
+            status=b"",
+            diff=b"",
+            untracked=b"",
         )
+        self.assertEqual(runner.rev_parse_calls, 3)
 
-    def test_real_git_materialization_executes_exact_detached_clone_contract(self) -> None:
-        git = Path("/usr/bin/git")
-        if not git.is_file():
-            self.skipTest("portable real-Git materialization requires /usr/bin/git")
-        environment = {
-            **TOOL.git_environment(),
-            "HOME": os.fspath(self.root / "empty-home"),
-        }
-        (self.root / "empty-home").mkdir(mode=0o700)
-
-        def run_git(*arguments: str) -> subprocess.CompletedProcess[bytes]:
-            return subprocess.run(
-                [os.fspath(git), *arguments],
-                cwd=self.source,
-                env=environment,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-                timeout=10.0,
+    def test_git_effective_source_content_drift_during_copy_is_rejected(self) -> None:
+        with self.assertRaisesRegex(
+            TOOL.TransactionError,
+            "effective Git worktree changed or copied inexactly",
+        ):
+            TOOL.materialize_repository(
+                TOOL.RepositorySpec("overlay", self.source, "git", ()),
+                self.root / "materialized",
+                runner=GitRunner(mutate_source_after_copy=True),
+                tools=self.tools,
             )
 
-        run_git("init", "--quiet")
-        run_git("add", "--all")
-        run_git(
-            "-c",
-            "user.name=Gentoo optimization fixture",
-            "-c",
-            "user.email=fixture.invalid@example.invalid",
-            "commit",
-            "--quiet",
-            "--message=fixture authority",
-        )
-        commit = run_git("rev-parse", "--verify", "HEAD^{commit}").stdout.decode(
-            "ascii"
-        ).strip()
+    def test_git_effective_destination_content_mismatch_is_rejected(self) -> None:
+        with self.assertRaisesRegex(
+            TOOL.TransactionError,
+            "effective Git worktree changed or copied inexactly",
+        ):
+            TOOL.materialize_repository(
+                TOOL.RepositorySpec("overlay", self.source, "git", ()),
+                self.root / "materialized",
+                runner=GitRunner(corrupt_destination_after_copy=True),
+                tools=self.tools,
+            )
 
+    def test_git_nested_dot_git_authority_is_rejected(self) -> None:
+        nested = self.source / "vendor/.git"
+        nested.mkdir(parents=True)
+        (nested / "config").write_text("foreign\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            TOOL.TransactionError, "contains a nested .git authority"
+        ):
+            TOOL.materialize_repository(
+                TOOL.RepositorySpec("overlay", self.source, "git", ()),
+                self.root / "materialized",
+                runner=GitRunner(),
+                tools=self.tools,
+            )
+
+    def test_git_effective_tree_digest_drift_is_rejected(self) -> None:
+        real_tree_manifest = TOOL.tree_manifest
+        source_calls = 0
+
+        def mismatched_tree_manifest(
+            root: Path, *, ignore_names: frozenset[str] = frozenset()
+        ) -> dict[str, Any]:
+            nonlocal source_calls
+            result = real_tree_manifest(root, ignore_names=ignore_names)
+            if root == self.source and ignore_names == frozenset({".git"}):
+                source_calls += 1
+                if source_calls == 2:
+                    result = {**result, "rows_sha256": "0" * 64}
+            return result
+
+        with (
+            unittest.mock.patch.object(
+                TOOL, "tree_manifest", side_effect=mismatched_tree_manifest
+            ),
+            self.assertRaisesRegex(
+                TOOL.TransactionError,
+                "effective Git worktree changed or copied inexactly",
+            ),
+        ):
+            TOOL.materialize_repository(
+                TOOL.RepositorySpec("overlay", self.source, "git", ()),
+                self.root / "materialized",
+                runner=GitRunner(),
+                tools=self.tools,
+            )
+
+    def test_git_source_observation_drift_is_rejected_per_axis(self) -> None:
+        for label in ("status", "diff", "untracked"):
+            with (
+                self.subTest(label=label),
+                self.assertRaisesRegex(
+                    TOOL.TransactionError,
+                    f"effective Git worktree {label} changed during materialization",
+                ),
+            ):
+                TOOL.materialize_repository(
+                    TOOL.RepositorySpec("overlay", self.source, "git", ()),
+                    self.root / f"materialized-{label}",
+                    runner=GitRunner(observation_drift_label=label),
+                    tools=self.tools,
+                )
+
+    def test_git_destination_observation_mismatch_is_rejected_per_axis(self) -> None:
+        for label in ("status", "diff", "untracked"):
+            with (
+                self.subTest(label=label),
+                self.assertRaisesRegex(
+                    TOOL.TransactionError,
+                    "frozen effective Git worktree differs from source",
+                ),
+            ):
+                TOOL.materialize_repository(
+                    TOOL.RepositorySpec("overlay", self.source, "git", ()),
+                    self.root / f"materialized-{label}",
+                    runner=GitRunner(
+                        destination_observation_mismatch_label=label
+                    ),
+                    tools=self.tools,
+                )
+
+    def test_real_git_materialization_executes_exact_detached_clone_contract(self) -> None:
+        commit = self.initialize_real_git_repository()
+        observations = {
+            label: self.real_git_observation(label)
+            for label in ("status", "diff", "untracked")
+        }
         destination = self.root / "materialized-real-git"
-        result = TOOL.materialize_repository(
-            TOOL.RepositorySpec("overlay", self.source, "git", ()),
-            destination,
-            runner=TOOL.SubprocessRunner(),
-            tools=self.tools,
+        result = self.materialize_real_git(destination)
+
+        self.assert_effective_git_authority(
+            result=result,
+            destination=destination,
+            commit=commit,
+            status=observations["status"],
+            diff=observations["diff"],
+            untracked=observations["untracked"],
+        )
+        self.assertEqual(
+            self.run_real_git(
+                "status", "--porcelain=v1", "--untracked-files=all"
+            ).stdout,
+            observations["status"].replace(b"\0", b"\n"),
         )
 
-        self.assertEqual(result["git"], {"commit": commit, "clean": True})
-        self.assertEqual(
-            run_git("status", "--porcelain=v1", "--untracked-files=all").stdout,
-            b"",
+    def test_real_git_modified_and_deleted_tracked_bytes_are_frozen(self) -> None:
+        commit = self.initialize_real_git_repository()
+        (self.source / "profiles/repo_name").write_text(
+            "modified fixture\n", encoding="utf-8"
         )
-        TOOL.verify_manifest(destination, Path(result["tree_manifest_path"]))
+        (self.source / "tracked-delete").unlink()
+        observations = {
+            label: self.real_git_observation(label)
+            for label in ("status", "diff", "untracked")
+        }
+        self.assertNotEqual(observations["status"], b"")
+        self.assertNotEqual(observations["diff"], b"")
+
+        destination = self.root / "materialized-dirty-tracked"
+        result = self.materialize_real_git(destination)
+
+        self.assert_effective_git_authority(
+            result=result,
+            destination=destination,
+            commit=commit,
+            status=observations["status"],
+            diff=observations["diff"],
+            untracked=observations["untracked"],
+        )
+        self.assertEqual(
+            (destination / "profiles/repo_name").read_text(encoding="utf-8"),
+            "modified fixture\n",
+        )
+        self.assertFalse((destination / "tracked-delete").exists())
+
+    def test_real_git_staged_observation_that_cannot_be_reproduced_is_rejected(
+        self,
+    ) -> None:
+        self.initialize_real_git_repository()
+        (self.source / "profiles/repo_name").write_text(
+            "staged fixture\n", encoding="utf-8"
+        )
+        self.run_real_git("add", "profiles/repo_name")
+
+        with self.assertRaisesRegex(
+            TOOL.TransactionError,
+            "frozen effective Git worktree differs from source",
+        ):
+            self.materialize_real_git(self.root / "materialized-staged")
+
+    def test_real_git_untracked_bytes_are_frozen_and_observed(self) -> None:
+        commit = self.initialize_real_git_repository()
+        (self.source / "local-overlay.conf").write_text(
+            "untracked authority\n", encoding="utf-8"
+        )
+        observations = {
+            label: self.real_git_observation(label)
+            for label in ("status", "diff", "untracked")
+        }
+        self.assertNotEqual(observations["status"], b"")
+        self.assertNotEqual(observations["untracked"], b"")
+
+        destination = self.root / "materialized-untracked"
+        result = self.materialize_real_git(destination)
+
+        self.assert_effective_git_authority(
+            result=result,
+            destination=destination,
+            commit=commit,
+            status=observations["status"],
+            diff=observations["diff"],
+            untracked=observations["untracked"],
+        )
+        self.assertEqual(
+            (destination / "local-overlay.conf").read_text(encoding="utf-8"),
+            "untracked authority\n",
+        )
+
+    def test_real_git_ignored_bytes_are_bound_by_effective_tree(self) -> None:
+        commit = self.initialize_real_git_repository()
+        baseline_tree = TOOL.tree_manifest(
+            self.source, ignore_names=frozenset({".git"})
+        )["rows_sha256"]
+        (self.source / "local.ignored").write_text(
+            "ignored but effective\n", encoding="utf-8"
+        )
+        observations = {
+            label: self.real_git_observation(label)
+            for label in ("status", "diff", "untracked")
+        }
+        self.assertEqual(observations, {"status": b"", "diff": b"", "untracked": b""})
+
+        destination = self.root / "materialized-ignored"
+        result = self.materialize_real_git(destination)
+
+        self.assert_effective_git_authority(
+            result=result,
+            destination=destination,
+            commit=commit,
+            status=b"",
+            diff=b"",
+            untracked=b"",
+        )
+        self.assertNotEqual(result["git"]["effective_tree_rows_sha256"], baseline_tree)
+        self.assertEqual(
+            (destination / "local.ignored").read_text(encoding="utf-8"),
+            "ignored but effective\n",
+        )
 
 
 class ExecutionAndPromptContractTests(unittest.TestCase):

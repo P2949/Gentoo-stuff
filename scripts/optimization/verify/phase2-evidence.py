@@ -5714,6 +5714,387 @@ def validate_prerequisite_file_observation(
     return observation
 
 
+def validate_prerequisite_vdb_authority(
+    value: object, *, production: bool
+) -> dict[str, Any]:
+    vdb = require_object(
+        value,
+        "jsonschema prepared VDB authority",
+        {
+            "schema_version",
+            "root_identity",
+            "root_xattrs",
+            "complete_tree",
+            "complete_tree_sha256",
+            "cpvs",
+            "cpvs_sha256",
+            "packages",
+            "packages_sha256",
+            "maximum_installed_counter",
+        },
+    )
+    complete_tree = require_object(
+        vdb.get("complete_tree"), "jsonschema prepared complete VDB tree"
+    )
+    vdb_root = absolute_path(
+        complete_tree.get("root"), "jsonschema prepared VDB root"
+    )
+    validate_prerequisite_tree_manifest(
+        complete_tree,
+        root=vdb_root,
+        label="jsonschema prepared complete VDB tree",
+        production=production,
+        verify_current=False,
+    )
+    root_identity = require_object(
+        vdb.get("root_identity"),
+        "jsonschema prepared VDB root identity",
+        {"device", "inode", "uid", "gid", "mode", "nlink", "size"},
+    )
+    root_observation = {
+        "path": os.fspath(vdb_root),
+        **root_identity,
+        "xattrs": vdb.get("root_xattrs"),
+        "type": "directory",
+    }
+    validate_prerequisite_object_observation(
+        root_observation,
+        "jsonschema prepared VDB root",
+        expected_path=vdb_root,
+    )
+    cpvs = [
+        require_string(item, "jsonschema prepared VDB CPV", PREREQUISITE_CPV_RE)
+        for item in require_list(
+            vdb.get("cpvs"), "jsonschema prepared VDB CPVs", nonempty=True
+        )
+    ]
+    packages = require_list(
+        vdb.get("packages"), "jsonschema prepared VDB packages", nonempty=True
+    )
+    observed_cpvs: list[str] = []
+    counters: list[int] = []
+    for raw_package in packages:
+        package = require_object(
+            raw_package,
+            "jsonschema prepared VDB package",
+            {"cpv", "counter", "tree", "tree_sha256"},
+        )
+        cpv = require_string(
+            package.get("cpv"), "jsonschema prepared VDB package CPV", PREREQUISITE_CPV_RE
+        )
+        counter = require_int(
+            package.get("counter"), f"jsonschema prepared VDB {cpv} counter"
+        )
+        package_tree = validate_prerequisite_tree_manifest(
+            package.get("tree"),
+            root=vdb_root / cpv,
+            label=f"jsonschema prepared VDB package tree {cpv}",
+            production=production,
+            verify_current=False,
+        )
+        if package.get("tree_sha256") != sha256(canonical_json(package_tree)):
+            fail(f"jsonschema prepared VDB package digest differs: {cpv}")
+        observed_cpvs.append(cpv)
+        counters.append(counter)
+    if (
+        vdb.get("schema_version") != 2
+        or cpvs != sorted(set(cpvs))
+        or observed_cpvs != cpvs
+        or vdb.get("complete_tree_sha256") != sha256(canonical_json(complete_tree))
+        or vdb.get("cpvs_sha256")
+        != sha256(("\n".join(cpvs) + "\n").encode("utf-8"))
+        or vdb.get("packages_sha256") != sha256(canonical_json(packages))
+        or vdb.get("maximum_installed_counter") != max(counters)
+    ):
+        fail("jsonschema prepared VDB authority is not canonically bound")
+    return vdb
+
+
+def validate_prerequisite_selected_sets_authority(
+    value: object,
+    *,
+    production: bool,
+) -> dict[str, Any]:
+    selected = require_object(
+        value,
+        "jsonschema selected Portage authorities",
+        {
+            "var_lib_portage",
+            "cache_edb_without_counter",
+            "world",
+            "world_sets",
+            "mtimedb",
+            "preserved_libs_registry",
+        },
+    )
+    roots: dict[str, Path] = {}
+    for key in ("var_lib_portage", "cache_edb_without_counter"):
+        row = require_object(
+            selected.get(key),
+            f"jsonschema selected {key}",
+            {"root", "rows_sha256"},
+        )
+        root = validate_prerequisite_object_observation(
+            row.get("root"), f"jsonschema selected {key} root"
+        )
+        if root.get("type") != "directory":
+            fail(f"jsonschema selected {key} root is not a directory")
+        root_path = Path(str(root["path"]))
+        current = observe_prerequisite_object(root_path)
+        if current != root:
+            fail(f"jsonschema selected {key} root changed")
+        require_string(
+            row.get("rows_sha256"),
+            f"jsonschema selected {key} rows digest",
+            SHA256_RE,
+        )
+        roots[key] = root_path
+    current_var_tree = observe_prerequisite_tree_manifest(roots["var_lib_portage"])
+    current_cache_tree = observe_prerequisite_tree_manifest(
+        roots["cache_edb_without_counter"]
+    )
+    current_cache_rows = [
+        row
+        for row in require_list(
+            current_cache_tree.get("rows"), "jsonschema current cache EDB rows"
+        )
+        if str(require_object(row, "jsonschema current cache EDB row").get("path")).split(
+            "/", 1
+        )[0]
+        != "counter"
+    ]
+    if (
+        selected["var_lib_portage"].get("rows_sha256")
+        != current_var_tree.get("rows_sha256")
+        or selected["cache_edb_without_counter"].get("rows_sha256")
+        != sha256(canonical_json(current_cache_rows))
+    ):
+        fail("jsonschema selected Portage tree authority changed")
+    expected_paths = {
+        "world": roots["var_lib_portage"] / "world",
+        "world_sets": roots["var_lib_portage"] / "world_sets",
+        "preserved_libs_registry": roots["var_lib_portage"]
+        / "preserved_libs_registry",
+        "mtimedb": roots["cache_edb_without_counter"] / "mtimedb",
+    }
+    for key, expected_path in expected_paths.items():
+        validate_prerequisite_file_observation(
+            selected.get(key),
+            label=f"jsonschema selected Portage {key}",
+            expected_path=expected_path,
+            production=production,
+            verify_current=True,
+        )
+    registry_payload, _registry_identity = read_regular(
+        expected_paths["preserved_libs_registry"],
+        "jsonschema selected preserved-libraries registry",
+    )
+    if parse_json_bytes(registry_payload, "jsonschema selected preserved-libraries registry") != {}:
+        fail("jsonschema selected preserved-libraries registry is not empty")
+    return selected
+
+
+def validate_prerequisite_loader_authority(
+    value: object, *, production: bool
+) -> dict[str, Any]:
+    authority = require_object(
+        value,
+        "jsonschema loader-directory authority",
+        {"schema_version", "rows", "rows_sha256"},
+    )
+    rows = require_list(authority.get("rows"), "jsonschema loader-directory rows")
+    paths: list[Path] = []
+    for raw_row in rows:
+        row = require_object(
+            raw_row,
+            "jsonschema loader-directory row",
+            {
+                "path",
+                "mtime_ns",
+                "observation",
+                "immediate_children",
+                "immediate_children_sha256",
+            },
+        )
+        path = absolute_path(row.get("path"), "jsonschema loader-directory path")
+        require_int(row.get("mtime_ns"), f"jsonschema loader-directory {path} mtime")
+        observation = validate_prerequisite_object_observation(
+            row.get("observation"),
+            f"jsonschema loader-directory observation {path}",
+            expected_path=path,
+        )
+        if observation.get("type") != "directory":
+            fail(f"jsonschema loader-directory authority is not a directory: {path}")
+        if production:
+            validate_root_trust(path, f"jsonschema loader-directory {path}", directory=True)
+        children = require_list(
+            row.get("immediate_children"),
+            f"jsonschema loader-directory children {path}",
+        )
+        child_paths: list[Path] = []
+        for raw_child in children:
+            child = validate_prerequisite_object_observation(
+                raw_child, f"jsonschema loader-directory child {path}"
+            )
+            child_path = absolute_path(
+                child.get("path"), f"jsonschema loader-directory child path {path}"
+            )
+            if child_path.parent != path:
+                fail("jsonschema loader-directory child is not immediate")
+            child_paths.append(child_path)
+        if (
+            child_paths != sorted(set(child_paths), key=os.fspath)
+            or row.get("immediate_children_sha256")
+            != sha256(canonical_json(children))
+        ):
+            fail(f"jsonschema loader-directory child vector differs: {path}")
+        paths.append(path)
+    if (
+        authority.get("schema_version") != 1
+        or paths != sorted(set(paths), key=os.fspath)
+        or authority.get("rows_sha256") != sha256(canonical_json(rows))
+    ):
+        fail("jsonschema loader-directory authority is not canonical")
+    return authority
+
+
+def validate_prerequisite_effective_policy(value: object) -> dict[str, Any]:
+    policy = require_object(
+        value,
+        "jsonschema effective Portage policy",
+        {
+            "schema_version",
+            "features",
+            "autoclean",
+            "uninstall_ignore",
+            "install_mask",
+            "config_protect",
+            "config_protect_mask",
+        },
+    )
+    features = [
+        require_string(item, "jsonschema effective Portage feature")
+        for item in require_list(
+            policy.get("features"), "jsonschema effective Portage features", nonempty=True
+        )
+    ]
+    required = {
+        "collision-protect",
+        "network-sandbox",
+        "pid-sandbox",
+        "protect-owned",
+        "sandbox",
+        "merge-sync",
+        "userpriv",
+        "usersandbox",
+    }
+    forbidden = {
+        "assume-digests",
+        "binpkg-signing",
+        "parallel-install",
+        "preserve-libs",
+        "unmerge-orphans",
+    }
+    if (
+        policy.get("schema_version") != 1
+        or features != sorted(set(features))
+        or not required.issubset(features)
+        or forbidden.intersection(features)
+        or policy.get("autoclean") != "no"
+        or policy.get("uninstall_ignore") != ""
+        or any(
+            not isinstance(policy.get(key), str)
+            for key in ("install_mask", "config_protect", "config_protect_mask")
+        )
+    ):
+        fail("jsonschema effective Portage policy differs from the transaction policy")
+    return policy
+
+
+def validate_prerequisite_native_toolchain(
+    value: object, *, production: bool
+) -> dict[str, Any]:
+    authority = require_object(
+        value,
+        "jsonschema native toolchain authority",
+        {"schema_version", "execution_path", "rows", "rows_sha256"},
+    )
+    expected_variables = [
+        "AR", "CC", "CPP", "CXX", "LD", "NM", "PKG_CONFIG", "RANLIB", "STRIP"
+    ]
+    rows = require_list(
+        authority.get("rows"), "jsonschema native toolchain rows", nonempty=True
+    )
+    variables: list[str] = []
+    for raw_row in rows:
+        row = require_object(
+            raw_row,
+            "jsonschema native toolchain row",
+            {"variable", "configured", "resolved", "executable", "stdout", "stderr"},
+        )
+        variable = require_string(row.get("variable"), "jsonschema native tool variable")
+        configured = require_string(
+            row.get("configured"), f"jsonschema native tool {variable} configured"
+        )
+        if len(shlex.split(configured)) != 1:
+            fail(f"jsonschema native tool {variable} is not one executable")
+        resolved = absolute_path(
+            row.get("resolved"), f"jsonschema native tool {variable} resolved path"
+        )
+        executable = validate_prerequisite_executable_identity(
+            row.get("executable"),
+            label=f"jsonschema native tool {variable}",
+            production=production,
+            expected_path=resolved,
+        )
+        if (
+            executable.get("requested_path") != os.fspath(resolved)
+            or not isinstance(row.get("stdout"), str)
+            or not isinstance(row.get("stderr"), str)
+            or (not row.get("stdout") and not row.get("stderr"))
+        ):
+            fail(f"jsonschema native tool {variable} authority differs")
+        variables.append(variable)
+    if (
+        authority.get("schema_version") != 1
+        or authority.get("execution_path")
+        != "/usr/lib/llvm/22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        or variables != expected_variables
+        or authority.get("rows_sha256") != sha256(canonical_json(rows))
+    ):
+        fail("jsonschema native toolchain vector is not exact")
+    return authority
+
+
+def validate_prerequisite_process_exclusion(
+    value: object,
+    *,
+    protected_roots: list[Path],
+) -> dict[str, Any]:
+    process = require_object(
+        value,
+        "jsonschema process-exclusion authority",
+        {"before_lock", "after_lock", "after_snapshot"},
+    )
+    expected_roots = [
+        os.fspath(
+            path.resolve(strict=True)
+            if path.exists()
+            else path.parent.resolve(strict=True) / path.name
+        )
+        for path in protected_roots
+    ]
+    expected_scan = {
+        "schema_version": 1,
+        "protected_roots": expected_roots,
+        "rows": [],
+        "rows_sha256": sha256(canonical_json([])),
+    }
+    if any(process.get(key) != expected_scan for key in process):
+        fail("jsonschema process-exclusion windows are not exact empty scans")
+    return process
+
+
 def validate_locked_prerequisite_authority(
     value: object,
     *,
@@ -5806,14 +6187,165 @@ def validate_locked_prerequisite_authority(
         )
     ):
         fail("jsonschema locked authority lacks a complete prepared observation")
-    vdb = require_object(window.get("vdb"), "jsonschema prepared VDB authority")
-    cpvs = require_list(vdb.get("cpvs"), "jsonschema prepared VDB CPVs", nonempty=True)
+    expected_lock_api = {
+        "lockdir_module": "portage.locks",
+        "lockdir_name": "lockdir",
+        "lockfile_module": "portage.locks",
+        "lockfile_name": "lockfile",
+        "contention_error_module": "portage.exception",
+        "contention_error_name": "TryAgain",
+    }
+    if window.get("portage_lock_api") != expected_lock_api:
+        fail("jsonschema Portage nonblocking-lock API identity differs")
+    vdb = validate_prerequisite_vdb_authority(
+        window.get("vdb"), production=production
+    )
+    selected = validate_prerequisite_selected_sets_authority(
+        window.get("selected_sets"), production=production
+    )
+    mtimedb = require_object(
+        window.get("mtimedb"),
+        "jsonschema prepared mtimedb authority",
+        {
+            "observation",
+            "stable",
+            "stable_sha256",
+            "resume_present",
+            "resume_backup",
+            "resume_backup_sha256",
+        },
+    )
+    mtimedb_observation = validate_prerequisite_file_observation(
+        mtimedb.get("observation"),
+        label="jsonschema prepared mtimedb observation",
+        expected_path=Path(str(selected["mtimedb"]["path"])),
+        production=production,
+        verify_current=True,
+    )
+    mtimedb_path = Path(str(mtimedb_observation["path"]))
+    mtimedb_payload, _mtimedb_identity = read_regular(
+        mtimedb_path, "jsonschema prepared mtimedb"
+    )
+    mtimedb_value = require_object(
+        parse_json_bytes(mtimedb_payload, "jsonschema prepared mtimedb"),
+        "jsonschema prepared mtimedb value",
+    )
+    stable = {
+        key: item
+        for key, item in mtimedb_value.items()
+        if key not in {"resume", "resume_backup"}
+    }
     if (
-        cpvs != sorted(set(cpvs))
-        or vdb.get("cpvs_sha256")
-        != sha256(("\n".join(str(item) for item in cpvs) + "\n").encode())
+        mtimedb_observation != selected["mtimedb"]
+        or mtimedb_value.get("resume") not in (None, {}, [])
+        or type(mtimedb.get("resume_present")) is not bool
+        or mtimedb.get("resume_present") != ("resume" in mtimedb_value)
+        or mtimedb.get("stable") != stable
+        or mtimedb.get("stable_sha256") != sha256(canonical_json(stable))
+        or mtimedb.get("resume_backup") != mtimedb_value.get("resume_backup")
+        or mtimedb.get("resume_backup_sha256")
+        != sha256(canonical_json(mtimedb_value.get("resume_backup")))
     ):
-        fail("jsonschema prepared VDB CPV authority is not canonical")
+        fail("jsonschema prepared mtimedb authority differs")
+    cache_root = Path(str(selected["cache_edb_without_counter"]["root"]["path"]))
+    counter = validate_prerequisite_file_observation(
+        window.get("counter"),
+        label="jsonschema prepared EDB counter",
+        expected_path=cache_root / "counter",
+        production=production,
+        verify_current=False,
+    )
+    counter_value = require_int(
+        window.get("counter_value"), "jsonschema prepared EDB counter value"
+    )
+    if (
+        counter.get("type") != "file"
+        or counter.get("sha256") != sha256(str(counter_value).encode("ascii"))
+        or counter_value < int(vdb["maximum_installed_counter"])
+    ):
+        fail("jsonschema prepared EDB counter authority differs")
+    copies = require_object(
+        window.get("copies"),
+        "jsonschema locked private-authority copies",
+        {"schema_version", "rows", "rows_sha256"},
+    )
+    copy_rows = require_object(
+        copies.get("rows"), "jsonschema locked private-authority copy rows"
+    )
+    if set(copy_rows) != {"var_lib_portage", "cache_edb", "etc"}:
+        fail("jsonschema locked private-authority copy membership differs")
+    expected_source_paths = {
+        "var_lib_portage": Path(
+            str(selected["var_lib_portage"]["root"]["path"])
+        ),
+        "cache_edb": cache_root,
+        "etc": Path("/etc") if production else None,
+    }
+    for copy_name in sorted(copy_rows):
+        copy_row = require_object(
+            copy_rows.get(copy_name),
+            f"jsonschema locked {copy_name} copy",
+            {"source_root", "copy_root", "tree", "tree_sha256"},
+        )
+        source_root = validate_prerequisite_object_observation(
+            copy_row.get("source_root"), f"jsonschema locked {copy_name} source root"
+        )
+        copy_root = validate_prerequisite_object_observation(
+            copy_row.get("copy_root"), f"jsonschema locked {copy_name} copy root"
+        )
+        if source_root.get("type") != "directory" or copy_root.get("type") != "directory":
+            fail(f"jsonschema locked {copy_name} copy roots are not directories")
+        source_path = Path(str(source_root["path"]))
+        expected_source = expected_source_paths[copy_name]
+        if expected_source is not None and source_path != expected_source:
+            fail(f"jsonschema locked {copy_name} source path differs")
+        tree = validate_prerequisite_tree_manifest(
+            copy_row.get("tree"),
+            root=source_path,
+            label=f"jsonschema locked {copy_name} tree",
+            production=production,
+            verify_current=copy_name != "cache_edb",
+        )
+        if copy_row.get("tree_sha256") != sha256(canonical_json(tree)):
+            fail(f"jsonschema locked {copy_name} tree digest differs")
+        if copy_name == "var_lib_portage" and (
+            source_root != selected["var_lib_portage"]["root"]
+            or tree.get("rows_sha256")
+            != selected["var_lib_portage"].get("rows_sha256")
+        ):
+            fail("jsonschema locked var-lib-portage copy differs from selected sets")
+        if copy_name == "cache_edb" and source_root != selected[
+            "cache_edb_without_counter"
+        ]["root"]:
+            fail("jsonschema locked cache-EDB root differs from selected sets")
+    if (
+        copies.get("schema_version") != 1
+        or copies.get("rows_sha256") != sha256(canonical_json(copy_rows))
+    ):
+        fail("jsonschema locked private-authority copies are not canonical")
+    loader = validate_prerequisite_loader_authority(
+        window.get("loader_directories"), production=production
+    )
+    policy = validate_prerequisite_effective_policy(
+        window.get("effective_portage_policy")
+    )
+    native_toolchain = validate_prerequisite_native_toolchain(
+        window.get("native_toolchain"), production=production
+    )
+    if window.get("plan_metadata") is not None:
+        fail("jsonschema initial locked window unexpectedly contains plan metadata")
+    vdb_root = Path(str(vdb["complete_tree"]["root"]))
+    validate_prerequisite_process_exclusion(
+        window.get("process_exclusion"),
+        protected_roots=[
+            vdb_root,
+            vdb_root.parent / ".pkg.portage_lockfile",
+            Path(str(selected["var_lib_portage"]["root"]["path"])),
+            cache_root,
+        ],
+    )
+    if not loader or not policy or not native_toolchain:
+        fail("jsonschema locked authority validation did not complete")
     return {"reference": reference, "document": document, "window": window}
 
 
@@ -7203,16 +7735,27 @@ def validate_prerequisite_repository_authorities(
         if variant == "git":
             git = require_object(
                 repository.get("git"), f"jsonschema repository {name} Git authority",
-                {"commit", "clean"},
+                {
+                    "commit",
+                    "clean_checkout_verified_before_effective_materialization",
+                    "effective_worktree_bound",
+                    "effective_worktree_clean",
+                    "status_sha256",
+                    "diff_sha256",
+                    "untracked_sha256",
+                    "effective_tree_rows_sha256",
+                    "effective_materialization",
+                },
             )
             commit = require_string(
                 git.get("commit"), f"jsonschema repository {name} Git commit", OID_RE
             )
-            if git.get("clean") is not True:
-                fail(f"jsonschema repository {name} Git authority is not clean")
             git_tool = tools_by_name.get("git")
-            if git_tool is None:
-                fail(f"jsonschema repository {name} lacks its Git tool authority")
+            cp_tool = tools_by_name.get("cp")
+            if git_tool is None or cp_tool is None:
+                fail(
+                    f"jsonschema repository {name} lacks its Git/copy tool authority"
+                )
             environment = {
                 "GIT_CONFIG_GLOBAL": "/dev/null",
                 "GIT_CONFIG_NOSYSTEM": "1",
@@ -7230,26 +7773,206 @@ def validate_prerequisite_repository_authorities(
                 str(git_tool["requested_path"]), "-c", "core.hooksPath=/dev/null",
                 "-c", "core.fsmonitor=false", "-c", "core.attributesFile=/dev/null",
             ]
+            observation_commands = {
+                "status_sha256": [
+                    *prefix,
+                    "-C",
+                    os.fspath(materialized),
+                    "status",
+                    "--porcelain=v1",
+                    "-z",
+                    "--untracked-files=all",
+                ],
+                "diff_sha256": [
+                    *prefix,
+                    "-C",
+                    os.fspath(materialized),
+                    "diff",
+                    "--binary",
+                    "--full-index",
+                    "--no-ext-diff",
+                    "HEAD",
+                    "--",
+                ],
+                "untracked_sha256": [
+                    *prefix,
+                    "-C",
+                    os.fspath(materialized),
+                    "ls-files",
+                    "--others",
+                    "--exclude-standard",
+                    "-z",
+                ],
+            }
             try:
                 head = subprocess.run(
                     [*prefix, "-C", os.fspath(materialized), "rev-parse", "--verify", "HEAD^{commit}"],
                     env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, timeout=60, check=False,
                 )
-                clean = subprocess.run(
-                    [*prefix, "-C", os.fspath(materialized), "status", "--porcelain=v1", "--untracked-files=all"],
-                    env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE, timeout=60, check=False,
-                )
+                observations = {
+                    key: subprocess.run(
+                        command,
+                        env=environment,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        timeout=60,
+                        check=False,
+                    )
+                    for key, command in observation_commands.items()
+                }
             except (OSError, subprocess.TimeoutExpired) as error:
                 fail(f"cannot revalidate jsonschema repository {name} Git authority: {error}")
             if (
                 head.returncode != 0
                 or head.stdout.decode("ascii", errors="strict").strip() != commit
-                or clean.returncode != 0
-                or clean.stdout
+                or any(
+                    observed.returncode != 0 or observed.stderr
+                    for observed in observations.values()
+                )
             ):
-                fail(f"jsonschema repository {name} Git checkout differs")
+                fail(f"jsonschema repository {name} Git observation failed")
+            status_payload = observations["status_sha256"].stdout
+            if (
+                git.get("clean_checkout_verified_before_effective_materialization")
+                is not True
+                or git.get("effective_worktree_bound") is not True
+                or type(git.get("effective_worktree_clean")) is not bool
+                or git.get("effective_worktree_clean") != (status_payload == b"")
+                or any(
+                    require_string(
+                        git.get(key),
+                        f"jsonschema repository {name} Git {key}",
+                        SHA256_RE,
+                    )
+                    != sha256(observations[key].stdout)
+                    for key in observation_commands
+                )
+            ):
+                fail(f"jsonschema repository {name} effective Git observation differs")
+            manifest_rows = require_list(
+                manifest.get("rows"),
+                f"jsonschema repository {name} tree-manifest rows",
+            )
+            effective_rows: list[dict[str, Any]] = []
+            for raw_manifest_row in manifest_rows:
+                manifest_row = require_object(
+                    raw_manifest_row,
+                    f"jsonschema repository {name} tree-manifest row",
+                )
+                row_path = require_string(
+                    manifest_row.get("path"),
+                    f"jsonschema repository {name} tree-manifest path",
+                )
+                components = Path(row_path).parts
+                if ".git" in components and components[0] != ".git":
+                    fail(
+                        f"jsonschema repository {name} contains a nested .git authority"
+                    )
+                if components[0] != ".git":
+                    effective_rows.append(manifest_row)
+            if (
+                git.get("effective_tree_rows_sha256")
+                != sha256(canonical_json(effective_rows))
+            ):
+                fail(f"jsonschema repository {name} effective tree digest differs")
+            materialization = require_object(
+                git.get("effective_materialization"),
+                f"jsonschema repository {name} effective materialization",
+                {"tools", "rows", "rows_sha256"},
+            )
+            materialization_tools = require_object(
+                materialization.get("tools"),
+                f"jsonschema repository {name} materialization tools",
+                {"cp", "git"},
+            )
+            expected_tool_identities = {
+                "cp": {key: value for key, value in cp_tool.items() if key != "name"},
+                "git": {key: value for key, value in git_tool.items() if key != "name"},
+            }
+            if materialization_tools != expected_tool_identities:
+                fail(f"jsonschema repository {name} materialization tools differ")
+            top_level = sorted(
+                {
+                    str(row["path"]).split("/", 1)[0]
+                    for row in effective_rows
+                    if isinstance(row.get("path"), str) and row["path"]
+                },
+                key=os.fsencode,
+            )
+            if not top_level:
+                fail(f"jsonschema repository {name} effective worktree is empty")
+            expected_commands = [
+                [
+                    *prefix,
+                    "-C",
+                    os.fspath(materialized),
+                    "rm",
+                    "-r",
+                    "-f",
+                    "--ignore-unmatch",
+                    "--",
+                    ".",
+                ],
+                [
+                    *prefix,
+                    "-C",
+                    os.fspath(materialized),
+                    "clean",
+                    "-ffdx",
+                ],
+                [
+                    str(cp_tool["requested_path"]),
+                    "-a",
+                    "--reflink=auto",
+                    "--one-file-system",
+                    "--",
+                    *(os.fspath(source / entry) for entry in top_level),
+                    os.fspath(materialized) + "/",
+                ],
+                [
+                    *prefix,
+                    "-C",
+                    os.fspath(materialized),
+                    "reset",
+                    "--mixed",
+                    "--quiet",
+                    "HEAD",
+                ],
+            ]
+            materialization_rows = require_list(
+                materialization.get("rows"),
+                f"jsonschema repository {name} materialization rows",
+            )
+            if len(materialization_rows) != len(expected_commands):
+                fail(f"jsonschema repository {name} materialization command count differs")
+            for index, (raw_row, expected_command) in enumerate(
+                zip(materialization_rows, expected_commands, strict=True)
+            ):
+                row = require_object(
+                    raw_row,
+                    f"jsonschema repository {name} materialization row {index}",
+                    {"argv", "exit_status", "stdout_sha256", "stderr_sha256"},
+                )
+                if (
+                    row.get("argv") != expected_command
+                    or row.get("exit_status") != 0
+                    or any(
+                        require_string(
+                            row.get(key),
+                            f"jsonschema repository {name} materialization {key}",
+                            SHA256_RE,
+                        )
+                        != row.get(key)
+                        for key in ("stdout_sha256", "stderr_sha256")
+                    )
+                ):
+                    fail(f"jsonschema repository {name} materialization row differs")
+            if materialization.get("rows_sha256") != sha256(
+                canonical_json(materialization_rows)
+            ):
+                fail(f"jsonschema repository {name} materialization digest differs")
         elif variant == "local":
             local = require_object(
                 repository.get("local"), f"jsonschema repository {name} local authority",
@@ -7260,7 +7983,10 @@ def validate_prerequisite_repository_authorities(
                 f"jsonschema repository {name} local source digest",
                 SHA256_RE,
             )
-            if local.get("full_tree_bound") is not True:
+            if (
+                local.get("full_tree_bound") is not True
+                or local.get("source_rows_sha256") != manifest.get("rows_sha256")
+            ):
                 fail(f"jsonschema repository {name} local tree was not fully bound")
         else:
             rsync = require_object(
@@ -7442,9 +8168,6 @@ def validate_prerequisite_stage_authority(
         if observed_lines != expected_lines:
             fail(f"jsonschema {stage} stdout plan differs from the reviewed exact plan")
     return evidence
-
-
-def validate_prerequisite_success_state(
 
 
 def validate_prerequisite_success_state(
