@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import shlex
 import shutil
 import stat
 import subprocess
@@ -594,6 +595,16 @@ namespace["require_active_python_matches_reviewed_tools"](
         def pretty(value: object) -> bytes:
             return cast(bytes, namespace["pretty_json"](value))
 
+        def prerequisite_json(value: object) -> bytes:
+            """Implement the prerequisite producer's digest encoding locally."""
+
+            return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode(
+                "utf-8"
+            )
+
+        def prerequisite_sha256(value: object) -> str:
+            return digest(prerequisite_json(value))
+
         def write_pretty(path: Path, value: object, mode: int = 0o600) -> bytes:
             path.parent.mkdir(parents=True, exist_ok=True)
             payload = pretty(value)
@@ -626,7 +637,7 @@ namespace["require_active_python_matches_reviewed_tools"](
             return cast(dict[str, Any], producer["tree_manifest"](path))
 
         def compact_manifest(path: Path, manifest: dict[str, Any]) -> str:
-            payload = canonical(manifest).encode()
+            payload = prerequisite_json(manifest)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(payload)
             path.chmod(0o600)
@@ -639,7 +650,7 @@ namespace["require_active_python_matches_reviewed_tools"](
                 "requested_path": os.fspath(path),
                 "resolved_path": os.fspath(resolved),
                 "manifest": manifest,
-                "manifest_sha256": digest(canonical(manifest).encode()),
+                "manifest_sha256": prerequisite_sha256(manifest),
             }
 
         def frozen_tree(
@@ -661,11 +672,49 @@ namespace["require_active_python_matches_reviewed_tools"](
                 "source_after": after,
             }
 
-        def executable_row(name: str, path: Path) -> dict[str, Any]:
+        def portable_executable_observation(path: Path) -> dict[str, Any]:
+            """Build the producer's executable schema without claiming root trust.
+
+            The detached verifier separately applies root ownership and trusted
+            ancestry checks when ``production`` is true.  This portable semantic
+            fixture intentionally lives below ``TemporaryDirectory`` and therefore
+            must not call the producer's production-only ``inspect_executable``.
+            """
+
+            resolved = path.resolve(strict=True)
+            metadata = resolved.lstat()
+            mode = stat.S_IMODE(metadata.st_mode)
+            self.assertTrue(stat.S_ISREG(metadata.st_mode))
+            self.assertTrue(mode & 0o111)
+            self.assertEqual(mode & 0o022, 0)
             return {
-                "name": name,
-                **cast(dict[str, Any], producer["inspect_executable"](path)),
+                "requested_path": os.fspath(path),
+                "resolved_path": os.fspath(resolved),
+                "device": metadata.st_dev,
+                "inode": metadata.st_ino,
+                "uid": metadata.st_uid,
+                "gid": metadata.st_gid,
+                "mode": mode,
+                "nlink": metadata.st_nlink,
+                "size": metadata.st_size,
+                "sha256": digest(resolved.read_bytes()),
             }
+
+        def executable_row(name: str, path: Path) -> dict[str, Any]:
+            return {"name": name, **portable_executable_observation(path)}
+
+        # Production executable trust is covered by the producer's root-host
+        # tests.  All producer helpers invoked below use this portable observer
+        # so that their output schema can be exercised under an unprivileged
+        # temporary root without weakening production code.
+        for producer_helper in (
+            "materialize_repository",
+            "native_toolchain_authority",
+            "build_execution_scope",
+        ):
+            cast(Callable[..., Any], producer[producer_helper]).__globals__[
+                "inspect_executable"
+            ] = portable_executable_observation
 
         def locked_copy(source: Path, destination: Path) -> dict[str, Any]:
             source_value = cast(
@@ -786,6 +835,8 @@ namespace["require_active_python_matches_reviewed_tools"](
             (checkpoint_bootstrap / name).chmod(0o755)
         fixture_tool_root = self.fixture.root / "checkpoint-tools"
         fixture_tool_root.mkdir(mode=0o700)
+        fixture_git_home = self.fixture.root / "git-home"
+        fixture_git_home.mkdir(mode=0o700)
         fixture_tools = {
             name: fixture_tool_root / name
             for name in (
@@ -793,6 +844,7 @@ namespace["require_active_python_matches_reviewed_tools"](
                 "emerge",
                 "emerge-implementation",
                 "gemato",
+                "git",
                 "gpep517",
                 "maturin",
                 "meson",
@@ -806,11 +858,19 @@ namespace["require_active_python_matches_reviewed_tools"](
             )
         }
         for name, tool_path in fixture_tools.items():
-            tool_path.write_text(
-                "#!/bin/sh\n"
-                f"printf '%s\\n' 'fixture {name} 1.0'\n",
-                encoding="utf-8",
-            )
+            if name == "git":
+                tool_path.write_text(
+                    "#!/bin/sh\n"
+                    f"export HOME={shlex.quote(os.fspath(fixture_git_home))}\n"
+                    f"exec {shlex.quote(os.fspath(self.fixture.git.resolve(strict=True)))} \"$@\"\n",
+                    encoding="utf-8",
+                )
+            else:
+                tool_path.write_text(
+                    "#!/bin/sh\n"
+                    f"printf '%s\\n' 'fixture {name} 1.0'\n",
+                    encoding="utf-8",
+                )
             tool_path.chmod(0o755)
 
         state_parent = self.fixture.root / "state/project"
@@ -1712,7 +1772,7 @@ namespace["require_active_python_matches_reviewed_tools"](
             "schema_version": 1,
             "ordered_exact_atoms": [f"={cpv}::gentoo"],
             "rows": plan_rows,
-            "rows_sha256": digest(canonical(plan_rows).encode()),
+            "rows_sha256": prerequisite_sha256(plan_rows),
         }
         pre_identity = identity(pre["canonical"])
         pre_phase_identity = identity(pre["terminal"])
@@ -1726,7 +1786,7 @@ namespace["require_active_python_matches_reviewed_tools"](
             "checkpoint_id": pre["id"],
             "status": "offline-restore-proven",
         }
-        git_path = Path(shutil.which("git") or "/usr/bin/git").resolve(strict=True)
+        git_path = fixture_tools["git"]
         cp_path = Path(shutil.which("cp") or "/usr/bin/cp").resolve(strict=True)
         tool_paths = {
             "cargo": fixture_tools["cargo"],
@@ -1751,7 +1811,7 @@ namespace["require_active_python_matches_reviewed_tools"](
         tools_authority = {
             "schema_version": 1,
             "rows": tool_rows,
-            "rows_sha256": digest(canonical(tool_rows).encode()),
+            "rows_sha256": prerequisite_sha256(tool_rows),
         }
 
         authority_parent = self.fixture.root / "prerequisite-authorities"
@@ -1868,14 +1928,14 @@ namespace["require_active_python_matches_reviewed_tools"](
             {
                 "path": os.fspath(python_root),
                 "manifest": python_manifest,
-                "manifest_sha256": digest(canonical(python_manifest).encode()),
+                "manifest_sha256": prerequisite_sha256(python_manifest),
             }
         ]
         python_modules = [
             {
                 "name": "fixture",
                 "roots": python_roots,
-                "roots_sha256": digest(canonical(python_roots).encode()),
+                "roots_sha256": prerequisite_sha256(python_roots),
             }
         ]
 
@@ -1966,7 +2026,7 @@ namespace["require_active_python_matches_reviewed_tools"](
         capacity = {
             "schema_version": 1,
             "rows": capacity_rows,
-            "rows_sha256": digest(canonical(capacity_rows).encode()),
+            "rows_sha256": prerequisite_sha256(capacity_rows),
         }
         preparation = {
             "schema": "gentoo-optimization-jsonschema-preparation-attempt-v1",
@@ -2015,7 +2075,7 @@ namespace["require_active_python_matches_reviewed_tools"](
         copies = {
             "schema_version": 1,
             "rows": copies_rows,
-            "rows_sha256": digest(canonical(copies_rows).encode()),
+            "rows_sha256": prerequisite_sha256(copies_rows),
         }
         var_lib_tree = producer_tree(live_var_lib)
         cache_without_counter = cast(
@@ -2066,7 +2126,7 @@ namespace["require_active_python_matches_reviewed_tools"](
         empty_scan_rows: list[dict[str, Any]] = []
         protected_roots = [
             live_vdb,
-            self.fixture.root / "vdb.lock",
+            live_vdb.parent / ".pkg.portage_lockfile",
             live_var_lib,
             live_cache_edb,
         ]
@@ -2074,7 +2134,7 @@ namespace["require_active_python_matches_reviewed_tools"](
             "schema_version": 1,
             "protected_roots": [os.fspath(path) for path in protected_roots],
             "rows": empty_scan_rows,
-            "rows_sha256": digest(canonical(empty_scan_rows).encode()),
+            "rows_sha256": prerequisite_sha256(empty_scan_rows),
         }
         locked_window = {
             "schema_version": 1,
@@ -2096,7 +2156,7 @@ namespace["require_active_python_matches_reviewed_tools"](
             "loader_directories": {
                 "schema_version": 1,
                 "rows": [],
-                "rows_sha256": digest(canonical([]).encode()),
+                "rows_sha256": prerequisite_sha256([]),
             },
             "effective_portage_policy": effective_policy,
             "native_toolchain": native_toolchain,
@@ -2115,7 +2175,7 @@ namespace["require_active_python_matches_reviewed_tools"](
         locked_path = state_parent / (
             f"jsonschema-prerequisite-{transaction_id}.locked-authority.json"
         )
-        locked_payload = canonical(locked_document).encode()
+        locked_payload = prerequisite_json(locked_document)
         locked_path.write_bytes(locked_payload)
         locked_path.chmod(0o600)
         locked_metadata = locked_path.lstat()
@@ -2173,7 +2233,7 @@ namespace["require_active_python_matches_reviewed_tools"](
         plan_metadata = {
             "schema_version": 1,
             "rows": plan_metadata_rows,
-            "rows_sha256": digest(canonical(plan_metadata_rows).encode()),
+            "rows_sha256": prerequisite_sha256(plan_metadata_rows),
         }
         build_version_rows = []
         tools_by_name = {
@@ -2206,14 +2266,13 @@ namespace["require_active_python_matches_reviewed_tools"](
         authority["build_tool_versions"] = {
             "schema_version": 1,
             "rows": build_version_rows,
-            "rows_sha256": digest(canonical(build_version_rows).encode()),
+            "rows_sha256": prerequisite_sha256(build_version_rows),
         }
         authority["build_execution_scope"] = producer["build_execution_scope"](
             plan_metadata, tool_paths
         )
-        private_path_map = {key: Path(value) for key, value in private_roots.items()}
-        source_mounts = namespace["prerequisite_mount_authority"](
-            authority, private_path_map
+        source_bindings = producer["authority_mount_bindings"](
+            authority, private_roots
         )
         plan_line = (plan_rows[0]["normalized_display"] + "\n").encode()
 
@@ -2228,18 +2287,16 @@ namespace["require_active_python_matches_reviewed_tools"](
             spec_path = transaction_report / f"{stage}.execution.json"
             stdout_path = transaction_report / f"{stage}.stdout"
             stderr_path = transaction_report / f"{stage}.stderr"
-            unsigned = {
-                "schema_version": 1,
-                "network_isolated": network_isolated,
-                "mounts": source_mounts,
-                "command": command,
-                "environment": environment,
-            }
-            spec = {
-                **unsigned,
-                "contract_sha256": digest(canonical(unsigned).encode()),
-            }
-            spec_payload = canonical(spec).encode()
+            spec = cast(
+                dict[str, Any],
+                producer["execution_spec"](
+                    bindings=source_bindings,
+                    command=command,
+                    environment=environment,
+                    network_isolated=network_isolated,
+                ),
+            )
+            spec_payload = prerequisite_json(spec)
             spec_path.write_bytes(spec_payload)
             stdout_path.write_bytes(stdout)
             stderr_path.write_bytes(b"")
@@ -2256,18 +2313,14 @@ namespace["require_active_python_matches_reviewed_tools"](
                 "stderr_sha256": digest(b""),
             }
 
-        emerge_options = cast(list[str], namespace["prerequisite_emerge_options"]())
+        emerge_options = cast(list[str], producer["emerge_options"]())
         offline_prepare_environment = cast(
             dict[str, str],
-            namespace["prerequisite_prepare_environment"](
-                private_path_map, offline=True
-            ),
+            producer["plan_environment"](private_roots, offline=True),
         )
         online_prepare_environment = cast(
             dict[str, str],
-            namespace["prerequisite_prepare_environment"](
-                private_path_map, offline=False
-            ),
+            producer["plan_environment"](private_roots, offline=False),
         )
         repository_vector = cast(
             list[dict[str, Any]], producer["repository_vector"]([repository_spec])
@@ -2368,7 +2421,7 @@ namespace["require_active_python_matches_reviewed_tools"](
                     "effective_portage_policy"
                 ],
                 "native_toolchain": locked_window["native_toolchain"],
-                "plan_metadata_sha256": digest(canonical(plan_metadata).encode()),
+                "plan_metadata_sha256": prerequisite_sha256(plan_metadata),
             },
             "plan_metadata": plan_metadata,
         }
@@ -2420,118 +2473,11 @@ namespace["require_active_python_matches_reviewed_tools"](
         prepared_path = state_parent / f"jsonschema-prerequisite-{transaction_id}.prepared.json"
         prepared_payload = write_pretty(prepared_path, prepared)
         source_spec_path = transaction_report / "source-emerge.execution.json"
-        private_path_map = {key: Path(value) for key, value in private_roots.items()}
-        source_environment = namespace["prerequisite_plan_environment"](
-            private_path_map
+        source_environment = producer["plan_environment"](
+            private_roots, offline=True
         )
-        source_mounts = [
-            {
-                "source": private_roots["etc"],
-                "target": private_roots["live_etc"],
-                "read_only": False,
-            },
-            {
-                "source": private_roots["etc"],
-                "target": private_roots["etc"],
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(repository_materialized),
-                "target": os.fspath(repository_materialized),
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(repository_materialized),
-                "target": os.fspath(repository_source),
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(config_materialized),
-                "target": os.fspath(config_materialized),
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(config_materialized),
-                "target": os.fspath(config_source),
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(global_config_materialized),
-                "target": os.fspath(global_config_materialized),
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(global_config_materialized),
-                "target": os.fspath(global_config_source),
-                "read_only": True,
-            },
-            {
-                "source": os.fspath(python_root),
-                "target": os.fspath(python_root),
-                "read_only": True,
-            },
-            {
-                "source": private_roots["distdir_authority"],
-                "target": private_roots["distdir_authority"],
-                "read_only": True,
-            },
-            {
-                "source": private_roots["live_cache_edb"],
-                "target": private_roots["live_cache_edb_view"],
-                "read_only": True,
-            },
-            {
-                "source": private_roots["var_lib_portage"],
-                "target": private_roots["live_var_lib_portage"],
-                "read_only": False,
-            },
-            {
-                "source": private_roots["var_lib_portage"],
-                "target": private_roots["var_lib_portage"],
-                "read_only": True,
-            },
-            {
-                "source": private_roots["cache_edb"],
-                "target": private_roots["live_cache_edb"],
-                "read_only": False,
-            },
-            {
-                "source": private_roots["cache_edb"],
-                "target": private_roots["cache_edb"],
-                "read_only": True,
-            },
-            {
-                "source": private_roots["thinlto_cache"],
-                "target": private_roots["live_thinlto_cache"],
-                "read_only": False,
-            },
-            {
-                "source": private_roots["thinlto_cache"],
-                "target": private_roots["thinlto_cache"],
-                "read_only": True,
-            },
-        ]
         source_control_session = "fixture-control-session"
-        source_emerge_options = [
-            "--ignore-default-opts",
-            "--verbose",
-            "--tree",
-            "--oneshot",
-            "--with-bdeps=y",
-            "--complete-graph=y",
-            "--autounmask=n",
-            "--autounmask-write=n",
-            "--buildpkg=y",
-            "--getbinpkg=n",
-            "--usepkg=n",
-            "--keep-going=n",
-            "--fail-clean=y",
-            "--noconfmem",
-            "--nospinner",
-            "--color=n",
-            "--jobs=1",
-            "--package-moves=n",
-        ]
+        source_emerge_options = emerge_options
         source_command = [
             os.fspath(python),
             "-I",
@@ -2548,18 +2494,16 @@ namespace["require_active_python_matches_reviewed_tools"](
             "--ask=y",
             *plan["ordered_exact_atoms"],
         ]
-        source_spec_unsigned = {
-            "schema_version": 1,
-            "network_isolated": True,
-            "mounts": source_mounts,
-            "command": source_command,
-            "environment": source_environment,
-        }
-        source_spec = {
-            **source_spec_unsigned,
-            "contract_sha256": digest(canonical(source_spec_unsigned).encode()),
-        }
-        source_spec_payload = canonical(source_spec).encode()
+        source_spec = cast(
+            dict[str, Any],
+            producer["execution_spec"](
+                bindings=source_bindings,
+                command=source_command,
+                environment=source_environment,
+                network_isolated=True,
+            ),
+        )
+        source_spec_payload = prerequisite_json(source_spec)
         source_spec_path.write_bytes(source_spec_payload)
         source_spec_path.chmod(0o600)
         child = {
@@ -2609,7 +2553,7 @@ namespace["require_active_python_matches_reviewed_tools"](
             "schema_version": 1,
             "root": os.fspath(mergeroot),
             "rows": payload_rows,
-            "rows_sha256": digest(canonical(payload_rows).encode()),
+            "rows_sha256": prerequisite_sha256(payload_rows),
         }
         destination_paths = ["/" + payload_relative]
         observation_names = [
@@ -2639,8 +2583,8 @@ namespace["require_active_python_matches_reviewed_tools"](
         preexisting_destinations.append(
             {"path": observation_names[-1], "type": "absent"}
         )
-        manifest_sha = digest(canonical(payload_manifest).encode())
-        preexisting_sha = digest(canonical(preexisting_destinations).encode())
+        manifest_sha = prerequisite_sha256(payload_manifest)
+        preexisting_sha = prerequisite_sha256(preexisting_destinations)
         payload_record = {
             "schema": "gentoo-optimization-jsonschema-payload-admission-v1",
             "transaction_id": transaction_id,
@@ -2735,7 +2679,7 @@ namespace["require_active_python_matches_reviewed_tools"](
             },
             "live_xattrs_before": [],
         }
-        counter_intent_payload = canonical(counter_intent).encode()
+        counter_intent_payload = prerequisite_json(counter_intent)
         counter_intent_path.write_bytes(counter_intent_payload)
         counter_intent_path.chmod(0o600)
         counter_completion_path = transaction_report / "counter-reconciliation-success.complete.json"
@@ -2749,7 +2693,7 @@ namespace["require_active_python_matches_reviewed_tools"](
             "after": 11,
             "live_observation": live_counter_observation,
         }
-        counter_completion_payload = canonical(counter_completion).encode()
+        counter_completion_payload = prerequisite_json(counter_completion)
         counter_completion_path.write_bytes(counter_completion_payload)
         counter_completion_path.chmod(0o600)
         counter_authority = {
@@ -2768,18 +2712,16 @@ namespace["require_active_python_matches_reviewed_tools"](
         }
         qcheck_stage = "source-success-qcheck-001"
         qcheck_spec_path = transaction_report / f"{qcheck_stage}.execution.json"
-        qcheck_spec_unsigned = {
-            "schema_version": 1,
-            "network_isolated": True,
-            "mounts": source_mounts,
-            "command": [os.fspath(fixture_tools["qcheck"]), f"={cpv}"],
-            "environment": source_environment,
-        }
-        qcheck_spec = {
-            **qcheck_spec_unsigned,
-            "contract_sha256": digest(canonical(qcheck_spec_unsigned).encode()),
-        }
-        qcheck_spec_payload = canonical(qcheck_spec).encode()
+        qcheck_spec = cast(
+            dict[str, Any],
+            producer["execution_spec"](
+                bindings=source_bindings,
+                command=[os.fspath(fixture_tools["qcheck"]), f"={cpv}"],
+                environment=source_environment,
+                network_isolated=True,
+            ),
+        )
+        qcheck_spec_payload = prerequisite_json(qcheck_spec)
         qcheck_spec_path.write_bytes(qcheck_spec_payload)
         qcheck_spec_path.chmod(0o600)
         qcheck_stdout_path = transaction_report / f"{qcheck_stage}.stdout"
@@ -2885,14 +2827,14 @@ namespace["require_active_python_matches_reviewed_tools"](
             "status": "pass",
             "issues": [],
         }
-        pkgdir_report_payload = canonical(pkgdir_report).encode()
+        pkgdir_report_payload = prerequisite_json(pkgdir_report)
         pkgdir_report_path.write_bytes(pkgdir_report_payload)
         pkgdir_report_path.chmod(0o600)
         payload_authority_value = {
             "schema_version": 1,
             "cpvs": [cpv],
             "payload_device": 123,
-            "payload_root_sha256": digest(canonical(payload_root_observation).encode()),
+            "payload_root_sha256": prerequisite_sha256(payload_root_observation),
             "per_cpv_paths": {cpv: destination_paths},
             "installed_rows": [
                 {
@@ -2902,12 +2844,12 @@ namespace["require_active_python_matches_reviewed_tools"](
             ],
             "contents_paths": destination_paths,
         }
-        payload_authority_value["rows_sha256"] = digest(
-            canonical(payload_authority_value).encode()
+        payload_authority_value["rows_sha256"] = prerequisite_sha256(
+            payload_authority_value
         )
         payload_authority = {
             "value": payload_authority_value,
-            "sha256": digest(canonical(payload_authority_value).encode()),
+            "sha256": prerequisite_sha256(payload_authority_value),
         }
         success_checks = {
             "qcheck": [qcheck_evidence],
@@ -2930,7 +2872,7 @@ namespace["require_active_python_matches_reviewed_tools"](
         }
         post_authority = {
             "value": post_value,
-            "sha256": digest(canonical(post_value).encode()),
+            "sha256": prerequisite_sha256(post_value),
         }
         completion = {
             "schema": "gentoo-optimization-jsonschema-child-completion-v1",
@@ -3038,10 +2980,10 @@ namespace["require_active_python_matches_reviewed_tools"](
             "checkpoint_builder": checkpoint,
         }
 
-    def test_automation_external_chain_is_semantically_bound(self) -> None:
-        fixture = self.automation_external_fixture()
-        namespace = fixture["namespace"]
-        namespace["validate_component_external_semantics"](
+    def validate_automation_external_fixture(
+        self, fixture: dict[str, Any]
+    ) -> None:
+        fixture["namespace"]["validate_component_external_semantics"](
             "automation",
             self.fixture.run_id,
             fixture["payloads"],
@@ -3051,6 +2993,21 @@ namespace["require_active_python_matches_reviewed_tools"](
             fixture["namespace"]["current_boot_id"](),
             False,
         )
+
+    def valid_automation_external_fixture(self) -> dict[str, Any]:
+        fixture = self.automation_external_fixture()
+        self.validate_automation_external_fixture(fixture)
+        return fixture
+
+    def assert_automation_external_fixture_rejected(
+        self, fixture: dict[str, Any], message: str
+    ) -> None:
+        with self.assertRaisesRegex(fixture["namespace"]["EvidenceError"], message):
+            self.validate_automation_external_fixture(fixture)
+
+    def test_automation_external_chain_is_semantically_bound(self) -> None:
+        fixture = self.valid_automation_external_fixture()
+        namespace = fixture["namespace"]
         core_log = self.fixture.evidence / "core.log"
         namespace["component_document"](
             {
@@ -3078,73 +3035,68 @@ namespace["require_active_python_matches_reviewed_tools"](
             False,
         )
 
-    def test_automation_external_chain_rejects_manifest_and_residue_tampering(self) -> None:
-        fixture = self.automation_external_fixture()
-        validate = fixture["namespace"]["validate_component_external_semantics"]
-        error_type = fixture["namespace"]["EvidenceError"]
+    def test_automation_external_chain_rejects_bootstrap_tree_tampering(self) -> None:
+        fixture = self.valid_automation_external_fixture()
         bad_bootstrap = json.loads(
             fixture["payloads"]["jsonschema-bootstrap-manifest"]
         )
-        bad_bootstrap["commit"] = "0" * 40
-        original_bootstrap = fixture["payloads"]["jsonschema-bootstrap-manifest"]
+        bad_bootstrap["tree"] = "0" * 40
         fixture["payloads"]["jsonschema-bootstrap-manifest"] = fixture[
             "namespace"
         ]["pretty_json"](bad_bootstrap)
-        with self.assertRaises(error_type):
-            validate(
-                "automation", self.fixture.run_id, fixture["payloads"], fixture["paths"],
-                self.fixture.evidence, fixture["repository"],
-                fixture["namespace"]["current_boot_id"](), False,
-            )
-        fixture["payloads"]["jsonschema-bootstrap-manifest"] = original_bootstrap
+        self.assert_automation_external_fixture_rejected(
+            fixture, "jsonschema bootstrap tree differs from its source commit"
+        )
 
+    def test_automation_external_chain_rejects_replaced_checkpoint_state(self) -> None:
+        fixture = self.valid_automation_external_fixture()
         pre_canonical = fixture["pre"]["canonical"]
         pre_canonical.unlink()
         pre_canonical.write_bytes(fixture["pre"]["terminal_payload"])
         pre_canonical.chmod(0o600)
-        with self.assertRaises(error_type):
-            validate(
-                "automation", self.fixture.run_id, fixture["payloads"], fixture["paths"],
-                self.fixture.evidence, fixture["repository"],
-                fixture["namespace"]["current_boot_id"](), False,
-            )
-        pre_canonical.unlink()
-        os.link(fixture["pre"]["terminal"], pre_canonical)
+        self.assert_automation_external_fixture_rejected(
+            fixture,
+            "pre checkpoint canonical and terminal states are not the exact hardlink pair",
+        )
 
+    def test_automation_external_chain_rejects_operator_tree_tampering(self) -> None:
+        fixture = self.valid_automation_external_fixture()
         operator_note = fixture["pre"]["operator_root"] / "checkpoint-note.txt"
-        original = operator_note.read_bytes()
         operator_note.write_bytes(b"tampered\n")
-        with self.assertRaises(error_type):
-            validate(
-                "automation", self.fixture.run_id, fixture["payloads"], fixture["paths"],
-                self.fixture.evidence, fixture["repository"],
-                fixture["namespace"]["current_boot_id"](), False,
-            )
-        operator_note.write_bytes(original)
+        self.assert_automation_external_fixture_rejected(
+            fixture,
+            "checkpoint operator-evidence tree differs from its complete manifest",
+        )
+
+    def test_automation_external_chain_rejects_selector_retargeting(self) -> None:
+        fixture = self.valid_automation_external_fixture()
         fixture["selector"].unlink()
         fixture["selector"].symlink_to(fixture["pre"]["durable"])
-        with self.assertRaises(error_type):
-            validate(
-                "automation", self.fixture.run_id, fixture["payloads"], fixture["paths"],
-                self.fixture.evidence, fixture["repository"],
-                fixture["namespace"]["current_boot_id"](), False,
-            )
-        fixture["selector"].unlink()
-        fixture["selector"].symlink_to(fixture["post"]["durable"])
+        self.assert_automation_external_fixture_rejected(
+            fixture, "post-checkpoint activated-selector identity changed"
+        )
 
+    def test_automation_external_chain_rejects_partial_receipt_residue(self) -> None:
+        fixture = self.valid_automation_external_fixture()
         partial = fixture["post"]["receipt"].with_name(
             fixture["post"]["receipt"].name + ".partial"
         )
         partial.write_text("partial\n", encoding="utf-8")
-        with self.assertRaises(error_type):
-            validate(
-                "automation", self.fixture.run_id, fixture["payloads"], fixture["paths"],
-                self.fixture.evidence, fixture["repository"],
-                fixture["namespace"]["current_boot_id"](), False,
-            )
+        self.assert_automation_external_fixture_rejected(
+            fixture, "post checkpoint partial remains visible"
+        )
 
     def test_automation_external_chain_rejects_cross_checkpoint_delta_mismatch(self) -> None:
-        fixture = self.automation_external_fixture()
+        fixture = self.valid_automation_external_fixture()
+        # Restore the exact pre-checkpoint selector inode from the valid post
+        # checkpoint's displaced witness.  The replacement checkpoint below
+        # can then vary only its declared delta while preserving every
+        # activation and witness identity required by the chain.
+        prior_post_witness = fixture["selector"].with_name(
+            f"{fixture['selector'].name}.previous-{fixture['post']['id']}"
+        )
+        fixture["selector"].unlink()
+        prior_post_witness.rename(fixture["selector"])
         mismatch = fixture["checkpoint_builder"](
             "post-mismatch",
             live_cpvs=11,
@@ -3161,8 +3113,6 @@ namespace["require_active_python_matches_reviewed_tools"](
                 ).encode(),
             },
         )
-        fixture["selector"].unlink()
-        fixture["selector"].symlink_to(mismatch["durable"])
         fixture["payloads"].update(
             {
                 "jsonschema-post-checkpoint-terminal-state": mismatch["terminal_payload"],
@@ -3177,12 +3127,9 @@ namespace["require_active_python_matches_reviewed_tools"](
                 "jsonschema-post-checkpoint-operator-manifest": mismatch["operator_manifest"],
             }
         )
-        with self.assertRaises(fixture["namespace"]["EvidenceError"]):
-            fixture["namespace"]["validate_component_external_semantics"](
-                "automation", self.fixture.run_id, fixture["payloads"], fixture["paths"],
-                self.fixture.evidence, fixture["repository"],
-                fixture["namespace"]["current_boot_id"](), False,
-            )
+        self.assert_automation_external_fixture_rejected(
+            fixture, "post-dependency checkpoint delta differs from the prerequisite plan"
+        )
 
     def test_capture_and_verify_bind_script_and_symlink_identity(self) -> None:
         self.fixture.run(check=True)

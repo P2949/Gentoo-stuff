@@ -54,6 +54,9 @@ PREREQUISITE_EXACT_ATOM_RE = re.compile(
     r"^=(?P<cpv>[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*)"
     r"::(?P<repository>[A-Za-z0-9][A-Za-z0-9+_.-]*)$"
 )
+PREREQUISITE_TRANSACTION_PATH = (
+    "/usr/bin:/usr/lib/llvm/22/bin:/bin:/usr/sbin:/sbin"
+)
 
 
 class EvidenceError(RuntimeError):
@@ -72,6 +75,12 @@ def canonical_json(value: object) -> bytes:
     return json.dumps(
         value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
     ).encode("utf-8")
+
+
+def prerequisite_canonical_json(value: object) -> bytes:
+    """Encode a prerequisite-producer digest value independently and exactly."""
+
+    return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def pretty_json(value: object) -> bytes:
@@ -2437,6 +2446,15 @@ def require_pretty_json_object(
     value = require_object(parse_json_bytes(payload, label), label, keys)
     if pretty_json(value) != payload:
         fail(f"{label} is not canonical pretty JSON")
+    return value
+
+
+def require_prerequisite_json_object(
+    payload: bytes, label: str, keys: set[str] | None = None
+) -> dict[str, Any]:
+    value = require_object(parse_json_bytes(payload, label), label, keys)
+    if prerequisite_canonical_json(value) != payload:
+        fail(f"{label} is not canonical prerequisite JSON")
     return value
 
 
@@ -5266,7 +5284,8 @@ def validate_payload_manifest(
     if (
         manifest.get("schema_version") != 1
         or manifest.get("root") != os.fspath(mergeroot)
-        or manifest.get("rows_sha256") != sha256(canonical_json(rows))
+        or manifest.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(rows))
     ):
         fail("jsonschema payload manifest is not canonically bound")
     paths: list[str] = []
@@ -5342,7 +5361,7 @@ def validate_payload_admission_record(
     private_tmpdir: Path,
     production: bool,
 ) -> dict[str, Any]:
-    record = require_pretty_json_object(
+    record = require_prerequisite_json_object(
         payload,
         f"jsonschema payload admission record {cpv}",
         {
@@ -5420,7 +5439,8 @@ def validate_payload_admission_record(
     )
     if (
         loader_directories.get("schema_version") != 1
-        or loader_directories.get("rows_sha256") != sha256(canonical_json(loader_rows))
+        or loader_directories.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(loader_rows))
     ):
         fail("jsonschema prepared loader-directory authority is not canonical")
     loader_roots: set[Path] = set()
@@ -5468,9 +5488,10 @@ def validate_payload_admission_record(
         or record.get("prepared_state_sha256") != prepared_sha256
         or record.get("control_session_sha256") != control_session_sha256
         or record.get("cpv") != cpv
-        or record.get("manifest_sha256") != sha256(canonical_json(manifest))
+        or record.get("manifest_sha256")
+        != sha256(prerequisite_canonical_json(manifest))
         or record.get("preexisting_destinations_sha256")
-        != sha256(canonical_json(observations))
+        != sha256(prerequisite_canonical_json(observations))
         or record.get("destination_paths") != destination_names
         or record.get("destination_paths_sha256")
         != sha256(("\n".join(destination_names) + "\n").encode())
@@ -5554,7 +5575,7 @@ def observe_prerequisite_tree_manifest(root: Path) -> dict[str, Any]:
             fail(f"prerequisite tree contains an unsupported object: {path}")
         rows.append(row)
     result = {"schema_version": 1, "root": os.fspath(root), "rows": rows}
-    result["rows_sha256"] = sha256(canonical_json(rows))
+    result["rows_sha256"] = sha256(prerequisite_canonical_json(rows))
     return result
 
 
@@ -5573,7 +5594,8 @@ def validate_prerequisite_tree_manifest(
     if (
         manifest.get("schema_version") != 1
         or manifest.get("root") != os.fspath(root)
-        or manifest.get("rows_sha256") != sha256(canonical_json(rows))
+        or manifest.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(rows))
     ):
         fail(f"{label} is not canonically bound")
     observed_paths: list[str] = []
@@ -5649,8 +5671,8 @@ def validate_prerequisite_manifest_reference(
         expected_path=expected_path,
     )
     manifest = require_object(parse_json_bytes(payload, label), label)
-    if canonical_json(manifest) != payload:
-        fail(f"{label} is not canonical compact JSON")
+    if prerequisite_canonical_json(manifest) != payload:
+        fail(f"{label} is not canonical prerequisite JSON")
     validate_prerequisite_tree_manifest(
         manifest,
         root=root,
@@ -5698,7 +5720,9 @@ def validate_prerequisite_file_observation(
             production=production,
             verify_current=verify_current,
         )
-        if observation.get("tree_sha256") != sha256(canonical_json(tree)):
+        if observation.get("tree_sha256") != sha256(
+            prerequisite_canonical_json(tree)
+        ):
             fail(f"{label} tree digest differs")
     else:
         validated = validate_prerequisite_object_observation(
@@ -5792,7 +5816,9 @@ def validate_prerequisite_vdb_authority(
             production=production,
             verify_current=False,
         )
-        if package.get("tree_sha256") != sha256(canonical_json(package_tree)):
+        if package.get("tree_sha256") != sha256(
+            prerequisite_canonical_json(package_tree)
+        ):
             fail(f"jsonschema prepared VDB package digest differs: {cpv}")
         observed_cpvs.append(cpv)
         counters.append(counter)
@@ -5800,10 +5826,12 @@ def validate_prerequisite_vdb_authority(
         vdb.get("schema_version") != 2
         or cpvs != sorted(set(cpvs))
         or observed_cpvs != cpvs
-        or vdb.get("complete_tree_sha256") != sha256(canonical_json(complete_tree))
+        or vdb.get("complete_tree_sha256")
+        != sha256(prerequisite_canonical_json(complete_tree))
         or vdb.get("cpvs_sha256")
         != sha256(("\n".join(cpvs) + "\n").encode("utf-8"))
-        or vdb.get("packages_sha256") != sha256(canonical_json(packages))
+        or vdb.get("packages_sha256")
+        != sha256(prerequisite_canonical_json(packages))
         or vdb.get("maximum_installed_counter") != max(counters)
     ):
         fail("jsonschema prepared VDB authority is not canonically bound")
@@ -5867,7 +5895,7 @@ def validate_prerequisite_selected_sets_authority(
         selected["var_lib_portage"].get("rows_sha256")
         != current_var_tree.get("rows_sha256")
         or selected["cache_edb_without_counter"].get("rows_sha256")
-        != sha256(canonical_json(current_cache_rows))
+        != sha256(prerequisite_canonical_json(current_cache_rows))
     ):
         fail("jsonschema selected Portage tree authority changed")
     expected_paths = {
@@ -5945,14 +5973,15 @@ def validate_prerequisite_loader_authority(
         if (
             child_paths != sorted(set(child_paths), key=os.fspath)
             or row.get("immediate_children_sha256")
-            != sha256(canonical_json(children))
+            != sha256(prerequisite_canonical_json(children))
         ):
             fail(f"jsonschema loader-directory child vector differs: {path}")
         paths.append(path)
     if (
         authority.get("schema_version") != 1
         or paths != sorted(set(paths), key=os.fspath)
-        or authority.get("rows_sha256") != sha256(canonical_json(rows))
+        or authority.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(rows))
     ):
         fail("jsonschema loader-directory authority is not canonical")
     return authority
@@ -6057,10 +6086,10 @@ def validate_prerequisite_native_toolchain(
         variables.append(variable)
     if (
         authority.get("schema_version") != 1
-        or authority.get("execution_path")
-        != "/usr/lib/llvm/22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        or authority.get("execution_path") != PREREQUISITE_TRANSACTION_PATH
         or variables != expected_variables
-        or authority.get("rows_sha256") != sha256(canonical_json(rows))
+        or authority.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(rows))
     ):
         fail("jsonschema native toolchain vector is not exact")
     return authority
@@ -6088,7 +6117,7 @@ def validate_prerequisite_process_exclusion(
         "schema_version": 1,
         "protected_roots": expected_roots,
         "rows": [],
-        "rows_sha256": sha256(canonical_json([])),
+        "rows_sha256": sha256(prerequisite_canonical_json([])),
     }
     if any(process.get(key) != expected_scan for key in process):
         fail("jsonschema process-exclusion windows are not exact empty scans")
@@ -6138,8 +6167,8 @@ def validate_locked_prerequisite_authority(
         "jsonschema locked authority",
         {"schema", "transaction_id", "initial_locked_window"},
     )
-    if canonical_json(document) != payload:
-        fail("jsonschema locked authority is not canonical compact JSON")
+    if prerequisite_canonical_json(document) != payload:
+        fail("jsonschema locked authority is not canonical prerequisite JSON")
     window = require_object(
         document.get("initial_locked_window"),
         "jsonschema initial locked window",
@@ -6241,10 +6270,13 @@ def validate_locked_prerequisite_authority(
         or type(mtimedb.get("resume_present")) is not bool
         or mtimedb.get("resume_present") != ("resume" in mtimedb_value)
         or mtimedb.get("stable") != stable
-        or mtimedb.get("stable_sha256") != sha256(canonical_json(stable))
+        or mtimedb.get("stable_sha256")
+        != sha256(prerequisite_canonical_json(stable))
         or mtimedb.get("resume_backup") != mtimedb_value.get("resume_backup")
         or mtimedb.get("resume_backup_sha256")
-        != sha256(canonical_json(mtimedb_value.get("resume_backup")))
+        != sha256(
+            prerequisite_canonical_json(mtimedb_value.get("resume_backup"))
+        )
     ):
         fail("jsonschema prepared mtimedb authority differs")
     cache_root = Path(str(selected["cache_edb_without_counter"]["root"]["path"]))
@@ -6306,7 +6338,9 @@ def validate_locked_prerequisite_authority(
             production=production,
             verify_current=copy_name != "cache_edb",
         )
-        if copy_row.get("tree_sha256") != sha256(canonical_json(tree)):
+        if copy_row.get("tree_sha256") != sha256(
+            prerequisite_canonical_json(tree)
+        ):
             fail(f"jsonschema locked {copy_name} tree digest differs")
         if copy_name == "var_lib_portage" and (
             source_root != selected["var_lib_portage"]["root"]
@@ -6320,7 +6354,8 @@ def validate_locked_prerequisite_authority(
             fail("jsonschema locked cache-EDB root differs from selected sets")
     if (
         copies.get("schema_version") != 1
-        or copies.get("rows_sha256") != sha256(canonical_json(copy_rows))
+        or copies.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(copy_rows))
     ):
         fail("jsonschema locked private-authority copies are not canonical")
     loader = validate_prerequisite_loader_authority(
@@ -6370,7 +6405,7 @@ def prerequisite_plan_environment(private_roots: dict[str, Path]) -> dict[str, s
         "LC_ALL": "C",
         "LOGNAME": "root",
         "NOCOLOR": "1",
-        "PATH": "/usr/lib/llvm/22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PATH": PREREQUISITE_TRANSACTION_PATH,
         "PKGDIR": os.fspath(private_roots["pkgdir"]),
         "PORTAGE_BINHOST": "",
         "PORTAGE_ELOG_SYSTEM": "echo",
@@ -6419,7 +6454,7 @@ def prerequisite_prepare_environment(
         "LC_ALL": "C",
         "LOGNAME": "root",
         "NOCOLOR": "1",
-        "PATH": "/usr/lib/llvm/22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PATH": PREREQUISITE_TRANSACTION_PATH,
         "PKGDIR": os.fspath(private_roots["pkgdir"]),
         "PORTAGE_BINHOST": "",
         "PORTAGE_ELOG_SYSTEM": "echo",
@@ -6600,11 +6635,11 @@ def validate_prerequisite_execution_spec(
             "contract_sha256",
         },
     )
-    if canonical_json(spec) != payload:
-        fail("jsonschema source execution spec is not canonical compact JSON")
+    if prerequisite_canonical_json(spec) != payload:
+        fail("jsonschema source execution spec is not canonical prerequisite JSON")
     unsigned = dict(spec)
     contract_digest = unsigned.pop("contract_sha256")
-    if contract_digest != sha256(canonical_json(unsigned)):
+    if contract_digest != sha256(prerequisite_canonical_json(unsigned)):
         fail("jsonschema source execution spec contract digest differs")
     expected_environment = prerequisite_plan_environment(private_roots)
     if spec.get("schema_version") != 1 or spec.get("network_isolated") is not True:
@@ -6754,10 +6789,10 @@ def validate_prerequisite_stage_evidence(
             unsigned = dict(spec)
             contract_sha = unsigned.pop("contract_sha256")
             if (
-                canonical_json(spec) != evidence_payload
+                prerequisite_canonical_json(spec) != evidence_payload
                 or spec.get("schema_version") != 1
                 or spec.get("network_isolated") is not True
-                or contract_sha != sha256(canonical_json(unsigned))
+                or contract_sha != sha256(prerequisite_canonical_json(unsigned))
                 or spec.get("command") != expected_command
                 or spec.get("environment") != expected_environment
                 or spec.get("mounts") != expected_mounts
@@ -6873,8 +6908,11 @@ def validate_prerequisite_counter_authority(
             "live_observation",
         },
     )
-    if canonical_json(intent) != intent_payload or canonical_json(completion) != completion_payload:
-        fail("jsonschema counter evidence is not canonical compact JSON")
+    if (
+        prerequisite_canonical_json(intent) != intent_payload
+        or prerequisite_canonical_json(completion) != completion_payload
+    ):
+        fail("jsonschema counter evidence is not canonical prerequisite JSON")
     if (
         intent.get("schema") != "gentoo-optimization-jsonschema-counter-intent-v1"
         or intent.get("transaction_id") != transaction_id
@@ -6951,8 +6989,8 @@ def validate_prerequisite_pkgdir_report(
         "jsonschema private PKGDIR report",
         {"archives", "counts", "coverage", "inputs", "issues", "schema_version", "status"},
     )
-    if canonical_json(report) != payload:
-        fail("jsonschema private PKGDIR report is not canonical compact JSON")
+    if prerequisite_canonical_json(report) != payload:
+        fail("jsonschema private PKGDIR report is not canonical prerequisite JSON")
     counts = require_object(
         report.get("counts"),
         "jsonschema private PKGDIR counts",
@@ -7198,7 +7236,8 @@ def validate_prerequisite_directory_authority(
     )
     if (
         current_resolved != resolved
-        or row.get("manifest_sha256") != sha256(canonical_json(manifest))
+        or row.get("manifest_sha256")
+        != sha256(prerequisite_canonical_json(manifest))
     ):
         fail(f"{label} directory authority differs")
     return row
@@ -7282,7 +7321,9 @@ def validate_prerequisite_python_modules(
         roots = require_list(
             module.get("roots"), f"jsonschema Python module {name} roots", nonempty=True
         )
-        if module.get("roots_sha256") != sha256(canonical_json(roots)):
+        if module.get("roots_sha256") != sha256(
+            prerequisite_canonical_json(roots)
+        ):
             fail(f"jsonschema Python module {name} roots are not canonically bound")
         root_paths: list[str] = []
         for raw_root in roots:
@@ -7298,7 +7339,9 @@ def validate_prerequisite_python_modules(
                 label=f"jsonschema Python module {name} manifest",
                 production=production,
             )
-            if root.get("manifest_sha256") != sha256(canonical_json(manifest)):
+            if root.get("manifest_sha256") != sha256(
+                prerequisite_canonical_json(manifest)
+            ):
                 fail(f"jsonschema Python module {name} manifest digest differs")
             root_paths.append(os.fspath(path))
         if root_paths != sorted(set(root_paths)):
@@ -7422,7 +7465,8 @@ def validate_prerequisite_capacity(
         observed_devices.append(device)
     if (
         capacity.get("schema_version") != 1
-        or capacity.get("rows_sha256") != sha256(canonical_json(rows))
+        or capacity.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(rows))
         or observed_devices != sorted(set(observed_devices))
         or observed_targets != expected_targets
     ):
@@ -7484,7 +7528,8 @@ def validate_prerequisite_build_tool_versions(
         names.append(name)
     if (
         authority.get("schema_version") != 1
-        or authority.get("rows_sha256") != sha256(canonical_json(rows))
+        or authority.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(rows))
         or names != sorted(PREREQUISITE_BUILD_VERSION_ARGUMENTS)
     ):
         fail("jsonschema build-tool version vector is not exact")
@@ -7543,7 +7588,7 @@ def validate_prerequisite_build_execution_scope(
         "derived_from_inherited_eclasses": inherited,
         "declared_pep517_backends": backends,
         "reviewed_tools": reviewed,
-        "reviewed_tools_sha256": sha256(canonical_json(reviewed)),
+        "reviewed_tools_sha256": sha256(prerequisite_canonical_json(reviewed)),
         "scope": (
             "explicit coordinator and eclass-derived build tools; arbitrary ebuild "
             "commands remain authorized only by the complete frozen repository, "
@@ -7601,21 +7646,25 @@ def validate_prerequisite_private_authorities(
                 "schema_version": 1,
                 "root": os.fspath(private_roots[key]),
                 "rows": [],
-                "rows_sha256": sha256(canonical_json([])),
+                "rows_sha256": sha256(prerequisite_canonical_json([])),
             }
-            if row_count != 0 or row.get("manifest_sha256") != sha256(canonical_json(empty_manifest)):
+            if row_count != 0 or row.get("manifest_sha256") != sha256(
+                prerequisite_canonical_json(empty_manifest)
+            ):
                 fail(f"jsonschema private-root baseline {key} was not empty")
         elif key in {"var_lib_portage", "cache_edb", "etc"}:
             copy_row = require_object(copies.get(key), f"jsonschema locked copy {key}")
             tree = require_object(copy_row.get("tree"), f"jsonschema locked copy {key} tree")
             if (
                 row_count != len(require_list(tree.get("rows"), f"jsonschema locked copy {key} rows"))
-                or row.get("manifest_sha256") != sha256(canonical_json(tree))
+                or row.get("manifest_sha256")
+                != sha256(prerequisite_canonical_json(tree))
             ):
                 fail(f"jsonschema private-root baseline {key} differs from the locked copy")
     if (
         baseline.get("schema_version") != 1
-        or baseline.get("rows_sha256") != sha256(canonical_json(rows))
+        or baseline.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(rows))
     ):
         fail("jsonschema private-root baseline is not canonically bound")
 
@@ -7764,7 +7813,7 @@ def validate_prerequisite_repository_authorities(
                 "LANG": "C",
                 "LC_ALL": "C",
                 "LOGNAME": "root",
-                "PATH": "/usr/lib/llvm/22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "PATH": PREREQUISITE_TRANSACTION_PATH,
                 "SHELL": "/bin/bash",
                 "TZ": "UTC",
                 "USER": "root",
@@ -7874,7 +7923,7 @@ def validate_prerequisite_repository_authorities(
                     effective_rows.append(manifest_row)
             if (
                 git.get("effective_tree_rows_sha256")
-                != sha256(canonical_json(effective_rows))
+                != sha256(prerequisite_canonical_json(effective_rows))
             ):
                 fail(f"jsonschema repository {name} effective tree digest differs")
             materialization = require_object(
@@ -7970,7 +8019,7 @@ def validate_prerequisite_repository_authorities(
                 ):
                     fail(f"jsonschema repository {name} materialization row differs")
             if materialization.get("rows_sha256") != sha256(
-                canonical_json(materialization_rows)
+                prerequisite_canonical_json(materialization_rows)
             ):
                 fail(f"jsonschema repository {name} materialization digest differs")
         elif variant == "local":
@@ -8135,10 +8184,10 @@ def validate_prerequisite_stage_authority(
     unsigned = dict(spec)
     contract_sha = unsigned.pop("contract_sha256")
     if (
-        canonical_json(spec) != payloads["spec"]
+        prerequisite_canonical_json(spec) != payloads["spec"]
         or spec.get("schema_version") != 1
         or spec.get("network_isolated") is not network_isolated
-        or contract_sha != sha256(canonical_json(unsigned))
+        or contract_sha != sha256(prerequisite_canonical_json(unsigned))
         or spec.get("mounts") != mounts
         or spec.get("command") != command
         or spec.get("environment") != environment
@@ -8232,7 +8281,9 @@ def validate_prerequisite_success_state(
         "unknown_total",
         "failed_total",
     }
-    state = require_pretty_json_object(payload, "jsonschema prerequisite success state", state_keys)
+    state = require_prerequisite_json_object(
+        payload, "jsonschema prerequisite success state", state_keys
+    )
     if (
         state.get("schema") != "gentoo-optimization-jsonschema-prerequisite-v1"
         or state.get("transaction_id") != transaction_id
@@ -8246,10 +8297,10 @@ def validate_prerequisite_success_state(
     armed_payload, _armed_stat = read_regular(
         armed_path, "jsonschema prerequisite armed state"
     )
-    prepared = require_pretty_json_object(
+    prepared = require_prerequisite_json_object(
         prepared_payload, "jsonschema prerequisite prepared state", state_keys
     )
-    armed = require_pretty_json_object(
+    armed = require_prerequisite_json_object(
         armed_payload, "jsonschema prerequisite armed state", state_keys
     )
     for phase_path, phase_name in (
@@ -8477,7 +8528,7 @@ def validate_prerequisite_success_state(
         expected_path=path.parent
         / f"jsonschema-prerequisite-{transaction_id}.preparation-attempt.json",
     )
-    preparation = require_pretty_json_object(
+    preparation = require_prerequisite_json_object(
         preparation_payload,
         "jsonschema preparation attempt",
         {
@@ -8542,9 +8593,11 @@ def validate_prerequisite_success_state(
         or final_window.get("effective_portage_policy")
         != locked_window.get("effective_portage_policy")
         or final_window.get("native_toolchain") != locked_window.get("native_toolchain")
-        or final_window.get("plan_metadata_sha256") != sha256(canonical_json(plan_metadata))
+        or final_window.get("plan_metadata_sha256")
+        != sha256(prerequisite_canonical_json(plan_metadata))
         or plan_metadata.get("schema_version") != 1
-        or plan_metadata.get("rows_sha256") != sha256(canonical_json(plan_metadata_rows))
+        or plan_metadata.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(plan_metadata_rows))
     ):
         fail("jsonschema final locked window is not bound to its immutable authority")
     tools = require_object(
@@ -8555,7 +8608,8 @@ def validate_prerequisite_success_state(
     tool_rows = require_list(tools.get("rows"), "jsonschema prerequisite tool rows", nonempty=True)
     if (
         tools.get("schema_version") != 1
-        or tools.get("rows_sha256") != sha256(canonical_json(tool_rows))
+        or tools.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(tool_rows))
     ):
         fail("jsonschema prerequisite tool manifest is not canonically bound")
     tools_by_name: dict[str, dict[str, Any]] = {}
@@ -8686,7 +8740,8 @@ def validate_prerequisite_success_state(
         or cpvs != sorted(set(cpvs))
         or len(ordered_atoms) != len(set(ordered_atoms))
         or set(ordered_atoms) != set(exact_atoms)
-        or plan.get("rows_sha256") != sha256(canonical_json(rows))
+        or plan.get("rows_sha256")
+        != sha256(prerequisite_canonical_json(rows))
     ):
         fail("jsonschema prerequisite plan is not canonical and exact")
     if displayed_plan != plan:
@@ -8845,7 +8900,8 @@ def validate_prerequisite_success_state(
     }
     if (
         set(post_value) != required_post_keys
-        or post_authority.get("sha256") != sha256(canonical_json(post_value))
+        or post_authority.get("sha256")
+        != sha256(prerequisite_canonical_json(post_value))
         or post_value.get("outcome") != "success"
         or post_value.get("vdb") != delta
         or any(
@@ -8917,7 +8973,7 @@ def validate_prerequisite_success_state(
     )
     if completion_path != report / "child-completion.json":
         fail("jsonschema prerequisite child completion is outside its report")
-    completion = require_pretty_json_object(
+    completion = require_prerequisite_json_object(
         completion_payload,
         "jsonschema prerequisite child completion",
         {
@@ -9062,7 +9118,9 @@ def validate_prerequisite_success_state(
     payload_authority_value = require_object(
         payload_authority.get("value"), "jsonschema installed payload authority value"
     )
-    if payload_authority.get("sha256") != sha256(canonical_json(payload_authority_value)):
+    if payload_authority.get("sha256") != sha256(
+        prerequisite_canonical_json(payload_authority_value)
+    ):
         fail("jsonschema installed payload authority is not canonically bound")
     admissions = require_list(
         completion["payload_admissions"],
@@ -9162,7 +9220,11 @@ def validate_prerequisite_success_state(
         or payload_authority_value.get("payload_device")
         != admission_records[0].get("payload_device")
         or payload_authority_value.get("payload_root_sha256")
-        != sha256(canonical_json(admission_records[0]["payload_root_observation"]))
+        != sha256(
+            prerequisite_canonical_json(
+                admission_records[0]["payload_root_observation"]
+            )
+        )
         or payload_authority_value.get("per_cpv_paths") != expected_per_cpv_paths
         or [row.get("path") for row in payload_rows] != expected_payload_paths
         or any(
@@ -9180,7 +9242,7 @@ def validate_prerequisite_success_state(
         or not set(payload_contents).issubset(set(expected_payload_paths))
         or payload_authority_value.get("rows_sha256")
         != sha256(
-            canonical_json(
+            prerequisite_canonical_json(
                 {
                     key: value
                     for key, value in payload_authority_value.items()
