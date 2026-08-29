@@ -326,6 +326,7 @@ find_transaction_debris() {
         "${BASE}|.framework-activation-expected.*"
         "${BASE}|framework-activation.pending.partial.*"
         "${BASE}|.candidate-inventory-check.*"
+        "${BASE}|.tmpfiles-semantic-probe.*"
         "${BASE}|.framework-check-manifest.*"
     )
     TRANSACTION_DEBRIS=
@@ -452,7 +453,39 @@ printf '%s\n' '..' '../../../../../features/llvm' >"${PROFILE}/parent"
 mkdir -p -- "${TARGET}/usr/bin"
 cp -- "$(command -v jq)" "${TARGET}/usr/bin/jq"
 chmod 0755 -- "${TARGET}/usr/bin/jq"
-cp -- "$(command -v systemd-tmpfiles)" "${TARGET}/usr/bin/systemd-tmpfiles"
+TMPFILES_REAL=${FIXTURE_TOOL_DIRECTORY}/systemd-tmpfiles.real
+TMPFILES_CALL_LOG=${WORK}/systemd-tmpfiles.calls
+TMPFILES_FAILURE_MARKER=${WORK}/systemd-tmpfiles.force-failure
+install -m 0700 -T -- "$(command -v systemd-tmpfiles)" "${TMPFILES_REAL}"
+{
+    printf '#!/bin/bash\nset -Eeuo pipefail\n'
+    printf 'readonly TMPFILES_REAL=%q\n' "${TMPFILES_REAL}"
+    printf 'readonly TMPFILES_CALL_LOG=%q\n' "${TMPFILES_CALL_LOG}"
+    printf 'readonly TMPFILES_FAILURE_MARKER=%q\n' "${TMPFILES_FAILURE_MARKER}"
+    cat <<'EOF'
+{
+    printf 'CALL'
+    printf '\t%s' "$@"
+    printf '\n'
+} >>"${TMPFILES_CALL_LOG}"
+create=0
+for argument in "$@"; do
+    if [[ ${argument} == --dry-run ]]; then
+        printf 'fixture pre-256 interface rejects --dry-run\n' >&2
+        exit 64
+    fi
+    [[ ${argument} == --create ]] && create=1
+done
+if ((create)) && [[ -e ${TMPFILES_FAILURE_MARKER} ]]; then
+    printf 'fixture pre-256 semantic-create failure\n' >&2
+    printf -v padding '%*s' 5000 ''
+    printf '%s\n' "${padding// /x}" >&2
+    printf 'fixture tmpfiles stderr tail must not be retained\n' >&2
+    exit 73
+fi
+exec "${TMPFILES_REAL}" "$@"
+EOF
+} >"${TARGET}/usr/bin/systemd-tmpfiles"
 chmod 0755 -- "${TARGET}/usr/bin/systemd-tmpfiles"
 mkdir -p -- "${TARGET}/etc/init.d" "${TARGET}/etc/runlevels/boot"
 printf '#!/bin/sh\nexec systemd-tmpfiles --create --remove --boot --exclude-prefix=/dev\n' \
@@ -855,6 +888,52 @@ grep -Fq 'PASS: root-owned Phase 2 framework check verified' "${LOG}" || \
 run_installer --check >"${LOG}" 2>&1 || { sed -n '1,260p' "${LOG}" >&2; fail 'strict check failed'; }
 [[ ! -e ${GIT_HELPER_MARKER} ]] || fail 'installer executed repository-local Git helper'
 git -C "${REPOSITORY}" config --unset core.fsmonitor
+
+# Model the pre-systemd-256 command interface for the complete fixture. The
+# wrapper rejects --dry-run even when the host tool is newer, while forwarding
+# the long-supported private-root creation operation. Retain the real tool's
+# first version line so portable CI identifies the implementation it exercised.
+TMPFILES_VERSION_OUTPUT=$("${TARGET}/usr/bin/systemd-tmpfiles" --version)
+TMPFILES_VERSION_FIRST_LINE=${TMPFILES_VERSION_OUTPUT%%$'\n'*}
+[[ -n ${TMPFILES_VERSION_FIRST_LINE} ]] || \
+    fail 'systemd-tmpfiles returned an empty version identity'
+printf 'INFO: framework-installer tmpfiles capability: version=%s interface=pre-256-no-dry-run\n' \
+    "${TMPFILES_VERSION_FIRST_LINE}"
+grep -Eq $'^CALL\t--root=[^\t]+\t--create\tgentoo-optimization\.conf$' \
+    "${TMPFILES_CALL_LOG}" || \
+    fail 'installer did not exercise the reviewed pre-256 tmpfiles interface'
+if grep -Fq $'\t--dry-run' "${TMPFILES_CALL_LOG}"; then
+    fail 'installer invoked unsupported systemd-tmpfiles --dry-run'
+fi
+
+# A failing external-tool check must retain enough bounded evidence to
+# distinguish an interface/tool failure from an invalid tmpfiles rule.
+: >"${TMPFILES_FAILURE_MARKER}"
+expect_failure 'systemd-tmpfiles isolated runtime-lock semantic probe failed' \
+    run_installer --check
+grep -Fq "tmpfiles_tool=${TARGET}/usr/bin/systemd-tmpfiles" "${LOG}" || \
+    fail 'tmpfiles failure diagnostic omits the exact tool'
+grep -Fq 'tmpfiles_argv=' "${LOG}" || \
+    fail 'tmpfiles failure diagnostic omits argv'
+grep -Fq ' --create gentoo-optimization.conf' "${LOG}" || \
+    fail 'tmpfiles failure diagnostic omits the semantic-create operation'
+grep -Fq 'tmpfiles_status=73' "${LOG}" || \
+    fail 'tmpfiles failure diagnostic omits the child status'
+grep -Fq 'tmpfiles_version_status=0' "${LOG}" || \
+    fail 'tmpfiles failure diagnostic omits version status'
+grep -Fq "${TMPFILES_VERSION_FIRST_LINE}" "${LOG}" || \
+    fail 'tmpfiles failure diagnostic omits the tool version'
+grep -Fq 'fixture pre-256 semantic-create failure' "${LOG}" || \
+    fail 'tmpfiles failure diagnostic omits bounded stderr'
+grep -Fq 'tmpfiles_stderr_truncated=true' "${LOG}" || \
+    fail 'tmpfiles failure diagnostic does not mark bounded stderr truncation'
+if grep -Fq 'fixture tmpfiles stderr tail must not be retained' "${LOG}"; then
+    fail 'tmpfiles failure diagnostic retained stderr beyond its bound'
+fi
+rm -f -- "${TMPFILES_FAILURE_MARKER}"
+assert_no_transaction_debris
+run_installer --check >/dev/null || \
+    fail 'tmpfiles diagnostic failure poisoned the following strict check'
 
 # A pending production profile-lock transaction is accepted only when the real
 # coordinator has armed the exact installer locks, published its durable child
@@ -1624,8 +1703,8 @@ done
 # Independently exercise the reviewed tmpfiles types, paths, and modes.  A
 # non-root portable run substitutes only the owner/group tokens because Linux
 # does not permit an unprivileged process to issue even a same-UID chown; the
-# exact root:portage bytes were already dry-run parsed through the installed
-# stable symlink by every installer check above.
+# exact root:portage bytes and isolated creation semantics were already checked
+# through the installed stable symlink by every installer check above.
 TMPFILES_SEMANTIC_ROOT=${WORK}/tmpfiles-semantic-root
 mkdir -p -- "${TMPFILES_SEMANTIC_ROOT}/etc/tmpfiles.d"
 sed 's/ root portage / - - /' \

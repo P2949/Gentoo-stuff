@@ -10,7 +10,7 @@
 - **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-08-09 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This unchanged observation is live progress evidence, not the frozen Phase 3 inventory, and must be recomputed immediately before the first live mutation.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-08-29; Candidate-A repository-boundary stabilization is in progress. The complete rejected-predecessor sequence and exact workflow evidence are recorded below and in `docs/commit-history-map.md`. Most recently, commits `9dd5960958c397216dd4c60b6212658f10015dca`, `ea191dce00f19db8ea0dda20ded85ab594d40db3`, `0f91f5ab68d7917206e79d4cb688b3a93ab5f182`, and `6462859e207b3545d9b699c242250022ad8c9f26` were tested by exact GitHub Actions runs `32601934693`, `33104209384`, `33170596519`, and `33188537276`; every run stopped at the static authoritative-contract preflight before `portable-complete`. Those CI runs prove stale test topology only. Defects found by separate direct review are attributed independently below. Commit `6462859e207b3545d9b699c242250022ad8c9f26` fixes the prerequisite producer/verifier serialization mismatch, the non-portable root-trust fixture, and non-discriminating negative evidence tests, but remains rejected and non-authorizing because its exact contract and portable CI boundary are red. Its pre-correction discovery baseline is 34 exact top-level cases, 59 Bash sources, 44 evidence tests, 323 main Python tests, one dedicated stress test, and 79 recovery tests. No live mutation, Candidate-A acceptance, Phase 2 authorization, optimization generation, or frozen inventory resulted. Any successor remains non-authorizing pending a coherent exact contract, fresh clean portable and CI boundary, and the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-08-29; Candidate-A repository-boundary stabilization is in progress. The complete rejected-predecessor sequence and exact workflow evidence are recorded below and in `docs/commit-history-map.md`. Commits `9dd5960958c397216dd4c60b6212658f10015dca`, `ea191dce00f19db8ea0dda20ded85ab594d40db3`, `0f91f5ab68d7917206e79d4cb688b3a93ab5f182`, and `6462859e207b3545d9b699c242250022ad8c9f26` were tested by exact GitHub Actions runs `32601934693`, `33104209384`, `33170596519`, and `33188537276`; each stopped at the static authoritative-contract preflight before `portable-complete`, so those four CI runs prove stale test topology only. Defects found by separate direct review are attributed independently below. Successor `274c50d2208dea9a86f0ff4e7293c7cee5df5603` binds the reviewed 34 exact top-level, 59 Bash, 44 evidence, 323 main-Python, one stress, and 79 recovery identities. Exact run `33249132657` passed that static contract and exercised essentially the complete portable boundary: 79 top-level passes, one failure, and 13 reviewed skips; 517 required-subtest passes, one failure, and 26 reviewed skips; and one diagnostic skip. Its sole functional failure was `framework-installer`, because the installer unconditionally invoked `systemd-tmpfiles --dry-run` on Ubuntu 24.04's systemd 255, where that option is unavailable. The final ledger-contract failure correctly propagated the required installer failure and is not renewed topology drift. Commit `274c50d2208dea9a86f0ff4e7293c7cee5df5603` is therefore rejected and non-authorizing. The current branch-head correction replaces that newer-option dependency with a private-root real-create proof, exact inode verification, bounded failure diagnostics, and a fixture-enforced pre-256 interface; the complete focused installer fixture, pinned ShellCheck 0.11.0, Bash syntax, and deterministic contract checks pass directly, while the complete portable and exact-SHA CI reruns remain pending. No live mutation, Candidate-A acceptance, Phase 2 authorization, optimization generation, or frozen inventory resulted. Any successor remains non-authorizing pending a coherent exact contract, fresh clean portable and CI boundary, and the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -1323,8 +1323,8 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   JSON encodings, the portable automation fixture invoked production
   root-trust validation on `/tmp` executables, and negative chain tests could
   pass while their untouched base fixture was already invalid.
-- Commit `6462859e207b3545d9b699c242250022ad8c9f26` is the latest
-  rejected, non-authorizing predecessor. It independently matches the
+- Commit `6462859e207b3545d9b699c242250022ad8c9f26` is a rejected,
+  non-authorizing predecessor. It independently matches the
   prerequisite producer's indented, sorted, newline-terminated digest
   serialization in the verifier, uses a fixture-local executable observation
   without weakening production root trust, and makes each chain-tamper test
@@ -1336,12 +1336,11 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   `portable-complete`. Its deterministic pre-correction discovery baseline is
   34 exact top-level cases, 59 Bash sources, 44 evidence tests, 323 main
   Python tests, one dedicated stress test, and 79 recovery tests. The final
-  reviewed contract must also include `no-legacy-bolt` and the four exact
-  `jsonschema` prerequisite authoritative-host methods as permitted required
-  skips in portable mode; authoritative mode must execute them and remains a
-  zero-required-skip boundary. Regenerate the contract only after the bounded
-  correction topology is final, inspect its complete diff, and require exact
-  deterministic reproduction.
+  successor contract therefore had to include `no-legacy-bolt` and the four
+  exact `jsonschema` prerequisite authoritative-host methods as permitted
+  required skips in portable mode; authoritative mode must execute them and
+  remains a zero-required-skip boundary. The bounded correction inspected the
+  complete contract diff and required exact deterministic reproduction.
 - The first pinned ShellCheck 0.11.0 run after that contract correction exposed
   only missing `SC2016` annotations for the intentionally literal `${ED}` text
   in the four fail-closed legacy BOLT stubs and their exact-content regression.
@@ -1353,6 +1352,39 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   its intended exact mode explicitly; the focused method and all 105
   prerequisite tests pass under the driver umask with only the four reviewed
   authoritative-host skips. Production mode validation remains unchanged.
+- Commit `274c50d2208dea9a86f0ff4e7293c7cee5df5603` is the latest
+  rejected, non-authorizing predecessor. It brought the tracked contract into
+  exact agreement with 34 top-level cases, 59 Bash sources, 44 evidence tests,
+  323 main Python tests, one dedicated stress test, and 79 recovery tests; it
+  also admitted the four exact portable-only prerequisite host skips and
+  retained their mandatory execution in authoritative mode.
+- Exact GitHub Actions run `33249132657` passed the static authoritative
+  contract and then exercised `portable-complete`. It recorded 79 top-level
+  passes, one functional failure, and 13 reviewed skips; its required subtests
+  recorded 517 passes, one failure, and 26 reviewed skips, plus one diagnostic
+  skip. All 323 main Python tests, 79 recovery tests, 44 evidence tests,
+  ShellCheck, PGO/BOLT policy and transaction fixtures, and both legacy-lane
+  retirement checks passed. The sole functional failure was
+  `framework-installer`.
+- The installer failure is a compatibility defect, not a renewed test-contract
+  mismatch or evidence that the installed tmpfiles rule is semantically
+  invalid. The installer unconditionally used `systemd-tmpfiles --dry-run`,
+  while the Ubuntu 24.04 runner provides systemd 255 without that option. The
+  final `FAIL: exact portable-complete test topology/identity contract` row
+  correctly propagated the required installer failure from the result ledger;
+  deterministic static discovery had already passed. The bounded successor
+  removes mandatory dependence on that newer option. It copies the exact
+  validated rule into a disposable private root, substitutes only portable
+  ownership tokens after exact-byte validation, keeps literal `root:portage`
+  semantics in production, and verifies the resulting directory and three
+  regular single-link empty lock files by exact ownership and mode. Transient
+  tool output is file-size-limited; a failure retains the exact tool, argv,
+  status, version status and at most 4096 bytes per stream. The existing
+  installer fixture now rejects every `--dry-run` call, forwards the pre-256
+  `--root --create` interface, and proves overlong stderr is truncated without
+  its tail. The complete focused fixture, Bash syntax, pinned ShellCheck 0.11.0,
+  and deterministic contract check pass directly; the exact complete portable
+  and CI boundaries remain pending.
 - This additive review preserves the Phase 2 scope freeze and changes no
   checkbox. All four Section 11.4 live sample-profile claims and all three
   Section 11.7 acceptance/authorization claims remain open. Both prerequisite

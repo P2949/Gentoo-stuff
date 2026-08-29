@@ -297,6 +297,7 @@ SNAPSHOT=
 SOURCE_CONTRACT_TEMP=
 METADATA_AUDIT_TEMP=
 CANDIDATE_INVENTORY_TEMP=
+TMPFILES_SEMANTIC_PROBE_ROOT=
 RAW_HEAD_OID_LENGTH=
 EXPECTED_CHECK_MANIFEST=
 CANDIDATE_STAGE=
@@ -651,6 +652,116 @@ verify_tmpfiles_boot_prerequisites() {
         fail 'systemd-tmpfiles-setup boot link has the wrong owner'
 }
 
+emit_bounded_tmpfiles_diagnostic() {
+    local label=$1 path=$2 bytes payload=
+    bytes=$(stat -c %s -- "${path}")
+    IFS= read -r -N 4096 payload <"${path}" || true
+    printf 'tmpfiles_%s_bytes=%s\n' "${label}" "${bytes}" >&2
+    printf 'tmpfiles_%s_begin\n' "${label}" >&2
+    printf '%s' "${payload}" >&2
+    [[ ${payload} == *$'\n' || -z ${payload} ]] || printf '\n' >&2
+    if ((bytes > 4096)); then
+        printf 'tmpfiles_%s_truncated=true\n' "${label}" >&2
+    fi
+    printf 'tmpfiles_%s_end\n' "${label}" >&2
+}
+
+report_tmpfiles_semantic_failure() {
+    local status=$1 stdout_path=$2 stderr_path=$3 version_status
+    shift 3
+    local -a command=("$@")
+    local version_path=${TMPFILES_SEMANTIC_PROBE_ROOT}/tmpfiles.version
+    if (ulimit -f 128 || {
+            printf 'cannot apply tmpfiles diagnostic capture bound\n' >&2
+            exit 125
+        }
+        exec "${TMPFILES_TOOL}" --version) \
+        >"${version_path}" 2>&1; then
+        version_status=0
+    else
+        version_status=$?
+    fi
+    printf 'tmpfiles_tool=%s\n' "${TMPFILES_TOOL}" >&2
+    printf 'tmpfiles_argv=' >&2
+    printf ' %q' "${command[@]}" >&2
+    printf '\n' >&2
+    printf 'tmpfiles_status=%s\n' "${status}" >&2
+    printf 'tmpfiles_version_status=%s\n' "${version_status}" >&2
+    emit_bounded_tmpfiles_diagnostic version "${version_path}"
+    emit_bounded_tmpfiles_diagnostic stdout "${stdout_path}"
+    emit_bounded_tmpfiles_diagnostic stderr "${stderr_path}"
+}
+
+verify_tmpfiles_rule_semantics() {
+    local candidate_rule=$1 status expected_gid lock
+    local config stdout_path stderr_path
+    local -a command
+    TMPFILES_SEMANTIC_PROBE_ROOT=$(mktemp -d \
+        "${BASE}/.tmpfiles-semantic-probe.XXXXXXXX")
+    config=${TMPFILES_SEMANTIC_PROBE_ROOT}/etc/tmpfiles.d/gentoo-optimization.conf
+    stdout_path=${TMPFILES_SEMANTIC_PROBE_ROOT}/tmpfiles.stdout
+    stderr_path=${TMPFILES_SEMANTIC_PROBE_ROOT}/tmpfiles.stderr
+    mkdir -p -- "${config%/*}"
+    if [[ -n ${TEST_ROOT} ]]; then
+        # Exact root:portage bytes were validated above. An unprivileged
+        # process cannot issue even a same-UID chown, so the portable semantic
+        # probe substitutes only the ownership tokens inside its private root.
+        sed 's/ root portage / - - /' "${candidate_rule}" >"${config}"
+        chmod 0644 -- "${config}"
+        expected_gid=${EXPECTED_GID}
+    else
+        install -m 0644 -T -- "${candidate_rule}" "${config}"
+        printf 'root:x:%s:%s:root:/root:/bin/sh\n' \
+            "${EXPECTED_UID}" "${EXPECTED_GID}" \
+            >"${TMPFILES_SEMANTIC_PROBE_ROOT}/etc/passwd"
+        printf 'root:x:%s:\nportage:x:%s:\n' \
+            "${EXPECTED_GID}" "${PORTAGE_GID}" \
+            >"${TMPFILES_SEMANTIC_PROBE_ROOT}/etc/group"
+        chmod 0644 -- "${TMPFILES_SEMANTIC_PROBE_ROOT}/etc/passwd" \
+            "${TMPFILES_SEMANTIC_PROBE_ROOT}/etc/group"
+        expected_gid=${PORTAGE_GID}
+    fi
+    command=(
+        "${TMPFILES_TOOL}"
+        "--root=${TMPFILES_SEMANTIC_PROBE_ROOT}"
+        --create
+        gentoo-optimization.conf
+    )
+    # Keep transient capture bounded even if a broken implementation is noisy;
+    # the retained diagnostic below is independently capped at 4096 bytes.
+    if (ulimit -f 128 || {
+            printf 'cannot apply tmpfiles diagnostic capture bound\n' >&2
+            exit 125
+        }
+        exec "${command[@]}") \
+        >"${stdout_path}" 2>"${stderr_path}"; then
+        status=0
+    else
+        status=$?
+    fi
+    if ((status != 0)); then
+        report_tmpfiles_semantic_failure "${status}" "${stdout_path}" \
+            "${stderr_path}" "${command[@]}"
+        fail 'systemd-tmpfiles isolated runtime-lock semantic probe failed'
+        return 1
+    fi
+    [[ -d ${TMPFILES_SEMANTIC_PROBE_ROOT}/run/gentoo-optimization && \
+       ! -L ${TMPFILES_SEMANTIC_PROBE_ROOT}/run/gentoo-optimization && \
+       $(stat -c '%u:%g:%a' -- \
+           "${TMPFILES_SEMANTIC_PROBE_ROOT}/run/gentoo-optimization") == \
+           "${EXPECTED_UID}:${expected_gid}:750" ]] || \
+        fail 'systemd-tmpfiles semantic probe created the wrong lock directory'
+    for lock in framework-install project generation; do
+        lock=${TMPFILES_SEMANTIC_PROBE_ROOT}/run/gentoo-optimization/${lock}.lock
+        [[ -f ${lock} && ! -L ${lock} && \
+           $(stat -c '%u:%g:%a:%h:%s' -- "${lock}") == \
+               "${EXPECTED_UID}:${expected_gid}:640:1:0" ]] || \
+            fail "systemd-tmpfiles semantic probe created an unsafe lock: ${lock}"
+    done
+    rm -rf -- "${TMPFILES_SEMANTIC_PROBE_ROOT}"
+    TMPFILES_SEMANTIC_PROBE_ROOT=
+}
+
 verify_runtime_root() {
     verify_directory "${RUNTIME_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
 }
@@ -668,15 +779,7 @@ verify_installed_tmpfiles_rule() {
         fail 'runtime-lock tmpfiles rule symlink has the wrong owner'
     candidate_rule=${FRAMEWORK_CURRENT}/share/tmpfiles/gentoo-optimization.conf
     verify_tmpfiles_rule_content "${candidate_rule}"
-    if [[ -n ${TEST_ROOT} ]]; then
-        "${TMPFILES_TOOL}" --root="${TEST_ROOT}" --create --dry-run \
-            gentoo-optimization.conf >/dev/null 2>&1 || \
-            fail 'systemd-tmpfiles rejected the installed runtime-lock rule in dry-run mode'
-    else
-        "${TMPFILES_TOOL}" --create --dry-run "${TMPFILES_RULE}" \
-            >/dev/null 2>&1 || \
-            fail 'systemd-tmpfiles rejected the installed runtime-lock rule in dry-run mode'
-    fi
+    verify_tmpfiles_rule_semantics "${candidate_rule}"
 }
 
 verify_profile_transaction_authorization() {
@@ -2472,6 +2575,7 @@ cleanup_stale_publication_debris() {
         "${BASE}/.source-git-contract.*"
         "${BASE}/.extended-metadata-audit.*"
         "${BASE}/.candidate-inventory-check.*"
+        "${BASE}/.tmpfiles-semantic-probe.*"
         "${BASE}/.framework-check-manifest.*"
         "${BASE}/.framework-rollback.*"
         "${BASE}/.helper-bootstrap-check.*"
@@ -2505,6 +2609,7 @@ verify_no_stale_publication_debris() {
         "${BASE}/.source-git-contract.*"
         "${BASE}/.extended-metadata-audit.*"
         "${BASE}/.candidate-inventory-check.*"
+        "${BASE}/.tmpfiles-semantic-probe.*"
         "${BASE}/.framework-check-manifest.*"
         "${BASE}/.framework-rollback.*"
         "${BASE}/.helper-bootstrap-check.*"
@@ -2563,6 +2668,8 @@ cleanup() {
         rm -f -- "${METADATA_AUDIT_TEMP}" "${METADATA_AUDIT_TEMP}.stderr"
     [[ -n ${CANDIDATE_INVENTORY_TEMP} ]] && \
         rm -f -- "${CANDIDATE_INVENTORY_TEMP}"
+    [[ -n ${TMPFILES_SEMANTIC_PROBE_ROOT} ]] && \
+        rm -rf -- "${TMPFILES_SEMANTIC_PROBE_ROOT}"
     [[ -n ${CANDIDATE_STAGE} ]] && rm -rf -- "${CANDIDATE_STAGE}"
     [[ -n ${EXPECTED_MANIFEST:-} ]] && rm -f -- "${EXPECTED_MANIFEST}"
     [[ -n ${EXPECTED_CHECK_MANIFEST} ]] && rm -f -- "${EXPECTED_CHECK_MANIFEST}"
