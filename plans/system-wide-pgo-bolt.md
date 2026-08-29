@@ -10,7 +10,7 @@
 - **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-08-09 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This unchanged observation is live progress evidence, not the frozen Phase 3 inventory, and must be recomputed immediately before the first live mutation.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-08-29; Candidate-A repository-boundary stabilization is in progress. The complete rejected-predecessor sequence and exact workflow evidence are recorded below and in `docs/commit-history-map.md`. Commits `9dd5960958c397216dd4c60b6212658f10015dca`, `ea191dce00f19db8ea0dda20ded85ab594d40db3`, `0f91f5ab68d7917206e79d4cb688b3a93ab5f182`, and `6462859e207b3545d9b699c242250022ad8c9f26` were tested by exact GitHub Actions runs `32601934693`, `33104209384`, `33170596519`, and `33188537276`; each stopped at the static authoritative-contract preflight before `portable-complete`, so those four CI runs prove stale test topology only. Defects found by separate direct review are attributed independently below. Successor `274c50d2208dea9a86f0ff4e7293c7cee5df5603` binds the reviewed 34 exact top-level, 59 Bash, 44 evidence, 323 main-Python, one stress, and 79 recovery identities. Exact run `33249132657` passed that static contract and exercised essentially the complete portable boundary: 79 top-level passes, one failure, and 13 reviewed skips; 517 required-subtest passes, one failure, and 26 reviewed skips; and one diagnostic skip. Its sole functional failure was `framework-installer`, because the installer unconditionally invoked `systemd-tmpfiles --dry-run` on Ubuntu 24.04's systemd 255, where that option is unavailable. The final ledger-contract failure correctly propagated the required installer failure and is not renewed topology drift. Commit `274c50d2208dea9a86f0ff4e7293c7cee5df5603` is therefore rejected and non-authorizing. The current branch-head correction replaces that newer-option dependency with a private-root real-create proof, exact inode verification, bounded failure diagnostics, and a fixture-enforced pre-256 interface; the complete focused installer fixture, pinned ShellCheck 0.11.0, Bash syntax, and deterministic contract checks pass directly, while the complete portable and exact-SHA CI reruns remain pending. No live mutation, Candidate-A acceptance, Phase 2 authorization, optimization generation, or frozen inventory resulted. Any successor remains non-authorizing pending a coherent exact contract, fresh clean portable and CI boundary, and the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-08-29; Candidate-A repository-boundary stabilization is in progress. The complete rejected-predecessor sequence and exact workflow evidence are recorded below and in `docs/commit-history-map.md`. Commits `9dd5960958c397216dd4c60b6212658f10015dca`, `ea191dce00f19db8ea0dda20ded85ab594d40db3`, `0f91f5ab68d7917206e79d4cb688b3a93ab5f182`, and `6462859e207b3545d9b699c242250022ad8c9f26` were tested by exact GitHub Actions runs `32601934693`, `33104209384`, `33170596519`, and `33188537276`; each stopped at the static authoritative-contract preflight before `portable-complete`, so those four CI runs prove stale test topology only. Defects found by separate direct review are attributed independently below. Successor `274c50d2208dea9a86f0ff4e7293c7cee5df5603` binds the reviewed 34 exact top-level, 59 Bash, 44 evidence, 323 main-Python, one stress, and 79 recovery identities. Exact run `33249132657` passed that static contract and exercised essentially the complete portable boundary: 79 top-level passes, one failure, and 13 reviewed skips; 517 required-subtest passes, one failure, and 26 reviewed skips; and one diagnostic skip. Its sole functional failure was `framework-installer`, because the installer unconditionally invoked `systemd-tmpfiles --dry-run` on Ubuntu 24.04's systemd 255, where that option is unavailable. Commit `dfa61d38b4c0486112789e3fc28aa6379449b154` corrected that tmpfiles boundary. Exact run `33267217547` passed the static contract and recorded 79 top-level passes, one failure, and 13 reviewed skips; 518 required-subtest passes, one failure, and 26 reviewed skips; and one diagnostic skip. Its sole functional failure was again `framework-installer`, now because portable generated-policy validation unconditionally attempted the unavailable Gentoo Portage atom parser and rejected `=app-misc/example-1` before the intended assignment-only diagnostic. The final ledger-contract failure correctly propagated that required failure and is not renewed topology drift. Commit `dfa61d38b4c0486112789e3fc28aa6379449b154` is therefore rejected and non-authorizing. Separate direct review also found a non-version-strict frozen-inventory CPV predicate, incompatible bootstrap/semantic-authority `owned_directories` schemas, generated atom syntax wider than the documented canonical plain `=CPV` form, and a double-escaped jq control-byte predicate that rejected ordinary nonempty paths containing `u`. The current working tree contains one bounded generated-policy/frozen-inventory correction: portable independent exact-CPV validation, separate production Portage-parser diagnostics, canonical plain `=CPV` atoms, strict versioned inventory CPVs, semantic-authority-compatible directory records and control-byte handling, and narrow fixture coverage. Its complete exact clean portable and exact-SHA CI boundaries remain pending. No live mutation, Candidate-A acceptance, Phase 2 authorization, optimization generation, or frozen inventory resulted. Any successor remains non-authorizing pending a coherent exact contract, fresh clean portable and CI boundary, and the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -1352,7 +1352,7 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   its intended exact mode explicitly; the focused method and all 105
   prerequisite tests pass under the driver umask with only the four reviewed
   authoritative-host skips. Production mode validation remains unchanged.
-- Commit `274c50d2208dea9a86f0ff4e7293c7cee5df5603` is the latest
+- Commit `274c50d2208dea9a86f0ff4e7293c7cee5df5603` is an earlier
   rejected, non-authorizing predecessor. It brought the tracked contract into
   exact agreement with 34 top-level cases, 59 Bash sources, 44 evidence tests,
   323 main Python tests, one dedicated stress test, and 79 recovery tests; it
@@ -1383,8 +1383,35 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   installer fixture now rejects every `--dry-run` call, forwards the pre-256
   `--root --create` interface, and proves overlong stderr is truncated without
   its tail. The complete focused fixture, Bash syntax, pinned ShellCheck 0.11.0,
-  and deterministic contract check pass directly; the exact complete portable
-  and CI boundaries remain pending.
+  and deterministic contract check passed directly before commit
+  `dfa61d38b4c0486112789e3fc28aa6379449b154`.
+- Commit `dfa61d38b4c0486112789e3fc28aa6379449b154` is the latest rejected,
+  non-authorizing predecessor. Exact GitHub Actions run `33267217547` passed
+  the static authoritative contract and exercised `portable-complete`: 79
+  top-level cases passed, one failed, and 13 produced reviewed skips; required
+  subtests recorded 518 passes, one failure, and 26 reviewed skips, plus one
+  diagnostic skip. The systemd-255/pre-256 tmpfiles proof passed. All 323 main
+  Python tests, 79 recovery tests, 44 evidence tests, ShellCheck, PGO/BOLT
+  policy and transaction fixtures, and both legacy-lane retirement checks
+  passed. The sole functional failure was `framework-installer`.
+- That failure is in the generated-policy boundary, not the repaired tmpfiles
+  boundary and not the authoritative test topology. Portable validation
+  unconditionally attempted `portage.dep.Atom`; Ubuntu lacks that Gentoo
+  module, so the fixture's valid `=app-misc/example-1` atom was reported as
+  invalid before the intended `generated environment is not assignment-only`
+  rejection. The final ledger-contract row only propagated this required
+  failure. Separate direct review also found that the bootstrap inventory CPV
+  predicate admits unversioned CPs, its `owned_directories` shape conflicts
+  with the semantic authority in `state.py`, and generated atom syntax is wider
+  than the documented canonical plain `=CPV` form.
+- The current working tree correction remains bounded to that coherent
+  interface: independent portable exact-versioned-CPV validation; distinct
+  production Portage-parser availability and invalid-atom diagnostics;
+  canonical unqualified `=CPV` generated atoms and CPV-keyed duplicate checks;
+  strict frozen-inventory CPVs; semantic-authority-compatible nonempty
+  `owned_directories`; corrected jq control-byte path handling; and narrow
+  positive and rejection fixtures. Its exact
+  clean portable and exact-SHA CI boundaries remain pending.
 - This additive review preserves the Phase 2 scope freeze and changes no
   checkbox. All four Section 11.4 live sample-profile claims and all three
   Section 11.7 acceptance/authorization claims remain open. Both prerequisite

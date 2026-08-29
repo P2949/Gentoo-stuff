@@ -1242,24 +1242,52 @@ snapshot_frozen_inventory() {
     before=$(sha256sum -- "${FROZEN_INVENTORY_INPUT}"); before=${before%% *}
     # Validate this data inside the already trusted bootstrap process.  Do not
     # execute a Python helper copied from the mutable source checkout before
-    # publication.  This filter mirrors the strict state inventory contract:
-    # exact keys, ordered unique packages/paths, exact CPVs/hashes, canonical
-    # absolute paths, valid owners, and disjoint file/directory namespaces.
+    # publication.  This filter independently mirrors the semantic state
+    # inventory authority and adds the publisher's safe-ID/nonempty-package
+    # requirements: exact keys, ordered unique packages/paths, exact
+    # CPVs/hashes, complete terminal directory records, canonical absolute
+    # paths, valid owners, and disjoint file/directory namespaces.
     # shellcheck disable=SC2016 # jq variables are intentionally single-quoted.
     validation_json=$("${JQ_PATH}" -ce --arg inventory_sha256 "${before}" '
         def safe_id:
             type == "string" and test("^[A-Za-z0-9+_.:@-]+$");
         def exact_cpv:
             type == "string" and
-            test("^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$");
+            test("^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*(?:-r[0-9]+)?$");
         def sha256:
             type == "string" and test("^[0-9a-f]{64}$");
+        def nonempty_string:
+            type == "string" and length > 0 and (contains("\u0000") | not);
+        def nonnegative_integer:
+            type == "number" and . >= 0 and floor == .;
         def canonical_absolute:
             type == "string" and startswith("/") and . != "/" and
-            (test("[\\u0000-\\u001f]") | not) and
+            (test("[\u0000-\u001f]") | not) and
             (contains("//") | not) and
             (test("/(?:[.]{1,2})(?:/|$)") | not) and
             (endswith("/") | not);
+        def evidence_kind:
+            . == "binary" or . == "binpkg" or . == "command-output" or
+            . == "config" or . == "log" or . == "manifest" or
+            . == "profile" or . == "report" or . == "sidecar" or
+            . == "source" or . == "transaction" or . == "other";
+        def terminal_evidence:
+            keys == ["kind", "path", "sha256"] and
+            (.path | canonical_absolute) and (.sha256 | sha256) and
+            (.kind | evidence_kind);
+        def directory_resolution:
+            keys == ["evidence", "reason_code", "registry_version",
+                     "reviewed_at", "reviewed_by"] and
+            .registry_version == "1" and
+            .reason_code == "not-machine-code" and
+            (.reviewed_by | nonempty_string) and
+            (.reviewed_at | type == "string" and
+                test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
+            (.evidence | type == "array" and length > 0) and
+            all(.evidence[]; terminal_evidence) and
+            ([.evidence[] | [.path, .sha256, .kind]] as $evidence |
+                $evidence == ($evidence | sort) and
+                ($evidence | length) == ($evidence | unique | length));
         if (
         keys == ["generation_id", "inventory_id", "owned_directories",
                  "owned_paths", "packages", "record_type", "schema_version"] and
@@ -1272,14 +1300,26 @@ snapshot_frozen_inventory() {
         ([.packages[].cpv] as $cpvs |
             $cpvs == ($cpvs | sort) and
             ($cpvs | length) == ($cpvs | unique | length) and
-            all(.owned_paths[], .owned_directories[];
+            (.owned_paths | type == "array") and
+            all(.owned_paths[];
                 . as $entry |
                 keys == ["owner_cpv", "path"] and
                 (.owner_cpv | exact_cpv) and
                 (.path | canonical_absolute) and
+                ($cpvs | index($entry.owner_cpv)) != null) and
+            (.owned_directories | type == "array") and
+            all(.owned_directories[];
+                . as $entry |
+                keys == ["classification", "gid", "mode", "owner_cpv",
+                         "path", "resolution", "uid"] and
+                (.owner_cpv | exact_cpv) and
+                (.path | canonical_absolute) and
+                (.mode | nonnegative_integer and . <= 4095) and
+                (.uid | nonnegative_integer) and
+                (.gid | nonnegative_integer) and
+                .classification == "not-applicable" and
+                (.resolution | directory_resolution) and
                 ($cpvs | index($entry.owner_cpv)) != null)) and
-        (.owned_paths | type == "array") and
-        (.owned_directories | type == "array") and
         ([.owned_paths[] | [.owner_cpv, .path]] as $paths |
          [.owned_directories[] | [.owner_cpv, .path]] as $directories |
             $paths == ($paths | sort) and
@@ -1329,9 +1369,86 @@ snapshot_frozen_inventory() {
     FROZEN_INVENTORY_SHA256=${before}
 }
 
+validate_production_generated_atom() {
+    local atom=$1 status match
+    # Portable validation above is deliberately independent of Gentoo Python
+    # modules.  Production adds Portage's parser and live-universe authority,
+    # with distinct diagnostics for an unavailable parser and a rejected atom.
+    if /usr/bin/python3 -I -B - "${atom}" <<'PY' >/dev/null 2>&1
+import sys
+
+try:
+    from portage.dep import Atom
+    from portage.exception import InvalidAtom
+except ImportError:
+    raise SystemExit(69)
+except Exception:
+    raise SystemExit(70)
+
+try:
+    parsed = Atom(
+        sys.argv[1],
+        allow_wildcard=False,
+        allow_repo=False,
+        allow_build_id=False,
+    )
+    if (
+        str(parsed) != sys.argv[1]
+        or parsed.operator != "="
+        or str(parsed.cpv) != sys.argv[1][1:]
+        or parsed.slot is not None
+        or parsed.repo is not None
+        or parsed.use is not None
+        or parsed.blocker
+        or parsed.build_id is not None
+    ):
+        raise SystemExit(65)
+except InvalidAtom:
+    raise SystemExit(65)
+except Exception:
+    raise SystemExit(70)
+PY
+    then
+        status=0
+    else
+        status=$?
+    fi
+    case ${status} in
+        0) ;;
+        65)
+            fail "generated package.env atom is rejected by Portage: ${atom}"
+            return 1
+            ;;
+        69)
+            fail "Portage Atom parser is unavailable for generated policy: ${atom}"
+            return 1
+            ;;
+        70)
+            fail "Portage Atom parser failed unexpectedly for generated policy: ${atom}"
+            return 1
+            ;;
+        *)
+            fail "Portage Atom parser failed for generated policy with status ${status}: ${atom}"
+            return 1
+            ;;
+    esac
+    if match=$(/usr/bin/portageq match / "${atom}" 2>/dev/null); then
+        status=0
+    else
+        status=$?
+    fi
+    ((status == 0)) || {
+        fail "Portage live atom match failed with status ${status}: ${atom}"
+        return 1
+    }
+    [[ -n ${match} ]] || \
+        fail "generated package.env atom does not match the live installed universe: ${atom}"
+}
+
 validate_generated_policy_grammar() {
     local source=$1 line atom environment extra basename file variable value cpv
-    local atom_re='^[A-Za-z0-9+_.~=@<>,*:-]+/[A-Za-z0-9+_.~=@<>,*:-]+$'
+    local safe_atom_re='^[A-Za-z0-9+_.~=@<>,*:-]+/[A-Za-z0-9+_.~=@<>,*:-]+$'
+    local canonical_atom_re='^=([A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*(-r[0-9]+)?)$'
     local -A pairs=() referenced=() files=() variables=()
     local -a top_entries=()
     mapfile -t top_entries < <(
@@ -1345,30 +1462,22 @@ validate_generated_policy_grammar() {
         IFS=$' \t' read -r atom environment extra <<<"${line}"
         [[ -n ${atom} && -n ${environment} && -z ${extra} ]] || \
             fail "generated package.env line is not exactly ATOM ENVIRONMENT: ${line}"
-        [[ ${atom} =~ ${atom_re} ]] || \
+        [[ ${atom} =~ ${safe_atom_re} ]] || \
             fail "generated package.env atom contains unsafe syntax: ${atom}"
-        [[ ${atom} == =* && ${atom} != *'*'* ]] || \
-            fail "generated package.env atom is not an exact CPV: ${atom}"
-        /usr/bin/python3 -I - "${atom}" <<'PY' >/dev/null 2>&1 || \
-            fail "generated package.env atom is invalid: ${atom}"
-import sys
-from portage.dep import Atom
-Atom(sys.argv[1])
-PY
-        cpv=${atom#=}
-        cpv=${cpv%%:*}
+        [[ ${atom} =~ ${canonical_atom_re} ]] || \
+            fail "generated package.env atom is not canonical =CPV: ${atom}"
+        cpv=${BASH_REMATCH[1]}
         [[ -n ${FROZEN_CPVS["${cpv}"]+x} ]] || \
             fail "generated package.env atom is absent from the frozen inventory: ${atom}"
         if [[ -z ${TEST_ROOT} ]]; then
-            [[ -n $(portageq match / "${atom}" 2>/dev/null) ]] || \
-                fail "generated package.env atom does not match the live installed universe: ${atom}"
+            validate_production_generated_atom "${atom}"
         fi
         [[ ${environment} =~ ^optimization/generated/([A-Za-z0-9][A-Za-z0-9_.-]*\.conf)$ ]] || \
             fail "generated environment path escapes optimization/generated: ${environment}"
         basename=${BASH_REMATCH[1]}
-        [[ -z ${pairs["${atom}\t${environment}"]+x} ]] || \
+        [[ -z ${pairs["${cpv}\t${environment}"]+x} ]] || \
             fail "duplicate generated package/environment pair: ${atom} ${environment}"
-        pairs["${atom}\t${environment}"]=1
+        pairs["${cpv}\t${environment}"]=1
         referenced["${basename}"]=1
     done <"${source}/package.env"
 

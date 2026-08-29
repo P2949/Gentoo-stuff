@@ -2109,21 +2109,79 @@ POLICY=${POLICY_PARENT}/generated-policy-${POLICY_HASH}
 mv -- "${POLICY_STAGE}" "${POLICY}"
 FROZEN_INVENTORY=${TARGET}/var/lib/gentoo-optimization/generations/fixture/frozen-inventory.json
 mkdir -p -- "${FROZEN_INVENTORY%/*}"
+VALID_FROZEN_INVENTORY='{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example-1","entry_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"owned_paths":[],"owned_directories":[{"owner_cpv":"app-misc/example-1","path":"/usr/bin","mode":493,"uid":0,"gid":0,"classification":"not-applicable","resolution":{"registry_version":"1","reason_code":"not-machine-code","reviewed_by":"framework-installer-fixture","reviewed_at":"2026-08-29T00:00:00Z","evidence":[{"path":"/var/lib/gentoo-optimization/reports/frozen-directory-review.json","sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","kind":"report"}]}}]}'
+write_valid_frozen_inventory() {
+    printf '%s\n' "${VALID_FROZEN_INVENTORY}" >"${FROZEN_INVENTORY}"
+}
 printf '%s\n' \
     '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example-1"}]}' \
     >"${FROZEN_INVENTORY}"
 expect_failure 'strict frozen-inventory semantic validation failed' \
     run_installer --generated-policy-generation "${POLICY}" \
     --frozen-inventory "${FROZEN_INVENTORY}"
+# A CP without an exact version must not enter the frozen authority.  This is
+# deliberately checked by the portable bootstrap grammar, without Portage.
 printf '%s\n' \
-    '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example-1","entry_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"owned_paths":[],"owned_directories":[]}' \
+    '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example","entry_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"owned_paths":[],"owned_directories":[]}' \
     >"${FROZEN_INVENTORY}"
+expect_failure 'strict frozen-inventory semantic validation failed' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+# This nonempty directory record uses the complete semantic shape accepted by
+# state.py; the independently implemented bootstrap validator must agree.
+write_valid_frozen_inventory
+/usr/bin/python3 -I -B \
+    "${REPOSITORY}/scripts/optimization/verify/reconcile-state.py" \
+    --validate-inventory-only --inventory "${FROZEN_INVENTORY}" \
+    --fixture-roots >/dev/null || \
+    fail 'semantic state authority rejected the valid generated-policy inventory fixture'
 cp -- "${POLICY}/env/example.conf" "${WORK}/example.conf.saved"
 printf 'source /tmp/forbidden\n' >"${POLICY}/env/example.conf"
 expect_failure 'generated environment is not assignment-only' \
     run_installer --generated-policy-generation "${POLICY}" \
     --frozen-inventory "${FROZEN_INVENTORY}"
 cp -- "${WORK}/example.conf.saved" "${POLICY}/env/example.conf"
+printf 'GENTOO_OPT_UNREVIEWED=1\n' >"${POLICY}/env/example.conf"
+expect_failure 'generated environment assigns a forbidden variable' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+cp -- "${WORK}/example.conf.saved" "${POLICY}/env/example.conf"
+# shellcheck disable=SC2016 # Literal command substitution must be rejected.
+printf '%s\n' 'GENTOO_OPT_MODE=$(id)' >"${POLICY}/env/example.conf"
+expect_failure 'generated environment value contains shell syntax' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+cp -- "${WORK}/example.conf.saved" "${POLICY}/env/example.conf"
+printf 'GENTOO_OPT_MODE=off\nGENTOO_OPT_MODE="off"\n' \
+    >"${POLICY}/env/example.conf"
+expect_failure 'generated environment repeats GENTOO_OPT_MODE' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+cp -- "${WORK}/example.conf.saved" "${POLICY}/env/example.conf"
+printf '=app-misc/example-1 optimization/generated/missing.conf\n' \
+    >"${POLICY}/package.env"
+expect_failure 'generated package.env references a missing environment' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+printf '=app-misc/example-1:0 optimization/generated/example.conf\n' \
+    >"${POLICY}/package.env"
+expect_failure 'generated package.env atom is not canonical =CPV' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+printf '=app-misc/example-1::gentoo optimization/generated/example.conf\n' \
+    >"${POLICY}/package.env"
+expect_failure 'generated package.env atom is not canonical =CPV' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+printf '%s\n' \
+    '=app-misc/example-1 optimization/generated/example.conf' \
+    '=app-misc/example-1 optimization/generated/example.conf' \
+    >"${POLICY}/package.env"
+expect_failure 'duplicate generated package/environment pair' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+printf '=app-misc/example-1 optimization/generated/example.conf\n' \
+    >"${POLICY}/package.env"
 printf 'GENTOO_OPT_MODE=off\n' >"${POLICY}/env/unreferenced.conf"
 expect_failure 'generated environment is unreferenced' \
     run_installer --generated-policy-generation "${POLICY}" \
@@ -2142,9 +2200,15 @@ printf '%s\n' \
 expect_failure 'generated package.env atom is absent from the frozen inventory' \
     run_installer --generated-policy-generation "${POLICY}" \
     --frozen-inventory "${FROZEN_INVENTORY}"
+# The obsolete two-field directory shape used by the old bootstrap must fail;
+# accepting it would disagree with the semantic state authority.
 printf '%s\n' \
-    '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example-1","entry_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"owned_paths":[],"owned_directories":[]}' \
+    '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example-1","entry_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"owned_paths":[],"owned_directories":[{"owner_cpv":"app-misc/example-1","path":"/usr/bin"}]}' \
     >"${FROZEN_INVENTORY}"
+expect_failure 'strict frozen-inventory semantic validation failed' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+write_valid_frozen_inventory
 run_installer --generated-policy-generation "${POLICY}" \
     --frozen-inventory "${FROZEN_INVENTORY}" >/dev/null
 POLICY_ACTIVE=$(readlink -- "${CURRENT}")
