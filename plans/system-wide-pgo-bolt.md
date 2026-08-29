@@ -10,7 +10,7 @@
 - **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-08-09 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This unchanged observation is live progress evidence, not the frozen Phase 3 inventory, and must be recomputed immediately before the first live mutation.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-08-22; Candidate-A repository-boundary stabilization is in progress. Commit `1d77b16ada380ade6396c91e33907d7bc13942a9` is a rejected predecessor whose exact GitHub Actions run `30226349306` failed. Commit `44ead3d66670a1ee8a9d3aace8fc0945cbb2d130` then passed its exact-SHA portable workflow but is superseded, non-authorizing predecessor evidence. Commit `1729e9a26bcf6d3fff466e05e04dc80c8dc0fbba` is a rejected predecessor: exact run `30747706125` exposed a transaction SIGTERM readiness race and skipped the portable framework-installer fixture. Commit `03e8917dc69a1cda1e9d7063e16b6a2ce0ff61fa` and its run `31543998224` are superseded rejected predecessor evidence. Commit `dcc6b8fc76e1bff20a25a06cda4aadda580b3885` is the latest rejected predecessor: exact GitHub Actions run `31880559624` stopped before `portable-complete` because the tracked contract expected 36 evidence and 206 main tests while deterministic discovery found 37 and 290. Separate direct review—not that aborted CI run—found three prerequisite fixture failures/errors, a root-fixture bootstrap trust defect, incomplete prerequisite signal-transition proof, absent Candidate-B prerequisite-chain semantics, and mechanically runnable legacy BOLT prototypes. No live mutation, Candidate-A acceptance, Phase 2 authorization, optimization generation, or frozen inventory resulted. The current working tree contains bounded corrections but remains non-authorizing pending a coherent successor contract, fresh exact clean portable and CI boundary, and the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-08-29; Candidate-A repository-boundary stabilization is in progress. The complete rejected-predecessor sequence and exact workflow evidence are recorded below and in `docs/commit-history-map.md`. Most recently, commits `9dd5960958c397216dd4c60b6212658f10015dca`, `ea191dce00f19db8ea0dda20ded85ab594d40db3`, `0f91f5ab68d7917206e79d4cb688b3a93ab5f182`, and `6462859e207b3545d9b699c242250022ad8c9f26` were tested by exact GitHub Actions runs `32601934693`, `33104209384`, `33170596519`, and `33188537276`; every run stopped at the static authoritative-contract preflight before `portable-complete`. Those CI runs prove stale test topology only. Defects found by separate direct review are attributed independently below. Commit `6462859e207b3545d9b699c242250022ad8c9f26` fixes the prerequisite producer/verifier serialization mismatch, the non-portable root-trust fixture, and non-discriminating negative evidence tests, but remains rejected and non-authorizing because its exact contract and portable CI boundary are red. Its pre-correction discovery baseline is 34 exact top-level cases, 59 Bash sources, 44 evidence tests, 323 main Python tests, one dedicated stress test, and 79 recovery tests. No live mutation, Candidate-A acceptance, Phase 2 authorization, optimization generation, or frozen inventory resulted. Any successor remains non-authorizing pending a coherent exact contract, fresh clean portable and CI boundary, and the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -1200,10 +1200,10 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   `runuser` compatibility proof, mandatory framework-installer pass, complete
   portable gate, and exact-SHA provenance.
 
-### 2026-08-22 rejected predecessor and final prerequisite-boundary review
+### 2026-08-22 rejected predecessor and prerequisite-boundary review
 
-- Commit `dcc6b8fc76e1bff20a25a06cda4aadda580b3885` is the latest rejected
-  predecessor. Its broad prerequisite/bootstrap/evidence scope is recorded
+- Commit `dcc6b8fc76e1bff20a25a06cda4aadda580b3885` was the latest rejected
+  predecessor at this review. Its broad prerequisite/bootstrap/evidence scope is recorded
   additively in `docs/commit-history-map.md`; the misleading narrow commit
   subject is historical evidence and must not be amended or rebased.
 - Exact GitHub Actions run `31880559624` stopped at the static authoritative
@@ -1229,7 +1229,8 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   recorded below. Installed-candidate lock integration, disposable/live
   Portage phase identity, authoritative zero-skip execution, and supervised
   production behavior still require the immutable Candidate-A framework.
-- The bounded prerequisite correction now has 92 deterministic test identities:
+- The bounded prerequisite correction later committed as
+  `9dd5960958c397216dd4c60b6212658f10015dca` had 92 deterministic test identities:
   88 portable passes and four intentional authoritative-host skips. The same
   four host identities pass under an actual-root clean environment and prove
   trusted host tools, pidfd plus PID/network namespace kill-child teardown,
@@ -1294,6 +1295,71 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   claims and all three Section 11.7 acceptance/authorization claims remain
   open; no package, selector, framework, optimization generation, or frozen
   inventory was changed.
+
+### 2026-08-29 rejected successors and evidence-contract correction review
+
+- Commit `9dd5960958c397216dd4c60b6212658f10015dca` is rejected,
+  non-authorizing predecessor evidence. Exact GitHub Actions run `32601934693`
+  stopped at the static authoritative-contract preflight before
+  `portable-complete`: the tracked 58 Bash, 36 evidence, and 206 main-test
+  identities had become 59, 40, and 309, and `no-legacy-bolt` was absent from
+  the exact top-level contract. That CI result proves stale topology only.
+  Separate direct review—not the aborted workflow—found incomplete repository
+  and resolver evidence semantics; both prerequisite live gates remained
+  deliberately false.
+- Commit `ea191dce00f19db8ea0dda20ded85ab594d40db3` is rejected,
+  non-authorizing predecessor evidence. Exact run `33104209384` again stopped
+  at the static contract preflight before `portable-complete`; main-test
+  discovery had advanced from the tracked 206 identities to 310. Separate
+  direct review found a verifier syntax error, stale Git fixture expectations,
+  and validator/schema wiring defects. CI did not execute or discover those
+  defects.
+- Commit `0f91f5ab68d7917206e79d4cb688b3a93ab5f182` is rejected,
+  non-authorizing predecessor evidence. Exact run `33170596519` stopped at the
+  static contract preflight before `portable-complete`; deterministic
+  discovery had reached 59 Bash sources, 40 evidence tests, and 323 main
+  tests against the older 58/36/206 contract. Separate direct review found
+  that prerequisite-originated digests used incompatible producer/verifier
+  JSON encodings, the portable automation fixture invoked production
+  root-trust validation on `/tmp` executables, and negative chain tests could
+  pass while their untouched base fixture was already invalid.
+- Commit `6462859e207b3545d9b699c242250022ad8c9f26` is the latest
+  rejected, non-authorizing predecessor. It independently matches the
+  prerequisite producer's indented, sorted, newline-terminated digest
+  serialization in the verifier, uses a fixture-local executable observation
+  without weakening production root trust, and makes each chain-tamper test
+  begin from a freshly validated base and require the intended rejection.
+  The positive producer-to-verifier chain and its six focused tamper cases
+  pass. These changes close the three defects found directly at `0f91f5ab`.
+- Exact run `33188537276` for `6462859e207b3545d9b699c242250022ad8c9f26`
+  nevertheless stopped at the static contract preflight before
+  `portable-complete`. Its deterministic pre-correction discovery baseline is
+  34 exact top-level cases, 59 Bash sources, 44 evidence tests, 323 main
+  Python tests, one dedicated stress test, and 79 recovery tests. The final
+  reviewed contract must also include `no-legacy-bolt` and the four exact
+  `jsonschema` prerequisite authoritative-host methods as permitted required
+  skips in portable mode; authoritative mode must execute them and remains a
+  zero-required-skip boundary. Regenerate the contract only after the bounded
+  correction topology is final, inspect its complete diff, and require exact
+  deterministic reproduction.
+- The first pinned ShellCheck 0.11.0 run after that contract correction exposed
+  only missing `SC2016` annotations for the intentionally literal `${ED}` text
+  in the four fail-closed legacy BOLT stubs and their exact-content regression.
+  The successor adds those narrow annotations without changing a test identity;
+  the exact five-file ShellCheck, Bash-syntax, and `no-legacy-bolt` checks pass.
+- The first complete main-suite run then exposed one fixture assumption rather
+  than a production-policy defect: the driver's deliberate `umask 077` filtered
+  a requested `0755` temporary Portage prefix to `0700`. The fixture now applies
+  its intended exact mode explicitly; the focused method and all 105
+  prerequisite tests pass under the driver umask with only the four reviewed
+  authoritative-host skips. Production mode validation remains unchanged.
+- This additive review preserves the Phase 2 scope freeze and changes no
+  checkbox. All four Section 11.4 live sample-profile claims and all three
+  Section 11.7 acceptance/authorization claims remain open. Both prerequisite
+  live gates remain deliberately false pending the reviewed gate-enabled
+  successor and its exact clean repository boundary. No package, selector,
+  installed framework, optimization generation, or frozen inventory was
+  changed, and Phase 3 must not begin.
 
 ## 11.1 Remove the unsafe global consumer
 

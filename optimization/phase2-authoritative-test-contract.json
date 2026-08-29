@@ -55,6 +55,22 @@
       "test": "python-unit-tests:tests/optimization"
     },
     {
+      "subtest": "python.test_jsonschema_prerequisite.AuthoritativeHostCapabilityTests.test_live_tools_and_package_manager_paths_are_root_trusted",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_jsonschema_prerequisite.AuthoritativeHostCapabilityTests.test_real_mount_pid_network_namespace_kills_child_with_supervisor",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_jsonschema_prerequisite.AuthoritativeHostCapabilityTests.test_real_portage_lock_objects_accept_nonblocking_tokens_and_release",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
+      "subtest": "python.test_jsonschema_prerequisite.AuthoritativeHostCapabilityTests.test_real_rsync_repository_clone_passes_full_recursive_gemato",
+      "test": "python-unit-tests:tests/optimization"
+    },
+    {
       "subtest": "python.test_production_profile_lock_transaction.ProductionProfileLockTransactionTests.test_child_timeout_terminates_process_group_and_restores",
       "test": "python-unit-tests:tests/optimization"
     },
@@ -148,6 +164,7 @@
       "capability:rust",
       "driver-cli-self-test",
       "framework-installer",
+      "no-legacy-bolt",
       "no-legacy-pgo",
       "package-env-duplicate-policy",
       "package-env-portage-semantic",
@@ -173,7 +190,7 @@
     ],
     "prefix_groups": [
       {
-        "expected_count": 58,
+        "expected_count": 59,
         "expected_names": [
           "bash-syntax:bench/compare-two-commands.sh",
           "bash-syntax:bench/perf-stat.sh",
@@ -222,6 +239,7 @@
           "bash-syntax:tests/optimization/test-bolt-hooks.sh",
           "bash-syntax:tests/optimization/test-bolt-transaction.sh",
           "bash-syntax:tests/optimization/test-framework-installer.sh",
+          "bash-syntax:tests/optimization/test-no-legacy-bolt.sh",
           "bash-syntax:tests/optimization/test-no-legacy-pgo.sh",
           "bash-syntax:tests/optimization/test-pgo-dispatcher.sh",
           "bash-syntax:tests/optimization/test-portage-config-cleanup.sh",
@@ -240,8 +258,8 @@
   },
   "unittest_suites": [
     {
-      "expected_count": 36,
-      "subtest_names_sha256": "cc631c2bba201c6b754ac6344ee167adde640d6caac083b20fa0bf027f3f7f06",
+      "expected_count": 44,
+      "subtest_names_sha256": "d4f159a54f8919d37f7af7ee894b3c05aac9a14116725e9f885a3996f16e6b7e",
       "test": "phase2-evidence-contract"
     },
     {
@@ -250,8 +268,8 @@
       "test": "production-profile-lock-crash-stress"
     },
     {
-      "expected_count": 206,
-      "subtest_names_sha256": "7c95b508cc1d5d271358c6da73d0631e15c9fada25c1584dcb2c791a744a31a7",
+      "expected_count": 323,
+      "subtest_names_sha256": "b4edea6b9de63e8825eeb7a7c5c3b9ead96359434242f1d2f20a08662f026bf2",
       "test": "python-unit-tests:tests/optimization"
     },
     {

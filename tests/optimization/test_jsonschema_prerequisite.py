@@ -2353,7 +2353,9 @@ class PrivateRootAndPolicyClosureTests(unittest.TestCase):
 
     def test_private_tmp_scaffold_and_isolated_build_residue_are_exact(self) -> None:
         prefix = Path(self.roots["portage_tmpdir"]) / "portage"
-        prefix.mkdir(mode=0o755)
+        prefix.mkdir()
+        # mkdir's requested mode is filtered by the driver's deliberate 077 umask.
+        prefix.chmod(0o755)
         (Path(self.roots["thinlto_cache"]) / "cache-entry").write_bytes(b"x")
         result = TOOL.private_roots_terminal_authority(
             self.roots,
