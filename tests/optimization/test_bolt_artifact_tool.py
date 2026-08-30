@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import grp
 import importlib.util
+import json
 import os
 import shutil
 import stat
@@ -16,6 +17,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+EXACT_CPV_CONTRACT_PATH = ROOT / "optimization/exact-cpv-contract.json"
 TOOL_PATH = ROOT / "scripts/optimization/bolt/artifact_tool.py"
 SPEC = importlib.util.spec_from_file_location("gentoo_bolt_artifact_tool", TOOL_PATH)
 assert SPEC is not None and SPEC.loader is not None
@@ -29,6 +31,15 @@ class ProductionTrustTests(unittest.TestCase):
             TOOL.INVENTORY_VALIDATOR_PYTHON,
             ("/usr/bin/python3", "-I", "-B"),
         )
+        exact_cpv_contract = json.loads(
+            EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        for cpv in exact_cpv_contract["valid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="valid"):
+                self.assertIsNotNone(TOOL.EXACT_CPV_RE.fullmatch(cpv))
+        for cpv in exact_cpv_contract["invalid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="invalid"):
+                self.assertIsNone(TOOL.EXACT_CPV_RE.fullmatch(cpv))
 
     def test_arbitrary_evidence_path_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="bolt-untrusted-evidence.") as temporary:

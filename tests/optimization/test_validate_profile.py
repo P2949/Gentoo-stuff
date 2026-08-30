@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 
 ROOT = Path(__file__).resolve().parents[2]
+EXACT_CPV_CONTRACT_PATH = ROOT / "optimization/exact-cpv-contract.json"
 VALIDATOR = ROOT / "scripts/optimization/pgo/validate-profile.py"
 FINGERPRINT = "a" * 64
 SAMPLE_INPUT_FINGERPRINT = "b" * 64
@@ -719,6 +720,59 @@ class ProfileValidatorTests(unittest.TestCase):
             sidecar["backend_proof"]["reproducibility"],
             sample_metadata["reproducibility"],
         )
+
+        exact_cpv_contract = json.loads(
+            EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        for index, cpv in enumerate(exact_cpv_contract["valid_cpvs"]):
+            with self.subTest(cpv=cpv, expected="valid"):
+                contract_metadata = self._sample_metadata(profile)
+                contract_data = json.loads(
+                    contract_metadata.read_text(encoding="utf-8")
+                )
+                contract_data["package"]["cpv"] = cpv
+                contract_metadata.write_text(
+                    json.dumps(contract_data, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                contract_manifest = self.root / f"sample-valid-cpv-{index}.manifest"
+                contract_arguments = self._common(
+                    "clang-sample",
+                    profile,
+                    "clang",
+                    self.clang,
+                    22,
+                    self.llvm22,
+                    22,
+                    contract_manifest,
+                ) + ["--sample-metadata", os.fspath(contract_metadata)]
+                self._run(contract_arguments, success=True)
+                self.assertTrue(contract_manifest.is_file())
+        for index, cpv in enumerate(exact_cpv_contract["invalid_cpvs"]):
+            with self.subTest(cpv=cpv, expected="invalid"):
+                contract_metadata = self._sample_metadata(profile)
+                contract_data = json.loads(
+                    contract_metadata.read_text(encoding="utf-8")
+                )
+                contract_data["package"]["cpv"] = cpv
+                contract_metadata.write_text(
+                    json.dumps(contract_data, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                contract_manifest = self.root / f"sample-invalid-cpv-{index}.manifest"
+                contract_arguments = self._common(
+                    "clang-sample",
+                    profile,
+                    "clang",
+                    self.clang,
+                    22,
+                    self.llvm22,
+                    22,
+                    contract_manifest,
+                ) + ["--sample-metadata", os.fspath(contract_metadata)]
+                completed = self._run(contract_arguments, success=False)
+                self.assertIn("not an exact Gentoo CPV", completed.stderr)
+                self.assertFalse(contract_manifest.exists())
 
         wrong_input_manifest = self.root / "sample-wrong-input.manifest"
         wrong_input = self._common(

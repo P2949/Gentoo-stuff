@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -18,6 +19,7 @@ from typing import Any, Callable
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+EXACT_CPV_CONTRACT_PATH = REPOSITORY_ROOT / "optimization/exact-cpv-contract.json"
 STATE_PATH = REPOSITORY_ROOT / "scripts/optimization/lib/state.py"
 RECONCILE_PATH = REPOSITORY_ROOT / "scripts/optimization/verify/reconcile-state.py"
 SPEC = importlib.util.spec_from_file_location("optimization_state", STATE_PATH)
@@ -659,6 +661,16 @@ class CollectionTests(unittest.TestCase):
         self.assertFalse(summary["coverage_complete"])
 
     def test_inventory_cpv_owned_path_and_generation_must_be_exact(self) -> None:
+        exact_cpv_contract = json.loads(
+            EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        for cpv in exact_cpv_contract["valid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="valid"):
+                self.assertIsNotNone(STATE.CPV_RE.fullmatch(cpv))
+        for cpv in exact_cpv_contract["invalid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="invalid"):
+                self.assertIsNone(STATE.CPV_RE.fullmatch(cpv))
+
         package, artifact, inventory, payload = self.collection()
         for mutation, message in (
             (lambda: inventory["packages"].append({"cpv": "app-test/extra-1", "entry_sha256": H["entry"]}), "exact CPV mismatch"),
@@ -671,6 +683,9 @@ class CollectionTests(unittest.TestCase):
                     STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest())
         package, artifact, inventory, payload = self.collection(); inventory["packages"][0]["entry_sha256"] = "0" * 64
         with self.assertRaisesRegex(STATE.StateValidationError, "entry hash mismatch"):
+            STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest())
+        package, artifact, inventory, payload = self.collection(); inventory["owned_paths"][0]["owner_cpv"] = "app-test/other-1"
+        with self.assertRaisesRegex(STATE.StateValidationError, "owner CPV is absent from packages"):
             STATE.reconcile_collection([package], [artifact], inventory=inventory, inventory_sha256=hashlib.sha256(payload).hexdigest())
 
     def test_owner_component_fingerprint_aggregate_and_topology_ambiguity_fail(self) -> None:
@@ -905,26 +920,77 @@ class PublicationAndSchemaTests(unittest.TestCase):
         self.assertEqual(set(package_schema["required"]), STATE.PACKAGE_KEYS)
         self.assertEqual(set(artifact_schema["required"]), STATE.ARTIFACT_KEYS)
         self.assertEqual(set(final_schema["required"]), STATE.FINAL_SYSTEM_KEYS)
+        exact_cpv_contract = json.loads(
+            EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        cpv_patterns = {
+            schema["$defs"]["cpv"]["pattern"]
+            for schema in (package_schema, artifact_schema, final_schema)
+        }
+        self.assertEqual(len(cpv_patterns), 1)
+        cpv_pattern = next(iter(cpv_patterns))
+        for cpv in exact_cpv_contract["valid_cpvs"]:
+            with self.subTest(schema_cpv=cpv, expected="valid"):
+                self.assertIsNotNone(re.search(cpv_pattern, cpv))
+        for cpv in exact_cpv_contract["invalid_cpvs"]:
+            with self.subTest(schema_cpv=cpv, expected="invalid"):
+                self.assertIsNone(re.search(cpv_pattern, cpv))
 
     def test_draft_202012_schema_parity_positive_and_negative(self) -> None:
         try:
             import jsonschema  # type: ignore[import-untyped]
         except ImportError:
             self.skipTest("jsonschema unavailable: Draft 2020-12 parity cannot run")
+
+        exact_cpv_contract = json.loads(
+            EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+
+        def package_cpv(record: dict[str, Any], cpv: str) -> None:
+            record["identity"]["cpv"] = cpv
+
+        def artifact_cpv(record: dict[str, Any], cpv: str) -> None:
+            record["owner"]["cpv"] = cpv
+
+        def final_cpv(record: dict[str, Any], cpv: str) -> None:
+            record["registries"]["dependency_edges"] = [{
+                "consumer_cpv": cpv,
+                "consumer_component_id": "consumer",
+                "provider_cpv": cpv,
+                "provider_component_id": "provider",
+                "evidence": [evidence("schema-edge", "report")],
+            }]
+
         with tempfile.TemporaryDirectory(prefix="state-schema-final.") as temporary:
             _package, _artifact, _inventory, _payload, final_state, _paths = strict_fixture(Path(temporary))
-            pairs = (("package-state.schema.json", package_record(), STATE.validate_package), ("artifact-state.schema.json", artifact_record(), STATE.validate_artifact), ("final-system-state.schema.json", final_state, STATE.validate_final_system_state))
-            for filename, record, validator in pairs:
+            pairs = (
+                ("package-state.schema.json", package_record(), STATE.validate_package, package_cpv),
+                ("artifact-state.schema.json", artifact_record(), STATE.validate_artifact, artifact_cpv),
+                ("final-system-state.schema.json", final_state, STATE.validate_final_system_state, final_cpv),
+            )
+            for filename, record, validator, set_cpv in pairs:
                 with self.subTest(filename=filename):
                     schema = json.loads((REPOSITORY_ROOT / "optimization/schema" / filename).read_text())
                     jsonschema.Draft202012Validator.check_schema(schema)
-                    jsonschema.Draft202012Validator(schema).validate(record)
+                    schema_validator = jsonschema.Draft202012Validator(schema)
+                    schema_validator.validate(record)
                     validator(record)
                     invalid = copy.deepcopy(record); invalid["schema_version"] = 99
                     with self.assertRaises(jsonschema.ValidationError):
-                        jsonschema.Draft202012Validator(schema).validate(invalid)
+                        schema_validator.validate(invalid)
                     with self.assertRaises(STATE.StateValidationError):
                         validator(invalid)
+                    for cpv in exact_cpv_contract["valid_cpvs"]:
+                        with self.subTest(schema=filename, cpv=cpv, expected="valid"):
+                            candidate = copy.deepcopy(record)
+                            set_cpv(candidate, cpv)
+                            schema_validator.validate(candidate)
+                    for cpv in exact_cpv_contract["invalid_cpvs"]:
+                        with self.subTest(schema=filename, cpv=cpv, expected="invalid"):
+                            candidate = copy.deepcopy(record)
+                            set_cpv(candidate, cpv)
+                            with self.assertRaises(jsonschema.ValidationError):
+                                schema_validator.validate(candidate)
 
 
 if __name__ == "__main__":

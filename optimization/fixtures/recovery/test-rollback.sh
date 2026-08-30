@@ -6,6 +6,8 @@ IFS=$'\n\t'
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 REPOSITORY_ROOT=$(cd -- "${SCRIPT_DIR}/../../.." && pwd -P)
 ROLLBACK=${REPOSITORY_ROOT}/scripts/optimization/recovery/rollback.sh
+CHECKPOINT=${REPOSITORY_ROOT}/scripts/optimization/recovery/create-binpkg-checkpoint.sh
+EXACT_CPV_CONTRACT=${REPOSITORY_ROOT}/optimization/exact-cpv-contract.json
 FIXTURE=$(mktemp -d)
 trap 'rm -rf -- "${FIXTURE}"' EXIT
 
@@ -27,6 +29,48 @@ assert_contains() {
     local file=$2
     grep -Fq -- "${needle}" "${file}" || fail "expected '${needle}' in ${file}"
 }
+
+assert_checkpoint_exact_cpv_contract() {
+    local cpv output
+    local -a valid_cpvs=() invalid_cpvs=()
+    mapfile -d '' -t valid_cpvs < <(
+        jq -j '.valid_cpvs[] | ., "\u0000"' "${EXACT_CPV_CONTRACT}"
+    )
+    mapfile -d '' -t invalid_cpvs < <(
+        jq -j '.invalid_cpvs[] | ., "\u0000"' "${EXACT_CPV_CONTRACT}"
+    )
+    ((${#valid_cpvs[@]} > 0 && ${#invalid_cpvs[@]} > 0)) || \
+        fail 'exact CPV contract corpus is empty'
+    for cpv in "${valid_cpvs[@]}"; do
+        if output=$("${CHECKPOINT}" \
+            --expected-source-target /fixture/source \
+            --expected-source-packages-sha256 \
+            0000000000000000000000000000000000000000000000000000000000000000 \
+            --expected-verifier-sha256 \
+            0000000000000000000000000000000000000000000000000000000000000000 \
+            --fixture-mode cpv-contract "=${cpv}" 2>&1); then
+            fail "checkpoint unexpectedly ran past its intentionally incomplete fixture for valid CPV: ${cpv}"
+        fi
+        [[ ${output} == *'fixture mode requires --fixture-root, --fixture-owner, and --tool-root'* ]] || \
+            fail "checkpoint rejected contract-valid CPV: ${cpv}: ${output}"
+    done
+    for cpv in "${invalid_cpvs[@]}"; do
+        if output=$("${CHECKPOINT}" \
+            --expected-source-target /fixture/source \
+            --expected-source-packages-sha256 \
+            0000000000000000000000000000000000000000000000000000000000000000 \
+            --expected-verifier-sha256 \
+            0000000000000000000000000000000000000000000000000000000000000000 \
+            --fixture-mode cpv-contract "=${cpv}" 2>&1); then
+            fail "checkpoint accepted contract-invalid CPV: ${cpv}"
+        fi
+        [[ ${output} == *'non-exact or unsafe quickpkg atom:'* ]] || \
+            fail "checkpoint rejected contract-invalid CPV for an unrelated reason: ${cpv}: ${output}"
+    done
+    printf 'PASS: checkpoint exact CPV contract corpus\n'
+}
+
+assert_checkpoint_exact_cpv_contract
 
 compile_recovery_cpp_lane() {
     local lane=$1
@@ -301,6 +345,39 @@ common=(
     --esp-root "${ESP}"
     --tool-root "${TOOLS}"
 )
+
+assert_rollback_exact_cpv_contract() {
+    local cpv output
+    local -a valid_cpvs=() invalid_cpvs=()
+    mapfile -d '' -t valid_cpvs < <(
+        jq -j '.valid_cpvs[] | ., "\u0000"' "${EXACT_CPV_CONTRACT}"
+    )
+    mapfile -d '' -t invalid_cpvs < <(
+        jq -j '.invalid_cpvs[] | ., "\u0000"' "${EXACT_CPV_CONTRACT}"
+    )
+    for cpv in "${valid_cpvs[@]}"; do
+        if output=$("${ROLLBACK}" "${common[@]}" --dry-run restore "=${cpv}" 2>&1); then
+            fail "rollback unexpectedly found a protected archive for contract-valid CPV: ${cpv}"
+        fi
+        [[ ${output} == *"expected exactly one protected binpkg record for ${cpv}; found 0"* ]] || \
+            fail "rollback rejected contract-valid CPV before archive lookup: ${cpv}: ${output}"
+    done
+    for cpv in "${invalid_cpvs[@]}"; do
+        if output=$("${ROLLBACK}" "${common[@]}" --dry-run restore "=${cpv}" 2>&1); then
+            fail "rollback accepted contract-invalid CPV: ${cpv}"
+        fi
+        if [[ ${cpv} == *[[:space:]]* ]]; then
+            [[ ${output} == *'restore atom contains whitespace:'* ]] || \
+                fail "rollback rejected whitespace-bearing contract-invalid CPV for an unrelated reason: ${cpv}: ${output}"
+        else
+            [[ ${output} == *'invalid exact Gentoo CPV in restore atom:'* ]] || \
+                fail "rollback rejected contract-invalid CPV for an unrelated reason: ${cpv}: ${output}"
+        fi
+    done
+    printf 'PASS: rollback exact CPV contract corpus\n'
+}
+
+assert_rollback_exact_cpv_contract
 
 "${ROLLBACK}" "${common[@]}" check
 

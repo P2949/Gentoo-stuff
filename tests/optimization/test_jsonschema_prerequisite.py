@@ -10,6 +10,7 @@ import errno
 import io
 import importlib.util
 import inspect
+import json
 import os
 import shutil
 import signal
@@ -25,6 +26,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence, cast
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+EXACT_CPV_CONTRACT_PATH = REPOSITORY_ROOT / "optimization/exact-cpv-contract.json"
 TOOL_PATH = (
     REPOSITORY_ROOT
     / "scripts"
@@ -548,6 +550,22 @@ class ManagedSignalBoundaryTests(unittest.TestCase):
 
 class PlanContractTests(unittest.TestCase):
     def test_parse_pretend_preserves_displayed_atom_order_and_sorts_rows(self) -> None:
+        exact_cpv_contract = json.loads(
+            EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        for cpv in exact_cpv_contract["valid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="valid"):
+                self.assertIsNotNone(TOOL.CPV_PATTERN.fullmatch(cpv))
+                self.assertIsNotNone(
+                    TOOL.EXACT_ATOM_PATTERN.fullmatch(f"={cpv}::gentoo")
+                )
+        for cpv in exact_cpv_contract["invalid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="invalid"):
+                self.assertIsNone(TOOL.CPV_PATTERN.fullmatch(cpv))
+                self.assertIsNone(
+                    TOOL.EXACT_ATOM_PATTERN.fullmatch(f"={cpv}::gentoo")
+                )
+
         plan = fixture_plan(tuple(reversed(PRETEND_LINES)))
 
         self.assertEqual(
@@ -3686,6 +3704,35 @@ class AuthoritativeHostCapabilityTests(unittest.TestCase):
 
     def test_live_tools_and_package_manager_paths_are_root_trusted(self) -> None:
         self.require_root()
+        from portage.dep import Atom
+        from portage.exception import InvalidAtom
+
+        exact_cpv_contract = json.loads(
+            EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        for cpv in exact_cpv_contract["valid_cpvs"]:
+            with self.subTest(portage_cpv=cpv, expected="valid"):
+                self.assertEqual(
+                    str(
+                        Atom(
+                            f"={cpv}",
+                            allow_wildcard=False,
+                            allow_repo=False,
+                            allow_build_id=False,
+                        )
+                    ),
+                    f"={cpv}",
+                )
+        for cpv in exact_cpv_contract["invalid_cpvs"]:
+            with self.subTest(portage_cpv=cpv, expected="invalid"):
+                with self.assertRaises(InvalidAtom):
+                    Atom(
+                        f"={cpv}",
+                        allow_wildcard=False,
+                        allow_repo=False,
+                        allow_build_id=False,
+                    )
+
         tools = TOOL.default_tools()
         # The transaction and snapshot verifier are Candidate-A bootstrap
         # payloads, not independently installed host tools.  Their root-owned

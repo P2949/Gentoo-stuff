@@ -20,6 +20,7 @@ from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+EXACT_CPV_CONTRACT_PATH = REPOSITORY_ROOT / "optimization/exact-cpv-contract.json"
 TOOL_PATH = (
     REPOSITORY_ROOT / "scripts" / "optimization" / "pgo" / "profile-identity.py"
 )
@@ -706,6 +707,19 @@ class ProfileFamilyPathTest(unittest.TestCase):
             self.assertTrue(next(item for item in outputs if "/go/" in item).endswith("/default.pgo"))
 
     def test_missing_extraneous_and_unsafe_components_fail(self) -> None:
+        exact_cpv_contract = json.loads(
+            EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        for cpv in exact_cpv_contract["valid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="valid"):
+                self.assertEqual(TOOL.require_cpv(cpv), cpv)
+        for cpv in exact_cpv_contract["invalid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="invalid"):
+                with self.assertRaisesRegex(
+                    TOOL.IdentityError, "is not an exact Gentoo CPV"
+                ):
+                    TOOL.require_cpv(cpv)
+
         with tempfile.TemporaryDirectory() as directory:
             fixture = Fixture(Path(directory))
             root = os.fspath(fixture.root / "profiles")

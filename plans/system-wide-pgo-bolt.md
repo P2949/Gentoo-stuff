@@ -2,7 +2,7 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. The current branch head is the latest Candidate-A implementation revision under repository-boundary correction; it remains non-authorizing pending the exact clean portable, CI, live-host, and supervised production gates. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active. Phase 2 is scope-frozen until Candidate B authorization: no new subsystem, optimization-policy axis, evidence category, or broad refactor may be added unless an existing required gate exposes a reproducible blocker that cannot be fixed within the current architecture.
+- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. Commit `3d3e660ca207d357caa1de5b537c6bba6fa83fbe` passed the exact mature portable repository boundary, but latest exact-tested successor `2128d87fcb5736f75b89ea6eed60f7db9ccc7fd4` is rejected and non-authorizing because its workflow has one required ShellCheck failure. The next successor must retain the CPV tightening, make its vector contract executable through existing tests, and pass a fresh exact clean portable and exact-SHA CI boundary before live work. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active. Phase 2 is scope-frozen until Candidate B authorization: no new subsystem, optimization-policy axis, evidence category, or broad refactor may be added unless an existing required gate exposes a reproducible blocker that cannot be fixed within the current architecture.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
@@ -10,7 +10,7 @@
 - **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-08-09 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This unchanged observation is live progress evidence, not the frozen Phase 3 inventory, and must be recomputed immediately before the first live mutation.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-08-29; Candidate-A repository-boundary stabilization is in progress. The complete rejected-predecessor sequence and exact workflow evidence are recorded below and in `docs/commit-history-map.md`. Commits `9dd5960958c397216dd4c60b6212658f10015dca`, `ea191dce00f19db8ea0dda20ded85ab594d40db3`, `0f91f5ab68d7917206e79d4cb688b3a93ab5f182`, and `6462859e207b3545d9b699c242250022ad8c9f26` were tested by exact GitHub Actions runs `32601934693`, `33104209384`, `33170596519`, and `33188537276`; each stopped at the static authoritative-contract preflight before `portable-complete`, so those four CI runs prove stale test topology only. Defects found by separate direct review are attributed independently below. Successor `274c50d2208dea9a86f0ff4e7293c7cee5df5603` binds the reviewed 34 exact top-level, 59 Bash, 44 evidence, 323 main-Python, one stress, and 79 recovery identities. Exact run `33249132657` passed that static contract and exercised essentially the complete portable boundary: 79 top-level passes, one failure, and 13 reviewed skips; 517 required-subtest passes, one failure, and 26 reviewed skips; and one diagnostic skip. Its sole functional failure was `framework-installer`, because the installer unconditionally invoked `systemd-tmpfiles --dry-run` on Ubuntu 24.04's systemd 255, where that option is unavailable. Commit `dfa61d38b4c0486112789e3fc28aa6379449b154` corrected that tmpfiles boundary. Exact run `33267217547` passed the static contract and recorded 79 top-level passes, one failure, and 13 reviewed skips; 518 required-subtest passes, one failure, and 26 reviewed skips; and one diagnostic skip. Its sole functional failure was again `framework-installer`, now because portable generated-policy validation unconditionally attempted the unavailable Gentoo Portage atom parser and rejected `=app-misc/example-1` before the intended assignment-only diagnostic. The final ledger-contract failure correctly propagated that required failure and is not renewed topology drift. Commit `dfa61d38b4c0486112789e3fc28aa6379449b154` is therefore rejected and non-authorizing. Separate direct review also found a non-version-strict frozen-inventory CPV predicate, incompatible bootstrap/semantic-authority `owned_directories` schemas, generated atom syntax wider than the documented canonical plain `=CPV` form, and a double-escaped jq control-byte predicate that rejected ordinary nonempty paths containing `u`. The current working tree contains one bounded generated-policy/frozen-inventory correction: portable independent exact-CPV validation, separate production Portage-parser diagnostics, canonical plain `=CPV` atoms, strict versioned inventory CPVs, semantic-authority-compatible directory records and control-byte handling, and narrow fixture coverage. Its complete exact clean portable and exact-SHA CI boundaries remain pending. No live mutation, Candidate-A acceptance, Phase 2 authorization, optimization generation, or frozen inventory resulted. Any successor remains non-authorizing pending a coherent exact contract, fresh clean portable and CI boundary, and the live-host and supervised production gates. The complete plan must be re-read after this correction, after the exact clean portable/CI gates, and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
+- **Last plan review:** 2026-08-30; Candidate-A repository-boundary stabilization remains narrowly in progress. The complete predecessor sequence and exact workflow evidence are recorded below and in `docs/commit-history-map.md`. Commit `3d3e660ca207d357caa1de5b537c6bba6fa83fbe` corrected the generated-policy/frozen-inventory boundary and passed exact GitHub Actions run `33279170822`: 80 top-level passes, zero failures, and 13 reviewed skips; 519 required-subtest passes, zero failures, and 26 reviewed skips; one diagnostic skip; 546 total subtests; and exit status zero. That established the current architecture's green portable repository boundary only. Successor `2128d87fcb5736f75b89ea6eed60f7db9ccc7fd4` retained and broadened strict Gentoo CPV validation, but exact run `33312523486` is rejected: it recorded 79 top-level passes, one failure, and 13 reviewed skips, with 518 required-subtest passes, one failure, and 26 reviewed skips. The only required failure was pinned ShellCheck 0.11.0 reporting four `SC2015` findings in `create-binpkg-checkpoint.sh`; all other executed functional boundaries passed. The next successor must retain the CPV correction, replace those four expressions with explicit control flow, execute `optimization/exact-cpv-contract.json` through existing test identities, and pass a fresh exact clean portable and exact-SHA CI boundary. No live mutation, Candidate-A host acceptance, Candidate-B detached index, Phase 2 authorization, optimization generation, or frozen inventory resulted from either run. The complete plan must be re-read after the corrected exact green boundary and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
 - **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -1404,14 +1404,14 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   predicate admits unversioned CPs, its `owned_directories` shape conflicts
   with the semantic authority in `state.py`, and generated atom syntax is wider
   than the documented canonical plain `=CPV` form.
-- The current working tree correction remains bounded to that coherent
-  interface: independent portable exact-versioned-CPV validation; distinct
-  production Portage-parser availability and invalid-atom diagnostics;
-  canonical unqualified `=CPV` generated atoms and CPV-keyed duplicate checks;
-  strict frozen-inventory CPVs; semantic-authority-compatible nonempty
-  `owned_directories`; corrected jq control-byte path handling; and narrow
-  positive and rejection fixtures. Its exact
-  clean portable and exact-SHA CI boundaries remain pending.
+- That bounded correction was committed as
+  `3d3e660ca207d357caa1de5b537c6bba6fa83fbe`: independent portable
+  exact-versioned-CPV validation; distinct production Portage-parser
+  availability and invalid-atom diagnostics; canonical unqualified `=CPV`
+  generated atoms and CPV-keyed duplicate checks; strict frozen-inventory
+  CPVs; semantic-authority-compatible nonempty `owned_directories`; corrected
+  jq control-byte path handling; and narrow positive and rejection fixtures.
+  Its exact portable result is recorded in the 2026-08-30 review below.
 - This additive review preserves the Phase 2 scope freeze and changes no
   checkbox. All four Section 11.4 live sample-profile claims and all three
   Section 11.7 acceptance/authorization claims remain open. Both prerequisite
@@ -1419,6 +1419,40 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   successor and its exact clean repository boundary. No package, selector,
   installed framework, optimization generation, or frozen inventory was
   changed, and Phase 3 must not begin.
+
+### 2026-08-30 green portable boundary and exact-CPV successor review
+
+- Commit `3d3e660ca207d357caa1de5b537c6bba6fa83fbe` passed exact GitHub
+  Actions run `33279170822`. The retained ledger records 80 top-level passes,
+  zero failures, and 13 reviewed skips; 519 required-subtest passes, zero
+  failures, and 26 reviewed skips; one diagnostic skip; 546 total subtests;
+  and exit status zero. The static authoritative contract,
+  `portable-complete`, `framework-installer`, pinned ShellCheck 0.11.0, main,
+  recovery, evidence, PGO, BOLT, and legacy-retirement boundaries all passed.
+  This establishes a green exact-SHA portable repository boundary for that
+  revision only. It performed no live mutation and did not install or accept
+  Candidate A, create Candidate B, or authorize Phase 2.
+- Successor `2128d87fcb5736f75b89ea6eed60f7db9ccc7fd4` tightened exact Gentoo
+  CPV semantics across independent schemas, state, profile, evidence,
+  framework, and recovery surfaces. Exact run `33312523486` recorded 79
+  top-level passes, one failure, and 13 reviewed skips; required subtests
+  recorded 518 passes, one failure, and 26 reviewed skips. The sole required
+  failure was pinned ShellCheck 0.11.0 reporting four `SC2015` findings in
+  `scripts/optimization/recovery/create-binpkg-checkpoint.sh`; all other
+  executed functional boundaries passed. This revision is rejected and
+  non-authorizing, but its CPV tightening remains part of the correction and
+  must not be reverted merely to recover the parent's green result.
+- The next successor must replace those four compound expressions with
+  explicit control flow, make the provenance-bound
+  `optimization/exact-cpv-contract.json` vectors executable through existing
+  test identities across the independent validators, and pass a fresh exact
+  clean portable and exact-SHA CI boundary. These are repository corrections,
+  not live-gate enablement.
+- This review changes no checkbox. All four Section 11.4 live sample-profile
+  claims and all three Section 11.7 acceptance/authorization claims remain
+  open. Both prerequisite live gates remain deliberately false. No package,
+  selector, installed framework, optimization generation, frozen inventory,
+  or Phase 2 authorization changed, and Phase 3 must not begin.
 
 ## 11.1 Remove the unsafe global consumer
 
@@ -1536,10 +1570,12 @@ The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the 
   locks and profile/metadata/manifest files are `0640`, conversion/perf inputs
   are `0440`, and the mapped input is `0550`.
 - Repository fixtures exist for syntax, pinned ShellCheck, strict runtime
-  typing, unit behavior, transaction recovery, and portable policy. Focused
-  current-tree tests are non-authorizing; the exact complete portable boundary,
-  green CI run, installed candidate, and supervised live Portage chain still
-  must pass. The four boxes below remain open until that live proof exists.
+  typing, unit behavior, transaction recovery, and portable policy. The green
+  exact-SHA `3d3e660c` parent remains portable-only evidence, while the
+  exact-CPV correction successor requires a fresh green repository boundary.
+  Neither portable result substitutes for an installed candidate or the
+  supervised live Portage chain. The four boxes below remain open until that
+  live proof exists.
 
 - [ ] Write sample profiles to `sample.prof` or another unmistakable sample-profile name.
 - [ ] Validate them with an LLVM sample-profile-aware command.
@@ -1759,11 +1795,11 @@ The root-owned retained artifact is
 (`root:root`, directory mode `0750`, file mode `0640`). Its location-independent
 `CONTENT-SHA256SUMS` covers 199 files and verifies; that manifest's SHA-256 is
 `b760c7dcb750a319c648c24718226be71b78e07608245178f3174e24f0aee627`.
-This proves that predecessor's portable boundary only; it is superseded by the
-current plan, runbook, and workflow corrections and never passed the live-host
-or supervised production gates. The current branch head therefore requires a
-fresh exact-driver `checkpoint-smoke`, complete clean `portable-complete`, and
-exact-SHA CI run.
+This proves that predecessor's portable boundary only; it was superseded by
+later plan, runbook, and workflow corrections and never passed the live-host or
+supervised production gates. At that checkpoint, the next corrected revision
+therefore required a fresh exact-driver `checkpoint-smoke`, complete clean
+`portable-complete`, and exact-SHA CI run.
 
 The first complete superseded-tree diagnostic at
 `/tmp/gentoo-opt-portable-complete-candidate-a-20260729-v6` proved all 198 main
@@ -1778,8 +1814,8 @@ candidate as an unexpected error. Its `summary.txt`, `results.tsv`, and
 and `ce1ebb56ca77b1a1d64ce17cb44eb185cc6797e0f6c6665b8b2067ff5ae63963`.
 The residue is removed, and a direct rerun of the corrected production-
 environment fixture exits zero while publishing the reviewed required
-`live-portage.policy` skip. The complete portable boundary and exact-clean-
-commit CI result for the current branch head remain pending.
+`live-portage.policy` skip. At that historical checkpoint, the complete
+portable boundary and exact-clean-commit CI result remained pending.
 
 The following non-authorizing 2026-07-26 checkpoint is retained as historical
 evidence for the superseded in-process child-subreaper harness; its evidence
@@ -1812,8 +1848,8 @@ methods surfaced as portable required skips; its structured ledger at
 `/tmp/recovery-complete-current-subtests.tsv` has SHA-256
 `422fc0277a5c4cbd7c85ecf80f21cbb1068df9971096e9ca0464913d9e3bcac5`.
 The exact root-host rerun and complete mirror precheck are recorded below;
-clean-commit provenance and the current green CI run remain pending and are not
-inferred from this dirty-tree result.
+clean-commit provenance and a green CI run were still pending at that
+historical checkpoint and are not inferred from this dirty-tree result.
 
 Containment preflight evidence now distinguishes a disposable exact-child
 pidfd `SIGTERM` proof from a real `unshare --pid --fork --kill-child=KILL`

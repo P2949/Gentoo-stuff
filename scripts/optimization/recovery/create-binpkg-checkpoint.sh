@@ -287,8 +287,9 @@ done
 [[ ${EXPECTED_VERIFIER_SHA256} =~ ^[0-9a-f]{64}$ ]] || \
     die 'an exact lowercase immutable verifier SHA-256 is required'
 for atom in "${ATOMS[@]}"; do
-    [[ ${atom} == =* ]] && is_exact_cpv "${atom#=}" || \
+    if [[ ${atom} != =* ]] || ! is_exact_cpv "${atom#=}"; then
         die "non-exact or unsafe quickpkg atom: ${atom}"
+    fi
 done
 if [[ ${ACTION} == finalize ]]; then
     is_exact_cpv "${RESTORE_CPV}" || \
@@ -1873,8 +1874,10 @@ bind_portage_implementation() {
     if [[ -f ${record} && ! -L ${record} ]]; then
         validate_regular_trusted_file "${record}" 0
         PORTAGE_CPV=$(${JQ} -r '.portage_cpv' "${record}") || die 'cannot load bound Portage CPV'
-        [[ ${PORTAGE_CPV} == sys-apps/portage-* ]] && is_exact_cpv "${PORTAGE_CPV}" || \
+        if [[ ${PORTAGE_CPV} != sys-apps/portage-* ]] || \
+            ! is_exact_cpv "${PORTAGE_CPV}"; then
             die 'bound Portage CPV is malformed'
+        fi
         emerge_tool_line=$(tool_identity_line "${EMERGE}")
         python_tool_line=$(tool_identity_line "${EMERGE_PYTHON}")
         implementation_tool_line=$(tool_identity_line "${EMERGE_IMPLEMENTATION}")
@@ -1908,9 +1911,10 @@ bind_portage_implementation() {
     [[ ${TRACKED_STATUS} -eq 0 && ! -s ${match_stderr} ]] || \
         die 'exact installed Portage package lookup failed'
     mapfile -t matches <"${match_stdout}"
-    [[ ${#matches[@]} -eq 1 && ${matches[0]} == sys-apps/portage-* ]] && \
-        is_exact_cpv "${matches[0]}" || \
+    if [[ ${#matches[@]} -ne 1 || ${matches[0]} != sys-apps/portage-* ]] || \
+        ! is_exact_cpv "${matches[0]}"; then
         die 'installed Portage package lookup did not return one exact CPV'
+    fi
     PORTAGE_CPV=${matches[0]}
     run_tracked "${qstdout}" "${qstderr}" 30m \
         "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
@@ -4071,8 +4075,9 @@ EXPECTED_MAKE_CONF_SHA256=${EXPECTED_MAKE_CONF_SHA256%% *}
 declare -A seen_atom=()
 declare -A seen_cpv=()
 for atom in "${ATOMS[@]}"; do
-    [[ ${atom} == =* ]] && is_exact_cpv "${atom#=}" || \
+    if [[ ${atom} != =* ]] || ! is_exact_cpv "${atom#=}"; then
         die "non-exact or unsafe quickpkg atom: ${atom}"
+    fi
     [[ -z ${seen_atom[${atom}]+x} ]] || die "duplicate quickpkg atom: ${atom}"
     cpv=${atom#=}
     [[ -z ${seen_cpv[${cpv}]+x} ]] || die "duplicate quickpkg CPV: ${cpv}"

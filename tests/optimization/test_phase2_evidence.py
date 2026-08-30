@@ -21,6 +21,7 @@ from unittest import mock
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
+EXACT_CPV_CONTRACT_PATH = REPOSITORY / "optimization/exact-cpv-contract.json"
 TOOL = REPOSITORY / "scripts/optimization/verify/phase2-evidence.py"
 POLICY_SCHEMA = "gentoo-optimization-phase2-evidence-policy-v1"
 TOOL_SCHEMA = "gentoo-optimization-phase2-tool-manifest-v1"
@@ -3008,6 +3009,29 @@ namespace["require_active_python_matches_reviewed_tools"](
     def test_automation_external_chain_is_semantically_bound(self) -> None:
         fixture = self.valid_automation_external_fixture()
         namespace = fixture["namespace"]
+        exact_cpv_contract = json.loads(
+            EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        for cpv in exact_cpv_contract["valid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="valid"):
+                self.assertIsNotNone(
+                    namespace["PREREQUISITE_CPV_RE"].fullmatch(cpv)
+                )
+                self.assertIsNotNone(
+                    namespace["PREREQUISITE_EXACT_ATOM_RE"].fullmatch(
+                        f"={cpv}::gentoo"
+                    )
+                )
+        for cpv in exact_cpv_contract["invalid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="invalid"):
+                self.assertIsNone(
+                    namespace["PREREQUISITE_CPV_RE"].fullmatch(cpv)
+                )
+                self.assertIsNone(
+                    namespace["PREREQUISITE_EXACT_ATOM_RE"].fullmatch(
+                        f"={cpv}::gentoo"
+                    )
+                )
         core_log = self.fixture.evidence / "core.log"
         namespace["component_document"](
             {

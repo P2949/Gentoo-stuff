@@ -7,6 +7,7 @@ umask 077
 export LC_ALL=C
 
 SOURCE_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
+EXACT_CPV_CONTRACT=${SOURCE_ROOT}/optimization/exact-cpv-contract.json
 AUTHORITATIVE=${GENTOO_OPT_AUTHORITATIVE:-0}
 [[ ${AUTHORITATIVE} == 0 || ${AUTHORITATIVE} == 1 ]] || {
     printf 'FAIL: GENTOO_OPT_AUTHORITATIVE must be exactly 0 or 1\n' >&2
@@ -2113,6 +2114,31 @@ VALID_FROZEN_INVENTORY='{"schema_version":2,"record_type":"frozen-inventory","ge
 write_valid_frozen_inventory() {
     printf '%s\n' "${VALID_FROZEN_INVENTORY}" >"${FROZEN_INVENTORY}"
 }
+mapfile -d '' -t CONTRACT_VALID_CPVS < <(
+    jq -j '.valid_cpvs[] | ., "\u0000"' "${EXACT_CPV_CONTRACT}"
+)
+mapfile -d '' -t CONTRACT_INVALID_CPVS < <(
+    jq -j '.invalid_cpvs[] | ., "\u0000"' "${EXACT_CPV_CONTRACT}"
+)
+((${#CONTRACT_VALID_CPVS[@]} > 0 && ${#CONTRACT_INVALID_CPVS[@]} > 0)) || \
+    fail 'exact CPV contract corpus is empty'
+write_single_cpv_inventory() {
+    local cpv=$1
+    jq -n --arg cpv "${cpv}" '
+        {
+            schema_version: 2,
+            record_type: "frozen-inventory",
+            generation_id: "fixture",
+            inventory_id: "fixture-inventory",
+            packages: [{
+                cpv: $cpv,
+                entry_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }],
+            owned_paths: [],
+            owned_directories: []
+        }
+    ' >"${FROZEN_INVENTORY}"
+}
 printf '%s\n' \
     '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example-1"}]}' \
     >"${FROZEN_INVENTORY}"
@@ -2127,6 +2153,43 @@ printf '%s\n' \
 expect_failure 'strict frozen-inventory semantic validation failed' \
     run_installer --generated-policy-generation "${POLICY}" \
     --frozen-inventory "${FROZEN_INVENTORY}"
+# Every invalid vector in the shared contract must independently reach and fail
+# the installer's jq exact_cpv predicate.  NUL-delimited loading above preserves
+# the embedded-newline vector as one Bash array element.
+for cpv in "${CONTRACT_INVALID_CPVS[@]}"; do
+    write_single_cpv_inventory "${cpv}"
+    expect_failure 'strict frozen-inventory semantic validation failed' \
+        run_installer --generated-policy-generation "${POLICY}" \
+        --frozen-inventory "${FROZEN_INVENTORY}"
+done
+# One authority containing every valid vector exercises both the jq predicate
+# and the independent portable generated-policy =CPV parser.  Reaching the
+# later content-address mismatch proves all vectors passed those grammars; the
+# policy basename intentionally remains bound to the original fixture content.
+jq -n --slurpfile contract "${EXACT_CPV_CONTRACT}" '
+    {
+        schema_version: 2,
+        record_type: "frozen-inventory",
+        generation_id: "fixture",
+        inventory_id: "fixture-inventory",
+        packages: ($contract[0].valid_cpvs | sort | map({
+            cpv: .,
+            entry_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        })),
+        owned_paths: [],
+        owned_directories: []
+    }
+' >"${FROZEN_INVENTORY}"
+: >"${POLICY}/package.env"
+for cpv in "${CONTRACT_VALID_CPVS[@]}"; do
+    printf '=%s optimization/generated/example.conf\n' "${cpv}" \
+        >>"${POLICY}/package.env"
+done
+expect_failure 'generated policy content hash ' \
+    run_installer --generated-policy-generation "${POLICY}" \
+    --frozen-inventory "${FROZEN_INVENTORY}"
+printf '=app-misc/example-1 optimization/generated/example.conf\n' \
+    >"${POLICY}/package.env"
 # This nonempty directory record uses the complete semantic shape accepted by
 # state.py; the independently implemented bootstrap validator must agree.
 write_valid_frozen_inventory
@@ -2173,6 +2236,24 @@ printf '=app-misc/example-1::gentoo optimization/generated/example.conf\n' \
 expect_failure 'generated package.env atom is not canonical =CPV' \
     run_installer --generated-policy-generation "${POLICY}" \
     --frozen-inventory "${FROZEN_INVENTORY}"
+# Independently reject every invalid corpus vector in the package.env parser.
+# The embedded-newline case is rejected by the exact two-field line grammar;
+# all other vectors reach the canonical =CPV grammar.
+for cpv in "${CONTRACT_INVALID_CPVS[@]}"; do
+    printf '=%s optimization/generated/example.conf\n' "${cpv}" \
+        >"${POLICY}/package.env"
+    if [[ ${cpv} == *$'\n'* ]]; then
+        expect_failure 'generated package.env line is not exactly ATOM ENVIRONMENT:' \
+            run_installer --generated-policy-generation "${POLICY}" \
+            --frozen-inventory "${FROZEN_INVENTORY}"
+    else
+        expect_failure 'generated package.env atom is not canonical =CPV' \
+            run_installer --generated-policy-generation "${POLICY}" \
+            --frozen-inventory "${FROZEN_INVENTORY}"
+    fi
+done
+printf '=app-misc/example-1 optimization/generated/example.conf\n' \
+    >"${POLICY}/package.env"
 printf '%s\n' \
     '=app-misc/example-1 optimization/generated/example.conf' \
     '=app-misc/example-1 optimization/generated/example.conf' \

@@ -16,6 +16,7 @@ from pathlib import Path
 
 
 REPOSITORY = Path(__file__).resolve().parents[3]
+EXACT_CPV_CONTRACT_PATH = REPOSITORY / "optimization/exact-cpv-contract.json"
 VERIFIER = (
     REPOSITORY
     / "scripts"
@@ -448,6 +449,16 @@ class VerifyBinpkgSnapshotTest(unittest.TestCase):
         self.assertEqual(list(temporary_directory.iterdir()), [])
 
     def test_valid_snapshot_and_json_are_deterministic(self) -> None:
+        exact_cpv_contract = json.loads(
+            EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        for cpv in exact_cpv_contract["valid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="valid"):
+                self.assertIsNotNone(VERIFIER_MODULE.CPV_RE.fullmatch(cpv))
+        for cpv in exact_cpv_contract["invalid_cpvs"]:
+            with self.subTest(cpv=cpv, expected="invalid"):
+                self.assertIsNone(VERIFIER_MODULE.CPV_RE.fullmatch(cpv))
+
         self.add_one_valid_record()
         first_process, first = self.run_verifier()
         second_process, second = self.run_verifier()
