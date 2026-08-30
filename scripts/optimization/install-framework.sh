@@ -1252,8 +1252,14 @@ snapshot_frozen_inventory() {
         def safe_id:
             type == "string" and test("^[A-Za-z0-9+_.:@-]+$");
         def exact_cpv:
+            "[A-Za-z0-9_][A-Za-z0-9+_.-]*" as $category |
+            "[A-Za-z0-9_][A-Za-z0-9+_-]*" as $package |
+            "[0-9]+(?:\\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*(?:-r[0-9]+)?" as $version_revision |
             type == "string" and
-            test("^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*(?:-r[0-9]+)?$");
+            (test("[^A-Za-z0-9_+./-]") | not) and
+            test("^" + $category + "/(?!" + $package + "-" +
+                 $version_revision + "-" + $version_revision + "$)" +
+                 $package + "-" + $version_revision + "$");
         def sha256:
             type == "string" and test("^[0-9a-f]{64}$");
         def nonempty_string:
@@ -1446,9 +1452,13 @@ PY
 }
 
 validate_generated_policy_grammar() {
-    local source=$1 line atom environment extra basename file variable value cpv
+    local source=$1 line atom environment extra basename file variable value cpv package_version
     local safe_atom_re='^[A-Za-z0-9+_.~=@<>,*:-]+/[A-Za-z0-9+_.~=@<>,*:-]+$'
-    local canonical_atom_re='^=([A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*(-r[0-9]+)?)$'
+    local category_re='[A-Za-z0-9_][A-Za-z0-9+_.-]*'
+    local package_re='[A-Za-z0-9_][A-Za-z0-9+_-]*'
+    local version_re='[0-9]+([.][0-9]+)*[a-z]?(_(alpha|beta|pre|rc|p)[0-9]*)*'
+    local version_revision_re="${version_re}(-r[0-9]+)?"
+    local canonical_atom_re="^=(${category_re}/${package_re}-${version_revision_re})$"
     local -A pairs=() referenced=() files=() variables=()
     local -a top_entries=()
     mapfile -t top_entries < <(
@@ -1467,6 +1477,9 @@ validate_generated_policy_grammar() {
         [[ ${atom} =~ ${canonical_atom_re} ]] || \
             fail "generated package.env atom is not canonical =CPV: ${atom}"
         cpv=${BASH_REMATCH[1]}
+        package_version=${cpv#*/}
+        [[ ! ${package_version} =~ ^${package_re}-${version_revision_re}-${version_revision_re}$ ]] || \
+            fail "generated package.env atom is not canonical =CPV: ${atom}"
         [[ -n ${FROZEN_CPVS["${cpv}"]+x} ]] || \
             fail "generated package.env atom is absent from the frozen inventory: ${atom}"
         if [[ -z ${TEST_ROOT} ]]; then

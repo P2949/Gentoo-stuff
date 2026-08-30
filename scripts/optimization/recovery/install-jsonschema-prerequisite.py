@@ -72,17 +72,30 @@ TRANSITIONS = {
     "rollback-in-progress": {"rolled-back", "recovery-failed"},
 }
 ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
-CPV_PATTERN = re.compile(r"[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*\Z")
+CATEGORY_PATTERN_TEXT = r"[A-Za-z0-9_][A-Za-z0-9+_.-]*"
+PACKAGE_PATTERN_TEXT = r"[A-Za-z0-9_][A-Za-z0-9+_-]*"
+VERSION_PATTERN_TEXT = (
+    r"[0-9]+(?:\.[0-9]+)*[a-z]?"
+    r"(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*"
+)
+VERSION_REVISION_PATTERN_TEXT = rf"{VERSION_PATTERN_TEXT}(?:-r[0-9]+)?"
+CPV_PATTERN_TEXT = (
+    rf"{CATEGORY_PATTERN_TEXT}/"
+    rf"(?!{PACKAGE_PATTERN_TEXT}-{VERSION_REVISION_PATTERN_TEXT}-"
+    rf"{VERSION_REVISION_PATTERN_TEXT}(?=\Z|::))"
+    rf"{PACKAGE_PATTERN_TEXT}-{VERSION_REVISION_PATTERN_TEXT}"
+)
+CPV_PATTERN = re.compile(rf"{CPV_PATTERN_TEXT}\Z")
 REPOSITORY_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9+_.-]*\Z")
 EXACT_ATOM_PATTERN = re.compile(
-    r"=(?P<cpv>[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*)"
-    r"::(?P<repository>[A-Za-z0-9][A-Za-z0-9+_.-]*)\Z"
+    rf"=(?P<cpv>{CPV_PATTERN_TEXT})"
+    rf"::(?P<repository>[A-Za-z0-9][A-Za-z0-9+_.-]*)\Z"
 )
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 SCHEDULED_LINE = re.compile(r"^\[[A-Za-z]")
 NEW_SOURCE_LINE = re.compile(
     r"^\[ebuild\s+N(?:\s+[^]]*)?\]\s+"
-    r"(?:=)?(?P<cpv>[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*)"
+    rf"(?:=)?(?P<cpv>{CPV_PATTERN_TEXT})"
     r"::(?P<repository>[A-Za-z0-9+_.-]+)(?:\s|$)"
 )
 TRANSACTION_SIGNALS = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)

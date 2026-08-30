@@ -41,6 +41,19 @@ MAX_TOOL_OUTPUT = 4 * 1024 * 1024
 TOOL_TIMEOUT_SECONDS = 30
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 BUILD_ID_RE = re.compile(r"^[0-9a-f]{8,128}$")
+CATEGORY_PATTERN = r"[A-Za-z0-9_][A-Za-z0-9+_.-]*"
+PACKAGE_PATTERN = r"[A-Za-z0-9_][A-Za-z0-9+_-]*"
+VERSION_PATTERN = (
+    r"[0-9]+(?:\.[0-9]+)*[a-z]?"
+    r"(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*"
+)
+VERSION_REVISION_PATTERN = rf"{VERSION_PATTERN}(?:-r[0-9]+)?"
+CPV_RE = re.compile(
+    rf"{CATEGORY_PATTERN}/"
+    rf"(?!{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}-"
+    rf"{VERSION_REVISION_PATTERN}\Z)"
+    rf"{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}\Z"
+)
 SAFE_GO_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_./+@~-]+$")
 SAFE_GO_SYMBOL_RE = re.compile(r"^[^\s\x00=]+$")
 SAFE_REPRODUCIBILITY_COMPONENT_RE = re.compile(r"^[A-Za-z0-9+_.@-]+$")
@@ -859,7 +872,9 @@ def validate_sample_metadata(
     require_exact_fields(package, SAMPLE_PACKAGE_FIELDS, "sample package")
     if package["fingerprint"] != sample_input_fingerprint or package["abi"] != abi:
         fail("sample metadata input fingerprint or ABI mismatch")
-    require_string(package["cpv"], "sample package CPV")
+    cpv = require_string(package["cpv"], "sample package CPV")
+    if CPV_RE.fullmatch(cpv) is None:
+        fail("sample package CPV is not an exact Gentoo CPV")
 
     compiler = require_object(metadata["compiler"], "sample compiler")
     require_exact_fields(compiler, SAMPLE_COMPILER_FIELDS, "sample compiler")

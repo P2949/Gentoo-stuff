@@ -145,6 +145,17 @@ die() {
     exit 1
 }
 
+is_exact_cpv() {
+    local cpv=$1 package_version
+    local category_re='[A-Za-z0-9_][A-Za-z0-9+_.-]*'
+    local package_re='[A-Za-z0-9_][A-Za-z0-9+_-]*'
+    local version_re='[0-9]+([.][0-9]+)*[a-z]?(_(alpha|beta|pre|rc|p)[0-9]*)*'
+    local version_revision_re="${version_re}(-r[0-9]+)?"
+    [[ ${cpv} =~ ^${category_re}/${package_re}-${version_revision_re}$ ]] || return 1
+    package_version=${cpv#*/}
+    [[ ! ${package_version} =~ ^${package_re}-${version_revision_re}-${version_revision_re}$ ]]
+}
+
 need_value() {
     (($# >= 2)) || die "option $1 requires a value"
 }
@@ -275,8 +286,12 @@ done
     die 'an exact lowercase source Packages SHA-256 is required'
 [[ ${EXPECTED_VERIFIER_SHA256} =~ ^[0-9a-f]{64}$ ]] || \
     die 'an exact lowercase immutable verifier SHA-256 is required'
+for atom in "${ATOMS[@]}"; do
+    [[ ${atom} == =* ]] && is_exact_cpv "${atom#=}" || \
+        die "non-exact or unsafe quickpkg atom: ${atom}"
+done
 if [[ ${ACTION} == finalize ]]; then
-    [[ ${RESTORE_CPV} =~ ^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$ ]] || \
+    is_exact_cpv "${RESTORE_CPV}" || \
         die 'offline finalization requires --restore-cpv with an exact CPV'
 fi
 [[ ${ACTION} == finalize || -z ${RESTORE_CPV} ]] || die '--restore-cpv requires --finalize-offline-restore'
@@ -1858,7 +1873,8 @@ bind_portage_implementation() {
     if [[ -f ${record} && ! -L ${record} ]]; then
         validate_regular_trusted_file "${record}" 0
         PORTAGE_CPV=$(${JQ} -r '.portage_cpv' "${record}") || die 'cannot load bound Portage CPV'
-        [[ ${PORTAGE_CPV} =~ ^sys-apps/portage-[0-9] ]] || die 'bound Portage CPV is malformed'
+        [[ ${PORTAGE_CPV} == sys-apps/portage-* ]] && is_exact_cpv "${PORTAGE_CPV}" || \
+            die 'bound Portage CPV is malformed'
         emerge_tool_line=$(tool_identity_line "${EMERGE}")
         python_tool_line=$(tool_identity_line "${EMERGE_PYTHON}")
         implementation_tool_line=$(tool_identity_line "${EMERGE_IMPLEMENTATION}")
@@ -1892,7 +1908,8 @@ bind_portage_implementation() {
     [[ ${TRACKED_STATUS} -eq 0 && ! -s ${match_stderr} ]] || \
         die 'exact installed Portage package lookup failed'
     mapfile -t matches <"${match_stdout}"
-    [[ ${#matches[@]} -eq 1 && ${matches[0]} =~ ^sys-apps/portage-[0-9] ]] || \
+    [[ ${#matches[@]} -eq 1 && ${matches[0]} == sys-apps/portage-* ]] && \
+        is_exact_cpv "${matches[0]}" || \
         die 'installed Portage package lookup did not return one exact CPV'
     PORTAGE_CPV=${matches[0]}
     run_tracked "${qstdout}" "${qstderr}" 30m \
@@ -4054,7 +4071,7 @@ EXPECTED_MAKE_CONF_SHA256=${EXPECTED_MAKE_CONF_SHA256%% *}
 declare -A seen_atom=()
 declare -A seen_cpv=()
 for atom in "${ATOMS[@]}"; do
-    [[ ${atom} =~ ^=([A-Za-z0-9+_.-]+)/([A-Za-z0-9+_.-]+)$ ]] || \
+    [[ ${atom} == =* ]] && is_exact_cpv "${atom#=}" || \
         die "non-exact or unsafe quickpkg atom: ${atom}"
     [[ -z ${seen_atom[${atom}]+x} ]] || die "duplicate quickpkg atom: ${atom}"
     cpv=${atom#=}

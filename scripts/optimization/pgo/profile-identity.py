@@ -53,8 +53,18 @@ HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 BUILD_ID_RE = re.compile(r"^[0-9a-f]{8,128}$")
 COMPONENT_RE = re.compile(r"^[A-Za-z0-9+_.@-]+$")
 FEATURE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+_.-]*$")
+CATEGORY_PATTERN = r"[A-Za-z0-9_][A-Za-z0-9+_.-]*"
+PACKAGE_PATTERN = r"[A-Za-z0-9_][A-Za-z0-9+_-]*"
+VERSION_PATTERN = (
+    r"[0-9]+(?:\.[0-9]+)*[a-z]?"
+    r"(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*"
+)
+VERSION_REVISION_PATTERN = rf"{VERSION_PATTERN}(?:-r[0-9]+)?"
 CPV_RE = re.compile(
-    r"^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*(?:-r[0-9]+)?$"
+    rf"{CATEGORY_PATTERN}/"
+    rf"(?!{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}-"
+    rf"{VERSION_REVISION_PATTERN}\Z)"
+    rf"{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}\Z"
 )
 PROFILE_FORMAT_PREFIX = {
     "clang": "llvm-",

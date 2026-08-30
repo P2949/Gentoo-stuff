@@ -29,9 +29,25 @@ SCHEMA_VERSION = 4
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 FINGERPRINT_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 BUILD_ID_RE = re.compile(r"^[0-9a-f]+$")
-CP_RE = re.compile(r"^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$")
-CPV_RE = re.compile(r"^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*(?:-r[0-9]+)?$")
-VERSION_RE = re.compile(r"^[0-9][A-Za-z0-9+_.]*(?:-r[0-9]+)?$")
+CATEGORY_PATTERN = r"[A-Za-z0-9_][A-Za-z0-9+_.-]*"
+PACKAGE_PATTERN = r"[A-Za-z0-9_][A-Za-z0-9+_-]*"
+VERSION_PATTERN = (
+    r"[0-9]+(?:\.[0-9]+)*[a-z]?"
+    r"(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*"
+)
+VERSION_REVISION_PATTERN = rf"{VERSION_PATTERN}(?:-r[0-9]+)?"
+CP_RE = re.compile(
+    rf"{CATEGORY_PATTERN}/"
+    rf"(?!{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}\Z)"
+    rf"{PACKAGE_PATTERN}\Z"
+)
+CPV_RE = re.compile(
+    rf"{CATEGORY_PATTERN}/"
+    rf"(?!{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}-"
+    rf"{VERSION_REVISION_PATTERN}\Z)"
+    rf"{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}\Z"
+)
+VERSION_RE = re.compile(rf"{VERSION_REVISION_PATTERN}\Z")
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9+_.:@-]+$")
 TIMESTAMP_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
 
@@ -201,6 +217,13 @@ def _fingerprint(value: Any, path: str) -> str:
     return result
 
 
+def _cpv(value: Any, path: str) -> str:
+    result = _string(value, path)
+    if not CPV_RE.fullmatch(result):
+        _error(path, "must be an exact Gentoo CPV")
+    return result
+
+
 def _timestamp(value: Any, path: str, *, nullable: bool = False) -> str | None:
     if value is None and nullable:
         return None
@@ -223,7 +246,7 @@ def _sorted_strings(value: Any, path: str, *, absolute: bool = False, allow_empt
 
 def _cp_cpv(cp: Any, cpv: Any, path: str) -> tuple[str, str]:
     cp_s = _string(cp, f"{path}.cp")
-    cpv_s = _string(cpv, f"{path}.cpv")
+    cpv_s = _cpv(cpv, f"{path}.cpv")
     if not CP_RE.fullmatch(cp_s):
         _error(f"{path}.cp", "must have category/package form")
     prefix = f"{cp_s}-"
@@ -616,9 +639,7 @@ def _source_rebuild(value: Any, path: str, generation_id: str) -> dict[str, Any]
 
 def _graph_ref(value: Any, path: str) -> dict[str, Any]:
     item = _object(value, path, {"cpv", "component_id", "evidence"})
-    cpv = _string(item["cpv"], f"{path}.cpv")
-    if "/" not in cpv:
-        _error(f"{path}.cpv", "must be an exact CPV")
+    _cpv(item["cpv"], f"{path}.cpv")
     component = _nullable_string(item["component_id"], f"{path}.component_id")
     if component is not None and not SAFE_ID_RE.fullmatch(component):
         _error(f"{path}.component_id", "must be a safe identifier")
@@ -709,6 +730,7 @@ def validate_package(record: Any) -> dict[str, Any]:
     if _bool(frozen["installed_at_freeze"], "$.frozen_inventory_entry.installed_at_freeze") is not True:
         _error("$.frozen_inventory_entry.installed_at_freeze", "must be true")
     frozen_payload = _object(frozen["payload"], "$.frozen_inventory_entry.payload", {"cpv", "repository", "slot_raw", "contents_sha256", "metadata_tree_sha256"})
+    _cpv(frozen_payload["cpv"], "$.frozen_inventory_entry.payload.cpv")
     if frozen_payload["cpv"] != identity["cpv"] or frozen_payload["repository"] != identity["repository"]:
         _error("$.frozen_inventory_entry.payload", "must identify the exact package")
     _string(frozen_payload["slot_raw"], "$.frozen_inventory_entry.payload.slot_raw")
@@ -1289,9 +1311,7 @@ def _inventory(raw: Any, path: str = "inventory") -> dict[str, Any]:
     for index, raw_package in enumerate(packages):
         ppath = f"{path}.packages[{index}]"
         package = _object(raw_package, ppath, {"cpv", "entry_sha256"})
-        cpv = _string(package["cpv"], f"{ppath}.cpv")
-        if not CPV_RE.fullmatch(cpv):
-            _error(f"{ppath}.cpv", "must be an exact versioned CPV")
+        cpv = _cpv(package["cpv"], f"{ppath}.cpv")
         package_keys.append(cpv)
         _sha(package["entry_sha256"], f"{ppath}.entry_sha256")
     if package_keys != sorted(set(package_keys)):
@@ -1303,9 +1323,12 @@ def _inventory(raw: Any, path: str = "inventory") -> dict[str, Any]:
     for index, raw_entry in enumerate(owned):
         epath = f"{path}.owned_paths[{index}]"
         entry = _object(raw_entry, epath, {"owner_cpv", "path"})
-        keys.append((_string(entry["owner_cpv"], f"{epath}.owner_cpv"), _string(entry["path"], f"{epath}.path", absolute=True)))
+        keys.append((_cpv(entry["owner_cpv"], f"{epath}.owner_cpv"), _string(entry["path"], f"{epath}.path", absolute=True)))
     if keys != sorted(set(keys)):
         _error(f"{path}.owned_paths", "must be sorted and unique")
+    package_set = set(package_keys)
+    if any(owner_cpv not in package_set for owner_cpv, _owned_path in keys):
+        _error(f"{path}.owned_paths", "owner CPV is absent from packages")
     directories = item["owned_directories"]
     if not isinstance(directories, list):
         _error(f"{path}.owned_directories", "must be an array")
@@ -1313,7 +1336,7 @@ def _inventory(raw: Any, path: str = "inventory") -> dict[str, Any]:
     for index, raw_entry in enumerate(directories):
         epath = f"{path}.owned_directories[{index}]"
         entry = _object(raw_entry, epath, {"owner_cpv", "path", "mode", "uid", "gid", "classification", "resolution"})
-        directory_keys.append((_string(entry["owner_cpv"], f"{epath}.owner_cpv"), _string(entry["path"], f"{epath}.path", absolute=True)))
+        directory_keys.append((_cpv(entry["owner_cpv"], f"{epath}.owner_cpv"), _string(entry["path"], f"{epath}.path", absolute=True)))
         mode = _int(entry["mode"], f"{epath}.mode")
         if mode > 0o7777:
             _error(f"{epath}.mode", "must contain only Unix permission/special bits")
@@ -1326,6 +1349,8 @@ def _inventory(raw: Any, path: str = "inventory") -> dict[str, Any]:
             _error(f"{epath}.resolution", "directory reason must be not-machine-code")
     if directory_keys != sorted(set(directory_keys)):
         _error(f"{path}.owned_directories", "must be sorted and unique")
+    if any(owner_cpv not in package_set for owner_cpv, _owned_path in directory_keys):
+        _error(f"{path}.owned_directories", "owner CPV is absent from packages")
     if set(keys) & set(directory_keys):
         _error(path, "file/symlink and directory inventories must not overlap")
     return item
@@ -1466,9 +1491,9 @@ def validate_final_system_state(value: Any) -> dict[str, Any]:
         path = f"$.registries.dependency_edges[{index}]"
         edge = _object(raw, path, {"consumer_cpv", "consumer_component_id", "provider_cpv", "provider_component_id", "evidence"})
         edge_key = (
-            _string(edge["consumer_cpv"], f"{path}.consumer_cpv"),
+            _cpv(edge["consumer_cpv"], f"{path}.consumer_cpv"),
             _string(edge["consumer_component_id"], f"{path}.consumer_component_id"),
-            _string(edge["provider_cpv"], f"{path}.provider_cpv"),
+            _cpv(edge["provider_cpv"], f"{path}.provider_cpv"),
             _string(edge["provider_component_id"], f"{path}.provider_component_id"),
         )
         edge_keys.append(edge_key)

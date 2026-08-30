@@ -1,0 +1,39 @@
+{
+  "schema": "gentoo-optimization-exact-cpv-contract-v1",
+  "authority": {
+    "reference": "Gentoo PMS package/version grammar, cross-checked with portage.versions.catpkgsplit in Portage 3.0.81.1",
+    "scope": "Fields described as exact CPVs; general package atoms and deliberately lexical path tokens are outside this contract"
+  },
+  "grammar": {
+    "category": "ASCII alphanumeric or underscore first, followed by ASCII alphanumeric, underscore, plus, dot, or hyphen",
+    "package": "ASCII alphanumeric or underscore first, followed by ASCII alphanumeric, underscore, plus, or hyphen; dot is forbidden",
+    "version": "digits, zero or more dot-digits, one optional lowercase letter, then zero or more alpha, beta, pre, rc, or p suffixes with optional digits",
+    "revision": "at most one trailing -r followed by digits",
+    "disambiguation": "the package portion before the final version delimiter must not itself end in a complete valid version/revision"
+  },
+  "valid_cpvs": [
+    "app+misc/example+tool-1",
+    "app-misc/example-1",
+    "app-misc/example--1",
+    "app-misc/example-tool-1.2",
+    "app-misc/example-1.2_rc3",
+    "app-misc/example-1.2_p4-r2",
+    "cross-x86_64.foo/binutils-2.44-r1",
+    "dev-lang/foo_bar-01.002a_alpha2_p3-r01",
+    "sys-devel/gcc-15.2.1_p20250816"
+  ],
+  "invalid_cpvs": [
+    "+app/example-1",
+    "app-misc/+example-1",
+    "app-misc/example",
+    "app-misc/example-1+foo",
+    "app-misc/example-1-2",
+    "app-misc/example-1_alpha-2",
+    "app-misc/example-1-r1-r2",
+    "app-misc/example-1a-2",
+    "app-misc/example-1\n",
+    "app-misc/example-1XYZ",
+    "app-misc/example-1__foo",
+    "app-misc/example.name-1"
+  ]
+}

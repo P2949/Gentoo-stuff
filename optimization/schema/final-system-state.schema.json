@@ -66,6 +66,7 @@
   },
   "$defs": {
     "sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "cpv": {"type": "string", "pattern": "^(?![\\s\\S]*[^A-Za-z0-9_+./-])[A-Za-z0-9_][A-Za-z0-9+_.-]*/(?![A-Za-z0-9_][A-Za-z0-9+_-]*-[0-9]+(?:\\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*(?:-r[0-9]+)?-[0-9]+(?:\\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*(?:-r[0-9]+)?$)[A-Za-z0-9_][A-Za-z0-9+_-]*-[0-9]+(?:\\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*(?:-r[0-9]+)?$"},
     "path": {"type": "string", "pattern": "^/[^\\u0000]+$"},
     "generation": {
       "type": "object", "additionalProperties": false,
@@ -98,8 +99,8 @@
       "type": "object", "additionalProperties": false,
       "required": ["consumer_cpv", "consumer_component_id", "provider_cpv", "provider_component_id", "evidence"],
       "properties": {
-        "consumer_cpv": {"type": "string", "minLength": 3}, "consumer_component_id": {"type": "string", "minLength": 1},
-        "provider_cpv": {"type": "string", "minLength": 3}, "provider_component_id": {"type": "string", "minLength": 1},
+        "consumer_cpv": {"$ref": "#/$defs/cpv"}, "consumer_component_id": {"type": "string", "minLength": 1},
+        "provider_cpv": {"$ref": "#/$defs/cpv"}, "provider_component_id": {"type": "string", "minLength": 1},
         "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
       }
     }

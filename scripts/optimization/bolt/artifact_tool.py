@@ -37,6 +37,19 @@ SCHEMA_FDATA_PROOF = "gentoo-optimization-bolt-fdata-quality-proof-v1"
 SCHEMA_QUALITY_COMMAND = "gentoo-optimization-bolt-quality-command-v1"
 FINGERPRINT_RE = re.compile(r"[0-9a-f]{64}")
 BUILD_ID_RE = re.compile(r"Build ID:\s*([0-9A-Fa-f]+)")
+CATEGORY_PATTERN = r"[A-Za-z0-9_][A-Za-z0-9+_.-]*"
+PACKAGE_PATTERN = r"[A-Za-z0-9_][A-Za-z0-9+_-]*"
+VERSION_PATTERN = (
+    r"[0-9]+(?:\.[0-9]+)*[a-z]?"
+    r"(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*"
+)
+VERSION_REVISION_PATTERN = rf"{VERSION_PATTERN}(?:-r[0-9]+)?"
+EXACT_CPV_RE = re.compile(
+    rf"{CATEGORY_PATTERN}/"
+    rf"(?!{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}-"
+    rf"{VERSION_REVISION_PATTERN}\Z)"
+    rf"{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}\Z"
+)
 HEADER_RE = re.compile(
     r"^\s*(Class|Data|Version|OS/ABI|ABI Version|Type|Machine|Flags):\s*(.*?)\s*$"
 )
@@ -1486,9 +1499,7 @@ def inventory_proof(
         if not isinstance(document[field], str) or re.fullmatch(r"[A-Za-z0-9._-]{1,128}", document[field]) is None:
             fail(f"BOLT inventory proof has an invalid {field}")
     cpv = document["cpv"]
-    if not isinstance(cpv, str) or re.fullmatch(
-        r"[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+", cpv
-    ) is None:
+    if not isinstance(cpv, str) or EXACT_CPV_RE.fullmatch(cpv) is None:
         fail("BOLT inventory proof has an invalid exact CPV")
     if not isinstance(document["inventory_entry_sha256"], str) or FINGERPRINT_RE.fullmatch(
         document["inventory_entry_sha256"]

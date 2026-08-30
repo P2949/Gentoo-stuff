@@ -36,7 +36,19 @@ ZSTD_TEST_KILL_AFTER_SECONDS = 2.0
 ZSTD_TEST_MAX_STDERR = 64 * 1024
 ZSTD_TEST_DRAIN_MAX_BYTES = 256 * 1024
 ZSTD_TEST_DRAIN_MAX_READS = 8
-CPV_RE = re.compile(r"^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$")
+CATEGORY_PATTERN = r"[A-Za-z0-9_][A-Za-z0-9+_.-]*"
+PACKAGE_PATTERN = r"[A-Za-z0-9_][A-Za-z0-9+_-]*"
+VERSION_PATTERN = (
+    r"[0-9]+(?:\.[0-9]+)*[a-z]?"
+    r"(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*"
+)
+VERSION_REVISION_PATTERN = rf"{VERSION_PATTERN}(?:-r[0-9]+)?"
+CPV_RE = re.compile(
+    rf"{CATEGORY_PATTERN}/"
+    rf"(?!{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}-"
+    rf"{VERSION_REVISION_PATTERN}\Z)"
+    rf"{PACKAGE_PATTERN}-{VERSION_REVISION_PATTERN}\Z"
+)
 HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
 INNER_ARCHIVE_RE = {
     "metadata": re.compile(

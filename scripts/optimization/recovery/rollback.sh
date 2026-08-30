@@ -154,6 +154,17 @@ die() {
     exit 1
 }
 
+is_exact_cpv() {
+    local cpv=$1 package_version
+    local category_re='[A-Za-z0-9_][A-Za-z0-9+_.-]*'
+    local package_re='[A-Za-z0-9_][A-Za-z0-9+_-]*'
+    local version_re='[0-9]+([.][0-9]+)*[a-z]?(_(alpha|beta|pre|rc|p)[0-9]*)*'
+    local version_revision_re="${version_re}(-r[0-9]+)?"
+    [[ ${cpv} =~ ^${category_re}/${package_re}-${version_revision_re}$ ]] || return 1
+    package_version=${cpv#*/}
+    [[ ! ${package_version} =~ ^${package_re}-${version_revision_re}-${version_revision_re}$ ]]
+}
+
 warn() {
     log WARN "$*" >&2
 }
@@ -729,9 +740,7 @@ atom_to_cpv() {
     body=${atom#=}
     body=${body%%::*}
     body=${body%%:*}
-    [[ ${body} == */* ]] || die "invalid exact atom: ${atom}"
-    [[ ${body#*/} =~ -[0-9] ]] || die "exact atom lacks a version beginning with a digit: ${atom}"
-    [[ ${body} =~ ^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+$ ]] || die "invalid characters in exact atom: ${atom}"
+    is_exact_cpv "${body}" || die "invalid exact Gentoo CPV in restore atom: ${atom}"
     ATOM_CPV=${body}
 }
 

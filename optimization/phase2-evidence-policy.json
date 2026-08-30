@@ -14,9 +14,10 @@
       "claim_id": "phase2-automation",
       "source_paths": [
         ".github/workflows/portable-optimization-validation.yml",
-        "docs/binpkg-checkpoint-runbook.md",
-        "docs/phase2-production-profile-transaction.md",
-        "optimization/phase2-authoritative-test-contract.json",
+      "docs/binpkg-checkpoint-runbook.md",
+      "docs/phase2-production-profile-transaction.md",
+      "optimization/exact-cpv-contract.json",
+      "optimization/phase2-authoritative-test-contract.json",
         "scripts/optimization/recovery/create-binpkg-checkpoint.sh",
         "scripts/optimization/recovery/install-jsonschema-prerequisite.py",
         "scripts/optimization/recovery/publish-jsonschema-prerequisite-bootstrap.py",
@@ -35,8 +36,9 @@
     {
       "claim_id": "phase2-bolt-hooks",
       "source_paths": [
-        "docs/bolt-global.md",
-        "portage/install-qa-check.d/zz-gentoo-optimization-bolt",
+      "docs/bolt-global.md",
+      "optimization/exact-cpv-contract.json",
+      "portage/install-qa-check.d/zz-gentoo-optimization-bolt",
         "scripts/bolt/bolt-package-binaries.sh",
         "scripts/bolt/collect-profile.sh",
         "scripts/bolt/list-package-binaries.sh",
@@ -53,6 +55,7 @@
     {
       "claim_id": "phase2-dispatcher",
       "source_paths": [
+        "optimization/exact-cpv-contract.json",
         "portage/bashrc",
         "scripts/optimization/pgo/profile-identity.py",
         "scripts/optimization/pgo/validate-profile.py",
@@ -62,8 +65,9 @@
     {
       "claim_id": "phase2-evidence-index",
       "source_paths": [
-        "docs/phase2-production-profile-transaction.md",
-        "optimization/phase2-authoritative-test-contract.json",
+      "docs/phase2-production-profile-transaction.md",
+      "optimization/exact-cpv-contract.json",
+      "optimization/phase2-authoritative-test-contract.json",
         "optimization/phase2-evidence-policy.json",
         "optimization/phase2-tool-manifest.json",
         "optimization/schema/phase2-component-state.schema.json",
@@ -77,6 +81,7 @@
     {
       "claim_id": "phase2-framework",
       "source_paths": [
+        "optimization/exact-cpv-contract.json",
         "optimization/tmpfiles/gentoo-optimization.conf",
         "scripts/optimization/install-framework.sh",
         "scripts/optimization/pgo/authorization-token-scan.py",
@@ -91,6 +96,7 @@
     {
       "claim_id": "phase2-sample-pgo",
       "source_paths": [
+        "optimization/exact-cpv-contract.json",
         "scripts/optimization/pgo/authorization-token-scan.py",
         "scripts/optimization/pgo/production-profile-lock-transaction.py",
         "scripts/optimization/pgo/profile-identity.py",
@@ -163,6 +169,7 @@
     "docs/binpkg-checkpoint-runbook.md",
     "docs/bolt-global.md",
     "docs/phase2-production-profile-transaction.md",
+    "optimization/exact-cpv-contract.json",
     "optimization/phase2-authoritative-test-contract.json",
     "optimization/phase2-evidence-policy.json",
     "optimization/phase2-tool-manifest.json",

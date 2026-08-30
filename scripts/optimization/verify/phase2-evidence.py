@@ -46,13 +46,24 @@ SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 CHECKED_RE = re.compile(r"^\s*-\s+\[[xX]\]\s+")
 TOP_TEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,1023}$")
 SUBTEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$")
-PREREQUISITE_CPV_RE = re.compile(
-    r"^[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*$"
+CATEGORY_PATTERN_TEXT = r"[A-Za-z0-9_][A-Za-z0-9+_.-]*"
+PACKAGE_PATTERN_TEXT = r"[A-Za-z0-9_][A-Za-z0-9+_-]*"
+VERSION_PATTERN_TEXT = (
+    r"[0-9]+(?:\.[0-9]+)*[a-z]?"
+    r"(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*"
 )
+VERSION_REVISION_PATTERN_TEXT = rf"{VERSION_PATTERN_TEXT}(?:-r[0-9]+)?"
+PREREQUISITE_CPV_PATTERN_TEXT = (
+    rf"{CATEGORY_PATTERN_TEXT}/"
+    rf"(?!{PACKAGE_PATTERN_TEXT}-{VERSION_REVISION_PATTERN_TEXT}-"
+    rf"{VERSION_REVISION_PATTERN_TEXT}(?=\Z|::))"
+    rf"{PACKAGE_PATTERN_TEXT}-{VERSION_REVISION_PATTERN_TEXT}"
+)
+PREREQUISITE_CPV_RE = re.compile(rf"{PREREQUISITE_CPV_PATTERN_TEXT}\Z")
 PREREQUISITE_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+_.-]*$")
 PREREQUISITE_EXACT_ATOM_RE = re.compile(
-    r"^=(?P<cpv>[A-Za-z0-9+_.-]+/[A-Za-z0-9+_.-]+-[0-9][A-Za-z0-9+_.-]*)"
-    r"::(?P<repository>[A-Za-z0-9][A-Za-z0-9+_.-]*)$"
+    rf"=(?P<cpv>{PREREQUISITE_CPV_PATTERN_TEXT})"
+    rf"::(?P<repository>[A-Za-z0-9][A-Za-z0-9+_.-]*)\Z"
 )
 PREREQUISITE_TRANSACTION_PATH = (
     "/usr/bin:/usr/lib/llvm/22/bin:/bin:/usr/sbin:/sbin"
@@ -3038,7 +3049,7 @@ def parse_packages_records(payload: bytes, label: str) -> list[dict[str, str | i
         cpv = fields["CPV"]
         relative = fields["PATH"]
         if (
-            not cpv
+            PREREQUISITE_CPV_RE.fullmatch(cpv) is None
             or cpv in seen_cpvs
             or relative in seen_paths
             or relative_path(relative, f"{label} record path") != relative
@@ -3196,7 +3207,9 @@ def validate_checkpoint_snapshot(
             f"{prefix} archive {index}",
             {"cpv", "exists", "gpkg", "md5", "path", "record", "regular", "sha1", "size"},
         )
-        cpv = require_string(archive.get("cpv"), f"{prefix} archive CPV")
+        cpv = require_string(
+            archive.get("cpv"), f"{prefix} archive CPV", PREREQUISITE_CPV_RE
+        )
         relative = relative_path(archive.get("path"), f"{prefix} archive path")
         package_record = package_records_by_cpv.get(cpv)
         if (
@@ -3724,7 +3737,9 @@ def validate_checkpoint_lane(
             "archive_sha256",
         ),
     )
-    restored_cpv = require_string(binpkg_record.get("cpv"), f"{lane} restored CPV")
+    restored_cpv = require_string(
+        binpkg_record.get("cpv"), f"{lane} restored CPV", PREREQUISITE_CPV_RE
+    )
     selected_ns = require_string(
         binpkg_record.get("selected_at_unix_ns"),
         f"{lane} restore selection time",
@@ -4029,8 +4044,10 @@ def validate_checkpoint_lane(
     portage_cpv = require_string(
         portage.get("cpv"),
         f"{lane} Portage CPV",
-        re.compile(r"sys-apps/portage-[0-9][^\n\r\t\0]*"),
+        PREREQUISITE_CPV_RE,
     )
+    if not portage_cpv.startswith("sys-apps/portage-"):
+        fail(f"{lane} Portage CPV is not sys-apps/portage")
     portage_python = require_object(
         portage.get("python"),
         f"{lane} Portage Python",
@@ -4955,6 +4972,7 @@ def validate_checkpoint_lane(
     if (
         not delta_cpvs
         or delta_cpvs != sorted(set(delta_cpvs))
+        or any(PREREQUISITE_CPV_RE.fullmatch(cpv) is None for cpv in delta_cpvs)
         or delta.get("sorted_cpvs_sha256") != sha256(delta_payload)
         or delta.get("count") != len(delta_cpvs)
     ):
@@ -7097,7 +7115,11 @@ def validate_prerequisite_pkgdir_report(
     observed_cpvs: list[str] = []
     for raw_archive in archives:
         archive = require_object(raw_archive, "jsonschema private PKGDIR archive")
-        cpv = require_string(archive.get("cpv"), "jsonschema private PKGDIR archive CPV")
+        cpv = require_string(
+            archive.get("cpv"),
+            "jsonschema private PKGDIR archive CPV",
+            PREREQUISITE_CPV_RE,
+        )
         relative = relative_path(
             archive.get("path"), "jsonschema private PKGDIR archive path"
         )
@@ -8724,17 +8746,40 @@ def validate_prerequisite_success_state(
             "jsonschema prerequisite plan row",
             {"cpv", "repository", "exact_atom", "normalized_display"},
         )
-        cpv = require_string(row["cpv"], "jsonschema prerequisite CPV")
-        repository_name = require_string(row["repository"], "jsonschema prerequisite repository")
-        exact_atom = f"={cpv}::{repository_name}"
-        if row.get("exact_atom") != exact_atom:
+        cpv = require_string(
+            row["cpv"], "jsonschema prerequisite CPV", PREREQUISITE_CPV_RE
+        )
+        repository_name = require_string(
+            row["repository"],
+            "jsonschema prerequisite repository",
+            PREREQUISITE_REPOSITORY_RE,
+        )
+        exact_atom = require_string(
+            row.get("exact_atom"),
+            "jsonschema prerequisite exact atom",
+            PREREQUISITE_EXACT_ATOM_RE,
+        )
+        exact_atom_match = PREREQUISITE_EXACT_ATOM_RE.fullmatch(exact_atom)
+        if (
+            exact_atom_match is None
+            or exact_atom_match.group("cpv") != cpv
+            or exact_atom_match.group("repository") != repository_name
+        ):
             fail("jsonschema prerequisite exact atom differs from its plan row")
         require_string(row["normalized_display"], "jsonschema prerequisite normalized display")
         cpvs.append(cpv)
         exact_atoms.append(exact_atom)
-    ordered_atoms = require_list(
-        plan["ordered_exact_atoms"], "jsonschema prerequisite ordered exact atoms"
-    )
+    ordered_atoms = [
+        require_string(
+            atom,
+            "jsonschema prerequisite ordered exact atom",
+            PREREQUISITE_EXACT_ATOM_RE,
+        )
+        for atom in require_list(
+            plan["ordered_exact_atoms"],
+            "jsonschema prerequisite ordered exact atoms",
+        )
+    ]
     if (
         plan.get("schema_version") != 1
         or cpvs != sorted(set(cpvs))
@@ -8750,6 +8795,7 @@ def validate_prerequisite_success_state(
         require_string(
             require_object(row, "jsonschema plan metadata row").get("cpv"),
             "jsonschema plan metadata CPV",
+            PREREQUISITE_CPV_RE,
         )
         for row in plan_metadata_rows
     ]
@@ -9146,7 +9192,11 @@ def validate_prerequisite_success_state(
                 "preexisting_destinations_sha256",
             },
         )
-        cpv = require_string(admission.get("cpv"), "jsonschema payload admission CPV")
+        cpv = require_string(
+            admission.get("cpv"),
+            "jsonschema payload admission CPV",
+            PREREQUISITE_CPV_RE,
+        )
         admission_path, admission_payload = read_sha256_reference(
             admission,
             f"jsonschema payload admission {cpv}",
