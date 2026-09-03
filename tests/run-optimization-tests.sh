@@ -181,7 +181,7 @@ GO_PGO_ITERATIONS, and BOLT_FIXTURE_TRAIN_ITERATIONS) are passed through.
 
 The default smoke mode never invokes perf or a PGO/BOLT training workload.
 All writes stay in a private test directory. Recovery tests use fake roots and
-mocked package/EFI tools; capability fixtures only build/profile local fixtures.
+mocked package tools; capability fixtures only build/profile local fixtures.
 An individual fixture exit status of 77 is recorded as an explicit reason-bearing
 SKIP rather than as a pass or failure.
 EOF
@@ -221,7 +221,7 @@ portable suites (smoke runs only the initial static/core subset):
   bolt-transaction-fixture (hermetic timeout/publication/interruption paths)
   bolt-pre-strip-hooks (hermetic capture/register/deploy and rollback fixture)
   driver-cli-self-test
-  recovery-boot-evidence-fixture (fake root)
+  no-boot-entry-automation (permanent firmware/kernel authority prohibition)
   recovery-rollback-fixture (fake root, including Clang/libc++ and GCC/libstdc++)
 
 opt-in capability fixtures:
@@ -295,7 +295,7 @@ emit_contract_topology() {
         portage-sample-production-env
         production-profile-lock-crash-stress
         python-source-compilation
-        recovery-boot-evidence-fixture
+        no-boot-entry-automation
         recovery-rollback-fixture
         shellcheck
     )
@@ -1822,15 +1822,15 @@ else
     skip_case driver-cli-self-test "fixture is absent: ${DRIVER_SELF_TEST}"
 fi
 
-BOOT_EVIDENCE_FIXTURE=${REPOSITORY_ROOT}/optimization/fixtures/recovery/test-record-boot-evidence.sh
-if [[ ! -f ${BOOT_EVIDENCE_FIXTURE} ]]; then
-    skip_case recovery-boot-evidence-fixture \
-        "fixture is absent: ${BOOT_EVIDENCE_FIXTURE}"
-elif ! require_commands bash grep find sha256sum mktemp; then
-    skip_case recovery-boot-evidence-fixture "${PREFLIGHT_REASON}"
+NO_BOOT_AUTOMATION_FIXTURE=${REPOSITORY_ROOT}/optimization/fixtures/recovery/test-no-boot-entry-automation.sh
+if [[ ! -f ${NO_BOOT_AUTOMATION_FIXTURE} ]]; then
+    skip_case no-boot-entry-automation \
+        "fixture is absent: ${NO_BOOT_AUTOMATION_FIXTURE}"
+elif ! require_commands bash grep sed; then
+    skip_case no-boot-entry-automation "${PREFLIGHT_REASON}"
 else
-    run_case recovery-boot-evidence-fixture \
-        "${BASH_BIN}" -- "${BOOT_EVIDENCE_FIXTURE}"
+    run_case no-boot-entry-automation \
+        "${BASH_BIN}" -- "${NO_BOOT_AUTOMATION_FIXTURE}"
 fi
 
 ROLLBACK_FIXTURE=${REPOSITORY_ROOT}/optimization/fixtures/recovery/test-rollback.sh
@@ -1923,7 +1923,7 @@ preflight_recovery_abi_lanes() {
 
 if [[ ! -f ${ROLLBACK_FIXTURE} ]]; then
     skip_case recovery-rollback-fixture "fixture is absent: ${ROLLBACK_FIXTURE}"
-elif ! require_commands bash clang++ g++ readelf iconv od md5sum sha256sum \
+elif ! require_commands bash clang++ g++ readelf md5sum sha256sum \
     stat realpath flock rm; then
     skip_case recovery-rollback-fixture \
         "${PREFLIGHT_REASON}; the C++ ABI lane fixture was not run"

@@ -5,6 +5,15 @@ checkpoint. It does not authorize an optimization generation. Run it only from
 the live Gentoo host as root, with package mutations stopped, and preserve the
 entire report and state trees.
 
+This is package-state recovery only. It must not inspect as a gate, create,
+edit, delete, reorder, select, or arm any boot entry; set or clear `BootNext`;
+change `BootOrder`; write EFI variables; invoke boot-entry management tools;
+or write `/efi`, `/boot`, bootloader configuration, kernel images, or initramfs
+images. Kernel configuration/build/install/deployment is human-only and outside
+this project. If any checkpoint or restore path would cross that boundary,
+stop before mutation; do not add a recovery-entry prerequisite and do not ask a
+human to create one for the project.
+
 ## Transaction states
 
 Each checkpoint ID has three immutable state records. The canonical

@@ -11,6 +11,24 @@ unless an existing required Phase 2 gate exposes a reproducible blocker that
 cannot be fixed within the current architecture. This freeze does not permit
 skipping or weakening an existing safeguard.
 
+## Boot and kernel safety boundary
+
+This is a userspace optimization project. Automated and LLM-directed work must
+never create, edit, delete, reorder, select, or arm a firmware/EFI/bootloader
+entry; set or clear `BootNext`; change `BootOrder`; write EFI variables; invoke
+boot-entry management tools; or modify `/efi`, `/boot`, bootloader
+configuration, kernel images, or initramfs images. Existing boot configuration
+must remain unchanged and outside project authority. No project test, recovery gate,
+acceptance condition, or evidence claim may depend on a recovery boot entry.
+
+Kernel configuration, build, installation, replacement, and deployment are
+human-only activities outside this project. The project must not ask a human to
+perform them as a project step. Kernel lifecycle packages and artifacts are
+recorded with the machine-valid terminal reason `kernel-policy-exclusion` (the
+human-only system boundary), while read-only running-kernel observations may be retained solely to identify the
+userspace execution environment. See [`AGENTS.md`](AGENTS.md) for the binding
+agent instructions.
+
 The default is intentionally risky and bleeding edge. Packages should start at
 the most aggressive tier, then be demoted one axis at a time through
 `portage/package.env` only when a real build failure, runtime bug, or
@@ -47,11 +65,12 @@ Portable-complete runs the complete portable non-capability, non-stress suite
 and reports reason-bearing environment skips; it is not an authoritative
 Gentoo-host pass.
 
-Live recovery and Phase 2 authorization have exact operator procedures:
+Live package-state recovery and Phase 2 authorization have exact operator
+procedures:
 
 - [`docs/binpkg-checkpoint-runbook.md`](docs/binpkg-checkpoint-runbook.md) for
   creating, activating, reconciling, and proving an exact package-managed
-  rollback checkpoint.
+  rollback checkpoint. It does not manage the boot chain.
 - [`docs/phase2-production-profile-transaction.md`](docs/phase2-production-profile-transaction.md)
   for Candidate A/B installation, the supervised production sample-PGO
   transaction, recovery, evidence retention, and detached authorization.

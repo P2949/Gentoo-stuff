@@ -152,7 +152,7 @@
     "python-source-compilation",
     "python-unit-tests:tests/optimization",
     "python-unit-tests:tests/optimization/recovery",
-    "recovery-boot-evidence-fixture",
+    "no-boot-entry-automation",
     "recovery-rollback-fixture",
     "shellcheck"
   ],

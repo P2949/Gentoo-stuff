@@ -11,6 +11,15 @@ on the first unexpected result. Never remove or edit a transaction journal,
 child sidecar, authorization file, receipt, token-scan result, or stable lock by
 hand.
 
+This transaction is userspace-only. It must never create, edit, delete,
+reorder, select, or arm a boot entry; set or clear `BootNext`; change
+`BootOrder`; write EFI variables; invoke boot-entry management tools; or modify
+`/efi`, `/boot`, bootloader configuration, a kernel image, or an initramfs.
+Boot-entry state is not a Phase 2 prerequisite or evidence input. Kernel
+configuration/build/install/deployment is human-only, outside this project, and
+must not be requested as a project step. Stop before any package mutation that
+would cross this boundary.
+
 ## Trust and non-circular evidence model
 
 The final evidence index is deliberately detached from both Git and the evidence
@@ -669,6 +678,10 @@ provenance and production transaction receipt. If the machine reboots before
 Phase 3 begins, preserve this run as historical evidence, allocate a new run
 ID, and rerun the complete host gate, production sample transaction, component
 states, and index capture. A prior index can never authorize a later boot.
+
+This same-boot binding is a userspace runtime identity only. It must not include
+or inspect firmware/boot-entry identity and does not authorize any boot-chain
+change.
 
 Preserve the immutable checkout, bundle, complete evidence root, all component
 states, validation-inventory JSON, transaction receipt,

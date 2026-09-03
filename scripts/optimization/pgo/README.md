@@ -5,14 +5,20 @@ classification and the Portage PGO dispatcher. It does not infer a profile
 from `CATEGORY/PN`, and it never searches for a profile merely because a file
 exists.
 
+This is a userspace-only tool. Kernel images, kernel modules, kernel build or
+installation packages, initramfs assets, and the boot chain are excluded under
+the terminal reason `kernel-policy-exclusion`. No LLM or automated project
+action may configure/build/install a kernel or initramfs, modify `/efi` or
+`/boot`, or create or alter a boot entry. The running kernel may be observed
+read-only only as host context.
+
 ## Package fingerprint
 
 The input is one strict JSON object. Unknown or missing fields are errors. Its
 fields correspond to plan section 7.1: exact package/slot/repository/ebuild,
 CHOST and ABI, the active compiler, complete flag sets, output-affecting
-FEATURES, the ordered `package.env` stack, build-system arguments and the
-kernel release when the package builds kernel modules. Rust fingerprints also
-require the exact target triple and the bundled LLVM version reported by the
+FEATURES, the ordered `package.env` stack, and build-system arguments. Rust
+fingerprints also require the exact target triple and the bundled LLVM version reported by the
 exact `rustc`; the target must appear in that compiler's target list. These
 fields must be null for every non-Rust compiler. The tool resolves and
 executes the compiler itself and records its real path, binary SHA-256 and full
@@ -51,9 +57,9 @@ scripts/optimization/pgo/profile-identity.py profile-path \
     --build-id "${build_id}"
 ```
 
-The families are `clang-ir`, `rust`, `gcc`, `go`, `clang-sample`, and
-`kernel`. They have non-overlapping compiler/generation/package/ABI identity
-axes. Rust paths additionally separate the exact Rust language/compiler
+The families are `clang-ir`, `rust`, `gcc`, `go`, and `clang-sample`. They have
+non-overlapping compiler/generation/package/ABI identity axes. Rust paths
+additionally separate the exact Rust language/compiler
 version, bundled LLVM major, complete bundled LLVM version, and target triple.
 A caller must never substitute one family path for another.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strict v3 optimization state contracts and collection reconciliation.
+"""Strict v5 optimization state contracts and collection reconciliation.
 
 JSON Schema documents the wire format.  This module is the semantic authority:
 it rejects contradictory state machines, incomplete evidence, mismatched ABI and
@@ -25,7 +25,8 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, NoReturn, Sequence
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
+FINAL_SYSTEM_SCHEMA_VERSION = 2
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 FINGERPRINT_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 BUILD_ID_RE = re.compile(r"^[0-9a-f]+$")
@@ -68,7 +69,6 @@ AUTHORITATIVE_LOCKS = {
 PRODUCTION_GETCAP = Path("/usr/bin/getcap")
 PRODUCTION_READELF = Path("/usr/bin/readelf")
 PRODUCTION_UNAME = Path("/usr/bin/uname")
-PRODUCTION_EFIBOOTMGR = Path("/usr/bin/efibootmgr")
 PRODUCTION_RC_STATUS = Path("/bin/rc-status")
 BOLT_POLICY_REVISION = "gentoo-system-wide-bolt-v1-cdsort-20260712"
 BOLT_APPROVED_ARGV = [
@@ -101,7 +101,7 @@ LANGUAGES = {"c", "c++", "fortran", "rust", "go", "jvm", "python", "shell", "dat
 COMPONENT_KINDS = {"native", "rust", "go", "kernel", "jvm", "script-data", "gpu", "other"}
 BACKENDS = {
     "clang-ir", "clang-sample", "gcc-gcov", "rust-llvm-ir", "go-pprof",
-    "ebuild-native", "kernel-autofdo", "not-applicable",
+    "ebuild-native", "not-applicable",
 }
 TOOL_FAMILIES = {
     "clang", "gcc", "rust", "go", "lld", "gnu-binutils", "llvm-binutils",
@@ -111,7 +111,7 @@ TOOL_ROLES = {"cc", "cxx", "fc", "rustc", "go", "linker", "archiver", "profiler"
 PGO_STATUSES = {"pending", "training", "profiled", "optimized", "not-applicable", "terminal-exclusion", "unknown", "failed"}
 BOLT_STATUSES = {"pending", "captured", "profiled", "optimized", "not-applicable", "terminal-exclusion", "unknown", "failed"}
 ELIGIBILITIES = {"eligible", "not-applicable", "terminal-exclusion", "unknown"}
-SOURCE_STATUSES = {"pending", "running", "succeeded", "unknown", "failed"}
+SOURCE_STATUSES = {"pending", "running", "succeeded", "not-applicable", "unknown", "failed"}
 FINAL_STATUSES = {"pending", "optimized", "optimized-with-exclusions", "not-applicable", "terminal-exclusion", "unknown", "failed"}
 
 ARTIFACT_KINDS = {
@@ -141,7 +141,7 @@ ARTIFACT_KEYS = {
 }
 FINAL_SYSTEM_KEYS = {
     "schema_version", "record_type", "generation", "trusted_roots", "locks",
-    "validators", "registries", "final_transaction", "boot",
+    "validators", "registries", "final_transaction", "runtime_after_reboot",
 }
 
 
@@ -391,7 +391,7 @@ def _toolchain(value: Any, path: str, languages: set[str], backend: str, abi: st
             _error(path, "gcc-gcov requires a pure GCC CC/CXX/FC tuple")
     family_requirements = {
         "rust-llvm-ir": ("rustc", "rust"),
-        "go-pprof": ("go", "go"), "kernel-autofdo": ("cc", "clang"),
+        "go-pprof": ("go", "go"),
     }
     requirement = family_requirements.get(backend)
     if requirement:
@@ -491,19 +491,24 @@ def _pgo(value: Any, path: str, backend: str, generation_id: str, toolchain: dic
     return item
 
 
-def _kernel_build(value: Any, path: str, required: bool) -> dict[str, Any] | None:
+def _kernel_observation(value: Any, path: str, required: bool) -> dict[str, Any] | None:
     if value is None:
         if required:
             _error(path, "is required for a kernel component")
         return None
     if not required:
         _error(path, "must be null outside a kernel component")
-    item = _object(value, path, {"release", "config", "image", "modules_manifest", "boot_entry_id", "boot_evidence"})
+    item = _object(value, path, {
+        "release", "config", "image", "modules_manifest", "operator_managed",
+        "project_mutation_prohibited",
+    })
     _string(item["release"], f"{path}.release")
     for key in ("config", "image", "modules_manifest"):
         _evidence(item[key], f"{path}.{key}")
-    _string(item["boot_entry_id"], f"{path}.boot_entry_id")
-    _evidence_list(item["boot_evidence"], f"{path}.boot_evidence", required=True)
+    if _bool(item["operator_managed"], f"{path}.operator_managed") is not True:
+        _error(f"{path}.operator_managed", "must be true for human-controlled kernels")
+    if _bool(item["project_mutation_prohibited"], f"{path}.project_mutation_prohibited") is not True:
+        _error(f"{path}.project_mutation_prohibited", "must be true")
     return item
 
 
@@ -522,7 +527,7 @@ def _component(value: Any, path: str, generation_id: str) -> dict[str, Any]:
     backend = _enum(item["build_backend"], f"{path}.build_backend", BACKENDS)
     toolchain = _toolchain(item["toolchain"], f"{path}.toolchain", set(language_list), backend, abi)
     _fingerprint(item["fingerprint"], f"{path}.fingerprint")
-    if backend == "not-applicable" and (abi != "none" or toolchain is not None):
+    if backend == "not-applicable" and kind != "kernel" and (abi != "none" or toolchain is not None):
         _error(path, "not-applicable backend requires ABI none and no toolchain")
     if backend != "not-applicable" and abi == "none":
         _error(f"{path}.abi", "machine-code backend cannot use ABI none")
@@ -530,8 +535,10 @@ def _component(value: Any, path: str, generation_id: str) -> dict[str, Any]:
         _error(f"{path}.languages", "Rust component must declare rust")
     if kind == "go" and "go" not in language_list:
         _error(f"{path}.languages", "Go component must declare go")
+    if kind == "kernel" and (backend != "not-applicable" or toolchain is not None):
+        _error(path, "kernel components are human-managed and must not declare a project build backend")
     _pgo(item["pgo"], f"{path}.pgo", backend, generation_id, toolchain)
-    _kernel_build(item["kernel"], f"{path}.kernel", kind == "kernel")
+    _kernel_observation(item["kernel"], f"{path}.kernel", kind == "kernel")
     if kind == "kernel" and (target is None or target["kernel_release"] is None):
         _error(f"{path}.target.kernel_release", "is required for a kernel component")
     return item
@@ -547,11 +554,13 @@ def _check_result(value: Any, path: str, *, many: bool = False) -> dict[str, Any
     return item
 
 
-def _source_rebuild(value: Any, path: str, generation_id: str) -> dict[str, Any]:
+def _source_rebuild(value: Any, path: str, generation_id: str, *, required: bool) -> dict[str, Any]:
     keys = {"required", "status", "generation_id", "transaction_id", "source_only", "attempts", "proof", "resolution"}
     item = _object(value, path, keys)
-    if _bool(item["required"], f"{path}.required") is not True:
-        _error(f"{path}.required", "must be true for every frozen installed package")
+    required_value = _bool(item["required"], f"{path}.required")
+    if required_value is not required:
+        expectation = "true" if required else "false"
+        _error(f"{path}.required", f"must be {expectation} for this package class")
     status_value = _enum(item["status"], f"{path}.status", SOURCE_STATUSES)
     if item["generation_id"] != generation_id:
         _error(f"{path}.generation_id", "must equal package generation")
@@ -617,7 +626,20 @@ def _source_rebuild(value: Any, path: str, generation_id: str) -> dict[str, Any]
             _error(f"{path}.proof.active_modes", "contains an unsupported final build mode")
         _evidence(pobj["portage_transaction_receipt"], f"{path}.proof.portage_transaction_receipt")
         _evidence(pobj["binpkg_validation_receipt"], f"{path}.proof.binpkg_validation_receipt")
-    _resolution(item["resolution"], f"{path}.resolution", status_value in {"unknown", "failed"})
+    resolution = _resolution(
+        item["resolution"], f"{path}.resolution",
+        status_value in {"not-applicable", "unknown", "failed"},
+    )
+    if not required:
+        if status_value != "not-applicable":
+            _error(f"{path}.status", "human-managed kernel packages must be not-applicable")
+        if transaction_id is not None or source_only or attempts or proof is not None:
+            _error(path, "human-managed kernel packages cannot claim a project build transaction")
+        if resolution is None or resolution["reason_code"] != "kernel-policy-exclusion":
+            _error(f"{path}.resolution.reason_code", "must be kernel-policy-exclusion")
+        return item
+    if status_value == "not-applicable":
+        _error(f"{path}.status", "is valid only for a human-managed kernel-only package")
     if status_value == "succeeded":
         if not source_only or not transaction_id or proof is None or successful != 1:
             _error(path, "succeeded rebuild requires source-only transaction, one successful attempt, and complete proof")
@@ -785,7 +807,11 @@ def validate_package(record: Any) -> dict[str, Any]:
     actual_languages = sorted({language for component in components for language in component["languages"]})
     if languages != actual_languages:
         _error("$.languages", f"must exactly equal component language coverage {actual_languages}")
-    source_rebuild = _source_rebuild(package["source_rebuild"], "$.source_rebuild", generation["generation_id"])
+    kernel_only = all(component["component_kind"] == "kernel" for component in components)
+    source_rebuild = _source_rebuild(
+        package["source_rebuild"], "$.source_rebuild", generation["generation_id"],
+        required=not kernel_only,
+    )
     if source_rebuild["proof"] is not None and source_rebuild["proof"]["installed_vdb_identity_sha256"] != live["identity_sha256"]:
         _error("$.source_rebuild.proof.installed_vdb_identity_sha256", "must equal live_instance.identity_sha256")
     package_graphs = _graphs(package["graphs"], "$.graphs")

@@ -20,14 +20,14 @@
 - [ ] Rebuild one OpenCL package.
 - [ ] Check whether `rocm-extra-econf.conf` is still needed.
 
-## After Kernel Update
+## Boot and kernel boundary
 
-- [ ] Confirm GPU firmware loads.
-- [ ] Confirm amdgpu initializes cleanly.
-- [ ] Confirm ZFS module status.
-- [ ] Confirm Gamescope starts.
-- [ ] Confirm Steam launches.
-- [ ] Confirm MangoHud/Mangoapp still work.
+Kernel configuration, build, installation, replacement, deployment, and the
+associated initramfs work are human-only and are not maintenance procedures for
+this project. Automated or LLM-directed work must never modify `/efi`, `/boot`,
+bootloader configuration, EFI variables, or any boot entry, including
+`BootNext` and `BootOrder`. Do not add recovery-entry checks or ask a human to
+perform boot/kernel work to satisfy this checklist.
 
 ## After Python Target Update
 

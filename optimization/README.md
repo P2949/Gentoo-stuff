@@ -16,6 +16,23 @@ transaction recovery, evidence retention, generated component states, and the
 detached Phase 2 authorization index is
 [`docs/phase2-production-profile-transaction.md`](../docs/phase2-production-profile-transaction.md).
 
+## Boot and kernel exclusion boundary
+
+This framework has no authority over the machine's boot chain. Automated and
+LLM-directed work must never manage boot entries or EFI variables, set or clear
+`BootNext`, change `BootOrder`, invoke boot-entry tools, write `/efi` or
+`/boot`, or modify bootloader configuration, kernel images, or initramfs
+images. Boot-entry state is not a framework test, recovery prerequisite,
+acceptance gate, or evidence input.
+
+Kernel configuration, build, installation, replacement, and deployment are
+human-only and are not optimization-project procedures. A kernel lifecycle
+package or artifact is terminally classified with the machine-valid reason
+`kernel-policy-exclusion` (the human-only system boundary); it must not be
+processed by automated project transactions. The running kernel may be
+observed read-only only as part of the
+userspace host identity.
+
 The exact Phase 1 BOLT default uses `ext-tsp` block ordering and `cdsort`
 function ordering. A policy change to either algorithm requires the complete
 fixed `ET_EXEC`, dynamic PIE, static PIE, and DSO fixture gate before it can be

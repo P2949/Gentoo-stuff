@@ -2,16 +2,17 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. Commit `3d3e660ca207d357caa1de5b537c6bba6fa83fbe` passed the exact mature portable repository boundary, but latest exact-tested successor `2128d87fcb5736f75b89ea6eed60f7db9ccc7fd4` is rejected and non-authorizing because its workflow has one required ShellCheck failure. The next successor must retain the CPV tightening, make its vector contract executable through existing tests, and pass a fresh exact clean portable and exact-SHA CI boundary before live work. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active. Phase 2 is scope-frozen until Candidate B authorization: no new subsystem, optimization-policy axis, evidence category, or broad refactor may be added unless an existing required gate exposes a reproducible blocker that cannot be fixed within the current architecture.
+- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. Commit `d42a0cea53c1b1dfdb86fa772def255d97dc2862` passed the exact mature portable repository boundary in GitHub Actions run `33327273287` and is the green pre-policy-change repository/pre-activation boundary. It is not an accepted live Candidate A and cannot authorize source changed by the present boot/kernel safety correction. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active. Phase 2 is scope-frozen until Candidate B authorization: no new subsystem, optimization-policy axis, evidence category, or broad refactor may be added unless an existing required gate exposes a reproducible blocker that cannot be fixed within the current architecture.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
 - **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-08-09 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This unchanged observation is live progress evidence, not the frozen Phase 3 inventory, and must be recomputed immediately before the first live mutation.
+- **Plan checkboxes:** 78 checked, 69 open, 147 total after removing the two completed boot/kernel recovery requirements and replacing the final kernel-optimization requirement with an explicit userspace inventory exclusion check. The Phase 2 checklist remains unchanged at 7 of 14 complete.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-08-30; Candidate-A repository-boundary stabilization remains narrowly in progress. The complete predecessor sequence and exact workflow evidence are recorded below and in `docs/commit-history-map.md`. Commit `3d3e660ca207d357caa1de5b537c6bba6fa83fbe` corrected the generated-policy/frozen-inventory boundary and passed exact GitHub Actions run `33279170822`: 80 top-level passes, zero failures, and 13 reviewed skips; 519 required-subtest passes, zero failures, and 26 reviewed skips; one diagnostic skip; 546 total subtests; and exit status zero. That established the current architecture's green portable repository boundary only. Successor `2128d87fcb5736f75b89ea6eed60f7db9ccc7fd4` retained and broadened strict Gentoo CPV validation, but exact run `33312523486` is rejected: it recorded 79 top-level passes, one failure, and 13 reviewed skips, with 518 required-subtest passes, one failure, and 26 reviewed skips. The only required failure was pinned ShellCheck 0.11.0 reporting four `SC2015` findings in `create-binpkg-checkpoint.sh`; all other executed functional boundaries passed. The next successor must retain the CPV correction, replace those four expressions with explicit control flow, execute `optimization/exact-cpv-contract.json` through existing test identities, and pass a fresh exact clean portable and exact-SHA CI boundary. No live mutation, Candidate-A host acceptance, Candidate-B detached index, Phase 2 authorization, optimization generation, or frozen inventory resulted from either run. The complete plan must be re-read after the corrected exact green boundary and after each live checkpoint or package operation. The absence of a generation, frozen inventory, or installed-system coverage claim remains binding.
-- **Safety gate:** passed on 2026-07-11. Protected binpkg restoration, exact independent `/efi` recovery assets, an actual `BootCurrent=0004` recovery boot, manifest-backed zero-override rollback defaults, and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified.
+- **Last plan review:** 2026-09-03. Exact commit `d42a0cea53c1b1dfdb86fa772def255d97dc2862` passed run `33327273287` with 80 top-level passes, zero failures, and 13 reviewed skips; 519 required-subtest passes, zero failures, and 26 reviewed skips; one diagnostic skip; 546 total subtests; and exit status zero. That proves only the green repository/pre-activation boundary. A later 2026-09-02/03 attempt to refresh the former boot-based recovery proof failed with zero probe failures and three validation failures (two unavailable assets and an expected-entry identity mismatch). Its retained log is `/var/lib/gentoo-optimization/reports/recovery/boot-evidence/20260903044355-candidate-a-recovery-refresh-d42a0cea-20260902T194800Z-08b449ce-cf57-44bc-adee-72d7a93e35ed.log` (SHA-256 `a71fc7a1ea891871fd7ff3fd21012f670ee61ae53409deaba92d4b9fadb59ee2`). That attempt is historical, failed, non-authorizing evidence; it must never be repeated. It triggered the absolute prohibition on LLM/automation boot-entry and kernel-lifecycle work in this plan. The current correction removes boot-chain requirements, tests, and authority, so its successor must pass a fresh exact repository boundary before live package work. No Candidate-A host acceptance, Candidate-B index, Phase 2 authorization, optimization generation, or frozen inventory resulted. The complete plan must be reread after each corrected exact green boundary and after every live checkpoint or package operation.
+- **Package-recovery safety gate:** protected binpkg restoration and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified. Boot-entry, EFI/boot-asset, initramfs, and kernel-lifecycle work are no longer project requirements or evidence. They are subject to the absolute human-only boundary below and must not be repeated by an agent.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
 ## Document purpose
@@ -20,12 +21,12 @@ This document is an execution plan for an LLM coding/system-administration agent
 
 The agent must implement an exhaustive, package-accounted optimization pipeline. By the end of the plan:
 
-1. Every package installed in `/var/db/pkg` must have been inventoried, classified, rebuilt from source during the project, and assigned a final optimization state.
-2. Every package that produces code eligible for a supported PGO mechanism must have been rebuilt using that mechanism and a valid representative profile.
+1. Every package installed in `/var/db/pkg` must be inventoried, classified, and assigned a final optimization state. Every userspace package in project scope must be rebuilt from source; kernel lifecycle packages are not rebuilt and instead receive `kernel-policy-exclusion`.
+2. Every in-scope userspace package that produces code eligible for a supported PGO mechanism must have been rebuilt using that mechanism and a valid representative profile.
 3. Every installed 64-bit x86 ELF executable or shared object that is technically safe and valid for BOLT must have been BOLT-optimized from an exact PGO-built input before Portage stripping and deployment.
 4. Every artifact that cannot physically receive PGO or BOLT must have a machine-verifiable exclusion reason. Nothing may be silently skipped.
 5. The final system rebuild must run with PGO-use and BOLT deployment enabled together, so the files installed at completion are the final PGO+BOLT variants rather than temporary training binaries.
-6. The active kernel must be handled through its supported kernel-specific profile optimization lane rather than through generic userspace flags.
+6. Kernel lifecycle packages and artifacts must use the machine-valid terminal reason `kernel-policy-exclusion`, denoting the human-only system boundary; kernel and boot-chain optimization are outside this userspace project.
 7. The final strict coverage verifier must report zero unclassified, pending, stale, mismatched, or failed eligible packages and artifacts.
 
 This document must remain in the repository at:
@@ -49,7 +50,7 @@ The plan therefore defines successful full-system coverage as follows:
 - **All BOLT-eligible deployed 64-bit x86 ELF executables and DSOs receive BOLT.**
 - **All non-eligible packages and artifacts are explicitly proven non-applicable.**
 - **There are no discretionary “not worth optimizing” exclusions.** Low expected benefit is not an exclusion reason.
-- **A package may be excluded only because the optimization is technically inapplicable, impossible to profile safely, unsupported by its compiler/toolchain, or demonstrably breaks correctness after package-specific remediation has been attempted.**
+- **A package may be excluded only because the optimization is technically inapplicable, impossible to profile safely, unsupported by its compiler/toolchain, demonstrably breaks correctness after package-specific remediation has been attempted, or crosses the explicit human-only kernel lifecycle boundary.**
 
 The final report must distinguish:
 
@@ -60,6 +61,7 @@ unsupported-by-upstream-toolchain
 unsafe-to-profile
 correctness-failure-after-remediation
 binary-only-no-rebuild-source
+kernel-policy-exclusion
 ```
 
 Only `optimized` and an evidence-backed terminal exclusion are acceptable final states. `pending`, `unknown`, `not-tested`, `skipped`, and `failed-without-analysis` are forbidden at completion.
@@ -73,7 +75,10 @@ The implementing agent must follow these rules throughout the project.
 ## 2.1 Work from evidence
 
 - Inspect the live system; do not assume the uploaded repository reflects every currently deployed file.
-- Treat `/var/db/pkg`, live `/etc/portage`, active compiler versions, active kernel, current package graph, and actual installed ELF files as the source of truth.
+- Treat `/var/db/pkg`, live `/etc/portage`, active compiler versions, the
+  read-only running-kernel identity, current package graph, and actual installed
+  userspace ELF files as the source of truth. Running-kernel observation never
+  grants authority to configure, build, install, or modify it.
 - Record every command and important result in the project state directory.
 - Do not infer that a package used PGO merely because a flag was configured. Verify build logs and profiles.
 - Do not infer that a file was BOLTed merely because the package was marked BOLT-enabled. Verify `.note.bolt_info` in the installed ELF.
@@ -89,11 +94,15 @@ The implementing agent must follow these rules throughout the project.
 ## 2.3 Protect system recoverability
 
 - Never remove the last known-good binary package for a critical package.
-- Never replace the only bootable kernel.
+- **Never create, edit, delete, rename, enable, disable, reorder, select, or arm a firmware, EFI, BIOS, bootloader, rescue, or recovery boot entry.** Do not set or clear `BootNext`, change `BootOrder`, write EFI variables, invoke boot-entry management tools, or write `/sys/firmware/efi/efivars`.
+- Never modify `/efi`, `/boot`, bootloader configuration, kernel command lines, EFI executables, kernel images, or initramfs images. Existing boot configuration is outside project authority and must remain unchanged.
+- Never configure, build, install, replace, remove, or deploy a kernel or initramfs. Kernel lifecycle is human-only and outside the project; do not ask a human to perform it to satisfy this roadmap.
+- Do not add or retain a project test, recovery prerequisite, acceptance condition, or evidence requirement involving boot-entry state. A supposedly temporary, inactive, one-shot, rescue, known-good, or order-neutral entry is still forbidden.
+- Stop before any automated package transaction that would perform kernel, initramfs, bootloader, EFI, or boot-entry work, and assign the affected lifecycle item the evidence-backed terminal reason `kernel-policy-exclusion`, denoting the human-only system boundary.
 - Never apply a BOLT output when build ID or `.text` identity checks fail.
 - Never reuse PGO raw data across incompatible compiler profile formats.
 - Never apply Clang profile flags to GCC or Rust builds by accident.
-- Never apply generic userspace PGO flags to kernel or kernel-module builds.
+- Never apply generic userspace PGO flags to kernel or kernel-module builds; neither is an automated project optimization lane.
 - Stop the affected package lane on correctness failure, restore the known-good binpkg, document the failure, and remediate before continuing.
 
 ## 2.4 Preserve reproducibility
@@ -179,7 +188,6 @@ rust-llvm-ir
 go-pprof
 ebuild-native
 clang-sample
-kernel-autofdo
 not-applicable
 ```
 
@@ -482,7 +490,6 @@ GOFLAGS
 FEATURES that affect output
 selected package.env files
 relevant EXTRA_ECONF/EXTRA_EMESON/EXTRA_ECMAKE values
-kernel release for kernel-module packages
 ```
 
 Do not include volatile timestamps.
@@ -529,7 +536,6 @@ rust/<rustc-version>/<bundled-llvm-major>/<generation>/<abi>/
 gcc/<gcc-major>/<cpv>/<fingerprint>/<abi>/
 go/<go-version>/<cpv>/<fingerprint>/<binary>/
 clang-sample/<clang-major>/<cpv>/<fingerprint>/<build-id>/
-kernel/<kernel-release>/<config-hash>/
 ```
 
 ---
@@ -548,8 +554,8 @@ The classifier must assign every installed package and artifact to one of these 
 | Pure Python/shell/Perl/Ruby package | Not applicable; optimize interpreter and native extensions | Not applicable unless package also owns eligible ELF |
 | Python/Ruby/etc. native extension | Native compiler lane | Candidate if it is a supported x86-64 DSO and validation passes |
 | Java/JVM bytecode package | Not applicable to bytecode; optimize JVM/native libraries | Native launcher/JNI DSOs may be candidates |
-| Kernel image | Kernel AutoFDO, then Propeller where supported | Do not use generic userspace BOLT lane |
-| Kernel module | Kernel build lane only | Generic BOLT not applicable |
+| Kernel image | Project-excluded; `kernel-policy-exclusion` human-only boundary | Project-excluded; never modify the kernel or boot chain |
+| Kernel module | Project-excluded from automated kernel lifecycle work; `kernel-policy-exclusion` | Generic BOLT not applicable |
 | eBPF, SPIR-V, AMDGPU, firmware | Toolchain-specific optimization only | Not applicable |
 | 32-bit x86 ELF | PGO in separate `x86` ABI lane if compiler supports it | Not applicable because BOLT lane is x86-64 only |
 | Binary-only package | No rebuild PGO unless upstream binary already proves it | Do not rewrite unless source/reproducible package integration exists |
@@ -574,14 +580,12 @@ The classifier must examine installed contents rather than relying only on packa
 - [x] Record `emerge --info`.
 - [x] Record `eselect profile show`.
 - [x] Record `clang --version`, `ld.lld --version`, `llvm-profdata --version`, `llvm-profgen --version`, `llvm-bolt --version`, `perf --version`, `gcc --version`, `rustc -vV`, `cargo -V`, and `go version` where installed. (`llvm-bolt`/`perf2bolt` absence is explicitly recorded.)
-- [x] Record active kernel release and kernel configuration.
+- [x] Record the running-kernel release and configuration read-only as userspace host context; this is not kernel lifecycle authority.
 - [x] Record filesystem free space for `/var/tmp`, `/var/cache`, `/var/lib`, and the binpkg location.
 - [x] Record current `@world`, custom sets, and installed CPVs.
 
-## 9.3 Create known-good recovery artifacts
+## 9.3 Create known-good package recovery artifacts
 
-- [x] Ensure a bootable rescue environment exists.
-- [x] Preserve at least one known-good kernel and initramfs entry.
 - [x] Run a full binary-package backup or `quickpkg` snapshot for installed packages.
 - [x] Copy critical bootstrap binpkgs to a directory that normal binpkg cleanup will not remove.
 - [x] Include at least Portage, Python, libc, libgcc/compiler-rt, libunwind, libc++, shell, coreutils, tar, xz, zstd, rsync, OpenRC, PAM, util-linux, grep, sed, awk, findutils, Clang/LLVM, GCC/binutils, and filesystem tools.
@@ -592,23 +596,14 @@ The classifier must examine installed contents rather than relying only on packa
 - Live evidence is rooted at `/var/lib/gentoo-optimization`; caches and recovery artifacts are under `/var/cache/gentoo-optimization`. The Phase 0 top-level roots were root-owned mode `0755`; security-sensitive descendants deliberately use stricter `0700`, `0750`, `0640`, `0440`, and `0550` policies. No profile pool is world-writable.
 - A Phase 2 root-trust audit on 2026-07-13 found that the live filesystem root and `/etc` had drifted to root-owned mode `0777`, which made any root-owned `/etc/portage` publication replaceable by an unprivileged local user. Both were immediately restored to the standard mode `0755` before any framework publication. The root-owned before/after report is `/var/lib/gentoo-optimization/reports/phase-2-root-trust-ancestor-remediation-20260713.log` (SHA-256 `054da0a00e57c3951f2cc4cfb1ee486147e5c4d8c8cbb3ef0a18464d498b58a4`); project state is `/var/lib/gentoo-optimization/state/project/root-trust-ancestor-remediation.json` (SHA-256 `51cf57b9378dad41ef7cac29098d9fdfe248e6fdaffc85dfb7cc62884c9eddf5`) with zero pending, unknown, or failed items for this remediation. The framework installer now treats every root-owned destination ancestor as a fail-closed trust condition; this remediation does not replace its per-run checks.
 - At Phase 0, `/etc/portage` was a live symlink to this repository's `portage/` tree; the starting archive is `/var/lib/gentoo-optimization/reports/phase-0-live-etc-portage.tar.zst` with SHA-256 `1f4c812aa2c26e700f4181d3bea550266ec0aa6d4433b41feb318b6d108e4b1f`. It now resolves through `/var/lib/gentoo-optimization/framework-current/portage`; the selected installed candidate predates Candidate A and cannot validate the current source revision.
-- The ESP is mounted at `/efi`, not `/boot`. Its starting raw image is `/var/cache/gentoo-optimization/binpkgs/esp-starting-20260710.img.zst` (verified by `zstd -t`, SHA-256 `83b3f46cc843427e9058cbcb07418c5e93ec943a3f176af60eebe75e81a33447`).
-- NVRAM entry `Boot0200` originally referenced `7.1.2-cachyos2` `-old` paths that were absent. Exact hash-matching copies now occupy those managed paths, but they remain rotatable and are not the authoritative independent recovery generation; the uniquely named `Boot0004`/`Boot0005` generation below supersedes them.
-- The active kernel is `7.1.2-cachyos2`; its recorded config SHA-256 is `cc8c2e2c90cc47720e027c0bf5b7fc8d438a183efa30f15e6bf77c5083ebe6a6` and enables `CONFIG_AUTOFDO_CLANG`, `CONFIG_PROPELLER_CLANG`, and perf events.
+- Historical EFI, boot-entry, kernel-image, and initramfs work is excluded from current project authority and is not a prerequisite, gate, recovery mechanism, or completion claim. It must not be repeated, refreshed, validated as a project test, or used to direct an agent. Existing boot configuration must remain unchanged.
 - At capture, `/var/tmp`, `/var/cache`, `/var/lib`, and `PKGDIR=/var/cache/binpkgs` share the root XFS filesystem with 213,653,905,408 bytes available. Existing binpkgs consume 13 GiB and distfiles 40 GiB; later preflight must account for snapshot/profile/BOLT growth.
 - The protected full snapshot is `/var/cache/gentoo-optimization/binpkgs/snapshot-20260710` (root-owned mode `0700`, 7.4 GiB). Its `Packages` index contains exactly 1,181 unique CPVs; set comparison against live `/var/db/pkg` reports zero missing and zero extra CPVs, and `emaint -c binhost` passes. A second archive-level verifier checked all 1,181 indexed outer GPKG manifests, hashes, sizes, and embedded `image.tar.zst` streams with zero missing, extra, unindexed, or failed records. Its machine-readable evidence is `phase-0-binpkg-payload-verification.json` (SHA-256 `3a64e7ded1deb7c00f05bd75f1bc9c8471159f0774b7d663966cf377d74f09d7`). Configuration files were deliberately excluded from quickpkg and are covered separately by configuration archives.
 - The durable critical recovery copy is `/var/lib/gentoo-optimization/recovery/binpkgs/critical-20260710` (root-owned mode `0700`), created with XFS copy-on-write reflinks and exposed through the root-owned `critical-current` link. It is outside normal Portage/cache cleanup scope, has the same clean 1,181-record index, and currently retains the complete snapshot rather than a narrow subset. Verification explicitly found all 58 installed CPVs spanning the required bootstrap/toolchain/filesystem package families; no required CPV was absent. Evidence is in `phase-0-critical-binpkg-verification.log` and `phase-0-persistent-critical-binpkgs.log`.
 - `app-admin/ps_mem-3.14-r1` was actually reinstalled from the protected snapshot with `--usepkgonly --getbinpkg=n --nodeps`; Portage reported one binary reinstall and zero downloads. `equery check` passed all 16 files both before and after, and the restored command's smoke test passed. Evidence is in `phase-0-binpkg-restore-pretend.log` and `phase-0-binpkg-restore-test.log`.
-- Root-only, checksum-tested starting archives of `/etc`, `/lib/modules/7.1.2-cachyos2`, and `/efi/EFI/Gentoo` are under `/var/lib/gentoo-optimization/recovery/boot`; see `phase-0-config-modules-efi-archives.log`.
-- A uniquely named, non-managed recovery generation exists at `/efi/EFI/Gentoo/recovery/pgo-known-good-20260710`. Custom entry `Boot0004` (`Gentoo PGO Known Good 20260710`) references its preserved kernel and initramfs; custom BootOrder-neutral entry `Boot0005` (`Gentoo PGO Rescue Shell 20260710`) references the same assets and adds `rd.break=pre-mount`. The rescue entry was created with `--create-only`, so it did not enter `BootOrder`. Both entries use the now-boot-proven kernel/initramfs pair, and `lsinitrd` validates the rescue userspace.
-- The authoritative recovery identity is now the root-owned mode `0600` manifest `/var/lib/gentoo-optimization/recovery/authoritative-known-good.manifest` (SHA-256 `dbeb5fd9c4b15479c32909eae0c6866c25d9747b439897eb0d16eda28ec7f4e0`). Its strict schema identifies independent `Boot0004`, the two exact `/efi/EFI/Gentoo/recovery/pgo-known-good-20260710` paths, and their hashes. Unknown, duplicate, missing, unsafe, symlinked, non-independent, malformed, or non-recovery-tree identities fail closed. The managed `Boot0200` generation is available only through the explicit `--legacy-managed-default` fallback or a complete explicit identity override.
-- `preserve-boot` writes a separate loader-compatible schema-v1 authoritative candidate rather than silently replacing the proven identity. The candidate is promoted only after a successful boot; its exact loader/EFI/hash round trip is fixture-tested.
-- `BootNext=0004` was armed and the machine actually rebooted from starting boot ID `6be5e262-683f-449b-83ff-d421e47fcca7` into boot ID `986afeaa-bfac-4815-80a4-9459bf4e080f`. Host-level evidence proves `BootCurrent=0004`, kernel `7.1.2-cachyos2`, root `/dev/nvme0n1p5`, writable XFS root, writable `/efi` on `/dev/nvme0n1p1`, matching kernel/initramfs hashes, clean OpenRC services, and successful Portage/Python/shell/C/C++/network probes. The authoritative pass record is `/var/lib/gentoo-optimization/reports/recovery/boot-evidence/20260710202218-phase0-known-good-recheck-20260710T201800Z-986afeaa-bfac-4815-80a4-9459bf4e080f.log` with zero probe, validation, and total failures.
-- The first automatic post-boot capture is deliberately retained as failed evidence rather than hidden. Every boot identity and asset check passed, but the hook initially treated OpenRC's documented empty-set `rc-status --crashed` exit status 1 as a probe error. The completed marker was archived as `boot-validation-phase0-attempt1.completed`; the hook now accepts only the empty-output status-1 case, still rejects any reported service name, and has regression tests for both outcomes. The installed corrected hook SHA-256 is `14d0d97c650c6375b56b6fe83744f363266551506fba1289f16e2575801ef73b`.
 - `thermald` was removed from the default runlevel after a foreground diagnostic proved that it exits with `Non mobile platform` on this desktop i5-10600K. This is a technically justified service-policy correction, not a hidden boot failure; evidence is `phase-0-thermald-service-remediation.log`.
-- Primary evidence logs: `phase-0-state-layout.log`, `phase-0-portage-archive.log`, `phase-0-system-toolchain-info.log`, `phase-0-absolute-toolchain-versions.log`, `phase-0-active-kernel-config.log`, `phase-0-filesystem-capacity.log`, `phase-0-efi-boot-entries.log`, `phase-0-esp-image-backup.log`, and `phase-0-known-good-kernel-preservation.log` in `/var/lib/gentoo-optimization/reports`, plus starting world/set/CPV records in `/var/lib/gentoo-optimization/inventory`.
+- Primary userspace evidence logs include `phase-0-state-layout.log`, `phase-0-portage-archive.log`, `phase-0-system-toolchain-info.log`, `phase-0-absolute-toolchain-versions.log`, and `phase-0-filesystem-capacity.log` in `/var/lib/gentoo-optimization/reports`, plus starting world/set/CPV records in `/var/lib/gentoo-optimization/inventory`. Any retained historical EFI/kernel/boot artifacts are not current project evidence and must not be acted upon.
 - Full snapshot construction and coverage evidence is in `phase-0-full-quickpkg-snapshot.log` and `phase-0-full-snapshot-coverage.log`.
-- A fresh independent read-only refresh ran the requested `efibootmgr -v`, `rc-update show`, and protected-snapshot listings. It proves that at the 2026-07-12 refresh the normal boot was `BootCurrent=01FF`, independent recovery entries `Boot0004`/`Boot0005` remained present, and both starting snapshot copies remained root-owned mode `0700` with exactly 1,181 GPKGs. This does not replace the earlier actual `BootCurrent=0004` recovery-boot proof and `rc-update show` is configuration evidence, not runtime service-health evidence. The corrected log is `/var/lib/gentoo-optimization/reports/independent-live-verification-refresh-20260712-corrected.log` (SHA-256 `3bc033d54c14a83951fb08fbeb4f7db40a0057c631993be46b1c50d2b3f0a39b`). The first capture is retained with SHA-256 `e167cadcf5be220a0e69be477b308f17827e2f935350164602cde1e9608bb3c4` because it queried the wrong `/var/lib/.../critical-current` path before the corrected `/var/cache/.../critical-current` check.
 - [x] Create and restoration-test a second exact current-system checkpoint before Phase 2 while retaining the immutable 1,181-CPV baseline.
 - The new cache checkpoint `/var/cache/gentoo-optimization/binpkgs/snapshot-pre-phase2-20260712` and durable copy `/var/lib/gentoo-optimization/recovery/binpkgs/critical-pre-phase2-20260712` are root-owned mode `0700`. Each independently verifies 1,217 indexed/live CPVs, 1,217 outer GPKG manifests, and 1,217 embedded zstd payload streams with zero missing, extra, unindexed, archive, or payload failures. `critical-current` was atomically retargeted only after both passes; both original 1,181-CPV generations remain intact. An actual offline `--usepkgonly` restoration of `app-admin/ps_mem-3.14-r1` selected one binary reinstall and zero downloads, retained the command hash/version, passed `equery check`, and was followed by a third 1,217/1,217 verifier pass. Evidence is `/var/lib/gentoo-optimization/reports/phase-1-pre-phase2-checkpoint-20260712` (manifest SHA-256 `150857821814fc01659c99c24c07d1d9e7bfb63cd70918facd12f82ad0c4e0a5`); state is `/var/lib/gentoo-optimization/state/project/pre-phase2-binpkg-checkpoint.json` (SHA-256 `af0fc3ba431925ec37b4872353ab3c78231e0df2bed0cc2fde1a121ad1332de2`).
 
@@ -618,14 +613,14 @@ Create and test a documented recovery sequence that can:
 
 1. disable all optimization package.env files;
 2. restore critical binpkgs;
-3. rebuild preserved libraries;
-4. regenerate initramfs/bootloader configuration when required;
-5. return to the known-good kernel.
+3. rebuild preserved userspace libraries.
 
-Do not proceed until the rollback path has been tested.
+Do not proceed until the package-state rollback path has been tested. It must
+not read or mutate boot entries as a project gate, touch EFI/boot assets, or
+perform kernel/initramfs work.
 
-- [x] The documented rollback sequence is implemented and restoration-tested. Its zero-override identity comes from the authoritative manifest and selects independent `Boot0004`; a live read-only preflight validated all 1,181 protected records and the exact assets (`rollback-20260711T012123Z-1181179.log`, SHA-256 `abae78aff70f516bba839233cdeee73e40d9e5d79a98801b9cf5b9a952503b50`). A live zero-override `--dry-run all` ended with `efibootmgr -n 0004` and contained zero `Boot0200`, managed `*-old`, or `/boot/` references (`rollback-20260711T012430Z-1191925.log`, SHA-256 `00688b83a6302fdca32a258651f4b7e26f4d0d3f7382643be1dd0cc027370bcc`). `app-admin/ps_mem-3.14-r1` was actually restored offline from the snapshot, and the independent Boot0004 path was actually booted.
-- [x] The recovery kill switch preserves the installed C++ ABI through separate conservative lanes. Its Clang lane retains libc++, LLD, compiler-rt, and libunwind while clearing project PGO/BOLT/LTO/Polly/OpenMP/visibility axes; its GCC lane retains GCC/binutils and libstdc++. The fixture actually compiles, links, and runs both C++ programs, verifies `libc++.so.1` with no `libstdc++` for Clang and `libstdc++.so.6` with no `libc++` for GCC, repeats every live `gcc.conf` selector after the global Clang assignment, and also proves explicit-only legacy Boot0200 plus authoritative-candidate round trips. Bash syntax, a freshly hash-verified ShellCheck 0.11.0 with zero diagnostics, boot-evidence fixtures, and 10/10 Python tests pass. The compact evidence record is `phase-0-recovery-review-remediation-summary.log` (SHA-256 `a5a1e292ed05c614e279e91b215c75d681106a9d75a0772b83f48dfa48933d0c`); live Phase 0 state is `/var/lib/gentoo-optimization/state/project/phase-0.json` (SHA-256 `1042dbac14d0fb160503f7932816083b3b160222711b4a2db0bae526689be8dc`).
+- [x] The package-state rollback sequence is restoration-tested: all 1,181 protected package records were validated, and `app-admin/ps_mem-3.14-r1` was actually restored offline from the snapshot. Historical boot-chain behavior is excluded and is not part of this completion claim.
+- [x] The recovery kill switch preserves the installed C++ ABI through separate conservative lanes. Its Clang lane retains libc++, LLD, compiler-rt, and libunwind while clearing project PGO/BOLT/LTO/Polly/OpenMP/visibility axes; its GCC lane retains GCC/binutils and libstdc++. The userspace fixture compiles, links, and runs both C++ programs, verifies `libc++.so.1` with no `libstdc++` for Clang and `libstdc++.so.6` with no `libc++` for GCC, and repeats every live `gcc.conf` selector after the global Clang assignment. Boot-entry and kernel cases are intentionally outside the fixture and project.
 
 ---
 
@@ -1625,7 +1620,7 @@ The current repository architecture retains the 2026-07-15 privilege-metadata re
 
 - [ ] Complete the combined Phase 2 automation gate; repository coverage exists for BOLT classification, mismatch, topology, privileged metadata, no-ELF, mixed-ABI, and the complete sample pipeline, while the exact clean Candidate-A host gate and supervised production transaction remain pending.
 - [ ] Install and validate the candidate-complete framework through its exact clean commit, immutable inventory, crash-consistent activation, stable bootstrap ABI, and final `--check` gate.
-- [ ] Capture and verify the root-owned detached Phase 2 evidence index at its policy-pinned run-scoped path with exact current-boot, source, tool, test, component-state, and production-receipt identities.
+- [ ] Capture and verify the root-owned detached Phase 2 evidence index at its policy-pinned run-scoped path with exact current userspace runtime boot ID, source, tool, test, component-state, and production-receipt identities, without boot-entry or EFI identity.
 
 The framework publisher is candidate-complete and crash-consistent: Portage, overlay, helpers, schemas, QA logic, generated policy, and the manifest live inside one immutable candidate. First migration installs a fail-closed Portage guard before its fsynced activation journal; normal upgrades change behavior only through the atomic `framework-current` rename. Each installed bashrc embeds and exports its exact candidate target, and stable shell/Python/QA bootstraps honor that pin, so a build begun on generation A cannot call generation B after an upgrade; re-sourcing another generation fails closed. Candidate Python helpers run isolated with bytecode writes disabled, and a terminal inventory check must prove helper execution did not change the immutable candidate. Fixed bootstrap bytes are an invariant upgrade ABI and a changed renderer is rejected before external publication. The hermetic fixture contains SIGKILL cases on both sides of activation, same-generation re-source, an old-bound process across activation, cross-generation rejection, and incompatible bootstrap migration; the exact final-tree fixture run and live filesystem exchange proof remain pending. This remains a repository/framework claim until the clean live install and combined host gate pass.
 
@@ -1642,7 +1637,7 @@ the entire tree. After the post-exchange crash it runs strict `--check` and old
 and newly added representative helpers before any repair/idempotence pass. The
 same exchange path still requires proof on the live XFS destinations.
 
-The detached evidence contract avoids self-referential plan hashes and stale prose authorization. Candidate A is a non-authorizing implementation/live precheck. After A passes, generated claim markers and truthful boxes are committed as Candidate B; the complete gate then reruns against B with no later plan edit. The sole accepted index path is `/var/lib/gentoo-optimization/state/project/phase2-evidence/<run-id>/index.json`. It binds one clean commit/tree, the current boot, active immutable candidate, exact production transaction receipt and validation input, required tool and test identities, eleven immutable run-scoped component states, exact directory membership, and aggregate `pending_total=0`, `unknown_total=0`, `failed_total=0`. Reboot, source drift, candidate drift, partial transaction debris, extra state entries, or any plan correction invalidates authorization and requires a new run ID and complete rerun.
+The detached evidence contract avoids self-referential plan hashes and stale prose authorization. Candidate A is a non-authorizing implementation/live precheck. After A passes, generated claim markers and truthful boxes are committed as Candidate B; the complete gate then reruns against B with no later plan edit. The sole accepted index path is `/var/lib/gentoo-optimization/state/project/phase2-evidence/<run-id>/index.json`. It binds one clean commit/tree, the current userspace runtime boot ID (never firmware/boot-entry identity), active immutable candidate, exact production transaction receipt and validation input, required tool and test identities, eleven immutable run-scoped component states, exact directory membership, and aggregate `pending_total=0`, `unknown_total=0`, `failed_total=0`. Reboot, source drift, candidate drift, partial transaction debris, extra state entries, or any plan correction invalidates authorization and requires a new run ID and complete rerun.
 
 The test driver has distinct `smoke`, `checkpoint-smoke`, `portable-complete`,
 `stress`, `capabilities`, and `authoritative` modes. `checkpoint-smoke` selects
@@ -1956,20 +1951,27 @@ authorize only through B's detached index.
 ## 12.1 Freeze package state before inventory
 
 - [ ] Sync repositories.
-- [ ] Complete the normal system update first.
+- [ ] Complete the normal userspace system update first, excluding every package operation that would build, install, configure, or deploy a kernel/initramfs or modify the boot chain.
 - [ ] Resolve all blockers, preserved libraries, and configuration updates.
 - [ ] Run depclean in pretend mode and decide whether intentional orphans remain in scope.
 - [ ] Freeze package changes during the optimization generation except for fixes required by the project.
 
-## 12.2 Generate an all-installed set
+## 12.2 Generate complete inventory and userspace mutation sets
 
-Inventory every CPV in `/var/db/pkg`, not only direct `@world` entries. Generate:
+Inventory every CPV in `/var/db/pkg`, not only direct `@world` entries. Generate
+one complete userspace mutation set and one explicit non-mutating kernel-policy
+exclusion set:
 
 ```text
-/etc/portage/sets/pgo-bolt-all-installed
+/etc/portage/sets/pgo-bolt-all-userspace
+/etc/portage/sets/optimization-kernel-policy-exclusion
 ```
 
-Prefer CP atoms in the persistent set and store the exact starting CPV separately in the generation manifest. Include intentional orphan packages.
+Prefer CP atoms in persistent sets and store exact starting CPVs separately in
+the generation manifest. Include intentional orphan packages. Every installed
+CPV appears in exactly one of the userspace mutation set or the human-only
+kernel lifecycle exclusion set. No automated emerge command may consume the
+exclusion set.
 
 Generate additional sets from classification:
 
@@ -1980,10 +1982,10 @@ Generate additional sets from classification:
 @pgo-gcc
 @pgo-rust
 @pgo-go
-@pgo-kernel
 @bolt-capture
 @bolt-deploy
 @optimization-not-applicable
+@optimization-kernel-policy-exclusion
 ```
 
 ## 12.3 Inventory owned files
@@ -2168,9 +2170,9 @@ Commit the toolchain phase.
 
 ---
 
-# 15. Phase 6 — Generate PGO instrumentation builds for the full installed system
+# 15. Phase 6 — Generate PGO instrumentation builds for all in-scope userspace packages
 
-This is the first exhaustive rebuild.
+This is the first exhaustive rebuild of every in-scope userspace package.
 
 ## 15.1 Establish the generation
 
@@ -2224,7 +2226,7 @@ Do not add generic PGO on top of native ebuild PGO unless explicitly designed an
 Use a dependency-complete rebuild with build dependencies included. Start with bootstrap/system libraries, then the remainder of the installed set. Suggested command shape, adjusted after pretend review:
 
 ```bash
-emerge -eav @pgo-bolt-all-installed \
+emerge -eav @pgo-bolt-all-userspace \
   --with-bdeps=y \
   --complete-graph=y \
   --backtrack=1000 \
@@ -2369,7 +2371,7 @@ Generate a signed-off profile coverage report before the PGO-use sweep.
 
 # 18. Phase 9 — Full PGO-use rebuild and BOLT input capture
 
-This is the second exhaustive rebuild. It produces the exact PGO-optimized binaries used for BOLT profiling.
+This is the second exhaustive userspace rebuild. It produces the exact PGO-optimized binaries used for BOLT profiling.
 
 ## 18.1 Generate final PGO-use package assignments
 
@@ -2397,7 +2399,10 @@ For BOLT candidate builds:
 
 ## 18.3 Run the exhaustive PGO build
 
-Rebuild all installed packages with PGO-use and BOLT capture enabled. Do not deploy BOLT yet.
+Rebuild every in-scope installed userspace package with PGO-use and BOLT
+capture enabled. Do not deploy BOLT yet. Kernel lifecycle items remain
+terminal `kernel-policy-exclusion` records and are not passed to Portage by
+this project.
 
 The capture hook must populate the exact input cache for every eligible ELF.
 
@@ -2596,7 +2601,10 @@ Non-machine-code packages still participate in the full rebuild/set processing a
 
 ## 21.3 Execute the full rebuild
 
-Run a pretend first. Then run the dependency-complete exhaustive rebuild. Use the complete all-installed set rather than relying only on `@world`.
+Run a pretend first. Then run the dependency-complete exhaustive userspace
+rebuild. Use the complete `@pgo-bolt-all-userspace` set rather than relying
+only on `@world`, and prove that it is disjoint from
+`@optimization-kernel-policy-exclusion` before mutation.
 
 The BOLT deployment hook must fail closed on missing or mismatched outputs. Do not let a package silently install an un-BOLTed eligible binary.
 
@@ -2628,47 +2636,19 @@ Use the appropriate installed tools and review all output. Rebuild any affected 
 
 ---
 
-# 22. Phase 13 — Kernel-specific full-system optimization lane
+# 22. Human-only kernel boundary — not a project phase
 
-Do not pass generic userspace PGO/BOLT flags to the kernel.
+Kernel configuration, compilation, installation, replacement, deployment,
+initramfs generation, and boot-chain management are outside this project and
+may be performed only by a human independently of it. The project must not ask
+a human to do that work to satisfy a project milestone.
 
-## 22.1 Preserve a known-good kernel
-
-- keep the current known-good boot entry;
-- create a distinct version/localversion for each training and optimized kernel;
-- never overwrite the only working kernel or initramfs.
-
-## 22.2 AutoFDO stage
-
-For a Clang-built supported kernel:
-
-1. enable kernel AutoFDO configuration;
-2. build and install a profile-collection kernel without a supplied profile;
-3. boot it;
-4. run representative full-system workloads;
-5. collect kernel branch profiles with the architecture-appropriate event;
-6. convert with a kernel-aware profile generator;
-7. rebuild with the AutoFDO profile;
-8. boot and validate.
-
-## 22.3 Propeller stage
-
-Where the active kernel/toolchain supports it:
-
-1. use the AutoFDO kernel as the base;
-2. enable Propeller metadata/configuration;
-3. build and boot the Propeller training kernel;
-4. collect a second representative kernel profile;
-5. generate compile-time and link-time Propeller profiles;
-6. build the final AutoFDO+Propeller kernel;
-7. install as a separate boot entry;
-8. boot and validate graphics, storage, networking, audio, input, ZFS/module compatibility, suspend/resume if used, and gaming workloads.
-
-## 22.4 Kernel modules
-
-Rebuild all external modules against the final optimized kernel. Verify module loading, vermagic, symbol versions, and initramfs inclusion.
-
-Record kernel optimization separately from userspace BOLT coverage.
+Automated and LLM-directed work must not process a kernel image or kernel
+module through PGO/BOLT, run a kernel training/deployment lane, modify a kernel
+or initramfs, or create or alter a boot entry. Kernel lifecycle artifacts are
+recorded with the machine-valid terminal reason `kernel-policy-exclusion`,
+denoting this human-only system boundary. There are no Phase 13 kernel tasks,
+gates, tests, or completion requirements.
 
 ---
 
@@ -2713,7 +2693,8 @@ For each optimized package, retain:
 
 At minimum validate:
 
-- reboot and login;
+- reboot and login through the pre-existing unchanged boot path, recording only
+  userspace runtime-after-reboot evidence and never boot-entry state;
 - OpenRC services;
 - networking and DNS;
 - Sway/Wayland session;
@@ -2742,7 +2723,7 @@ Compare selected high-impact workloads with the recorded baseline:
 - shader compilation;
 - startup of major applications;
 - selected games/benchmarks;
-- kernel/system workload.
+- whole-userspace system workload (excluding kernel profiling or mutation).
 
 Do not require every tiny utility to show a speedup, but reject material reproducible regressions caused by profile or BOLT choices.
 
@@ -2753,6 +2734,8 @@ Generate a report with at least:
 ```text
 installed_packages_total
 packages_rebuilt_from_source_total
+kernel_policy_exclusion_package_total
+kernel_policy_exclusion_artifact_total
 pgo_eligible_total
 pgo_optimized_total
 pgo_not_applicable_total_by_reason
@@ -2762,7 +2745,6 @@ bolt_eligible_total
 bolt_optimized_total
 bolt_not_applicable_total_by_reason
 bolt_terminal_exclusion_total_by_reason
-kernel_optimization_state
 pending_total
 unknown_total
 failed_total
@@ -2771,7 +2753,7 @@ failed_total
 Strict completion requires:
 
 ```text
-packages_rebuilt_from_source_total == installed_packages_total
+packages_rebuilt_from_source_total + kernel_policy_exclusion_package_total == installed_packages_total
 pgo_optimized_total == pgo_eligible_total
 bolt_optimized_total == bolt_eligible_total
 pending_total == 0
@@ -2779,7 +2761,11 @@ unknown_total == 0
 failed_total == 0
 ```
 
-Terminal exclusions must not be counted as eligible. The classifier must prove why they are not eligible or why the upstream/tooling correctness boundary makes optimization impossible.
+Terminal exclusions must not be counted as eligible. The classifier must prove
+why they are not eligible, why the upstream/tooling correctness boundary makes
+optimization impossible, or why the item is within the explicit
+`kernel-policy-exclusion` human-only boundary. Every such package/artifact must
+be listed; the exclusion cannot conceal an unknown or pending item.
 
 ---
 
@@ -2914,6 +2900,7 @@ The implementing agent may mark this plan complete only after every item below i
 - [ ] Every owned file is classified.
 - [ ] Every package has a PGO backend or evidence-backed non-applicable state.
 - [ ] Every native ELF has a BOLT eligibility state.
+- [ ] Every kernel lifecycle package/artifact has terminal reason `kernel-policy-exclusion` and was absent from every automated mutation set.
 - [ ] Zero package or artifact records are unknown.
 
 ## PGO
@@ -2938,11 +2925,10 @@ The implementing agent may mark this plan complete only after every item below i
 - [ ] Final exhaustive rebuild applied PGO and BOLT together.
 - [ ] `@preserved-rebuild` is clean.
 - [ ] Reverse-dependency checks are clean.
-- [ ] System rebooted successfully.
+- [ ] System rebooted successfully through the pre-existing unchanged boot path; `runtime_after_reboot` evidence contains only boot ID, running-kernel release, loaded-module manifest, OpenRC state hash, and userspace reboot-test evidence—not any boot-entry/EFI identity.
 - [ ] Desktop, graphics, audio, network, package manager, compiler, media, gaming, storage, and service tests pass.
-- [ ] Active kernel uses the completed supported kernel profile-optimization lane.
 - [ ] Strict report has `pending=0`, `unknown=0`, and `failed=0`.
-- [ ] Rollback binpkgs and known-good kernel remain available.
+- [ ] Rollback binpkgs remain available and verified; no project action changed the boot chain or kernel lifecycle state.
 - [ ] This document contains final counts, benchmark results, exceptions, and the generation ID.
 
 ---
@@ -2950,6 +2936,13 @@ The implementing agent may mark this plan complete only after every item below i
 # 28. Final agent instruction
 
 Implement the complete plan, not merely the framework. Do not stop after adding scripts, flags, profiles, or documentation. Continue through inventory, exhaustive rebuilds, training, profile validation, BOLT conversion, final package-managed deployment, reboot, runtime testing, and strict coverage verification.
+
+This completion mandate is userspace-only. An agent must never create, edit,
+delete, reorder, select, or arm a boot entry; change EFI variables; touch the
+bootloader/EFI assets; or configure, build, install, replace, or deploy a
+kernel or initramfs. It must not ask a human to do those things for this
+project. Record affected lifecycle items with terminal reason
+`kernel-policy-exclusion` and continue only within the userspace boundary.
 
 After every completed item:
 
