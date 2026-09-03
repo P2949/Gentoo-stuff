@@ -537,7 +537,13 @@ def _component(value: Any, path: str, generation_id: str) -> dict[str, Any]:
         _error(f"{path}.languages", "Go component must declare go")
     if kind == "kernel" and (backend != "not-applicable" or toolchain is not None):
         _error(path, "kernel components are human-managed and must not declare a project build backend")
-    _pgo(item["pgo"], f"{path}.pgo", backend, generation_id, toolchain)
+    pgo = _pgo(item["pgo"], f"{path}.pgo", backend, generation_id, toolchain)
+    if kind == "kernel":
+        if pgo["eligibility"] != "terminal-exclusion" or pgo["status"] != "terminal-exclusion":
+            _error(f"{path}.pgo", "human-managed kernel components must be terminally excluded from PGO")
+        pgo_resolution = pgo["resolution"]
+        if pgo_resolution is None or pgo_resolution["reason_code"] != "kernel-policy-exclusion":
+            _error(f"{path}.pgo.resolution.reason_code", "must be kernel-policy-exclusion")
     _kernel_observation(item["kernel"], f"{path}.kernel", kind == "kernel")
     if kind == "kernel" and (target is None or target["kernel_release"] is None):
         _error(f"{path}.target.kernel_release", "is required for a kernel component")
@@ -959,7 +965,11 @@ def _kernel_artifact(value: Any, path: str, required: bool, role: str) -> dict[s
         return None
     if not required:
         _error(path, "must be null outside a kernel artifact")
-    item = _object(value, path, {"release", "artifact_type", "module_name", "vermagic", "config_sha256", "signed", "signature_key_id", "boot_entry_id", "boot_evidence"})
+    item = _object(value, path, {
+        "release", "artifact_type", "module_name", "vermagic", "config_sha256",
+        "signed", "signature_key_id", "operator_managed",
+        "project_mutation_prohibited",
+    })
     _string(item["release"], f"{path}.release")
     artifact_type = _enum(item["artifact_type"], f"{path}.artifact_type", {"image", "module"})
     if (role == "kernel-module") != (artifact_type == "module"):
@@ -973,10 +983,10 @@ def _kernel_artifact(value: Any, path: str, required: bool, role: str) -> dict[s
     key = _nullable_string(item["signature_key_id"], f"{path}.signature_key_id")
     if signed != (key is not None):
         _error(path, "signed and signature_key_id must agree")
-    boot_entry = _nullable_string(item["boot_entry_id"], f"{path}.boot_entry_id")
-    evidence = _evidence_list(item["boot_evidence"], f"{path}.boot_evidence")
-    if artifact_type == "image" and (not boot_entry or not evidence):
-        _error(path, "kernel image requires boot entry and boot evidence")
+    if _bool(item["operator_managed"], f"{path}.operator_managed") is not True:
+        _error(f"{path}.operator_managed", "must be true for human-controlled kernel artifacts")
+    if _bool(item["project_mutation_prohibited"], f"{path}.project_mutation_prohibited") is not True:
+        _error(f"{path}.project_mutation_prohibited", "must be true")
     return item
 
 
@@ -1257,7 +1267,20 @@ def validate_artifact(record: Any) -> dict[str, Any]:
     final = _enum(artifact["final_status"], "$.final_status", FINAL_STATUSES - {"optimized-with-exclusions"})
     if final != expected:
         _error("$.final_status", f"must be {expected}")
-    _resolution(artifact["resolution"], "$.resolution", final in {"not-applicable", "terminal-exclusion", "unknown", "failed"})
+    resolution = _resolution(
+        artifact["resolution"], "$.resolution",
+        final in {"not-applicable", "terminal-exclusion", "unknown", "failed"},
+    )
+    if kernel_required:
+        if bolt["eligibility"] != "terminal-exclusion" or bolt["status"] != "terminal-exclusion":
+            _error("$.bolt", "human-managed kernel artifacts must be terminally excluded from BOLT")
+        bolt_resolution = bolt["resolution"]
+        if bolt_resolution is None or bolt_resolution["reason_code"] != "kernel-policy-exclusion":
+            _error("$.bolt.resolution.reason_code", "must be kernel-policy-exclusion")
+        if final != "terminal-exclusion":
+            _error("$.final_status", "human-managed kernel artifacts must be terminal-exclusion")
+        if resolution is None or resolution["reason_code"] != "kernel-policy-exclusion":
+            _error("$.resolution.reason_code", "must be kernel-policy-exclusion")
     return artifact
 
 
@@ -1490,10 +1513,10 @@ def _validator(value: Any, path: str) -> dict[str, Any]:
 
 
 def validate_final_system_state(value: Any) -> dict[str, Any]:
-    """Validate the wire shape of the independent generation/boot authority."""
+    """Validate the wire shape of the independent generation/runtime authority."""
     item = _object(value, "$", FINAL_SYSTEM_KEYS)
-    if item["schema_version"] != 1 or item["record_type"] != "final-system-state":
-        _error("$", "requires schema_version=1 and record_type=final-system-state")
+    if item["schema_version"] != FINAL_SYSTEM_SCHEMA_VERSION or item["record_type"] != "final-system-state":
+        _error("$", f"requires schema_version={FINAL_SYSTEM_SCHEMA_VERSION} and record_type=final-system-state")
     _generation(item["generation"], "$.generation")
     roots = _object(item["trusted_roots"], "$.trusted_roots", {
         "generation_root", "evidence_root", "profiles_root", "bolt_root",
@@ -1504,7 +1527,10 @@ def validate_final_system_state(value: Any) -> dict[str, Any]:
     locks = _object(item["locks"], "$.locks", {"framework", "project", "generation"})
     for key in locks:
         _validator(locks[key], f"$.locks.{key}")
-    validators = _object(item["validators"], "$.validators", {"state_runtime", "reconciler_runtime", "profile", "binpkg_snapshot", "readelf", "getcap", "uname", "efibootmgr", "rc_status"})
+    validators = _object(item["validators"], "$.validators", {
+        "state_runtime", "reconciler_runtime", "profile", "binpkg_snapshot",
+        "readelf", "getcap", "uname", "rc_status",
+    })
     for key in validators:
         _validator(validators[key], f"$.validators.{key}")
     registries = _object(item["registries"], "$.registries", {"workloads", "dependency_edges"})
@@ -1534,22 +1560,19 @@ def validate_final_system_state(value: Any) -> dict[str, Any]:
         _error("$.final_transaction.active_modes", "contains unsupported final mode")
     for key in ("portage_receipt", "vdb_receipt", "binpkg_snapshot_receipt"):
         _evidence(transaction[key], f"$.final_transaction.{key}")
-    boot = _object(item["boot"], "$.boot", {
-        "boot_id", "kernel_release", "boot_current", "efi_root", "kernel_image",
-        "initramfs", "efi_loader", "modules_manifest", "efibootmgr_output_sha256",
-        "openrc_output_sha256", "reboot_evidence",
+    runtime = _object(item["runtime_after_reboot"], "$.runtime_after_reboot", {
+        "boot_id", "kernel_release", "modules_manifest", "openrc_output_sha256",
+        "reboot_evidence",
     })
-    _string(boot["boot_id"], "$.boot.boot_id")
-    _string(boot["kernel_release"], "$.boot.kernel_release")
-    if not re.fullmatch(r"[0-9A-Fa-f]{4}", _string(boot["boot_current"], "$.boot.boot_current")):
-        _error("$.boot.boot_current", "must be a four-digit EFI boot number")
-    if boot["efi_root"] != "/efi":
-        _error("$.boot.efi_root", "must be /efi")
-    for key in ("kernel_image", "initramfs", "efi_loader", "modules_manifest"):
-        _evidence(boot[key], f"$.boot.{key}")
-    for key in ("efibootmgr_output_sha256", "openrc_output_sha256"):
-        _sha(boot[key], f"$.boot.{key}")
-    _evidence_list(boot["reboot_evidence"], "$.boot.reboot_evidence", required=True)
+    _string(runtime["boot_id"], "$.runtime_after_reboot.boot_id")
+    _string(runtime["kernel_release"], "$.runtime_after_reboot.kernel_release")
+    _evidence(runtime["modules_manifest"], "$.runtime_after_reboot.modules_manifest")
+    _sha(runtime["openrc_output_sha256"], "$.runtime_after_reboot.openrc_output_sha256")
+    _evidence_list(
+        runtime["reboot_evidence"],
+        "$.runtime_after_reboot.reboot_evidence",
+        required=True,
+    )
     return item
 
 
@@ -2328,104 +2351,149 @@ def _verify_validator_path(
     return path
 
 
-def _tree_identity(root: Path) -> list[dict[str, Any]]:
-    entries: list[dict[str, Any]] = []
-    for path in sorted(root.rglob("*")):
-        metadata = path.lstat()
-        relative = path.relative_to(root).as_posix()
-        if stat.S_ISDIR(metadata.st_mode):
-            entries.append({"path": relative, "type": "directory", "sha256": None, "target": None})
-        elif stat.S_ISREG(metadata.st_mode):
-            entries.append({"path": relative, "type": "regular", "sha256": _file_sha(path), "target": None})
-        elif stat.S_ISLNK(metadata.st_mode):
-            entries.append({"path": relative, "type": "symlink", "sha256": None, "target": os.readlink(path)})
-        else:
-            raise StateValidationError(f"unsupported module-tree entry: {path}")
-    return entries
-
-
-def _verify_boot(final_state: Mapping[str, Any], validators: Mapping[str, Path], artifacts: Sequence[Mapping[str, Any]], *, fixture_mode: bool) -> str:
-    boot = final_state["boot"]
-    if fixture_mode:
-        # Hermetic fixtures prove wire/reopen behavior but can never authorize completion.
-        return _string(boot["boot_id"], "collection.boot.boot_id")
-    boot_id_path = Path("/proc/sys/kernel/random/boot_id")
-    boot_id_before = boot_id_path.read_text(encoding="ascii").strip()
-    if boot_id_before != boot["boot_id"]:
-        _error("collection.boot.boot_id", "live boot ID differs from frozen final boot")
-    kernel_release = _run_exact(validators["uname"], ["-r"]).decode("utf-8", errors="strict").strip()
-    if kernel_release != boot["kernel_release"]:
-        _error("collection.boot.kernel_release", "live uname release differs")
-    kernel_artifacts = [
-        artifact for artifact in artifacts
-        if artifact["kind"] == "kernel-image"
-        and artifact["canonical_path"] == boot["kernel_image"]["path"]
-        and artifact["content_sha256"] == boot["kernel_image"]["sha256"]
-        and artifact["kernel"] is not None
-        and artifact["kernel"]["release"] == kernel_release
-    ]
-    if len(kernel_artifacts) != 1:
-        _error("collection.boot.kernel_image", "must bind exactly one installed kernel artifact for the running release")
-    efibootmgr = _run_exact(validators["efibootmgr"], ["-v"])
-    if hashlib.sha256(efibootmgr).hexdigest() != boot["efibootmgr_output_sha256"]:
-        _error("collection.boot.efibootmgr_output_sha256", "live EFI state differs")
-    current_match = re.search(rb"(?m)^BootCurrent:\s*([0-9A-Fa-f]{4})\s*$", efibootmgr)
-    if current_match is None or current_match.group(1).decode().upper() != boot["boot_current"].upper():
-        _error("collection.boot.boot_current", "live BootCurrent differs")
-    current_line = next((line for line in efibootmgr.decode("utf-8", errors="replace").splitlines() if line.upper().startswith(f"BOOT{boot['boot_current'].upper()}")), "")
-    loader_path = Path(boot["efi_loader"]["path"])
-    if not loader_path.is_relative_to(Path("/efi")):
-        _error("collection.boot.efi_loader", "EFI loader must be on /efi")
-    firmware_loader = "\\" + "\\".join(loader_path.relative_to("/efi").parts)
-    if firmware_loader.casefold() not in current_line.casefold():
-        _error("collection.boot.efi_loader", "BootCurrent does not reference the recorded /efi loader")
-    kernel_path = Path(boot["kernel_image"]["path"])
-    if not kernel_path.is_relative_to(Path("/efi")):
-        _error("collection.boot.kernel_image", "kernel image must be on /efi")
-    firmware_kernel = "\\" + "\\".join(kernel_path.relative_to("/efi").parts)
-    if loader_path != kernel_path and firmware_kernel.casefold() not in current_line.casefold():
-        _error("collection.boot.kernel_image", "BootCurrent options do not select the recorded kernel image")
-    initramfs_path = Path(boot["initramfs"]["path"])
-    if not initramfs_path.is_relative_to(Path("/efi")):
-        _error("collection.boot.initramfs", "initramfs must be on /efi")
-    firmware_initramfs = "\\" + "\\".join(initramfs_path.relative_to("/efi").parts)
-    if firmware_initramfs.casefold() not in current_line.casefold():
-        _error("collection.boot.initramfs", "BootCurrent options do not select the recorded initramfs")
-    openrc = _run_exact(validators["rc_status"], ["--all"])
-    if hashlib.sha256(openrc).hexdigest() != boot["openrc_output_sha256"]:
-        _error("collection.boot.openrc_output_sha256", "live OpenRC state differs")
-    modules_root = Path("/lib/modules") / kernel_release
-    if not modules_root.is_dir():
-        _error("collection.boot.modules_manifest", "running kernel module tree is absent")
+def _loaded_module_names(path: Path = Path("/proc/modules")) -> list[str]:
+    """Return a canonical read-only observation of currently loaded modules."""
     try:
-        modules_document = json.loads(secure_read(Path(boot["modules_manifest"]["path"]), boot["modules_manifest"]["sha256"]))
-    except (OSError, json.JSONDecodeError) as error:
-        raise StateValidationError(f"invalid modules manifest: {error}") from error
-    if modules_document != {"kernel_release": kernel_release, "entries": _tree_identity(modules_root)}:
-        _error("collection.boot.modules_manifest", "running kernel module tree differs from the exact manifest")
-    if len(boot["reboot_evidence"]) != 1:
-        _error("collection.boot.reboot_evidence", "requires exactly one post-final-build reboot receipt")
-    reboot_evidence = boot["reboot_evidence"][0]
-    reboot = secure_json(Path(reboot_evidence["path"]), reboot_evidence["sha256"])
-    expected_reboot_keys = {"schema", "generation", "final_transaction_id", "final_transaction_completed_at", "pre_boot_id", "post_boot_id", "observed_at", "kernel_release", "boot_current", "efi_loader_sha256", "portage_receipt_sha256", "vdb_receipt_sha256"}
+        lines = path.read_text(encoding="ascii", errors="strict").splitlines()
+    except OSError as error:
+        raise StateValidationError(f"cannot read loaded-module state: {path}: {error}") from error
+    names: list[str] = []
+    for line_number, line in enumerate(lines, 1):
+        fields = line.split()
+        if not fields:
+            raise StateValidationError(f"invalid empty loaded-module row: {path}:{line_number}")
+        names.append(fields[0])
+    if len(names) != len(set(names)):
+        raise StateValidationError(f"duplicate loaded-module name in {path}")
+    return sorted(names)
+
+
+def _verify_runtime_after_reboot(
+    final_state: Mapping[str, Any], validators: Mapping[str, Path], *, fixture_mode: bool,
+) -> str:
+    """Verify the running userspace environment without inspecting boot-entry state."""
+    runtime = final_state["runtime_after_reboot"]
+    if fixture_mode:
+        # Hermetic fixtures prove receipt binding but can never authorize completion.
+        boot_id_before = _string(
+            runtime["boot_id"], "collection.runtime_after_reboot.boot_id",
+        )
+        kernel_release = _string(
+            runtime["kernel_release"],
+            "collection.runtime_after_reboot.kernel_release",
+        )
+    else:
+        boot_id_path = Path("/proc/sys/kernel/random/boot_id")
+        boot_id_before = boot_id_path.read_text(encoding="ascii").strip()
+        if boot_id_before != runtime["boot_id"]:
+            _error(
+                "collection.runtime_after_reboot.boot_id",
+                "live boot ID differs from the frozen post-transaction runtime",
+            )
+        kernel_release = _run_exact(validators["uname"], ["-r"]).decode(
+            "utf-8", errors="strict",
+        ).strip()
+        if kernel_release != runtime["kernel_release"]:
+            _error(
+                "collection.runtime_after_reboot.kernel_release",
+                "live uname release differs",
+            )
+        openrc = _run_exact(validators["rc_status"], ["--all"])
+        if hashlib.sha256(openrc).hexdigest() != runtime["openrc_output_sha256"]:
+            _error(
+                "collection.runtime_after_reboot.openrc_output_sha256",
+                "live OpenRC state differs",
+            )
+
+    try:
+        modules_document = secure_json(
+            Path(runtime["modules_manifest"]["path"]),
+            runtime["modules_manifest"]["sha256"],
+            fixture_mode=fixture_mode,
+        )
+    except OSError as error:
+        raise StateValidationError(f"invalid loaded-module manifest: {error}") from error
+    if not isinstance(modules_document, dict) or set(modules_document) != {
+        "kernel_release", "loaded_modules",
+    }:
+        _error(
+            "collection.runtime_after_reboot.modules_manifest",
+            "invalid loaded-module manifest schema",
+        )
+    manifest_release = _string(
+        modules_document["kernel_release"],
+        "collection.runtime_after_reboot.modules_manifest.kernel_release",
+    )
+    loaded_modules = _sorted_strings(
+        modules_document["loaded_modules"],
+        "collection.runtime_after_reboot.modules_manifest.loaded_modules",
+    )
+    if manifest_release != kernel_release:
+        _error(
+            "collection.runtime_after_reboot.modules_manifest.kernel_release",
+            "must equal the observed running kernel release",
+        )
+    if not fixture_mode and loaded_modules != _loaded_module_names():
+        _error(
+            "collection.runtime_after_reboot.modules_manifest.loaded_modules",
+            "loaded-module state differs from the exact manifest",
+        )
+
+    if len(runtime["reboot_evidence"]) != 1:
+        _error(
+            "collection.runtime_after_reboot.reboot_evidence",
+            "requires exactly one post-final-transaction reboot receipt",
+        )
+    reboot_evidence = runtime["reboot_evidence"][0]
+    reboot = secure_json(
+        Path(reboot_evidence["path"]), reboot_evidence["sha256"],
+        fixture_mode=fixture_mode,
+    )
+    expected_reboot_keys = {
+        "schema", "generation", "final_transaction_id",
+        "final_transaction_completed_at", "pre_boot_id", "post_boot_id",
+        "observed_at", "kernel_release", "portage_receipt_sha256",
+        "vdb_receipt_sha256",
+    }
     if not isinstance(reboot, dict) or set(reboot) != expected_reboot_keys:
-        _error("collection.boot.reboot_evidence", "invalid reboot receipt schema")
+        _error(
+            "collection.runtime_after_reboot.reboot_evidence",
+            "invalid reboot receipt schema",
+        )
     transaction = final_state["final_transaction"]
     expected_reboot = {
-        "schema": "gentoo-optimization-post-final-reboot-v1", "generation": final_state["generation"],
-        "final_transaction_id": transaction["transaction_id"], "final_transaction_completed_at": transaction["completed_at"],
-        "post_boot_id": boot_id_before, "kernel_release": kernel_release,
-        "boot_current": boot["boot_current"], "efi_loader_sha256": boot["efi_loader"]["sha256"],
+        "schema": "gentoo-optimization-post-final-reboot-v2",
+        "generation": final_state["generation"],
+        "final_transaction_id": transaction["transaction_id"],
+        "final_transaction_completed_at": transaction["completed_at"],
+        "post_boot_id": boot_id_before,
+        "kernel_release": kernel_release,
         "portage_receipt_sha256": transaction["portage_receipt"]["sha256"],
         "vdb_receipt_sha256": transaction["vdb_receipt"]["sha256"],
     }
     for key, expected in expected_reboot.items():
         if reboot.get(key) != expected:
-            _error("collection.boot.reboot_evidence", f"reboot receipt differs for {key}")
-    pre_boot_id = _string(reboot.get("pre_boot_id"), "collection.boot.reboot_evidence.pre_boot_id")
-    observed_at = _timestamp(reboot.get("observed_at"), "collection.boot.reboot_evidence.observed_at")
-    if pre_boot_id == boot_id_before or observed_at is None or observed_at <= transaction["completed_at"]:
-        _error("collection.boot.reboot_evidence", "does not prove a distinct boot after final transaction completion")
+            _error(
+                "collection.runtime_after_reboot.reboot_evidence",
+                f"reboot receipt differs for {key}",
+            )
+    pre_boot_id = _string(
+        reboot.get("pre_boot_id"),
+        "collection.runtime_after_reboot.reboot_evidence.pre_boot_id",
+    )
+    observed_at = _timestamp(
+        reboot.get("observed_at"),
+        "collection.runtime_after_reboot.reboot_evidence.observed_at",
+    )
+    if (
+        pre_boot_id == boot_id_before
+        or observed_at is None
+        or observed_at <= transaction["completed_at"]
+    ):
+        _error(
+            "collection.runtime_after_reboot.reboot_evidence",
+            "does not prove a distinct reboot after final transaction completion",
+        )
     return boot_id_before
 
 
@@ -2466,7 +2534,10 @@ def _verify_authoritative_state_locked(
     for key in ("generation_root", "evidence_root", "profiles_root", "bolt_root", "binpkg_snapshot", "packages_dir", "artifacts_dir"):
         _assert_trusted_path(roots[key], regular=False, fixture_mode=fixture_mode)
     _assert_trusted_path(inventory_path, regular=True, fixture_mode=fixture_mode)
-    allowed_proof_roots = [roots["generation_root"], roots["profiles_root"], roots["bolt_root"], roots["binpkg_snapshot"], Path("/efi")]
+    allowed_proof_roots = [
+        roots["generation_root"], roots["profiles_root"], roots["bolt_root"],
+        roots["binpkg_snapshot"],
+    ]
     lock_payloads: dict[str, bytes] = {}
     for key in ("framework", "project", "generation"):
         evidence = final["locks"][key]
@@ -2500,7 +2571,6 @@ def _verify_authoritative_state_locked(
         "readelf": PRODUCTION_READELF,
         "getcap": PRODUCTION_GETCAP,
         "uname": PRODUCTION_UNAME,
-        "efibootmgr": PRODUCTION_EFIBOOTMGR,
         "rc_status": PRODUCTION_RC_STATUS,
     }
     validators = {
@@ -2617,7 +2687,9 @@ def _verify_authoritative_state_locked(
         raise StateValidationError("binpkg validator did not return JSON") from error
     if binpkg_report.get("status") not in {"pass", "PASS", True}:
         _error("collection.binpkg_snapshot", "authoritative binpkg semantic validation failed")
-    boot_id = _verify_boot(final, validators, artifacts, fixture_mode=fixture_mode)
+    boot_id = _verify_runtime_after_reboot(
+        final, validators, fixture_mode=fixture_mode,
+    )
     # Close the long-running semantic-validation TOCTOU window over VDB and live files.
     for package in packages:
         live = package["live_instance"]
@@ -2639,7 +2711,10 @@ def _verify_authoritative_state_locked(
         if secure_read(Path(evidence["path"]), evidence["sha256"], fixture_mode=fixture_mode) != lock_payloads[key]:
             _error(f"collection.locks.{key}", "changed during reconciliation")
     if not fixture_mode and Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip() != boot_id:
-        _error("collection.boot.boot_id", "boot changed during reconciliation")
+        _error(
+            "collection.runtime_after_reboot.boot_id",
+            "running boot changed during reconciliation",
+        )
     return {"authoritative": not fixture_mode, "strict_verified": True, "boot_id": boot_id}
 
 
@@ -2911,6 +2986,7 @@ def reconcile_collection(
 
     pgo_counts = _pgo_counts([component for package in validated_packages for component in package["components"]])
     bolt_counts = _bolt_counts(validated_artifacts)
+    source_required = sum(package["source_rebuild"]["required"] for package in validated_packages)
     source_succeeded = sum(package["source_rebuild"]["status"] == "succeeded" for package in validated_packages)
     source_pending = sum(package["source_rebuild"]["status"] in {"pending", "running"} for package in validated_packages)
     source_unknown = sum(package["source_rebuild"]["status"] == "unknown" for package in validated_packages)
@@ -2924,7 +3000,8 @@ def reconcile_collection(
         "owned_path_total": len(topology_owners),
         "owned_directory_total": len(inventory["owned_directories"]) if inventory is not None else 0,
         "owner_component_resolved_total": len(validated_artifacts),
-        "source_rebuild_required_total": len(validated_packages), "source_rebuild_succeeded_total": source_succeeded,
+        "source_rebuild_required_total": source_required,
+        "source_rebuild_succeeded_total": source_succeeded,
         **{f"pgo_{key}": value for key, value in pgo_counts.items()},
         **{f"bolt_{key}": value for key, value in bolt_counts.items()},
         "pending_total": pending_total, "unknown_total": unknown_total, "failed_total": failed_total,
@@ -2943,5 +3020,5 @@ def reconcile_collection(
         "fixture_mode": fixture_mode,
         "boot_id": authoritative_result["boot_id"],
         "counts": counts,
-        "coverage_complete": bool(validated_packages) and authoritative_verified and inventory_verified and vdb_verified and installed_artifacts_verified and source_succeeded == len(validated_packages) and pending_total == unknown_total == failed_total == 0,
+        "coverage_complete": bool(validated_packages) and authoritative_verified and inventory_verified and vdb_verified and installed_artifacts_verified and source_succeeded == source_required and pending_total == unknown_total == failed_total == 0,
     }

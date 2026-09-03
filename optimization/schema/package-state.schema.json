@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://gentoo-optimization.invalid/schema/package-state.schema.json",
-  "title": "Gentoo optimization package state v4",
-  "description": "An exact frozen-generation installed package, its live VDB identity, source rebuild transaction, component toolchains, PGO proof, graph references, and derived coverage.",
+  "title": "Gentoo optimization package state v5",
+  "description": "An exact frozen-generation installed package, its live VDB identity, userspace source rebuild transaction, component toolchains, PGO proof, human-managed kernel exclusion, graph references, and derived coverage.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "record_type", "generation", "identity", "frozen_inventory_entry", "live_instance", "source", "abis", "languages", "use_flags", "components", "source_rebuild", "graphs", "aggregate", "final_status", "resolution", "notes"],
   "properties": {
-    "schema_version": {"const": 4},
+    "schema_version": {"const": 5},
     "record_type": {"const": "package"},
     "generation": {"$ref": "#/$defs/generation"},
     "identity": {"$ref": "#/$defs/package_identity"},
@@ -29,6 +29,24 @@
     "resolution": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/resolution"}]},
     "notes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
   },
+  "allOf": [{
+    "if": {
+      "properties": {
+        "components": {
+          "items": {"properties": {"component_kind": {"const": "kernel"}}, "required": ["component_kind"]}
+        }
+      },
+      "required": ["components"]
+    },
+    "then": {
+      "properties": {
+        "source_rebuild": {"properties": {"required": {"const": false}}},
+        "final_status": {"const": "terminal-exclusion"},
+        "resolution": {"type": "object", "required": ["reason_code"], "properties": {"reason_code": {"const": "kernel-policy-exclusion"}}}
+      }
+    },
+    "else": {"properties": {"source_rebuild": {"properties": {"required": {"const": true}}}}}
+  }],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
@@ -148,7 +166,7 @@
       "required": ["eligibility", "mode", "status", "generation_id", "manifest", "sidecar", "profile", "toolchain_fingerprint", "workload_refs", "training_evidence", "validation_evidence", "build_use", "resolution"],
       "properties": {
         "eligibility": {"enum": ["eligible", "not-applicable", "terminal-exclusion", "unknown"]},
-        "mode": {"enum": ["clang-ir", "clang-sample", "gcc-gcov", "rust-llvm-ir", "go-pprof", "ebuild-native", "kernel-autofdo", "not-applicable"]},
+        "mode": {"enum": ["clang-ir", "clang-sample", "gcc-gcov", "rust-llvm-ir", "go-pprof", "ebuild-native", "not-applicable"]},
         "status": {"enum": ["pending", "training", "profiled", "optimized", "not-applicable", "terminal-exclusion", "unknown", "failed"]},
         "generation_id": {"type": ["string", "null"]}, "manifest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/evidence"}]},
         "sidecar": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/evidence"}]}, "profile": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/evidence"}]},
@@ -160,8 +178,8 @@
     },
     "kernel_build": {
       "type": "object", "additionalProperties": false,
-      "required": ["release", "config", "image", "modules_manifest", "boot_entry_id", "boot_evidence"],
-      "properties": {"release": {"type": "string", "minLength": 1}, "config": {"$ref": "#/$defs/evidence"}, "image": {"$ref": "#/$defs/evidence"}, "modules_manifest": {"$ref": "#/$defs/evidence"}, "boot_entry_id": {"type": "string", "minLength": 1}, "boot_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
+      "required": ["release", "config", "image", "modules_manifest", "operator_managed", "project_mutation_prohibited"],
+      "properties": {"release": {"type": "string", "minLength": 1}, "config": {"$ref": "#/$defs/evidence"}, "image": {"$ref": "#/$defs/evidence"}, "modules_manifest": {"$ref": "#/$defs/evidence"}, "operator_managed": {"const": true}, "project_mutation_prohibited": {"const": true}}
     },
     "component": {
       "type": "object", "additionalProperties": false,
@@ -169,10 +187,27 @@
       "properties": {
         "component_id": {"type": "string", "pattern": "^[A-Za-z0-9+_.:@-]+$"}, "component_kind": {"enum": ["native", "rust", "go", "kernel", "jvm", "script-data", "gpu", "other"]},
         "languages": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/language"}}, "abi": {"enum": ["amd64", "x86", "other", "none"]},
-        "target": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/target"}]}, "build_backend": {"enum": ["clang-ir", "clang-sample", "gcc-gcov", "rust-llvm-ir", "go-pprof", "ebuild-native", "kernel-autofdo", "not-applicable"]},
+        "target": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/target"}]}, "build_backend": {"enum": ["clang-ir", "clang-sample", "gcc-gcov", "rust-llvm-ir", "go-pprof", "ebuild-native", "not-applicable"]},
         "toolchain": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/toolchain"}]}, "fingerprint": {"$ref": "#/$defs/fingerprint"}, "pgo": {"$ref": "#/$defs/pgo"},
         "kernel": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/kernel_build"}]}
-      }
+      },
+      "allOf": [{
+        "if": {"properties": {"component_kind": {"const": "kernel"}}, "required": ["component_kind"]},
+        "then": {
+          "properties": {
+            "build_backend": {"const": "not-applicable"}, "toolchain": {"const": null},
+            "pgo": {
+              "properties": {
+                "eligibility": {"const": "terminal-exclusion"}, "mode": {"const": "not-applicable"},
+                "status": {"const": "terminal-exclusion"},
+                "resolution": {"type": "object", "required": ["reason_code"], "properties": {"reason_code": {"const": "kernel-policy-exclusion"}}}
+              }
+            },
+            "kernel": {"$ref": "#/$defs/kernel_build"}
+          }
+        },
+        "else": {"properties": {"kernel": {"const": null}}}
+      }]
     },
     "attempt": {
       "type": "object", "additionalProperties": false,
@@ -202,7 +237,19 @@
     "source_rebuild": {
       "type": "object", "additionalProperties": false,
       "required": ["required", "status", "generation_id", "transaction_id", "source_only", "attempts", "proof", "resolution"],
-      "properties": {"required": {"const": true}, "status": {"enum": ["pending", "running", "succeeded", "unknown", "failed"]}, "generation_id": {"type": "string", "minLength": 1}, "transaction_id": {"type": ["string", "null"]}, "source_only": {"type": "boolean"}, "attempts": {"type": "array", "items": {"$ref": "#/$defs/attempt"}}, "proof": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/rebuild_proof"}]}, "resolution": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/resolution"}]}}
+      "properties": {"required": {"type": "boolean"}, "status": {"enum": ["pending", "running", "succeeded", "not-applicable", "unknown", "failed"]}, "generation_id": {"type": "string", "minLength": 1}, "transaction_id": {"type": ["string", "null"]}, "source_only": {"type": "boolean"}, "attempts": {"type": "array", "items": {"$ref": "#/$defs/attempt"}}, "proof": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/rebuild_proof"}]}, "resolution": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/resolution"}]}},
+      "allOf": [{
+        "if": {"properties": {"required": {"const": false}}, "required": ["required"]},
+        "then": {
+          "properties": {
+            "status": {"const": "not-applicable"}, "transaction_id": {"const": null},
+            "source_only": {"const": false}, "attempts": {"maxItems": 0},
+            "proof": {"const": null},
+            "resolution": {"type": "object", "required": ["reason_code"], "properties": {"reason_code": {"const": "kernel-policy-exclusion"}}}
+          }
+        },
+        "else": {"properties": {"status": {"enum": ["pending", "running", "succeeded", "unknown", "failed"]}}}
+      }]
     },
     "graph_ref": {
       "type": "object", "additionalProperties": false,

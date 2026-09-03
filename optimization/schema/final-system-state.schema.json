@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://gentoo-optimization.invalid/schema/final-system-state.schema.json",
-  "title": "Gentoo optimization authoritative final-system state v1",
+  "title": "Gentoo optimization authoritative final-system state v2",
+  "description": "Authoritative userspace state and post-transaction runtime evidence without boot-entry, bootloader, kernel-lifecycle, or EFI authority.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "record_type", "generation", "trusted_roots", "locks", "validators", "registries", "final_transaction", "boot"],
+  "required": ["schema_version", "record_type", "generation", "trusted_roots", "locks", "validators", "registries", "final_transaction", "runtime_after_reboot"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "record_type": {"const": "final-system-state"},
     "generation": {"$ref": "#/$defs/generation"},
     "trusted_roots": {
@@ -25,13 +26,12 @@
     },
     "validators": {
       "type": "object", "additionalProperties": false,
-      "required": ["state_runtime", "reconciler_runtime", "profile", "binpkg_snapshot", "readelf", "getcap", "uname", "efibootmgr", "rc_status"],
+      "required": ["state_runtime", "reconciler_runtime", "profile", "binpkg_snapshot", "readelf", "getcap", "uname", "rc_status"],
       "properties": {
         "state_runtime": {"$ref": "#/$defs/validator"}, "reconciler_runtime": {"$ref": "#/$defs/validator"},
         "profile": {"$ref": "#/$defs/validator"}, "binpkg_snapshot": {"$ref": "#/$defs/validator"},
         "readelf": {"$ref": "#/$defs/validator"}, "getcap": {"$ref": "#/$defs/validator"},
-        "uname": {"$ref": "#/$defs/validator"}, "efibootmgr": {"$ref": "#/$defs/validator"},
-        "rc_status": {"$ref": "#/$defs/validator"}
+        "uname": {"$ref": "#/$defs/validator"}, "rc_status": {"$ref": "#/$defs/validator"}
       }
     },
     "registries": {
@@ -51,16 +51,13 @@
         "binpkg_snapshot_receipt": {"$ref": "#/$defs/evidence"}
       }
     },
-    "boot": {
+    "runtime_after_reboot": {
       "type": "object", "additionalProperties": false,
-      "required": ["boot_id", "kernel_release", "boot_current", "efi_root", "kernel_image", "initramfs", "efi_loader", "modules_manifest", "efibootmgr_output_sha256", "openrc_output_sha256", "reboot_evidence"],
+      "required": ["boot_id", "kernel_release", "modules_manifest", "openrc_output_sha256", "reboot_evidence"],
       "properties": {
         "boot_id": {"type": "string", "minLength": 1}, "kernel_release": {"type": "string", "minLength": 1},
-        "boot_current": {"type": "string", "pattern": "^[0-9A-Fa-f]{4}$"}, "efi_root": {"const": "/efi"},
-        "kernel_image": {"$ref": "#/$defs/evidence"}, "initramfs": {"$ref": "#/$defs/evidence"}, "efi_loader": {"$ref": "#/$defs/evidence"},
-        "modules_manifest": {"$ref": "#/$defs/evidence"}, "efibootmgr_output_sha256": {"$ref": "#/$defs/sha"},
-        "openrc_output_sha256": {"$ref": "#/$defs/sha"},
-        "reboot_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
+        "modules_manifest": {"$ref": "#/$defs/evidence"}, "openrc_output_sha256": {"$ref": "#/$defs/sha"},
+        "reboot_evidence": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/evidence"}}
       }
     }
   },

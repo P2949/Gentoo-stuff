@@ -146,11 +146,26 @@ def nonapplicable_pgo() -> dict[str, Any]:
     }
 
 
+def kernel_excluded_pgo() -> dict[str, Any]:
+    return {
+        "eligibility": "terminal-exclusion", "mode": "not-applicable",
+        "status": "terminal-exclusion", "generation_id": None,
+        "manifest": None, "sidecar": None, "profile": None,
+        "toolchain_fingerprint": None, "workload_refs": [],
+        "training_evidence": [], "validation_evidence": [],
+        "build_use": None, "resolution": resolution("kernel-policy-exclusion"),
+    }
+
+
 def component(component_id: str, kind: str, languages: list[str], abi: str, backend: str) -> dict[str, Any]:
     tc = None if backend == "not-applicable" else toolchain(languages, backend, component_id, abi)
     tc_fingerprint = None if tc is None else tc["environment_fingerprint"]
-    pgo_state = nonapplicable_pgo() if tc_fingerprint is None else optimized_pgo(backend, tc_fingerprint)
     is_kernel = kind == "kernel"
+    pgo_state = (
+        kernel_excluded_pgo() if is_kernel else
+        nonapplicable_pgo() if tc_fingerprint is None else
+        optimized_pgo(backend, tc_fingerprint)
+    )
     item: dict[str, Any] = {
         "component_id": component_id, "component_kind": kind,
         "languages": sorted(languages), "abi": abi,
@@ -164,7 +179,7 @@ def component(component_id: str, kind: str, languages: list[str], abi: str, back
         item["kernel"] = {
             "release": "6.18.0-test", "config": evidence("config", "config"),
             "image": evidence("image", "binary"), "modules_manifest": evidence("modules", "manifest"),
-            "boot_entry_id": "Boot0004", "boot_evidence": [evidence("boot", "report")],
+            "operator_managed": True, "project_mutation_prohibited": True,
         }
     return item
 
@@ -177,7 +192,7 @@ def all_components() -> list[dict[str, Any]]:
         component("04-rust", "rust", ["rust"], "amd64", "rust-llvm-ir"),
         component("05-go", "go", ["go"], "amd64", "go-pprof"),
         component("06-native", "native", ["other"], "amd64", "ebuild-native"),
-        component("07-kernel", "kernel", ["c"], "amd64", "kernel-autofdo"),
+        component("07-kernel", "kernel", ["c"], "amd64", "not-applicable"),
         component("08-jvm", "jvm", ["jvm"], "none", "not-applicable"),
         component("09-script-data", "script-data", ["data", "python", "shell"], "none", "not-applicable"),
     ]
@@ -219,7 +234,7 @@ def package_record(*, inventory_sha: str = H["inventory"], artifact_count: int =
     frozen_payload = {"cpv": "app-test/example-suite-1.0-r2", "repository": "gentoo", "slot_raw": "0", "contents_sha256": H["contents"], "metadata_tree_sha256": H["vdb"]}
     frozen_sha = hashlib.sha256(STATE.canonical_bytes(frozen_payload)).hexdigest()
     return {
-        "schema_version": 4, "record_type": "package", "generation": generation(inventory_sha),
+        "schema_version": 5, "record_type": "package", "generation": generation(inventory_sha),
         "identity": {"cpv": "app-test/example-suite-1.0-r2", "cp": "app-test/example-suite", "repository": "gentoo", "slot": "0", "subslot": "0"},
         "frozen_inventory_entry": {"entry_sha256": frozen_sha, "installed_at_freeze": True, "payload": frozen_payload}, "live_instance": live,
         "source": {"ebuild": evidence("ebuild", "source"), "manifest": evidence("manifest", "manifest"), "distfiles": [evidence("source", "source")], "source_fingerprint": f"sha256:{H['source']}"},
@@ -228,11 +243,47 @@ def package_record(*, inventory_sha: str = H["inventory"], artifact_count: int =
         "graphs": {"consumer_refs": [], "workload_refs": [workload()], "reverse_dependency_refs": []},
         "aggregate": {
             "component_count": len(components), "artifact_count": artifact_count,
-            "pgo": {"eligible_count": 7, "optimized_count": 7, "excluded_count": 0, "not_applicable_count": 2, "pending_count": 0, "unknown_count": 0, "failed_count": 0, "status": "optimized"},
+            "pgo": {"eligible_count": 6, "optimized_count": 6, "excluded_count": 1, "not_applicable_count": 2, "pending_count": 0, "unknown_count": 0, "failed_count": 0, "status": "optimized-with-exclusions"},
             "bolt": bolt_counts,
         },
-        "final_status": "optimized", "resolution": None, "notes": [],
+        "final_status": "optimized-with-exclusions", "resolution": None, "notes": [],
     }
+
+
+def kernel_only_package_record() -> dict[str, Any]:
+    record = package_record()
+    kernel_component = component(
+        "01-kernel", "kernel", ["c"], "amd64", "not-applicable"
+    )
+    record["components"] = [kernel_component]
+    record["abis"] = ["amd64"]
+    record["languages"] = ["c"]
+    record["use_flags"] = []
+    record["graphs"]["workload_refs"] = []
+    record["source_rebuild"] = {
+        "required": False, "status": "not-applicable",
+        "generation_id": "generation-test", "transaction_id": None,
+        "source_only": False, "attempts": [], "proof": None,
+        "resolution": resolution("kernel-policy-exclusion"),
+    }
+    record["aggregate"] = {
+        "component_count": 1, "artifact_count": 0,
+        "pgo": {
+            "eligible_count": 0, "optimized_count": 0,
+            "excluded_count": 1, "not_applicable_count": 0,
+            "pending_count": 0, "unknown_count": 0, "failed_count": 0,
+            "status": "terminal-exclusion",
+        },
+        "bolt": {
+            "candidate_count": 0, "optimized_count": 0,
+            "excluded_count": 0, "not_applicable_count": 0,
+            "pending_count": 0, "unknown_count": 0, "failed_count": 0,
+            "status": "not-applicable",
+        },
+    }
+    record["final_status"] = "terminal-exclusion"
+    record["resolution"] = resolution("kernel-policy-exclusion")
+    return record
 
 
 def elf_metadata(role: str = "pie-executable", abi: str = "amd64") -> dict[str, Any]:
@@ -288,22 +339,44 @@ def artifact_record(*, inventory_sha: str = H["inventory"], kind: str = "elf", p
     kernel = None
     if kind in {"kernel-image", "kernel-module"}:
         is_module = kind == "kernel-module"
-        kernel = {"release": "6.18.0-test", "artifact_type": "module" if is_module else "image", "module_name": "example" if is_module else None, "vermagic": "6.18.0-test SMP" if is_module else None, "config_sha256": H["config"], "signed": True, "signature_key_id": "test-key", "boot_entry_id": None if is_module else "Boot0004", "boot_evidence": [] if is_module else [evidence("boot", "report")]}
+        kernel = {
+            "release": "6.18.0-test",
+            "artifact_type": "module" if is_module else "image",
+            "module_name": "example" if is_module else None,
+            "vermagic": "6.18.0-test SMP" if is_module else None,
+            "config_sha256": H["config"], "signed": True,
+            "signature_key_id": "test-key", "operator_managed": True,
+            "project_mutation_prohibited": True,
+        }
     optimized = kind == "elf"
     if optimized and elf is not None:
         elf["build_id"] = "cd34ef56"
         elf["text_sha256"] = H["installed"]
-    bolt = optimized_bolt() if optimized else {"eligibility": "not-applicable", "status": "not-applicable", "generation_id": None, "resolution": resolution("bolt-not-elf"), "capture": None, "perf_profiles": [], "fdata": None, "tools": None, "option_policy_revision": None, "options": [], "command": None, "output": None, "deployment": None}
+    kernel_artifact = kind in {"kernel-image", "kernel-module"}
+    terminal_resolution = resolution("kernel-policy-exclusion")
+    bolt = (
+        optimized_bolt() if optimized else {
+            "eligibility": "terminal-exclusion" if kernel_artifact else "not-applicable",
+            "status": "terminal-exclusion" if kernel_artifact else "not-applicable",
+            "generation_id": None,
+            "resolution": copy.deepcopy(terminal_resolution) if kernel_artifact else resolution("bolt-not-elf"),
+            "capture": None, "perf_profiles": [], "fdata": None, "tools": None,
+            "option_policy_revision": None, "options": [], "command": None,
+            "output": None, "deployment": None,
+        }
+    )
     artifact_id = hashlib.sha256((kind + path).encode()).hexdigest()
     record = {
-        "schema_version": 4, "record_type": "artifact", "generation": generation(inventory_sha), "artifact_id": f"sha256:{artifact_id}",
+        "schema_version": 5, "record_type": "artifact", "generation": generation(inventory_sha), "artifact_id": f"sha256:{artifact_id}",
         "owner": {"cpv": "app-test/example-suite-1.0-r2", "cp": "app-test/example-suite", "component_id": "01-clang-ir", "component_fingerprint": f"sha256:{hashlib.sha256('01-clang-ir'.encode()).hexdigest()}"},
         "kind": kind, "format": "ELF" if elf else kind, "role": role, "installed_path": path, "canonical_path": path,
         "content_sha256": H["installed"] if optimized else H["artifact"], "size": 4096, "abi": abi, "target": machine_target,
         "metadata": {"file_type": "regular", "device_major": None, "device_minor": None, "mode": 0o755, "uid": 0, "gid": 0, "mtime_ns": 1783904400000000000, "xattrs": [{"name": "user.test", "value_sha256": H["xattr"]}], "file_capabilities": [], "selinux_context": None},
         "topology": {"device": 2049, "inode": 1001, "link_count": 1, "hardlink_paths": [path], "symlinks": []},
         "elf": elf, "kernel": kernel, "graphs": {"consumer_refs": [], "workload_refs": [workload()], "reverse_dependency_refs": []},
-        "bolt": bolt, "final_status": "optimized" if optimized else "not-applicable", "resolution": None if optimized else resolution("bolt-not-elf"),
+        "bolt": bolt,
+        "final_status": "optimized" if optimized else "terminal-exclusion" if kernel_artifact else "not-applicable",
+        "resolution": None if optimized else copy.deepcopy(terminal_resolution) if kernel_artifact else resolution("bolt-not-elf"),
     }
     if kind == "symlink":
         record["metadata"]["file_type"] = "symlink"
@@ -414,7 +487,7 @@ def strict_fixture(root: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str
     package_receipt_payload = STATE.canonical_bytes(package_receipt); Path(package_receipt_evidence["path"]).write_bytes(package_receipt_payload); package_receipt_evidence["sha256"] = hashlib.sha256(package_receipt_payload).hexdigest()
     validators: dict[str, dict[str, str]] = {}
     validator_dir = root / "validators"; validator_dir.mkdir()
-    for key in ("state_runtime", "reconciler_runtime", "profile", "readelf", "getcap", "uname", "efibootmgr", "rc_status"):
+    for key in ("state_runtime", "reconciler_runtime", "profile", "readelf", "getcap", "uname", "rc_status"):
         path = validator_dir / key
         path.write_text("#!/bin/sh\nexit 0\n"); path.chmod(0o755)
         validators[key] = {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
@@ -430,20 +503,49 @@ def strict_fixture(root: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str
         path.write_bytes(payload)
         locks[key] = {"path": str(path), "sha256": hashlib.sha256(payload).hexdigest()}
     final_state: dict[str, Any] = {
-        "schema_version": 1, "record_type": "final-system-state", "generation": generation_identity,
+        "schema_version": 2, "record_type": "final-system-state", "generation": generation_identity,
         "trusted_roots": {"generation_root": str(generation_root), "evidence_root": str(evidence_root), "profiles_root": str(profiles_root), "bolt_root": str(bolt_root), "binpkg_snapshot": str(binpkg_root), "packages_dir": str(packages_dir), "artifacts_dir": str(artifacts_dir), "inventory": str(inventory_path)},
         "locks": locks, "validators": validators,
         "registries": {"workloads": [], "dependency_edges": []},
         "final_transaction": {"transaction_id": "final-transaction", "completed_at": "2026-07-13T02:00:00Z", "active_modes": [], "portage_receipt": evidence("final-transaction", "transaction"), "vdb_receipt": evidence("validation", "report"), "binpkg_snapshot_receipt": evidence("binpkg-validation", "report")},
-        "boot": {"boot_id": "fixture-boot", "kernel_release": "fixture-kernel", "boot_current": "0004", "efi_root": "/efi", "kernel_image": evidence("image", "binary"), "initramfs": evidence("boot", "binary"), "efi_loader": evidence("image", "binary"), "modules_manifest": evidence("modules", "manifest"), "efibootmgr_output_sha256": H["boot"], "openrc_output_sha256": H["validation"], "reboot_evidence": [evidence("boot", "report")]},
+        "runtime_after_reboot": {
+            "boot_id": "fixture-boot", "kernel_release": "fixture-kernel",
+            "modules_manifest": evidence("modules", "manifest"),
+            "openrc_output_sha256": H["validation"],
+            "reboot_evidence": [evidence("reboot", "report")],
+        },
     }
-    materialize_evidence(final_state["final_transaction"], evidence_root); materialize_evidence(final_state["boot"], evidence_root)
+    materialize_evidence(final_state["final_transaction"], evidence_root)
+    materialize_evidence(final_state["runtime_after_reboot"], evidence_root)
+    modules_evidence = final_state["runtime_after_reboot"]["modules_manifest"]
+    modules_payload = STATE.canonical_bytes({
+        "kernel_release": final_state["runtime_after_reboot"]["kernel_release"],
+        "loaded_modules": [],
+    })
+    Path(modules_evidence["path"]).write_bytes(modules_payload)
+    modules_evidence["sha256"] = hashlib.sha256(modules_payload).hexdigest()
     final_receipt_evidence = final_state["final_transaction"]["portage_receipt"]
     final_receipt = {"schema": "gentoo-optimization-final-portage-transaction-v1", "generation": generation(inventory_sha), "transaction_id": "final-transaction", "completed_at": "2026-07-13T02:00:00Z", "packages": [{"cpv": package["identity"]["cpv"], "path": package_receipt_evidence["path"], "sha256": package_receipt_evidence["sha256"]}]}
     final_receipt_payload = STATE.canonical_bytes(final_receipt); Path(final_receipt_evidence["path"]).write_bytes(final_receipt_payload); final_receipt_evidence["sha256"] = hashlib.sha256(final_receipt_payload).hexdigest()
     binpkg_receipt_evidence = final_state["final_transaction"]["binpkg_snapshot_receipt"]
     binpkg_output = b'{"status":"pass"}\n'; Path(binpkg_receipt_evidence["path"]).write_bytes(binpkg_output); binpkg_receipt_evidence["sha256"] = hashlib.sha256(binpkg_output).hexdigest()
     package["source_rebuild"]["proof"]["binpkg_validation_receipt"] = copy.deepcopy(binpkg_receipt_evidence)
+    reboot_evidence = final_state["runtime_after_reboot"]["reboot_evidence"][0]
+    reboot_receipt = {
+        "schema": "gentoo-optimization-post-final-reboot-v2",
+        "generation": generation(inventory_sha),
+        "final_transaction_id": final_state["final_transaction"]["transaction_id"],
+        "final_transaction_completed_at": final_state["final_transaction"]["completed_at"],
+        "pre_boot_id": "fixture-boot-before",
+        "post_boot_id": final_state["runtime_after_reboot"]["boot_id"],
+        "observed_at": "2026-07-13T02:05:00Z",
+        "kernel_release": final_state["runtime_after_reboot"]["kernel_release"],
+        "portage_receipt_sha256": final_state["final_transaction"]["portage_receipt"]["sha256"],
+        "vdb_receipt_sha256": final_state["final_transaction"]["vdb_receipt"]["sha256"],
+    }
+    reboot_payload = STATE.canonical_bytes(reboot_receipt)
+    Path(reboot_evidence["path"]).write_bytes(reboot_payload)
+    reboot_evidence["sha256"] = hashlib.sha256(reboot_payload).hexdigest()
     # Lock evidence contains authoritative generation JSON and must not be rematerialized.
     (packages_dir / "package.json").write_bytes(STATE.canonical_bytes(package))
     (artifacts_dir / "artifact.json").write_bytes(STATE.canonical_bytes(artifact))
@@ -464,7 +566,32 @@ class PackageContractTests(unittest.TestCase):
         self.assertEqual({item["build_backend"] for item in record["components"]}, STATE.BACKENDS)
         self.assertEqual(set(record["languages"]), STATE.LANGUAGES - {"other"} | {"other"})
         kernel = next(item for item in record["components"] if item["component_kind"] == "kernel")
-        self.assertEqual(kernel["kernel"]["boot_entry_id"], "Boot0004")
+        self.assertTrue(kernel["kernel"]["operator_managed"])
+        self.assertTrue(kernel["kernel"]["project_mutation_prohibited"])
+        self.assertEqual(kernel["pgo"]["status"], "terminal-exclusion")
+        self.assertEqual(kernel["pgo"]["resolution"]["reason_code"], "kernel-policy-exclusion")
+        retired_backend = package_record()
+        retired_kernel = next(
+            item for item in retired_backend["components"]
+            if item["component_kind"] == "kernel"
+        )
+        retired_kernel["build_backend"] = "kernel-autofdo"
+        with self.assertRaises(STATE.StateValidationError):
+            STATE.validate_package(retired_backend)
+        retired_field = package_record()
+        retired_kernel = next(
+            item for item in retired_field["components"]
+            if item["component_kind"] == "kernel"
+        )
+        retired_kernel["kernel"]["boot_entry_id"] = "retired"
+        with self.assertRaisesRegex(STATE.StateValidationError, "extra"):
+            STATE.validate_package(retired_field)
+        kernel_only = STATE.validate_package(kernel_only_package_record())
+        self.assertFalse(kernel_only["source_rebuild"]["required"])
+        self.assertEqual(
+            kernel_only["source_rebuild"]["resolution"]["reason_code"],
+            "kernel-policy-exclusion",
+        )
 
     def test_live_vdb_and_rebuild_proof_are_cryptographically_bound(self) -> None:
         record = package_record()
@@ -620,8 +747,11 @@ class ArtifactContractTests(unittest.TestCase):
         record = artifact_record(kind="kernel-module", path="/lib/modules/6.18.0-test/example.ko"); record["kernel"] = None
         with self.assertRaisesRegex(STATE.StateValidationError, "required for a kernel artifact"):
             STATE.validate_artifact(record)
-        record = artifact_record(kind="kernel-image", path="/efi/vmlinuz-test.efi"); record["kernel"]["boot_evidence"] = []
-        with self.assertRaisesRegex(STATE.StateValidationError, "boot entry and boot evidence"):
+        record = artifact_record(kind="kernel-image", path="/usr/lib/modules/6.18.0-test/vmlinuz"); record["kernel"]["operator_managed"] = False
+        with self.assertRaisesRegex(STATE.StateValidationError, "operator_managed"):
+            STATE.validate_artifact(record)
+        record = artifact_record(kind="kernel-image", path="/usr/lib/modules/6.18.0-test/vmlinuz"); record["kernel"]["boot_evidence"] = []
+        with self.assertRaisesRegex(STATE.StateValidationError, "extra"):
             STATE.validate_artifact(record)
 
 
@@ -915,11 +1045,25 @@ class PublicationAndSchemaTests(unittest.TestCase):
         package_schema = json.loads((REPOSITORY_ROOT / "optimization/schema/package-state.schema.json").read_text())
         artifact_schema = json.loads((REPOSITORY_ROOT / "optimization/schema/artifact-state.schema.json").read_text())
         final_schema = json.loads((REPOSITORY_ROOT / "optimization/schema/final-system-state.schema.json").read_text())
-        self.assertEqual(package_schema["properties"]["schema_version"]["const"], 4)
-        self.assertEqual(artifact_schema["properties"]["schema_version"]["const"], 4)
+        self.assertEqual(package_schema["properties"]["schema_version"]["const"], 5)
+        self.assertEqual(artifact_schema["properties"]["schema_version"]["const"], 5)
+        self.assertEqual(final_schema["properties"]["schema_version"]["const"], 2)
         self.assertEqual(set(package_schema["required"]), STATE.PACKAGE_KEYS)
         self.assertEqual(set(artifact_schema["required"]), STATE.ARTIFACT_KEYS)
         self.assertEqual(set(final_schema["required"]), STATE.FINAL_SYSTEM_KEYS)
+        package_schema_text = json.dumps(package_schema, sort_keys=True)
+        artifact_schema_text = json.dumps(artifact_schema, sort_keys=True)
+        final_schema_text = json.dumps(final_schema, sort_keys=True)
+        self.assertNotIn("kernel-autofdo", package_schema_text)
+        for retired in ("boot_entry_id", "boot_evidence"):
+            self.assertNotIn(retired, package_schema_text)
+            self.assertNotIn(retired, artifact_schema_text)
+        for retired in (
+            "boot_current", "efi_root", "efi_loader", "efibootmgr",
+            "kernel_image", "initramfs",
+        ):
+            self.assertNotIn(retired, final_schema_text)
+        self.assertIn("runtime_after_reboot", final_schema["required"])
         exact_cpv_contract = json.loads(
             EXACT_CPV_CONTRACT_PATH.read_text(encoding="utf-8")
         )
@@ -991,6 +1135,58 @@ class PublicationAndSchemaTests(unittest.TestCase):
                             set_cpv(candidate, cpv)
                             with self.assertRaises(jsonschema.ValidationError):
                                 schema_validator.validate(candidate)
+
+            package_schema = json.loads(
+                (REPOSITORY_ROOT / "optimization/schema/package-state.schema.json").read_text()
+            )
+            package_schema_validator = jsonschema.Draft202012Validator(package_schema)
+            kernel_package = kernel_only_package_record()
+            package_schema_validator.validate(kernel_package)
+            STATE.validate_package(kernel_package)
+            for mutate in (
+                lambda item: next(
+                    component for component in item["components"]
+                    if component["component_kind"] == "kernel"
+                ).__setitem__("build_backend", "kernel-autofdo"),
+                lambda item: next(
+                    component for component in item["components"]
+                    if component["component_kind"] == "kernel"
+                )["kernel"].__setitem__("boot_entry_id", "retired"),
+            ):
+                candidate = copy.deepcopy(kernel_package)
+                mutate(candidate)
+                with self.assertRaises(jsonschema.ValidationError):
+                    package_schema_validator.validate(candidate)
+                with self.assertRaises(STATE.StateValidationError):
+                    STATE.validate_package(candidate)
+
+            artifact_schema = json.loads(
+                (REPOSITORY_ROOT / "optimization/schema/artifact-state.schema.json").read_text()
+            )
+            artifact_schema_validator = jsonschema.Draft202012Validator(artifact_schema)
+            kernel_artifact = artifact_record(
+                kind="kernel-image",
+                path="/usr/lib/modules/6.18.0-test/vmlinuz",
+            )
+            artifact_schema_validator.validate(kernel_artifact)
+            STATE.validate_artifact(kernel_artifact)
+            candidate = copy.deepcopy(kernel_artifact)
+            candidate["kernel"]["boot_evidence"] = []
+            with self.assertRaises(jsonschema.ValidationError):
+                artifact_schema_validator.validate(candidate)
+            with self.assertRaises(STATE.StateValidationError):
+                STATE.validate_artifact(candidate)
+
+            final_schema = json.loads(
+                (REPOSITORY_ROOT / "optimization/schema/final-system-state.schema.json").read_text()
+            )
+            final_schema_validator = jsonschema.Draft202012Validator(final_schema)
+            candidate = copy.deepcopy(final_state)
+            candidate["runtime_after_reboot"]["boot_current"] = "0004"
+            with self.assertRaises(jsonschema.ValidationError):
+                final_schema_validator.validate(candidate)
+            with self.assertRaises(STATE.StateValidationError):
+                STATE.validate_final_system_state(candidate)
 
 
 if __name__ == "__main__":
