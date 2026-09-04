@@ -45,8 +45,8 @@ done
 # directories only; an unexpected top-level file (such as the former `trap`
 # scratch output) is always fatal.
 declare -A allowed_root_entries=(
-    [.agents]=1 [.codex]=1 [.git]=1 [.github]=1 [.gitignore]=1 [.mypy_cache]=1 [.vscode]=1
-    [LICENSE]=1 [README.md]=1 [bench]=1 [docs]=1 [local-overlay]=1
+    [.agents]=1 [.codex]=1 [.cursor]=1 [.git]=1 [.github]=1 [.gitignore]=1 [.mypy_cache]=1 [.vscode]=1
+    [AGENTS.md]=1 [CLAUDE.md]=1 [GEMINI.md]=1 [LICENSE]=1 [README.md]=1 [bench]=1 [docs]=1 [local-overlay]=1
     [optimization]=1 [plan.md]=1 [plans]=1 [portage]=1 [scripts]=1 [tests]=1
 )
 while IFS= read -r -d '' entry; do
@@ -54,7 +54,7 @@ while IFS= read -r -d '' entry; do
     [[ -n ${allowed_root_entries[${name}]+x} ]] || \
         fail "unexpected top-level repository residue: ${name}"
     case ${name} in
-        .gitignore|LICENSE|README.md|plan.md)
+        .gitignore|AGENTS.md|CLAUDE.md|GEMINI.md|LICENSE|README.md|plan.md)
             [[ ! -d ${entry} ]] || fail "expected top-level file is a directory: ${name}"
             ;;
         *)

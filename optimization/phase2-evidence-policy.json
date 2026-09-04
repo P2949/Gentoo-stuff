@@ -132,6 +132,7 @@
     "bolt-transaction-fixture",
     "driver-cli-self-test",
     "framework-installer",
+    "no-boot-entry-automation",
     "no-legacy-bolt",
     "no-legacy-pgo",
     "package-env-duplicate-policy",
@@ -152,7 +153,6 @@
     "python-source-compilation",
     "python-unit-tests:tests/optimization",
     "python-unit-tests:tests/optimization/recovery",
-    "no-boot-entry-automation",
     "recovery-rollback-fixture",
     "shellcheck"
   ],
