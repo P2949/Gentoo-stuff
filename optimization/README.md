@@ -26,12 +26,14 @@ images. Boot-entry state is not a framework test, recovery prerequisite,
 acceptance gate, or evidence input.
 
 Kernel configuration, build, installation, replacement, and deployment are
-human-only and are not optimization-project procedures. A kernel lifecycle
-package or artifact is terminally classified with the machine-valid reason
-`kernel-policy-exclusion` (the human-only system boundary); it must not be
-processed by automated project transactions. The running kernel may be
-observed read-only only as part of the
-userspace host identity.
+human-only and are not optimization-project procedures. Any CPV whose package
+transaction could cross that kernel lifecycle boundary is terminally excluded
+as a whole with the machine-valid reason `kernel-policy-exclusion`; Portage
+cannot safely rebuild only the userspace subset of a mixed package. Kernel
+images and modules provide an independent artifact-level exclusion signal.
+No such CPV or artifact may be processed by an automated project transaction.
+The running kernel may be observed read-only only as part of the userspace host
+identity.
 
 The exact Phase 1 BOLT default uses `ext-tsp` block ordering and `cdsort`
 function ordering. A policy change to either algorithm requires the complete

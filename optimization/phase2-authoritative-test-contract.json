@@ -164,6 +164,7 @@
       "capability:rust",
       "driver-cli-self-test",
       "framework-installer",
+      "no-boot-entry-automation",
       "no-legacy-bolt",
       "no-legacy-pgo",
       "package-env-duplicate-policy",
@@ -184,7 +185,6 @@
       "python-source-compilation",
       "python-unit-tests:tests/optimization",
       "python-unit-tests:tests/optimization/recovery",
-      "recovery-boot-evidence-fixture",
       "recovery-rollback-fixture",
       "shellcheck"
     ],
@@ -206,7 +206,7 @@
           "bash-syntax:optimization/fixtures/portage/capture-proxy.sh.in",
           "bash-syntax:optimization/fixtures/portage/phase2-phase-identity-1.ebuild",
           "bash-syntax:optimization/fixtures/portage/phase2-phase-identity-install-qa",
-          "bash-syntax:optimization/fixtures/recovery/test-record-boot-evidence.sh",
+          "bash-syntax:optimization/fixtures/recovery/test-no-boot-entry-automation.sh",
           "bash-syntax:optimization/fixtures/recovery/test-rollback.sh",
           "bash-syntax:portage/bashrc",
           "bash-syntax:portage/install-qa-check.d/zz-gentoo-optimization-bolt",
@@ -268,8 +268,8 @@
       "test": "production-profile-lock-crash-stress"
     },
     {
-      "expected_count": 323,
-      "subtest_names_sha256": "b4edea6b9de63e8825eeb7a7c5c3b9ead96359434242f1d2f20a08662f026bf2",
+      "expected_count": 324,
+      "subtest_names_sha256": "77f47c488edeccb645a998ff85f20eab9cfce8bd9a129535cc6d32dac9038334",
       "test": "python-unit-tests:tests/optimization"
     },
     {

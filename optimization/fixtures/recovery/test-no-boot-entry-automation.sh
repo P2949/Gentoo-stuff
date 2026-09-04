@@ -164,6 +164,22 @@ function_names = {
 if "_verify_boot" in function_names:
     fail("state semantic authority still defines the retired boot-entry verifier")
 
+kernel_affected_assignments = [
+    node
+    for node in ast.walk(state_tree)
+    if isinstance(node, ast.Assign)
+    and any(isinstance(target, ast.Name) and target.id == "kernel_affected" for target in node.targets)
+]
+if len(kernel_affected_assignments) != 1:
+    fail("state semantic authority must define one package-level kernel_affected decision")
+kernel_affected_value = kernel_affected_assignments[0].value
+if not (
+    isinstance(kernel_affected_value, ast.Call)
+    and isinstance(kernel_affected_value.func, ast.Name)
+    and kernel_affected_value.func.id == "any"
+):
+    fail("package-level kernel exclusion must trigger when any component is kernel")
+
 for node in ast.walk(state_tree):
     if isinstance(node, ast.Name) and node.id == "PRODUCTION_EFIBOOTMGR":
         fail("state semantic authority still references a boot-entry executable")
@@ -239,6 +255,24 @@ if set(package_kernel.get("required", [])) != expected_package_kernel:
     fail("package wire schema does not bind the exact human-managed kernel component shape")
 if set(package_kernel.get("properties", {})) != expected_package_kernel:
     fail("package kernel properties differ from the human-managed component shape")
+
+package_boundary = schemas["package"].get("allOf", [{}])[0]
+component_condition = (
+    package_boundary.get("if", {}).get("properties", {}).get("components", {})
+)
+if "contains" not in component_condition or "items" in component_condition:
+    fail("package wire schema must exclude a CPV when any component is kernel")
+package_then = package_boundary.get("then", {}).get("properties", {})
+if package_then.get("source_rebuild", {}).get("properties", {}).get("required", {}).get("const") is not False:
+    fail("kernel-affected package schema does not prohibit source rebuild")
+if package_then.get("final_status", {}).get("const") != "terminal-exclusion":
+    fail("kernel-affected package schema does not require terminal exclusion")
+if (
+    package_then.get("resolution", {}).get("properties", {})
+    .get("reason_code", {}).get("const")
+    != "kernel-policy-exclusion"
+):
+    fail("kernel-affected package schema lacks the exact terminal reason")
 
 artifact_kernel = schemas["artifact"].get("$defs", {}).get("kernel", {})
 expected_artifact_kernel = {

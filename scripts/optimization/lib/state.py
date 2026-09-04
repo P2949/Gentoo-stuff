@@ -565,8 +565,12 @@ def _source_rebuild(value: Any, path: str, generation_id: str, *, required: bool
     item = _object(value, path, keys)
     required_value = _bool(item["required"], f"{path}.required")
     if required_value is not required:
-        expectation = "true" if required else "false"
-        _error(f"{path}.required", f"must be {expectation} for this package class")
+        expectation = (
+            "true for a userspace-only package"
+            if required
+            else "false for a kernel-affected package"
+        )
+        _error(f"{path}.required", f"must be {expectation}")
     status_value = _enum(item["status"], f"{path}.status", SOURCE_STATUSES)
     if item["generation_id"] != generation_id:
         _error(f"{path}.generation_id", "must equal package generation")
@@ -638,14 +642,14 @@ def _source_rebuild(value: Any, path: str, generation_id: str, *, required: bool
     )
     if not required:
         if status_value != "not-applicable":
-            _error(f"{path}.status", "human-managed kernel packages must be not-applicable")
+            _error(f"{path}.status", "human-managed kernel-affected packages must be not-applicable")
         if transaction_id is not None or source_only or attempts or proof is not None:
-            _error(path, "human-managed kernel packages cannot claim a project build transaction")
+            _error(path, "human-managed kernel-affected packages cannot claim a project build transaction")
         if resolution is None or resolution["reason_code"] != "kernel-policy-exclusion":
             _error(f"{path}.resolution.reason_code", "must be kernel-policy-exclusion")
         return item
     if status_value == "not-applicable":
-        _error(f"{path}.status", "is valid only for a human-managed kernel-only package")
+        _error(f"{path}.status", "is valid only for a human-managed kernel-affected package")
     if status_value == "succeeded":
         if not source_only or not transaction_id or proof is None or successful != 1:
             _error(path, "succeeded rebuild requires source-only transaction, one successful attempt, and complete proof")
@@ -813,10 +817,10 @@ def validate_package(record: Any) -> dict[str, Any]:
     actual_languages = sorted({language for component in components for language in component["languages"]})
     if languages != actual_languages:
         _error("$.languages", f"must exactly equal component language coverage {actual_languages}")
-    kernel_only = all(component["component_kind"] == "kernel" for component in components)
+    kernel_affected = any(component["component_kind"] == "kernel" for component in components)
     source_rebuild = _source_rebuild(
         package["source_rebuild"], "$.source_rebuild", generation["generation_id"],
-        required=not kernel_only,
+        required=not kernel_affected,
     )
     if source_rebuild["proof"] is not None and source_rebuild["proof"]["installed_vdb_identity_sha256"] != live["identity_sha256"]:
         _error("$.source_rebuild.proof.installed_vdb_identity_sha256", "must equal live_instance.identity_sha256")
@@ -855,7 +859,12 @@ def validate_package(record: Any) -> dict[str, Any]:
     final = _enum(package["final_status"], "$.final_status", FINAL_STATUSES)
     if final != expected_final:
         _error("$.final_status", f"must be {expected_final}")
-    _resolution(package["resolution"], "$.resolution", final in {"not-applicable", "terminal-exclusion", "unknown", "failed"})
+    package_resolution = _resolution(package["resolution"], "$.resolution", final in {"not-applicable", "terminal-exclusion", "unknown", "failed"})
+    if kernel_affected:
+        if final != "terminal-exclusion":
+            _error("$.final_status", "kernel-affected packages must be terminal-exclusion")
+        if package_resolution is None or package_resolution["reason_code"] != "kernel-policy-exclusion":
+            _error("$.resolution.reason_code", "must be kernel-policy-exclusion for a kernel-affected package")
     _sorted_strings(package["notes"], "$.notes")
     return package
 
@@ -2855,6 +2864,26 @@ def reconcile_collection(
     # Package artifact and BOLT aggregates are claims: independently rederive them.
     for cpv, package in package_by_cpv.items():
         owned = artifacts_by_owner[cpv]
+        kernel_components = {
+            component["component_id"]
+            for component in package["components"]
+            if component["component_kind"] == "kernel"
+        }
+        kernel_artifacts = [
+            artifact for artifact in owned
+            if artifact["kind"] in {"kernel-image", "kernel-module"}
+        ]
+        if (kernel_components or kernel_artifacts) and package["source_rebuild"]["required"]:
+            _error(
+                f"collection.package[{cpv}].kernel_policy",
+                "kernel-affected CPV cannot enter an automated source-rebuild transaction",
+            )
+        for artifact in kernel_artifacts:
+            if artifact["owner"]["component_id"] not in kernel_components:
+                _error(
+                    f"collection.package[{cpv}].kernel_policy",
+                    f"kernel artifact {artifact['artifact_id']} must be owned by a kernel component",
+                )
         if package["aggregate"]["artifact_count"] != len(owned):
             _error(f"collection.package[{cpv}].aggregate.artifact_count", f"must be {len(owned)}")
         expected_bolt = _bolt_counts(owned)

@@ -1,9 +1,11 @@
 # Pre-strip BOLT capture and deployment hooks
 
-This is a userspace-only lane. Kernel images/modules, initramfs and EFI/boot
-assets are categorically outside it under `kernel-policy-exclusion`. Automated
-and LLM-directed work must not configure/build/install a kernel, write `/efi`
-or `/boot`, manage EFI variables, or create or alter a boot entry.
+This is a userspace-only lane. A CPV containing a kernel component or owning a
+kernel image/module is excluded from automated package mutation as a whole
+under `kernel-policy-exclusion`; initramfs and EFI/boot assets are also
+categorically outside project authority. Automated and LLM-directed work must
+not configure/build/install a kernel, write `/efi` or `/boot`, manage EFI
+variables, or create or alter a boot entry.
 
 These tools are the fail-closed `${ED}` transaction lane. The production hook
 runs as the lexically last Portage `install-qa-check.d` command, after the

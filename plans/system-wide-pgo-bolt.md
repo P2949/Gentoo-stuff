@@ -2,7 +2,7 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. Commit `d42a0cea53c1b1dfdb86fa772def255d97dc2862` passed the exact mature portable repository boundary in GitHub Actions run `33327273287` and remains the last green pre-policy-change repository/pre-activation boundary. It is not an accepted live Candidate A and cannot authorize later source. Commit `04c1becd4c915759be4f3ab0f94f1d805cdf58b1` correctly adopted the userspace-only boot/kernel safety policy, but exact run `33719023582` rejected it at the stale authoritative topology check before `portable-complete`; independent focused review also found its package/artifact v5 and final-system v2 state/schema migration incomplete. A corrective successor must align the semantic authority, wire schemas, fixtures, and exact test contract and pass a fresh repository boundary before any live-host work resumes. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active. Phase 2 is scope-frozen until Candidate B authorization: no new subsystem, optimization-policy axis, evidence category, or broad refactor may be added unless an existing required gate exposes a reproducible blocker that cannot be fixed within the current architecture.
+- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. Commit `d42a0cea53c1b1dfdb86fa772def255d97dc2862` passed the exact mature portable repository boundary in GitHub Actions run `33327273287` and remains the last green pre-policy-change repository/pre-activation boundary. It is not an accepted live Candidate A and cannot authorize later source. Commit `04c1becd4c915759be4f3ab0f94f1d805cdf58b1` correctly adopted the userspace-only boot/kernel safety policy but incompletely migrated the state authority. Successor `e2bd31875781ff14ef95977c4d2a5534b010460a` completed the package/artifact v5 and final-system v2 migration and passed its focused state and non-boot tests, but exact run `33745489392` was rejected at the still-stale authoritative topology check before `portable-complete`. Subsequent deterministic review found unadmitted repository instruction files and a mixed kernel/userspace CPV rule that could still admit an automated source rebuild for a kernel-affected package. A bounded successor must close those policy/state invariants, add a positive completion proof, regenerate the exact test contract last, and pass a fresh repository boundary before any live-host work resumes. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active. Phase 2 is scope-frozen until Candidate B authorization: no new subsystem, optimization-policy axis, evidence category, or broad refactor may be added unless an existing required gate exposes a reproducible blocker that cannot be fixed within the current architecture.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
@@ -11,7 +11,7 @@
 - **Plan checkboxes:** 78 checked, 69 open, 147 total after removing the two completed boot/kernel recovery requirements and replacing the final kernel-optimization requirement with an explicit userspace inventory exclusion check. The Phase 2 checklist remains unchanged at 7 of 14 complete.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-09-03. Exact commit `d42a0cea53c1b1dfdb86fa772def255d97dc2862` passed run `33327273287` with 80 top-level passes, zero failures, and 13 reviewed skips; 519 required-subtest passes, zero failures, and 26 reviewed skips; one diagnostic skip; 546 total subtests; and exit status zero. That proves only its green repository/pre-activation boundary. A later 2026-09-02/03 attempt to refresh the former boot-based recovery proof failed with zero probe failures and three validation failures (two unavailable assets and an expected-entry identity mismatch). Its retained log is `/var/lib/gentoo-optimization/reports/recovery/boot-evidence/20260903044355-candidate-a-recovery-refresh-d42a0cea-20260902T194800Z-08b449ce-cf57-44bc-adee-72d7a93e35ed.log` (SHA-256 `a71fc7a1ea891871fd7ff3fd21012f670ee61ae53409deaba92d4b9fadb59ee2`). That attempt is historical, failed, non-authorizing evidence; it must never be repeated. It triggered the absolute prohibition on LLM/automation boot-entry and kernel-lifecycle work in this plan. Commit `04c1becd4c915759be4f3ab0f94f1d805cdf58b1` then retired the boot mutation entrypoints and revised the plan to userspace-only scope, but exact run `33719023582` stopped at the stale authoritative topology check before `portable-complete`. Separate direct execution of `tests/optimization/test_state.py` ran 29 methods and reported 24 failures plus 24 errors because the v5/v2 Python declarations were only partially implemented while all three JSON Schemas and fixtures still carried the former wire authority; the same review found the old EFI/boot-entry verifier and an undefined retired tool constant still reachable. Those findings were not produced by the aborted CI job. `04c1becd` is rejected and non-authorizing; no live-host work, Candidate-A acceptance, Candidate-B index, Phase 2 authorization, optimization generation, or frozen inventory resulted. The complete plan must be reread after each corrected exact green boundary and after every live checkpoint or package operation.
+- **Last plan review:** 2026-09-04. Exact commit `d42a0cea53c1b1dfdb86fa772def255d97dc2862` passed run `33327273287` with 80 top-level passes, zero failures, and 13 reviewed skips; 519 required-subtest passes, zero failures, and 26 reviewed skips; one diagnostic skip; 546 total subtests; and exit status zero. That proves only its green repository/pre-activation boundary. A later 2026-09-02/03 attempt to refresh the former boot-based recovery proof failed with zero probe failures and three validation failures (two unavailable assets and an expected-entry identity mismatch). Its retained log is `/var/lib/gentoo-optimization/reports/recovery/boot-evidence/20260903044355-candidate-a-recovery-refresh-d42a0cea-20260902T194800Z-08b449ce-cf57-44bc-adee-72d7a93e35ed.log` (SHA-256 `a71fc7a1ea891871fd7ff3fd21012f670ee61ae53409deaba92d4b9fadb59ee2`). That attempt is historical, failed, non-authorizing evidence; it must never be repeated. It triggered the absolute prohibition on LLM/automation boot-entry and kernel-lifecycle work in this plan. Commit `04c1becd4c915759be4f3ab0f94f1d805cdf58b1` then retired the boot mutation entrypoints and revised the plan to userspace-only scope, but exact run `33719023582` stopped at the stale authoritative topology check before `portable-complete`; independent direct testing found the incomplete v5/v2 migration described below. Successor `e2bd31875781ff14ef95977c4d2a5534b010460a` repaired that semantic/schema migration: its 29 focused state methods passed with one reviewed dependency skip and the strengthened non-boot authority fixture passed. Exact run `33745489392` nevertheless stopped at the unchanged stale topology check before `portable-complete`. Separate full-suite review—not that aborted CI job—then found `test_policy.py` rejected the new root instruction files and `.github/copilot-instructions.md`, and found that the package-level kernel exclusion triggered only when every component was kernel rather than whenever a CPV crossed the kernel lifecycle boundary. `e2bd3187` is rejected and non-authorizing; no live-host work, Candidate-A acceptance, Candidate-B index, Phase 2 authorization, optimization generation, or frozen inventory resulted. The complete plan must be reread after each corrected exact green boundary and after every live checkpoint or package operation.
 - **Package-recovery safety gate:** protected binpkg restoration and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified. Boot-entry, EFI/boot-asset, initramfs, and kernel-lifecycle work are no longer project requirements or evidence. They are subject to the absolute human-only boundary below and must not be repeated by an agent.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -21,7 +21,7 @@ This document is an execution plan for an LLM coding/system-administration agent
 
 The agent must implement an exhaustive, package-accounted optimization pipeline. By the end of the plan:
 
-1. Every package installed in `/var/db/pkg` must be inventoried, classified, and assigned a final optimization state. Every userspace package in project scope must be rebuilt from source; kernel lifecycle packages are not rebuilt and instead receive `kernel-policy-exclusion`.
+1. Every package installed in `/var/db/pkg` must be inventoried, classified, and assigned a final optimization state. Every userspace-only package in project scope must be rebuilt from source; any CPV whose package transaction crosses the kernel lifecycle boundary is not rebuilt and instead receives `kernel-policy-exclusion` for the whole CPV.
 2. Every in-scope userspace package that produces code eligible for a supported PGO mechanism must have been rebuilt using that mechanism and a valid representative profile.
 3. Every installed 64-bit x86 ELF executable or shared object that is technically safe and valid for BOLT must have been BOLT-optimized from an exact PGO-built input before Portage stripping and deployment.
 4. Every artifact that cannot physically receive PGO or BOLT must have a machine-verifiable exclusion reason. Nothing may be silently skipped.
@@ -1485,6 +1485,36 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   and its detached index do not exist, Phase 2 remains unauthorized, and Phase
   3 must not begin.
 
+### 2026-09-04 corrected state migration and remaining post-policy blockers
+
+- Successor `e2bd31875781ff14ef95977c4d2a5534b010460a` completed the
+  package/artifact v5 and final-system v2 migration, removed the active former
+  firmware-entry authority, migrated the state fixtures, and strengthened the
+  existing non-boot regression across Python and all three wire schemas.
+  Direct execution of its 29 state methods passed with one reviewed
+  `jsonschema` dependency skip, and the non-boot authority fixture passed.
+- Exact GitHub Actions run `33745489392` still rejected `e2bd3187` at the
+  stale authoritative-contract preflight before `portable-complete`. It
+  produced no portable result ledger and authorizes no live work.
+- Subsequent deterministic full-suite review found that the repository policy
+  allowlists had not admitted `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursor`,
+  or `.github/copilot-instructions.md`. More importantly, package exclusion
+  was derived with an all-kernel test even though Portage mutates whole CPVs.
+  A mixed userspace/kernel CPV could therefore claim a successful automated
+  source rebuild despite containing a project-mutation-prohibited kernel
+  component. Artifact reconciliation also lacked an independent check that a
+  kernel image or module forces the owning CPV outside the mutation set.
+- The bounded stabilization successor must make any kernel-affected CPV a
+  whole-package `kernel-policy-exclusion`, verify that decision from both
+  component and owned-artifact classification, admit the exact instruction
+  files in repository policy, and add a positive `coverage_complete` test with
+  one succeeded userspace CPV plus one non-mutating kernel-excluded CPV. The
+  authoritative contract is regenerated only after those source, test, and
+  documentation changes are final.
+- This review changes no checkbox. Both prerequisite live gates remain false;
+  live-host preflight and all package mutation remain stopped until a successor
+  passes the complete exact repository boundary.
+
 ## 11.1 Remove the unsafe global consumer
 
 - [x] Delete or disable `portage/package.env/50-global-pgo` in its current form.
@@ -1603,8 +1633,11 @@ The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the 
 - Repository fixtures exist for syntax, pinned ShellCheck, strict runtime
   typing, unit behavior, transaction recovery, and portable policy. Exact-CPV
   successor `d42a0cea` passed its portable boundary, but remains portable-only
-  evidence. Later policy-migration predecessor `04c1becd` is rejected, and its
-  v5/v2 completion successor requires a fresh exact green repository boundary.
+  evidence. Policy-migration predecessor `04c1becd` and v5/v2 completion
+  successor `e2bd3187` are both rejected; the latter repaired the state format
+  but did not pass the static contract and still admitted mixed kernel/userspace
+  CPVs to the automated rebuild lane. A corrected successor requires a fresh
+  exact green repository boundary.
   No portable result substitutes for an installed candidate or the supervised
   live Portage chain. The four boxes below remain open until that live proof
   exists.

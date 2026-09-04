@@ -5,12 +5,13 @@ classification and the Portage PGO dispatcher. It does not infer a profile
 from `CATEGORY/PN`, and it never searches for a profile merely because a file
 exists.
 
-This is a userspace-only tool. Kernel images, kernel modules, kernel build or
-installation packages, initramfs assets, and the boot chain are excluded under
-the terminal reason `kernel-policy-exclusion`. No LLM or automated project
-action may configure/build/install a kernel or initramfs, modify `/efi` or
-`/boot`, or create or alter a boot entry. The running kernel may be observed
-read-only only as host context.
+This is a userspace-only tool. Any CPV containing a kernel component or owning
+a kernel image/module is excluded as a whole under the terminal reason
+`kernel-policy-exclusion`; a mixed package is not admitted to an automated
+Portage rebuild. Initramfs assets and the boot chain are also outside project
+authority. No LLM or automated project action may configure/build/install a
+kernel or initramfs, modify `/efi` or `/boot`, or create or alter a boot entry.
+The running kernel may be observed read-only only as host context.
 
 ## Package fingerprint
 

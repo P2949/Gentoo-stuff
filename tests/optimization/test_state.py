@@ -184,7 +184,7 @@ def component(component_id: str, kind: str, languages: list[str], abi: str, back
     return item
 
 
-def all_components() -> list[dict[str, Any]]:
+def all_userspace_components() -> list[dict[str, Any]]:
     items = [
         component("01-clang-ir", "native", ["c"], "amd64", "clang-ir"),
         component("02-clang-sample", "native", ["c++"], "amd64", "clang-sample"),
@@ -192,7 +192,6 @@ def all_components() -> list[dict[str, Any]]:
         component("04-rust", "rust", ["rust"], "amd64", "rust-llvm-ir"),
         component("05-go", "go", ["go"], "amd64", "go-pprof"),
         component("06-native", "native", ["other"], "amd64", "ebuild-native"),
-        component("07-kernel", "kernel", ["c"], "amd64", "not-applicable"),
         component("08-jvm", "jvm", ["jvm"], "none", "not-applicable"),
         component("09-script-data", "script-data", ["data", "python", "shell"], "none", "not-applicable"),
     ]
@@ -220,7 +219,7 @@ def source_rebuild(live_identity_sha: str) -> dict[str, Any]:
 
 
 def package_record(*, inventory_sha: str = H["inventory"], artifact_count: int = 0, bolt_counts: dict[str, Any] | None = None, vdb_path: str = "/var/db/pkg/app-test/example-suite-1.0-r2", contents_sha: str = H["contents"], environment_sha: str | None = H["environment"]) -> dict[str, Any]:
-    components = all_components()
+    components = all_userspace_components()
     live: dict[str, Any] = {
         "vdb_path": vdb_path, "contents_sha256": contents_sha, "metadata_tree_sha256": H["vdb"], "repository": "gentoo", "slot_raw": "0", "slot": "0", "subslot": "0",
         "build_time": "1783904400", "counter": "17", "environment_bz2_sha256": environment_sha, "identity_sha256": "",
@@ -243,10 +242,10 @@ def package_record(*, inventory_sha: str = H["inventory"], artifact_count: int =
         "graphs": {"consumer_refs": [], "workload_refs": [workload()], "reverse_dependency_refs": []},
         "aggregate": {
             "component_count": len(components), "artifact_count": artifact_count,
-            "pgo": {"eligible_count": 6, "optimized_count": 6, "excluded_count": 1, "not_applicable_count": 2, "pending_count": 0, "unknown_count": 0, "failed_count": 0, "status": "optimized-with-exclusions"},
+            "pgo": {"eligible_count": 6, "optimized_count": 6, "excluded_count": 0, "not_applicable_count": 2, "pending_count": 0, "unknown_count": 0, "failed_count": 0, "status": "optimized"},
             "bolt": bolt_counts,
         },
-        "final_status": "optimized-with-exclusions", "resolution": None, "notes": [],
+        "final_status": "optimized", "resolution": None, "notes": [],
     }
 
 
@@ -561,37 +560,40 @@ def mutate_live_magic(artifact: dict[str, Any], paths: dict[str, Path]) -> None:
 
 
 class PackageContractTests(unittest.TestCase):
-    def test_all_backends_languages_abis_and_kernel_are_representable(self) -> None:
+    def test_all_backends_languages_abis_and_kernel_exclusion_are_representable(self) -> None:
         record = STATE.validate_package(package_record())
         self.assertEqual({item["build_backend"] for item in record["components"]}, STATE.BACKENDS)
         self.assertEqual(set(record["languages"]), STATE.LANGUAGES - {"other"} | {"other"})
-        kernel = next(item for item in record["components"] if item["component_kind"] == "kernel")
+        kernel_package = kernel_only_package_record()
+        kernel = kernel_package["components"][0]
         self.assertTrue(kernel["kernel"]["operator_managed"])
         self.assertTrue(kernel["kernel"]["project_mutation_prohibited"])
         self.assertEqual(kernel["pgo"]["status"], "terminal-exclusion")
         self.assertEqual(kernel["pgo"]["resolution"]["reason_code"], "kernel-policy-exclusion")
-        retired_backend = package_record()
-        retired_kernel = next(
-            item for item in retired_backend["components"]
-            if item["component_kind"] == "kernel"
-        )
+        retired_backend = kernel_only_package_record()
+        retired_kernel = retired_backend["components"][0]
         retired_kernel["build_backend"] = "kernel-autofdo"
         with self.assertRaises(STATE.StateValidationError):
             STATE.validate_package(retired_backend)
-        retired_field = package_record()
-        retired_kernel = next(
-            item for item in retired_field["components"]
-            if item["component_kind"] == "kernel"
-        )
+        retired_field = kernel_only_package_record()
+        retired_kernel = retired_field["components"][0]
         retired_kernel["kernel"]["boot_entry_id"] = "retired"
         with self.assertRaisesRegex(STATE.StateValidationError, "extra"):
             STATE.validate_package(retired_field)
-        kernel_only = STATE.validate_package(kernel_only_package_record())
-        self.assertFalse(kernel_only["source_rebuild"]["required"])
+        excluded = STATE.validate_package(kernel_package)
+        self.assertFalse(excluded["source_rebuild"]["required"])
         self.assertEqual(
-            kernel_only["source_rebuild"]["resolution"]["reason_code"],
+            excluded["source_rebuild"]["resolution"]["reason_code"],
             "kernel-policy-exclusion",
         )
+
+        mixed = package_record()
+        mixed["components"].append(
+            component("07-kernel", "kernel", ["c"], "amd64", "not-applicable")
+        )
+        mixed["components"].sort(key=lambda item: item["component_id"])
+        with self.assertRaisesRegex(STATE.StateValidationError, "kernel-affected"):
+            STATE.validate_package(mixed)
 
     def test_live_vdb_and_rebuild_proof_are_cryptographically_bound(self) -> None:
         record = package_record()
@@ -831,6 +833,22 @@ class CollectionTests(unittest.TestCase):
         package, artifact, inventory, payload = self.collection(); second = copy.deepcopy(artifact); second["artifact_id"] = f"sha256:{'f' * 64}"; second["installed_path"] = "/usr/bin/second"; second["canonical_path"] = "/usr/bin/second"; second["topology"]["hardlink_paths"] = ["/usr/bin/second"]
         with self.assertRaisesRegex(STATE.StateValidationError, "split inode"):
             STATE.reconcile_collection([package], [artifact, second])
+        kernel_bolt = {
+            "candidate_count": 1, "optimized_count": 0,
+            "excluded_count": 1, "not_applicable_count": 0,
+            "pending_count": 0, "unknown_count": 0, "failed_count": 0,
+            "status": "terminal-exclusion",
+        }
+        package = package_record(artifact_count=1, bolt_counts=kernel_bolt)
+        package["final_status"] = "optimized-with-exclusions"
+        artifact = artifact_record(
+            kind="kernel-module", path="/usr/lib/modules/6.18.0-test/example.ko"
+        )
+        with self.assertRaisesRegex(
+            STATE.StateValidationError,
+            "kernel-affected CPV cannot enter an automated source-rebuild transaction",
+        ):
+            STATE.reconcile_collection([package], [artifact])
 
     def test_graph_references_must_resolve(self) -> None:
         package, artifact, _inventory, _payload = self.collection()
@@ -931,6 +949,103 @@ class CollectionTests(unittest.TestCase):
             self.assertTrue(summary["strict_verified"])
             self.assertFalse(summary["authoritative_verified"])
             self.assertFalse(summary["coverage_complete"])
+
+    def test_coverage_complete_counts_only_userspace_rebuilds(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="state-complete.") as temporary:
+            root = Path(temporary)
+            vdb_root = root / "vdb"
+            installed_root = root / "installed"
+            packages_dir = root / "records/packages"
+            artifacts_dir = root / "records/artifacts"
+            for directory in (vdb_root, installed_root, packages_dir, artifacts_dir):
+                directory.mkdir(parents=True, exist_ok=True)
+
+            userspace = package_record()
+            kernel = kernel_only_package_record()
+            kernel_cpv = "sys-kernel/example-kernel-1.0"
+            kernel["identity"].update({"cpv": kernel_cpv, "cp": "sys-kernel/example-kernel"})
+            kernel["frozen_inventory_entry"]["payload"]["cpv"] = kernel_cpv
+
+            def materialize_vdb(package: dict[str, Any]) -> None:
+                instance = vdb_root / package["identity"]["cpv"]
+                instance.mkdir(parents=True)
+                contents = b""
+                (instance / "CONTENTS").write_bytes(contents)
+                (instance / "repository").write_text("gentoo\n", encoding="utf-8")
+                (instance / "SLOT").write_text("0\n", encoding="utf-8")
+                (instance / "BUILD_TIME").write_text("1783904400\n", encoding="utf-8")
+                (instance / "COUNTER").write_text("17\n", encoding="utf-8")
+                (instance / "environment.bz2").write_bytes(b"environment")
+                metadata_sha = STATE.vdb_metadata_tree_sha256(instance)
+                live = package["live_instance"]
+                live.update({
+                    "vdb_path": str(instance),
+                    "contents_sha256": hashlib.sha256(contents).hexdigest(),
+                    "metadata_tree_sha256": metadata_sha,
+                    "repository": "gentoo", "slot_raw": "0", "slot": "0",
+                    "subslot": "0", "build_time": "1783904400", "counter": "17",
+                    "environment_bz2_sha256": hashlib.sha256(b"environment").hexdigest(),
+                })
+                live["identity_sha256"] = STATE.vdb_identity_sha256(live)
+                proof = package["source_rebuild"]["proof"]
+                if proof is not None:
+                    proof["installed_vdb_identity_sha256"] = live["identity_sha256"]
+                frozen = package["frozen_inventory_entry"]["payload"]
+                frozen.update({
+                    "repository": "gentoo", "slot_raw": "0",
+                    "contents_sha256": live["contents_sha256"],
+                    "metadata_tree_sha256": metadata_sha,
+                })
+                package["frozen_inventory_entry"]["entry_sha256"] = hashlib.sha256(
+                    STATE.canonical_bytes(frozen)
+                ).hexdigest()
+
+            for package in (userspace, kernel):
+                materialize_vdb(package)
+
+            inventory = {
+                "schema_version": 2, "record_type": "frozen-inventory",
+                "generation_id": "generation-test", "inventory_id": "inventory-test",
+                "packages": [
+                    {
+                        "cpv": package["identity"]["cpv"],
+                        "entry_sha256": package["frozen_inventory_entry"]["entry_sha256"],
+                    }
+                    for package in (userspace, kernel)
+                ],
+                "owned_paths": [], "owned_directories": [],
+            }
+            inventory_payload = STATE.canonical_bytes(inventory)
+            inventory_sha = hashlib.sha256(inventory_payload).hexdigest()
+            for package in (userspace, kernel):
+                package["generation"] = generation(inventory_sha)
+            inventory_path = root / "inventory.json"
+            inventory_path.write_bytes(inventory_payload)
+
+            original_verify = STATE.verify_authoritative_state
+            STATE.verify_authoritative_state = lambda *args, **kwargs: {
+                "authoritative": True, "strict_verified": True,
+                "boot_id": "controlled-authoritative-fixture",
+            }
+            try:
+                summary = STATE.reconcile_collection(
+                    [userspace, kernel], [], inventory=inventory,
+                    inventory_sha256=inventory_sha, vdb_root=vdb_root,
+                    installed_root=installed_root, final_system_state={},
+                    packages_dir=packages_dir, artifacts_dir=artifacts_dir,
+                    inventory_path=inventory_path, strict=True, fixture_mode=True,
+                    fixture_getcap=fixture_getcap(root),
+                )
+            finally:
+                STATE.verify_authoritative_state = original_verify
+
+            self.assertEqual(summary["counts"]["source_rebuild_required_total"], 1)
+            self.assertEqual(summary["counts"]["source_rebuild_succeeded_total"], 1)
+            self.assertEqual(summary["counts"]["pending_total"], 0)
+            self.assertEqual(summary["counts"]["unknown_total"], 0)
+            self.assertEqual(summary["counts"]["failed_total"], 0)
+            self.assertTrue(summary["authoritative_verified"])
+            self.assertTrue(summary["coverage_complete"])
 
     def test_strict_fixture_rejects_missing_tampered_and_symlinked_proof(self) -> None:
         for mutation, message in (
@@ -1143,6 +1258,15 @@ class PublicationAndSchemaTests(unittest.TestCase):
             kernel_package = kernel_only_package_record()
             package_schema_validator.validate(kernel_package)
             STATE.validate_package(kernel_package)
+            mixed_kernel_package = package_record()
+            mixed_kernel_package["components"].append(
+                component("07-kernel", "kernel", ["c"], "amd64", "not-applicable")
+            )
+            mixed_kernel_package["components"].sort(key=lambda item: item["component_id"])
+            with self.assertRaises(jsonschema.ValidationError):
+                package_schema_validator.validate(mixed_kernel_package)
+            with self.assertRaisesRegex(STATE.StateValidationError, "kernel-affected"):
+                STATE.validate_package(mixed_kernel_package)
             for mutate in (
                 lambda item: next(
                     component for component in item["components"]

@@ -33,7 +33,8 @@
     "if": {
       "properties": {
         "components": {
-          "items": {"properties": {"component_kind": {"const": "kernel"}}, "required": ["component_kind"]}
+          "contains": {"properties": {"component_kind": {"const": "kernel"}}, "required": ["component_kind"]},
+          "minContains": 1
         }
       },
       "required": ["components"]

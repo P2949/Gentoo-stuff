@@ -65,11 +65,15 @@ class OptimizationPolicyTests(unittest.TestCase):
     def test_repository_root_contains_only_reviewed_files(self) -> None:
         """Reject accidental shell-redirection and fixture residue at repo root."""
         reviewed = {
+            ".cursor",
             ".git",
             ".github",
             ".gitignore",
             ".mypy_cache",
             ".vscode",
+            "AGENTS.md",
+            "CLAUDE.md",
+            "GEMINI.md",
             "LICENSE",
             "README.md",
             "bench",
@@ -102,8 +106,31 @@ class OptimizationPolicyTests(unittest.TestCase):
         self.assertEqual(
             github_entries,
             {
+                "copilot-instructions.md": "file",
                 "workflows": "directory",
                 "workflows/portable-optimization-validation.yml": "file",
+            },
+        )
+        cursor = REPOSITORY_ROOT / ".cursor"
+        self.assertTrue(cursor.is_dir())
+        self.assertFalse(cursor.is_symlink())
+        cursor_entries = {
+            path.relative_to(cursor).as_posix(): (
+                "symlink"
+                if path.is_symlink()
+                else "directory"
+                if path.is_dir()
+                else "file"
+                if path.is_file()
+                else "other"
+            )
+            for path in cursor.rglob("*")
+        }
+        self.assertEqual(
+            cursor_entries,
+            {
+                "rules": "directory",
+                "rules/immutable-boot-kernel.mdc": "file",
             },
         )
 
