@@ -701,9 +701,9 @@ class StateMachineTests(unittest.TestCase):
             ["source_emerge_may_never_be_retried_after_armed"]
         )
 
-    def test_live_entrypoints_remain_fail_closed_pending_final_candidate_a_proof(self) -> None:
-        self.assertIs(TOOL.LIVE_PREPARATION_ENABLED, False)
-        self.assertIs(TOOL.LIVE_MUTATION_ENABLED, False)
+    def test_live_entrypoints_are_enabled_only_after_green_host_preflight(self) -> None:
+        self.assertIs(TOOL.LIVE_PREPARATION_ENABLED, True)
+        self.assertIs(TOOL.LIVE_MUTATION_ENABLED, True)
 
     def test_state_schema_rejects_unknown_fields(self) -> None:
         state = dict(self.prepared)
@@ -939,16 +939,17 @@ class LiveGateTests(unittest.TestCase):
         production_paths.root.mkdir(mode=0o700)
         before = filesystem_snapshot(production_paths.root)
 
-        with self.assertRaisesRegex(
-            TOOL.TransactionError, "live jsonschema preparation is disabled"
-        ):
-            TOOL.prepare_command(
-                argparse.Namespace(
-                    target="dev-python/jsonschema",
-                    pre_checkpoint_state=self.root / "must-not-be-read.json",
-                ),
-                production_paths,
-            )
+        with unittest.mock.patch.object(TOOL, "LIVE_PREPARATION_ENABLED", False):
+            with self.assertRaisesRegex(
+                TOOL.TransactionError, "live jsonschema preparation is disabled"
+            ):
+                TOOL.prepare_command(
+                    argparse.Namespace(
+                        target="dev-python/jsonschema",
+                        pre_checkpoint_state=self.root / "must-not-be-read.json",
+                    ),
+                    production_paths,
+                )
 
         self.assertEqual(filesystem_snapshot(production_paths.root), before)
 
@@ -956,7 +957,10 @@ class LiveGateTests(unittest.TestCase):
         self.publish_prepared()
         before = filesystem_snapshot(self.root)
 
-        with unittest.mock.patch.object(TOOL, "verify_command", return_value=0):
+        with (
+            unittest.mock.patch.object(TOOL, "LIVE_MUTATION_ENABLED", False),
+            unittest.mock.patch.object(TOOL, "verify_command", return_value=0),
+        ):
             with self.assertRaisesRegex(
                 TOOL.TransactionError, "live jsonschema mutation is disabled"
             ):
@@ -976,10 +980,11 @@ class LiveGateTests(unittest.TestCase):
         TOOL.publish_state(self.paths, armed)
         before = filesystem_snapshot(self.root)
 
-        with self.assertRaisesRegex(
-            TOOL.TransactionError, "live jsonschema recovery is disabled"
-        ):
-            TOOL.recover_command(argparse.Namespace(), self.paths)
+        with unittest.mock.patch.object(TOOL, "LIVE_MUTATION_ENABLED", False):
+            with self.assertRaisesRegex(
+                TOOL.TransactionError, "live jsonschema recovery is disabled"
+            ):
+                TOOL.recover_command(argparse.Namespace(), self.paths)
 
         self.assertEqual(filesystem_snapshot(self.root), before)
 
@@ -987,7 +992,10 @@ class LiveGateTests(unittest.TestCase):
         before = filesystem_snapshot(self.root)
         stderr = io.StringIO()
 
-        with contextlib.redirect_stderr(stderr):
+        with (
+            unittest.mock.patch.object(TOOL, "LIVE_MUTATION_ENABLED", False),
+            contextlib.redirect_stderr(stderr),
+        ):
             status = TOOL.main(
                 [
                     "__portage-action",

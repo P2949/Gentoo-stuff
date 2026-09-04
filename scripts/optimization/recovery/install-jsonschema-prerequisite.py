@@ -15,13 +15,12 @@ Production phases are::
 
 Once ``armed`` is visible, the source emerge may never be executed again.
 
-The live preparation and mutation entry points intentionally remain disabled.
-The implementation now includes Portage/VDB exclusion, held-lock authority
-snapshots, exact post-emerge authority, rollback, counter reconciliation, and
-terminal durability.  Hermetic tests exercise those mechanics without touching
-a live Gentoo installation; the remaining Candidate-A work is to finish their
-reviewed proof boundary and run the explicitly separated authoritative Gentoo
-host capability checks before enabling either live gate.
+The live preparation and mutation entry points are enabled only in this
+reviewed successor after the exact predecessor passed its portable boundary and
+the explicitly separated, non-package-mutating Gentoo-host capability preflight.
+Portage/VDB exclusion, held-lock authority snapshots, exact post-emerge
+authority, rollback, counter reconciliation, and terminal durability remain
+mandatory; a disabled gate is still tested as an independent fail-closed mode.
 """
 
 from __future__ import annotations
@@ -108,15 +107,15 @@ MANAGED_SIGNAL_BOUNDARY = "terminal-child-reap-only"
 PR_SET_PDEATHSIG = 1
 PORTAGE_LOCK_ACQUIRE_TIMEOUT_SECONDS = 5.0
 PORTAGE_LOCK_RETRY_SECONDS = 0.05
-# Candidate-A safety gates.  The authority/state implementation is executable
-# for hermetic tests, but neither live preparation nor installed-package
-# mutation is authorized yet.  VDB/preserved-registry locking, process/handle
-# exclusion, two held snapshot windows, post-emerge authority, held-lock
-# rollback, counter reconciliation/reseal, and terminal durability are
-# implemented.  Their final invariant audit and authoritative Gentoo-host
-# capability proofs remain prerequisites to changing either value.
-LIVE_PREPARATION_ENABLED = False
-LIVE_MUTATION_ENABLED = False
+# Candidate-A prerequisite safety gates.  These literal values are enabled only
+# after exact predecessor 0a2e16bb passed portable CI run 33879183160 and the
+# reviewed non-package-mutating Gentoo-host capability preflight on 2026-09-04.
+# They authorize only the runbook's separately guarded prerequisite transaction;
+# they do not authorize Candidate-A acceptance, optimization generation, Phase
+# 3, or any boot/kernel action.  Setting either value false remains an immediate
+# fail-closed stop and is covered independently by the hermetic gate tests.
+LIVE_PREPARATION_ENABLED = True
+LIVE_MUTATION_ENABLED = True
 CONTROL_SCHEMA = "gentoo-optimization-jsonschema-control-v1"
 CONTROL_MAX_FRAME = 1024 * 1024
 CONTROL_SESSION_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
@@ -7976,20 +7975,20 @@ def assert_no_armed_retry(paths: Paths) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Build and verify the Phase-2 jsonschema prerequisite transaction contract; "
-            "live preparation and mutation remain disabled pending final Candidate-A proof"
+            "Build and verify the reviewed Phase-2 jsonschema prerequisite transaction "
+            "contract; live actions remain subject to exact runbook authority"
         )
     )
     parser.add_argument("--fixture-root", type=Path, help=argparse.SUPPRESS)
     subparsers = parser.add_subparsers(dest="action", required=True)
     prepare = subparsers.add_parser(
-        "prepare", help="disabled pending final invariant and authoritative-host proof"
+        "prepare", help="prepare the exact runbook-authorized live prerequisite transaction"
     )
     prepare.add_argument("transaction_id")
     prepare.add_argument("--target", default="dev-python/jsonschema")
     prepare.add_argument("--pre-checkpoint-state", required=True, type=Path)
     run = subparsers.add_parser(
-        "run", help="disabled pending final invariant and authoritative-host proof"
+        "run", help="run an exact durable prepared prerequisite transaction"
     )
     run.add_argument("transaction_id")
     recover = subparsers.add_parser("recover", help="reconcile an armed or rollback transaction; never rerun emerge")

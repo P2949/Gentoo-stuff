@@ -2,7 +2,7 @@
 
 ## Progress summary
 
-- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. Commit `d42a0cea53c1b1dfdb86fa772def255d97dc2862` passed the exact mature portable repository boundary in GitHub Actions run `33327273287` and remains the last green pre-policy-change repository/pre-activation boundary. It is not an accepted live Candidate A and cannot authorize later source. Commits `04c1becd4c915759be4f3ab0f94f1d805cdf58b1` and `e2bd31875781ff14ef95977c4d2a5534b010460a` adopted the userspace-only policy and completed its package/artifact v5 and final-system v2 migration but remained rejected predecessors. Successor `cbee0c2855f77339c42a2d7673aea0dd990c5a6b` then closed the whole-CPV kernel-lifecycle exclusion, added independent kernel-artifact reconciliation, admitted the exact instruction trees, proved positive mixed userspace/excluded-kernel completion, and restored the exact static test topology. Exact run `33872811448` reached `portable-complete` but was rejected with 77 top-level passes, three failures, and 13 reviewed skips because one evidence-policy list was unsorted and a separate cleanup allowlist omitted four reviewed instruction entries. A narrow successor must correct only those bookkeeping defects and pass a fresh exact repository boundary before any live-host work resumes. No Candidate-A revision has been installed or accepted by the complete host and production gates, and no generated package assignment is active. Phase 2 is scope-frozen until Candidate B authorization: no new subsystem, optimization-policy axis, evidence category, or broad refactor may be added unless an existing required gate exposes a reproducible blocker that cannot be fixed within the current architecture.
+- **Project state:** active; Phase 0 and Phase 1 are complete and Phase 2 is active. Commit `0a2e16bb9fce0b61a8120b8618ac9ac809ab6449` is the first green post-userspace-policy repository/pre-activation boundary. Exact GitHub Actions run `33879183160` passed with 80 top-level passes, zero failures, and 13 reviewed skips; 520 required-subtest passes, zero failures, and 26 reviewed skips; one diagnostic skip; 547 total subtests; and exit status zero. The exact clean revision then passed the reviewed non-package-mutating Gentoo-host preflight on 2026-09-04. The current working tree is the deliberately narrow gate-enabled successor and must establish its own exact portable CI and repeated prerequisite/host-capability boundary before prerequisite publication. No Candidate-A revision has been installed or accepted by the complete host and production gates, no generated package assignment is active, and no Phase 2 authorization exists. Phase 2 is scope-frozen until Candidate B authorization: no new subsystem, optimization-policy axis, evidence category, or broad refactor may be added unless an existing required gate exposes a reproducible blocker that cannot be fixed within the current architecture.
 - **Dedicated branch:** `feat/system-wide-pgo-bolt`.
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
@@ -11,7 +11,7 @@
 - **Plan checkboxes:** 78 checked, 69 open, 147 total after removing the two completed boot/kernel recovery requirements and replacing the final kernel-optimization requirement with an explicit userspace inventory exclusion check. The Phase 2 checklist remains unchanged at 7 of 14 complete.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
-- **Last plan review:** 2026-09-04. Exact commit `d42a0cea53c1b1dfdb86fa772def255d97dc2862` passed run `33327273287` with 80 top-level passes, zero failures, and 13 reviewed skips; 519 required-subtest passes, zero failures, and 26 reviewed skips; one diagnostic skip; 546 total subtests; and exit status zero. That proves only its green repository/pre-activation boundary. A later 2026-09-02/03 attempt to refresh the former boot-based recovery proof failed with zero probe failures and three validation failures (two unavailable assets and an expected-entry identity mismatch). Its retained log is `/var/lib/gentoo-optimization/reports/recovery/boot-evidence/20260903044355-candidate-a-recovery-refresh-d42a0cea-20260902T194800Z-08b449ce-cf57-44bc-adee-72d7a93e35ed.log` (SHA-256 `a71fc7a1ea891871fd7ff3fd21012f670ee61ae53409deaba92d4b9fadb59ee2`). That attempt is historical, failed, non-authorizing evidence; it must never be repeated. It triggered the absolute prohibition on LLM/automation boot-entry and kernel-lifecycle work in this plan. Commit `04c1becd4c915759be4f3ab0f94f1d805cdf58b1` then retired the boot mutation entrypoints and revised the plan to userspace-only scope; exact run `33719023582` stopped at stale topology, and direct review found the incomplete v5/v2 migration. Successor `e2bd31875781ff14ef95977c4d2a5534b010460a` repaired that semantic/schema migration, but exact run `33745489392` again stopped at stale topology; separate review found instruction-policy and mixed-kernel-CPV gaps. Successor `cbee0c2855f77339c42a2d7673aea0dd990c5a6b` closed those substantive gaps, added the positive completion proof, and made the static contract exact. Exact run `33872811448` executed `portable-complete` and recorded 77 top-level passes, three failures, and 13 reviewed skips; 517 required-subtest passes, three failures, and 26 reviewed skips; one diagnostic skip; 547 total subtests; and exit status one. Two failures shared one cause—an unsorted required-test policy list—while the third came from the independent Portage-cleanup root allowlist omitting `.cursor` and the three root instruction Markdown files. `cbee0c28` is rejected and non-authorizing. No live-host work, Candidate-A acceptance, Candidate-B index, Phase 2 authorization, optimization generation, or frozen inventory resulted. The complete plan must be reread after each corrected exact green boundary and after every live checkpoint or package operation.
+- **Last plan review:** 2026-09-04. Exact commit `0a2e16bb9fce0b61a8120b8618ac9ac809ab6449` passed run `33879183160` with 80 top-level passes, zero failures, and 13 reviewed skips; 520 required-subtest passes, zero failures, and 26 reviewed skips; one diagnostic skip; 547 total subtests; and exit status zero. Its exact clean checkout then passed four prerequisite host methods, three checkpoint host primitives, two production-containment methods, all six compiler/profile/BOLT capability lanes, live Portage package-environment semantics, the intentional Python 3.15 Portage/Python 3.14 Meson split, exact build-tool version observation, and atomic exchange/fsync/xattr/file-capability probes at all six production destination parents on XFS device 66307. The retained capability results, subtests, and summary have SHA-256 `cd461ef7ff6924c1b81ba4c41f7a9ab2f67758e71056311513840e2d1310b73d`, `156f11fd2b56a84ccc9ee08f3432e005e1beb1e070474df0a30a77cccfc261e6`, and `194404f6f491a889a469ff23cd1e31a117c1476144d47551324adc0bcbf139c1`. This is repository and non-package-mutating host-preflight evidence only: no package, boot, or kernel mutation occurred, Candidate A is not installed or accepted, Candidate B and its detached index do not exist, and Phase 2 remains unauthorized. The complete plan must be reread after the gate-enabled successor's exact green boundary and after every live checkpoint or package operation.
 - **Package-recovery safety gate:** protected binpkg restoration and separate executable-tested Clang/libc++ and GCC/libstdc++ recovery lanes are verified. Boot-entry, EFI/boot-asset, initramfs, and kernel-lifecycle work are no longer project requirements or evidence. They are subject to the absolute human-only boundary below and must not be repeated by an agent.
 - **BOLT capability gate:** the historical Phase 1 gate passed on 2026-07-12 with package-managed LLVM BOLT 22.1.8. Candidate A must rerun the current four-class gate; the old proof authorizes hook development only and does not claim that any installed-system candidate has been BOLT-optimized.
 
@@ -1525,6 +1525,31 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
   live-host preflight and all package mutation remain stopped until a successor
   passes the complete exact repository boundary.
 
+### 2026-09-04 green post-policy boundary and prerequisite gate successor
+
+- Successor `0a2e16bb9fce0b61a8120b8618ac9ac809ab6449` corrected only the
+  two portable bookkeeping defects left by `cbee0c28`. Exact GitHub Actions
+  run `33879183160` passed with 80 top-level passes, zero failures, and 13
+  reviewed skips; 520 required-subtest passes, zero failures, and 26 reviewed
+  skips; one diagnostic skip; 547 total subtests; and exit status zero.
+- The exact clean revision then passed the non-package-mutating Gentoo-host
+  prerequisite boundary: all four prerequisite host methods, all three
+  checkpoint primitives, both selected production-containment methods, all
+  six compiler/profile/BOLT capability lanes, live Portage package-environment
+  semantics, the Python 3.15 Portage/Python 3.14 Meson split, exact build-tool
+  versions, and atomic exchange/fsync/xattr/file-capability behavior at all six
+  production destination parents on XFS device 66307. No package, boot, or
+  kernel mutation occurred.
+- That result authorizes a source-controlled gate-enabled successor, not direct
+  host edits or a package transaction from `0a2e16bb`. The successor changes
+  both literal prerequisite gates to true and must itself pass the exact
+  portable CI and repeated prerequisite/host-capability boundary before the
+  bootstrap is published. The pre-prerequisite boundary is not the later
+  complete installed-Candidate-A authoritative zero-required-skip gate.
+- This transition changes no checkbox. Candidate A remains uninstalled and
+  unaccepted, Candidate B and its detached index do not exist, Phase 2 remains
+  unauthorized, and Phase 3 remains prohibited.
+
 ## 11.1 Remove the unsafe global consumer
 
 - [x] Delete or disable `portage/package.env/50-global-pgo` in its current form.
@@ -1642,12 +1667,14 @@ The stage files contain only `GENTOO_OPT_MODE`, `GENTOO_OPT_BOLT_STAGE`, or the 
   are `0440`, and the mapped input is `0550`.
 - Repository fixtures exist for syntax, pinned ShellCheck, strict runtime
   typing, unit behavior, transaction recovery, and portable policy. Exact-CPV
-  successor `d42a0cea` passed its portable boundary, but remains portable-only
-  evidence. Policy-migration predecessors `04c1becd` and `e2bd3187` are
-  rejected. Successor `cbee0c28` repaired the whole-CPV kernel exclusion and
-  restored the static contract, but exact run `33872811448` remained red on
-  the two portable bookkeeping defects recorded above. Their narrow successor
-  requires a fresh exact green repository boundary.
+  successor `d42a0cea` passed its portable boundary, but remains superseded
+  portable-only evidence. Policy-migration predecessors `04c1becd` and
+  `e2bd3187` are rejected. Successor `cbee0c28` repaired the whole-CPV kernel
+  exclusion and restored the static contract, and `0a2e16bb` then closed its
+  two bookkeeping defects, passed exact run `33879183160`, and passed the
+  exact-clean non-package-mutating Gentoo-host preflight. The gate-enabled
+  successor must now reproduce its own portable CI and prerequisite/host
+  boundary before publication.
   No portable result substitutes for an installed candidate or the supervised
   live Portage chain. The four boxes below remain open until that live proof
   exists.

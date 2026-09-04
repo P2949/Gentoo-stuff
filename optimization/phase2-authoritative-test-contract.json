@@ -269,7 +269,7 @@
     },
     {
       "expected_count": 324,
-      "subtest_names_sha256": "77f47c488edeccb645a998ff85f20eab9cfce8bd9a129535cc6d32dac9038334",
+      "subtest_names_sha256": "f482df3ec52fd262a2be32636a31e864b5dd1e7d49bfd8540d4d3b70acd2b557",
       "test": "python-unit-tests:tests/optimization"
     },
     {

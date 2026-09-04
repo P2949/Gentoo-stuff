@@ -780,13 +780,14 @@ checkpoint_evidence_manifest \
   "/var/lib/gentoo-optimization/reports/checkpoint-$PRE_CHECKPOINT_ID-operator-evidence/operator-evidence.manifest.json"
 ```
 
-The current reviewed source intentionally sets both
-`LIVE_PREPARATION_ENABLED` and `LIVE_MUTATION_ENABLED` to `False`.  Check those
-literal gates in the exact clean checkout **before** publishing anything.  The
-gate therefore exits today without modifying the bootstrap parent, Portage,
-the VDB, or any package.  Do not change the constants on the host.  Continue
-only after a new reviewed exact candidate enables both gates and passes its
-updated portable, host-capability and authoritative contracts.
+The reviewed gate-enabled successor sets both `LIVE_PREPARATION_ENABLED` and
+`LIVE_MUTATION_ENABLED` to `True` in source control. Check those literal gates
+in the exact clean checkout **before** publishing anything. Never change the
+constants on the host. Before prerequisite publication, require the exact
+portable repository boundary and the separately reviewed non-package-mutating
+prerequisite/host-capability boundary. The complete installed-candidate
+authoritative zero-required-skip gate remains later: it requires immutable
+Candidate A and must not be treated as a prerequisite for this bootstrap.
 
 ```bash
 PREREQUISITE_PUBLISHER_SOURCE=$CHECKOUT_SOURCE/scripts/optimization/recovery/publish-jsonschema-prerequisite-bootstrap.py
