@@ -27,6 +27,17 @@ revision contained.
 
 ## History rule
 
+Commit `36cc7a4261a1a82ca084064f448fd44965c10a96` enabled the prerequisite
+gates after the reviewed predecessor host proof and clarified the ordering of
+prerequisite and installed-candidate validation. Exact run `33894608595` passed
+the portable boundary (80 passes, zero failures, 13 reviewed skips; 520 required
+subtest passes, zero failures, 26 reviewed skips). Its repeated host preflight
+passed, but subsequent checkpoint creation stopped at canonical-path validation
+of `/etc/portage/make.conf`: its parent resolves through the installed framework
+selector. This live finding requires a corrective successor. Portable and host
+capability success did not constitute checkpoint completion, Candidate-A
+acceptance, or Phase-2 authorization.
+
 Evidence-bearing ancestors are immutable. Do not amend, rebase, filter, or
 force-rewrite them to improve historical wording. Corrections to descriptions,
 review conclusions, or provenance are additive commits and documents that name

@@ -3061,6 +3061,14 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
         return ("--restore-cpv", "cat/new-2")
 
     def test_success_is_exact_journaled_and_activates_last(self) -> None:
+        # Mirror the installed framework: etc/portage resolves through a
+        # generation selector. The helper must bind make.conf under its locks.
+        portage = self.fixture.root / "etc/portage"
+        generation = self.fixture.root / "framework-generation"
+        portage.rename(generation)
+        current = self.fixture.root / "framework-current"
+        current.symlink_to(generation, target_is_directory=True)
+        portage.symlink_to(current, target_is_directory=True)
         result = self.fixture.run()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PASS: checkpoint=fixture live_cpvs=2", result.stdout)

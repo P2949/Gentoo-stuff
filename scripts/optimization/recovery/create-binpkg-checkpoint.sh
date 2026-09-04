@@ -402,6 +402,7 @@ readonly ZSTD=${TOOL[zstd]}
 readonly EMERGE_EPYTHON=python3.15
 readonly EMERGE_PYTHON=${TOOL_ROOT}/usr/bin/${EMERGE_EPYTHON}
 readonly EMERGE_IMPLEMENTATION=${TOOL_ROOT}/usr/lib/python-exec/${EMERGE_EPYTHON}/emerge
+
 declare -ar RESTORE_EMERGE_OPTIONS=(
     --ignore-default-opts
     --ask=n
@@ -4009,10 +4010,19 @@ SELF=$(${READLINK} -e -- "$0") || die 'cannot resolve checkpoint script'
 [[ -n ${VERIFIER} ]] || VERIFIER=${SELF%/*}/verify-binpkg-snapshot.py
 for path in "${VDB}" "${CACHE_PARENT}" "${DURABLE_PARENT}" "${REPORT_PARENT}" \
     "${STATE_PARENT}" "${LOCK_PATH}" "${SELECTOR}" "${VERIFIER}" \
-    "${MAKE_CONF}" "${EXPECTED_SOURCE_TARGET}" "${FIXTURE_ROOT}" "${PORTAGE_STATE_PARENT}" \
+    "${EXPECTED_SOURCE_TARGET}" "${FIXTURE_ROOT}" "${PORTAGE_STATE_PARENT}" \
     "${FRAMEWORK_LOCK_PATH}" "${PROJECT_LOCK_PATH}" "${GENERATION_LOCK_PATH}"; do
     require_absolute_canonical "${path}" 'configured path'
 done
+
+# The default uses the fixed logical etc/portage/make.conf path, whose parent
+# may point through framework-current. Resolve it only after acquiring the
+# framework locks below, so a publisher cannot change the selected generation
+# between resolution and locking. Fixture overrides still require canonical
+# paths before any mutation; the resolved file is validated in both modes.
+if [[ -n ${MAKE_CONF_OVERRIDE} ]]; then
+    require_absolute_canonical "${MAKE_CONF}" 'configured path'
+fi
 
 validate_ancestor_chain "${VDB}"
 validate_ancestor_chain "${CACHE_PARENT}"
