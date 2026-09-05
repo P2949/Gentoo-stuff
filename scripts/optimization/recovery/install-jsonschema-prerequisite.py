@@ -7709,6 +7709,23 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
             prepared_sha256=arguments.prepared_sha256,
             control_session=arguments.control_session,
         )
+        # Validate admitted image objects while the child mount namespace is
+        # still active.  The coordinator cannot inspect this transaction view
+        # after teardown; a failed image check must become a normal failed
+        # action and therefore take the authenticated rollback path.
+        if source_status == 0:
+            try:
+                verify_success_payload_authority(
+                    references=payload_admissions,
+                    prepared=prepared,
+                    prepared_sha256=arguments.prepared_sha256,
+                    control_session_sha256=sha256_bytes(
+                        arguments.control_session.encode("ascii")
+                    ),
+                    vdb=vdb_path,
+                )
+            except TransactionError:
+                source_status = 1
         channel.send("ACTION_COMPLETE", {"status": source_status})
         decision = channel.receive("DECISION", 30 * 60)
         requested = decision.get("outcome")
