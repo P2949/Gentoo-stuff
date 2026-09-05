@@ -8124,7 +8124,9 @@ def verify_stage_evidence(row: object) -> None:
         verify_evidence_reference(row, path_key, digest_key)
 
 
-def verify_frozen_authorities(paths: Paths, prepared: Mapping[str, Any]) -> None:
+def verify_frozen_authorities(
+    paths: Paths, prepared: Mapping[str, Any], *, revalidate_current: bool = True
+) -> None:
     prepared_locked_window(prepared)
     final_window = prepared["resolver"].get("final_locked_window")
     locked_reference = prepared["resolver"].get("locked_authority")
@@ -8137,34 +8139,36 @@ def verify_frozen_authorities(paths: Paths, prepared: Mapping[str, Any]) -> None
         != sha256_bytes(canonical_json(prepared["resolver"].get("plan_metadata")))
     ):
         fail("final locked window differs from external authority references")
-    validate_frozen_portage_policy(prepared["authority"])
-    revalidate_tool_manifest(prepared["authority"]["tools"])
-    revalidate_build_tool_versions(prepared["authority"].get("build_tool_versions"))
-    revalidate_native_toolchain(
-        final_window.get("native_toolchain")
-    )
-    revalidate_pre_checkpoint_authority(
-        prepared["authority"].get("pre_dependency_checkpoint")
-    )
+    if revalidate_current:
+        validate_frozen_portage_policy(prepared["authority"])
+        revalidate_tool_manifest(prepared["authority"]["tools"])
+        revalidate_build_tool_versions(prepared["authority"].get("build_tool_versions"))
+        revalidate_native_toolchain(final_window.get("native_toolchain"))
+        revalidate_pre_checkpoint_authority(
+            prepared["authority"].get("pre_dependency_checkpoint")
+        )
     modules = prepared["authority"].get("python_modules")
     if not isinstance(modules, list) or not modules:
         fail("prepared authority lacks Python module identities")
-    for module in modules:
-        revalidate_python_module_authority(module)
-    for repository in prepared["authority"]["repositories"]:
-        verify_manifest(Path(repository["materialized_location"]), Path(repository["tree_manifest_path"]))
-    for key in ("portage_config", "portage_global_config"):
-        row = prepared["authority"].get(key)
-        if not isinstance(row, dict):
-            fail(f"prepared authority lacks {key}")
-        verify_manifest(Path(row["materialized_location"]), Path(row["tree_manifest_path"]))
+    if revalidate_current:
+        for module in modules:
+            revalidate_python_module_authority(module)
+    if revalidate_current:
+        for repository in prepared["authority"]["repositories"]:
+            verify_manifest(Path(repository["materialized_location"]), Path(repository["tree_manifest_path"]))
+        for key in ("portage_config", "portage_global_config"):
+            row = prepared["authority"].get(key)
+            if not isinstance(row, dict):
+                fail(f"prepared authority lacks {key}")
+            verify_manifest(Path(row["materialized_location"]), Path(row["tree_manifest_path"]))
     prefetch = prepared["resolver"].get("prefetch")
     if not isinstance(prefetch, dict):
         fail("prepared resolver lacks prefetch authority")
-    verify_manifest(Path(prefetch["authority"]), Path(prefetch["tree_manifest_path"]))
-    verify_framework_authority(paths, prepared["authority"].get("framework"))
-    verify_plan_metadata_authority(prepared)
-    if build_execution_scope(
+    if revalidate_current:
+        verify_manifest(Path(prefetch["authority"]), Path(prefetch["tree_manifest_path"]))
+        verify_framework_authority(paths, prepared["authority"].get("framework"))
+        verify_plan_metadata_authority(prepared)
+    if revalidate_current and build_execution_scope(
         prepared["resolver"]["plan_metadata"],
         tools_from_manifest(prepared["authority"]["tools"]),
     ) != prepared["authority"].get("build_execution_scope"):
@@ -8252,7 +8256,7 @@ def verify_command(paths: Paths) -> int:
     prepared, prepared_sha = load_phase_state(paths, "prepared")
     if state["phase"] != "prepared" and state["prepared_state_sha256"] != prepared_sha:
         fail("current state is not bound to the immutable prepared state")
-    verify_frozen_authorities(paths, prepared)
+    verify_frozen_authorities(paths, prepared, revalidate_current=state["phase"] != "recovery-failed")
     prefetch = prepared["resolver"]["prefetch"]
     for key in (
         "initial_pretend",

@@ -1010,6 +1010,13 @@ command.
 
 ### Recovery-failed prerequisite remediation
 
+Historical recovery-failed transaction records are verified independently of
+current host authority. The immutable prepared/state/evidence chain and the
+forensic payload observations remain verifiable after tool, Python, Portage, or
+repository drift. That drift is then reported separately as
+`current_host_authority_matches=false` and makes the consumed transaction
+non-reusable; it must never rewrite or invalidate the historical record.
+
 When the prerequisite transaction publishes `recovery-failed`, stop all
 package-manager activity and preserve the complete report and state chain. Do
 not rerun `emerge`, reuse the transaction ID, delete its private roots, or
