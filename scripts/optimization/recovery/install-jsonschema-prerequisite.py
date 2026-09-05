@@ -5051,7 +5051,14 @@ def private_roots_terminal_authority(
         value = private_roots.get(key)
         if not isinstance(value, str):
             fail(f"private roots lack terminal policy root {key}")
-        manifest = tree_manifest(Path(value))
+        # During the held-lock child ``distdir_runtime`` is a read-only bind
+        # view of the immutable prefetched authority.  The mount is gone when
+        # the coordinator finalizes, so inspect the authority tree for this
+        # one terminal record rather than the now-empty disposable mountpoint.
+        manifest_path = (
+            Path(authority_root_value) if key == "distdir_runtime" else Path(value)
+        )
+        manifest = tree_manifest(manifest_path)
         manifest_rows = _manifest_rows(manifest, f"terminal private {key}")
         if policy == "must-be-empty" and manifest_rows:
             fail(f"terminal private root is not empty: {key}")
