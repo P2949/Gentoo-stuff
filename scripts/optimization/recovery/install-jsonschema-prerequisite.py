@@ -7668,21 +7668,27 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
             rollback_atoms = rollback_order(prepared["plan"], delta["added"])
             if decision.get("rollback_atoms") != rollback_atoms:
                 fail("coordinator rollback atoms differ from the exact reverse delta")
-            rollback_arguments = rollback_emerge_arguments(rollback_atoms)
-            rollback_action, rollback_options, parsed_atoms = parse_opts(
-                rollback_arguments, silent=True
-            )
-            if (
-                rollback_action != "unmerge"
-                or parsed_atoms != rollback_atoms
-                or rollback_options.get("--ask") != "n"
-                or rollback_options.get("--deselect") != "n"
-                or rollback_options.get("--package-moves") != "n"
-                or "--ignore-default-opts" not in rollback_options
-            ):
-                fail("internal Portage rollback differs from the exact reverse action")
-            config.action, config.opts, config.args = parse_opts(rollback_arguments)
-            rollback_status = int(actions.run_action(config))
+            if rollback_atoms:
+                rollback_arguments = rollback_emerge_arguments(rollback_atoms)
+                rollback_action, rollback_options, parsed_atoms = parse_opts(
+                    rollback_arguments, silent=True
+                )
+                if (
+                    rollback_action != "unmerge"
+                    or parsed_atoms != rollback_atoms
+                    or rollback_options.get("--ask") != "n"
+                    or rollback_options.get("--deselect") != "n"
+                    or rollback_options.get("--package-moves") != "n"
+                    or "--ignore-default-opts" not in rollback_options
+                ):
+                    fail("internal Portage rollback differs from the exact reverse action")
+                config.action, config.opts, config.args = parse_opts(rollback_arguments)
+                rollback_status = int(actions.run_action(config))
+            else:
+                # A failed action that installed nothing requires no reverse
+                # Portage invocation.  The VDB comparison below is the
+                # authoritative no-op restoration proof.
+                rollback_status = 0
             if config.trees[target]["vartree"].dbapi is not vardb:
                 fail("Portage replaced the locked vardb object during rollback")
             if rollback_status != 0:
