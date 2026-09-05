@@ -5331,11 +5331,12 @@ def plan_environment(private_roots: Mapping[str, str], *, offline: bool) -> dict
         {
             "CCACHE_DIR": private_roots["ccache_dir"],
             "CARGO_HOME": private_roots["cargo_home"],
-            # Offline stages must read the immutable post-prefetch authority;
-            # the runtime directory is intentionally empty and is not a
-            # source of packages.
+            # Offline stages read the read-only runtime bind view of the
+            # immutable post-prefetch authority.  Portage's sandbox can
+            # traverse that mounted view reliably, whereas the authority
+            # source path itself is outside the child mount namespace.
             "DISTDIR": (
-                private_roots.get("distdir_authority", private_roots["distdir_runtime"])
+                private_roots.get("distdir_runtime", private_roots["distdir_authority"])
                 if offline
                 else private_roots["distdir_staging"]
             ),
@@ -5377,7 +5378,9 @@ def plan_environment(private_roots: Mapping[str, str], *, offline: bool) -> dict
                 "FETCHCOMMAND": "/bin/false ${FILE}",
                 "RESUMECOMMAND": "/bin/false ${FILE}",
                 "GENTOO_MIRRORS": "",
-                "PORTAGE_RO_DISTDIRS": private_roots["distdir_authority"],
+                "PORTAGE_RO_DISTDIRS": private_roots.get(
+                    "distdir_runtime", private_roots["distdir_authority"]
+                ),
             }
         )
     return environment
