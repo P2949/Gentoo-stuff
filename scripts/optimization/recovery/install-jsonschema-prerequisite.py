@@ -3912,7 +3912,7 @@ def scan_package_manager_activity(
             # Their inaccessible proc fields are not package-manager activity
             # and must not make the fail-closed exclusion scan report a false
             # protected-path occupant.
-            if int(identity["ppid"]) == 2:
+            if int(identity["ppid"]) in {0, 2}:
                 unreadable.clear()
             reasons.update(f"unreadable:{name}" for name in sorted(unreadable))
         if reasons:
