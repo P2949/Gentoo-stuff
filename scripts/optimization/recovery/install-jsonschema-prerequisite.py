@@ -8428,8 +8428,19 @@ def prefetch_distfiles(
     # distdir, not arbitrary host paths under the authority root.  Materialize
     # the already-verified prefetch into that private runtime view; the
     # authority copy remains the immutable digest-bound record.
-    copy_tree(distfile_authority, Path(private_roots["distdir_runtime"]), runner, tools)
-    normalize_tree_ownership(Path(private_roots["distdir_runtime"]), uid, gid)
+    runtime_distdir = Path(private_roots["distdir_runtime"])
+    if not runtime_distdir.is_dir() or runtime_distdir.is_symlink():
+        fail("private runtime distdir is not an exact directory")
+    if any(runtime_distdir.iterdir()):
+        fail("private runtime distdir is not empty before authority materialization")
+    result = runner.run(
+        [os.fspath(tools["cp"]), "-a", "--reflink=auto", "--one-file-system",
+         os.fspath(distfile_authority) + "/.", os.fspath(runtime_distdir) + "/"],
+        environment=clean_environment(), timeout=4 * 3600,
+    )
+    if result.status != 0:
+        fail(f"runtime distfile materialization failed: status={result.status}")
+    normalize_tree_ownership(runtime_distdir, uid, gid)
     manifest = tree_manifest(distfile_authority)
     manifest_path = paths.authority / "distfiles.manifest.json"
     manifest_sha = write_manifest(manifest_path, manifest)
