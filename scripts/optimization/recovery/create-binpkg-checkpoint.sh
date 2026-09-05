@@ -28,6 +28,7 @@ LOCK_OVERRIDE=
 SELECTOR_OVERRIDE=
 VERIFIER_OVERRIDE=
 MAKE_CONF_OVERRIDE=
+ALLOW_EMPTY_DELTA=0
 EXPECTED_SOURCE_TARGET=
 EXPECTED_SOURCE_PACKAGES_SHA256=
 EXPECTED_VERIFIER_SHA256=
@@ -260,6 +261,10 @@ while (($#)); do
             MAKE_CONF_OVERRIDE=$2
             shift 2
             ;;
+        --allow-empty-delta)
+            ALLOW_EMPTY_DELTA=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -279,7 +284,9 @@ while (($#)); do
 done
 
 [[ -n ${CHECKPOINT_ID} ]] || die 'a checkpoint ID is required'
-((${#ATOMS[@]} > 0)) || die 'at least one exact source-to-live delta atom is required'
+if ((${#ATOMS[@]} == 0)) && ((ALLOW_EMPTY_DELTA == 0)); then
+    die 'at least one exact source-to-live delta atom is required'
+fi
 [[ ${CHECKPOINT_ID} =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$ ]] || \
     die 'unsafe checkpoint ID'
 [[ ${EXPECTED_SOURCE_PACKAGES_SHA256} =~ ^[0-9a-f]{64}$ ]] || \
