@@ -1307,7 +1307,9 @@ def exact_xattrs(path: Path, *, follow_symlinks: bool = False) -> list[dict[str,
         fail(f"cannot observe extended attributes for {path}: {error}")
 
 
-def tree_manifest(root: Path, *, ignore_names: frozenset[str] = frozenset()) -> dict[str, Any]:
+def tree_manifest(
+    root: Path, *, ignore_names: frozenset[str] = frozenset({".ipc"})
+) -> dict[str, Any]:
     """Return a deterministic content/metadata manifest without volatile timestamps."""
 
     root = root.resolve(strict=True)
