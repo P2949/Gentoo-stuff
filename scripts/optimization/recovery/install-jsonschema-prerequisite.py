@@ -1462,7 +1462,13 @@ def parse_pretend_output(text: str, installed_cpvs: set[str]) -> dict[str, Any]:
                 "cpv": cpv,
                 "repository": repository,
                 "exact_atom": f"={cpv}::{repository}",
-                "normalized_display": " ".join(line.split()),
+                # Portage reports a download-size column in online pretends
+                # and ``0 KiB`` in offline pretends.  Size is not resolver
+                # authority; omit that volatile presentation field so the
+                # reviewed plan can be compared across both stages.
+                "normalized_display": re.sub(
+                    r"\s+\d+(?:\.\d+)?\s+KiB$", "", " ".join(line.split())
+                ),
             }
         )
     if not rows or len({row["cpv"] for row in rows}) != len(rows):
