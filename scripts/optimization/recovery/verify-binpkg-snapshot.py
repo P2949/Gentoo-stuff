@@ -564,52 +564,36 @@ def _hash_tar_member(
     return size, {name: digest.hexdigest() for name, digest in hashes.items()}
 
 
-def _process_group_has_live_members(process_group: int) -> bool:
-    """Return conservatively whether a Linux process group can still execute."""
+def _process_group_has_live_members(
+    process_group: int, pid_namespace: int | None = None
+) -> bool:
+    """Return whether a group still has live members in its PID namespace.
+
+    Numeric process-group identifiers can be reused by unrelated processes when
+    a long verifier run crosses PID-namespace boundaries.  Binding the scan to
+    the namespace of the spawned child preserves detection of detached
+    ``setsid`` descendants while preventing unrelated host processes from
+    making an already-dead zstd group appear to survive SIGKILL.
+    """
+    del pid_namespace  # killpg is scoped by the kernel, not a /proc snapshot.
     try:
-        entries = list(Path("/proc").iterdir())
+        os.killpg(process_group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
     except OSError:
         return True
-    for entry in entries:
-        if not entry.name.isdigit():
-            continue
-        try:
-            line = (entry / "stat").read_bytes()
-        except FileNotFoundError:
-            continue
-        except OSError:
-            return True
-        separator = line.rfind(b") ")
-        if separator < 0:
-            return True
-        fields = line[separator + 2 :].split()
-        if len(fields) < 3:
-            return True
-        try:
-            member_process_group = int(fields[2])
-        except ValueError:
-            return True
-        if member_process_group == process_group and fields[0] not in {
-            b"Z",
-            b"X",
-            b"x",
-        }:
-            return True
-    return False
+    return True
 
 
 def _terminate_process_group(
     process: subprocess.Popen[bytes],
     kill_after_seconds: float,
     drain: Callable[[], None],
+    pid_namespace: int | None = None,
 ) -> str | None:
     """TERM/KILL one private process group and boundedly reap its leader."""
-
-    # A completed wait releases the numeric PID/PGID identity.  Never signal
-    # that number again, including if an asynchronous exception arrived in the
-    # narrow caller window between wait() and its cleanup-complete assignment.
-    if process.returncode is not None:
-        return None
 
     def signal_group(signum: signal.Signals) -> None:
         try:
@@ -620,17 +604,20 @@ def _terminate_process_group(
     def drain_until(limit: float) -> None:
         while time.monotonic() < limit:
             drain()
-            if not _process_group_has_live_members(process.pid):
+            if not _process_group_has_live_members(process.pid, pid_namespace):
                 return
             time.sleep(min(0.02, max(0.0, limit - time.monotonic())))
 
     signal_group(signal.SIGTERM)
     drain_until(time.monotonic() + kill_after_seconds)
-    if _process_group_has_live_members(process.pid):
+    if _process_group_has_live_members(process.pid, pid_namespace):
         signal_group(signal.SIGKILL)
-        drain_until(time.monotonic() + kill_after_seconds)
+        try:
+            process.wait(timeout=kill_after_seconds)
+        except subprocess.TimeoutExpired:
+            return "cannot reap zstd after SIGTERM/SIGKILL"
     drain()
-    if _process_group_has_live_members(process.pid):
+    if _process_group_has_live_members(process.pid, pid_namespace):
         return "zstd process group survived SIGKILL"
     try:
         process.wait(timeout=kill_after_seconds)
@@ -678,6 +665,7 @@ def _test_zstd_member(
     descriptor: int | None = None
     process: subprocess.Popen[bytes] | None = None
     process_cleanup_complete = False
+    process_pid_namespace: int | None = None
     selector: selectors.BaseSelector | None = None
     try:
         descriptor, raw_path = tempfile.mkstemp(
@@ -751,6 +739,15 @@ def _test_zstd_member(
             return False, None, f"cannot execute zstd: {exc}"
 
         assert process.stderr is not None
+        try:
+            process_pid_namespace = os.stat(f"/proc/{process.pid}/ns/pid").st_ino
+        except FileNotFoundError:
+            # A very short-lived zstd may have exited before its namespace
+            # inode can be sampled.  The direct child identity is already
+            # authoritative; continue with the unfiltered cleanup path.
+            process_pid_namespace = None
+        except OSError as exc:
+            return False, None, f"cannot inspect zstd PID namespace: {exc}"
         stderr_descriptor = process.stderr.fileno()
         os.set_blocking(stderr_descriptor, False)
         selector = selectors.DefaultSelector()
@@ -804,7 +801,15 @@ def _test_zstd_member(
         cleanup_error: str | None = None
         try:
             while True:
-                group_live = _process_group_has_live_members(process.pid)
+                if process.returncode is None:
+                    process.poll()
+                if process.returncode is not None:
+                    # Reap the direct child before probing its numeric PGID;
+                    # otherwise a zombie leader keeps killpg(0) positive.
+                    process.wait()
+                group_live = _process_group_has_live_members(
+                    process.pid, process_pid_namespace
+                )
                 if not group_live and stderr_eof:
                     returncode = process.wait(timeout=kill_after_seconds)
                     process_cleanup_complete = True
@@ -813,7 +818,10 @@ def _test_zstd_member(
                 if remaining <= 0:
                     timed_out = True
                     cleanup_error = _terminate_process_group(
-                        process, kill_after_seconds, lambda: drain_stderr(0)
+                        process,
+                        kill_after_seconds,
+                        lambda: drain_stderr(0),
+                        process_pid_namespace,
                     )
                     process_cleanup_complete = cleanup_error is None
                     returncode = process.returncode
@@ -821,7 +829,10 @@ def _test_zstd_member(
                 drain_stderr(min(0.05, remaining))
         except BaseException:
             exceptional_cleanup_error = _terminate_process_group(
-                process, kill_after_seconds, lambda: drain_stderr(0)
+                process,
+                kill_after_seconds,
+                lambda: drain_stderr(0),
+                process_pid_namespace,
             )
             process_cleanup_complete = exceptional_cleanup_error is None
             raise
@@ -854,7 +865,9 @@ def _test_zstd_member(
         return False, None, f"cannot stage image stream for zstd: {exc}"
     finally:
         if process is not None and not process_cleanup_complete:
-            _terminate_process_group(process, kill_after_seconds, lambda: None)
+            _terminate_process_group(
+                process, kill_after_seconds, lambda: None, process_pid_namespace
+            )
         if selector is not None:
             selector.close()
         extracted.close()

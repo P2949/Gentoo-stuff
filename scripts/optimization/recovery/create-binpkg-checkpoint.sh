@@ -509,6 +509,32 @@ validate_ancestor_chain() {
     done
 }
 
+# Portage's selected-set directory is conventionally root-owned but group-owned
+# by the Portage service group (and may carry the setgid bit).  It is still
+# trusted when no group/world write bit is present; requiring root:root here
+# would reject the real Gentoo layout before any checkpoint mutation begins.
+validate_portage_state_ancestor_chain() {
+    local path=$1 current stop fields uid gid mode type
+    require_absolute_canonical "${path}" 'trusted Portage state path'
+    current=${path}
+    [[ -d ${current} ]] || current=${current%/*}
+    [[ -n ${current} ]] || current=/
+    stop=/
+    ((FIXTURE_MODE)) && stop=${FIXTURE_ROOT}
+    while :; do
+        [[ -d ${current} && ! -L ${current} ]] || die "trusted Portage state directory is absent or not real: ${current}"
+        fields=$(stat_fields "${current}") || die "cannot stat trusted Portage state directory: ${current}"
+        IFS=: read -r _ _ uid gid mode _ type <<<"${fields}"
+        [[ ${type} == directory && ${uid} == "${TRUST_UID}" ]] || \
+            die "untrusted Portage state directory: ${current} (${uid}:${gid})"
+        mode_is_trusted "${mode}" || die "group/world-writable Portage state directory: ${current} (${mode})"
+        [[ ${current} == "${stop}" ]] && break
+        [[ ${current} != / ]] || die "trusted Portage state path escaped validation root: ${path}"
+        current=${current%/*}
+        [[ -n ${current} ]] || current=/
+    done
+}
+
 validate_regular_trusted_file() {
     local path=$1 executable=${2:-0} fields uid gid mode links type
     require_absolute_canonical "${path}" 'trusted file'
@@ -4029,7 +4055,7 @@ validate_ancestor_chain "${CACHE_PARENT}"
 validate_ancestor_chain "${DURABLE_PARENT}"
 validate_ancestor_chain "${REPORT_PARENT}"
 validate_ancestor_chain "${STATE_PARENT}"
-validate_ancestor_chain "${PORTAGE_STATE_PARENT}"
+validate_portage_state_ancestor_chain "${PORTAGE_STATE_PARENT}"
 validate_ancestor_chain "${LOCK_PATH%/*}"
 validate_ancestor_chain "${SELECTOR%/*}"
 validate_regular_trusted_file "${VERIFIER}" 0
