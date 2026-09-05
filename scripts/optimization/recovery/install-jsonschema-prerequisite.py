@@ -4649,7 +4649,7 @@ def prepare_directories(paths: Paths, fixture_mode: bool) -> None:
             gid=(grp.getgrnam("portage").gr_gid if not fixture_mode else gid),
             # Portage's restricted user must traverse this private root; the
             # parent remains root-owned and non-world-writable.
-            mode=(0o2710 if not fixture_mode else 0o700),
+            mode=(0o2775 if not fixture_mode else 0o700),
         )
     if not paths.transaction_lock.exists():
         parent_fd = os.open(
