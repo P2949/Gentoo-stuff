@@ -5687,9 +5687,8 @@ def authority_mount_bindings(
     else:
         bindings.append(MountBinding(Path(distfiles), Path(distfiles), True))
         runtime = private_roots.get("distdir_runtime")
-        if not isinstance(runtime, str):
-            fail("private roots lack runtime distdir")
-        bindings.append(MountBinding(Path(distfiles), Path(runtime), True))
+        if isinstance(runtime, str):
+            bindings.append(MountBinding(Path(distfiles), Path(runtime), True))
     live_cache, live_view = private_roots.get("live_cache_edb"), private_roots.get(
         "live_cache_edb_view"
     )
