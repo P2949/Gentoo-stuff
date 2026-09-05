@@ -5341,8 +5341,11 @@ def plan_environment(private_roots: Mapping[str, str], *, offline: bool) -> dict
     if offline:
         environment.update(
             {
-                "FETCHCOMMAND": "/bin/false",
-                "RESUMECOMMAND": "/bin/false",
+                # Portage validates these templates before attempting a
+                # fetch.  Keep network fetches fail-closed while retaining
+                # the required ${FILE} placeholder for current Portage.
+                "FETCHCOMMAND": "/bin/false ${FILE}",
+                "RESUMECOMMAND": "/bin/false ${FILE}",
                 "GENTOO_MIRRORS": "",
                 "PORTAGE_RO_DISTDIRS": private_roots["distdir_authority"],
             }
