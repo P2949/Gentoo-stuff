@@ -612,10 +612,13 @@ def _terminate_process_group(
     drain_until(time.monotonic() + kill_after_seconds)
     if _process_group_has_live_members(process.pid, pid_namespace):
         signal_group(signal.SIGKILL)
-        try:
-            process.wait(timeout=kill_after_seconds)
-        except subprocess.TimeoutExpired:
-            return "cannot reap zstd after SIGTERM/SIGKILL"
+        if pid_namespace is None:
+            drain_until(time.monotonic() + kill_after_seconds)
+        else:
+            try:
+                process.wait(timeout=kill_after_seconds)
+            except subprocess.TimeoutExpired:
+                return "cannot reap zstd after SIGTERM/SIGKILL"
     drain()
     if _process_group_has_live_members(process.pid, pid_namespace):
         return "zstd process group survived SIGKILL"
