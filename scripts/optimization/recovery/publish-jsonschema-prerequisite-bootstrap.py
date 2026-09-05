@@ -508,7 +508,12 @@ def validate_manifest_directory(
     uid = authority.uid
     gid = authority.gid
     validate_runtime_parent(authority)
-    validate_directory(directory, uid, gid, 0o700)
+    # The published helper is executed by Portage's unprivileged build user
+    # (including multiprocessing children).  It must therefore be traversable
+    # and readable while remaining root-owned and non-writable.  A production
+    # bootstrap is public code, so 0755 is the narrow least-privilege mode;
+    # fixture bootstraps retain the private 0700 boundary.
+    validate_directory(directory, uid, gid, 0o755 if authority.production else 0o700)
     manifest_path = directory / "bootstrap-manifest.json"
     payload, manifest_identity = read_trusted_file(manifest_path, uid, gid)
     if manifest_identity.mode != 0o600:
@@ -682,7 +687,7 @@ def publish(arguments: argparse.Namespace, authority: RuntimeAuthority) -> int:
         source_rows.append((relative, payload, identity, git_authority))
     os.mkdir(stage, 0o700)
     os.chown(stage, uid, gid)
-    os.chmod(stage, 0o700)
+    os.chmod(stage, 0o755 if authority.production else 0o700)
     try:
         rows: list[dict[str, object]] = []
         for relative, payload, source_identity, git_authority in source_rows:
