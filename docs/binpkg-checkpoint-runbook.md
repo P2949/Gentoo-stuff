@@ -373,6 +373,13 @@ Successful creation intentionally stops in
 `selector-activated-offline-restore-pending`; this is not a terminal recovery
 claim.
 
+An empty source-to-live delta may be used only to prove that a failed package
+attempt installed nothing and that the live VDB is unchanged. It does not by
+itself satisfy `offline-restore-proven`: terminal offline restoration must use
+the normal evidence receipt and perform an exact binary restoration of the
+selected `--restore-cpv`. Do not publish a no-op receipt or manufacture a
+second restore protocol for an empty delta.
+
 ## 4. Reconcile an interrupted activation
 
 Do not remove a prepared selector, witness, intent, receipt, state, mount, or
