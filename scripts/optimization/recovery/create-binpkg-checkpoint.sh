@@ -2289,8 +2289,19 @@ verify_source_delta() {
         [[ ${status} -eq 1 ]] || die 'source snapshot unexpectedly equals the live VDB; nonempty delta was supplied'
     fi
     # shellcheck disable=SC2016 # jq variables, not shell expansions.
-    ${JQ} -e --arg snapshot "${EXPECTED_SOURCE_TARGET}" --arg vdb "${VDB}" \
-        --arg zstd "${ZSTD}" '
+    local validation_filter
+    if ((ALLOW_EMPTY_DELTA == 1)); then
+        validation_filter='
+        .schema_version == 1 and .status == "pass" and
+        .inputs.snapshot == $snapshot and .inputs.vdb == $vdb and
+        .inputs.validate_gpkg == true and .inputs.zstd == $zstd and
+        .counts.missing_live_cpvs == 0 and .counts.errors == 0 and
+        .counts.extra_indexed_archives == 0 and .counts.unindexed_gpkg_archives == 0 and
+        (.coverage.duplicate_live_cpvs | length) == 0 and
+        (.coverage.extra_indexed_archives | length) == 0 and
+        (.coverage.unindexed_gpkg_archives | length) == 0'
+    else
+        validation_filter='
         .schema_version == 1 and .status == "fail" and
         .inputs.snapshot == $snapshot and .inputs.vdb == $vdb and
         .inputs.validate_gpkg == true and .inputs.zstd == $zstd and
@@ -2304,14 +2315,25 @@ verify_source_delta() {
         ([.issues[].code] | all(. == "live_cpv_missing_archive")) and
         (.coverage.duplicate_live_cpvs | length) == 0 and
         (.coverage.extra_indexed_archives | length) == 0 and
-        (.coverage.unindexed_gpkg_archives | length) == 0' \
+        (.coverage.unindexed_gpkg_archives | length) == 0'
+    fi
+    ${JQ} -e --arg snapshot "${EXPECTED_SOURCE_TARGET}" --arg vdb "${VDB}" \
+        --arg zstd "${ZSTD}" "${validation_filter}" \
         "${output}" >/dev/null || die 'source snapshot has failures beyond the exact live delta'
     missing_file=${REPORT}/${suffix}.missing-cpvs.txt
     expected_file=${REPORT}/${suffix}.requested-delta-cpvs.txt
-    ${JQ} -r '.coverage.missing_live_cpvs[]' "${output}" | ${SORT} >"${missing_file}"
-    printf '%s\n' "${ATOM_CPVS[@]}" | ${SORT} >"${expected_file}"
-    ${CMP} -- "${missing_file}" "${expected_file}" || \
-        die 'quickpkg atoms are not the complete exact source-to-live CPV delta'
+    if ((ALLOW_EMPTY_DELTA == 1)); then
+        : >"${missing_file}"
+    else
+        ${JQ} -r '.coverage.missing_live_cpvs[]' "${output}" | ${SORT} >"${missing_file}"
+    fi
+    if ((ALLOW_EMPTY_DELTA == 1)); then
+        : >"${expected_file}"
+    else
+        printf '%s\n' "${ATOM_CPVS[@]}" | ${SORT} >"${expected_file}"
+        ${CMP} -- "${missing_file}" "${expected_file}" || \
+            die 'quickpkg atoms are not the complete exact source-to-live CPV delta'
+    fi
 }
 
 publish_canonical_state() {
@@ -4295,11 +4317,16 @@ ${CHMOD} 0700 -- "${CACHE_PARTIAL}"
 ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${CACHE_PARTIAL}"
 validate_snapshot_tree_trust "${CACHE_PARTIAL}"
 
-run_tracked "${REPORT}/quickpkg.log" "${REPORT}/quickpkg.stderr" 8h \
-    "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
-    PKGDIR="${CACHE_PARTIAL}" TZ=UTC \
-    "${QUICKPKG}" --ignore-default-opts --include-config=n "${ATOMS[@]}"
-[[ ${TRACKED_STATUS} -eq 0 ]] || die "quickpkg failed with status ${TRACKED_STATUS}"
+if ((${#ATOMS[@]} > 0)); then
+    run_tracked "${REPORT}/quickpkg.log" "${REPORT}/quickpkg.stderr" 8h \
+        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
+        PKGDIR="${CACHE_PARTIAL}" TZ=UTC \
+        "${QUICKPKG}" --ignore-default-opts --include-config=n "${ATOMS[@]}"
+    [[ ${TRACKED_STATUS} -eq 0 ]] || die "quickpkg failed with status ${TRACKED_STATUS}"
+else
+    : >"${REPORT}/quickpkg.log"
+    : >"${REPORT}/quickpkg.stderr"
+fi
 run_tracked "${REPORT}/emaint-fix.log" "${REPORT}/emaint-fix.stderr" 2h \
     "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
     PKGDIR="${CACHE_PARTIAL}" TZ=UTC \
