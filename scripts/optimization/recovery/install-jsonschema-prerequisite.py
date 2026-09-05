@@ -7560,7 +7560,10 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
         "effective_portage_policy"
     )
     if policy != expected_policy:
-        fail("effective Portage action policy differs from prepared authority")
+        fail(
+            "effective Portage action policy differs from prepared authority: "
+            f"actual={policy!r} expected={expected_policy!r}"
+        )
     if native_toolchain_authority(settings) != prepared["resolver"][
         "final_locked_window"
     ].get("native_toolchain"):
