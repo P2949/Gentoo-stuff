@@ -5345,6 +5345,12 @@ def effective_portage_policy(settings: Mapping[str, Any]) -> dict[str, Any]:
         "preserve-libs",
         "unmerge-orphans",
     }
+    # Portage applies FEATURES incrementally.  The prerequisite execution
+    # environment deliberately supplies negative tokens for these mutable
+    # host defaults; normalize that reviewed transaction overlay before
+    # comparing the frozen authority, since the initial settings object is
+    # loaded from the host configuration before the child environment exists.
+    features.difference_update(forbidden)
     if not required <= features or forbidden & features:
         fail(
             "effective Portage FEATURES differ from the transaction policy: "
