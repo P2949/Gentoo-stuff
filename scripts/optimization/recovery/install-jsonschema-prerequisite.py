@@ -91,7 +91,9 @@ EXACT_ATOM_PATTERN = re.compile(
     rf"::(?P<repository>[A-Za-z0-9][A-Za-z0-9+_.-]*)\Z"
 )
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
-SCHEDULED_LINE = re.compile(r"^\[[A-Za-z]")
+# Portage --tree output also contains [nomerge] dependency rows.  Ignore those
+# display-only rows, while retaining rejection for other non-source actions.
+SCHEDULED_LINE = re.compile(r"^\[(?!nomerge\])[A-Za-z]")
 NEW_SOURCE_LINE = re.compile(
     r"^\[ebuild\s+N(?:\s+[^]]*)?\]\s+"
     rf"(?:=)?(?P<cpv>{CPV_PATTERN_TEXT})"
