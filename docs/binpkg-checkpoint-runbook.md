@@ -1008,6 +1008,33 @@ an ID is consumed before repository/config/VDB preparation begins: never
 delete forensic residue, republish its bootstrap, or reuse that ID for any
 command.
 
+### Recovery-failed prerequisite remediation
+
+When the prerequisite transaction publishes `recovery-failed`, stop all
+package-manager activity and preserve the complete report and state chain. Do
+not rerun `emerge`, reuse the transaction ID, delete its private roots, or
+declare the VDB rolled back from a CPV-name comparison alone. A
+`recovery-failed` record is deliberately non-reusable when its prepared tool,
+repository, configuration, or VDB authority has drifted.
+
+An operator-supervised remediation must use the already published
+pre-dependency checkpoint and the recovery-failed evidence as its inputs. In a
+fresh root shell, independently verify the checkpoint's immutable selector,
+normal `offline-restore-proven` receipt, archive/payload manifests, and
+`0/0/0` terminal totals. Then reconcile the failed transaction's recorded
+payload admissions, raw VDB residue, EDB counter partials, and private-root
+manifest against that checkpoint and the live userspace state. Any object not
+covered by those authenticated authorities is a stop condition.
+
+Publish a separate root-owned remediation receipt containing the exact
+checkpoint identity, recovery-failed evidence identity, payload/residue
+comparison results, current VDB identity, and reviewer/operator identity.
+Only after that receipt is independently reviewed may the consumed transaction
+be archived as remediated and a **new** preparation ID be created from a fresh
+source/config/VDB authority. This procedure concerns userspace package state
+only; it never modifies firmware, boot entries, `/boot`, `/efi`, kernels, or
+initramfs images.
+
 ## 8. Create, replay, and finalize the post-install checkpoint
 
 The second checkpoint is independent. It starts from the terminal
