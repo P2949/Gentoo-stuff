@@ -4584,7 +4584,9 @@ def ensure_trusted_child_directory(
     path: Path, parent: Path, *, uid: int, gid: int, mode: int
 ) -> None:
     require_direct_child(path, parent, "trusted child directory")
-    validate_ancestor_chain(parent, uid, gid, Path("/"))
+    # Ancestors remain root-owned authority; only the direct child directory
+    # may use the restricted Portage group for traversal.
+    validate_ancestor_chain(parent, uid, 0, Path("/"))
     parent_fd = os.open(
         parent,
         os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
