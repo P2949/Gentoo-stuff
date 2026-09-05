@@ -4822,8 +4822,11 @@ def prepare_private_roots(paths: Paths) -> dict[str, Any]:
         "xdg_cache": paths.cache / "xdg-cache",
         "live_cache_edb_view": paths.cache / "live-cache-edb-view",
     }
-    paths.cache.mkdir(mode=0o700)
     portage_gid = os.getegid() if paths.fixture_mode else grp.getgrnam("portage").gr_gid
+    paths.cache.mkdir(mode=0o2770)
+    os.chmod(paths.cache, 0o2770)
+    if not paths.fixture_mode:
+        os.chown(paths.cache, 0, portage_gid)
     for key, root in roots.items():
         if key in {"var_lib_portage", "cache_edb", "etc"}:
             # These exact authority copies are created only while the live
