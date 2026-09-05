@@ -7982,7 +7982,7 @@ def portage_recovery_command(arguments: argparse.Namespace) -> int:
         )
         if (
             recovery_action != "unmerge"
-            or parsed_atoms != exact_atoms
+            or sorted(parsed_atoms) != sorted(exact_atoms)
             or recovery_options.get("--ask") != "n"
             or recovery_options.get("--deselect") != "n"
             or recovery_options.get("--package-moves") != "n"
