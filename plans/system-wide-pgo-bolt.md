@@ -9,7 +9,7 @@
 - **Starting repository commit:** `c04773564da826abdeea3660568701d040cc89d0`.
 - **Optimization generation:** not established; inventory is not yet frozen.
 - **Starting live package count:** 1,181 CPVs; this is evidence capture only, not the frozen Phase 3 inventory.
-- **Current non-frozen live package count:** 1,220 installed CPVs in the read-only 2026-08-09 `/var/db/pkg` refresh; sorted CPV-list SHA-256 `a5b75bd995f68d74d869b2d5996dcd345e326741f4d1c329a9dbc876edb630ff`. This unchanged observation is live progress evidence, not the frozen Phase 3 inventory, and must be recomputed immediately before the first live mutation.
+- **Current non-frozen live package count:** 1,219 installed CPVs in the read-only 2026-09-05 `/var/db/pkg` observation; sorted exact-CPV list SHA-256 `198efbe861ba4ad423c8fe0c9ab63d90bcfccff3aaf075f1f2e6a8cec233d186`, retained at `/var/lib/gentoo-optimization/reports/live-cpv-observation-20260905/installed-cpvs.txt` with summary SHA-256 `79c6efcc213c9976375cdb1890b19c5ef5d33c5a11ccedd985bce62b1e7354a8`. This observation is live progress evidence, not the frozen Phase 3 inventory, and must be recomputed immediately before the first live mutation.
 - **Plan checkboxes:** 78 checked, 69 open, 147 total after removing the two completed boot/kernel recovery requirements and replacing the final kernel-optimization requirement with an explicit userspace inventory exclusion check. The Phase 2 checklist remains unchanged at 7 of 14 complete.
 - **Strict coverage totals:** pending the Phase 3 live inventory; no zero-coverage claim has been made.
 - **Current Phase 2 authorization:** none. No detached Phase 2 evidence index exists for the Candidate-A implementation, and the installed framework predates it.
