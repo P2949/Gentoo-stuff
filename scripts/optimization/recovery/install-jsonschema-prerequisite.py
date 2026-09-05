@@ -7981,7 +7981,10 @@ def portage_recovery_command(arguments: argparse.Namespace) -> int:
             exact_arguments, silent=True
         )
         if recovery_action != "unmerge" or sorted(parsed_atoms) != sorted(exact_atoms):
-            fail("held-lock recovery argv differs from exact reverse unmerge")
+            fail(
+                "held-lock recovery argv differs from exact reverse unmerge: "
+                f"action={recovery_action!r} parsed={parsed_atoms!r} expected={exact_atoms!r}"
+            )
         config.action, config.opts, config.args = parse_opts(exact_arguments)
         channel.send(
             "LOCK_HELD",
