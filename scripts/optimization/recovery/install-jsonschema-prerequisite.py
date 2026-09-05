@@ -1475,7 +1475,9 @@ def parse_pretend_output(text: str, installed_cpvs: set[str]) -> dict[str, Any]:
     canonical_rows = sorted(rows, key=lambda row: (row["cpv"], row["repository"]))
     return {
         "schema_version": 1,
-        "ordered_exact_atoms": [row["exact_atom"] for row in rows],
+        # Resolver --tree output is dependency-order dependent; execute the
+        # reviewed closure in one canonical CPV/repository order instead.
+        "ordered_exact_atoms": [row["exact_atom"] for row in canonical_rows],
         "rows": canonical_rows,
         "rows_sha256": sha256_bytes(canonical_json(canonical_rows)),
     }
