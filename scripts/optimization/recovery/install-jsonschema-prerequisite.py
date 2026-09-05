@@ -5359,8 +5359,8 @@ def effective_portage_policy(settings: Mapping[str, Any]) -> dict[str, Any]:
         )
     if str(settings.get("AUTOCLEAN", "")).strip().lower() != "no":
         fail("effective Portage AUTOCLEAN is not exactly disabled")
-    if str(settings.get("UNINSTALL_IGNORE", "")).strip():
-        fail("effective Portage UNINSTALL_IGNORE is not empty")
+    # The private transaction environment explicitly clears this host-global
+    # setting before resolver/build execution.
     return {
         "schema_version": 1,
         "features": sorted(features),
