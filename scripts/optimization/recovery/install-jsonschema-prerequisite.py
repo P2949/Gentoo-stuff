@@ -7739,7 +7739,8 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
                     ),
                     vdb=vdb_path,
                 )
-            except TransactionError:
+            except TransactionError as error:
+                print(f"payload authority validation failed: {error}", file=sys.stderr)
                 source_status = 1
         channel.send("ACTION_COMPLETE", {"status": source_status})
         decision = channel.receive("DECISION", 30 * 60)
