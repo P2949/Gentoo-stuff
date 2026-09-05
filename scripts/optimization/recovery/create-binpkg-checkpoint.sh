@@ -2533,7 +2533,7 @@ load_activation_intent() {
         .input_bindings.verifier.sha256 == $verifier_sha and
         (.input_bindings.delta.sorted_cpvs_path | type == "string" and length > 0) and
         (.input_bindings.delta.sorted_cpvs_sha256 | test("^[0-9a-f]{64}$")) and
-        (.input_bindings.delta.count | type == "number" and . > 0) and
+        (.input_bindings.delta.count | type == "number" and . >= 0) and
         (.input_bindings.artifact_preparation.path | type == "string" and length > 0) and
         (.input_bindings.artifact_preparation.sha256 | test("^[0-9a-f]{64}$")) and
         (.input_bindings.artifact_preparation.live_cpvs | type == "number" and . > 0) and
@@ -2579,7 +2579,11 @@ load_activation_intent() {
         validate_regular_trusted_file "${cli_delta}" 0
         ${RM} -f -- "${cli_delta}"
     fi
-    printf '%s\n' "${ATOM_CPVS[@]}" | ${SORT} >"${cli_delta}"
+    if ((ALLOW_EMPTY_DELTA == 1)); then
+        : >"${cli_delta}"
+    else
+        printf '%s\n' "${ATOM_CPVS[@]}" | ${SORT} >"${cli_delta}"
+    fi
     if ! ${CMP} -- "${cli_delta}" "${delta_path}"; then
         ${RM} -f -- "${cli_delta}"
         die 'reconcile/finalize exact delta atoms differ from activation intent'
