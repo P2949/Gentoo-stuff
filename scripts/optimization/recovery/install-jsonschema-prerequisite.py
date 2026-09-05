@@ -5179,7 +5179,23 @@ def _terminal_durability_candidates(
         value = private_roots.get(key)
         if not isinstance(value, str):
             fail(f"prepared state lacks durability root {key}")
-        raw.append((f"private-{key}", Path(value), Path(value), None))
+        # ``distdir_runtime`` is a read-only bind view of the immutable
+        # ``distdir_authority`` during the held-lock child.  Once the child
+        # has torn down its mount namespace, statting the runtime directory
+        # would report the disposable transaction filesystem instead of the
+        # device that was actually synchronised.  Bind its durability
+        # identity to the prepared authority so the coordinator validates the
+        # same evidence after teardown.
+        bound_device = None
+        if key == "distdir_runtime":
+            authority = private_roots.get("distdir_authority")
+            if not isinstance(authority, str):
+                fail("prepared state lacks distdir authority for runtime view")
+            authority_path = Path(authority)
+            if not authority_path.is_dir() or authority_path.is_symlink():
+                fail("prepared distdir authority is not a directory")
+            bound_device = authority_path.stat().st_dev
+        raw.append((f"private-{key}", Path(value), Path(value), bound_device))
     loader = initial.get("loader_directories")
     if not isinstance(loader, dict) or not isinstance(loader.get("rows"), list):
         fail("prepared state lacks loader durability authority")
