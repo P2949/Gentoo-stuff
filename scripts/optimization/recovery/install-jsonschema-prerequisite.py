@@ -7501,9 +7501,10 @@ def verify_success_payload_authority(
         if (
             expected_type == "directory"
             and current.get("type") == "absent"
-            and not any(
-                path.startswith(destination.rstrip("/") + "/")
+            and all(
+                object_observation(Path(path)).get("type") == "absent"
                 for path in image_rows
+                if path.startswith(destination.rstrip("/") + "/")
             )
         ):
             continue
