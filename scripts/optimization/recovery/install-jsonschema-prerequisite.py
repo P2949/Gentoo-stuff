@@ -7773,7 +7773,6 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
                 if (
                     rollback_action != "unmerge"
                     or sorted(parsed_atoms) != sorted(rollback_atoms)
-                    or rollback_options.get("--ask") != "n"
                     or rollback_options.get("--deselect") != "n"
                     or rollback_options.get("--package-moves") != "n"
                     or "--ignore-default-opts" not in rollback_options
