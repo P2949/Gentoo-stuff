@@ -1640,12 +1640,12 @@ def verify_selected_sets(
         fail("selected sets or Portage resume authority changed")
 
 
-def mtimedb_authority(path: Path) -> dict[str, Any]:
+def mtimedb_authority(path: Path, *, allow_resume: bool = False) -> dict[str, Any]:
     value = read_json_regular(path, "Portage mtimedb")
     if not isinstance(value, dict):
         fail("Portage mtimedb is not a JSON object")
     resume = value.get("resume")
-    if resume not in (None, {}, []):
+    if not allow_resume and resume not in (None, {}, []):
         fail("Portage mtimedb contains unresolved resume state")
     stable = {
         key: item
@@ -1664,10 +1664,12 @@ def mtimedb_authority(path: Path) -> dict[str, Any]:
     }
 
 
-def verify_mtimedb_transition(before: object, path: Path) -> dict[str, Any]:
+def verify_mtimedb_transition(
+    before: object, path: Path, *, allow_resume: bool = False
+) -> dict[str, Any]:
     if not isinstance(before, dict) or not isinstance(before.get("stable"), dict):
         fail("prepared mtimedb authority is invalid")
-    after = mtimedb_authority(path)
+    after = mtimedb_authority(path, allow_resume=allow_resume)
     if (
         after["stable"] != before["stable"]
         or after["stable_sha256"] != before.get("stable_sha256")
@@ -2039,6 +2041,7 @@ def verify_declared_post_emerge_authority(
     mtimedb_delta = verify_mtimedb_transition(
         initial_window.get("mtimedb"),
         Path(private_roots["cache_edb"]) / "mtimedb",
+        allow_resume=(outcome == "rolled-back"),
     )
     private_root_authority = private_roots_terminal_authority(
         private_roots,
