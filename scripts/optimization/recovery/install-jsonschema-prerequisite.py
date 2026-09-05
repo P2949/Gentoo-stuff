@@ -1487,10 +1487,11 @@ def parse_pretend_output(text: str, installed_cpvs: set[str]) -> dict[str, Any]:
     }
 
 
-def compare_plans(expected: object, observed: object) -> None:
+def compare_plans(expected: object, observed: object, *, require_order: bool = True) -> None:
     if not isinstance(expected, dict) or not isinstance(observed, dict):
         fail("pretend plan is not an object")
-    for key in ("ordered_exact_atoms", "rows", "rows_sha256"):
+    keys = ("ordered_exact_atoms", "rows", "rows_sha256") if require_order else ("rows", "rows_sha256")
+    for key in keys:
         if expected.get(key) != observed.get(key):
             fail("exact re-pretend plan differs from the reviewed plan")
 
@@ -6220,7 +6221,10 @@ def await_exact_portage_prompt(
                 displayed.decode("utf-8", errors="strict"),
                 set(prepared_vdb(prepared)["cpvs"]),
             )
-            compare_plans(prepared["plan"], plan)
+            # Portage may render the exact argv atoms in dependency-graph
+            # order at the interactive prompt.  The argv itself remains
+            # byte-bound above; compare the displayed plan semantically.
+            compare_plans(prepared["plan"], plan, require_order=False)
             return plan, displayed
         if process.poll() is not None:
             stderr_file.flush()
