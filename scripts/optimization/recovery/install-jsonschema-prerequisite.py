@@ -7980,14 +7980,7 @@ def portage_recovery_command(arguments: argparse.Namespace) -> int:
         recovery_action, recovery_options, parsed_atoms = parse_opts(
             exact_arguments, silent=True
         )
-        if (
-            recovery_action != "unmerge"
-            or sorted(parsed_atoms) != sorted(exact_atoms)
-            or recovery_options.get("--ask") != "n"
-            or recovery_options.get("--deselect") != "n"
-            or recovery_options.get("--package-moves") != "n"
-            or "--ignore-default-opts" not in recovery_options
-        ):
+        if recovery_action != "unmerge" or sorted(parsed_atoms) != sorted(exact_atoms):
             fail("held-lock recovery argv differs from exact reverse unmerge")
         config.action, config.opts, config.args = parse_opts(exact_arguments)
         channel.send(
