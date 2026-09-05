@@ -5643,7 +5643,16 @@ def authority_mount_bindings(
     distfiles = private_roots.get("distdir_authority")
     if not isinstance(distfiles, str):
         fail("private roots lack immutable distfile authority")
-    bindings.append(MountBinding(Path(distfiles), Path(distfiles), True))
+    # During the prefetch stage ``distdir_authority`` aliases the private
+    # staging directory.  That directory must remain writable so Portage can
+    # download distfiles; it is copied to a separate authority tree and
+    # sealed read-only immediately after prefetch completes.  For all later
+    # stages the authority is distinct and can be sealed safely.
+    distdir_staging = private_roots.get("distdir_staging")
+    if distfiles == distdir_staging:
+        bindings.append(MountBinding(Path(distfiles), Path(distfiles), False))
+    else:
+        bindings.append(MountBinding(Path(distfiles), Path(distfiles), True))
     live_cache, live_view = private_roots.get("live_cache_edb"), private_roots.get(
         "live_cache_edb_view"
     )
