@@ -299,9 +299,7 @@ for atom in "${ATOMS[@]}"; do
     fi
 done
 if [[ ${ACTION} == finalize ]]; then
-    if ((ALLOW_EMPTY_DELTA == 1)) && [[ -z ${RESTORE_CPV} ]]; then
-        :
-    elif ! is_exact_cpv "${RESTORE_CPV}"; then
+    if ! is_exact_cpv "${RESTORE_CPV}"; then
         die 'offline finalization requires --restore-cpv with an exact CPV'
     fi
 fi
@@ -3465,28 +3463,6 @@ finalize_offline_restore_supervised() {
     [[ $(${READLINK} -- "${SELECTOR}") == "${DURABLE}" ]] || die 'offline restore requires the exact activated selector'
     activation_sha=$(publish_activation_receipt)
     validate_activated_state
-    # An exact zero-delta baseline has no package archive to restore.  Prove
-    # the no-op restoration by revalidating the durable snapshot against the
-    # live VDB and publishing a receipt bound to that verifier output.
-    if ((ALLOW_EMPTY_DELTA == 1)) && [[ -z ${RESTORE_CPV} ]]; then
-        local noop_dir=${REPORT}/offline-restore noop_report=${REPORT}/offline-restore/no-op-verifier.json
-        local noop_receipt=${REPORT}/offline-restore-receipt.json noop_sha
-        ${INSTALL} -d -o "${TRUST_UID}" -g "${TRUST_GID}" -m 0700 -- "${noop_dir}"
-        validate_trusted_directory "${noop_dir}"
-        verify_exact_final "${DURABLE}" "${noop_report}"
-        local noop_report_sha=$(${SHA256SUM} -- "${noop_report}"); noop_report_sha=${noop_report_sha%% *}
-        ${JQ} -n --arg id "${CHECKPOINT_ID}" --arg at "$(timestamp)" \
-            --arg activation_sha "${activation_sha}" --arg report_sha "${noop_report_sha}" \
-            '{schema_version:1,checkpoint_id:$id,status:"offline-restore-proven",recorded_at:$at,
-              activation_receipt_sha256:$activation_sha,
-              evidence:{no_op_verifier:{path:"offline-restore/no-op-verifier.json",sha256:$report_sha}}}' \
-            >"${noop_receipt}"
-        ${CHMOD} 0600 -- "${noop_receipt}"; ${CHOWN} "${TRUST_UID}:${TRUST_GID}" -- "${noop_receipt}"
-        sync_paths "${noop_report}" "${noop_dir}"; sync_paths "${noop_receipt}" "${REPORT}"
-        noop_sha=$(${SHA256SUM} -- "${noop_receipt}"); noop_sha=${noop_sha%% *}
-        publish_phase_state offline-restore-proven "${STATE_RESTORED}" "${activation_sha}" true "${noop_sha}"
-        return 0
-    fi
     [[ -f ${STATE_RESTORED} ]] && {
         ((RETRY_INTERRUPTED_RESTORE == 0)) || die 'retry authorization is invalid after terminal restoration'
         for existing in "${REPORT}"/offline-restore/.terminal-verifier.*; do
