@@ -1467,7 +1467,10 @@ def parse_pretend_output(text: str, installed_cpvs: set[str]) -> dict[str, Any]:
         )
     if not rows or len({row["cpv"] for row in rows}) != len(rows):
         fail("pretend selection is empty or duplicated")
-    if sum(row["cpv"].startswith("dev-python/jsonschema-") for row in rows) != 1:
+    if sum(
+        bool(re.fullmatch(r"dev-python/jsonschema-[0-9].*", row["cpv"]))
+        for row in rows
+    ) != 1:
         fail("pretend did not select exactly one jsonschema CPV")
     canonical_rows = sorted(rows, key=lambda row: (row["cpv"], row["repository"]))
     return {
