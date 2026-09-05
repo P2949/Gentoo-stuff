@@ -5686,6 +5686,10 @@ def authority_mount_bindings(
         bindings.append(MountBinding(Path(distfiles), Path(distfiles), False))
     else:
         bindings.append(MountBinding(Path(distfiles), Path(distfiles), True))
+        runtime = private_roots.get("distdir_runtime")
+        if not isinstance(runtime, str):
+            fail("private roots lack runtime distdir")
+        bindings.append(MountBinding(Path(distfiles), Path(runtime), True))
     live_cache, live_view = private_roots.get("live_cache_edb"), private_roots.get(
         "live_cache_edb_view"
     )
@@ -8424,23 +8428,6 @@ def prefetch_distfiles(
     distfile_authority = paths.authority / "distfiles"
     copy_tree(Path(private_roots["distdir_staging"]), distfile_authority, runner, tools)
     normalize_tree_ownership(distfile_authority, uid, gid)
-    # The source-action mount namespace exposes the transaction runtime
-    # distdir, not arbitrary host paths under the authority root.  Materialize
-    # the already-verified prefetch into that private runtime view; the
-    # authority copy remains the immutable digest-bound record.
-    runtime_distdir = Path(private_roots["distdir_runtime"])
-    if not runtime_distdir.is_dir() or runtime_distdir.is_symlink():
-        fail("private runtime distdir is not an exact directory")
-    if any(runtime_distdir.iterdir()):
-        fail("private runtime distdir is not empty before authority materialization")
-    result = runner.run(
-        [os.fspath(tools["cp"]), "-a", "--reflink=auto", "--one-file-system",
-         os.fspath(distfile_authority) + "/.", os.fspath(runtime_distdir) + "/"],
-        environment=clean_environment(), timeout=4 * 3600,
-    )
-    if result.status != 0:
-        fail(f"runtime distfile materialization failed: status={result.status}")
-    normalize_tree_ownership(runtime_distdir, uid, gid)
     manifest = tree_manifest(distfile_authority)
     manifest_path = paths.authority / "distfiles.manifest.json"
     manifest_sha = write_manifest(manifest_path, manifest)
