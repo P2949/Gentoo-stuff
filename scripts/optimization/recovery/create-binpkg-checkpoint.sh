@@ -2283,7 +2283,11 @@ verify_source_delta() {
     suffix=${suffix%.json}
     run_verifier "${EXPECTED_SOURCE_TARGET}" "${output}" 1
     status=${VERIFIER_STATUS}
-    [[ ${status} -eq 1 ]] || die 'source snapshot unexpectedly equals the live VDB; nonempty delta was supplied'
+    if ((ALLOW_EMPTY_DELTA == 1)); then
+        [[ ${status} -eq 0 ]] || die 'zero-delta baseline does not match the live VDB'
+    else
+        [[ ${status} -eq 1 ]] || die 'source snapshot unexpectedly equals the live VDB; nonempty delta was supplied'
+    fi
     # shellcheck disable=SC2016 # jq variables, not shell expansions.
     ${JQ} -e --arg snapshot "${EXPECTED_SOURCE_TARGET}" --arg vdb "${VDB}" \
         --arg zstd "${ZSTD}" '
