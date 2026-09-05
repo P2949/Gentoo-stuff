@@ -8424,6 +8424,12 @@ def prefetch_distfiles(
     distfile_authority = paths.authority / "distfiles"
     copy_tree(Path(private_roots["distdir_staging"]), distfile_authority, runner, tools)
     normalize_tree_ownership(distfile_authority, uid, gid)
+    # The source-action mount namespace exposes the transaction runtime
+    # distdir, not arbitrary host paths under the authority root.  Materialize
+    # the already-verified prefetch into that private runtime view; the
+    # authority copy remains the immutable digest-bound record.
+    copy_tree(distfile_authority, Path(private_roots["distdir_runtime"]), runner, tools)
+    normalize_tree_ownership(Path(private_roots["distdir_runtime"]), uid, gid)
     manifest = tree_manifest(distfile_authority)
     manifest_path = paths.authority / "distfiles.manifest.json"
     manifest_sha = write_manifest(manifest_path, manifest)
