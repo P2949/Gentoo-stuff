@@ -5308,7 +5308,14 @@ def plan_environment(private_roots: Mapping[str, str], *, offline: bool) -> dict
         {
             "CCACHE_DIR": private_roots["ccache_dir"],
             "CARGO_HOME": private_roots["cargo_home"],
-            "DISTDIR": private_roots["distdir_runtime"] if offline else private_roots["distdir_staging"],
+            # Offline stages must read the immutable post-prefetch authority;
+            # the runtime directory is intentionally empty and is not a
+            # source of packages.
+            "DISTDIR": (
+                private_roots.get("distdir_authority", private_roots["distdir_runtime"])
+                if offline
+                else private_roots["distdir_staging"]
+            ),
             "EMERGE_LOG_DIR": private_roots["portage_logdir"],
             "EPYTHON": "python3.15",
             "AUTOCLEAN": "no",
