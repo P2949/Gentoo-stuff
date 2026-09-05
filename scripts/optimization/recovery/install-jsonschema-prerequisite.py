@@ -5359,6 +5359,7 @@ def effective_portage_policy(settings: Mapping[str, Any]) -> dict[str, Any]:
     forbidden = {
         "assume-digests",
         "binpkg-signing",
+        "ccache",
         "parallel-install",
         "preserve-libs",
         "unmerge-orphans",
