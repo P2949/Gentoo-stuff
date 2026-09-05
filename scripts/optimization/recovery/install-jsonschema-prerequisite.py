@@ -8633,7 +8633,11 @@ def prepare_command(arguments: argparse.Namespace, paths: Paths) -> int:
         )
         offline_plan, offline_evidence = run_pretend_stage(
             stage="offline-exact-repretend",
-            target_atoms=exact_plan_atoms(initial_plan),
+            # Portage renders the dependency graph in reverse target order;
+            # use the same ordered atom vector as the reviewed re-pretend so
+            # the offline comparison binds the exact plan rather than a
+            # resolver-presentation permutation.
+            target_atoms=list(reversed(exact_plan_atoms(initial_plan))),
             paths=paths,
             authority=authority,
             private_roots=private_roots,
