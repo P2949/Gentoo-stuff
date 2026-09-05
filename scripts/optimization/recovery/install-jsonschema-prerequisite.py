@@ -6927,8 +6927,13 @@ def validate_payload_observation_authority(
             for destination in destination_set
         )
         if kind == "absent":
-            if is_ancestor:
-                fail(f"payload destination ancestor is absent: {cpv}: {path}")
+            # A fresh package image may legitimately introduce a directory
+            # ancestor (for example a new ``*.dist-info`` directory).  The
+            # manifest is the authority for those paths; requiring every
+            # ancestor to pre-exist rejects the first package that creates
+            # one.  Keep the exact closure and /usr device checks, while
+            # allowing manifest-declared absent paths to be created by the
+            # authenticated merge.
             if set(observation) != {"path", "type"}:
                 fail(f"absent payload destination has foreign authority: {cpv}: {path}")
             continue
