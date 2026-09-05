@@ -8455,6 +8455,30 @@ def prefetch_distfiles(
     require_success(result, "prefetch")
     distfile_authority = paths.authority / "distfiles"
     copy_tree(Path(private_roots["distdir_staging"]), distfile_authority, runner, tools)
+    # Portage may finish background fetch workers just after the fetch-only
+    # coordinator exits.  Reconcile the immutable clone once the staging tree
+    # has remained stable, otherwise a late distfile can be absent from the
+    # offline child despite being reported fetched.
+    staging = Path(private_roots["distdir_staging"])
+    previous = None
+    stable = 0
+    for _ in range(30):
+        current = tree_manifest(staging)
+        digest = sha256_bytes(canonical_json(current))
+        if digest == previous:
+            stable += 1
+            if stable >= 3:
+                break
+        else:
+            previous, stable = digest, 0
+        time.sleep(1)
+    result = runner.run(
+        [os.fspath(tools["cp"]), "-a", "--reflink=auto", "--one-file-system", "--", os.fspath(staging) + "/.", os.fspath(distfile_authority) + "/"],
+        environment=clean_environment(),
+        timeout=4 * 3600,
+    )
+    if result.status != 0:
+        fail("late distfile authority reconciliation failed")
     normalize_tree_ownership(distfile_authority, uid, gid)
     manifest = tree_manifest(distfile_authority)
     manifest_path = paths.authority / "distfiles.manifest.json"
