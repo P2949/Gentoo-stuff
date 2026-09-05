@@ -9,12 +9,10 @@ from __future__ import annotations
 import argparse, hashlib, json, os, sys
 from pathlib import Path
 
-TX = "jsonschema-source-20260906T100000Z"
+DEFAULT_TX = "jsonschema-source-20260906T100000Z"
 ROOT = Path("/var/lib/gentoo-optimization")
 STATE = ROOT / "state/project"
-REPORT = ROOT / "reports" / f"jsonschema-prerequisite-{TX}"
-PREFIX = STATE / f"jsonschema-prerequisite-{TX}"
-CHECKPOINT = "checkpoint-pre-candidate-a-deps-20260905T000008Z"
+DEFAULT_CHECKPOINT = "checkpoint-pre-candidate-a-deps-20260905T000008Z"
 
 def digest(path: Path) -> str:
     h = hashlib.sha256()
@@ -34,7 +32,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("command", choices=("inspect", "prepare-receipt", "review-receipt", "verify-receipt"))
     ap.add_argument("--operator")
+    ap.add_argument("--transaction-id", default=DEFAULT_TX)
+    ap.add_argument("--checkpoint-id", default=DEFAULT_CHECKPOINT)
     args = ap.parse_args()
+    TX = args.transaction_id
+    CHECKPOINT = args.checkpoint_id
+    REPORT = ROOT / "reports" / f"jsonschema-prerequisite-{TX}"
+    PREFIX = STATE / f"jsonschema-prerequisite-{TX}"
     failed = PREFIX.with_suffix(".recovery-failed.json")
     prepared = PREFIX.with_suffix(".prepared.json")
     evidence = REPORT / "recovery-failed-evidence.json"
@@ -71,6 +75,9 @@ def main() -> int:
           "checkpoint_restore_proven":True,"checkpoint_terminal_totals":{"pending":0,"unknown":0,"failed":0},
           "payload_admission_count":0,"counter_partial_count":0,
           "vdb_exact_match":True,"reconciliation_observation_sha256":digest(observation),
+          "payload_reconciliation": {"evidence_sha256": digest(evidence), "admissions": []},
+          "counter_reconciliation": {"evidence_sha256": digest(evidence), "partials": []},
+          "private_root_reconciliation": {"status": "complete", "observation_sha256": digest(observation)},
           "additional_package_restore_performed":False,"additional_package_restore_required":False,
           "restoration_basis":"existing authenticated pre-dependency offline-restore-proven checkpoint; failed transaction admitted no payload and produced no VDB delta",
           "historical_evidence_valid":True,"current_host_authority_matches":False,
