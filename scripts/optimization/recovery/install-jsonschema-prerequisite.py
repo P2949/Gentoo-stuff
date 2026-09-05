@@ -3907,6 +3907,13 @@ def scan_package_manager_activity(
         if final_identity != identity:
             fail(f"process identity changed during exclusion scan: {pid}")
         if strict_unreadable and unreadable:
+            # Kernel threads (whose parent is kthreadd/PID 2) intentionally
+            # expose no userspace environment, descriptors, or mappings.
+            # Their inaccessible proc fields are not package-manager activity
+            # and must not make the fail-closed exclusion scan report a false
+            # protected-path occupant.
+            if int(identity["ppid"]) == 2:
+                unreadable.clear()
             reasons.update(f"unreadable:{name}" for name in sorted(unreadable))
         if reasons:
             rows.append(
