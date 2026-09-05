@@ -5027,7 +5027,11 @@ def private_roots_terminal_authority(
     policies = {
         "pkgdir": "retained-package-evidence",
         "distdir_runtime": "verified-prefetch-derived",
-        "portage_tmpdir": "empty-portage-prefix-only",
+        "portage_tmpdir": (
+            "empty-portage-prefix-only"
+            if outcome == "success"
+            else "retained-failed-build-evidence"
+        ),
         "portage_logdir": "retained-log-evidence",
         "ccache_dir": "must-be-empty",
         "thinlto_cache": "retained-build-evidence",
@@ -5080,6 +5084,12 @@ def private_roots_terminal_authority(
                     )
                 ):
                     fail("terminal PORTAGE_TMPDIR prefix metadata is foreign")
+        elif policy == "retained-failed-build-evidence":
+            if any(
+                not (path == "portage" or path.startswith("portage/"))
+                for path in manifest_rows
+            ):
+                fail("terminal failed-build evidence escaped PORTAGE_TMPDIR")
         if policy == "verified-prefetch-derived":
             for relative, row in manifest_rows.items():
                 if row.get("type") == "directory":
