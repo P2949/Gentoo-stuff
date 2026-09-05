@@ -373,12 +373,13 @@ Successful creation intentionally stops in
 `selector-activated-offline-restore-pending`; this is not a terminal recovery
 claim.
 
-An empty source-to-live delta may be used only to prove that a failed package
-attempt installed nothing and that the live VDB is unchanged. It does not by
-itself satisfy `offline-restore-proven`: terminal offline restoration must use
-the normal evidence receipt and perform an exact binary restoration of the
-selected `--restore-cpv`. Do not publish a no-op receipt or manufacture a
-second restore protocol for an empty delta.
+An empty source-to-live delta is not a valid checkpoint generation and is
+rejected by the production checkpoint interface. If a failed package attempt
+installed nothing, the prerequisite transaction records a no-op rollback and
+an unchanged-VDB proof instead. It does not satisfy `offline-restore-proven`:
+terminal offline restoration must use the normal evidence receipt and perform
+an exact binary restoration of the selected `--restore-cpv`. Do not publish a
+no-op receipt or manufacture a second restore protocol for an empty delta.
 
 ## 4. Reconcile an interrupted activation
 

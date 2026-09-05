@@ -262,8 +262,7 @@ while (($#)); do
             shift 2
             ;;
         --allow-empty-delta)
-            ALLOW_EMPTY_DELTA=1
-            shift
+            die '--allow-empty-delta is not supported for production checkpoints; use no-op rollback evidence'
             ;;
         -h|--help)
             usage

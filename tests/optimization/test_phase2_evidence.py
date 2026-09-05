@@ -2272,6 +2272,20 @@ namespace["require_active_python_matches_reviewed_tools"](
         authority["build_execution_scope"] = producer["build_execution_scope"](
             plan_metadata, tool_paths
         )
+
+        # Model the production prefetch boundary: staging is writable while
+        # fetching, then the verified payload is copied into a distinct
+        # immutable authority used by every offline stage.  Keeping the
+        # staging path in the bindings here would make this fixture claim a
+        # mutable source authority after prefetch and reject an otherwise
+        # authentic producer/verifier chain.
+        distdir_staging = Path(private_roots["distdir_staging"])
+        distdir_authority = private_cache / "distfiles.authority"
+        distdir_authority.mkdir(parents=True, exist_ok=True)
+        for staged in sorted(distdir_staging.iterdir()):
+            if staged.is_file() and not staged.is_symlink():
+                shutil.copy2(staged, distdir_authority / staged.name)
+        private_roots["distdir_authority"] = os.fspath(distdir_authority)
         source_bindings = producer["authority_mount_bindings"](
             authority, private_roots
         )
