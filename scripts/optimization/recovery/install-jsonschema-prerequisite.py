@@ -6692,8 +6692,14 @@ def run_armed_source_child(
                 )
             )
             if child_post_emerge != post_emerge_authority:
+                differing = [
+                    key
+                    for key in sorted(set(child_post_emerge["value"]) | set(post_emerge_authority["value"]))
+                    if child_post_emerge["value"].get(key) != post_emerge_authority["value"].get(key)
+                ]
                 fail(
-                    "held-lock child and coordinator post-emerge authorities differ"
+                    "held-lock child and coordinator post-emerge authorities differ: "
+                    + ",".join(differing)
                 )
             final_delta = cast(
                 dict[str, Any],
