@@ -7492,6 +7492,21 @@ def verify_success_payload_authority(
     for destination, expected in sorted(image_rows.items()):
         current = object_observation(Path(destination))
         expected_type = expected.get("type")
+        # Manifest generation includes parent directory scaffolding for every
+        # payload path.  Portage does not materialize an empty scaffold when
+        # the package has no documentation/file beneath it (for example
+        # /usr/share/doc here).  Such a synthetic directory is not an
+        # installed payload object and must not make an otherwise complete
+        # admission fail.
+        if (
+            expected_type == "directory"
+            and current.get("type") == "absent"
+            and not any(
+                path.startswith(destination.rstrip("/") + "/")
+                for path in image_rows
+            )
+        ):
+            continue
         if current.get("type") != expected_type:
             fail("installed payload object type differs: " + destination)
         if current.get("device") != payload_device:
