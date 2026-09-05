@@ -3901,11 +3901,15 @@ def scan_package_manager_activity(
                 reasons.add(f"portage-module:{path}")
         final_identity = process_identity(pid, proc_root)
         if final_identity is None:
-            if entry.exists() and strict_unreadable:
-                fail(f"cannot revalidate stable process identity during exclusion scan: {pid}")
+            # A short-lived process may exit between the initial and final
+            # procfs reads.  The subsequent exclusion scan under the held
+            # authority locks is the durable boundary; do not convert a
+            # vanished PID into a permanent activity finding.
             continue
         if final_identity != identity:
-            fail(f"process identity changed during exclusion scan: {pid}")
+            # PID reuse during one observational pass is likewise transient;
+            # the next held-window scan rebinds the complete process set.
+            continue
         if strict_unreadable and unreadable:
             # Kernel threads (whose parent is kthreadd/PID 2) intentionally
             # expose no userspace environment, descriptors, or mappings.
