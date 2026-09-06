@@ -10,7 +10,7 @@ WORK=$(mktemp -d /tmp/gentoo-optimization-sample-env.XXXXXXXX)
 trap 'rm -rf -- "${WORK}"' EXIT INT TERM HUP
 TOKEN=$(printf '%064d' 0 | tr 0 a)
 INVENTORY_SHA=$(printf fixture-inventory | sha256sum | awk '{print $1}')
-OUTPUT=/var/tmp/gentoo-optimization/phase2-sample-work-fixture-run/forbidden-env-fixture-${BASHPID}
+OUTPUT=/var/lib/gentoo-optimization/reports/forbidden-env-fixture-${BASHPID}
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
