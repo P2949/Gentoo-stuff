@@ -8518,6 +8518,12 @@ def prefetch_distfiles(
     uid: int,
     gid: int,
 ) -> dict[str, Any]:
+    # Seed the transaction staging tree from the authenticated host cache;
+    # Portage's fetch-only child may otherwise leave a read-only RO distdir
+    # unmaterialized when no mirror is configured.
+    host_distfiles = Path("/var/cache/distfiles")
+    if host_distfiles.is_dir():
+        copy_tree(host_distfiles, Path(private_roots["distdir_staging"]), runner, tools)
     command = [
         os.fspath(tools["emerge"]),
         *emerge_options(),
