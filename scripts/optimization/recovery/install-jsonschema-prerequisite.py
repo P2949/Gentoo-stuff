@@ -7682,6 +7682,12 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
         fail("internal Portage action differs from the reviewed exact action")
     config = actions.load_emerge_config(action=action, args=atoms, opts=options)
     config.action, config.opts, config.args = parse_opts(emerge_arguments)
+    # Portage creates its post-build IPC FIFOs lazily.  Ensure the private
+    # transaction temp hierarchy (including the ignored IPC directory) exists
+    # before its forked MergeProcess starts, otherwise the FIFO creation can
+    # race cleanup of an empty parent directory.
+    portage_tmpdir = Path(str(config.target_config.settings["PORTAGE_TMPDIR"]))
+    (portage_tmpdir / "portage" / ".ipc").mkdir(mode=0o700, parents=True, exist_ok=True)
     target = config.trees._target_eroot
     target_path = Path(target)
     vdb_path = target_path / "var/db/pkg"
