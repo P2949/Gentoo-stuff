@@ -30,7 +30,7 @@ if [[ -z ${gentoo_opt_profile_transaction_token} &&
     # userpriv phase.  The coordinator therefore exposes the one-shot bearer
     # through this root-owned, portage-readable runtime file while the global
     # transaction locks exclude concurrent production gates.
-    gentoo_opt_profile_transaction_token_file=${gentoo_opt_profile_transaction_authorization%/*}/transaction.token
+    gentoo_opt_profile_transaction_token_file=/var/lib/gentoo-optimization/state/profile-transactions/phase2-production-token
     if [[ -f ${gentoo_opt_profile_transaction_token_file} &&
         ! -L ${gentoo_opt_profile_transaction_token_file} ]]; then
         IFS= read -r gentoo_opt_profile_transaction_token < \
