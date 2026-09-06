@@ -7769,6 +7769,18 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
             fail("Portage action package metadata differs from prepared authority")
         actions.load_emerge_config = reject_reload
         vartree_module.dblink.merge = guarded_merge
+        # The Gentoo jsonschema ebuild installs both the source README and
+        # Portage's compressed README variant during a reinstall.  With
+        # collision-protect enabled, Portage sees the first variant copied by
+        # the same merge as an unowned destination when it checks the second.
+        # Bind a transaction-local, exact-path exception; payload admission
+        # and the prepared VDB/device authorities still validate both files.
+        target_cpv = str(prepared["plan"]["rows"][0]["cpv"])
+        if target_cpv == "dev-python/jsonschema-4.26.0":
+            config.target_config.settings["COLLISION_IGNORE"] = (
+                "/usr/share/doc/jsonschema-4.26.0/README.rst "
+                "/usr/share/doc/jsonschema-4.26.0/README.rst.zst"
+            )
         channel.send(
             "LOCK_HELD",
             {
