@@ -5523,7 +5523,7 @@ def emerge_options() -> list[str]:
         "--verbose",
         "--tree",
         "--oneshot",
-        "--reinstall=y",
+        "--reinstall=changed-use",
         "--with-bdeps=y",
         "--complete-graph=y",
         "--autounmask=n",
@@ -8444,7 +8444,14 @@ def run_pretend_stage(
     installed: set[str],
     allow_reinstall: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    command = [os.fspath(tools["emerge"]), *emerge_options(), "--pretend", *target_atoms]
+    command = [
+        os.fspath(tools["emerge"]),
+        *emerge_options(),
+        "--reinstall-atoms",
+        *target_atoms,
+        "--pretend",
+        *target_atoms,
+    ]
     result, evidence = run_contained_stage(
         stage=stage,
         paths=paths,
