@@ -1540,7 +1540,10 @@ HOST_NETWORK_NAMESPACE=$(readlink -- /proc/self/ns/net)
 HOST_IPC_NAMESPACE=$(readlink -- /proc/self/ns/ipc)
 HOST_MOUNT_NAMESPACE=$(readlink -- /proc/self/ns/mnt)
 POLICY_PROBE_ENV=${PORTAGE_ROOT}/env/sample-live-policy-probe.conf
-SANDBOX_DENY_DIRECTORY=${PACKAGE_ROOT}/sandbox-policy-deny
+ # Keep the probe under the runtime lock root, which is writable by the
+ # Portage test group but intentionally absent from Portage's SANDBOX_WRITE
+ # allow-list.  A probe under /var/tmp would be incorrectly permitted.
+SANDBOX_DENY_DIRECTORY=/run/gentoo-optimization/sample-pgo-sandbox-policy-deny
 SANDBOX_DENY_PATH=${SANDBOX_DENY_DIRECTORY}/forbidden-write
 if ((PRODUCTION_LOCKS)); then
     GENERATION_ID=${PRODUCTION_GATE_GENERATION_ID}
