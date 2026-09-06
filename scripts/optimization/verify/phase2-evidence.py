@@ -1046,7 +1046,13 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
         requested, f"tool {name} requested entry point"
     ) != requested_entrypoint:
         fail(f"tool {name} requested entry point changed during resolution")
-    binary_payload, binary_stat = read_regular(resolved, f"tool {name}")
+    # Some immutable system tools (notably bash on this host) are legitimate
+    # root-owned hardlinks at both /usr/bin and /bin.  Their exact path,
+    # device/inode, ownership, mode, and digest remain bound by the manifest;
+    # requiring nlink==1 here would reject that trusted layout unnecessarily.
+    binary_payload, binary_stat = read_regular(
+        resolved, f"tool {name}", allow_hardlinks=True
+    )
     binary = {
         "path": os.fspath(resolved),
         "sha256": sha256(binary_payload),
