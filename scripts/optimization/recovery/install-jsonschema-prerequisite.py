@@ -6476,6 +6476,11 @@ def run_armed_source_child(
             lock_held = parent_control.receive("LOCK_HELD", min(timeout, 30 * 60))
             expected_emerge_arguments = [
                 *emerge_options(),
+                "--reinstall-atoms="
+                + ",".join(
+                    re.sub(r"-\d[^:]*\Z", "", row["cpv"].split("::", 1)[0])
+                    for row in prepared["plan"]["rows"]
+                ),
                 "--ask=y",
                 *exact_plan_atoms(prepared["plan"]),
             ]
