@@ -17,6 +17,19 @@ fail() {
     exit 1
 }
 
+if ((EUID != 0)); then
+    record_required_subtest() {
+        local status=$1 name=$2 detail=$3
+        [[ -n ${GENTOO_OPT_SUBTEST_RESULTS:-} ]] || return 0
+        printf '%s\trequired\t%s\t%s\n' "${status}" "${name}" "${detail}" \
+            >>"${GENTOO_OPT_SUBTEST_RESULTS}"
+    }
+    record_required_subtest SKIP production-sample.environment \
+        'root-owned production report-root checks require the root driver'
+    printf 'SKIP: production sample environment contract requires root driver\n'
+    exit 0
+fi
+
 record_required_subtest() {
     local status=$1 name=$2 detail=$3
     [[ -n ${GENTOO_OPT_SUBTEST_RESULTS:-} ]] || return 0
