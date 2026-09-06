@@ -2041,7 +2041,8 @@ run_ebuild() {
             LANG=C LC_ALL=C TZ=UTC "TMPDIR=${DRIVER_TMP}" \
             "XDG_CACHE_HOME=${XDG_CACHE_DIR}" "XDG_CONFIG_HOME=${XDG_CONFIG_DIR}" \
             "XDG_STATE_HOME=${XDG_STATE_DIR}" PORTAGE_CONFIGROOT="${CONFIG_ROOT}" \
-            NOCOLOR=true /usr/bin/ebuild --color n "${EBUILD}" "$@" \
+            "FEATURES=${PORTAGE_FEATURES_ASSIGNMENT}" NOCOLOR=true \
+            /usr/bin/ebuild --color n "${EBUILD}" "$@" \
             > "${log}" 2>&1
     fi
 }
