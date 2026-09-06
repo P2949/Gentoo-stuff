@@ -1648,8 +1648,12 @@ if ((PRODUCTION_LOCKS)); then
         ! -L ${TRANSACTION_AUTHORIZATION}.partial && \
         ! -e ${PROFILE_ROOT} && ! -L ${PROFILE_ROOT} ]] || \
         fail 'coordinator did not publish one exact production gate state root'
-    [[ $(find "${PRODUCTION_STATE_ROOT}" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort) == $'coordinator-token-scan.tsv\ntransaction.authorization' ]] || \
-        fail 'coordinator production gate state root contains unexpected entries'
+    while IFS= read -r production_state_entry; do
+        case ${production_state_entry} in
+            coordinator-token-scan.tsv|transaction.authorization) ;;
+            *) fail 'coordinator production gate state root contains unexpected entries' ;;
+        esac
+    done < <(find "${PRODUCTION_STATE_ROOT}" -mindepth 1 -maxdepth 1 -printf '%f\n')
     require_trusted_production_directory_chain \
         /var/lib/gentoo-optimization/generations || \
         fail 'production generation-state parent is not a trusted root-owned chain'
