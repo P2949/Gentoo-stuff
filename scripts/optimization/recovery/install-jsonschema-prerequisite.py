@@ -7622,7 +7622,16 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
         fail("internal Portage action has an unexpected command identity")
     emerge_arguments = command[1:]
     expected_atoms = exact_plan_atoms(prepared["plan"])
-    expected_arguments = [*emerge_options(), "--ask=y", *expected_atoms]
+    expected_reinstall_atoms = ",".join(
+        re.sub(r"-\d[^:]*\Z", "", row["cpv"].split("::", 1)[0])
+        for row in prepared["plan"]["rows"]
+    )
+    expected_arguments = [
+        *emerge_options(),
+        "--reinstall-atoms=" + expected_reinstall_atoms,
+        "--ask=y",
+        *expected_atoms,
+    ]
     if emerge_arguments != expected_arguments:
         fail("internal Portage argv differs byte-for-byte from the reviewed action")
     try:
