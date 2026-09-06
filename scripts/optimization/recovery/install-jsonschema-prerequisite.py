@@ -7666,6 +7666,7 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
         fail("internal Portage argv differs byte-for-byte from the reviewed action")
     try:
         import _emerge.actions as actions
+        from _emerge.AbstractEbuildProcess import AbstractEbuildProcess
         from _emerge.main import parse_opts
         import portage.dbapi.vartree as vartree_module
     except ImportError as error:
@@ -7711,7 +7712,19 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
         fail("Portage target configuration does not share the selected vardb object")
     original_loader = actions.load_emerge_config
     original_merge = vartree_module.dblink.merge
+    original_init_ipc_fifos = AbstractEbuildProcess._init_ipc_fifos
     payload_admissions: list[dict[str, Any]] = []
+
+    def ensure_builddir_ipc(self: Any) -> Any:
+        # Portage creates PORTAGE_BUILDDIR lazily for each ebuild.  Its IPC
+        # helper assumes the per-build .ipc parent already exists; create it
+        # at the exact call boundary, before mkfifo, rather than only creating
+        # the transaction-level PORTAGE_TMPDIR/portage/.ipc directory.
+        builddir = Path(str(self.settings["PORTAGE_BUILDDIR"]))
+        (builddir / ".ipc").mkdir(mode=0o700, parents=True, exist_ok=True)
+        return original_init_ipc_fifos(self)
+
+    AbstractEbuildProcess._init_ipc_fifos = ensure_builddir_ipc
 
     def reject_reload(*_args: object, **_kwargs: object) -> NoReturn:
         fail("Portage attempted to reload configuration after VDB lock acquisition")
