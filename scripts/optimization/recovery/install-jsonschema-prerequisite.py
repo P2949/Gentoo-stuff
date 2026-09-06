@@ -5523,10 +5523,7 @@ def emerge_options() -> list[str]:
         "--verbose",
         "--tree",
         "--oneshot",
-        # This prerequisite is an intentional source rebuild even when the
-        # installed ebuild has identical USE flags.  The authenticated
-        # reinstall atom must therefore force the target into the merge set.
-        "--reinstall=always",
+        "--reinstall=changed-use",
         "--with-bdeps=y",
         "--complete-graph=y",
         "--autounmask=n",
@@ -6283,6 +6280,7 @@ def await_exact_portage_prompt(
             plan = parse_pretend_output(
                 displayed.decode("utf-8", errors="strict"),
                 set(prepared_vdb(prepared)["cpvs"]),
+                allow_reinstall=True,
             )
             # Portage may render the exact argv atoms in dependency-graph
             # order at the interactive prompt.  The argv itself remains
