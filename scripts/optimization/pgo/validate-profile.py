@@ -1800,6 +1800,15 @@ def _command_verify_locked(
             "<manifest>.metadata.json sidecar"
         )
     metadata = load_json(arguments.metadata, "validation metadata")
+    # The sidecar is an authenticated immutable artifact, not merely a JSON
+    # value.  Require the exact canonical bytes emitted by ``produce`` so
+    # whitespace-only tampering cannot be accepted by Portage's dispatcher.
+    try:
+        metadata_payload = arguments.metadata.read_bytes()
+    except OSError as error:
+        fail(f"cannot read validation metadata bytes: {error}")
+    if metadata_payload != metadata_bytes(metadata):
+        fail("validation metadata is not the exact canonical JSON encoding")
     namespace = arguments_from_metadata(metadata, manifest_path)
     if generation_from_fields(
         namespace.generation_id,
