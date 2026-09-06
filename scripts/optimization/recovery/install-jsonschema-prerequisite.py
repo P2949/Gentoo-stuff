@@ -5523,7 +5523,11 @@ def emerge_options() -> list[str]:
         "--verbose",
         "--tree",
         "--oneshot",
-        "--reinstall=changed-use",
+        # The prerequisite transaction is an intentional source rebuild even
+        # when the installed ebuild has identical USE flags.  `changed-use`
+        # permits Portage to report an empty graph; the authenticated
+        # reinstall atom must force the package into the merge set.
+        "--reinstall=always",
         "--with-bdeps=y",
         "--complete-graph=y",
         "--autounmask=n",
