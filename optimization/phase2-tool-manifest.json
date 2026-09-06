@@ -26,7 +26,7 @@
     {"name": "emerge", "path": "/usr/bin/emerge", "version_args": ["--version"]},
     {"name": "emerge-python3.15", "path": "/usr/lib/python-exec/python3.15/emerge", "version_args": ["--version"]},
     {"name": "env", "path": "/usr/bin/env", "version_args": ["--version"]},
-    {"name": "false", "path": "/bin/false", "version_args": ["--version"], "version_returncodes": [1]},
+    {"name": "false", "path": "/usr/bin/false", "version_args": ["--version"], "version_returncodes": [1]},
     {"name": "file", "path": "/usr/bin/file", "version_args": ["--version"]},
     {"name": "find", "path": "/usr/bin/find", "version_args": ["--version"]},
     {"name": "findmnt", "path": "/usr/bin/findmnt", "version_args": ["--version"]},
