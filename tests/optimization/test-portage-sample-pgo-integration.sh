@@ -2604,6 +2604,9 @@ fi
 # succeeds outside sandbox would be a hard failure; a normal diagnostic build
 # never executes this expected-failure phase.
 if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
+    [[ ${SANDBOX_DENY_DIRECTORY} == /run/gentoo-optimization/sample-pgo-sandbox-policy-deny ]] || \
+        fail 'sandbox-denial fixture path drifted'
+    rm -rf -- "${SANDBOX_DENY_DIRECTORY}"
     mkdir -- "${SANDBOX_DENY_DIRECTORY}"
     chown "0:${PORTAGE_GID}" -- "${SANDBOX_DENY_DIRECTORY}"
     chmod 0770 -- "${SANDBOX_DENY_DIRECTORY}"
