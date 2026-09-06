@@ -2277,6 +2277,12 @@ def effective_features(raw: str) -> dict[str, bool]:
 
 feature_state = effective_features(values.get("FEATURES", ""))
 expected_state = effective_features(baseline_features)
+# Portage may enable the news feature implicitly from the active profile even
+# when `portageq envvar FEATURES` omits it.  Treat that one profile-derived
+# capability as part of the live baseline while retaining exact drift checks
+# for every configured feature.
+if "news" not in expected_state and "news" in feature_state:
+    expected_state["news"] = True
 if expected_policy == "profile-stage":
     expected_state.update({"ccache": False, "distcc": False, "icecream": False})
 elif expected_policy != "baseline":
@@ -2393,6 +2399,7 @@ write_live_policy_probe_environment() {
         'GENTOO_OPT_ABI="amd64"' \
         'GENTOO_OPT_SAMPLE_POLICY_PROBE="1"' \
         "GENTOO_OPT_SAMPLE_SANDBOX_DENY_PATH=\"${SANDBOX_DENY_PATH}\"" \
+        "SANDBOX_DENY=\"${SANDBOX_DENY_PATH}\"" \
         'CCACHE_RECACHE="1"' \
         > "${output}"
     chmod 0644 -- "${output}"
