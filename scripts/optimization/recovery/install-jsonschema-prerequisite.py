@@ -5523,7 +5523,7 @@ def emerge_options() -> list[str]:
         "--verbose",
         "--tree",
         "--oneshot",
-        "--reinstall",
+        "--reinstall=y",
         "--with-bdeps=y",
         "--complete-graph=y",
         "--autounmask=n",
