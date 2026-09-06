@@ -5526,6 +5526,9 @@ def emerge_options() -> list[str]:
         "--reinstall=changed-use",
         "--with-bdeps=y",
         "--complete-graph=y",
+        # A masked, unrelated installed live ebuild must not poison the
+        # isolated prerequisite dependency graph.
+        "--exclude=games-util/mangohud",
         "--autounmask=n",
         "--autounmask-write=n",
         "--buildpkg=y",
