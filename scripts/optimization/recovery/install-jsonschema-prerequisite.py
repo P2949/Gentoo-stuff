@@ -5386,6 +5386,11 @@ def plan_environment(private_roots: Mapping[str, str], *, offline: bool) -> dict
                 ),
             }
         )
+    else:
+        # Use the authenticated host distfile cache as a read-only source for
+        # fetch-only preparation; the transaction staging tree remains the
+        # only writable destination.
+        environment["PORTAGE_RO_DISTDIRS"] = "/var/cache/distfiles"
     return environment
 
 
