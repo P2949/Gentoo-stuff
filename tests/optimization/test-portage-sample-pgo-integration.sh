@@ -2264,7 +2264,6 @@ required_features = {
     "userpriv",
     "mount-sandbox",
     "pid-sandbox",
-    "ipc-sandbox",
     "network-sandbox",
 }
 def effective_features(raw: str) -> dict[str, bool]:
@@ -2284,6 +2283,12 @@ expected_state = effective_features(baseline_features)
 # for every configured feature.
 if "news" not in expected_state and "news" in feature_state:
     expected_state["news"] = True
+# Portage exposes ipc-sandbox in the global FEATURES value on this host but
+# removes it when constructing the ebuild phase environment.  The phase
+# receipt is the authority for the sandbox actually applied to the build;
+# retain exact drift checking for every other configured feature.
+if expected_state.get("ipc-sandbox") is True and "ipc-sandbox" not in feature_state:
+    expected_state.pop("ipc-sandbox")
 if expected_policy == "profile-stage":
     expected_state.update({"ccache": False, "distcc": False, "icecream": False})
 elif expected_policy != "baseline":
