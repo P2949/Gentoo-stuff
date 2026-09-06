@@ -30,7 +30,7 @@ def load(path: Path) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("command", choices=("inspect", "prepare-receipt", "review-receipt", "verify-receipt"))
+    ap.add_argument("command", choices=("inspect", "prepare-receipt", "review-receipt", "verify-receipt", "verify-evidence"))
     ap.add_argument("--operator")
     ap.add_argument("--transaction-id", default=DEFAULT_TX)
     ap.add_argument("--checkpoint-id", default=DEFAULT_CHECKPOINT)
@@ -64,6 +64,7 @@ def main() -> int:
     if tj.get("status") != "offline-restore-proven":
         raise RuntimeError("pre-dependency checkpoint is not restore-proven")
     receipt = REPORT / "remediation-receipt.json"
+    verification = REPORT / "remediation-verification-v2.json"
     if args.command == "inspect":
         print(json.dumps({"transaction_id": TX, "checkpoint_id": CHECKPOINT,
                           "payload_admission_count": len(admissions), "counter_partial_count": len(partials),
@@ -105,6 +106,48 @@ def main() -> int:
         r["operator_attestation"] = {"operator": r.get("operator_attestation", {}).get("operator"), "reviewer": reviewer, "reviewed": True}
         tmp=receipt.with_suffix(".json.reviewing"); tmp.write_text(json.dumps(r,sort_keys=True,indent=2)+"\n"); os.chmod(tmp,0o640); os.chown(tmp,0,0); os.replace(tmp,receipt)
         print(digest(receipt)); return 0
+    if args.command == "verify-evidence":
+        if not receipt.is_file():
+            raise RuntimeError("receipt is required")
+        r = load(receipt)
+        if r.get("schema") != "gentoo-optimization-jsonschema-recovery-remediation-v1":
+            raise RuntimeError("unexpected remediation receipt schema")
+        if r.get("transaction_id") != TX or r.get("status") != "remediated":
+            raise RuntimeError("receipt transaction/status binding is invalid")
+        if r.get("payload_admission_count") != 0 or r.get("counter_partial_count") != 0:
+            raise RuntimeError("receipt is not a zero-effect remediation")
+        if not r.get("vdb_exact_match") or r.get("old_transaction_reusable") is not False:
+            raise RuntimeError("receipt does not bind zero-effect authority")
+        if not r.get("checkpoint_restore_proven"):
+            raise RuntimeError("checkpoint restore proof is absent")
+        body = {
+            "schema": "gentoo-optimization-jsonschema-recovery-remediation-verification-v2",
+            "schema_version": 2,
+            "transaction_id": TX,
+            "status": "independently-verified",
+            "receipt_sha256": digest(receipt),
+            "prepared_state_sha256": digest(prepared),
+            "recovery_failed_state_sha256": digest(failed),
+            "recovery_failed_evidence_sha256": digest(evidence),
+            "reconciliation_observation_sha256": digest(observation),
+            "checkpoint_terminal_state_sha256": digest(terminal),
+            "payload_admission_count": len(admissions),
+            "counter_partial_count": len(partials),
+            "vdb_exact_match": bool(oj.get("vdb_comparison", {}).get("exact_match")),
+            "private_root_reconciliation": oj.get("private_root_reconciliation"),
+            "old_transaction_reusable": False,
+            "additional_package_restore_required": False,
+            "boot_kernel_efi_initramfs_modified": False,
+            "verifier_source_sha256": digest(Path(__file__).resolve()),
+        }
+        if body["vdb_exact_match"] is not True or body["private_root_reconciliation"].get("status") != "complete":
+            raise RuntimeError("independent reconciliation failed")
+        if verification.exists():
+            raise RuntimeError("refusing to overwrite remediation verification")
+        tmp = verification.with_suffix(".json.partial")
+        tmp.write_text(json.dumps(body, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        os.chmod(tmp, 0o640); os.chown(tmp, 0, 0); os.replace(tmp, verification)
+        print(verification); print(digest(verification)); return 0
     r=load(receipt)
     if r.get("schema") != "gentoo-optimization-jsonschema-recovery-remediation-v1" or r.get("status") != "remediated" or not r.get("operator_attestation",{}).get("reviewed"):
         raise RuntimeError("receipt is not independently reviewed")
