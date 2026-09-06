@@ -1109,7 +1109,10 @@ excluded = {"publication-tree.jsonl", "publication-root.sha256"}
 raw: list[tuple[pathlib.Path, os.stat_result]] = []
 for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
     relative = path.relative_to(root)
-    if relative.as_posix() in excluded:
+    # Portage's live IPC helper creates transient sockets under .ipc while
+    # the fixture runs.  They are runtime plumbing, not evidence objects;
+    # never admit them to the immutable publication tree.
+    if relative.as_posix() in excluded or ".ipc" in relative.parts:
         continue
     raw.append((relative, path.lstat()))
 
