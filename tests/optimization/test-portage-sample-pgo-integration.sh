@@ -1463,7 +1463,7 @@ cleanup() {
     local status=$? finalized=0
     trap '' HUP INT TERM
     if ((PRODUCTION_LOCKS)); then
-        /usr/bin/rm -f -- /run/gentoo-optimization/phase2-production-token || :
+        /usr/bin/rm -f -- "${TRANSACTION_TOKEN_FILE}" || :
     fi
     if ((PRODUCTION_LOCKS && PRODUCTION_ROOTS_CREATED)); then
         if ((status == 0 && PRODUCTION_GATE_COMPLETE && \
@@ -1600,7 +1600,7 @@ if ((PRODUCTION_LOCKS)); then
     MAP_FINGERPRINT_FILE=${PRODUCTION_STATE_ROOT}/mapping.fingerprint
     USE_FINGERPRINT_FILE=${PRODUCTION_STATE_ROOT}/consumer.fingerprint
     TRANSACTION_AUTHORIZATION=${PRODUCTION_STATE_ROOT}/transaction.authorization
-    TRANSACTION_TOKEN_FILE=/run/gentoo-optimization/phase2-production-token
+    TRANSACTION_TOKEN_FILE=${PRODUCTION_STATE_ROOT}/transaction.token
     TRANSACTION_JOURNAL=/var/lib/gentoo-optimization/state/profile-transactions/phase-2-production-profile-locks.pending
     TRANSACTION_CHILD_IDENTITY=${TRANSACTION_JOURNAL}.child.json
     VALIDATOR_COMMAND=${VALIDATOR}
@@ -1654,7 +1654,7 @@ if ((PRODUCTION_LOCKS)); then
         fail 'coordinator did not publish one exact production gate state root'
     while IFS= read -r production_state_entry; do
         case ${production_state_entry} in
-            coordinator-token-scan.tsv|transaction.authorization) ;;
+            coordinator-token-scan.tsv|transaction.authorization|transaction.token) ;;
             *) fail 'coordinator production gate state root contains unexpected entries' ;;
         esac
     done < <(find "${PRODUCTION_STATE_ROOT}" -mindepth 1 -maxdepth 1 -printf '%f\n')
