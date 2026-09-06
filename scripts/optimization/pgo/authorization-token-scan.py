@@ -157,6 +157,11 @@ def scan_roots(roots: Sequence[pathlib.Path], token: bytes) -> list[str]:
                         or stable_regular_contains(path, token)
                     ):
                         leaks.add(path_identity(path))
+                elif stat.S_ISFIFO(metadata.st_mode) and path.parent.name == ".ipc" and name in {"in", "out"}:
+                    # Portage's userpriv build IPC endpoints are named FIFOs;
+                    # they cannot contain the bearer bytes and are part of the
+                    # coordinator's disposable runtime roots.
+                    continue
                 else:
                     raise ScanError(
                         "token scan found an unsupported object: "
