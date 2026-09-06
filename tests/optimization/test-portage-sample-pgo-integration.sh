@@ -1019,14 +1019,19 @@ export GENTOO_OPT_FRAMEWORK_TARGET=${FRAMEWORK_TARGET}
 
 if [[ -n ${OUTPUT_DIR} ]]; then
     OUTPUT_PARENT=${CANONICAL_OUTPUT_DIR%/*}
-    [[ -d /var/tmp && ! -L /var/tmp && $(realpath -e -- /var/tmp) == /var/tmp && \
-        $(stat -c %u -- /var/tmp) == 0 ]] || \
-        fail '/var/tmp is not the canonical root-owned output boundary'
-    VAR_TMP_MODE=$(stat -c %a -- /var/tmp)
-    (( (8#${VAR_TMP_MODE} & 8#1000) != 0 )) || \
-        fail '/var/tmp output boundary lacks the sticky bit'
-    CURRENT_OUTPUT_ANCESTOR=${TRUSTED_OUTPUT_BASE}
-    OUTPUT_RELATIVE_PARENT=${OUTPUT_PARENT#"${TRUSTED_OUTPUT_BASE}"}
+    if ((PRODUCTION_LOCKS)); then
+        CURRENT_OUTPUT_ANCESTOR=${PRODUCTION_OUTPUT_BASE}
+        OUTPUT_RELATIVE_PARENT=${OUTPUT_PARENT#"${PRODUCTION_OUTPUT_BASE}"}
+    else
+        [[ -d /var/tmp && ! -L /var/tmp && $(realpath -e -- /var/tmp) == /var/tmp && \
+            $(stat -c %u -- /var/tmp) == 0 ]] || \
+            fail '/var/tmp is not the canonical root-owned output boundary'
+        VAR_TMP_MODE=$(stat -c %a -- /var/tmp)
+        (( (8#${VAR_TMP_MODE} & 8#1000) != 0 )) || \
+            fail '/var/tmp output boundary lacks the sticky bit'
+        CURRENT_OUTPUT_ANCESTOR=${TRUSTED_OUTPUT_BASE}
+        OUTPUT_RELATIVE_PARENT=${OUTPUT_PARENT#"${TRUSTED_OUTPUT_BASE}"}
+    fi
     OUTPUT_RELATIVE_PARENT=${OUTPUT_RELATIVE_PARENT#/}
     IFS=/ read -r -a OUTPUT_ANCESTOR_COMPONENTS <<< "${OUTPUT_RELATIVE_PARENT}"
     for OUTPUT_ANCESTOR_COMPONENT in '' "${OUTPUT_ANCESTOR_COMPONENTS[@]}"; do
