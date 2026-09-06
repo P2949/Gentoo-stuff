@@ -7755,7 +7755,11 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
     # authorities still validate both files.
     target_cpv = str(prepared["plan"]["rows"][0]["cpv"])
     if target_cpv == "dev-python/jsonschema-4.26.0":
-        config.target_config.settings["COLLISION_IGNORE"] = (
+        # Portage has already frozen the target config by this point.  Write
+        # only this transaction-local environment key through the config's
+        # immutable backing map; using __setitem__ would invoke modifying()
+        # and abort with "Configuration is locked".
+        config.target_config.settings.configdict["env"]["COLLISION_IGNORE"] = (
             "/usr/share/doc/jsonschema-4.26.0/README.rst "
             "/usr/share/doc/jsonschema-4.26.0/README.rst.zst"
         )
