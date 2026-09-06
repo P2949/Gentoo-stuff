@@ -1051,9 +1051,17 @@ if [[ -n ${OUTPUT_DIR} ]]; then
 fi
 if ((PRODUCTION_LOCKS)); then
     EXPECTED_PRODUCTION_WORK_ROOT=${TRUSTED_OUTPUT_BASE}/phase2-sample-work-${PRODUCTION_GATE_RUN_ID}
-    [[ ${PRODUCTION_GATE_WORK_ROOT} == "${EXPECTED_PRODUCTION_WORK_ROOT}" && \
-        ! -e ${PRODUCTION_GATE_WORK_ROOT} && ! -L ${PRODUCTION_GATE_WORK_ROOT} ]] || \
-        fail 'production work root differs from its exact absent coordinator contract'
+    [[ ${PRODUCTION_GATE_WORK_ROOT} == "${EXPECTED_PRODUCTION_WORK_ROOT}" ]] || \
+        fail 'production work root differs from its exact coordinator contract'
+    if [[ -e ${PRODUCTION_GATE_WORK_ROOT} || -L ${PRODUCTION_GATE_WORK_ROOT} ]]; then
+        [[ -d ${PRODUCTION_GATE_WORK_ROOT} && ! -L ${PRODUCTION_GATE_WORK_ROOT} ]] || \
+            fail 'production work root is not a directory'
+        IFS=' ' read -r work_mode work_uid work_gid < <(
+            stat -c '%a %u %g' -- "${PRODUCTION_GATE_WORK_ROOT}"
+        )
+        [[ ${work_mode} == 755 && ${work_uid} == 0 && ${work_gid} == 0 ]] || \
+            fail 'production work root must be root-owned 0755'
+    fi
     install -d -o 0 -g 0 -m 0700 -- "${PRODUCTION_GATE_WORK_ROOT}"
     sync -f -- "${PRODUCTION_GATE_WORK_ROOT}" "${PRODUCTION_GATE_WORK_ROOT%/*}"
     WORK=${PRODUCTION_GATE_WORK_ROOT}
