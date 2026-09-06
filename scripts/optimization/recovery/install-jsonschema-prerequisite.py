@@ -8517,6 +8517,7 @@ def prefetch_distfiles(
         os.fspath(tools["emerge"]),
         *emerge_options(),
         "--fetchonly",
+        "--fetch-all-uri",
         "--ask=n",
         *exact_plan_atoms(plan),
     ]
