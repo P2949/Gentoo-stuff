@@ -411,6 +411,12 @@ cp -a -- "${SOURCE_ROOT}/scripts/optimization/verify" \
     "${REPOSITORY}/scripts/optimization/verify"
 cp -a -- "${SOURCE_ROOT}/scripts/optimization/recovery" \
     "${REPOSITORY}/scripts/optimization/recovery"
+# A root authoritative fixture must model the production root-owned source
+# boundary; cp -a otherwise preserves the developer checkout owner and the
+# installer correctly rejects that untrusted input.
+if ((EUID == 0)); then
+    chown -R 0:0 -- "${REPOSITORY}"
+fi
 mkdir -p -- "${REPOSITORY}/optimization"
 cp -a -- "${SOURCE_ROOT}/optimization/schema" "${REPOSITORY}/optimization/schema"
 cp -a -- "${SOURCE_ROOT}/optimization/tmpfiles" \

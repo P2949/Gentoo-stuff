@@ -576,7 +576,7 @@ rm -f -- "${TOOL_SHADOW_BIN}"/*
 set +e
 PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
 SHELLCHECK=${HERMETIC_BIN}/shellcheck \
-    "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
+    /usr/bin/bash -- "${HERMETIC_DRIVER}" \
     --internal-process-group-probe 2147483647 \
     >"${FIXTURE}/authoritative-reviewed-entrypoints.log" 2>&1
 reviewed_entrypoint_status=$?
@@ -603,7 +603,7 @@ grep -Fq 'authoritative driver Bash argv-zero differs from the reviewed entry po
 set +e
 PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
 SHELLCHECK=/usr/bin/true \
-    "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
+    /usr/bin/bash -- "${HERMETIC_DRIVER}" \
     --internal-process-group-probe 2147483647 \
     >"${FIXTURE}/authoritative-fake-shellcheck.log" 2>&1
 fake_shellcheck_status=$?
