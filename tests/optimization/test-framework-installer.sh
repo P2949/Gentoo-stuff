@@ -411,12 +411,6 @@ cp -a -- "${SOURCE_ROOT}/scripts/optimization/verify" \
     "${REPOSITORY}/scripts/optimization/verify"
 cp -a -- "${SOURCE_ROOT}/scripts/optimization/recovery" \
     "${REPOSITORY}/scripts/optimization/recovery"
-# A root authoritative fixture must model the production root-owned source
-# boundary; cp -a otherwise preserves the developer checkout owner and the
-# installer correctly rejects that untrusted input.
-if ((EUID == 0)); then
-    chown -R 0:0 -- "${REPOSITORY}"
-fi
 mkdir -p -- "${REPOSITORY}/optimization"
 cp -a -- "${SOURCE_ROOT}/optimization/schema" "${REPOSITORY}/optimization/schema"
 cp -a -- "${SOURCE_ROOT}/optimization/tmpfiles" \
@@ -429,6 +423,13 @@ install -m 0755 -T -- \
 install -m 0755 -T -- \
     "${SOURCE_ROOT}/scripts/optimization/pgo/authorization-token-scan.py" \
     "${REPOSITORY}/scripts/optimization/pgo/authorization-token-scan.py"
+
+# A root authoritative fixture must model the production root-owned source
+# boundary; cp -a otherwise preserves the developer checkout owner and the
+# installer correctly rejects that untrusted input.
+if ((EUID == 0)); then
+    chown -R 0:0 -- "${REPOSITORY}"
+fi
 
 # Git cannot represent empty directories.  The production installer rejects
 # them in behavior-affecting input trees, so normalize any harmless checkout
