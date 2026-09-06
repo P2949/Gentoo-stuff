@@ -95,7 +95,7 @@ SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 # display-only rows, while retaining rejection for other non-source actions.
 SCHEDULED_LINE = re.compile(r"^\[(?!nomerge\b)[A-Za-z]")
 NEW_SOURCE_LINE = re.compile(
-    r"^\[ebuild\s+N(?:\s+[^]]*)?\]\s+"
+    r"^\[ebuild\s+[NR](?:\s+[^]]*)?\]\s+"
     rf"(?:=)?(?P<cpv>{CPV_PATTERN_TEXT})"
     r"::(?P<repository>[A-Za-z0-9+_.-]+)(?:\s|$)"
 )
@@ -1444,7 +1444,9 @@ def revalidate_tool_manifest(value: object) -> None:
         fail("a transaction tool identity changed")
 
 
-def parse_pretend_output(text: str, installed_cpvs: set[str]) -> dict[str, Any]:
+def parse_pretend_output(
+    text: str, installed_cpvs: set[str], *, allow_reinstall: bool = False
+) -> dict[str, Any]:
     rows: list[dict[str, str]] = []
     for raw in text.splitlines():
         line = raw.lstrip()
@@ -1457,7 +1459,7 @@ def parse_pretend_output(text: str, installed_cpvs: set[str]) -> dict[str, Any]:
         repository = match.group("repository")
         if not CPV_PATTERN.fullmatch(cpv) or not REPOSITORY_PATTERN.fullmatch(repository):
             fail(f"pretend selected an unsafe package identity: {raw}")
-        if cpv in installed_cpvs:
+        if cpv in installed_cpvs and not allow_reinstall:
             fail(f"pretend selected an already installed CPV: {cpv}")
         rows.append(
             {
@@ -5521,6 +5523,7 @@ def emerge_options() -> list[str]:
         "--verbose",
         "--tree",
         "--oneshot",
+        "--reinstall",
         "--with-bdeps=y",
         "--complete-graph=y",
         "--autounmask=n",
@@ -8439,6 +8442,7 @@ def run_pretend_stage(
     runner: Runner,
     tools: Mapping[str, Path],
     installed: set[str],
+    allow_reinstall: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     command = [os.fspath(tools["emerge"]), *emerge_options(), "--pretend", *target_atoms]
     result, evidence = run_contained_stage(
@@ -8454,7 +8458,11 @@ def run_pretend_stage(
         network_isolated=True,
     )
     require_success(result, stage)
-    return parse_pretend_output(result.stdout.decode("utf-8", errors="strict"), installed), evidence
+    return parse_pretend_output(
+        result.stdout.decode("utf-8", errors="strict"),
+        installed,
+        allow_reinstall=allow_reinstall,
+    ), evidence
 
 
 def prefetch_distfiles(
