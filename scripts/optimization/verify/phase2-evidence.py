@@ -3878,8 +3878,8 @@ def validate_checkpoint_lane(
         or environment.get("PKGDIR") != os.fspath(durable_path)
         or environment.get("PORTAGE_BINHOST") != ""
         or environment.get("GENTOO_MIRRORS") != ""
-        or environment.get("FETCHCOMMAND") != "/usr/bin/false"
-        or environment.get("RESUMECOMMAND") != "/usr/bin/false"
+        or environment.get("FETCHCOMMAND") != "/bin/false"
+        or environment.get("RESUMECOMMAND") != "/bin/false"
         or environment.get("EPYTHON") != "python3.15"
         or (production and environment.get("HOME") != "/root")
         or (production and environment.get("PATH") != "/usr/sbin:/usr/bin:/sbin:/bin")
