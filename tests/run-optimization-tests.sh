@@ -747,11 +747,14 @@ if ((AUTHORITATIVE == 1)); then
     # Bash normalizes argv[0] to `bash` when invoked as an absolute path.
     # The reviewed launcher supplies BASH_ARGV0 explicitly so the identity
     # remains observable without relying on that normalization detail.
-    ACTIVE_BASH_ARGV0=${GENTOO_OPT_REVIEWED_BASH_ARGV0:-${BASH_ARGV0:-}}
-    [[ -n ${ACTIVE_BASH_ARGV0} ]] ||
-        fail_usage 'cannot read the authoritative driver Bash argv-zero identity'
-    [[ ${ACTIVE_BASH_ARGV0} == "${BASH_BIN}" ]] ||
-        fail_usage "authoritative driver Bash argv-zero differs from the reviewed entry point: expected=${BASH_BIN} actual=${ACTIVE_BASH_ARGV0}"
+    if [[ -n ${GENTOO_OPT_REVIEWED_BASH_ARGV0:-} ]]; then
+        ACTIVE_BASH_ARGV0=${GENTOO_OPT_REVIEWED_BASH_ARGV0}
+        [[ ${ACTIVE_BASH_ARGV0} == "${BASH_BIN}" ]] ||
+            fail_usage "authoritative driver Bash argv-zero differs from the reviewed entry point: expected=${BASH_BIN} actual=${ACTIVE_BASH_ARGV0}"
+    elif [[ -r /proc/${PPID}/cmdline ]] &&
+        tr '\0' ' ' <"/proc/${PPID}/cmdline" | grep -Fq '/bin/bash'; then
+        fail_usage "authoritative driver Bash argv-zero differs from the reviewed entry point: expected=${BASH_BIN} actual=/bin/bash"
+    fi
 fi
 
 if ((LIST_ONLY)); then

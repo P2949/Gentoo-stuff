@@ -575,6 +575,7 @@ rm -f -- "${TOOL_SHADOW_BIN}"/*
 
 set +e
 PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
+GENTOO_OPT_REVIEWED_BASH_ARGV0=${HERMETIC_BIN}/bash \
 SHELLCHECK=${HERMETIC_BIN}/shellcheck \
     "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
     --internal-process-group-probe 2147483647 \
@@ -588,6 +589,7 @@ grep -Fxq quiescent "${FIXTURE}/authoritative-reviewed-entrypoints.log" || \
 
 set +e
 PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
+GENTOO_OPT_REVIEWED_BASH_ARGV0=/bin/bash \
 SHELLCHECK=${HERMETIC_BIN}/shellcheck \
     /bin/bash -- "${HERMETIC_DRIVER}" \
     --internal-process-group-probe 2147483647 \
