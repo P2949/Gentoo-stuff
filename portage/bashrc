@@ -1298,8 +1298,16 @@ gentoo_opt_depend_phase_preflight() {
     local mode=${GENTOO_OPT_MODE:-off} bolt_stage=${GENTOO_OPT_BOLT_STAGE:-off}
     local effective_bolt_stage=${bolt_stage}
     if [[ ${PGO_INSTRUMENT:-0} == 1 || ${PGO_USE_IF_AVAILABLE:-0} == 1 ]]; then
+        if [[ ${EBUILD_PHASE-} == prerm || ${EBUILD_PHASE-} == postrm ]]; then
+            # Portage may source a historical package environment during
+            # removal.  Legacy markers must never affect non-build lifecycle
+            # phases; discard them while retaining strict rejection in all
+            # dependency/build evaluation paths.
+            unset PGO_INSTRUMENT PGO_USE_IF_AVAILABLE
+        else
         gentoo_opt_error 'legacy PGO marker requested during dependency evaluation'
         return 1
+        fi
     fi
     case ${mode} in
         off|''|clang-ir-generate|clang-ir-use|clang-sample-use|gcc-generate|gcc-use|\
