@@ -32,7 +32,7 @@ src_unpack() {
         '    for (int index = 0; index < value; ++index) result += index % 7;' \
         '    return result;' \
         '}' \
-        'int main(void) { printf("%d\\n", trained(5000)); return 0; }' \
+        'int main(void) { printf("%d\n", trained(5000)); return 0; }' \
         > "${S}/fixture.c" || die
 }
 
