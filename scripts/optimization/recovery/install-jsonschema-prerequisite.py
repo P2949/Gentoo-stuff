@@ -8544,13 +8544,12 @@ def run_pretend_stage(
     command = [
         os.fspath(tools["emerge"]),
         *emerge_options(),
-        # Portage's option parser takes one comma-separated value for
+        # Portage takes a whitespace-separated package-atom list for
         # --reinstall-atoms. Repository-qualified exact atoms remain on the
         # positional vector for authority binding.
         "--reinstall-atoms="
-        + ",".join(
-            re.sub(r"-\d[^:]*\Z", "", atom.split("::", 1)[0].lstrip("="))
-            for atom in target_atoms
+        + reinstall_atoms_for_cpvs(
+            atom.split("::", 1)[0].lstrip("=") for atom in target_atoms
         ),
         "--pretend",
         *target_atoms,
@@ -8999,10 +8998,7 @@ def source_emerge_command(
         os.fspath(tools["emerge"]),
         *emerge_options(),
         "--reinstall-atoms="
-        + ",".join(
-            re.sub(r"-\d[^:]*\Z", "", row["cpv"].split("::", 1)[0])
-            for row in plan["rows"]
-        ),
+        + reinstall_atoms_for_cpvs(row["cpv"] for row in plan["rows"]),
         "--ask=y",
         *exact_plan_atoms(plan),
     ]
