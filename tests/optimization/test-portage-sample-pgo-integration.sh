@@ -2289,6 +2289,11 @@ if "news" not in expected_state and "news" in feature_state:
 # retain exact drift checking for every other configured feature.
 if expected_state.get("ipc-sandbox") is True and "ipc-sandbox" not in feature_state:
     expected_state.pop("ipc-sandbox")
+# `merge-wait` is likewise a global Portage setting that is not exported to
+# the ebuild phase environment.  It remains covered by the global policy
+# capture; phase receipts compare only the effective phase feature set.
+if expected_state.get("merge-wait") is True and "merge-wait" not in feature_state:
+    expected_state.pop("merge-wait")
 if expected_policy == "profile-stage":
     expected_state.update({"ccache": False, "distcc": False, "icecream": False})
 elif expected_policy != "baseline":
