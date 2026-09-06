@@ -5350,6 +5350,7 @@ def plan_environment(private_roots: Mapping[str, str], *, offline: bool) -> dict
             "FEATURES": (
                 "-assume-digests -binpkg-signing -ccache -distcc "
                 "-icecream -parallel-install -preserve-libs -unmerge-orphans noinfo "
+                "-nodoc -noman "
                 "collision-protect protect-owned sandbox userpriv usersandbox "
                 "network-sandbox pid-sandbox merge-sync"
             ),
@@ -5415,6 +5416,8 @@ def effective_portage_policy(settings: Mapping[str, Any]) -> dict[str, Any]:
         "parallel-install",
         "preserve-libs",
         "unmerge-orphans",
+        "nodoc",
+        "noman",
     }
     # Portage applies FEATURES incrementally.  The prerequisite execution
     # environment deliberately supplies negative tokens for these mutable
