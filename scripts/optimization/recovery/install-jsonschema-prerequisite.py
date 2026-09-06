@@ -6489,7 +6489,13 @@ def run_armed_source_child(
                 ),
                 "vardb_root": os.fspath(paths.vdb),
             }:
-                fail("held-lock child authority differs from the prepared transaction")
+                fail(
+                    "held-lock child authority differs from the prepared transaction: "
+                    f"actual={lock_held!r} expected={{'prepared_state_sha256': {prepared_sha!r}, "
+                    f"'emerge_arguments_sha256': {sha256_bytes(canonical_json(expected_emerge_arguments))!r}, "
+                    f"'vdb_sha256': {sha256_bytes(canonical_json(prepared_vdb(prepared)))!r}, "
+                    f"'vardb_root': {os.fspath(paths.vdb)!r}}}"
+                )
             displayed_plan, displayed = await_exact_portage_prompt(
                 process=process,
                 stdout_file=stdout_file,
