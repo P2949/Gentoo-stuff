@@ -2575,7 +2575,6 @@ if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
     set +e
     run_ebuild "${WORK}/sandbox-probe-build.log" compile
     sandbox_probe_status=$?
-    set -e
     trap - ERR
     if ((sandbox_probe_status == 0)); then
         fail 'live Portage sandbox allowed its DAC-permitted external write probe'
@@ -2619,6 +2618,7 @@ PY
     printf 'sandbox_write_denied\tpassed\n' >> "${WORK}/sandbox-enforcement.tsv"
     chmod 0750 -- "${SANDBOX_DENY_DIRECTORY}"
     run_ebuild "${WORK}/sandbox-probe-final-clean.log" clean
+    set -e
 fi
 
 # Resolve the exact dispatcher-expanded mapping axes once, then bind an
