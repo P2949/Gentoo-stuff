@@ -5523,11 +5523,7 @@ def emerge_options() -> list[str]:
         "--verbose",
         "--tree",
         "--oneshot",
-        # The prerequisite transaction is an intentional source rebuild even
-        # when the installed ebuild has identical USE flags.  `changed-use`
-        # permits Portage to report an empty graph; the authenticated
-        # reinstall atom must force the package into the merge set.
-        "--reinstall=always",
+        "--reinstall=changed-use",
         "--with-bdeps=y",
         "--complete-graph=y",
         "--autounmask=n",
@@ -8451,11 +8447,11 @@ def run_pretend_stage(
     command = [
         os.fspath(tools["emerge"]),
         *emerge_options(),
-        "--reinstall-atoms",
-        # Portage accepts package/slot atoms for --reinstall-atoms, but
-        # rejects repository-qualified exact atoms (the latter remain
-        # necessary on the positional pretend vector for authority binding).
-        *(
+        # Portage's option parser takes one comma-separated value for
+        # --reinstall-atoms. Repository-qualified exact atoms remain on the
+        # positional vector for authority binding.
+        "--reinstall-atoms="
+        + ",".join(
             re.sub(r"-\d[^:]*\Z", "", atom.split("::", 1)[0].lstrip("="))
             for atom in target_atoms
         ),
