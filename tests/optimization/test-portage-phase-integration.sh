@@ -413,7 +413,7 @@ for option in "${BOLT_OPTIONS[@]}"; do
 done
 "${REGISTER_TOOL}" "${REGISTER_ARGUMENTS[@]}" \
     >"${REGISTER_STDOUT}" 2>"${REGISTER_STDERR}" || \
-    fail 'production BOLT output registration rejected the exact real-tool provenance'
+    { cat -- "${REGISTER_STDERR}" >&2; fail 'production BOLT output registration rejected the exact real-tool provenance'; }
 chmod 0600 -- "${REGISTER_STDOUT}" "${REGISTER_STDERR}"
 
 OUTPUT_MANIFEST=${CACHE_ROOT}/outputs/${SUCCESS_FINGERPRINT}/manifest.json
