@@ -8523,7 +8523,14 @@ def prefetch_distfiles(
     # unmaterialized when no mirror is configured.
     host_distfiles = Path("/var/cache/distfiles")
     if host_distfiles.is_dir():
-        copy_tree(host_distfiles, Path(private_roots["distdir_staging"]), runner, tools)
+        result = runner.run(
+            [os.fspath(tools["cp"]), "-a", "--reflink=auto", "--one-file-system", "--",
+             os.fspath(host_distfiles) + "/.",
+             os.fspath(private_roots["distdir_staging"]) + "/"],
+            environment=clean_environment(), timeout=4 * 3600,
+        )
+        if result.status != 0:
+            fail("authenticated host distfile seeding failed")
     command = [
         os.fspath(tools["emerge"]),
         *emerge_options(),
