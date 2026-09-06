@@ -8451,7 +8451,10 @@ def run_pretend_stage(
         # Portage accepts package/slot atoms for --reinstall-atoms, but
         # rejects repository-qualified exact atoms (the latter remain
         # necessary on the positional pretend vector for authority binding).
-        *(atom.split("::", 1)[0] for atom in target_atoms),
+        *(
+            re.sub(r"-\d[^:]*\Z", "", atom.split("::", 1)[0].lstrip("="))
+            for atom in target_atoms
+        ),
         "--pretend",
         *target_atoms,
     ]
