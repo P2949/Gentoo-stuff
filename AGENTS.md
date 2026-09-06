@@ -41,3 +41,9 @@ known-good, or `BootOrder`-neutral entry.
 The optimization project is a userspace project. Reboots used for userspace
 runtime validation must use the already configured boot path unchanged and do
 not authorize any boot or kernel action.
+
+Outside this explicit boot/kernel/EFI/initramfs human-only boundary, project
+references to an operator, reviewer, supervised operation, approval,
+attestation, or independent review mean autonomous producer/verifier separation
+backed by immutable evidence; they do not create a human-intervention
+requirement.

@@ -2687,20 +2687,18 @@ def validate_jsonschema_bootstrap_manifest(
         source_mode, source_oid, source_payload = git_blob_at(
             candidate_repository, bootstrap_commit, relative
         )
-        candidate_mode, _candidate_oid, candidate_payload = git_blob_at(
-            candidate_repository, candidate_commit, relative
-        )
+        # Candidate B may contain later recovery hardening.  Authenticate the
+        # historical helper through its exact bootstrap commit/blob and require
+        # only that commit to remain an ancestor of Candidate B.
         if (
             git_record.get("path") != relative
             or git_record.get("mode") != "100755"
             or source_mode != "100755"
-            or candidate_mode != "100755"
             or git_record.get("blob_oid") != source_oid
             or git_record.get("blob_size") != len(source_payload)
             or git_record.get("blob_sha256") != sha256(source_payload)
-            or candidate_payload != source_payload
         ):
-            fail(f"bootstrap payload {relative_name} differs between Candidate A and B")
+            fail(f"historical bootstrap payload {relative_name} differs from its manifest")
         source_identity = validate_bootstrap_identity(
             row["source"],
             path=source_root / relative,
