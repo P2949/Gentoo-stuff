@@ -5523,7 +5523,10 @@ def emerge_options() -> list[str]:
         "--verbose",
         "--tree",
         "--oneshot",
-        "--reinstall=changed-use",
+        # This prerequisite is an intentional source rebuild even when the
+        # installed ebuild has identical USE flags.  The authenticated
+        # reinstall atom must therefore force the target into the merge set.
+        "--reinstall=always",
         "--with-bdeps=y",
         "--complete-graph=y",
         "--autounmask=n",
