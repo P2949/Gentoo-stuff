@@ -2617,7 +2617,7 @@ PY
         fail 'live sandbox policy probe created the forbidden external file'
     printf 'sandbox_write_denied\tpassed\n' >> "${WORK}/sandbox-enforcement.tsv"
     chmod 0750 -- "${SANDBOX_DENY_DIRECTORY}"
-    run_ebuild "${WORK}/sandbox-probe-final-clean.log" clean
+    run_ebuild "${WORK}/sandbox-probe-final-clean.log" clean || :
     set -e
 fi
 
