@@ -5534,10 +5534,9 @@ def emerge_options() -> list[str]:
         # A masked, unrelated installed live ebuild must not poison the
         # isolated prerequisite dependency graph.
         "--exclude=games-util/mangohud",
-        # The frozen installed world may still enumerate that excluded atom;
-        # permit Portage to ignore its mask while the exact prerequisite plan
-        # and payload/VDB authorities continue to restrict the transaction.
-        "--ignore-masked=y",
+        # Keep dependency selection limited to the exact prerequisite target;
+        # the frozen installed world may contain unrelated masked atoms.
+        "--selective=y",
         "--autounmask=n",
         "--autounmask-write=n",
         "--buildpkg=y",
