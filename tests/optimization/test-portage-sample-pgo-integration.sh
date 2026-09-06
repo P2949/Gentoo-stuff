@@ -1404,9 +1404,15 @@ quarantine_published_evidence() {
 publish_evidence() {
     local status=$1 partial=${CANONICAL_OUTPUT_DIR}.partial.$$
     [[ ${EXPLICIT_OUTPUT_DIR} == 1 ]] || return 0
-    if [[ -e ${CANONICAL_OUTPUT_DIR} || -L ${CANONICAL_OUTPUT_DIR} || \
-        -e ${partial} || -L ${partial} ]]; then
-        printf 'FAIL: sample-PGO evidence publication destination is no longer empty\n' >&2
+    if [[ -e ${CANONICAL_OUTPUT_DIR} || -L ${CANONICAL_OUTPUT_DIR} ]]; then
+        if ! ((PRODUCTION_LOCKS)) || [[ ! -d ${CANONICAL_OUTPUT_DIR} || -L ${CANONICAL_OUTPUT_DIR} ]] || \
+            [[ -n $(find "${CANONICAL_OUTPUT_DIR}" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
+            printf 'FAIL: sample-PGO evidence publication destination is no longer empty\n' >&2
+            return 1
+        fi
+    fi
+    if [[ -e ${partial} || -L ${partial} ]]; then
+        printf 'FAIL: sample-PGO evidence partial destination already exists\n' >&2
         return 1
     fi
     if ! cp -a -- "${WORK}" "${partial}" || ! chmod 0700 -- "${partial}"; then
@@ -1642,8 +1648,7 @@ if ((PRODUCTION_LOCKS)); then
         ! -L ${TRANSACTION_AUTHORIZATION}.partial && \
         ! -e ${PROFILE_ROOT} && ! -L ${PROFILE_ROOT} ]] || \
         fail 'coordinator did not publish one exact production gate state root'
-    [[ $(find "${PRODUCTION_STATE_ROOT}" -mindepth 1 -maxdepth 1 -printf '%f\n') == \
-        transaction.authorization ]] || \
+    [[ $(find "${PRODUCTION_STATE_ROOT}" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort) == $'coordinator-token-scan.tsv\ntransaction.authorization' ]] || \
         fail 'coordinator production gate state root contains unexpected entries'
     require_trusted_production_directory_chain \
         /var/lib/gentoo-optimization/generations || \
