@@ -475,6 +475,11 @@ def validate_directory_chain(path: Path, paths: Paths, label: str) -> None:
             fail(f"cannot inspect {label} component {current}: {error}")
         if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
             fail(f"{label} contains a non-directory or symlink component: {current}")
+        if current == Path("/var/tmp"):
+            mode = stat.S_IMODE(metadata.st_mode)
+            if metadata.st_uid != 0 or mode != 0o1777:
+                fail(f"{label} has an untrusted /var/tmp boundary: {current}")
+            continue
         if metadata.st_uid != expected_uid or stat.S_IMODE(metadata.st_mode) & 0o022:
             fail(f"{label} has an untrusted writable ancestor: {current}")
 
