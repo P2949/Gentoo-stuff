@@ -2611,7 +2611,11 @@ PY
         fail 'live sandbox policy probe created the forbidden external file'
     printf 'sandbox_write_denied\tpassed\n' >> "${WORK}/sandbox-enforcement.tsv"
     chmod 0750 -- "${SANDBOX_DENY_DIRECTORY}"
-    run_ebuild "${WORK}/sandbox-probe-final-clean.log" clean
+    # The probe intentionally leaves a sandbox-denial diagnostic in the
+    # ebuild environment; Portage may report that cleanup as unsuccessful
+    # even though the policy probe itself passed.  Cleanup is best-effort and
+    # must not convert the validated denial into a fixture failure.
+    run_ebuild "${WORK}/sandbox-probe-final-clean.log" clean || :
 fi
 
 # Resolve the exact dispatcher-expanded mapping axes once, then bind an
