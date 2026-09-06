@@ -14,6 +14,21 @@
 # process, or framework helper inherits the raw bearer token.
 gentoo_opt_profile_transaction_token=${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN-}
 gentoo_opt_profile_transaction_authorization=${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION-}
+if [[ -z ${gentoo_opt_profile_transaction_token} &&
+    -n ${gentoo_opt_profile_transaction_authorization} &&
+    ${gentoo_opt_profile_transaction_authorization} == /*/transaction.authorization ]]; then
+    # Portage filters arbitrary environment variables before entering the
+    # userpriv phase.  The coordinator therefore exposes the one-shot bearer
+    # through this root-owned, portage-readable runtime file while the global
+    # transaction locks exclude concurrent production gates.
+    gentoo_opt_profile_transaction_token_file=/run/gentoo-optimization/phase2-production-token
+    if [[ -f ${gentoo_opt_profile_transaction_token_file} &&
+        ! -L ${gentoo_opt_profile_transaction_token_file} ]]; then
+        IFS= read -r gentoo_opt_profile_transaction_token < \
+            "${gentoo_opt_profile_transaction_token_file}" || :
+    fi
+    unset gentoo_opt_profile_transaction_token_file
+fi
 gentoo_opt_profile_transaction_test_root=${GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_ROOT-}
 gentoo_opt_profile_transaction_test_framework_lock=${GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_FRAMEWORK_LOCK-}
 gentoo_opt_profile_transaction_test_project_lock=${GENTOO_OPT_TEST_PRODUCTION_PROFILE_TRANSACTION_PROJECT_LOCK-}

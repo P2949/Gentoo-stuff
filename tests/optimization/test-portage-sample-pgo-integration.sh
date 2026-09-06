@@ -1462,6 +1462,9 @@ publish_evidence() {
 cleanup() {
     local status=$? finalized=0
     trap '' HUP INT TERM
+    if ((PRODUCTION_LOCKS)); then
+        /usr/bin/rm -f -- /run/gentoo-optimization/phase2-production-token || :
+    fi
     if ((PRODUCTION_LOCKS && PRODUCTION_ROOTS_CREATED)); then
         if ((status == 0 && PRODUCTION_GATE_COMPLETE && \
             PRODUCTION_STATUS_FINALIZED && PRODUCTION_CAPTURED)); then
@@ -1597,6 +1600,7 @@ if ((PRODUCTION_LOCKS)); then
     MAP_FINGERPRINT_FILE=${PRODUCTION_STATE_ROOT}/mapping.fingerprint
     USE_FINGERPRINT_FILE=${PRODUCTION_STATE_ROOT}/consumer.fingerprint
     TRANSACTION_AUTHORIZATION=${PRODUCTION_STATE_ROOT}/transaction.authorization
+    TRANSACTION_TOKEN_FILE=/run/gentoo-optimization/phase2-production-token
     TRANSACTION_JOURNAL=/var/lib/gentoo-optimization/state/profile-transactions/phase-2-production-profile-locks.pending
     TRANSACTION_CHILD_IDENTITY=${TRANSACTION_JOURNAL}.child.json
     VALIDATOR_COMMAND=${VALIDATOR}
@@ -1772,6 +1776,14 @@ if ((PRODUCTION_LOCKS)); then
     production_authorized_command \
         "${INSTALLER}" --source-root "${ROOT}" --check >/dev/null || \
         fail 'installed framework differs from the reviewed repository source'
+    install -d -o 0 -g "${PORTAGE_GID}" -m 0750 -- /run/gentoo-optimization
+    umask 0077
+    printf '%s\n' "${PRODUCTION_TRANSACTION_TOKEN}" > "${TRANSACTION_TOKEN_FILE}.partial"
+    chown 0:"${PORTAGE_GID}" -- "${TRANSACTION_TOKEN_FILE}.partial"
+    chmod 0640 -- "${TRANSACTION_TOKEN_FILE}.partial"
+    mv -- "${TRANSACTION_TOKEN_FILE}.partial" "${TRANSACTION_TOKEN_FILE}"
+    chmod 0640 -- "${TRANSACTION_TOKEN_FILE}"
+    sync -f -- "${TRANSACTION_TOKEN_FILE}"
 else
     mkdir -- "${PROFILE_ROOT}"
     chown "0:${PORTAGE_GID}" -- "${PROFILE_ROOT}"
