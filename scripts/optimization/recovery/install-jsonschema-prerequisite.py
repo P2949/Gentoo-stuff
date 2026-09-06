@@ -8887,6 +8887,11 @@ def source_emerge_command(
         "--",
         os.fspath(tools["emerge"]),
         *emerge_options(),
+        "--reinstall-atoms="
+        + ",".join(
+            re.sub(r"-\d[^:]*\Z", "", row["cpv"].split("::", 1)[0])
+            for row in plan["rows"]
+        ),
         "--ask=y",
         *exact_plan_atoms(plan),
     ]
