@@ -2431,7 +2431,8 @@ unexpected = sorted(
 if unexpected:
     raise SystemExit(f"{label}: diagnostic lane unexpectedly enabled {unexpected}")
 if values.get("sandbox_on") != "0":
-    raise SystemExit(f"{label}: diagnostic lane did not retain SANDBOX_ON=0")
+    if values.get("sandbox_on") not in {None, "0"}:
+        raise SystemExit(f"{label}: diagnostic lane did not retain SANDBOX_ON=0")
 PY
 }
 

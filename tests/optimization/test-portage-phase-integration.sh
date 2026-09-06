@@ -23,7 +23,7 @@ if ((EUID != 0)); then
     exit 77
 fi
 
-for command in b2sum date ebuild mv portageq python3 readelf sed sha256sum sha512sum stat; do
+for command in b2sum chgrp date ebuild mv portageq python3 readelf sed sha256sum sha512sum stat; do
     command -v "${command}" >/dev/null 2>&1 || fail "missing required command: ${command}"
 done
 [[ -f ${TEMPLATE} && -f ${PROXY_TEMPLATE} && -x ${CAPTURE_TOOL} ]] || \
@@ -78,7 +78,8 @@ INVENTORY_PROOF=${INVENTORY_PROOF_ROOT}/proof.json
 FIXTURE_PROJECT_LOCK=${WORK}/fixture-project.lock
 FIXTURE_GENERATION_LOCK=${WORK}/fixture-generation.lock
 mkdir -p -- "${INVENTORY_PROOF_ROOT}"
-chmod 0700 -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" "${INVENTORY_PROOF_ROOT}"
+chgrp portage -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" "${INVENTORY_PROOF_ROOT}"
+chmod 0750 -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" "${INVENTORY_PROOF_ROOT}"
 python3 - "${INVENTORY_EVIDENCE}" "${INVENTORY_PROOF}" "${SUCCESS_FINGERPRINT}" <<'PY'
 import hashlib,json,pathlib,sys
 evidence=pathlib.Path(sys.argv[1]).resolve()
