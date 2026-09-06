@@ -41,5 +41,4 @@ virtual/pkgconfig abi_x86_32
 virtual/rust abi_x86_32
 # These cap at LLVM 21 (LLVM_COMPAT), so pin them below the global slot 22:
 gui-apps/xwayland-satellite llvm_slot_21
-gui-wm/niri llvm_slot_21
 sys-block/thin-provisioning-tools llvm_slot_21
