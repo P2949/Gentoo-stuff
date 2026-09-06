@@ -14,6 +14,15 @@
 # process, or framework helper inherits the raw bearer token.
 gentoo_opt_profile_transaction_token=${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN-}
 gentoo_opt_profile_transaction_authorization=${GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION-}
+if [[ -z ${gentoo_opt_profile_transaction_authorization} ]]; then
+    gentoo_opt_profile_transaction_authorization_file=/var/lib/gentoo-optimization/state/profile-transactions/phase2-production-authorization.path
+    if [[ -f ${gentoo_opt_profile_transaction_authorization_file} &&
+        ! -L ${gentoo_opt_profile_transaction_authorization_file} ]]; then
+        IFS= read -r gentoo_opt_profile_transaction_authorization < \
+            "${gentoo_opt_profile_transaction_authorization_file}" || :
+    fi
+    unset gentoo_opt_profile_transaction_authorization_file
+fi
 if [[ -z ${gentoo_opt_profile_transaction_token} &&
     -n ${gentoo_opt_profile_transaction_authorization} &&
     ${gentoo_opt_profile_transaction_authorization} == /*/transaction.authorization ]]; then

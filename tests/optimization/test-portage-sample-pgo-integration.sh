@@ -1464,6 +1464,7 @@ cleanup() {
     trap '' HUP INT TERM
     if ((PRODUCTION_LOCKS)); then
         /usr/bin/rm -f -- "${TRANSACTION_TOKEN_FILE}" || :
+        /usr/bin/rm -f -- /var/lib/gentoo-optimization/state/profile-transactions/phase2-production-authorization.path || :
     fi
     if ((PRODUCTION_LOCKS && PRODUCTION_ROOTS_CREATED)); then
         if ((status == 0 && PRODUCTION_GATE_COMPLETE && \
@@ -1784,6 +1785,13 @@ if ((PRODUCTION_LOCKS)); then
     mv -- "${TRANSACTION_TOKEN_FILE}.partial" "${TRANSACTION_TOKEN_FILE}"
     chmod 0640 -- "${TRANSACTION_TOKEN_FILE}"
     sync -f -- "${TRANSACTION_TOKEN_FILE}"
+    printf '%s\n' "${TRANSACTION_AUTHORIZATION}" > \
+        /var/lib/gentoo-optimization/state/profile-transactions/phase2-production-authorization.path
+    chown 0:"${PORTAGE_GID}" -- \
+        /var/lib/gentoo-optimization/state/profile-transactions/phase2-production-authorization.path
+    chmod 0640 -- \
+        /var/lib/gentoo-optimization/state/profile-transactions/phase2-production-authorization.path
+    sync -f -- /var/lib/gentoo-optimization/state/profile-transactions/phase2-production-authorization.path
 else
     mkdir -- "${PROFILE_ROOT}"
     chown "0:${PORTAGE_GID}" -- "${PROFILE_ROOT}"
