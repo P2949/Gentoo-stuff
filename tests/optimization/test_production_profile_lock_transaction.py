@@ -597,6 +597,31 @@ raise SystemExit(child.returncode)
 
 
 class ProductionProfileLockTransactionTests(unittest.TestCase):
+    _saved_gentoo_opt_environment: dict[str, str] = {}
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        # The coordinator must be proven to reject inherited GENTOO_OPT_*
+        # controls.  The authoritative suite enables host-capability flags
+        # for neighboring test modules, so isolate this module from those
+        # runner-level opt-ins while preserving explicit per-test env maps.
+        cls._saved_gentoo_opt_environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key.startswith("GENTOO_OPT_")
+        }
+        for key in cls._saved_gentoo_opt_environment:
+            os.environ.pop(key, None)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        for key in list(os.environ):
+            if key.startswith("GENTOO_OPT_"):
+                os.environ.pop(key, None)
+        os.environ.update(cls._saved_gentoo_opt_environment)
+        super().tearDownClass()
+
     def setUp(self) -> None:
         self.fixture = Fixture()
 

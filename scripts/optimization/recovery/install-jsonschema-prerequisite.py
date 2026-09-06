@@ -3693,7 +3693,7 @@ def default_tools(root: Path = Path("/")) -> dict[str, Path]:
         "bash": tool("/bin/bash"),
         "cp": tool("/usr/bin/cp"),
         "emerge": tool("/usr/lib/python-exec/python3.15/emerge"),
-        "false": tool("/bin/false"),
+        "false": tool("/usr/bin/false"),
         "gemato": tool("/usr/lib/python-exec/python3.15/gemato"),
         "git": tool("/usr/bin/git"),
         "gpg": tool("/usr/bin/gpg"),
@@ -5376,8 +5376,8 @@ def plan_environment(private_roots: Mapping[str, str], *, offline: bool) -> dict
                 # Portage validates these templates before attempting a
                 # fetch.  Keep network fetches fail-closed while retaining
                 # the required ${FILE} placeholder for current Portage.
-                "FETCHCOMMAND": "/bin/false ${FILE}",
-                "RESUMECOMMAND": "/bin/false ${FILE}",
+                "FETCHCOMMAND": "/usr/bin/false ${FILE}",
+                "RESUMECOMMAND": "/usr/bin/false ${FILE}",
                 "GENTOO_MIRRORS": "",
                 "PORTAGE_RO_DISTDIRS": private_roots.get(
                     "distdir_runtime", private_roots["distdir_authority"]

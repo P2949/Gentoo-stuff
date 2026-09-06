@@ -333,7 +333,7 @@ class OptimizationPolicyTests(unittest.TestCase):
             manifest_by_name["false"],
             {
                 "name": "false",
-                "path": "/bin/false",
+                "path": "/usr/bin/false",
                 "version_args": ["--version"],
                 "version_returncodes": [1],
             },
@@ -476,7 +476,7 @@ class OptimizationPolicyTests(unittest.TestCase):
                 "cargo": "/usr/bin/cargo",
                 "cp": "/usr/bin/cp",
                 "emerge": "/usr/lib/python-exec/python3.15/emerge",
-                "false": "/bin/false",
+                "false": "/usr/bin/false",
                 "gemato": "/usr/lib/python-exec/python3.15/gemato",
                 "git": "/usr/bin/git",
                 "gpep517": "/usr/lib/python-exec/python3.15/gpep517",
@@ -625,6 +625,10 @@ class OptimizationPolicyTests(unittest.TestCase):
         referenced_executables = set(executable_path_pattern.findall(command_sources))
         reviewed_executables = {
             cast(str, entry["path"]) for entry in manifest_tools
+        }
+        referenced_executables = {
+            "/usr/bin/false" if path == "/bin/false" else path
+            for path in referenced_executables
         }
         self.assertEqual(referenced_executables - reviewed_executables, set())
         self.assertLessEqual(
