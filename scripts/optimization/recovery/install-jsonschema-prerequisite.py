@@ -5537,6 +5537,7 @@ def emerge_options() -> list[str]:
         # Keep dependency selection limited to the exact prerequisite target;
         # the frozen installed world may contain unrelated masked atoms.
         "--selective=y",
+        "--ignore-world=y",
         "--autounmask=n",
         "--autounmask-write=n",
         "--buildpkg=y",
