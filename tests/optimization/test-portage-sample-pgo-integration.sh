@@ -916,7 +916,7 @@ if [[ -n ${OUTPUT_DIR} ]]; then
         fail '--output-dir contains unsafe characters'
     if [[ -e ${CANONICAL_OUTPUT_DIR} || -L ${CANONICAL_OUTPUT_DIR} ]]; then
         if ((PRODUCTION_LOCKS)) && [[ -d ${CANONICAL_OUTPUT_DIR} && ! -L ${CANONICAL_OUTPUT_DIR} ]]; then
-            read -r output_mode output_uid output_gid < <(
+            IFS=' ' read -r output_mode output_uid output_gid < <(
                 stat -c '%a %u %g' -- "${CANONICAL_OUTPUT_DIR}"
             )
             [[ ${output_mode} == 750 && ${output_uid} == 0 && ${output_gid} == 0 ]] || \
