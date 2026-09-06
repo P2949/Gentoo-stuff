@@ -6419,10 +6419,10 @@ def prerequisite_plan_environment(private_roots: dict[str, Path]) -> dict[str, s
         "FEATURES": (
             "-assume-digests -binpkg-signing -ccache -distcc "
             "-icecream -parallel-install -preserve-libs -unmerge-orphans noinfo "
-            "collision-protect protect-owned sandbox userpriv usersandbox "
+            "-nodoc -noman collision-protect protect-owned sandbox userpriv usersandbox "
             "network-sandbox pid-sandbox merge-sync"
         ),
-        "FETCHCOMMAND": "/bin/false",
+        "FETCHCOMMAND": "/bin/false ${FILE}",
         "GENTOO_MIRRORS": "",
         "HOME": os.fspath(private_roots["home"]),
         "LANG": "C",
@@ -6434,9 +6434,9 @@ def prerequisite_plan_environment(private_roots: dict[str, Path]) -> dict[str, s
         "PORTAGE_BINHOST": "",
         "PORTAGE_ELOG_SYSTEM": "echo",
         "PORTAGE_LOGDIR": os.fspath(private_roots["portage_logdir"]),
-        "PORTAGE_RO_DISTDIRS": os.fspath(private_roots["distdir_authority"]),
+        "PORTAGE_RO_DISTDIRS": os.fspath(private_roots["distdir_runtime"]),
         "PORTAGE_TMPDIR": os.fspath(private_roots["portage_tmpdir"]),
-        "RESUMECOMMAND": "/bin/false",
+        "RESUMECOMMAND": "/bin/false ${FILE}",
         "RUSTUP_HOME": os.fspath(private_roots["rustup_home"]),
         "SHELL": "/bin/bash",
         "TEMP": os.fspath(private_roots["portage_tmpdir"]),
@@ -6592,6 +6592,11 @@ def prerequisite_mount_authority(
             {
                 "source": os.fspath(private_roots["distdir_authority"]),
                 "target": os.fspath(private_roots["distdir_authority"]),
+                "read_only": True,
+            },
+            {
+                "source": os.fspath(private_roots["distdir_authority"]),
+                "target": os.fspath(private_roots["distdir_runtime"]),
                 "read_only": True,
             },
             {
