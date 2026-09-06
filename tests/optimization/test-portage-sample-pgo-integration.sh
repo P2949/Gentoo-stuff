@@ -908,8 +908,19 @@ if [[ -n ${OUTPUT_DIR} ]]; then
         fail '--output-dir must remain below /var/tmp/gentoo-optimization'
     [[ ${CANONICAL_OUTPUT_DIR} =~ ^/[A-Za-z0-9_./-]+$ ]] || \
         fail '--output-dir contains unsafe characters'
-    [[ ! -e ${CANONICAL_OUTPUT_DIR} && ! -L ${CANONICAL_OUTPUT_DIR} ]] || \
-        fail "--output-dir already exists: ${CANONICAL_OUTPUT_DIR}"
+    if [[ -e ${CANONICAL_OUTPUT_DIR} || -L ${CANONICAL_OUTPUT_DIR} ]]; then
+        if ((PRODUCTION_LOCKS)) && [[ -d ${CANONICAL_OUTPUT_DIR} && ! -L ${CANONICAL_OUTPUT_DIR} ]]; then
+            read -r output_mode output_uid output_gid < <(
+                stat -c '%a %u %g' -- "${CANONICAL_OUTPUT_DIR}"
+            )
+            [[ ${output_mode} == 750 && ${output_uid} == 0 && ${output_gid} == 0 ]] || \
+                fail 'production --output-dir must be an empty root-owned 0750 directory'
+            [[ -z $(find "${CANONICAL_OUTPUT_DIR}" -mindepth 1 -maxdepth 1 -print -quit) ]] || \
+                fail 'production --output-dir must be empty'
+        else
+            fail "--output-dir already exists: ${CANONICAL_OUTPUT_DIR}"
+        fi
+    fi
 fi
 [[ ${ITERATIONS} =~ ^[1-9][0-9]*$ ]] || fail 'iteration count must be positive'
 [[ ${KEEP_TEMP} == 0 || ${KEEP_TEMP} == 1 ]] || fail 'KEEP_TEMP must be 0 or 1'
