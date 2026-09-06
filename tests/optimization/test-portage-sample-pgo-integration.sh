@@ -26,6 +26,7 @@ OUTPUT_DIR=
 CANONICAL_OUTPUT_DIR=
 EXPLICIT_OUTPUT_DIR=0
 TRUSTED_OUTPUT_BASE=/var/tmp/gentoo-optimization
+PRODUCTION_OUTPUT_BASE=/var/lib/gentoo-optimization/reports
 PRODUCTION_LOCKS=0
 PORTAGE_POLICY_MODE=
 LIVE_POLICY_PREFLIGHT_ONLY=0
@@ -904,8 +905,13 @@ if [[ -n ${OUTPUT_DIR} ]]; then
         fail '--output-dir must be an absolute non-root path'
     command -v realpath >/dev/null 2>&1 || fail 'missing command: realpath'
     CANONICAL_OUTPUT_DIR=$(realpath -m -- "${OUTPUT_DIR}")
-    [[ ${CANONICAL_OUTPUT_DIR} == "${TRUSTED_OUTPUT_BASE}"/* ]] || \
-        fail '--output-dir must remain below /var/tmp/gentoo-optimization'
+    if ((PRODUCTION_LOCKS)); then
+        [[ ${CANONICAL_OUTPUT_DIR} == "${PRODUCTION_OUTPUT_BASE}"/* ]] || \
+            fail '--production-locks output must remain below the authoritative report root'
+    else
+        [[ ${CANONICAL_OUTPUT_DIR} == "${TRUSTED_OUTPUT_BASE}"/* ]] || \
+            fail '--output-dir must remain below /var/tmp/gentoo-optimization'
+    fi
     [[ ${CANONICAL_OUTPUT_DIR} =~ ^/[A-Za-z0-9_./-]+$ ]] || \
         fail '--output-dir contains unsafe characters'
     if [[ -e ${CANONICAL_OUTPUT_DIR} || -L ${CANONICAL_OUTPUT_DIR} ]]; then
