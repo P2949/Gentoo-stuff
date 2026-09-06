@@ -109,7 +109,8 @@ src_compile() {
             > "${GENTOO_OPT_SAMPLE_SANDBOX_DENY_PATH}"; then
             die "sample sandbox policy probe unexpectedly wrote outside the Portage sandbox"
         fi
-        die "sample sandbox policy probe observed the expected write denial"
+        einfo "sample sandbox policy probe observed the expected write denial"
+        return 0
     fi
     "${CC}" ${CFLAGS} -fPIE -c "${S}/workload.c" -o "${S}/workload.o" || die
     einfo "fixture-compiler-execution=workload.c:completed"
