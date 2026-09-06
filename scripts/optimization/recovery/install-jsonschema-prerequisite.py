@@ -7035,6 +7035,13 @@ def admit_merge_image_payload(
         fail(f"Portage attempted to merge an object outside the exact plan: {cpv}")
     manifest = tree_manifest(mergeroot)
     manifest_rows = _manifest_rows(manifest, f"{cpv} payload image")
+    reinstalling_existing_cpv = False
+    try:
+        reinstalling_existing_cpv = cpv in set(prepared_vdb(prepared)["cpvs"])
+    except TransactionError:
+        # Fixture-level payload authority tests may intentionally omit the
+        # locked VDB; retain the strict collision behavior in that mode.
+        pass
     destinations = canonical_payload_destinations(manifest_rows, cpv=cpv)
     required_observations = payload_observation_paths(destinations)
     for candidate in required_observations:
@@ -7086,8 +7093,11 @@ def admit_merge_image_payload(
         live_destination = observations_by_path[os.fspath(destination)]
         if live_destination.get("type") != "absent":
             if (
+                not reinstalling_existing_cpv
+                and (
                 row.get("type") != "directory"
                 or live_destination.get("type") != "directory"
+                )
             ):
                 fail(
                     f"planned image collides with a pre-existing object: {cpv}: {destination}"
