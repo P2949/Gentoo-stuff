@@ -2572,9 +2572,11 @@ if [[ ${PORTAGE_POLICY_MODE} == live ]]; then
     run_ebuild "${WORK}/sandbox-probe-clean.log" clean
     sandbox_probe_status=0
     trap '' ERR
-    set +e
-    run_ebuild "${WORK}/sandbox-probe-build.log" compile
-    sandbox_probe_status=$?
+    if run_ebuild "${WORK}/sandbox-probe-build.log" compile; then
+        sandbox_probe_status=0
+    else
+        sandbox_probe_status=$?
+    fi
     trap - ERR
     if ((sandbox_probe_status == 0)); then
         fail 'live Portage sandbox allowed its DAC-permitted external write probe'
