@@ -85,6 +85,9 @@ CPV_PATTERN_TEXT = (
     rf"{PACKAGE_PATTERN_TEXT}-{VERSION_REVISION_PATTERN_TEXT}"
 )
 CPV_PATTERN = re.compile(rf"{CPV_PATTERN_TEXT}\Z")
+CPV_PACKAGE_PATTERN = re.compile(
+    rf"^(?P<package>{PACKAGE_PATTERN_TEXT})-(?P<version>{VERSION_REVISION_PATTERN_TEXT})\Z"
+)
 REPOSITORY_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9+_.-]*\Z")
 EXACT_ATOM_PATTERN = re.compile(
     rf"=(?P<cpv>{CPV_PATTERN_TEXT})"
@@ -2799,6 +2802,25 @@ def exact_plan_atoms(plan: object) -> list[str]:
     if set(atoms) != {row["exact_atom"] for row in expected_rows}:
         fail("reviewed plan ordered atom vector differs from its rows")
     return list(atoms)
+
+
+def cpv_to_package_atom(cpv: str) -> str:
+    """Return Portage's canonical category/package atom for a CPV."""
+    if not CPV_PATTERN.fullmatch(cpv):
+        fail(f"invalid CPV for package atom conversion: {cpv!r}")
+    category, package_version = cpv.split("/", 1)
+    match = CPV_PACKAGE_PATTERN.fullmatch(package_version)
+    if match is None:
+        fail(f"cannot derive package atom from CPV: {cpv!r}")
+    return f"{category}/{match.group('package')}"
+
+
+def reinstall_atoms_for_cpvs(cpvs: Iterable[str]) -> str:
+    """Produce Portage's whitespace-separated --reinstall-atoms value."""
+    atoms = [cpv_to_package_atom(cpv) for cpv in cpvs]
+    if not atoms or len(atoms) != len(set(atoms)):
+        fail("reinstall atom vector is empty or contains duplicate package atoms")
+    return " ".join(atoms)
 
 
 def synthetic_vdb(root: Path, cpvs: Iterable[str]) -> None:
@@ -6490,10 +6512,7 @@ def run_armed_source_child(
             expected_emerge_arguments = [
                 *emerge_options(),
                 "--reinstall-atoms="
-                + ",".join(
-                    re.sub(r"-\d[^:]*\Z", "", row["cpv"].split("::", 1)[0])
-                    for row in prepared["plan"]["rows"]
-                ),
+                + reinstall_atoms_for_cpvs(row["cpv"] for row in prepared["plan"]["rows"]),
                 "--ask=y",
                 *exact_plan_atoms(prepared["plan"]),
             ]
@@ -7656,9 +7675,8 @@ def portage_action_command(arguments: argparse.Namespace) -> int:
         fail("internal Portage action has an unexpected command identity")
     emerge_arguments = command[1:]
     expected_atoms = exact_plan_atoms(prepared["plan"])
-    expected_reinstall_atoms = ",".join(
-        re.sub(r"-\d[^:]*\Z", "", row["cpv"].split("::", 1)[0])
-        for row in prepared["plan"]["rows"]
+    expected_reinstall_atoms = reinstall_atoms_for_cpvs(
+        row["cpv"] for row in prepared["plan"]["rows"]
     )
     expected_arguments = [
         *emerge_options(),
