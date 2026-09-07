@@ -460,11 +460,7 @@ def load_authoritative_test_contract(path: Path) -> dict[str, Any]:
     named_subtests: list[dict[str, str]] = []
     named_identities: list[tuple[str, str]] = []
     for index, raw_subtest in enumerate(
-        require_list(
-            document["required_named_subtests"],
-            "required named subtests",
-            nonempty=True,
-        )
+        require_list(document["required_named_subtests"], "required named subtests")
     ):
         subtest = require_object(
             raw_subtest,
