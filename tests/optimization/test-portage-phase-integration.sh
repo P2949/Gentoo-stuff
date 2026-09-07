@@ -23,7 +23,7 @@ if ((EUID != 0)); then
     exit 77
 fi
 
-for command in b2sum chgrp date ebuild mv portageq python3 readelf sed sha256sum sha512sum stat; do
+for command in b2sum chgrp date ebuild mv portageq python3 readelf sed setfacl sha256sum sha512sum stat; do
     command -v "${command}" >/dev/null 2>&1 || fail "missing required command: ${command}"
 done
 [[ -f ${TEMPLATE} && -f ${PROXY_TEMPLATE} && -x ${CAPTURE_TOOL} ]] || \
@@ -63,6 +63,7 @@ cleanup() {
     # proof to the Portage user during the test.
     chown root:root -- "${CACHE_ROOT}/diagnostics" 2>/dev/null || :
     chmod 0700 -- "${CACHE_ROOT}/diagnostics" 2>/dev/null || :
+    setfacl -b -- "${CACHE_ROOT}" "${CACHE_ROOT}/diagnostics" 2>/dev/null || :
     rm -rf -- "${WORK}"
     return "${status}"
 }
@@ -82,6 +83,7 @@ INVENTORY_PROOF=${INVENTORY_PROOF_ROOT}/proof.json
 FIXTURE_PROJECT_LOCK=${WORK}/fixture-project.lock
 FIXTURE_GENERATION_LOCK=${WORK}/fixture-generation.lock
 mkdir -p -- "${INVENTORY_PROOF_ROOT}"
+setfacl -m u:portage:--x -- "${CACHE_ROOT}"
 chgrp portage -- "${CACHE_ROOT}/diagnostics"
 chmod 0750 -- "${CACHE_ROOT}/diagnostics"
 chgrp portage -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" "${INVENTORY_PROOF_ROOT}"
