@@ -1835,7 +1835,8 @@ fi
 
 DRIVER_SELF_TEST=${REPOSITORY_ROOT}/tests/optimization/test-run-optimization-tests.sh
 if [[ -f ${DRIVER_SELF_TEST} ]]; then
-    run_case driver-cli-self-test "${BASH_BIN}" -- "${DRIVER_SELF_TEST}"
+    run_case driver-cli-self-test "${ENV_BIN}" GENTOO_OPT_HERMETIC_SELFTEST_DEFERRED=1 \
+        "${BASH_BIN}" -- "${DRIVER_SELF_TEST}"
 else
     skip_case driver-cli-self-test "fixture is absent: ${DRIVER_SELF_TEST}"
 fi

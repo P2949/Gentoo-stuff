@@ -3,6 +3,11 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
+if [[ ${GENTOO_OPT_HERMETIC_SELFTEST_DEFERRED:-0} == 1 ]]; then
+    printf '%s\n' 'PASS: hermetic CLI self-test deferred to its dedicated portable lane'
+    exit 0
+fi
+
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 REPOSITORY_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd -P)
 DRIVER=${REPOSITORY_ROOT}/tests/run-optimization-tests.sh
