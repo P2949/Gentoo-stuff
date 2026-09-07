@@ -1819,7 +1819,9 @@ def tree_manifest(root: Path, production: bool) -> dict[str, object]:
             if stat.S_ISDIR(child_metadata.st_mode):
                 visit(child_path, child_relative)
             elif stat.S_ISREG(child_metadata.st_mode):
-                payload, identity = read_regular(child_path, "evidence file")
+                payload, identity = read_regular(
+                    child_path, "evidence file", allow_hardlinks=True
+                )
                 if production and (identity["uid"] != 0 or identity["mode"] & 0o022):
                     fail(f"production evidence file is not root-owned and non-writable: {child_path}")
                 entries.append(
