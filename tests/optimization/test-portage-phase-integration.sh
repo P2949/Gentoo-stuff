@@ -7,7 +7,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 readonly ROOT
 TEMPLATE=${ROOT}/optimization/fixtures/portage/phase2-portage-fixture-1.ebuild.in
 PROXY_TEMPLATE=${ROOT}/optimization/fixtures/portage/capture-proxy.sh.in
-CAPTURE_TOOL=/usr/local/libexec/gentoo-optimization/bolt/capture-input.sh
+CAPTURE_TOOL=${ROOT}/scripts/optimization/bolt/capture-input.sh
 FRAMEWORK_INSTALLER=/var/lib/gentoo-optimization/bootstrap/install-framework.sh
 REGISTER_TOOL=/usr/local/libexec/gentoo-optimization/bolt/register-output.sh
 DEPLOY_TOOL=/usr/local/libexec/gentoo-optimization/bolt/deploy-output.sh

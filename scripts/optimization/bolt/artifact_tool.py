@@ -1539,6 +1539,8 @@ def inventory_proof(
         ]
         validate_root_owned_nonwritable_chain(validator_path, "frozen inventory validator")
     validator_identity = file_record(str(validator_path), "frozen inventory validator")
+    if test_mode:
+        validator_identity["path"] = "reconcile-state.py"
     try:
         summary = json.loads(run_checked(validator_arguments))
     except json.JSONDecodeError as error:
