@@ -2096,7 +2096,8 @@ run_ebuild() {
             "XDG_CACHE_HOME=${XDG_CACHE_DIR}" \
             "XDG_CONFIG_HOME=${XDG_CONFIG_DIR}" \
             "XDG_STATE_HOME=${XDG_STATE_DIR}" \
-            "PORTAGE_CONFIGROOT=${CONFIG_ROOT}" NOCOLOR=true \
+            "PORTAGE_CONFIGROOT=${CONFIG_ROOT}" \
+            "${environment_args[@]}" NOCOLOR=true \
             /usr/bin/ebuild --color n "${EBUILD}" "$@" > "${log}" 2>&1
     else
         /usr/bin/env -i "HOME=${DRIVER_HOME}" USER=root LOGNAME=root SHELL=/bin/bash \

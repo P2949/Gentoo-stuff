@@ -470,7 +470,8 @@ for required_driver_tool in bash dirname env find mkdir realpath setsid sleep so
         "${HERMETIC_BIN}/${required_driver_tool}"
 done
 
-PATH=${HERMETIC_BIN} bash -- "${HERMETIC_DRIVER}" \
+PATH=${HERMETIC_BIN} SHELLCHECK=${HERMETIC_BIN}/shellcheck \
+    bash -- "${HERMETIC_DRIVER}" \
     --mode capabilities --capability bolt --output-dir "${HERMETIC_OUTPUT}" \
     >"${FIXTURE}/hermetic-preflight.log" 2>&1 || {
     sed -n '1,240p' "${FIXTURE}/hermetic-preflight.log" >&2
