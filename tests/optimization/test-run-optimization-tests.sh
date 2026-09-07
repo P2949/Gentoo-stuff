@@ -539,7 +539,6 @@ grep -Fxq 'exit_status=0' "${HERMETIC_OUTPUT}/summary.txt" || \
     fail 'hermetic preflight SKIP produced a nonzero driver status'
 grep -Fxq 'mode=capabilities' "${HERMETIC_OUTPUT}/summary.txt" || \
     fail 'hermetic capability-preflight run lost its exact mode'
-fi
 
 AUTHORITATIVE_OUTPUT=${FIXTURE}/hermetic-authoritative-output
 
@@ -725,6 +724,7 @@ for capability in clang-ir clang-sample gcc rust go bolt; do
         fail "authoritative mode left ${capability} unselected"
     fi
 done
+fi
 
 # Exercise the real per-case deadline around a capability whose runner and
 # preflight are entirely fake.  Both the runner and its child ignore TERM, so
