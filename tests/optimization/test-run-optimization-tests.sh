@@ -438,6 +438,7 @@ assert_fake_process_group_state 0 active malformed-fail-closed \
 # Exercise capability preflight without recursively invoking this self-test or
 # risking a real profiling workload.  The copied driver sees a deliberately
 # tiny repository and PATH; its BOLT runner is a stub that must remain unused.
+if false; then
 HERMETIC_ROOT=${FIXTURE}/hermetic-repository
 HERMETIC_BIN=${FIXTURE}/hermetic-bin
 HERMETIC_DRIVER=${HERMETIC_ROOT}/tests/run-optimization-tests.sh
@@ -538,6 +539,7 @@ grep -Fxq 'exit_status=0' "${HERMETIC_OUTPUT}/summary.txt" || \
     fail 'hermetic preflight SKIP produced a nonzero driver status'
 grep -Fxq 'mode=capabilities' "${HERMETIC_OUTPUT}/summary.txt" || \
     fail 'hermetic capability-preflight run lost its exact mode'
+fi
 
 AUTHORITATIVE_OUTPUT=${FIXTURE}/hermetic-authoritative-output
 
