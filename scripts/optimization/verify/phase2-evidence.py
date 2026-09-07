@@ -2935,7 +2935,7 @@ def snapshot_tree_identity(
 ) -> list[dict[str, object]]:
     if not root.is_dir() or root.is_symlink():
         fail(f"{label} is not a real directory")
-    if production and (verify_current or root.exists()):
+    if production:
         validate_root_trust(root, label, directory=True)
     rows: list[dict[str, object]] = []
     for directory, directory_names, file_names in os.walk(root, followlinks=False):
@@ -5717,7 +5717,7 @@ def validate_prerequisite_tree_manifest(
         observed_paths.append(relative)
     if observed_paths != sorted(set(observed_paths)):
         fail(f"{label} rows are not sorted and unique")
-    if production:
+    if production and (verify_current or root.exists()):
         validate_root_trust(root, label, directory=True)
     if verify_current and observe_prerequisite_tree_manifest(root) != manifest:
         fail(f"{label} differs from its materialized tree")
