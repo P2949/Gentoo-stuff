@@ -471,6 +471,8 @@ print("DEBUG_KEYS", sorted(output.keys()), file=sys.stderr)
 if output.get("source_abi_security_identity") != output.get("abi_security_identity"):
     print("ABI_SOURCE", output.get("source_abi_security_identity"), file=sys.stderr)
     print("ABI_OUTPUT", output.get("abi_security_identity"), file=sys.stderr)
+print("ABI_SET", sorted(output.get("abi_security_identity", {})), file=sys.stderr)
+print("ABI_EXPECT", sorted(abi_keys), file=sys.stderr)
 assert set(output["source_abi_security_identity"]) == abi_keys
 assert set(output["abi_security_identity"]) == abi_keys
 assert output["source_abi_security_identity"] == output["abi_security_identity"]
