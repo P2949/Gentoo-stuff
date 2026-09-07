@@ -1517,7 +1517,9 @@ def inventory_proof(
     if evidence != document["inventory_evidence"]:
         fail("BOLT inventory proof frozen inventory identity mismatch")
     if test_mode:
-        validator_path = Path(__file__).resolve().parents[3] / "scripts/optimization/verify/reconcile-state.py"
+        # Installed framework layout keeps auxiliary validators beside the
+        # bolt tool under libexec/scripts, not at the optimization state root.
+        validator_path = Path(__file__).resolve().parents[1] / "scripts/optimization/verify/reconcile-state.py"
         validator_arguments = [
             *INVENTORY_VALIDATOR_PYTHON, str(validator_path),
             "--validate-inventory-only", "--inventory", evidence["path"],
