@@ -1696,8 +1696,11 @@ def plan_claims(
             len(phase_lines),
         ):
             continue
-        # Historical narrative is retained verbatim; executable authority is
-        # restricted to checked claims and their detached evidence marker.
+        if historical_pattern.search(line) and not line.startswith(historical_prefix):
+            fail(
+                "Phase 2 historical hash/evidence prose is not explicitly superseded "
+                f"at line {offset}"
+            )
     checkbox_lines: dict[str, list[int]] = {}
     checked_phase_hashes: set[str] = set()
     open_phase_lines: list[int] = []
@@ -1777,8 +1780,11 @@ def plan_claims(
     ]
     if len(covered_hashes) != len(set(covered_hashes)):
         fail("a checked Phase 2 checkbox is covered by more than one evidence claim")
-    if not set(covered_hashes).issubset(checked_phase_hashes):
-        fail("a detached-index claim marker references an unchecked Phase 2 checkbox")
+    if set(covered_hashes) != checked_phase_hashes:
+        fail(
+            "every checked Phase 2 checkbox must be covered exactly once by the "
+            "current detached-index claim markers"
+        )
     return sha256(payload), [observed[name] for name in sorted(observed)]
 
 
