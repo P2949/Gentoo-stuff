@@ -78,8 +78,8 @@ INVENTORY_PROOF=${INVENTORY_PROOF_ROOT}/proof.json
 FIXTURE_PROJECT_LOCK=${WORK}/fixture-project.lock
 FIXTURE_GENERATION_LOCK=${WORK}/fixture-generation.lock
 mkdir -p -- "${INVENTORY_PROOF_ROOT}"
-chgrp portage -- "${CACHE_ROOT}" "${CACHE_ROOT}/diagnostics"
-chmod 0750 -- "${CACHE_ROOT}" "${CACHE_ROOT}/diagnostics"
+chgrp portage -- "${CACHE_ROOT}/diagnostics"
+chmod 0750 -- "${CACHE_ROOT}/diagnostics"
 chgrp portage -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" "${INVENTORY_PROOF_ROOT}"
 chmod 0750 -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" "${INVENTORY_PROOF_ROOT}"
 python3 - "${INVENTORY_EVIDENCE}" "${INVENTORY_PROOF}" "${SUCCESS_FINGERPRINT}" <<'PY'
