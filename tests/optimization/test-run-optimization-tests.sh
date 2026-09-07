@@ -461,6 +461,7 @@ printf '%s\n' \
     'exit 96' >"${HERMETIC_SAMPLE_RUNNER}"
 chmod 0755 -- "${HERMETIC_DRIVER}" "${HERMETIC_BOLT_RUNNER}" \
     "${HERMETIC_SAMPLE_RUNNER}"
+install_hermetic_contract_support "${HERMETIC_ROOT}" "${HERMETIC_BIN}"
 for required_driver_tool in bash dirname env find mkdir realpath setsid sleep sort \
     stat tee timeout; do
     required_driver_path=$(command -v -- "${required_driver_tool}") || \
@@ -536,7 +537,6 @@ grep -Fxq 'mode=capabilities' "${HERMETIC_OUTPUT}/summary.txt" || \
     fail 'hermetic capability-preflight run lost its exact mode'
 
 AUTHORITATIVE_OUTPUT=${FIXTURE}/hermetic-authoritative-output
-install_hermetic_contract_support "${HERMETIC_ROOT}" "${HERMETIC_BIN}"
 
 # A PATH-selected wrapper must never stand in for any PATH-resolved execution-
 # core tool during an authoritative run. Exercise this contract against the
