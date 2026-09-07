@@ -64,7 +64,11 @@ cleanup() {
     chown root:root -- "${CACHE_ROOT}/diagnostics" 2>/dev/null || :
     chmod 0700 -- "${CACHE_ROOT}/diagnostics" 2>/dev/null || :
     setfacl -b -- "${CACHE_ROOT}" "${CACHE_ROOT}/diagnostics" 2>/dev/null || :
-    rm -rf -- "${WORK}"
+    if [[ ${KEEP_PORTAGE_FIXTURE_TEMP:-0} != 1 ]]; then
+        rm -rf -- "${WORK}"
+    else
+        printf 'PRESERVED_WORK=%s\n' "${WORK}" >&2
+    fi
     return "${status}"
 }
 trap cleanup EXIT HUP INT TERM
