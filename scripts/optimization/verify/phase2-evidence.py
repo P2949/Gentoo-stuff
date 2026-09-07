@@ -8331,7 +8331,11 @@ def validate_prerequisite_success_state(
             (prepared_path, "jsonschema prerequisite prepared state"),
             (armed_path, "jsonschema prerequisite armed state"),
         ):
-            validate_root_trust(required, label)
+            validate_root_trust(
+                required,
+                label,
+                allow_hardlinks=(required == canonical_path),
+            )
     canonical_payload, _canonical_stat = read_regular(
         canonical_path, "jsonschema prerequisite canonical state", allow_hardlinks=True
     )
