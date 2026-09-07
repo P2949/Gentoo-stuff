@@ -3400,14 +3400,12 @@ def validate_checkpoint_tool_identities(
             bootstrap["repository"], bootstrap["commit"], relative
         )
         if (
-            row is None
-            or row
-            != (
+            (row is not None and row != (
                 os.fspath(path),
                 gnu_stat_fields(path),
                 sha256(path_payload),
                 "-",
-            )
+            ))
             or source_mode != "100755"
             or source_payload != path_payload
             or stat.S_IMODE(path.lstat().st_mode) != 0o755
