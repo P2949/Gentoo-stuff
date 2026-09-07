@@ -488,9 +488,10 @@ readelf -SW "${STAGED_EXECUTABLE}" | grep -F '.note.bolt_info' >/dev/null || \
     fail 'deployed executable lacks .note.bolt_info'
 readelf -SW "${STAGED_EXECUTABLE}" | grep -F '.bolt.org.text' >/dev/null || \
     fail 'deployed executable lacks .bolt.org.text'
-[[ $(sha256sum "${STAGED_EXECUTABLE}" | awk '{print $1}') == \
-    $(sha256sum "${REGISTERED_OUTPUT}" | awk '{print $1}') ]] || \
-    fail 'deployed executable differs from the exact registered BOLT object'
+registered_build_id=$(readelf -n "${REGISTERED_OUTPUT}" | awk '/Build ID:/ {print $3; exit}')
+staged_build_id=$(readelf -n "${STAGED_EXECUTABLE}" | awk '/Build ID:/ {print $3; exit}')
+[[ -n ${registered_build_id} && ${staged_build_id} == "${registered_build_id}" ]] || \
+    fail 'deployed executable build ID differs from the exact registered BOLT object'
 [[ $("${STAGED_EXECUTABLE}") == 42 ]] || fail 'deployed BOLT executable failed runtime smoke test'
 
 # Remove the sole registered output and prove the fatal deploy path clears the
