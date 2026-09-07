@@ -492,7 +492,12 @@ registered_build_id=$(readelf -n "${REGISTERED_OUTPUT}" | awk '/Build ID:/ {prin
 staged_build_id=$(readelf -n "${STAGED_EXECUTABLE}" | awk '/Build ID:/ {print $3; exit}')
 objcopy --dump-section .text="${WORK}/registered.text" "${REGISTERED_OUTPUT}" >/dev/null 2>&1 || fail 'registered BOLT object has no readable .text'
 objcopy --dump-section .text="${WORK}/staged.text" "${STAGED_EXECUTABLE}" >/dev/null 2>&1 || fail 'deployed BOLT object has no readable .text'
-cmp -s "${WORK}/registered.text" "${WORK}/staged.text" || fail 'deployed executable .text differs from registered BOLT object'
+if ! cmp -s "${WORK}/registered.text" "${WORK}/staged.text"; then
+    printf 'registered_text=%s staged_text=%s\n' \
+        "$(sha256sum "${WORK}/registered.text" | awk '{print $1}')" \
+        "$(sha256sum "${WORK}/staged.text" | awk '{print $1}')" >&2
+    fail 'deployed executable .text differs from registered BOLT object'
+fi
 [[ $("${STAGED_EXECUTABLE}") == 42 ]] || fail 'deployed BOLT executable failed runtime smoke test'
 
 # Remove the sole registered output and prove the fatal deploy path clears the
