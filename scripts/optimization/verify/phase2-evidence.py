@@ -4927,10 +4927,15 @@ def validate_checkpoint_lane(
         for residue in parent.glob(pattern):
             fail(f"{lane} checkpoint retains publication residue: {residue}")
     for residue in report.rglob("*partial*"):
-        if (
-            residue.name.endswith(".stderr")
-            or residue.name.endswith("-partial-verification.json")
-        ):
+        retained_diagnostic = (
+            residue.parent == report
+            and residue.name in {
+                "cache-partial-verification.json",
+                "durable-partial-verification.json",
+            }
+        )
+        retained_stderr = residue.parent == report and residue.name.endswith(".stderr")
+        if retained_diagnostic or retained_stderr:
             continue
         fail(f"{lane} checkpoint retains nested partial residue: {residue}")
     operator_root = validate_operator_evidence_manifest(
