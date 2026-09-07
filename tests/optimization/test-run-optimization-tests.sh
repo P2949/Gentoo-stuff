@@ -471,7 +471,6 @@ for required_driver_tool in bash dirname env find mkdir realpath setsid sleep so
 done
 
 PATH=${HERMETIC_BIN} \
-GENTOO_OPT_AUTHORITATIVE=0 \
 GENTOO_OPT_REVIEWED_BASH_ARGV0=${HERMETIC_BIN}/bash \
 SHELLCHECK=${HERMETIC_BIN}/shellcheck \
     "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
