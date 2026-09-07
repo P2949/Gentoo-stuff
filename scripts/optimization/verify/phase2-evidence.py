@@ -1692,7 +1692,12 @@ def plan_claims(
             r"\s*(?:[0-9a-f]{40}|[0-9a-f]{64}|/var/lib/gentoo-optimization/[^\s]+)\s*",
             line,
         )
-        if standalone_historical and not line.startswith(historical_prefix):
+        labelled_unscoped = line.lstrip().startswith("Historical") and bool(
+            historical_pattern.search(line)
+        )
+        if (standalone_historical or labelled_unscoped) and not line.startswith(
+            historical_prefix
+        ):
             fail(
                 "Phase 2 historical hash/evidence prose is not explicitly superseded "
                 f"at line {offset}"
