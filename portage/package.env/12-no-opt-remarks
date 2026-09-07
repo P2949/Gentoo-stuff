@@ -1,0 +1,3 @@
+# LLVM runtime probes link temporary objects with /dev output paths; suppress
+# optimization-record emission so Portage's sandbox treats them normally.
+llvm-runtimes/compiler-rt no-opt-remarks.conf
