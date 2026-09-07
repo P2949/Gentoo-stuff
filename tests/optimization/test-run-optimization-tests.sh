@@ -463,7 +463,7 @@ chmod 0755 -- "${HERMETIC_DRIVER}" "${HERMETIC_BOLT_RUNNER}" \
     "${HERMETIC_SAMPLE_RUNNER}"
 install_hermetic_contract_support "${HERMETIC_ROOT}" "${HERMETIC_BIN}"
 for required_driver_tool in bash dirname env find mkdir realpath setsid sleep sort \
-    stat tee timeout; do
+    stat tail tee timeout; do
     required_driver_path=$(command -v -- "${required_driver_tool}") || \
         fail "self-test prerequisite is unavailable: ${required_driver_tool}"
     ln -s -- "${required_driver_path}" \
