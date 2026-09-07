@@ -4958,7 +4958,10 @@ def validate_checkpoint_lane(
     if production and (
         source_path.parent
         != Path("/var/lib/gentoo-optimization/recovery/binpkgs")
-        or re.fullmatch(r"critical-[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", source_path.name)
+        or re.fullmatch(
+            r"(?:critical|snapshot)-[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",
+            source_path.name,
+        )
         is None
     ):
         fail(f"{lane} source checkpoint is outside the canonical durable root")
