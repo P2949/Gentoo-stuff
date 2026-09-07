@@ -119,8 +119,11 @@ PORTAGE_LOCK_RETRY_SECONDS = 0.05
 # they do not authorize Candidate-A acceptance, optimization generation, Phase
 # 3, or any boot/kernel action.  Setting either value false remains an immediate
 # fail-closed stop and is covered independently by the hermetic gate tests.
-LIVE_PREPARATION_ENABLED = True
-LIVE_MUTATION_ENABLED = True
+# The historical prerequisite completion authority retires this one-shot
+# production transaction.  Inspection and reconciliation of existing IDs remain
+# available, but creation of a new live prepare/run is permanently fail-closed.
+LIVE_PREPARATION_ENABLED = False
+LIVE_MUTATION_ENABLED = False
 CONTROL_SCHEMA = "gentoo-optimization-jsonschema-control-v1"
 CONTROL_MAX_FRAME = 1024 * 1024
 CONTROL_SESSION_PATTERN = re.compile(r"[0-9a-f]{64}\Z")

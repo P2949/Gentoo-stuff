@@ -701,9 +701,9 @@ class StateMachineTests(unittest.TestCase):
             ["source_emerge_may_never_be_retried_after_armed"]
         )
 
-    def test_live_entrypoints_are_enabled_only_after_green_host_preflight(self) -> None:
-        self.assertIs(TOOL.LIVE_PREPARATION_ENABLED, True)
-        self.assertIs(TOOL.LIVE_MUTATION_ENABLED, True)
+    def test_live_entrypoints_are_retired_after_historical_completion(self) -> None:
+        self.assertIs(TOOL.LIVE_PREPARATION_ENABLED, False)
+        self.assertIs(TOOL.LIVE_MUTATION_ENABLED, False)
 
     def test_state_schema_rejects_unknown_fields(self) -> None:
         state = dict(self.prepared)
