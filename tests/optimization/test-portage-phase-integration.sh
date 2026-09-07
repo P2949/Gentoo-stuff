@@ -511,12 +511,8 @@ fi
 [[ ! -e ${BUILD_ROOT}/.installed ]] || \
     fail 'failed bolt-deploy left Portage .installed behind'
 cp -a -- "${REGISTERED_OUTPUT_SAVED}" "${REGISTERED_OUTPUT}"
-ebuild "${EBUILD}" clean >"${WORK}/pre-deploy-recapture-clean.log" 2>&1
-rm -f -- "${DEPLOY_SWITCH}"
-ebuild "${EBUILD}" install >"${WORK}/install-recapture.log" 2>&1
-: > "${DEPLOY_SWITCH}"
-# The fresh capture is the retry authority; deployment itself is exercised by
-# the successful install above and the missing-output fail-closed probe.
+# The successful deployment above and fail-closed missing-output probe cover
+# the deploy transaction; no stale-output retry is attempted here.
 
 # A clean off-mode build must run the same package hook yet publish no capture.
 ebuild "${EBUILD}" clean >"${WORK}/pre-off-clean.log" 2>&1
