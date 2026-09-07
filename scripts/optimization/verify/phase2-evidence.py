@@ -1045,7 +1045,7 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
         fail(f"tool {name} does not resolve to an executable regular file")
     if production:
         validate_root_trusted_entrypoint(requested, f"tool {name}")
-        validate_root_trust(resolved, f"tool {name}")
+        validate_root_trust(resolved, f"tool {name}", allow_hardlinks=True)
     if requested_entrypoint_identity(
         requested, f"tool {name} requested entry point"
     ) != requested_entrypoint:
