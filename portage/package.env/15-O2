@@ -34,6 +34,7 @@ dev-util/glslang O2.conf
 dev-python/charset-normalizer no-opt-remarks.conf
 dev-python/cffi no-opt-remarks.conf
 llvm-runtimes/compiler-rt no-opt-remarks.conf
+dev-lang/ghc no-opt-remarks.conf
 
 # Phase 1: release packages that are not worth fighting with global LTO/WPD/OpenMP flags.
 x11-base/xorg-server O2.conf
