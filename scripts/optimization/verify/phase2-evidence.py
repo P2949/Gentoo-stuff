@@ -3440,7 +3440,11 @@ def validate_checkpoint_lane(
     if production and terminal_path.parent != expected_state_parent:
         fail(f"{lane} checkpoint terminal state is outside the canonical production root")
     if production:
-        validate_root_trust(canonical_path, f"{lane} checkpoint canonical state")
+        validate_root_trust(
+            canonical_path,
+            f"{lane} checkpoint canonical state",
+            allow_hardlinks=True,
+        )
     canonical_payload, _canonical_stat = read_regular(
         canonical_path, f"{lane} checkpoint canonical state", allow_hardlinks=True
     )
