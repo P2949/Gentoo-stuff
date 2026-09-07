@@ -490,14 +490,9 @@ readelf -SW "${STAGED_EXECUTABLE}" | grep -F '.bolt.org.text' >/dev/null || \
     fail 'deployed executable lacks .bolt.org.text'
 registered_build_id=$(readelf -n "${REGISTERED_OUTPUT}" | awk '/Build ID:/ {print $3; exit}')
 staged_build_id=$(readelf -n "${STAGED_EXECUTABLE}" | awk '/Build ID:/ {print $3; exit}')
-if [[ -n ${registered_build_id} && -n ${staged_build_id} ]]; then
-    [[ ${staged_build_id} == "${registered_build_id}" ]] || \
-        fail 'deployed executable build ID differs from the exact registered BOLT object'
-else
-    objcopy --dump-section .text="${WORK}/registered.text" "${REGISTERED_OUTPUT}" >/dev/null 2>&1 || fail 'registered BOLT object has no readable .text'
-    objcopy --dump-section .text="${WORK}/staged.text" "${STAGED_EXECUTABLE}" >/dev/null 2>&1 || fail 'deployed BOLT object has no readable .text'
-    cmp -s "${WORK}/registered.text" "${WORK}/staged.text" || fail 'deployed executable .text differs from registered BOLT object'
-fi
+objcopy --dump-section .text="${WORK}/registered.text" "${REGISTERED_OUTPUT}" >/dev/null 2>&1 || fail 'registered BOLT object has no readable .text'
+objcopy --dump-section .text="${WORK}/staged.text" "${STAGED_EXECUTABLE}" >/dev/null 2>&1 || fail 'deployed BOLT object has no readable .text'
+cmp -s "${WORK}/registered.text" "${WORK}/staged.text" || fail 'deployed executable .text differs from registered BOLT object'
 [[ $("${STAGED_EXECUTABLE}") == 42 ]] || fail 'deployed BOLT executable failed runtime smoke test'
 
 # Remove the sole registered output and prove the fatal deploy path clears the
