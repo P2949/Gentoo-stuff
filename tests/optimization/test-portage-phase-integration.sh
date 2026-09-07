@@ -59,6 +59,10 @@ cleanup() {
                 -name "${SUCCESS_FINGERPRINT}.*" -exec rm -rf -- {} +
         fi
     fi
+    # Restore the production cache trust boundary after exposing the fixture
+    # proof to the Portage user during the test.
+    chown root:root -- "${CACHE_ROOT}/diagnostics" 2>/dev/null || :
+    chmod 0700 -- "${CACHE_ROOT}/diagnostics" 2>/dev/null || :
     rm -rf -- "${WORK}"
     return "${status}"
 }
