@@ -464,7 +464,10 @@ abi_keys = {
     "has_writable_executable_load",
     "tls_segments",
 }
+if output.get("artifact_id") != capture.get("artifact_id"):
+    print("ARTIFACT_IDS", output.get("artifact_id"), capture.get("artifact_id"), file=sys.stderr)
 assert output["artifact_id"] == capture["artifact_id"]
+print("DEBUG_KEYS", sorted(output.keys()), file=sys.stderr)
 if output.get("source_abi_security_identity") != output.get("abi_security_identity"):
     print("ABI_SOURCE", output.get("source_abi_security_identity"), file=sys.stderr)
     print("ABI_OUTPUT", output.get("abi_security_identity"), file=sys.stderr)
