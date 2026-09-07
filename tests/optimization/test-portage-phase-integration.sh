@@ -511,7 +511,10 @@ fi
 [[ ! -e ${BUILD_ROOT}/.installed ]] || \
     fail 'failed bolt-deploy left Portage .installed behind'
 cp -a -- "${REGISTERED_OUTPUT_SAVED}" "${REGISTERED_OUTPUT}"
-cp -- "${CAPTURED_OBJECT}" "${STAGED_EXECUTABLE}"
+ebuild "${EBUILD}" clean >"${WORK}/pre-deploy-recapture-clean.log" 2>&1
+rm -f -- "${DEPLOY_SWITCH}"
+ebuild "${EBUILD}" install >"${WORK}/install-recapture.log" 2>&1
+: > "${DEPLOY_SWITCH}"
 ebuild "${EBUILD}" install >"${WORK}/install-deploy-retry.log" 2>&1
 [[ -f ${BUILD_ROOT}/.installed ]] || fail 'bolt-deploy retry did not complete install phase'
 [[ $("${STAGED_EXECUTABLE}") == 42 ]] || fail 'bolt-deploy retry failed runtime smoke test'
