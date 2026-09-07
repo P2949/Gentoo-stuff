@@ -621,7 +621,17 @@ def _terminate_process_group(
                 return "cannot reap zstd after SIGTERM/SIGKILL"
     drain()
     if _process_group_has_live_members(process.pid, pid_namespace):
-        return "zstd process group survived SIGKILL"
+        # A just-reaped leader can leave a short-lived zombie observation in
+        # procfs while its descendants are already dead.  Reap first, then
+        # report a genuine surviving group only if members remain.
+        try:
+            process.wait(timeout=kill_after_seconds)
+        except subprocess.TimeoutExpired:
+            return "zstd process group survived SIGKILL"
+        drain()
+        if _process_group_has_live_members(process.pid, pid_namespace):
+            return "zstd process group survived SIGKILL"
+        return None
     try:
         process.wait(timeout=kill_after_seconds)
     except subprocess.TimeoutExpired:
