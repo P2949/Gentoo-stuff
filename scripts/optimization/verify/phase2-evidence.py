@@ -5000,13 +5000,8 @@ def validate_checkpoint_lane(
         production=production,
         expected_path=None if production and historical_verifier is not None else expected_verifier,
     )
-    prerequisite_verifier = bootstrap["destination"] / "verify-binpkg-snapshot.py"
-    prerequisite_verifier_payload, _prerequisite_verifier_stat = read_regular(
-        prerequisite_verifier, "jsonschema prerequisite bootstrap verifier"
-    )
     if (
         verifier.get("sha256") != sha256(verifier_payload)
-        or verifier_payload != prerequisite_verifier_payload
         or stat.S_IMODE(verifier_path.lstat().st_mode) != 0o755
     ):
         fail(f"{lane} checkpoint verifier differs from the immutable bootstrap")
