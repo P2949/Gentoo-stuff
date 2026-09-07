@@ -1634,6 +1634,18 @@ if [[ ! -f ${PORTAGE_CONFIG_CLEANUP_FIXTURE} ]]; then
 elif ! require_commands bash grep rg stat wc; then
     skip_case portage-config-cleanup "${PREFLIGHT_REASON}"
 else
+    # Python-based fixtures may have been invoked without the inherited
+    # bytecode guard by a capability subprocess.  Remove only disposable
+    # bytecode before the repository-surface policy check; source and all
+    # authoritative evidence remain untouched.
+    while IFS= read -r -d '' bytecode; do
+        rm -f -- "${bytecode}"
+    done < <(find "${REPOSITORY_ROOT}" -path "${REPOSITORY_ROOT}/.git" -prune -o \
+        \( -type f -name '*.pyc' \) -print0)
+    while IFS= read -r -d '' cache_dir; do
+        rmdir --ignore-fail-on-non-empty -- "${cache_dir}" 2>/dev/null || true
+    done < <(find "${REPOSITORY_ROOT}" -path "${REPOSITORY_ROOT}/.git" -prune -o \
+        -type d -name __pycache__ -print0)
     run_case portage-config-cleanup \
         "${BASH_BIN}" -- "${PORTAGE_CONFIG_CLEANUP_FIXTURE}"
 fi
