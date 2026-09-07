@@ -23,6 +23,7 @@ dev-scheme/guile O2.conf
 sys-libs/libblockdev O2.conf
 media-libs/zxing-cpp O2.conf
 net-misc/lldpd O2.conf
+llvm-core/lld O2.conf
 
 dev-util/spirv-llvm-translator O2.conf
 dev-util/spirv-tools O2.conf
