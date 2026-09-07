@@ -77,17 +77,13 @@ DEPLOY_SWITCH=${WORK}/optimization-deploy
 CAPTURE_PROXY=${WORK}/capture-proxy.sh
 DEPLOY_PROXY=${WORK}/deploy-proxy.sh
 SUCCESS_FINGERPRINT=$(printf '%s' "${WORK}:success" | sha256sum | awk '{print $1}')
-INVENTORY_PROOF_ROOT=${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}/inventory-proof
+INVENTORY_PROOF_ROOT=${WORK}/inventory-proof
 INVENTORY_EVIDENCE=${INVENTORY_PROOF_ROOT}/inventory.json
 INVENTORY_PROOF=${INVENTORY_PROOF_ROOT}/proof.json
 FIXTURE_PROJECT_LOCK=${WORK}/fixture-project.lock
 FIXTURE_GENERATION_LOCK=${WORK}/fixture-generation.lock
 mkdir -p -- "${INVENTORY_PROOF_ROOT}"
-setfacl -m u:portage:--x -- "${CACHE_ROOT}"
-chgrp portage -- "${CACHE_ROOT}/diagnostics"
-chmod 0750 -- "${CACHE_ROOT}/diagnostics"
-chgrp portage -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" "${INVENTORY_PROOF_ROOT}"
-chmod 0750 -- "${CACHE_ROOT}/diagnostics/${SUCCESS_FINGERPRINT}" "${INVENTORY_PROOF_ROOT}"
+chmod 0755 -- "${INVENTORY_PROOF_ROOT}"
 python3 - "${INVENTORY_EVIDENCE}" "${INVENTORY_PROOF}" "${SUCCESS_FINGERPRINT}" <<'PY'
 import hashlib,json,pathlib,sys
 evidence=pathlib.Path(sys.argv[1]).resolve()
