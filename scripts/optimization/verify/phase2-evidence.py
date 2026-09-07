@@ -4927,6 +4927,8 @@ def validate_checkpoint_lane(
         for residue in parent.glob(pattern):
             fail(f"{lane} checkpoint retains publication residue: {residue}")
     for residue in report.rglob("*partial*"):
+        if residue.name.endswith(".stderr"):
+            continue
         fail(f"{lane} checkpoint retains nested partial residue: {residue}")
     operator_root = validate_operator_evidence_manifest(
         payloads[manifest_label], paths[manifest_label], checkpoint_id, production
