@@ -1832,6 +1832,16 @@ def tree_manifest(root: Path, production: bool) -> dict[str, object]:
                         "sha256": sha256(payload),
                     }
                 )
+            elif stat.S_ISLNK(child_metadata.st_mode):
+                target = os.readlink(child_path)
+                entries.append(
+                    {
+                        "path": child_relative,
+                        "type": "symlink",
+                        "stat": stat_identity(child_metadata),
+                        "target": target,
+                    }
+                )
             else:
                 fail(f"evidence tree contains a symlink or special object: {child_path}")
 
