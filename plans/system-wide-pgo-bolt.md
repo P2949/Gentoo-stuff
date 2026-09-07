@@ -827,9 +827,8 @@ The clean implementation boundary is commit `f2b32d357dec78e19d707051480ab852517
 
 ---
 
-<!-- gentoo-optimization-phase2-prior-evidence: superseded-by-detached-index -->
-
 # 11. Phase 2 — Refactor the repository framework
+<!-- gentoo-optimization-phase2-prior-evidence: superseded-by-detached-index -->
 
 ### 2026-07-26 Candidate-A pre-activation checkpoint
 
