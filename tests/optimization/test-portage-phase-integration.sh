@@ -501,7 +501,6 @@ cmp -s "${WORK}/registered.text" "${WORK}/staged.text" || fail 'deployed executa
 
 # Remove the sole registered output and prove the fatal deploy path clears the
 # marker that would otherwise let Portage skip the next install attempt.
-ebuild "${EBUILD}" clean >"${WORK}/pre-deploy-failure-clean.log" 2>&1
 REGISTERED_OUTPUT_SAVED=${REGISTERED_OUTPUT}.saved
 cp -a -- "${REGISTERED_OUTPUT}" "${REGISTERED_OUTPUT_SAVED}"
 rm -f -- "${REGISTERED_OUTPUT}"
