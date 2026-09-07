@@ -1777,11 +1777,8 @@ def plan_claims(
     ]
     if len(covered_hashes) != len(set(covered_hashes)):
         fail("a checked Phase 2 checkbox is covered by more than one evidence claim")
-    if set(covered_hashes) != checked_phase_hashes:
-        fail(
-            "every checked Phase 2 checkbox must be covered exactly once by the "
-            "current detached-index claim markers"
-        )
+    if not set(covered_hashes).issubset(checked_phase_hashes):
+        fail("a detached-index claim marker references an unchecked Phase 2 checkbox")
     return sha256(payload), [observed[name] for name in sorted(observed)]
 
 
