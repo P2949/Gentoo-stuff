@@ -2935,7 +2935,7 @@ def snapshot_tree_identity(
 ) -> list[dict[str, object]]:
     if not root.is_dir() or root.is_symlink():
         fail(f"{label} is not a real directory")
-    if production:
+    if production and (verify_current or root.exists()):
         validate_root_trust(root, label, directory=True)
     rows: list[dict[str, object]] = []
     for directory, directory_names, file_names in os.walk(root, followlinks=False):
