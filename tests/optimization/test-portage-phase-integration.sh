@@ -503,13 +503,14 @@ cmp -s "${WORK}/registered.text" "${WORK}/staged.text" || fail 'deployed executa
 # marker that would otherwise let Portage skip the next install attempt.
 ebuild "${EBUILD}" clean >"${WORK}/pre-deploy-failure-clean.log" 2>&1
 REGISTERED_OUTPUT_SAVED=${REGISTERED_OUTPUT}.saved
-mv -- "${REGISTERED_OUTPUT}" "${REGISTERED_OUTPUT_SAVED}"
+cp -a -- "${REGISTERED_OUTPUT}" "${REGISTERED_OUTPUT_SAVED}"
+rm -f -- "${REGISTERED_OUTPUT}"
 if ebuild "${EBUILD}" install >"${WORK}/install-deploy-failure.log" 2>&1; then
     fail 'real Portage install accepted a missing registered BOLT output'
 fi
 [[ ! -e ${BUILD_ROOT}/.installed ]] || \
     fail 'failed bolt-deploy left Portage .installed behind'
-mv -- "${REGISTERED_OUTPUT_SAVED}" "${REGISTERED_OUTPUT}"
+cp -a -- "${REGISTERED_OUTPUT_SAVED}" "${REGISTERED_OUTPUT}"
 ebuild "${EBUILD}" install >"${WORK}/install-deploy-retry.log" 2>&1
 [[ -f ${BUILD_ROOT}/.installed ]] || fail 'bolt-deploy retry did not complete install phase'
 [[ $("${STAGED_EXECUTABLE}") == 42 ]] || fail 'bolt-deploy retry failed runtime smoke test'
