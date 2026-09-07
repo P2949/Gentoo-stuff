@@ -941,7 +941,7 @@ class LiveGateTests(unittest.TestCase):
 
         with unittest.mock.patch.object(TOOL, "LIVE_PREPARATION_ENABLED", False):
             with self.assertRaisesRegex(
-                TOOL.TransactionError, "live jsonschema preparation is disabled"
+                TOOL.TransactionError, "prerequisite-retired"
             ):
                 TOOL.prepare_command(
                     argparse.Namespace(
@@ -962,7 +962,7 @@ class LiveGateTests(unittest.TestCase):
             unittest.mock.patch.object(TOOL, "verify_command", return_value=0),
         ):
             with self.assertRaisesRegex(
-                TOOL.TransactionError, "live jsonschema mutation is disabled"
+                TOOL.TransactionError, "prerequisite-retired"
             ):
                 TOOL.run_command(argparse.Namespace(), self.paths)
 
@@ -982,7 +982,7 @@ class LiveGateTests(unittest.TestCase):
 
         with unittest.mock.patch.object(TOOL, "LIVE_MUTATION_ENABLED", False):
             with self.assertRaisesRegex(
-                TOOL.TransactionError, "live jsonschema recovery is disabled"
+                TOOL.TransactionError, "prerequisite-retired"
             ):
                 TOOL.recover_command(argparse.Namespace(), self.paths)
 

@@ -8733,10 +8733,7 @@ def prepare_command(arguments: argparse.Namespace, paths: Paths) -> int:
             "repository discovery and command results explicitly"
         )
     if not LIVE_PREPARATION_ENABLED:
-        fail(
-            "live jsonschema preparation is disabled pending the final Candidate-A "
-            "invariant audit and authoritative Gentoo-host capability proofs"
-        )
+        fail("prerequisite-retired: historical completion authority already exists")
     prepare_directories(paths, paths.fixture_mode)
     with transaction_locks(paths) as held_locks:
         held_locks.revalidate()
@@ -9308,10 +9305,7 @@ def run_held_lock_recovery(
 def run_command(_arguments: argparse.Namespace, paths: Paths) -> int:
     paths.validate()
     if not LIVE_MUTATION_ENABLED:
-        fail(
-            "live jsonschema mutation is disabled pending the final Candidate-A "
-            "invariant audit and authoritative Gentoo-host capability proofs"
-        )
+        fail("prerequisite-retired: historical completion authority already exists")
     with transaction_locks(paths) as held_locks:
         held_locks.revalidate()
         if reconcile_state_chain(paths) is None:
@@ -9439,10 +9433,7 @@ def finalize_from_child_completion(
 def recover_command(_arguments: argparse.Namespace, paths: Paths) -> int:
     paths.validate()
     if not LIVE_MUTATION_ENABLED:
-        fail(
-            "live jsonschema recovery is disabled pending the final Candidate-A "
-            "invariant audit and authoritative Gentoo-host capability proofs"
-        )
+        fail("prerequisite-retired: historical completion authority already exists")
     with transaction_locks(paths) as held_locks:
         held_locks.revalidate()
         if reconcile_state_chain(paths) is None:
