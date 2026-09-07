@@ -2820,9 +2820,11 @@ def validate_sha256_manifest(
         if referenced in observed:
             fail(f"{label} repeats a referenced path: {referenced}")
         if production:
-            validate_root_trust(referenced, f"{label} referenced payload")
+        validate_root_trust(
+            referenced, f"{label} referenced payload", allow_hardlinks=True
+        )
         referenced_payload, _referenced_stat = read_regular(
-            referenced, f"{label} referenced payload"
+            referenced, f"{label} referenced payload", allow_hardlinks=True
         )
         if sha256(referenced_payload) != digest:
             fail(f"{label} referenced payload changed: {referenced}")
