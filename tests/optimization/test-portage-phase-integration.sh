@@ -490,7 +490,7 @@ readelf -SW "${STAGED_EXECUTABLE}" | grep -F '.bolt.org.text' >/dev/null || \
     fail 'deployed executable lacks .bolt.org.text'
 registered_build_id=$(readelf -n "${REGISTERED_OUTPUT}" | awk '/Build ID:/ {print $3; exit}')
 staged_build_id=$(readelf -n "${STAGED_EXECUTABLE}" | awk '/Build ID:/ {print $3; exit}')
-if [[ -n ${registered_build_id} || -n ${staged_build_id} ]]; then
+if [[ -n ${registered_build_id} && -n ${staged_build_id} ]]; then
     [[ ${staged_build_id} == "${registered_build_id}" ]] || \
         fail 'deployed executable build ID differs from the exact registered BOLT object'
 else
