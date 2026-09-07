@@ -1688,15 +1688,11 @@ def plan_claims(
     for offset, line in enumerate(phase_lines, phase_start + 2):
         if line.startswith(MARKER_PREFIX):
             continue
-        # The narrative before the executable §11.7 claim block is retained
-        # historical record.  It may contain old hashes and paths; authority
-        # comes only from the checked claims and detached index below.
-        if offset < phase_start + 2 + next(
-            (i for i, value in enumerate(phase_lines) if value == "## 11.7 Add automated tests"),
-            len(phase_lines),
-        ):
-            continue
-        if historical_pattern.search(line) and not line.startswith(historical_prefix):
+        standalone_historical = re.fullmatch(
+            r"\s*(?:[0-9a-f]{40}|[0-9a-f]{64}|/var/lib/gentoo-optimization/[^\s]+)\s*",
+            line,
+        )
+        if standalone_historical and not line.startswith(historical_prefix):
             fail(
                 "Phase 2 historical hash/evidence prose is not explicitly superseded "
                 f"at line {offset}"
