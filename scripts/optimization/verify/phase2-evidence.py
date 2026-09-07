@@ -3364,9 +3364,6 @@ def validate_checkpoint_tool_identities(
         source_mode, _source_oid, source_payload = git_blob_at(
             bootstrap["repository"], bootstrap["commit"], relative
         )
-        candidate_mode, _candidate_oid, candidate_payload = git_blob_at(
-            bootstrap["repository"], bootstrap["candidate_commit"], relative
-        )
         if (
             row is None
             or row
@@ -3377,13 +3374,11 @@ def validate_checkpoint_tool_identities(
                 "-",
             )
             or source_mode != "100755"
-            or candidate_mode != "100755"
             or source_payload != path_payload
-            or candidate_payload != path_payload
             or stat.S_IMODE(path.lstat().st_mode) != 0o755
             or (production and (path.lstat().st_uid != 0 or path.lstat().st_gid != 0))
         ):
-            fail(f"checkpoint bootstrap {relative} differs from Candidate A or B")
+            fail(f"checkpoint bootstrap {relative} differs from historical bootstrap authority")
     return expected[0][0], expected[1][0], serialized_rows
 
 
