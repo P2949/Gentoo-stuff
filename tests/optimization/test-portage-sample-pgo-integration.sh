@@ -2085,7 +2085,11 @@ write_use_probe_environment() {
 
 run_ebuild() {
     local log=$1
+    local -a environment_args=()
     shift
+    if [[ ${PORTAGE_POLICY_MODE} == isolated-diagnostic ]]; then
+        environment_args+=(SANDBOX_ON=0)
+    fi
     if ((PRODUCTION_LOCKS)); then
         production_authorized_command \
             "HOME=${DRIVER_HOME}" "TMPDIR=${DRIVER_TMP}" \
@@ -2100,7 +2104,7 @@ run_ebuild() {
             LANG=C LC_ALL=C TZ=UTC "TMPDIR=${DRIVER_TMP}" \
             "XDG_CACHE_HOME=${XDG_CACHE_DIR}" "XDG_CONFIG_HOME=${XDG_CONFIG_DIR}" \
             "XDG_STATE_HOME=${XDG_STATE_DIR}" PORTAGE_CONFIGROOT="${CONFIG_ROOT}" \
-            $([[ ${PORTAGE_POLICY_MODE} == isolated-diagnostic ]] && printf '%s' 'SANDBOX_ON=0') \
+            "${environment_args[@]}" \
             "FEATURES=${PORTAGE_FEATURES_ASSIGNMENT}" NOCOLOR=true \
             /usr/bin/ebuild --color n "${EBUILD}" "$@" \
             > "${log}" 2>&1
