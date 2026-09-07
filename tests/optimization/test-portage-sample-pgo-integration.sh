@@ -2091,7 +2091,8 @@ run_ebuild() {
     local -a environment_args=()
     shift
     if [[ ${PORTAGE_POLICY_MODE} == isolated-diagnostic ]]; then
-        environment_args+=(SANDBOX_ON=0 "FEATURES=${PORTAGE_FEATURES_ASSIGNMENT}")
+        environment_args+=(SANDBOX_ON=0 "FEATURES=${PORTAGE_FEATURES_ASSIGNMENT}" \
+            GENTOO_OPT_DIAGNOSTIC=1)
     fi
     if ((PRODUCTION_LOCKS)); then
         production_authorized_command \

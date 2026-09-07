@@ -64,6 +64,9 @@ EOF
 }
 
 src_compile() {
+    if [[ ${GENTOO_OPT_DIAGNOSTIC:-0} == 1 ]]; then
+        export SANDBOX_ON=0
+    fi
     einfo "fixture-mode=${GENTOO_OPT_MODE:-unset}"
     einfo "fixture-profile-map-ready=${GENTOO_OPT_PROFILE_MAP_READY:-0}"
     einfo "fixture-CC=${CC}"
