@@ -10075,7 +10075,14 @@ def component_document(
     for evidence_label in expected_labels:
         path = external_paths[str(evidence_label)]
         if production:
-            validate_root_trust(path, f"component {name} external evidence {evidence_label}")
+            validate_root_trust(
+                path,
+                f"component {name} external evidence {evidence_label}",
+                allow_hardlinks=(
+                    evidence_label.endswith("-checkpoint-terminal-state")
+                    or evidence_label == "jsonschema-prerequisite-success-state"
+                ),
+            )
         payload, external_stat = read_regular(
             path,
             f"component {name} external evidence {evidence_label}",
