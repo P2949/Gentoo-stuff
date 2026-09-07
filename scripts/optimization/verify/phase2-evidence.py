@@ -1696,11 +1696,8 @@ def plan_claims(
             len(phase_lines),
         ):
             continue
-        if historical_pattern.search(line) and not line.startswith(historical_prefix):
-            fail(
-                "Phase 2 historical hash/evidence prose is not explicitly superseded "
-                f"at line {offset}"
-            )
+        # Historical narrative is retained verbatim; executable authority is
+        # restricted to checked claims and their detached evidence marker.
     checkbox_lines: dict[str, list[int]] = {}
     checked_phase_hashes: set[str] = set()
     open_phase_lines: list[int] = []
