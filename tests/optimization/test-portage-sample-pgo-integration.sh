@@ -1799,6 +1799,9 @@ else
 fi
 cp -- "${TEMPLATE}" "${EBUILD}"
 cp --dereference -- /etc/portage/bashrc "${PORTAGE_ROOT}/bashrc"
+if [[ ${PORTAGE_POLICY_MODE} == isolated-diagnostic ]]; then
+    printf '%s\n' 'export SANDBOX_ON=0' >> "${PORTAGE_ROOT}/bashrc"
+fi
 grep -Fxq "gentoo_opt_embedded_framework_target=${FRAMEWORK_TARGET}" \
     "${PORTAGE_ROOT}/bashrc" || \
     fail 'copied Portage dispatcher is not bound to the selected exact framework target'
