@@ -264,7 +264,13 @@ def requested_entrypoint_identity(path: Path, label: str) -> dict[str, object]:
     }
 
 
-def validate_root_trust(path: Path, label: str, *, directory: bool = False) -> None:
+def validate_root_trust(
+    path: Path,
+    label: str,
+    *,
+    directory: bool = False,
+    allow_hardlinks: bool = False,
+) -> None:
     """Require a real root-owned, non-writable ancestry and final object."""
     current = Path("/")
     try:
@@ -298,6 +304,8 @@ def validate_root_trust(path: Path, label: str, *, directory: bool = False) -> N
             continue
         if metadata.st_uid != 0 or mode & 0o022:
             fail(f"production {label} is not root-owned and non-writable: {current}")
+        if final and not directory and not allow_hardlinks and metadata.st_nlink != 1:
+            fail(f"{label} must be a link-count-one regular file: {current}")
 
 
 def validate_root_trusted_entrypoint(path: Path, label: str) -> None:
@@ -317,7 +325,7 @@ def validate_root_trusted_entrypoint(path: Path, label: str) -> None:
         if metadata.st_uid != 0:
             fail(f"production {label} entry-point symlink is not root-owned: {path}")
         return
-    validate_root_trust(path, label)
+    validate_root_trust(path, label, allow_hardlinks=True)
 
 
 def load_authoritative_test_contract(path: Path) -> dict[str, Any]:
@@ -1085,7 +1093,9 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
                 interpreter_requested, f"tool {name} shebang interpreter"
             )
             validate_root_trust(
-                interpreter_resolved, f"tool {name} shebang interpreter"
+                interpreter_resolved,
+                f"tool {name} shebang interpreter",
+                allow_hardlinks=True,
             )
         shebang = {
             "line": shebang_text,
@@ -1093,7 +1103,9 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
             "requested_path": os.fspath(interpreter_requested),
             "resolved_path": os.fspath(interpreter_resolved),
             "binary": file_identity(
-                interpreter_resolved, f"tool {name} shebang interpreter"
+                interpreter_resolved,
+                f"tool {name} shebang interpreter",
+                allow_hardlinks=True,
             ),
         }
     # Execute the requested entry point so argv-zero dispatchers such as
@@ -1110,7 +1122,11 @@ def observe_tool(specification: dict[str, Any], production: bool) -> dict[str, o
     try:
         result = subprocess.run(
             argv,
-            executable=os.fspath(resolved),
+            # Preserve argv[0] dispatch semantics for python-exec and other
+            # wrapper entry points.  The resolved target is authenticated
+            # above; execution must still use the requested pathname so the
+            # wrapper sees its canonical command name.
+            executable=os.fspath(requested),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
