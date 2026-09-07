@@ -106,7 +106,8 @@ document={"schema":"gentoo-optimization-bolt-inventory-proof-v1","generation_id"
 "expected_eligible_count":1,"inventory_evidence":record,"candidates":[candidate]}
 pathlib.Path(sys.argv[2]).write_text(json.dumps(document,sort_keys=True)+"\n")
 PY
-chmod 0600 -- "${INVENTORY_EVIDENCE}" "${INVENTORY_PROOF}"
+chgrp portage -- "${INVENTORY_EVIDENCE}" "${INVENTORY_PROOF}"
+chmod 0640 -- "${INVENTORY_EVIDENCE}" "${INVENTORY_PROOF}"
 python3 - "${INVENTORY_PROOF}" "${FIXTURE_PROJECT_LOCK}" "${FIXTURE_GENERATION_LOCK}" <<'PY'
 import json,pathlib,sys
 p=json.load(open(sys.argv[1])); payload=json.dumps({"generation_id":p["generation_id"],"inventory_id":p["inventory_id"],"inventory_sha256":p["inventory_evidence"]["sha256"]},indent=2,sort_keys=True)+"\n"
