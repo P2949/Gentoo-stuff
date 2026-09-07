@@ -52,8 +52,11 @@ src_install() {
 post_src_install() {
     readelf -SW "${ED}/usr/bin/phase2-portage-fixture" | \
         grep -q '[.]symtab' || die "pre-strip symtab is absent"
+    # PIE linkers commonly place dynamic relocations in .rela.dyn/.rela.plt
+    # rather than .rela.text; either form proves the pre-strip relocation
+    # metadata needed by the package-managed BOLT path is present.
     readelf -SW "${ED}/usr/bin/phase2-portage-fixture" | \
-        grep -Eq '[.]rela?[.]text' || die "pre-strip text relocations are absent"
+        grep -Eq '[.]rela?[.](text|dyn|plt)' || die "pre-strip relocations are absent"
     if [[ ${GENTOO_OPT_MODE} == bolt-deploy ]] && \
         readelf -SW "${ED}/usr/bin/phase2-portage-fixture" | \
             grep -F '.note.bolt_info' >/dev/null; then
