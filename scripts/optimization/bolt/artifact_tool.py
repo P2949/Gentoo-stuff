@@ -1518,8 +1518,14 @@ def inventory_proof(
         fail("BOLT inventory proof frozen inventory identity mismatch")
     if test_mode:
         # Installed framework layout keeps auxiliary validators beside the
-        # bolt tool under libexec/scripts, not at the optimization state root.
-        validator_path = Path(__file__).resolve().parents[1] / "scripts/optimization/verify/reconcile-state.py"
+        # bolt tool under libexec/scripts; source checkouts keep them under
+        # the repository's scripts/optimization tree.
+        resolved_tool = Path(__file__).resolve()
+        candidates = (
+            resolved_tool.parents[1] / "scripts/optimization/verify/reconcile-state.py",
+            resolved_tool.parents[2] / "optimization/verify/reconcile-state.py",
+        )
+        validator_path = next((path for path in candidates if path.is_file()), candidates[0])
         validator_arguments = [
             *INVENTORY_VALIDATOR_PYTHON, str(validator_path),
             "--validate-inventory-only", "--inventory", evidence["path"],
