@@ -504,6 +504,7 @@ cmp -s "${WORK}/registered.text" "${WORK}/staged.text" || fail 'deployed executa
 REGISTERED_OUTPUT_SAVED=${REGISTERED_OUTPUT}.saved
 cp -a -- "${REGISTERED_OUTPUT}" "${REGISTERED_OUTPUT_SAVED}"
 rm -f -- "${REGISTERED_OUTPUT}"
+rm -f -- "${BUILD_ROOT}/.installed"
 if ebuild "${EBUILD}" install >"${WORK}/install-deploy-failure.log" 2>&1; then
     fail 'real Portage install accepted a missing registered BOLT output'
 fi
