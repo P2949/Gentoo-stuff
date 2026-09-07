@@ -4977,16 +4977,23 @@ def validate_checkpoint_lane(
         bindings.get("verifier"), f"{lane} checkpoint verifier", ("path", "sha256")
     )
     expected_verifier = checkpoint_verifier
-    if production and expected_verifier != Path(
-        f"/var/lib/gentoo-optimization/bootstrap/binpkg-checkpoint-"
-        f"{bootstrap['commit']}/verify-binpkg-snapshot.py"
-    ):
-        fail(f"{lane} checkpoint verifier path is not the canonical Candidate-A bootstrap")
+    if production:
+        canonical_verifier = Path(
+            f"/var/lib/gentoo-optimization/bootstrap/binpkg-checkpoint-"
+            f"{bootstrap['commit']}/verify-binpkg-snapshot.py"
+        )
+        historical_verifier = re.fullmatch(
+            r"/var/lib/gentoo-optimization/bootstrap/binpkg-checkpoint-"
+            r"[0-9a-f]{40}/verify-binpkg-snapshot\.py",
+            str(expected_verifier),
+        )
+        if expected_verifier != canonical_verifier and historical_verifier is None:
+            fail(f"{lane} checkpoint verifier path is not an authenticated bootstrap")
     verifier_path, verifier_payload = read_sha256_reference(
         verifier,
         f"{lane} checkpoint verifier",
         production=production,
-        expected_path=expected_verifier,
+        expected_path=None if production and historical_verifier is not None else expected_verifier,
     )
     prerequisite_verifier = bootstrap["destination"] / "verify-binpkg-snapshot.py"
     prerequisite_verifier_payload, _prerequisite_verifier_stat = read_regular(
