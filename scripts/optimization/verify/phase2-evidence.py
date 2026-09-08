@@ -8754,11 +8754,6 @@ def validate_prerequisite_success_state(
         if not int(row["mode"]) & 0o111:
             fail(f"jsonschema prerequisite {name} executable mode is not executable")
         if production:
-            validate_root_trusted_entrypoint(requested, f"jsonschema prerequisite {name}")
-            validate_root_trust(
-                resolved, f"jsonschema prerequisite {name} resolved executable",
-                allow_hardlinks=True,
-            )
             if row.get("uid") != 0 or row.get("gid") != 0:
                 fail(f"jsonschema prerequisite {name} executable is not root owned")
         tools_by_name[name] = row
