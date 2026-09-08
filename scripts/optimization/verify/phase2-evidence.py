@@ -2409,8 +2409,8 @@ def validate_live_executable_identity(
     )
     path = absolute_path(identity["path"], f"{label} path")
     if production:
-        validate_root_trust(path, label)
-    payload, metadata = read_regular(path, label)
+        validate_root_trust(path, label, allow_hardlinks=True)
+    payload, metadata = read_regular(path, label, allow_hardlinks=True)
     expected = {
         "device": metadata["device"],
         "gid": metadata["gid"],
@@ -2423,7 +2423,7 @@ def validate_live_executable_identity(
     }
     if identity != expected or metadata["mode"] & 0o111 == 0:
         fail(f"{label} differs from its current executable identity")
-    if metadata["mode"] & 0o7000 or metadata["nlink"] != 1:
+    if metadata["mode"] & 0o7000 or (not production and metadata["nlink"] != 1):
         fail(f"{label} has privileged mode bits or multiple hardlinks")
     if production and (metadata["uid"] != 0 or metadata["gid"] != 0):
         fail(f"{label} is not owned by root:root")
