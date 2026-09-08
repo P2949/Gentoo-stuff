@@ -9485,11 +9485,11 @@ def validate_automation_external_semantics(
         repository,
         production,
     )
-    validate_prerequisite_retry_disposition(
-        payloads["jsonschema-prerequisite-retry-disposition"],
-        paths["jsonschema-prerequisite-retry-disposition"],
-        production=production,
-    )
+    retry_label = "jsonschema-prerequisite-retry-disposition"
+    if production or retry_label in payloads:
+        validate_prerequisite_retry_disposition(
+            payloads[retry_label], paths[retry_label], production=production
+        )
     pre = validate_checkpoint_lane("pre", payloads, paths, bootstrap, production)
     prerequisite = validate_prerequisite_success_state(
         payloads["jsonschema-prerequisite-success-state"],
