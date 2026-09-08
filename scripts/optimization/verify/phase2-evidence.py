@@ -9431,6 +9431,48 @@ def validate_prerequisite_success_state(
     return {"cpvs": cpvs, "canonical": canonical_path, "transaction_id": transaction_id}
 
 
+def validate_prerequisite_retry_disposition(
+    payload: bytes, path: Path, *, production: bool
+) -> None:
+    disposition = require_object(
+        parse_json_bytes(payload, "jsonschema prerequisite retry disposition"),
+        "jsonschema prerequisite retry disposition",
+        {"schema", "rows", "rows_sha256"},
+    )
+    rows = require_list(disposition["rows"], "jsonschema prerequisite retry rows")
+    if disposition["schema"] != "gentoo-optimization-jsonschema-prerequisite-retry-disposition-v1":
+        fail("jsonschema prerequisite retry disposition schema differs")
+    if disposition["rows_sha256"] != sha256(prerequisite_canonical_json(rows)):
+        fail("jsonschema prerequisite retry disposition is not canonically bound")
+    seen: set[str] = set()
+    for raw in rows:
+        row = require_object(raw, "jsonschema prerequisite retry row", {"transaction_id", "classification", "states"})
+        tid = require_string(row["transaction_id"], "jsonschema retry transaction ID")
+        if tid in seen:
+            fail("jsonschema retry disposition repeats a transaction")
+        seen.add(tid)
+        states = require_list(row["states"], "jsonschema retry state paths")
+        if not states:
+            fail("jsonschema retry disposition omits retained states")
+        for item in states:
+            state = require_object(item, "jsonschema retry state", {"path", "sha256"})
+            state_path = absolute_path(state["path"], "jsonschema retry state path")
+            require_string(state["sha256"], "jsonschema retry state digest", SHA256_RE)
+            if production:
+                validate_root_trust(state_path, "jsonschema retry state", allow_hardlinks=True)
+            observed, _ = read_regular(state_path, "jsonschema retry state", allow_hardlinks=True)
+            if sha256(observed) != state["sha256"]:
+                fail("jsonschema retry state digest changed")
+        if row["classification"] not in {
+            "terminal-rolled-back", "terminal-recovery-failed", "prepared-only-consumed",
+            "locked-authority-only-consumed", "externally-reconciled-consumed-nonterminal",
+            "rollback-in-progress-with-external-reconciliation",
+        }:
+            fail("jsonschema retry disposition has an unsupported classification")
+    if [r["transaction_id"] for r in rows] != sorted(seen):
+        fail("jsonschema retry disposition rows are not sorted")
+
+
 def validate_automation_external_semantics(
     payloads: dict[str, bytes],
     paths: dict[str, Path],
@@ -9442,6 +9484,11 @@ def validate_automation_external_semantics(
         paths["jsonschema-bootstrap-manifest"],
         repository,
         production,
+    )
+    validate_prerequisite_retry_disposition(
+        payloads["jsonschema-prerequisite-retry-disposition"],
+        paths["jsonschema-prerequisite-retry-disposition"],
+        production=production,
     )
     pre = validate_checkpoint_lane("pre", payloads, paths, bootstrap, production)
     prerequisite = validate_prerequisite_success_state(
