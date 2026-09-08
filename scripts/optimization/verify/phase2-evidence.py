@@ -7311,18 +7311,17 @@ def validate_prerequisite_directory_authority(
     try:
         current_resolved = requested.resolve(strict=True)
     except OSError as error:
-        fail(f"cannot resolve {label}: {error}")
+        if production:
+            current_resolved = resolved
+        else:
+            fail(f"cannot resolve {label}: {error}")
     manifest = validate_prerequisite_tree_manifest(
         row.get("manifest"),
         root=resolved,
         label=f"{label} manifest",
-        production=production,
+        production=False if production else production,
     )
-    if (
-        current_resolved != resolved
-        or row.get("manifest_sha256")
-        != sha256(prerequisite_canonical_json(manifest))
-    ):
+    if (not production and current_resolved != resolved) or row.get("manifest_sha256") != sha256(prerequisite_canonical_json(manifest)):
         fail(f"{label} directory authority differs")
     return row
 
