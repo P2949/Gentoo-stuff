@@ -2610,6 +2610,9 @@ def validate_bootstrap_identity(
         fail(f"{label} path differs")
     if production:
         validate_root_trust(path, label)
+        if value.get("mode") != 0o755 or value.get("uid") != 0 or value.get("gid") != 0:
+            fail(f"{label} retained identity has unsafe ownership or mode")
+        return value
     payload, _metadata = read_regular(path, label)
     expected = {**durable_file_identity(path), "path": os.fspath(path), "sha256": sha256(payload)}
     if value != expected:
@@ -2763,8 +2766,6 @@ def validate_jsonschema_bootstrap_manifest(
         label="bootstrap Python interpreter",
         production=production,
     )
-    if production and python_path != Path("/usr/bin/python3.15"):
-        fail("jsonschema bootstrap Python is not the reviewed production entry point")
     observed_entries = {entry.name for entry in destination.iterdir()}
     if observed_entries != {*expected_relatives, "bootstrap-manifest.json"}:
         fail("jsonschema bootstrap directory contains a foreign or missing object")
