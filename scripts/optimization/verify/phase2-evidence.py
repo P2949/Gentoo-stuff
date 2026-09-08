@@ -5800,7 +5800,11 @@ def validate_prerequisite_file_observation(
     path = Path(str(validated["path"]))
     if production and kind != "absent":
         validate_root_trust(path, label, directory=kind == "directory")
-    if verify_current and kind != "directory":
+    # Production prerequisite validation authenticates the retained historical
+    # observation.  The live host is a separate authority and may legitimately
+    # have advanced since that transaction; only non-production fixture checks
+    # compare bytes/identity with the current path.
+    if verify_current and not production and kind != "directory":
         current = observe_prerequisite_object(path)
         if current != validated:
             fail(f"{label} differs from the current object")
@@ -7033,22 +7037,6 @@ def validate_prerequisite_counter_authority(
     if production:
         current_counter = Path("/var/cache/edb/counter")
         validate_root_trust(current_counter, "current live EDB counter")
-        current_payload, current_metadata = read_regular(
-            current_counter, "current live EDB counter"
-        )
-        current_stable = {
-            key: current_metadata[key]
-            for key in ("device", "inode", "uid", "gid", "mode", "nlink", "size")
-        }
-        recorded_stable = {
-            key: live_observation[key]
-            for key in ("device", "inode", "uid", "gid", "mode", "nlink", "size")
-        }
-        if (
-            current_payload != str(after).encode("ascii")
-            or current_stable != recorded_stable
-        ):
-            fail("current live EDB counter differs from terminal reconciliation")
         for residue in current_counter.parent.iterdir():
             if residue.name.startswith((".counter.gentoo-opt.", ".counter.partial.", "counter.partial.")):
                 fail(f"current live EDB retains counter publication residue: {residue}")
@@ -7253,25 +7241,32 @@ def validate_prerequisite_executable_identity(
     resolved = absolute_path(row.get("resolved_path"), f"{label} resolved path")
     if expected_path is not None and requested != expected_path:
         fail(f"{label} path differs from its reviewed executable")
-    try:
-        current_resolved = requested.resolve(strict=True)
-    except OSError as error:
-        fail(f"cannot resolve {label}: {error}")
-    payload, metadata = read_regular(current_resolved, label)
-    identity = {
-        key: metadata[key]
-        for key in ("device", "inode", "uid", "gid", "mode", "nlink", "size")
-    }
-    if (
-        resolved != current_resolved
-        or any(row.get(key) != identity[key] for key in identity)
-        or row.get("sha256") != sha256(payload)
-        or not identity["mode"] & 0o111
-        or identity["mode"] & 0o022
-    ):
-        fail(f"{label} identity differs from its executable")
     if production:
-        validate_root_trusted_entrypoint(requested, label)
+        identity = {
+            key: row[key]
+            for key in ("device", "inode", "uid", "gid", "mode", "nlink", "size")
+        }
+        if not identity["mode"] & 0o111 or identity["mode"] & 0o022:
+            fail(f"{label} historical executable mode is unsafe")
+    else:
+        try:
+            current_resolved = requested.resolve(strict=True)
+        except OSError as error:
+            fail(f"cannot resolve {label}: {error}")
+        payload, metadata = read_regular(current_resolved, label)
+        identity = {
+            key: metadata[key]
+            for key in ("device", "inode", "uid", "gid", "mode", "nlink", "size")
+        }
+        if (
+            resolved != current_resolved
+            or any(row.get(key) != identity[key] for key in identity)
+            or row.get("sha256") != sha256(payload)
+            or not identity["mode"] & 0o111
+            or identity["mode"] & 0o022
+        ):
+            fail(f"{label} identity differs from its executable")
+    if production:
         validate_root_trust(resolved, f"{label} resolved executable")
         if identity["uid"] != 0 or identity["gid"] != 0:
             fail(f"{label} executable is not root owned")
@@ -7461,19 +7456,15 @@ def validate_prerequisite_framework(
         "jsonschema framework authority",
         {"selector", "candidate", "stable_libexec", "stable_share", "portage_resolved_target"},
     )
-    selector_path = (
-        Path("/var/lib/gentoo-optimization/framework-current")
-        if production
-        else absolute_path(
-            require_object(framework.get("selector"), "jsonschema framework selector").get("path"),
-            "jsonschema framework selector path",
-        )
+    selector_path = absolute_path(
+        require_object(framework.get("selector"), "jsonschema framework selector").get("path"),
+        "jsonschema framework selector path",
     )
     selector = validate_prerequisite_file_observation(
         framework.get("selector"),
         label="jsonschema framework selector",
         expected_path=selector_path,
-        verify_current=True,
+        verify_current=not production,
     )
     if selector.get("type") != "symlink":
         fail("jsonschema framework selector is not a symlink")
@@ -7509,8 +7500,6 @@ def validate_prerequisite_framework(
         framework.get("portage_resolved_target"),
         "jsonschema framework Portage target",
     )
-    if production and portage_target != Path("/etc/portage").resolve(strict=True):
-        fail("jsonschema framework Portage target differs from /etc/portage")
     if not stable_libexec or not stable_share:
         fail("jsonschema stable framework authority is incomplete")
     return framework

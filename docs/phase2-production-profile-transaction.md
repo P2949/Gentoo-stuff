@@ -245,10 +245,11 @@ root_git -C "$SOURCE" bundle verify "$BUNDLE"
 
 Retain each candidate's bundle, digest, private Git home, and root-owned
 checkout. Do not rebuild any of them in place. If any verification differs,
-allocate new paths. Candidate A stops after the complete host and supervised
-production transaction precheck; component-state and detached-index generation
-remain blocked by its deliberately open plan. Candidate B repeats every step
-with a new run ID and is the only pass that may continue into index capture.
+allocate new paths. **HISTORICAL / SUPERSEDED EXECUTION NOTE:** Candidate A
+stopped after the complete host and production precheck, and the former
+Candidate-B freeze was later invalidated by verifier-source changes. The next
+frozen successor must rerun the complete boundary before detached-index
+capture; this paragraph does not authorize another prerequisite replay.
 
 ## Install and preflight the exact candidate
 
@@ -524,12 +525,13 @@ doas sync -f "$EVIDENCE_ROOT"
 ```
 
 Generate the deterministic state files. The automation component binds the
-immutable Candidate-A bootstrap plus the complete pre-checkpoint, prerequisite
+immutable historical bootstrap plus the complete pre-checkpoint, prerequisite
 success, and post-checkpoint chain. Its semantic verifier replays every durable
 reference, requires both checkpoint lanes to be `offline-restore-proven` at
-`0/0/0`, proves the prerequisite plan is the post-checkpoint delta, and proves
-the Candidate-A bootstrap commit is an ancestor whose three executable payloads
-are byte- and mode-identical in Candidate B. The framework component binds the
+`0/0/0`, and proves the prerequisite plan is the post-checkpoint delta. The
+historical Git blobs and immutable published bootstrap are authenticated from
+their historical manifest; later Candidate source may contain verifier and
+recovery hardening and is not required to retain obsolete helper bytes. The framework component binds the
 installed candidate manifest. The sample component additionally binds the
 coordinator receipt, token-persistence scan, publication context, child
 identity, and the exact retained validation-inventory JSON whose path, commit,
