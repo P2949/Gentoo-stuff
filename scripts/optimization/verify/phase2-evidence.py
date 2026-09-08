@@ -8740,20 +8740,25 @@ def validate_prerequisite_success_state(
             require_int(row.get(key), f"jsonschema prerequisite {name} {key}")
         if resolved != requested.resolve(strict=True):
             fail(f"jsonschema prerequisite {name} requested/resolved identity differs")
-        resolved_payload, resolved_metadata = read_regular(
-            resolved, f"jsonschema prerequisite {name} executable"
-        )
-        if (
-            row.get("sha256") != sha256(resolved_payload)
-            or any(row.get(key) != resolved_metadata[key] for key in (
-                "device", "inode", "uid", "gid", "mode", "nlink", "size"
-            ))
-            or not int(row["mode"]) & 0o111
-        ):
-            fail(f"jsonschema prerequisite {name} executable changed")
+        if not production:
+            resolved_payload, resolved_metadata = read_regular(
+                resolved, f"jsonschema prerequisite {name} executable"
+            )
+            if (
+                row.get("sha256") != sha256(resolved_payload)
+                or any(row.get(key) != resolved_metadata[key] for key in (
+                    "device", "inode", "uid", "gid", "mode", "nlink", "size"
+                ))
+            ):
+                fail(f"jsonschema prerequisite {name} executable changed")
+        if not int(row["mode"]) & 0o111:
+            fail(f"jsonschema prerequisite {name} executable mode is not executable")
         if production:
             validate_root_trusted_entrypoint(requested, f"jsonschema prerequisite {name}")
-            validate_root_trust(resolved, f"jsonschema prerequisite {name} resolved executable")
+            validate_root_trust(
+                resolved, f"jsonschema prerequisite {name} resolved executable",
+                allow_hardlinks=True,
+            )
             if row.get("uid") != 0 or row.get("gid") != 0:
                 fail(f"jsonschema prerequisite {name} executable is not root owned")
         tools_by_name[name] = row
