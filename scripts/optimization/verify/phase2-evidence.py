@@ -5289,7 +5289,9 @@ def observe_prerequisite_object(path: Path) -> dict[str, Any]:
         ],
     }
     if stat.S_ISREG(metadata.st_mode):
-        payload, _identity = read_regular(path, "prerequisite installed payload")
+        payload, _identity = read_regular(
+            path, "prerequisite installed payload", allow_hardlinks=True
+        )
         observation.update(type="file", sha256=sha256(payload))
     elif stat.S_ISDIR(metadata.st_mode):
         observation["type"] = "directory"
