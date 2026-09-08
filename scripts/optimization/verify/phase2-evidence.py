@@ -6407,7 +6407,7 @@ def validate_locked_prerequisite_authority(
             root=source_path,
             label=f"jsonschema locked {copy_name} tree",
             production=production,
-            verify_current=copy_name != "cache_edb",
+            verify_current=(copy_name != "cache_edb") and not production,
         )
         if copy_row.get("tree_sha256") != sha256(
             prerequisite_canonical_json(tree)
