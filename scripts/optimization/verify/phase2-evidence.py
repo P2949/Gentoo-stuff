@@ -7243,6 +7243,7 @@ def validate_prerequisite_executable_identity(
     )
     requested = absolute_path(row.get("requested_path"), f"{label} requested path")
     resolved = absolute_path(row.get("resolved_path"), f"{label} resolved path")
+    require_string(row.get("sha256"), f"{label} executable digest", SHA256_RE)
     if expected_path is not None and requested != expected_path:
         fail(f"{label} path differs from its reviewed executable")
     if production:
@@ -7272,10 +7273,8 @@ def validate_prerequisite_executable_identity(
             fail(f"{label} identity differs from its executable")
     if production:
         # The retained historical executable may have shared inode topology
-        # on the current host; its recorded identity/hash is the authority.
-        validate_root_trust(
-            resolved, f"{label} resolved executable", allow_hardlinks=True
-        )
+        # on the current host; its sealed row is the authority.  Do not
+        # require an obsolete resolved path to remain installed today.
         if identity["uid"] != 0 or identity["gid"] != 0:
             fail(f"{label} executable is not root owned")
     return row
@@ -9456,6 +9455,21 @@ def validate_prerequisite_retry_disposition(
     if disposition["rows_sha256"] != sha256(prerequisite_canonical_json(rows)):
         fail("jsonschema prerequisite retry disposition is not canonically bound")
     seen: set[str] = set()
+    state_root = Path("/var/lib/gentoo-optimization/state/project")
+    canonical_states: dict[str, set[str]] = {}
+    for candidate in state_root.glob("jsonschema-prerequisite-jsonschema-source-*"):
+        if not candidate.is_file() or candidate.suffix not in {".json", ".jsonl"}:
+            continue
+        match = re.fullmatch(
+            r"jsonschema-prerequisite-(jsonschema-source-[^./]+)\.(.+)",
+            candidate.name,
+        )
+        if match and match.group(2) in {
+            "preparation-attempt.json", "locked-authority.json", "prepared.json",
+            "armed.json", "rollback-in-progress.json", "recovery-failed.json",
+            "rolled-back.json", "success.json",
+        }:
+            canonical_states.setdefault(match.group(1), set()).add(os.fspath(candidate))
     for raw in rows:
         row = require_object(raw, "jsonschema prerequisite retry row", {"transaction_id", "classification", "states"})
         tid = require_string(row["transaction_id"], "jsonschema retry transaction ID")
@@ -9468,18 +9482,37 @@ def validate_prerequisite_retry_disposition(
         for item in states:
             state = require_object(item, "jsonschema retry state", {"path", "sha256"})
             state_path = absolute_path(state["path"], "jsonschema retry state path")
+            if state_path.parent != state_root:
+                fail("jsonschema retry state is outside the canonical state root")
+            match = re.fullmatch(
+                r"jsonschema-prerequisite-(jsonschema-source-[^./]+)\.(.+)",
+                state_path.name,
+            )
+            if match is None or match.group(1) != tid:
+                fail("jsonschema retry state does not belong to its transaction")
             require_string(state["sha256"], "jsonschema retry state digest", SHA256_RE)
             if production:
                 validate_root_trust(state_path, "jsonschema retry state", allow_hardlinks=True)
             observed, _ = read_regular(state_path, "jsonschema retry state", allow_hardlinks=True)
             if sha256(observed) != state["sha256"]:
                 fail("jsonschema retry state digest changed")
-        if row["classification"] not in {
+        classification = row["classification"]
+        if classification not in {
             "terminal-rolled-back", "terminal-recovery-failed", "prepared-only-consumed",
             "locked-authority-only-consumed", "externally-reconciled-consumed-nonterminal",
             "rollback-in-progress-with-external-reconciliation",
         }:
             fail("jsonschema retry disposition has an unsupported classification")
+        declared = {os.fspath(absolute_path(item["path"], "jsonschema retry state path")) for item in states}
+        actual = canonical_states.get(tid, set())
+        if declared != actual:
+            fail("jsonschema retry disposition state set is not exhaustive")
+        if classification in {"externally-reconciled-consumed-nonterminal", "rollback-in-progress-with-external-reconciliation"}:
+            reconciliation = require_object(row.get("reconciliation"), "jsonschema retry reconciliation", {"transaction_id", "reusable", "states"})
+            if reconciliation.get("transaction_id") != tid or reconciliation.get("reusable") is not False:
+                fail("jsonschema retry reconciliation is not bound")
+            if not require_list(reconciliation.get("states"), "jsonschema retry reconciliation states"):
+                fail("jsonschema retry reconciliation omits evidence")
     if [r["transaction_id"] for r in rows] != sorted(seen):
         fail("jsonschema retry disposition rows are not sorted")
 
