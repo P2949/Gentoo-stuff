@@ -9477,6 +9477,8 @@ def validate_prerequisite_retry_disposition(
             r"jsonschema-prerequisite-(jsonschema-source-[^./]+)\.(.+)",
             candidate.name,
         )
+        if match and match.group(2) == "json":
+            continue
         if match and match.group(2) in known_suffixes:
             canonical_states.setdefault(match.group(1), set()).add(os.fspath(candidate))
         elif match:
@@ -9523,12 +9525,15 @@ def validate_prerequisite_retry_disposition(
             fail("successful prerequisite transaction must not appear in retry disposition")
         if declared != actual:
             fail("jsonschema retry disposition state set is not exhaustive")
-        suffixes = {Path(item).name.rsplit(".", 1)[-2] + ".json" for item in actual}
+        suffixes = {
+            Path(item).name.split(f"{tid}.", 1)[1]
+            for item in actual
+        }
         if classification == "terminal-rolled-back" and ("rolled-back.json" not in suffixes or "recovery-failed.json" in suffixes):
             fail("retry classification does not match rolled-back state")
         if classification == "terminal-recovery-failed" and ("recovery-failed.json" not in suffixes or "rolled-back.json" in suffixes):
             fail("retry classification does not match recovery-failed state")
-        if classification == "prepared-only-consumed" and not actual <= {os.fspath(state_root / f"jsonschema-prerequisite-{tid}.prepared.json"), os.fspath(state_root / f"jsonschema-prerequisite-{tid}.preparation-attempt.json") }:
+        if classification == "prepared-only-consumed" and not actual <= {os.fspath(state_root / f"jsonschema-prerequisite-{tid}.prepared.json"), os.fspath(state_root / f"jsonschema-prerequisite-{tid}.locked-authority.json"), os.fspath(state_root / f"jsonschema-prerequisite-{tid}.preparation-attempt.json") }:
             fail("prepared-only classification has later transaction state")
         if classification == "locked-authority-only-consumed" and not actual <= {os.fspath(state_root / f"jsonschema-prerequisite-{tid}.locked-authority.json"), os.fspath(state_root / f"jsonschema-prerequisite-{tid}.preparation-attempt.json") }:
             fail("locked-authority-only classification has later transaction state")
@@ -9630,7 +9635,9 @@ def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> Non
         validate_root_trust(state_root, "prerequisite state root", directory=True)
         validate_root_trust(success_path, "prerequisite success state", allow_hardlinks=True)
     reconciliation_path = absolute_path(arguments.reconciliation, "retry reconciliation input") if arguments.reconciliation else None
-    success = require_object(parse_json_bytes(read_regular(success_path, "prerequisite success state")[0], "prerequisite success state"), "prerequisite success state", {"transaction_id"})
+    success = parse_json_bytes(read_regular(success_path, "prerequisite success state", allow_hardlinks=True)[0], "prerequisite success state")
+    if not isinstance(success, dict):
+        fail("prerequisite success state must be an object")
     successful_id = require_string(success["transaction_id"], "successful prerequisite transaction ID")
     known_suffixes = {
         "preparation-attempt.json", "locked-authority.json", "prepared.json", "armed.json",
@@ -9644,6 +9651,9 @@ def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> Non
         if not match:
             continue
         suffix = match.group(2)
+        if suffix == "json":
+            # Historical bare transaction snapshots are aliases, not phase states.
+            continue
         if suffix not in known_suffixes:
             fail(f"unknown jsonschema prerequisite transaction state suffix: {candidate}")
         canonical.setdefault(match.group(1), []).append(candidate)
@@ -9665,7 +9675,7 @@ def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> Non
             classification = "terminal-recovery-failed"
         elif "rollback-in-progress.json" in suffixes:
             classification = "rollback-in-progress-with-external-reconciliation"
-        elif "prepared.json" in suffixes:
+        elif "prepared.json" in suffixes or suffixes <= {"preparation-attempt.json"}:
             classification = "prepared-only-consumed"
         elif "locked-authority.json" in suffixes:
             classification = "locked-authority-only-consumed"
