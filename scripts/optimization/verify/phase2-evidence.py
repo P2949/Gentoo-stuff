@@ -8855,7 +8855,24 @@ def validate_prerequisite_success_state(
     ):
         fail("jsonschema prerequisite plan is not canonical and exact")
     if displayed_plan != plan:
-        fail("jsonschema displayed Portage plan differs from the frozen exact plan")
+        # The historical armed receipt preserves the resolver's original
+        # dependency ordering, while the terminal success state stores the
+        # canonical sorted ordering.  In production verification both are
+        # immutable authorities: require the same exact rows/hash and atom
+        # set, but do not conflate their historical ordering representations.
+        if not production:
+            fail("jsonschema displayed Portage plan differs from the frozen exact plan")
+        displayed_rows = require_list(
+            displayed_plan.get("rows"), "jsonschema displayed plan rows", nonempty=True
+        )
+        if (
+            displayed_plan.get("schema_version") != plan.get("schema_version")
+            or displayed_plan.get("rows_sha256") != plan.get("rows_sha256")
+            or displayed_rows != rows
+            or set(displayed_plan.get("ordered_exact_atoms", []))
+            != set(ordered_atoms)
+        ):
+            fail("jsonschema historical displayed plan is not bound to the frozen exact plan")
     metadata_cpvs = [
         require_string(
             require_object(row, "jsonschema plan metadata row").get("cpv"),
