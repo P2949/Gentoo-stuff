@@ -6772,7 +6772,18 @@ def validate_prerequisite_execution_spec(
     expected_environment = prerequisite_plan_environment(private_roots)
     if spec.get("schema_version") != 1 or spec.get("network_isolated") is not True:
         fail("jsonschema source execution spec lacks required containment")
-    if spec.get("environment") != expected_environment:
+    actual_environment = spec.get("environment")
+    # Historical successful transactions recorded the equivalent /bin/false
+    # spelling while current Portage resolves the same executable through
+    # /usr/bin/false.  Preserve that immutable evidence without accepting any
+    # other environment drift.
+    if isinstance(actual_environment, dict):
+        actual_environment = dict(actual_environment)
+        for key in ("FETCHCOMMAND", "RESUMECOMMAND"):
+            value = actual_environment.get(key)
+            if value == "/bin/false ${FILE}" and os.path.samefile("/bin/false", "/usr/bin/false"):
+                actual_environment[key] = "/usr/bin/false ${FILE}"
+    if actual_environment != expected_environment:
         fail("jsonschema source execution environment differs from the frozen roots")
     command = require_list(spec.get("command"), "jsonschema source command", nonempty=True)
     python_path = require_string(
