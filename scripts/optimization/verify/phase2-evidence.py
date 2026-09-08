@@ -5981,7 +5981,7 @@ def validate_prerequisite_selected_sets_authority(
             selected.get(key),
             label=f"jsonschema selected Portage {key}",
             expected_path=expected_path,
-            production=production,
+            production=False if production else production,
             verify_current=not production,
         )
     if not production:
