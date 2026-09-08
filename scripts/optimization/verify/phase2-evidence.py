@@ -3395,6 +3395,7 @@ def validate_checkpoint_tool_identities(
         )
         row = rows.get(os.fspath(path))
         historical_fallback = False
+        historical_blob_digests: set[str] = set()
         if production and row is None:
             # Retained checkpoint reports may have been produced from a
             # different immutable bootstrap directory.  Bind the observed
@@ -3405,6 +3406,37 @@ def validate_checkpoint_tool_identities(
                 if Path(logical).name == Path(relative).name
                 and value[2] == sha256(source_payload)
             ]
+            if not candidates:
+                # A retained checkpoint may have been created from an older
+                # immutable Git blob that is no longer the bootstrap commit's
+                # current helper.  Accept only when that exact digest is still
+                # present as a historical blob in the authenticated repository.
+                try:
+                    object_ids = subprocess.check_output(
+                        ["git", "-C", os.fspath(bootstrap["repository"]), "rev-list", "--all", "--objects", "--", relative],
+                        text=True,
+                        stderr=subprocess.DEVNULL,
+                    ).splitlines()
+                except (OSError, subprocess.CalledProcessError):
+                    object_ids = []
+                historical_digests = set()
+                for object_line in object_ids:
+                    object_id = object_line.split(" ", 1)[0]
+                    try:
+                        blob = subprocess.check_output(
+                            ["git", "-C", os.fspath(bootstrap["repository"]), "cat-file", "blob", object_id],
+                            stderr=subprocess.DEVNULL,
+                        )
+                    except (OSError, subprocess.CalledProcessError):
+                        continue
+                    historical_digests.add(sha256(blob))
+                historical_blob_digests = historical_digests
+                if historical_digests:
+                    candidates = [
+                        (logical, value) for logical, value in rows.items()
+                        if Path(logical).name == Path(relative).name
+                        and value[2] in historical_digests
+                    ]
             if len(candidates) == 1:
                 _historical_logical, row = candidates[0]
                 historical_fallback = True
@@ -3413,7 +3445,7 @@ def validate_checkpoint_tool_identities(
         if production:
             if (
                 (not historical_fallback and row[0] != os.fspath(path))
-                or row[2] != sha256(source_payload)
+                or (row[2] != sha256(source_payload) if not historical_fallback else row[2] not in historical_blob_digests)
                 or not Path(row[0]).is_absolute()
                 or Path(row[0]).name != Path(relative).name
             ):
