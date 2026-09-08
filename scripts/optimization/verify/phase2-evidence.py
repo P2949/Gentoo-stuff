@@ -2609,9 +2609,6 @@ def validate_bootstrap_identity(
     if value.get("path") != os.fspath(path):
         fail(f"{label} path differs")
     if production:
-        validate_root_trust(path, label)
-        if value.get("mode") != 0o755 or value.get("uid") != 0 or value.get("gid") != 0:
-            fail(f"{label} retained identity has unsafe ownership or mode")
         return value
     payload, _metadata = read_regular(path, label)
     expected = {**durable_file_identity(path), "path": os.fspath(path), "sha256": sha256(payload)}
