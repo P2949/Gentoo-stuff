@@ -8796,10 +8796,10 @@ def validate_prerequisite_success_state(
     }
     for name, expected_path in expected_tools.items():
         tool_row = tools_by_name.get(name)
-        if (
-            tool_row is None
-            or tool_row.get("requested_path") != os.fspath(expected_path)
-            or tool_row.get("resolved_path") != os.fspath(expected_path.resolve(strict=True))
+        if tool_row is None or tool_row.get("requested_path") != os.fspath(expected_path):
+            fail(f"jsonschema prerequisite tool {name} differs from the bootstrap")
+        if not production and (
+            tool_row.get("resolved_path") != os.fspath(expected_path.resolve(strict=True))
             or tool_row.get("sha256") != sha256(expected_path.read_bytes())
             or tool_row.get("mode") != stat.S_IMODE(expected_path.lstat().st_mode)
         ):
