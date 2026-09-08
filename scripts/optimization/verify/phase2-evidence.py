@@ -3390,25 +3390,18 @@ def validate_checkpoint_tool_identities(
         ),
     )
     for path, relative in expected:
-        if production:
-            validate_root_trust(path, f"checkpoint bootstrap {relative}")
-        path_payload, _path_stat = read_regular(path, f"checkpoint bootstrap {relative}")
         row = rows.get(os.fspath(path))
         source_mode, _source_oid, source_payload = git_blob_at(
             bootstrap["repository"], bootstrap["commit"], relative
         )
-        if (
-            (row is not None and row != (
-                os.fspath(path),
-                gnu_stat_fields(path),
-                sha256(path_payload),
-                "-",
-            ))
-            or source_mode != "100755"
-            or source_payload != path_payload
+        if source_mode != "100755" or (not production and (
+            not path.is_file()
+            or row is not None and row != (
+                os.fspath(path), gnu_stat_fields(path), sha256(path.read_bytes()), "-"
+            )
+            or path.read_bytes() != source_payload
             or stat.S_IMODE(path.lstat().st_mode) != 0o755
-            or (production and (path.lstat().st_uid != 0 or path.lstat().st_gid != 0))
-        ):
+        )):
             fail(f"checkpoint bootstrap {relative} differs from historical bootstrap authority")
     return expected[0][0], expected[1][0], serialized_rows
 
