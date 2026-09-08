@@ -562,6 +562,7 @@ JSONSCHEMA_PRE_CHECKPOINT_TERMINAL=/var/lib/gentoo-optimization/state/project/bi
 JSONSCHEMA_PRE_CHECKPOINT_RECEIPT=/var/lib/gentoo-optimization/reports/checkpoint-$PRE_CHECKPOINT_ID/offline-restore-receipt.json
 JSONSCHEMA_PRE_CHECKPOINT_OPERATOR_MANIFEST=/var/lib/gentoo-optimization/reports/checkpoint-$PRE_CHECKPOINT_ID-operator-evidence/operator-evidence.manifest.json
 JSONSCHEMA_PREREQUISITE_SUCCESS=/var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-$JSONSCHEMA_INSTALL_ID.success.json
+JSONSCHEMA_RETRY_DISPOSITION=/var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-retry-disposition.json
 JSONSCHEMA_POST_CHECKPOINT_TERMINAL=/var/lib/gentoo-optimization/state/project/binpkg-checkpoint-$POST_CHECKPOINT_ID.offline-restore-proven.json
 JSONSCHEMA_POST_CHECKPOINT_RECEIPT=/var/lib/gentoo-optimization/reports/checkpoint-$POST_CHECKPOINT_ID/offline-restore-receipt.json
 JSONSCHEMA_POST_CHECKPOINT_OPERATOR_MANIFEST=/var/lib/gentoo-optimization/reports/checkpoint-$POST_CHECKPOINT_ID-operator-evidence/operator-evidence.manifest.json
@@ -590,6 +591,7 @@ phase2_evidence_tool component-state --production \
   --external-evidence jsonschema-pre-checkpoint-operator-manifest="$JSONSCHEMA_PRE_CHECKPOINT_OPERATOR_MANIFEST" \
   --external-evidence jsonschema-pre-checkpoint-terminal-state="$JSONSCHEMA_PRE_CHECKPOINT_TERMINAL" \
   --external-evidence jsonschema-prerequisite-success-state="$JSONSCHEMA_PREREQUISITE_SUCCESS" \
+  --external-evidence jsonschema-prerequisite-retry-disposition="$JSONSCHEMA_RETRY_DISPOSITION" \
   --output "$COMPONENT_ROOT/automation.json"
 
 for component in bolt-hooks capability-bolt capability-clang-ir \

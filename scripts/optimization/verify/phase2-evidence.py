@@ -9450,7 +9450,7 @@ def validate_prerequisite_success_state(
 
 
 def validate_prerequisite_retry_disposition(
-    payload: bytes, path: Path, *, production: bool
+    payload: bytes, path: Path, *, production: bool, successful_transaction_id: str
 ) -> None:
     disposition = require_object(
         parse_json_bytes(payload, "jsonschema prerequisite retry disposition"),
@@ -9465,25 +9465,31 @@ def validate_prerequisite_retry_disposition(
     seen: set[str] = set()
     state_root = Path("/var/lib/gentoo-optimization/state/project")
     canonical_states: dict[str, set[str]] = {}
+    known_suffixes = {
+        "preparation-attempt.json", "locked-authority.json", "prepared.json",
+        "armed.json", "rollback-in-progress.json", "recovery-failed.json",
+        "rolled-back.json", "success.json",
+    }
     for candidate in state_root.glob("jsonschema-prerequisite-jsonschema-source-*"):
-        if not candidate.is_file() or candidate.suffix not in {".json", ".jsonl"}:
+        if not candidate.is_file():
             continue
         match = re.fullmatch(
             r"jsonschema-prerequisite-(jsonschema-source-[^./]+)\.(.+)",
             candidate.name,
         )
-        if match and match.group(2) in {
-            "preparation-attempt.json", "locked-authority.json", "prepared.json",
-            "armed.json", "rollback-in-progress.json", "recovery-failed.json",
-            "rolled-back.json", "success.json",
-        }:
+        if match and match.group(2) in known_suffixes:
             canonical_states.setdefault(match.group(1), set()).add(os.fspath(candidate))
+        elif match:
+            fail(f"unknown jsonschema prerequisite transaction state suffix: {candidate}")
+    actual_retry_ids = set(canonical_states) - {successful_transaction_id}
     for raw in rows:
-        row = require_object(raw, "jsonschema prerequisite retry row", {"transaction_id", "classification", "states"})
+        row = require_object(raw, "jsonschema prerequisite retry row", {"transaction_id", "classification", "states", "reusable"} | ({"reconciliation"} if isinstance(raw, dict) and raw.get("classification") in {"externally-reconciled-consumed-nonterminal", "rollback-in-progress-with-external-reconciliation"} else set()))
         tid = require_string(row["transaction_id"], "jsonschema retry transaction ID")
         if tid in seen:
             fail("jsonschema retry disposition repeats a transaction")
         seen.add(tid)
+        if row.get("reusable") is not False:
+            fail("jsonschema retry rows must be non-reusable")
         states = require_list(row["states"], "jsonschema retry state paths")
         if not states:
             fail("jsonschema retry disposition omits retained states")
@@ -9513,14 +9519,40 @@ def validate_prerequisite_retry_disposition(
             fail("jsonschema retry disposition has an unsupported classification")
         declared = {os.fspath(absolute_path(item["path"], "jsonschema retry state path")) for item in states}
         actual = canonical_states.get(tid, set())
+        if tid == successful_transaction_id:
+            fail("successful prerequisite transaction must not appear in retry disposition")
         if declared != actual:
             fail("jsonschema retry disposition state set is not exhaustive")
+        suffixes = {Path(item).name.rsplit(".", 1)[-2] + ".json" for item in actual}
+        if classification == "terminal-rolled-back" and ("rolled-back.json" not in suffixes or "recovery-failed.json" in suffixes):
+            fail("retry classification does not match rolled-back state")
+        if classification == "terminal-recovery-failed" and ("recovery-failed.json" not in suffixes or "rolled-back.json" in suffixes):
+            fail("retry classification does not match recovery-failed state")
+        if classification == "prepared-only-consumed" and not actual <= {os.fspath(state_root / f"jsonschema-prerequisite-{tid}.prepared.json"), os.fspath(state_root / f"jsonschema-prerequisite-{tid}.preparation-attempt.json") }:
+            fail("prepared-only classification has later transaction state")
+        if classification == "locked-authority-only-consumed" and not actual <= {os.fspath(state_root / f"jsonschema-prerequisite-{tid}.locked-authority.json"), os.fspath(state_root / f"jsonschema-prerequisite-{tid}.preparation-attempt.json") }:
+            fail("locked-authority-only classification has later transaction state")
+        if classification == "rollback-in-progress-with-external-reconciliation" and "rollback-in-progress.json" not in suffixes:
+            fail("rollback-in-progress classification lacks rollback state")
         if classification in {"externally-reconciled-consumed-nonterminal", "rollback-in-progress-with-external-reconciliation"}:
             reconciliation = require_object(row.get("reconciliation"), "jsonschema retry reconciliation", {"transaction_id", "reusable", "states"})
             if reconciliation.get("transaction_id") != tid or reconciliation.get("reusable") is not False:
                 fail("jsonschema retry reconciliation is not bound")
-            if not require_list(reconciliation.get("states"), "jsonschema retry reconciliation states"):
+            reconciliation_states = require_list(reconciliation.get("states"), "jsonschema retry reconciliation states")
+            if not reconciliation_states:
                 fail("jsonschema retry reconciliation omits evidence")
+            for evidence in reconciliation_states:
+                evidence = require_object(evidence, "jsonschema retry reconciliation evidence", {"path", "sha256", "purpose"})
+                evidence_path = absolute_path(evidence["path"], "jsonschema retry reconciliation path")
+                if not evidence_path.is_file() or evidence_path.is_symlink():
+                    fail("jsonschema retry reconciliation evidence is not a regular file")
+                if production:
+                    validate_root_trust(evidence_path, "jsonschema retry reconciliation evidence", allow_hardlinks=True)
+                observed, _ = read_regular(evidence_path, "jsonschema retry reconciliation evidence", allow_hardlinks=True)
+                if sha256(observed) != evidence["sha256"]:
+                    fail("jsonschema retry reconciliation evidence digest changed")
+    if seen != actual_retry_ids:
+        fail("jsonschema retry disposition does not enumerate every retained prerequisite transaction")
     if [r["transaction_id"] for r in rows] != sorted(seen):
         fail("jsonschema retry disposition rows are not sorted")
 
@@ -9537,11 +9569,6 @@ def validate_automation_external_semantics(
         repository,
         production,
     )
-    retry_label = "jsonschema-prerequisite-retry-disposition"
-    if production or retry_label in payloads:
-        validate_prerequisite_retry_disposition(
-            payloads[retry_label], paths[retry_label], production=production
-        )
     pre = validate_checkpoint_lane("pre", payloads, paths, bootstrap, production)
     prerequisite = validate_prerequisite_success_state(
         payloads["jsonschema-prerequisite-success-state"],
@@ -9550,6 +9577,12 @@ def validate_automation_external_semantics(
         bootstrap,
         production,
     )
+    retry_label = "jsonschema-prerequisite-retry-disposition"
+    if production or retry_label in payloads:
+        validate_prerequisite_retry_disposition(
+            payloads[retry_label], paths[retry_label], production=production,
+            successful_transaction_id=prerequisite["transaction_id"],
+        )
     post = validate_checkpoint_lane("post", payloads, paths, bootstrap, production)
     if pre["id"] == post["id"]:
         fail("pre- and post-dependency checkpoints reuse one checkpoint ID")
@@ -9574,14 +9607,8 @@ def validate_automation_external_semantics(
         fail("current checkpoint selector does not name the post-dependency generation")
     post_operator = post["operator_root"]
     expected_added = ("\n".join(prerequisite["cpvs"]) + "\n").encode("utf-8")
-    expected_atoms = (
-        "\n".join(f"={cpv}" for cpv in prerequisite["cpvs"]) + "\n"
-    ).encode("utf-8")
-    for name, expected in (
-        ("jsonschema-prerequisite-added-cpvs.txt", expected_added),
-        ("delta-atoms.txt", expected_atoms),
-        ("expected-delta-atoms.txt", expected_atoms),
-    ):
+    expected_atoms = ("\n".join(f"={cpv}" for cpv in prerequisite["cpvs"]) + "\n").encode("utf-8")
+    for name, expected in (("jsonschema-prerequisite-added-cpvs.txt", expected_added), ("delta-atoms.txt", expected_atoms), ("expected-delta-atoms.txt", expected_atoms)):
         evidence_path = post_operator / name
         if production:
             validate_root_trust(evidence_path, f"post-checkpoint operator {name}")
@@ -9589,15 +9616,74 @@ def validate_automation_external_semantics(
         if observed != expected:
             fail(f"post-checkpoint operator {name} differs from the prerequisite plan")
     state_digest_path = post_operator / "jsonschema-prerequisite-state.sha256"
-    state_digest_payload, _state_digest_stat = read_regular(
-        state_digest_path, "post-checkpoint prerequisite state digest"
-    )
-    expected_digest_line = (
-        f"{sha256(payloads['jsonschema-prerequisite-success-state'])}  "
-        f"{prerequisite['canonical']}\n"
-    ).encode("utf-8")
+    state_digest_payload, _state_digest_stat = read_regular(state_digest_path, "post-checkpoint prerequisite state digest")
+    expected_digest_line = (f"{sha256(payloads['jsonschema-prerequisite-success-state'])}  {prerequisite['canonical']}\n").encode("utf-8")
     if state_digest_payload != expected_digest_line:
         fail("post-checkpoint operator evidence does not bind the prerequisite success state")
+
+
+def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> None:
+    """Produce the canonical, non-reusable disposition for retained attempts."""
+    state_root = absolute_path(arguments.state_root, "prerequisite state root")
+    success_path = absolute_path(arguments.success_state, "prerequisite success state")
+    if arguments.production:
+        validate_root_trust(state_root, "prerequisite state root", directory=True)
+        validate_root_trust(success_path, "prerequisite success state", allow_hardlinks=True)
+    reconciliation_path = absolute_path(arguments.reconciliation, "retry reconciliation input") if arguments.reconciliation else None
+    success = require_object(parse_json_bytes(read_regular(success_path, "prerequisite success state")[0], "prerequisite success state"), "prerequisite success state", {"transaction_id"})
+    successful_id = require_string(success["transaction_id"], "successful prerequisite transaction ID")
+    known_suffixes = {
+        "preparation-attempt.json", "locked-authority.json", "prepared.json", "armed.json",
+        "rollback-in-progress.json", "recovery-failed.json", "rolled-back.json", "success.json",
+    }
+    canonical: dict[str, list[Path]] = {}
+    for candidate in state_root.glob("jsonschema-prerequisite-jsonschema-source-*"):
+        if not candidate.is_file():
+            continue
+        match = re.fullmatch(r"jsonschema-prerequisite-(jsonschema-source-[^./]+)\.(.+)", candidate.name)
+        if not match:
+            continue
+        suffix = match.group(2)
+        if suffix not in known_suffixes:
+            fail(f"unknown jsonschema prerequisite transaction state suffix: {candidate}")
+        canonical.setdefault(match.group(1), []).append(candidate)
+    reconciliation = {}
+    if reconciliation_path is not None:
+        reconciliation = parse_json_bytes(
+            read_regular(reconciliation_path, "retry reconciliation input")[0],
+            "retry reconciliation input",
+        )
+        if not isinstance(reconciliation, dict) or any(not isinstance(key, str) for key in reconciliation):
+            fail("retry reconciliation input must be an object keyed by transaction ID")
+    rows = []
+    for tid in sorted(set(canonical) - {successful_id}):
+        paths = sorted(canonical[tid], key=os.fspath)
+        suffixes = {p.name.split(f"{tid}.", 1)[1] for p in paths}
+        if "rolled-back.json" in suffixes and "recovery-failed.json" not in suffixes:
+            classification = "terminal-rolled-back"
+        elif "recovery-failed.json" in suffixes and "rolled-back.json" not in suffixes:
+            classification = "terminal-recovery-failed"
+        elif "rollback-in-progress.json" in suffixes:
+            classification = "rollback-in-progress-with-external-reconciliation"
+        elif "prepared.json" in suffixes:
+            classification = "prepared-only-consumed"
+        elif "locked-authority.json" in suffixes:
+            classification = "locked-authority-only-consumed"
+        else:
+            classification = "externally-reconciled-consumed-nonterminal"
+        row = {"classification": classification, "reusable": False, "states": [] , "transaction_id": tid}
+        for p in paths:
+            data, _ = read_regular(p, "prerequisite transaction state", allow_hardlinks=True)
+            row["states"].append({"path": os.fspath(p), "sha256": sha256(data)})
+        if classification in {"rollback-in-progress-with-external-reconciliation", "externally-reconciled-consumed-nonterminal"}:
+            evidence = reconciliation.get(tid)
+            if not isinstance(evidence, list) or not evidence:
+                fail(f"reconciliation evidence required for {tid}")
+            row["reconciliation"] = {"transaction_id": tid, "reusable": False, "states": evidence}
+        rows.append(row)
+    document = {"schema": "gentoo-optimization-jsonschema-prerequisite-retry-disposition-v1", "rows": rows}
+    document["rows_sha256"] = sha256(prerequisite_canonical_json(rows))
+    atomic_publish(absolute_path(arguments.output, "retry disposition output"), pretty_json(document), bool(arguments.production))
 
 
 def validate_component_external_semantics(
@@ -11605,6 +11691,16 @@ def build_parser() -> argparse.ArgumentParser:
     component.add_argument("--output", required=True)
     component.add_argument("--production", action="store_true")
 
+    retry = subparsers.add_parser(
+        "prerequisite-retry-disposition",
+        help="produce the canonical retained jsonschema retry disposition",
+    )
+    retry.add_argument("--state-root", required=True)
+    retry.add_argument("--success-state", required=True)
+    retry.add_argument("--reconciliation")
+    retry.add_argument("--output", required=True)
+    retry.add_argument("--production", action="store_true")
+
     test_contract = subparsers.add_parser(
         "test-contract",
         help="validate exact top-level and internal test identities for one mode",
@@ -11645,6 +11741,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.action == "component-state":
             component_state_command(arguments)
             print(f"COMPONENT: {arguments.output}")
+            return 0
+        if arguments.action == "prerequisite-retry-disposition":
+            prerequisite_retry_disposition_command(arguments)
+            print(f"RETRY-DISPOSITION: {arguments.output}")
             return 0
         if arguments.action == "test-contract":
             test_contract_command(arguments)
