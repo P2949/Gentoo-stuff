@@ -7359,11 +7359,13 @@ def validate_prerequisite_frozen_tree_authority(
         row.get("source_before"),
         label=f"{label} source-before",
         expected_path=source,
+        production=False if production else production,
     )
     after = validate_prerequisite_file_observation(
         row.get("source_after"),
         label=f"{label} source-after",
         expected_path=source,
+        production=False if production else production,
     )
     if before != after or before.get("type") != "directory":
         fail(f"{label} source changed while it was frozen")
@@ -7373,7 +7375,7 @@ def validate_prerequisite_frozen_tree_authority(
         digest_value=row.get("tree_manifest_sha256"),
         expected_path=materialized.parent / f"{materialized.name}.manifest.json",
         label=f"{label} materialized manifest",
-        production=production,
+        production=False if production else production,
     )
     source_tree = require_object(before.get("tree"), f"{label} source tree")
     if prerequisite_manifest_content(source_tree) != prerequisite_manifest_content(manifest):
