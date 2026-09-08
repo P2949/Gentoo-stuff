@@ -3390,10 +3390,21 @@ def validate_checkpoint_tool_identities(
         ),
     )
     for path, relative in expected:
-        row = rows.get(os.fspath(path))
         source_mode, _source_oid, source_payload = git_blob_at(
             bootstrap["repository"], bootstrap["commit"], relative
         )
+        row = rows.get(os.fspath(path))
+        if production and row is None:
+            # Retained checkpoint reports may have been produced from a
+            # different immutable bootstrap directory.  Bind the observed
+            # historical row by its authenticated helper basename and Git
+            # blob digest rather than inventing today's directory identity.
+            candidates = [
+                value for logical, value in rows.items()
+                if Path(logical).name == Path(relative).name
+            ]
+            if len(candidates) == 1:
+                row = candidates[0]
         if source_mode != "100755" or row is None:
             fail(f"checkpoint bootstrap {relative} differs from historical bootstrap authority")
         if production:
