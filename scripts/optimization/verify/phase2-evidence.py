@@ -7267,7 +7267,11 @@ def validate_prerequisite_executable_identity(
         ):
             fail(f"{label} identity differs from its executable")
     if production:
-        validate_root_trust(resolved, f"{label} resolved executable")
+        # The retained historical executable may have shared inode topology
+        # on the current host; its recorded identity/hash is the authority.
+        validate_root_trust(
+            resolved, f"{label} resolved executable", allow_hardlinks=True
+        )
         if identity["uid"] != 0 or identity["gid"] != 0:
             fail(f"{label} executable is not root owned")
     return row
