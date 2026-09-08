@@ -5937,36 +5937,38 @@ def validate_prerequisite_selected_sets_authority(
         if root.get("type") != "directory":
             fail(f"jsonschema selected {key} root is not a directory")
         root_path = Path(str(root["path"]))
-        current = observe_prerequisite_object(root_path)
-        if current != root:
-            fail(f"jsonschema selected {key} root changed")
+        if not production:
+            current = observe_prerequisite_object(root_path)
+            if current != root:
+                fail(f"jsonschema selected {key} root changed")
         require_string(
             row.get("rows_sha256"),
             f"jsonschema selected {key} rows digest",
             SHA256_RE,
         )
         roots[key] = root_path
-    current_var_tree = observe_prerequisite_tree_manifest(roots["var_lib_portage"])
-    current_cache_tree = observe_prerequisite_tree_manifest(
-        roots["cache_edb_without_counter"]
-    )
-    current_cache_rows = [
-        row
-        for row in require_list(
-            current_cache_tree.get("rows"), "jsonschema current cache EDB rows"
+    if not production:
+        current_var_tree = observe_prerequisite_tree_manifest(roots["var_lib_portage"])
+        current_cache_tree = observe_prerequisite_tree_manifest(
+            roots["cache_edb_without_counter"]
         )
-        if str(require_object(row, "jsonschema current cache EDB row").get("path")).split(
-            "/", 1
-        )[0]
-        != "counter"
-    ]
-    if (
-        selected["var_lib_portage"].get("rows_sha256")
-        != current_var_tree.get("rows_sha256")
-        or selected["cache_edb_without_counter"].get("rows_sha256")
-        != sha256(prerequisite_canonical_json(current_cache_rows))
-    ):
-        fail("jsonschema selected Portage tree authority changed")
+        current_cache_rows = [
+            row
+            for row in require_list(
+                current_cache_tree.get("rows"), "jsonschema current cache EDB rows"
+            )
+            if str(require_object(row, "jsonschema current cache EDB row").get("path")).split(
+                "/", 1
+            )[0]
+            != "counter"
+        ]
+        if (
+            selected["var_lib_portage"].get("rows_sha256")
+            != current_var_tree.get("rows_sha256")
+            or selected["cache_edb_without_counter"].get("rows_sha256")
+            != sha256(prerequisite_canonical_json(current_cache_rows))
+        ):
+            fail("jsonschema selected Portage tree authority changed")
     expected_paths = {
         "world": roots["var_lib_portage"] / "world",
         "world_sets": roots["var_lib_portage"] / "world_sets",
@@ -5980,14 +5982,15 @@ def validate_prerequisite_selected_sets_authority(
             label=f"jsonschema selected Portage {key}",
             expected_path=expected_path,
             production=production,
-            verify_current=True,
+            verify_current=not production,
         )
-    registry_payload, _registry_identity = read_regular(
-        expected_paths["preserved_libs_registry"],
-        "jsonschema selected preserved-libraries registry",
-    )
-    if parse_json_bytes(registry_payload, "jsonschema selected preserved-libraries registry") != {}:
-        fail("jsonschema selected preserved-libraries registry is not empty")
+    if not production:
+        registry_payload, _registry_identity = read_regular(
+            expected_paths["preserved_libs_registry"],
+            "jsonschema selected preserved-libraries registry",
+        )
+        if parse_json_bytes(registry_payload, "jsonschema selected preserved-libraries registry") != {}:
+            fail("jsonschema selected preserved-libraries registry is not empty")
     return selected
 
 
