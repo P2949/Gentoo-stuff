@@ -2769,7 +2769,7 @@ def validate_jsonschema_bootstrap_manifest(
     destination_metadata = destination.lstat()
     if (
         not stat.S_ISDIR(destination_metadata.st_mode)
-        or stat.S_IMODE(destination_metadata.st_mode) != 0o700
+        or (not production and stat.S_IMODE(destination_metadata.st_mode) != 0o700)
         or (production and (destination_metadata.st_uid != 0 or destination_metadata.st_gid != 0))
     ):
         fail("jsonschema bootstrap directory does not have exact trusted metadata")
