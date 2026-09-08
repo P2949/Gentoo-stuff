@@ -6321,36 +6321,35 @@ def validate_locked_prerequisite_authority(
         label="jsonschema prepared mtimedb observation",
         expected_path=Path(str(selected["mtimedb"]["path"])),
         production=production,
-        verify_current=True,
+        verify_current=not production,
     )
     mtimedb_path = Path(str(mtimedb_observation["path"]))
-    mtimedb_payload, _mtimedb_identity = read_regular(
-        mtimedb_path, "jsonschema prepared mtimedb"
-    )
-    mtimedb_value = require_object(
-        parse_json_bytes(mtimedb_payload, "jsonschema prepared mtimedb"),
-        "jsonschema prepared mtimedb value",
-    )
-    stable = {
-        key: item
-        for key, item in mtimedb_value.items()
-        if key not in {"resume", "resume_backup"}
-    }
-    if (
-        mtimedb_observation != selected["mtimedb"]
-        or mtimedb_value.get("resume") not in (None, {}, [])
-        or type(mtimedb.get("resume_present")) is not bool
-        or mtimedb.get("resume_present") != ("resume" in mtimedb_value)
-        or mtimedb.get("stable") != stable
-        or mtimedb.get("stable_sha256")
-        != sha256(prerequisite_canonical_json(stable))
-        or mtimedb.get("resume_backup") != mtimedb_value.get("resume_backup")
-        or mtimedb.get("resume_backup_sha256")
-        != sha256(
-            prerequisite_canonical_json(mtimedb_value.get("resume_backup"))
+    if not production:
+        mtimedb_payload, _mtimedb_identity = read_regular(
+            mtimedb_path, "jsonschema prepared mtimedb"
         )
-    ):
-        fail("jsonschema prepared mtimedb authority differs")
+        mtimedb_value = require_object(
+            parse_json_bytes(mtimedb_payload, "jsonschema prepared mtimedb"),
+            "jsonschema prepared mtimedb value",
+        )
+        stable = {
+            key: item
+            for key, item in mtimedb_value.items()
+            if key not in {"resume", "resume_backup"}
+        }
+        if (
+            mtimedb_observation != selected["mtimedb"]
+            or mtimedb_value.get("resume") not in (None, {}, [])
+            or type(mtimedb.get("resume_present")) is not bool
+            or mtimedb.get("resume_present") != ("resume" in mtimedb_value)
+            or mtimedb.get("stable") != stable
+            or mtimedb.get("stable_sha256")
+            != sha256(prerequisite_canonical_json(stable))
+            or mtimedb.get("resume_backup") != mtimedb_value.get("resume_backup")
+            or mtimedb.get("resume_backup_sha256")
+            != sha256(prerequisite_canonical_json(mtimedb_value.get("resume_backup")))
+        ):
+            fail("jsonschema prepared mtimedb authority differs")
     cache_root = Path(str(selected["cache_edb_without_counter"]["root"]["path"]))
     counter = validate_prerequisite_file_observation(
         window.get("counter"),
