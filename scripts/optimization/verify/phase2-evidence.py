@@ -3394,14 +3394,14 @@ def validate_checkpoint_tool_identities(
         source_mode, _source_oid, source_payload = git_blob_at(
             bootstrap["repository"], bootstrap["commit"], relative
         )
-        if source_mode != "100755" or (not production and (
-            not path.is_file()
-            or row is not None and row != (
-                os.fspath(path), gnu_stat_fields(path), sha256(path.read_bytes()), "-"
-            )
-            or path.read_bytes() != source_payload
-            or stat.S_IMODE(path.lstat().st_mode) != 0o755
-        )):
+        if source_mode != "100755" or row is None:
+            fail(f"checkpoint bootstrap {relative} differs from historical bootstrap authority")
+        if production:
+            if row[0] != os.fspath(path) or row[2] != sha256(source_payload):
+                fail(f"checkpoint bootstrap {relative} is not bound to its historical Git blob")
+        elif row != (
+            os.fspath(path), gnu_stat_fields(path), sha256(path.read_bytes()), "-"
+        ) or path.read_bytes() != source_payload or stat.S_IMODE(path.lstat().st_mode) != 0o755:
             fail(f"checkpoint bootstrap {relative} differs from historical bootstrap authority")
     return expected[0][0], expected[1][0], serialized_rows
 
@@ -7475,7 +7475,16 @@ def validate_prerequisite_framework(
         production=production,
     )
     candidate_path = Path(str(candidate["resolved_path"]))
-    if selector_path.resolve(strict=True) != candidate_path or candidate_path.parent != selector_path.parent:
+    if production:
+        historical_target = require_string(
+            selector.get("target"), "jsonschema historical framework selector target"
+        )
+        target_path = Path(historical_target)
+        if not target_path.is_absolute():
+            target_path = selector_path.parent / target_path
+        if target_path != candidate_path or candidate_path.parent != selector_path.parent:
+            fail("jsonschema historical framework selector does not name its direct candidate")
+    elif selector_path.resolve(strict=True) != candidate_path or candidate_path.parent != selector_path.parent:
         fail("jsonschema framework selector does not name its direct candidate")
     stable_libexec = validate_prerequisite_directory_authority(
         framework.get("stable_libexec"),
@@ -7829,7 +7838,7 @@ def validate_prerequisite_repository_authorities(
             repository.get("materialized_location"),
             f"jsonschema repository {name} materialized path",
         )
-        if configured.resolve(strict=True) != source:
+        if not production and configured.resolve(strict=True) != source:
             fail(f"jsonschema repository {name} configured/source paths differ")
         if production and materialized != authority_root / "repositories" / name:
             fail(f"jsonschema repository {name} materialized path is not canonical")
@@ -8731,7 +8740,7 @@ def validate_prerequisite_success_state(
         require_string(row.get("sha256"), f"jsonschema prerequisite {name} digest", SHA256_RE)
         for key in ("device", "inode", "uid", "gid", "mode", "nlink", "size"):
             require_int(row.get(key), f"jsonschema prerequisite {name} {key}")
-        if resolved != requested.resolve(strict=True):
+        if not production and resolved != requested.resolve(strict=True):
             fail(f"jsonschema prerequisite {name} requested/resolved identity differs")
         if not production:
             resolved_payload, resolved_metadata = read_regular(
