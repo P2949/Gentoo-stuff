@@ -258,8 +258,8 @@
   },
   "unittest_suites": [
     {
-      "expected_count": 44,
-      "subtest_names_sha256": "d4f159a54f8919d37f7af7ee894b3c05aac9a14116725e9f885a3996f16e6b7e",
+      "expected_count": 45,
+      "subtest_names_sha256": "d7801ec8aec3f54e61521c9ca69e81837fe01059810818ee7891a5cdbb6b67d3",
       "test": "phase2-evidence-contract"
     },
     {
