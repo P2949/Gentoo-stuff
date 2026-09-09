@@ -692,3 +692,22 @@ states, validation-inventory JSON, transaction receipt,
 authorization/sidecar/token-scan evidence, and detached index. Run
 `verify --production` immediately before declaring the Phase 2 boundary and
 again immediately before Phase 3 begins on that same boot.
+
+## Prerequisite retry-disposition publication
+
+Before generating the automation component, prepare the canonical reconciliation
+input and publish the immutable retry disposition with the existing verifier:
+
+```sh
+test ! -e /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-retry-disposition.json
+phase2-evidence.py prerequisite-retry-disposition --production \
+  --state-root /var/lib/gentoo-optimization/state/project \
+  --success-state /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-jsonschema-source-20260906T012300Z.success.json \
+  --reconciliation /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-reconciliation.json \
+  --output /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-retry-disposition.json
+```
+
+The reconciliation object must contain exactly the non-success transactions
+requiring external reconciliation. Its evidence paths, purposes, digests, and
+ordering are validated by the producer and independently revalidated by the
+automation component. Existing canonical output is never overwritten.

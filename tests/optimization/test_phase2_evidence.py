@@ -4579,6 +4579,17 @@ namespace["require_active_python_matches_reviewed_tools"](
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("test driver identity", result.stderr)
 
+    def test_retry_classification_uses_highest_durable_phase(self) -> None:
+        ns = runpy.run_path(os.fspath(TOOL))
+        classify = ns["prerequisite_retry_classification"]
+        self.assertEqual(classify({"preparation-attempt.json", "prepared.json", "armed.json"}), "externally-reconciled-consumed-nonterminal")
+        self.assertEqual(classify({"preparation-attempt.json", "prepared.json"}), "prepared-only-consumed")
+        self.assertEqual(classify({"locked-authority.json"}), "locked-authority-only-consumed")
+        with self.assertRaises(Exception):
+            classify({"success.json"})
+        with self.assertRaises(Exception):
+            classify({"rolled-back.json", "recovery-failed.json"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9573,6 +9573,26 @@ def validate_prerequisite_success_state(
     return {"cpvs": cpvs, "canonical": canonical_path, "transaction_id": transaction_id}
 
 
+def prerequisite_retry_classification(suffixes: set[str]) -> str:
+    if "success.json" in suffixes:
+        fail("a retry transaction contains a successful prerequisite state")
+    if {"rolled-back.json", "recovery-failed.json"} <= suffixes:
+        fail("retry transaction contains conflicting terminal states")
+    if "rolled-back.json" in suffixes:
+        return "terminal-rolled-back"
+    if "recovery-failed.json" in suffixes:
+        return "terminal-recovery-failed"
+    if "rollback-in-progress.json" in suffixes:
+        return "rollback-in-progress-with-external-reconciliation"
+    if "armed.json" in suffixes:
+        return "externally-reconciled-consumed-nonterminal"
+    if "prepared.json" in suffixes:
+        return "prepared-only-consumed"
+    if "locked-authority.json" in suffixes:
+        return "locked-authority-only-consumed"
+    return "prepared-only-consumed"
+
+
 def validate_prerequisite_retry_disposition(
     payload: bytes, path: Path, *, production: bool, successful_transaction_id: str
 ) -> None:
@@ -9608,6 +9628,10 @@ def validate_prerequisite_retry_disposition(
         elif match:
             fail(f"unknown jsonschema prerequisite transaction state suffix: {candidate}")
     actual_retry_ids = set(canonical_states) - {successful_transaction_id}
+    for tid, states in canonical_states.items():
+        suffixes = {Path(item).name.split(f"{tid}.", 1)[1] for item in states}
+        if tid != successful_transaction_id and "success.json" in suffixes:
+            fail("a non-authoritative prerequisite transaction contains success.json")
     for raw in rows:
         row = require_object(raw, "jsonschema prerequisite retry row", {"transaction_id", "classification", "states", "reusable"} | ({"reconciliation"} if isinstance(raw, dict) and raw.get("classification") in {"externally-reconciled-consumed-nonterminal", "rollback-in-progress-with-external-reconciliation"} else set()))
         tid = require_string(row["transaction_id"], "jsonschema retry transaction ID")
@@ -9653,6 +9677,8 @@ def validate_prerequisite_retry_disposition(
             Path(item).name.split(f"{tid}.", 1)[1]
             for item in actual
         }
+        if classification != prerequisite_retry_classification(suffixes):
+            fail("retry classification does not match retained transaction phases")
         if classification == "terminal-rolled-back" and ("rolled-back.json" not in suffixes or "recovery-failed.json" in suffixes):
             fail("retry classification does not match rolled-back state")
         if classification == "terminal-recovery-failed" and ("recovery-failed.json" not in suffixes or "rolled-back.json" in suffixes):
@@ -9672,6 +9698,7 @@ def validate_prerequisite_retry_disposition(
                 fail("jsonschema retry reconciliation omits evidence")
             for evidence in reconciliation_states:
                 evidence = require_object(evidence, "jsonschema retry reconciliation evidence", {"path", "sha256", "purpose"})
+                require_string(evidence["purpose"], "jsonschema retry reconciliation purpose")
                 evidence_path = absolute_path(evidence["path"], "jsonschema retry reconciliation path")
                 if not evidence_path.is_file() or evidence_path.is_symlink():
                     fail("jsonschema retry reconciliation evidence is not a regular file")
@@ -9680,6 +9707,9 @@ def validate_prerequisite_retry_disposition(
                 observed, _ = read_regular(evidence_path, "jsonschema retry reconciliation evidence", allow_hardlinks=True)
                 if sha256(observed) != evidence["sha256"]:
                     fail("jsonschema retry reconciliation evidence digest changed")
+            evidence_paths = [absolute_path(item["path"], "jsonschema retry reconciliation path") for item in reconciliation_states]
+            if len(evidence_paths) != len(set(evidence_paths)):
+                fail("jsonschema retry reconciliation repeats an evidence path")
     if seen != actual_retry_ids:
         fail("jsonschema retry disposition does not enumerate every retained prerequisite transaction")
     if [r["transaction_id"] for r in rows] != sorted(seen):
@@ -9832,18 +9862,7 @@ def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> Non
     for tid in sorted(set(canonical) - {successful_id}):
         paths = sorted(canonical[tid], key=os.fspath)
         suffixes = {p.name.split(f"{tid}.", 1)[1] for p in paths}
-        if "rolled-back.json" in suffixes and "recovery-failed.json" not in suffixes:
-            classification = "terminal-rolled-back"
-        elif "recovery-failed.json" in suffixes and "rolled-back.json" not in suffixes:
-            classification = "terminal-recovery-failed"
-        elif "rollback-in-progress.json" in suffixes:
-            classification = "rollback-in-progress-with-external-reconciliation"
-        elif "prepared.json" in suffixes or suffixes <= {"preparation-attempt.json"}:
-            classification = "prepared-only-consumed"
-        elif "locked-authority.json" in suffixes:
-            classification = "locked-authority-only-consumed"
-        else:
-            classification = "externally-reconciled-consumed-nonterminal"
+        classification = prerequisite_retry_classification(suffixes)
         row = {"classification": classification, "reusable": False, "states": [] , "transaction_id": tid}
         for p in paths:
             data, _ = read_regular(p, "prerequisite transaction state", allow_hardlinks=True)
@@ -9856,7 +9875,12 @@ def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> Non
         rows.append(row)
     document = {"schema": "gentoo-optimization-jsonschema-prerequisite-retry-disposition-v1", "rows": rows}
     document["rows_sha256"] = sha256(prerequisite_canonical_json(rows))
-    atomic_publish(absolute_path(arguments.output, "retry disposition output"), pretty_json(document), bool(arguments.production))
+    payload = pretty_json(document)
+    validate_prerequisite_retry_disposition(
+        payload, absolute_path(arguments.output, "retry disposition output"),
+        production=bool(arguments.production), successful_transaction_id=successful_id,
+    )
+    atomic_publish(absolute_path(arguments.output, "retry disposition output"), payload, bool(arguments.production))
 
 
 def validate_component_external_semantics(
