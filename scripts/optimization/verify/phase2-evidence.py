@@ -9608,7 +9608,7 @@ def validate_prerequisite_retry_disposition(
     if disposition["rows_sha256"] != sha256(prerequisite_canonical_json(rows)):
         fail("jsonschema prerequisite retry disposition is not canonically bound")
     seen: set[str] = set()
-    state_root = absolute_path(state_root, "prerequisite state root")
+    state_root = absolute_path(os.fspath(state_root), "prerequisite state root")
     canonical_states: dict[str, set[str]] = {}
     known_suffixes = {
         "preparation-attempt.json", "locked-authority.json", "prepared.json",
