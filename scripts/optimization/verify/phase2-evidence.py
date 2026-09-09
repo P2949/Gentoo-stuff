@@ -6806,10 +6806,9 @@ def validate_prerequisite_execution_spec(
         "--usepkg=n", "--keep-going=n", "--fail-clean=y", "--noconfmem",
         "--nospinner", "--color=n", "--jobs=1", "--package-moves=n",
     ]
-    if len(command) not in {
-        12 + len(emerge_options) + len(plan_atoms),
-        12 + len(historical_emerge_options) + 1 + len(plan_atoms),
-    }:
+    expected_current = ["--", emerge_path, *emerge_options, "--ask=y", *plan_atoms]
+    expected_historical = ["--", emerge_path, *historical_emerge_options, "--ask=y", *plan_atoms]
+    if len(command[9:]) not in {len(expected_current), len(expected_historical)}:
         fail("jsonschema source command length differs from the exact plan")
     control_fd = command[7]
     control_session = command[8]
@@ -6830,10 +6829,7 @@ def validate_prerequisite_execution_spec(
         or not isinstance(control_session, str)
         or sha256(control_session.encode("ascii", errors="strict"))
         != child.get("control_session_sha256")
-        or command[9:] not in (
-            ["--", emerge_path, *emerge_options, "--ask=y", *plan_atoms],
-            ["--", emerge_path, *historical_emerge_options, "--ask=y", *plan_atoms],
-        )
+        or command[9:] not in (expected_current, expected_historical)
     ):
         fail("jsonschema source command differs from the exact held-lock action")
     mounts = require_list(spec.get("mounts"), "jsonschema source mount authority", nonempty=True)
