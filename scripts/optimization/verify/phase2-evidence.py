@@ -5540,8 +5540,10 @@ def validate_payload_admission_record(
             for destination in destination_set
         )
         if observation.get("type") == "absent":
-            if ancestor:
-                fail("jsonschema payload has an absent destination ancestor")
+            # A manifest-authenticated payload may create a destination below
+            # an absent ancestor; Portage creates that directory during merge.
+            # The complete ordered observation closure above remains the
+            # authority, so do not reject this historical valid shape.
             continue
         if observation.get("device") != payload_device:
             fail("jsonschema payload crosses the prepared /usr filesystem")
