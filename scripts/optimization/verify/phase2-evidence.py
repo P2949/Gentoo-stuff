@@ -321,7 +321,15 @@ def validate_root_trusted_entrypoint(path: Path, label: str) -> None:
     except OSError as error:
         fail(f"cannot inspect production {label} entry point {path}: {error}")
     if stat.S_ISLNK(metadata.st_mode):
-        validate_root_trust(path.parent, f"{label} entry-point parent", directory=True)
+        parent = path.parent
+        # The live Gentoo layout intentionally exposes /bin as a symlink to
+        # /usr/bin.  Bind that exact immutable ABI path while validating the
+        # real trusted directory rather than rejecting the system's standard
+        # entry-point alias.
+        if parent == Path("/bin") and parent.resolve(strict=True) == Path("/usr/bin"):
+            validate_root_trust(Path("/usr/bin"), f"{label} entry-point parent", directory=True)
+        else:
+            validate_root_trust(parent, f"{label} entry-point parent", directory=True)
         if metadata.st_uid != 0:
             fail(f"production {label} entry-point symlink is not root-owned: {path}")
         return
