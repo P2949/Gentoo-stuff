@@ -9891,7 +9891,12 @@ def validate_component_external_semantics(
     if component_name != "sample-pgo":
         return
     token_payload = payloads["production-token-scan"]
-    if token_payload != b"passed\t-\n":
+    token_lines = token_payload.decode("utf-8").splitlines()
+    if token_payload != b"passed\t-\n" and not (
+        len(token_lines) == 2
+        and token_lines[0] == "status\tpath_sha256"
+        and token_lines[1] == "passed\t-"
+    ):
         fail("production token scan is not the exact terminal pass receipt")
     publication_payload = payloads["production-publication-context"]
     try:
