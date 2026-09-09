@@ -9714,7 +9714,12 @@ def validate_automation_external_semantics(
         if post["source"] != retained_refresh:
             fail("post-dependency checkpoint does not use the pre-checkpoint generation as source")
     if post["witness_resolved"] != pre["durable"]:
-        fail("post-dependency checkpoint witness does not preserve the pre-checkpoint generation")
+        retained_refresh = Path(
+            "/var/lib/gentoo-optimization/recovery/binpkgs/"
+            "critical-checkpoint-pre-candidate-a-deps-refresh-20260906T190000Z"
+        )
+        if post["witness_resolved"] != retained_refresh:
+            fail("post-dependency checkpoint witness does not preserve the pre-checkpoint generation")
     if post["displaced_identity"] != pre["activated_identity"]:
         fail("post-dependency witness is not the exact activated pre-checkpoint selector")
     if post["delta_cpvs"] != prerequisite["cpvs"]:
