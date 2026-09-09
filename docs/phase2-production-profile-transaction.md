@@ -577,6 +577,16 @@ phase2_evidence_tool() {
     "$EVIDENCE_PY" -I -B "$EVIDENCE_TOOL" "$@"
 }
 
+# Publish the immutable retry disposition before any component consumes it.
+# The reconciliation input is canonical JSON, root-owned, non-symlink, private,
+# and its keys must exactly equal the externally reconciled transaction IDs.
+doas test ! -e "$JSONSCHEMA_RETRY_DISPOSITION"
+phase2_evidence_tool prerequisite-retry-disposition --production \
+  --state-root /var/lib/gentoo-optimization/state/project \
+  --success-state "$JSONSCHEMA_PREREQUISITE_SUCCESS" \
+  --reconciliation /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-reconciliation.json \
+  --output "$JSONSCHEMA_RETRY_DISPOSITION"
+
 doas test ! -e "$COMPONENT_ROOT/automation.json"
 phase2_evidence_tool component-state --production \
   --repository-root "$SOURCE" --component automation --run-id "$RUN_ID" \
@@ -692,22 +702,3 @@ states, validation-inventory JSON, transaction receipt,
 authorization/sidecar/token-scan evidence, and detached index. Run
 `verify --production` immediately before declaring the Phase 2 boundary and
 again immediately before Phase 3 begins on that same boot.
-
-## Prerequisite retry-disposition publication
-
-Before generating the automation component, prepare the canonical reconciliation
-input and publish the immutable retry disposition with the existing verifier:
-
-```sh
-test ! -e /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-retry-disposition.json
-phase2-evidence.py prerequisite-retry-disposition --production \
-  --state-root /var/lib/gentoo-optimization/state/project \
-  --success-state /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-jsonschema-source-20260906T012300Z.success.json \
-  --reconciliation /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-reconciliation.json \
-  --output /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-retry-disposition.json
-```
-
-The reconciliation object must contain exactly the non-success transactions
-requiring external reconciliation. Its evidence paths, purposes, digests, and
-ordering are validated by the producer and independently revalidated by the
-automation component. Existing canonical output is never overwritten.

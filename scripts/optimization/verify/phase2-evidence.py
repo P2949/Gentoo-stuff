@@ -9594,7 +9594,8 @@ def prerequisite_retry_classification(suffixes: set[str]) -> str:
 
 
 def validate_prerequisite_retry_disposition(
-    payload: bytes, path: Path, *, production: bool, successful_transaction_id: str
+    payload: bytes, path: Path, *, production: bool, successful_transaction_id: str,
+    state_root: Path = Path("/var/lib/gentoo-optimization/state/project")
 ) -> None:
     disposition = require_object(
         parse_json_bytes(payload, "jsonschema prerequisite retry disposition"),
@@ -9607,7 +9608,7 @@ def validate_prerequisite_retry_disposition(
     if disposition["rows_sha256"] != sha256(prerequisite_canonical_json(rows)):
         fail("jsonschema prerequisite retry disposition is not canonically bound")
     seen: set[str] = set()
-    state_root = Path("/var/lib/gentoo-optimization/state/project")
+    state_root = absolute_path(state_root, "prerequisite state root")
     canonical_states: dict[str, set[str]] = {}
     known_suffixes = {
         "preparation-attempt.json", "locked-authority.json", "prepared.json",
@@ -9700,6 +9701,14 @@ def validate_prerequisite_retry_disposition(
                 evidence = require_object(evidence, "jsonschema retry reconciliation evidence", {"path", "sha256", "purpose"})
                 require_string(evidence["purpose"], "jsonschema retry reconciliation purpose")
                 evidence_path = absolute_path(evidence["path"], "jsonschema retry reconciliation path")
+                expected_state_prefix = state_root / f"jsonschema-prerequisite-{tid}."
+                reports_root = Path("/var/lib/gentoo-optimization/reports") / tid
+                if not (
+                    evidence_path.parent == state_root
+                    and evidence_path.name.startswith(expected_state_prefix.name)
+                    or reports_root in evidence_path.parents
+                ):
+                    fail("jsonschema retry reconciliation evidence is outside its transaction namespace")
                 if not evidence_path.is_file() or evidence_path.is_symlink():
                     fail("jsonschema retry reconciliation evidence is not a regular file")
                 if production:
@@ -9707,9 +9716,18 @@ def validate_prerequisite_retry_disposition(
                 observed, _ = read_regular(evidence_path, "jsonschema retry reconciliation evidence", allow_hardlinks=True)
                 if sha256(observed) != evidence["sha256"]:
                     fail("jsonschema retry reconciliation evidence digest changed")
+                try:
+                    structured = parse_json_bytes(observed, "jsonschema retry reconciliation evidence")
+                except SystemExit:
+                    structured = None
+                if isinstance(structured, dict) and isinstance(structured.get("transaction_id"), str):
+                    if structured["transaction_id"] != tid:
+                        fail("jsonschema retry reconciliation evidence transaction differs")
             evidence_paths = [absolute_path(item["path"], "jsonschema retry reconciliation path") for item in reconciliation_states]
             if len(evidence_paths) != len(set(evidence_paths)):
                 fail("jsonschema retry reconciliation repeats an evidence path")
+            if reconciliation_states != sorted(reconciliation_states, key=lambda item: (item["path"], item["purpose"], item["sha256"])):
+                fail("jsonschema retry reconciliation evidence is not canonically ordered")
     if seen != actual_retry_ids:
         fail("jsonschema retry disposition does not enumerate every retained prerequisite transaction")
     if [r["transaction_id"] for r in rows] != sorted(seen):
@@ -9741,6 +9759,7 @@ def validate_automation_external_semantics(
         validate_prerequisite_retry_disposition(
             payloads[retry_label], paths[retry_label], production=production,
             successful_transaction_id=prerequisite["transaction_id"],
+            state_root=Path("/var/lib/gentoo-optimization/state/project"),
         )
     post = validate_checkpoint_lane("post", payloads, paths, bootstrap, production)
     if pre["id"] == post["id"]:
@@ -9858,6 +9877,13 @@ def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> Non
         )
         if not isinstance(reconciliation, dict) or any(not isinstance(key, str) for key in reconciliation):
             fail("retry reconciliation input must be an object keyed by transaction ID")
+    required_reconciliation_ids = {
+        tid for tid in set(canonical) - {successful_id}
+        if prerequisite_retry_classification({p.name.split(f"{tid}.", 1)[1] for p in canonical[tid]})
+        in {"rollback-in-progress-with-external-reconciliation", "externally-reconciled-consumed-nonterminal"}
+    }
+    if set(reconciliation) != required_reconciliation_ids:
+        fail("retry reconciliation input transaction set is not exact")
     rows = []
     for tid in sorted(set(canonical) - {successful_id}):
         paths = sorted(canonical[tid], key=os.fspath)
@@ -9871,6 +9897,7 @@ def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> Non
             evidence = reconciliation.get(tid)
             if not isinstance(evidence, list) or not evidence:
                 fail(f"reconciliation evidence required for {tid}")
+            evidence = sorted(evidence, key=lambda item: (item["path"], item["purpose"], item["sha256"]))
             row["reconciliation"] = {"transaction_id": tid, "reusable": False, "states": evidence}
         rows.append(row)
     document = {"schema": "gentoo-optimization-jsonschema-prerequisite-retry-disposition-v1", "rows": rows}
@@ -9879,6 +9906,7 @@ def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> Non
     validate_prerequisite_retry_disposition(
         payload, absolute_path(arguments.output, "retry disposition output"),
         production=bool(arguments.production), successful_transaction_id=successful_id,
+        state_root=state_root,
     )
     atomic_publish(absolute_path(arguments.output, "retry disposition output"), payload, bool(arguments.production))
 
