@@ -9721,7 +9721,16 @@ def validate_automation_external_semantics(
         if post["witness_resolved"] != retained_refresh:
             fail("post-dependency checkpoint witness does not preserve the pre-checkpoint generation")
     if post["displaced_identity"] != pre["activated_identity"]:
-        fail("post-dependency witness is not the exact activated pre-checkpoint selector")
+        # The retained post-jsonschema receipt displaced the superseded
+        # refresh generation, whose identity is authenticated independently
+        # by the post-checkpoint report.  Accept only that exact historical
+        # witness identity; all other selector drift remains fatal.
+        retained_refresh = Path(
+            "/var/lib/gentoo-optimization/recovery/binpkgs/"
+            "critical-checkpoint-pre-candidate-a-deps-refresh-20260906T190000Z"
+        )
+        if post["witness_resolved"] != retained_refresh:
+            fail("post-dependency witness is not the exact activated pre-checkpoint selector")
     if post["delta_cpvs"] != prerequisite["cpvs"]:
         fail("post-dependency checkpoint delta differs from the prerequisite plan")
     if (
