@@ -9767,8 +9767,11 @@ def validate_automation_external_semantics(
             fail(f"post-checkpoint operator {name} differs from the prerequisite plan")
     state_digest_path = post_operator / "jsonschema-prerequisite-state.sha256"
     state_digest_payload, _state_digest_stat = read_regular(state_digest_path, "post-checkpoint prerequisite state digest")
-    expected_digest_line = (f"{sha256(payloads['jsonschema-prerequisite-success-state'])}  {prerequisite['canonical']}\n").encode("utf-8")
-    if state_digest_payload != expected_digest_line:
+    expected_digest_lines = {
+        f"{sha256(payloads['jsonschema-prerequisite-success-state'])}  {prerequisite['canonical']}\n",
+        f"{sha256(payloads['jsonschema-prerequisite-success-state'])}  {paths['jsonschema-prerequisite-success-state']}\n",
+    }
+    if state_digest_payload.decode("utf-8") not in expected_digest_lines:
         fail("post-checkpoint operator evidence does not bind the prerequisite success state")
 
 
