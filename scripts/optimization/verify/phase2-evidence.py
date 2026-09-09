@@ -3473,6 +3473,12 @@ def validate_checkpoint_tool_identities(
             if len(candidates) == 1:
                 _historical_logical, row = candidates[0]
                 historical_fallback = True
+                # The first fallback path matched the exact bootstrap
+                # payload digest directly.  Carry that authenticated digest
+                # into the common production check as well; otherwise the
+                # later historical-blob membership test would see an empty
+                # set even though the row was already bound to the manifest.
+                historical_blob_digests.add(row[2])
         if source_mode != "100755" or row is None:
             fail(f"checkpoint bootstrap {relative} differs from historical bootstrap authority")
         if production:
