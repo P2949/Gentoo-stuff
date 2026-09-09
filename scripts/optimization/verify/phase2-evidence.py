@@ -2778,6 +2778,11 @@ def validate_jsonschema_bootstrap_manifest(
         "destination": destination,
         "python": python_path,
         "repository": candidate_repository,
+        # Retained checkpoint reports may reference helper blobs from the
+        # immutable bootstrap checkout rather than the successor checkout.
+        # Keep that authenticated repository available for historical blob
+        # lookup; it is bound above by repository-root identity and manifest.
+        "source_repository": source_root,
         "candidate_commit": candidate_commit,
     }
 
@@ -3411,37 +3416,38 @@ def validate_checkpoint_tool_identities(
                 # immutable Git blob that is no longer the bootstrap commit's
                 # current helper.  Accept only when that exact digest is still
                 # present as a historical blob in the authenticated repository.
-                try:
-                    object_ids = subprocess.check_output(
-                        ["git", "-C", os.fspath(bootstrap["repository"]), "rev-list", "--all", "--objects", "--", relative],
-                        text=True,
-                        stderr=subprocess.DEVNULL,
-                    ).splitlines()
-                except (OSError, subprocess.CalledProcessError):
-                    object_ids = []
                 historical_digests = set()
-                for object_line in object_ids:
-                    object_id = object_line.split(" ", 1)[0]
+                repositories = [bootstrap["repository"]]
+                if bootstrap.get("source_repository") != bootstrap["repository"]:
+                    repositories.append(bootstrap["source_repository"])
+                for historical_repository in repositories:
                     try:
-                        blob = subprocess.check_output(
-                            ["git", "-C", os.fspath(bootstrap["repository"]), "cat-file", "blob", object_id],
-                            stderr=subprocess.DEVNULL,
-                        )
+                        object_ids = subprocess.check_output(
+                            ["git", "-C", os.fspath(historical_repository), "rev-list", "--all", "--objects", "--", relative],
+                            text=True, stderr=subprocess.DEVNULL,
+                        ).splitlines()
                     except (OSError, subprocess.CalledProcessError):
+                        object_ids = []
+                    for object_line in object_ids:
+                        object_id = object_line.split(" ", 1)[0]
+                        try:
+                            blob = subprocess.check_output(
+                                ["git", "-C", os.fspath(historical_repository), "cat-file", "blob", object_id],
+                                stderr=subprocess.DEVNULL,
+                            )
+                        except (OSError, subprocess.CalledProcessError):
+                            continue
+                        historical_digests.add(sha256(blob))
+                    if candidates:
                         continue
-                    historical_digests.add(sha256(blob))
-                if not candidates:
                     # A retained bootstrap may reference a blob that remains
                     # in the authenticated repository object database but is
                     # no longer reachable from a current ref.  Search only
                     # blob objects and still require the exact recorded digest.
                     try:
                         all_objects = subprocess.check_output(
-                            ["git", "-C", os.fspath(bootstrap["repository"]),
-                             "cat-file", "--batch-all-objects",
-                             "--batch-check=%(objectname) %(objecttype)"],
-                            text=True,
-                            stderr=subprocess.DEVNULL,
+                            ["git", "-C", os.fspath(historical_repository), "cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype)"],
+                            text=True, stderr=subprocess.DEVNULL,
                         ).splitlines()
                     except (OSError, subprocess.CalledProcessError):
                         all_objects = []
@@ -3451,8 +3457,7 @@ def validate_checkpoint_tool_identities(
                             continue
                         try:
                             blob = subprocess.check_output(
-                                ["git", "-C", os.fspath(bootstrap["repository"]),
-                                 "cat-file", "blob", parts[0]],
+                                ["git", "-C", os.fspath(historical_repository), "cat-file", "blob", parts[0]],
                                 stderr=subprocess.DEVNULL,
                             )
                         except (OSError, subprocess.CalledProcessError):
