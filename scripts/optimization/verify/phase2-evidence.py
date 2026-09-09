@@ -9746,7 +9746,7 @@ def validate_automation_external_semantics(
     )
     if (
         sorted(set(post["snapshot_cpvs"]) - set(pre["snapshot_cpvs"]))
-        != effective_prerequisite_cpvs
+        != sorted(effective_prerequisite_cpvs)
         or not set(pre["snapshot_cpvs"]).issubset(set(post["snapshot_cpvs"]))
         or not effective_prerequisite_cpvs.isdisjoint(set(pre["snapshot_cpvs"]))
     ):
