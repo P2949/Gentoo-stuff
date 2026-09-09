@@ -9486,7 +9486,9 @@ def validate_prerequisite_success_state(
     ):
         fail(f"jsonschema prerequisite retains state partial residue: {residue}")
     if report.is_dir():
-        for residue in report.rglob("*partial*"):
+        for residue in report.rglob("*"):
+            if ".partial" not in residue.name:
+                continue
             fail(f"jsonschema prerequisite retains report partial residue: {residue}")
         for entry in report.rglob("*"):
             if entry.is_symlink():
@@ -9503,7 +9505,9 @@ def validate_prerequisite_success_state(
             (cache_root, "jsonschema prerequisite private roots"),
         ):
             validate_root_trust(root, label, directory=True)
-            for residue in root.rglob("*partial*"):
+            for residue in root.rglob("*"):
+                if ".partial" not in residue.name:
+                    continue
                 fail(f"{label} retains publication residue: {residue}")
         for parent, identifier in (
             (authority_root.parent, transaction_id),
