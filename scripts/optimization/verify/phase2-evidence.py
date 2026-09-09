@@ -3430,6 +3430,34 @@ def validate_checkpoint_tool_identities(
                     except (OSError, subprocess.CalledProcessError):
                         continue
                     historical_digests.add(sha256(blob))
+                if not historical_digests:
+                    # A retained bootstrap may reference a blob that remains
+                    # in the authenticated repository object database but is
+                    # no longer reachable from a current ref.  Search only
+                    # blob objects and still require the exact recorded digest.
+                    try:
+                        all_objects = subprocess.check_output(
+                            ["git", "-C", os.fspath(bootstrap["repository"]),
+                             "cat-file", "--batch-all-objects",
+                             "--batch-check=%(objectname) %(objecttype)"],
+                            text=True,
+                            stderr=subprocess.DEVNULL,
+                        ).splitlines()
+                    except (OSError, subprocess.CalledProcessError):
+                        all_objects = []
+                    for object_line in all_objects:
+                        parts = object_line.split()
+                        if len(parts) != 2 or parts[1] != "blob":
+                            continue
+                        try:
+                            blob = subprocess.check_output(
+                                ["git", "-C", os.fspath(bootstrap["repository"]),
+                                 "cat-file", "blob", parts[0]],
+                                stderr=subprocess.DEVNULL,
+                            )
+                        except (OSError, subprocess.CalledProcessError):
+                            continue
+                        historical_digests.add(sha256(blob))
                 historical_blob_digests = historical_digests
                 if historical_digests:
                     candidates = [
