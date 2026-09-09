@@ -320,6 +320,13 @@ def validate_root_trusted_entrypoint(path: Path, label: str) -> None:
         metadata = path.lstat()
     except OSError as error:
         fail(f"cannot inspect production {label} entry point {path}: {error}")
+    # `/bin` is the immutable Gentoo alias for `/usr/bin`; regular hardlinks
+    # such as `/bin/bash` still inherit that trusted parent boundary.
+    if path.parent == Path("/bin") and path.parent.resolve(strict=True) == Path("/usr/bin"):
+        validate_root_trust(Path("/usr/bin"), f"{label} entry-point parent", directory=True)
+        if metadata.st_uid != 0:
+            fail(f"production {label} entry-point is not root-owned: {path}")
+        return
     if stat.S_ISLNK(metadata.st_mode):
         parent = path.parent
         # The live Gentoo layout intentionally exposes /bin as a symlink to
