@@ -9737,11 +9737,11 @@ def validate_automation_external_semantics(
         # historical prerequisite plan rows.  Preserve this one exact
         # historical closure discrepancy; all other deltas remain fatal.
         retained_delta = set(prerequisite["cpvs"]) | {"dev-python/tzdata-10001"}
-        if post["delta_cpvs"] != retained_delta:
+        if post["delta_cpvs"] != sorted(retained_delta):
             fail("post-dependency checkpoint delta differs from the prerequisite plan")
     effective_prerequisite_cpvs = set(prerequisite["cpvs"]) | (
         {"dev-python/tzdata-10001"}
-        if post["delta_cpvs"] == set(prerequisite["cpvs"]) | {"dev-python/tzdata-10001"}
+        if post["delta_cpvs"] == sorted(set(prerequisite["cpvs"]) | {"dev-python/tzdata-10001"})
         else set()
     )
     if (
