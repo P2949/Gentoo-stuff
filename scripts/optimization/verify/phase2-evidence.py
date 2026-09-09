@@ -3430,7 +3430,7 @@ def validate_checkpoint_tool_identities(
                     except (OSError, subprocess.CalledProcessError):
                         continue
                     historical_digests.add(sha256(blob))
-                if not historical_digests:
+                if not candidates:
                     # A retained bootstrap may reference a blob that remains
                     # in the authenticated repository object database but is
                     # no longer reachable from a current ref.  Search only
