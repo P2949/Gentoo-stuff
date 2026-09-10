@@ -8,6 +8,7 @@ IFS=$'\n\t'
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 HOOK=${ROOT}/portage/install-qa-check.d/zz-gentoo-optimization-bolt
+ABI_GUARD=${ROOT}/scripts/optimization/verify/abi-guard.py
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/gentoo-opt-qa-hook.XXXXXX")
 trap 'rm -rf -- "${TMP}"' EXIT HUP INT TERM
 PASS=0
@@ -92,6 +93,163 @@ case_active_transaction_runs_exactly_once() (
     [[ -f ${PORTAGE_BUILDDIR}/.installed ]]
 )
 
+
+case_abi_guard_tracks_cpp_and_unique_exports() (
+    python3 - "${ABI_GUARD}" <<'PY_ABI_CPP'
+from pathlib import Path
+from unittest import mock
+import os
+import runpy
+import sys
+
+namespace = runpy.run_path(
+    os.fspath(Path(sys.argv[1]))
+)
+
+sample = """\
+Symbol table '.dynsym' contains 5 entries:
+   Num:    Value          Size Type    Bind   Vis      Ndx Name
+     1: 0000000000001000    16 FUNC    GLOBAL DEFAULT   12 _ZN7Example3fooEv
+     2: 0000000000001010    16 FUNC    WEAK   DEFAULT   12 _ZN7Example3barEv
+     3: 0000000000002000     8 OBJECT  UNIQUE DEFAULT   23 unique_public
+     4: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND ignored_undefined
+     5: 0000000000001020    16 FUNC    LOCAL  DEFAULT   12 ignored_local
+"""
+
+with mock.patch.object(
+    namespace["subprocess"],
+    "check_output",
+    return_value=sample,
+):
+    observed = namespace["symbols"](
+        Path("/tmp/libfixture.so")
+    )
+
+assert observed == {
+    "_ZN7Example3fooEv",
+    "_ZN7Example3barEv",
+    "unique_public",
+}, observed
+PY_ABI_CPP
+)
+
+case_abi_guard_rejects_small_complete_abi_replacement() (
+    python3 - "${ABI_GUARD}" <<'PY_ABI_SMALL'
+from pathlib import Path
+from unittest import mock
+import contextlib
+import io
+import os
+import runpy
+import sys
+import tempfile
+
+namespace = runpy.run_path(
+    os.fspath(Path(sys.argv[1]))
+)
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = Path(temporary)
+
+    ed = root / "ed"
+    installed_root = root / "root"
+
+    candidate = (
+        ed
+        / "usr/lib64/libtiny.so.1"
+    )
+
+    installed = (
+        installed_root
+        / "usr/lib64/libtiny.so.1"
+    )
+
+    candidate.parent.mkdir(
+        parents=True
+    )
+
+    installed.parent.mkdir(
+        parents=True
+    )
+
+    candidate.write_bytes(b"candidate")
+    installed.write_bytes(b"installed")
+
+    old_exports = {
+        "_ZN4Tiny3oneEv",
+        "_ZN4Tiny3twoEv",
+        "_ZN4Tiny5threeEv",
+    }
+
+    replacement_exports = {
+        "_ZN4Tiny7foreignEv",
+        "_ZN4Tiny8differentEv",
+    }
+
+    def fake_symbols(path: Path):
+        if path == installed:
+            return old_exports
+
+        if path == candidate:
+            return replacement_exports
+
+        return set()
+
+    namespace["main"].__globals__["symbols"] = fake_symbols
+
+    stderr = io.StringIO()
+
+    with (
+        mock.patch.dict(
+            os.environ,
+            {
+                "ED": os.fspath(ed),
+                "ROOT": os.fspath(installed_root),
+            },
+            clear=False,
+        ),
+        contextlib.redirect_stderr(stderr),
+    ):
+        result = namespace["main"]()
+
+    assert result == 1, result
+    assert (
+        "gentoo-optimization ABI guard: exported ABI loss"
+        in stderr.getvalue()
+    )
+PY_ABI_SMALL
+)
+
+case_abi_guard_failure_invalidates_install() (
+    new_marker abi-guard-failure
+
+    failing_guard=${TMP}/failing-abi-guard.py
+
+    cat >"${failing_guard}" <<'PY_ABI_HOOK'
+raise SystemExit(1)
+PY_ABI_HOOK
+
+    GENTOO_OPT_ABI_GUARD=${failing_guard}
+    GENTOO_OPT_MODE=off
+
+    die() {
+        exit 98
+    }
+
+    set +e
+
+    (
+        source "${HOOK}"
+    ) >/dev/null 2>&1
+
+    status=$?
+
+    set -e
+
+    [[ ${status} -eq 98 ]]
+    [[ ! -e ${PORTAGE_BUILDDIR}/.installed ]]
+)
+
 [[ -f ${HOOK} ]] || {
     printf 'FAIL: hook is absent: %s\n' "${HOOK}" >&2
     exit 1
@@ -101,5 +259,8 @@ run_case 'lost active state invalidates the install' case_lost_active_state_is_f
 run_case 'requested/active mismatch invalidates the install' case_mismatched_active_state_is_fatal
 run_case 'missing transaction function invalidates the install' case_missing_transaction_function_is_fatal
 run_case 'active transaction runs exactly once' case_active_transaction_runs_exactly_once
+run_case 'ABI guard tracks C++ and GNU-unique exports' case_abi_guard_tracks_cpp_and_unique_exports
+run_case 'ABI guard rejects complete replacement of a small ABI' case_abi_guard_rejects_small_complete_abi_replacement
+run_case 'ABI guard failure invalidates the install' case_abi_guard_failure_invalidates_install
 printf 'SUMMARY: pass=%d fail=%d total=%d\n' "${PASS}" "${FAIL}" "$((PASS + FAIL))"
 ((FAIL == 0))

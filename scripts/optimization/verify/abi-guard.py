@@ -23,12 +23,12 @@ def symbols(path: Path) -> set[str]:
         if len(fields) < 8 or fields[0].rstrip(":").isdigit() is False:
             continue
         # Num Value Size Type Bind Vis Ndx Name
-        if fields[4] not in {"GLOBAL", "WEAK", "GNU_UNIQUE"}:
+        if fields[4] not in {"GLOBAL", "WEAK", "UNIQUE", "GNU_UNIQUE"}:
             continue
         if fields[5] not in {"DEFAULT", "PROTECTED"} or fields[6] == "UND":
             continue
         name = fields[7]
-        if name and not name.startswith("_"):
+        if name:
             result.add(name)
     return result
 
@@ -48,12 +48,21 @@ def main() -> int:
             continue
         old = symbols(installed)
         new = symbols(candidate)
-        if len(old) < 20:
+        if not old:
             continue
         missing = old - new
-        # A replacement that loses most of the established public ABI is
-        # catastrophic.  Report the exact versioned names for remediation.
-        if len(new) * 4 < len(old) or len(missing) * 2 >= len(old):
+        # Losing every established export is catastrophic regardless of DSO
+        # size.  For larger established ABIs also reject severe count loss or
+        # loss of at least half of the previous exported names.
+        catastrophic_loss = (
+            missing == old
+            or len(new) * 4 < len(old)
+            or (
+                len(old) >= 20
+                and len(missing) * 2 >= len(old)
+            )
+        )
+        if catastrophic_loss:
             sample = ",".join(sorted(missing)[:12])
             failures.append(f"{rel}: old={len(old)} new={len(new)} missing={sample}")
     if failures:
