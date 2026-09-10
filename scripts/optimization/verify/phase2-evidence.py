@@ -9751,13 +9751,14 @@ def validate_prerequisite_retry_disposition(
                 require_string(evidence["purpose"], "jsonschema retry reconciliation purpose")
                 evidence_path = absolute_path(evidence["path"], "jsonschema retry reconciliation path")
                 expected_state_prefix = state_root / f"jsonschema-prerequisite-{tid}."
-                reports_root = Path("/var/lib/gentoo-optimization/reports") / tid
+                reports_root = Path("/var/lib/gentoo-optimization/reports") / f"jsonschema-prerequisite-{tid}"
                 if not (
-                    evidence_path.parent == state_root
-                    and evidence_path.name.startswith(expected_state_prefix.name)
-                    or reports_root in evidence_path.parents
+                    (reports_root in evidence_path.parents)
+                    and evidence_path != reports_root
                 ):
                     fail("jsonschema retry reconciliation evidence is outside its transaction namespace")
+                if evidence_path.name.endswith(("prepared.json", "armed.json", "rollback-in-progress.json", "recovery-failed.json", "rolled-back.json", "success.json", "locked-authority.json", "preparation-attempt.json")):
+                    fail("jsonschema retry reconciliation evidence must be independent report evidence")
                 if not evidence_path.is_file() or evidence_path.is_symlink():
                     fail("jsonschema retry reconciliation evidence is not a regular file")
                 if production:
@@ -9765,13 +9766,11 @@ def validate_prerequisite_retry_disposition(
                 observed, _ = read_regular(evidence_path, "jsonschema retry reconciliation evidence", allow_hardlinks=True)
                 if sha256(observed) != evidence["sha256"]:
                     fail("jsonschema retry reconciliation evidence digest changed")
-                try:
-                    structured = parse_json_bytes(observed, "jsonschema retry reconciliation evidence")
-                except SystemExit:
-                    structured = None
-                if isinstance(structured, dict) and isinstance(structured.get("transaction_id"), str):
-                    if structured["transaction_id"] != tid:
-                        fail("jsonschema retry reconciliation evidence transaction differs")
+                structured = parse_json_bytes(observed, "jsonschema retry reconciliation evidence")
+                if not isinstance(structured, dict):
+                    fail("jsonschema retry reconciliation evidence must be a JSON object")
+                if isinstance(structured.get("transaction_id"), str) and structured["transaction_id"] != tid:
+                    fail("jsonschema retry reconciliation evidence transaction differs")
             evidence_paths = [absolute_path(item["path"], "jsonschema retry reconciliation path") for item in reconciliation_states]
             if len(evidence_paths) != len(set(evidence_paths)):
                 fail("jsonschema retry reconciliation repeats an evidence path")
@@ -9896,6 +9895,8 @@ def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> Non
         validate_root_trust(state_root, "prerequisite state root", directory=True)
         validate_root_trust(success_path, "prerequisite success state", allow_hardlinks=True)
     reconciliation_path = absolute_path(arguments.reconciliation, "retry reconciliation input") if arguments.reconciliation else None
+    if arguments.production and reconciliation_path is not None:
+        validate_root_trust(reconciliation_path, "retry reconciliation input", allow_hardlinks=True)
     success = parse_json_bytes(read_regular(success_path, "prerequisite success state", allow_hardlinks=True)[0], "prerequisite success state")
     if not isinstance(success, dict):
         fail("prerequisite success state must be an object")

@@ -8,17 +8,23 @@ import sys
 from pathlib import Path
 
 
-def symbols(path: Path) -> set[str]:
+def inspect(path: Path) -> tuple[str, str | None, set[str]]:
     try:
         out = subprocess.check_output(
-            ["readelf", "--dyn-syms", "--wide", str(path)],
+            ["/usr/bin/readelf", "-h", "-d", "--dyn-syms", "--wide", str(path)],
             text=True,
             stderr=subprocess.DEVNULL,
         )
-    except (OSError, subprocess.CalledProcessError):
-        return set()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(f"cannot inspect ELF {path}: {exc}") from exc
+    elf_type = None
+    soname = None
     result: set[str] = set()
     for line in out.splitlines():
+        if line.startswith("  Type:"):
+            elf_type = line.split(":", 1)[1].strip().split()[0]
+        if "(SONAME)" in line and "Library soname:" in line:
+            soname = line.split("Library soname:", 1)[1].strip().strip("[]")
         fields = line.split()
         if len(fields) < 8 or fields[0].rstrip(":").isdigit() is False:
             continue
@@ -30,7 +36,7 @@ def symbols(path: Path) -> set[str]:
         name = fields[7]
         if name:
             result.add(name)
-    return result
+    return elf_type or "", soname, result
 
 
 def main() -> int:
@@ -46,8 +52,14 @@ def main() -> int:
         installed = root / rel
         if not installed.is_file():
             continue
-        old = symbols(installed)
-        new = symbols(candidate)
+        try:
+            old_type, old_soname, old = inspect(installed)
+            new_type, new_soname, new = inspect(candidate)
+        except RuntimeError as exc:
+            failures.append(str(exc))
+            continue
+        if old_type != "DYN" or new_type != "DYN" or not old_soname or old_soname != new_soname:
+            continue
         if not old:
             continue
         missing = old - new

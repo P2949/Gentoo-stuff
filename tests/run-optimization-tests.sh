@@ -266,6 +266,7 @@ emit_contract_topology() {
     local LC_ALL=C
     validate_explicit_shell_sources
     local -a exact_names=(
+        abi-guard-fixture
         bolt-command-policy
         bolt-pre-strip-hooks
         bolt-transaction-fixture
