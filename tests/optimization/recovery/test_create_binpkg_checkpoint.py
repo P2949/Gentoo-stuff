@@ -3272,10 +3272,44 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
         self.assertEqual(lock_receipt["implementation"], "fixture-fcntl-lockf")
 
     def test_early_exchange_preflight_fails_before_expensive_publication(self) -> None:
-        self.fixture.marker("exchange-unsupported")
-        result = self.fixture.run()
+        # Another fixture may legitimately have an argv basename such as
+        # "emerge" while this fixture runs.  Fixture mode owns an emulated VDB,
+        # so unrelated host processes must not veto this fixture's transaction.
+        with tempfile.TemporaryDirectory() as foreign_directory:
+            foreign_argv0 = (
+                Path(foreign_directory).resolve()
+                / "foreign-fixture/tools/usr/bin/emerge"
+            )
+            foreign = subprocess.Popen(
+                [
+                    "/usr/bin/bash",
+                    "-c",
+                    'exec -a "$1" /usr/bin/sleep 30',
+                    "bash",
+                    str(foreign_argv0),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            try:
+                time.sleep(0.1)
+                self.fixture.marker("exchange-unsupported")
+                result = self.fixture.run()
+            finally:
+                if foreign.poll() is None:
+                    try:
+                        os.killpg(foreign.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                foreign.wait(timeout=3)
+
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("does not support atomic mv --exchange", result.stderr)
+        self.assertNotIn(
+            "existing Portage package mutation process prevents VDB freeze",
+            result.stderr,
+        )
         self.assert_selector_unchanged()
         self.assertFalse(self.report().exists())
 

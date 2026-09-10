@@ -1066,6 +1066,14 @@ deactivate_make_conf_overlay() {
 scan_portage_processes() {
     local output=$1 proc pid comm argument matched
     : >"${output}"
+
+    # Fixture roots never mutate the host Portage VDB.  Host-wide process
+    # discovery therefore has no authority in fixture mode and makes otherwise
+    # independent recovery fixtures interfere with one another.
+    if ((FIXTURE_MODE)); then
+        return 0
+    fi
+
     for proc in /proc/[0-9]*; do
         [[ -d ${proc} ]] || continue
         pid=${proc##*/}
@@ -1078,9 +1086,6 @@ scan_portage_processes() {
         esac
         if [[ -r ${proc}/cmdline ]]; then
             while IFS= read -r -d '' argument; do
-                if ((FIXTURE_MODE)) && [[ ${argument} == "${FIXTURE_ROOT}/"* ]]; then
-                    continue
-                fi
                 case ${argument##*/} in
                     emerge|ebuild|ebuild.sh|emaint|quickpkg) matched=1 ;;
                 esac
