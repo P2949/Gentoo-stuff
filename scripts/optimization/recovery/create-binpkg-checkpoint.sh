@@ -1078,6 +1078,9 @@ scan_portage_processes() {
         esac
         if [[ -r ${proc}/cmdline ]]; then
             while IFS= read -r -d '' argument; do
+                if ((FIXTURE_MODE)) && [[ ${argument} == "${FIXTURE_ROOT}/"* ]]; then
+                    continue
+                fi
                 case ${argument##*/} in
                     emerge|ebuild|ebuild.sh|emaint|quickpkg) matched=1 ;;
                 esac
