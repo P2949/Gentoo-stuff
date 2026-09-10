@@ -23,6 +23,11 @@ if ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"; then
 fi
 echo 'PASS: ABI guard rejects catastrophic exported-symbol loss'
 
+# The catastrophic-loss candidate above is intentionally invalid.  Remove it
+# before beginning independent positive cases so whole-ED validation does not
+# carry the expected failure into later assertions.
+rm -f -- "${work}/ed/usr/lib/libcanary.so.1"
+
 printf 'INPUT(libcanary.so.1)\n' >"${work}/root/usr/lib/libscript.so.1"
 printf 'INPUT(libcanary.so.1)\n' >"${work}/ed/usr/lib/libscript.so.1"
 ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
