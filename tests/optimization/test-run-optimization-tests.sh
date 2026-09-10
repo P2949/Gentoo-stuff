@@ -202,6 +202,8 @@ grep -Fq 'TEST_CASE_TIMEOUT_SECONDS_CLANG_IR' "${FIXTURE}/help.txt" || \
     fail 'help omits normalized per-capability deadline overrides'
 grep -Fq 'GENTOO_OPT_AUTHORITATIVE=0|1' "${FIXTURE}/help.txt" || \
     fail 'help omits authoritative subtest accounting'
+grep -Fq 'GENTOO_OPT_REVIEWED_BASH_ARGV0=/usr/bin/bash' "${FIXTURE}/help.txt" || \
+    fail 'help omits reviewed authoritative Bash argv-zero identity'
 grep -Fq -- '--contract-topology' "${FIXTURE}/help.txt" || \
     fail 'help omits deterministic contract topology discovery'
 
@@ -595,6 +597,19 @@ set -e
     fail "authoritative reviewed-entrypoint probe returned ${reviewed_entrypoint_status}, expected 1"
 grep -Fxq quiescent "${FIXTURE}/authoritative-reviewed-entrypoints.log" || \
     fail 'authoritative reviewed-entrypoint probe did not reach process inspection'
+
+set +e
+PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \
+SHELLCHECK=${HERMETIC_BIN}/shellcheck \
+    "${HERMETIC_BIN}/bash" -- "${HERMETIC_DRIVER}" \
+    --internal-process-group-probe 2147483647 \
+    >"${FIXTURE}/authoritative-no-argv0-declaration.log" 2>&1
+no_argv0_declaration_status=$?
+set -e
+[[ ${no_argv0_declaration_status} -eq 1 ]] || \
+    fail "authoritative no-argv0-declaration probe returned ${no_argv0_declaration_status}, expected 1"
+grep -Fxq quiescent "${FIXTURE}/authoritative-no-argv0-declaration.log" || \
+    fail 'authoritative /usr-style Bash path was falsely classified as /bin/bash'
 
 set +e
 PATH=${HERMETIC_BIN} GENTOO_OPT_AUTHORITATIVE=1 \

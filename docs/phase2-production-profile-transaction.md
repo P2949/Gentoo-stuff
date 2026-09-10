@@ -322,6 +322,7 @@ doas /usr/bin/env -i HOME=/root LANG=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
 doas /usr/bin/env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash \
   PATH=/usr/bin:/usr/lib/llvm/22/bin:/bin \
   LANG=C LC_ALL=C TZ=UTC \
+  GENTOO_OPT_REVIEWED_BASH_ARGV0=/usr/bin/bash \
   SHELLCHECK=/var/lib/gentoo-optimization/test-tools/shellcheck-0.11.0 \
   /usr/bin/bash "$SOURCE/tests/run-optimization-tests.sh" --mode authoritative \
   --capability all --output-dir "$EVIDENCE_ROOT"
@@ -339,8 +340,10 @@ doas grep -Fx 'required_subtest_skip=0' "$EVIDENCE_ROOT/summary.txt"
 doas grep -Fx 'mandatory_internal_skip=0' "$EVIDENCE_ROOT/summary.txt"
 ```
 
-The authoritative driver must itself be invoked with `/usr/bin/bash` as Bash
-argv zero. Before it trusts PATH, repository-path setup and diagnostics use
+The authoritative driver must itself be invoked with `/usr/bin/bash` and the
+launcher must set `GENTOO_OPT_REVIEWED_BASH_ARGV0=/usr/bin/bash`; the declaration
+preserves the reviewed requested entry-point spelling that merged-/usr executable
+identity alone cannot recover. Before it trusts PATH, repository-path setup and diagnostics use
 only Bash builtins. It then pins the reviewed `bash`, `env`, `git`, `python3`,
 `setsid`, `shellcheck`, `sleep`, and `timeout` entry points and rejects any PATH
 shadow before running a case. The ShellCheck case uses the already-bound

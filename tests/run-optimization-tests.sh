@@ -157,6 +157,7 @@ Environment:
   CHECKPOINT_SMOKE_METHOD_TIMEOUT_SECONDS=90
   RECOVERY_SUITE_TIMEOUT_SECONDS=2700
   GENTOO_OPT_AUTHORITATIVE=0|1
+  GENTOO_OPT_REVIEWED_BASH_ARGV0=/usr/bin/bash (authoritative launcher requested-entry-point identity)
 
 Each case receives a private GENTOO_OPT_SUBTEST_RESULTS fragment path.  A
 fixture may append four tab-separated fields: status (PASS|FAIL|SKIP),
@@ -752,9 +753,16 @@ if ((AUTHORITATIVE == 1)); then
         ACTIVE_BASH_ARGV0=${GENTOO_OPT_REVIEWED_BASH_ARGV0}
         [[ ${ACTIVE_BASH_ARGV0} == "${BASH_BIN}" ]] ||
             fail_usage "authoritative driver Bash argv-zero differs from the reviewed entry point: expected=${BASH_BIN} actual=${ACTIVE_BASH_ARGV0}"
-    elif [[ -r /proc/${PPID}/cmdline ]] &&
-        tr '\0' ' ' <"/proc/${PPID}/cmdline" | grep -Fq '/bin/bash'; then
-        fail_usage "authoritative driver Bash argv-zero differs from the reviewed entry point: expected=${BASH_BIN} actual=/bin/bash"
+    elif [[ -r /proc/${PPID}/cmdline ]]; then
+        # Compatibility fallback for direct/internal test launches which do
+        # not carry the reviewed launcher declaration.  Compare NUL-delimited
+        # argv tokens exactly: substring matching cannot distinguish
+        # /usr/bin/bash from /bin/bash.
+        while IFS= read -r -d '' ACTIVE_PARENT_ARG; do
+            if [[ ${ACTIVE_PARENT_ARG} == /bin/bash ]]; then
+                fail_usage "authoritative driver Bash argv-zero differs from the reviewed entry point: expected=${BASH_BIN} actual=/bin/bash"
+            fi
+        done <"/proc/${PPID}/cmdline"
     fi
 fi
 
