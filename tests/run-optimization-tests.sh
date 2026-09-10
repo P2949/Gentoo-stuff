@@ -1810,6 +1810,15 @@ else
         "${BASH_BIN}" -- "${BOLT_COMMAND_POLICY_FIXTURE}"
 fi
 
+ABI_GUARD_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-abi-guard.sh
+if [[ ! -f ${ABI_GUARD_FIXTURE} ]]; then
+    skip_case abi-guard-fixture "fixture is absent: ${ABI_GUARD_FIXTURE}"
+elif ! require_commands bash cc python3 readelf; then
+    skip_case abi-guard-fixture "${PREFLIGHT_REASON}"
+else
+    run_case abi-guard-fixture "${BASH_BIN}" -- "${ABI_GUARD_FIXTURE}"
+fi
+
 BOLT_TRANSACTION_FIXTURE=${REPOSITORY_ROOT}/tests/optimization/test-bolt-transaction.sh
 if [[ ! -f ${BOLT_TRANSACTION_FIXTURE} ]]; then
     skip_case bolt-transaction-fixture \
