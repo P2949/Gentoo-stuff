@@ -50,6 +50,9 @@ def inspect(path: Path) -> tuple[str, str | None, set[str]]:
 
 
 def main() -> int:
+    if "--help" in sys.argv[1:]:
+        print(__doc__)
+        return 0
     raw_ed = os.environ.get("ED")
     raw_root = os.environ.get("ROOT")
     if not raw_ed or not raw_root:
