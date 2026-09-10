@@ -4591,5 +4591,455 @@ namespace["require_active_python_matches_reviewed_tools"](
             classify({"rolled-back.json", "recovery-failed.json"})
 
 
+class HistoricalCheckpointToolPathHistoryTest(
+    unittest.TestCase
+):
+    def test_only_authenticated_commit_ancestry_is_authority(
+        self,
+    ) -> None:
+        namespace = runpy.run_path(
+            os.fspath(TOOL)
+        )
+
+        historical_digests = namespace[
+            "historical_path_blob_digests"
+        ]
+
+        relative = (
+            "scripts/optimization/recovery/"
+            "create-binpkg-checkpoint.sh"
+        )
+
+        first_payload = (
+            b"#!/bin/sh\n"
+            b"echo authenticated-first\n"
+        )
+
+        second_payload = (
+            b"#!/bin/sh\n"
+            b"echo authenticated-second\n"
+        )
+
+        foreign_payload = (
+            b"#!/bin/sh\n"
+            b"echo foreign-side-ref\n"
+        )
+
+        orphan_payload = (
+            b"#!/bin/sh\n"
+            b"echo unreachable-orphan\n"
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary) / "repository"
+
+            subprocess.run(
+                [
+                    "git",
+                    "init",
+                    "-q",
+                    os.fspath(repository),
+                ],
+                check=True,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "config",
+                    "user.name",
+                    "Phase2 Test",
+                ],
+                check=True,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "config",
+                    "user.email",
+                    "phase2@example.invalid",
+                ],
+                check=True,
+            )
+
+            helper = repository / relative
+            helper.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            helper.write_bytes(
+                first_payload
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "add",
+                    relative,
+                ],
+                check=True,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "commit",
+                    "-q",
+                    "-m",
+                    "authenticated first",
+                ],
+                check=True,
+            )
+
+            base_branch = subprocess.check_output(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "branch",
+                    "--show-current",
+                ],
+                text=True,
+            ).strip()
+
+            self.assertTrue(
+                base_branch
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "checkout",
+                    "-q",
+                    "-b",
+                    "foreign-authority",
+                ],
+                check=True,
+            )
+
+            helper.write_bytes(
+                foreign_payload
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "add",
+                    relative,
+                ],
+                check=True,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "commit",
+                    "-q",
+                    "-m",
+                    "foreign helper",
+                ],
+                check=True,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "checkout",
+                    "-q",
+                    base_branch,
+                ],
+                check=True,
+            )
+
+            helper.write_bytes(
+                second_payload
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "add",
+                    relative,
+                ],
+                check=True,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "commit",
+                    "-q",
+                    "-m",
+                    "authenticated second",
+                ],
+                check=True,
+            )
+
+            authenticated_commit = (
+                subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        os.fspath(repository),
+                        "rev-parse",
+                        "HEAD",
+                    ],
+                    text=True,
+                ).strip()
+            )
+
+            orphan_oid = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "hash-object",
+                    "-w",
+                    "--stdin",
+                ],
+                input=orphan_payload,
+                stdout=subprocess.PIPE,
+                check=True,
+            ).stdout.decode(
+                encoding="ascii",
+                errors="strict",
+            ).strip()
+
+            self.assertTrue(
+                orphan_oid
+            )
+
+            observed = historical_digests(
+                [
+                    (
+                        repository,
+                        authenticated_commit,
+                    )
+                ],
+                relative,
+            )
+
+            self.assertIn(
+                digest(first_payload),
+                observed,
+            )
+
+            self.assertIn(
+                digest(second_payload),
+                observed,
+            )
+
+            self.assertNotIn(
+                digest(foreign_payload),
+                observed,
+            )
+
+            self.assertNotIn(
+                digest(orphan_payload),
+                observed,
+            )
+
+    def test_foreign_ref_does_not_change_authenticated_history(
+        self,
+    ) -> None:
+        namespace = runpy.run_path(
+            os.fspath(TOOL)
+        )
+
+        historical_digests = namespace[
+            "historical_path_blob_digests"
+        ]
+
+        relative = (
+            "scripts/optimization/recovery/"
+            "verify-binpkg-snapshot.py"
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary) / "repository"
+
+            subprocess.run(
+                [
+                    "git",
+                    "init",
+                    "-q",
+                    os.fspath(repository),
+                ],
+                check=True,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "config",
+                    "user.name",
+                    "Phase2 Test",
+                ],
+                check=True,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "config",
+                    "user.email",
+                    "phase2@example.invalid",
+                ],
+                check=True,
+            )
+
+            helper = repository / relative
+            helper.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            trusted = b"trusted\n"
+            foreign = b"foreign\n"
+
+            helper.write_bytes(
+                trusted
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "add",
+                    relative,
+                ],
+                check=True,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "commit",
+                    "-q",
+                    "-m",
+                    "trusted",
+                ],
+                check=True,
+            )
+
+            authenticated_commit = (
+                subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        os.fspath(repository),
+                        "rev-parse",
+                        "HEAD",
+                    ],
+                    text=True,
+                ).strip()
+            )
+
+            before = historical_digests(
+                [
+                    (
+                        repository,
+                        authenticated_commit,
+                    )
+                ],
+                relative,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "checkout",
+                    "-q",
+                    "-b",
+                    "unrelated-ref",
+                ],
+                check=True,
+            )
+
+            helper.write_bytes(
+                foreign
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "add",
+                    relative,
+                ],
+                check=True,
+            )
+
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "commit",
+                    "-q",
+                    "-m",
+                    "foreign",
+                ],
+                check=True,
+            )
+
+            after = historical_digests(
+                [
+                    (
+                        repository,
+                        authenticated_commit,
+                    )
+                ],
+                relative,
+            )
+
+            self.assertEqual(
+                before,
+                after,
+            )
+
+            self.assertIn(
+                digest(trusted),
+                after,
+            )
+
+            self.assertNotIn(
+                digest(foreign),
+                after,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

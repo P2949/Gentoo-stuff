@@ -3367,6 +3367,67 @@ def validate_checkpoint_snapshot(
     }
 
 
+def historical_path_blob_digests(
+    authorities: list[tuple[Path, str]],
+    relative: str,
+) -> set[str]:
+    """Return exact-path blob digests from authenticated commit ancestry."""
+
+    digests: set[str] = set()
+
+    for repository, commit in authorities:
+        try:
+            object_lines = subprocess.check_output(
+                [
+                    "git",
+                    "-C",
+                    os.fspath(repository),
+                    "rev-list",
+                    commit,
+                    "--objects",
+                    "--",
+                    relative,
+                ],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).splitlines()
+        except (
+            OSError,
+            subprocess.CalledProcessError,
+        ):
+            object_lines = []
+
+        for object_line in object_lines:
+            object_id = object_line.split(
+                " ",
+                1,
+            )[0]
+
+            try:
+                blob = subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        os.fspath(repository),
+                        "cat-file",
+                        "blob",
+                        object_id,
+                    ],
+                    stderr=subprocess.DEVNULL,
+                )
+            except (
+                OSError,
+                subprocess.CalledProcessError,
+            ):
+                continue
+
+            digests.add(
+                sha256(blob)
+            )
+
+    return digests
+
+
 def validate_checkpoint_tool_identities(
     report: Path, bootstrap: dict[str, Any], *, production: bool
 ) -> tuple[Path, Path, dict[str, str]]:
@@ -3428,62 +3489,50 @@ def validate_checkpoint_tool_identities(
             ]
             if not candidates:
                 # A retained checkpoint may have been created from an older
-                # immutable Git blob that is no longer the bootstrap commit's
-                # current helper.  Accept only when that exact digest is still
-                # present as a historical blob in the authenticated repository.
-                historical_digests = set()
-                repositories = [bootstrap["repository"]]
-                if bootstrap.get("source_repository") != bootstrap["repository"]:
-                    repositories.append(bootstrap["source_repository"])
-                for historical_repository in repositories:
-                    try:
-                        object_ids = subprocess.check_output(
-                            ["git", "-C", os.fspath(historical_repository), "rev-list", "--all", "--objects", "--", relative],
-                            text=True, stderr=subprocess.DEVNULL,
-                        ).splitlines()
-                    except (OSError, subprocess.CalledProcessError):
-                        object_ids = []
-                    for object_line in object_ids:
-                        object_id = object_line.split(" ", 1)[0]
-                        try:
-                            blob = subprocess.check_output(
-                                ["git", "-C", os.fspath(historical_repository), "cat-file", "blob", object_id],
-                                stderr=subprocess.DEVNULL,
-                            )
-                        except (OSError, subprocess.CalledProcessError):
-                            continue
-                        historical_digests.add(sha256(blob))
-                    if candidates:
-                        continue
-                    # A retained bootstrap may reference a blob that remains
-                    # in the authenticated repository object database but is
-                    # no longer reachable from a current ref.  Search only
-                    # blob objects and still require the exact recorded digest.
-                    try:
-                        all_objects = subprocess.check_output(
-                            ["git", "-C", os.fspath(historical_repository), "cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype)"],
-                            text=True, stderr=subprocess.DEVNULL,
-                        ).splitlines()
-                    except (OSError, subprocess.CalledProcessError):
-                        all_objects = []
-                    for object_line in all_objects:
-                        parts = object_line.split()
-                        if len(parts) != 2 or parts[1] != "blob":
-                            continue
-                        try:
-                            blob = subprocess.check_output(
-                                ["git", "-C", os.fspath(historical_repository), "cat-file", "blob", parts[0]],
-                                stderr=subprocess.DEVNULL,
-                            )
-                        except (OSError, subprocess.CalledProcessError):
-                            continue
-                        historical_digests.add(sha256(blob))
-                historical_blob_digests = historical_digests
-                if historical_digests:
+                # immutable helper revision.  Extend authority only through
+                # blobs reachable from the exact helper path in authenticated
+                # commit ancestry.  Unrelated refs or unreachable object-database
+                # blobs are not historical authority.
+                authorities = [
+                    (
+                        bootstrap["repository"],
+                        bootstrap["commit"],
+                    )
+                ]
+
+                source_repository = bootstrap.get(
+                    "source_repository"
+                )
+
+                if (
+                    source_repository is not None
+                    and source_repository
+                    != bootstrap["repository"]
+                ):
+                    authorities.append(
+                        (
+                            source_repository,
+                            bootstrap["commit"],
+                        )
+                    )
+
+                historical_blob_digests = (
+                    historical_path_blob_digests(
+                        authorities,
+                        relative,
+                    )
+                )
+
+                if historical_blob_digests:
                     candidates = [
-                        (logical, value) for logical, value in rows.items()
-                        if Path(logical).name == Path(relative).name
-                        and value[2] in historical_digests
+                        (logical, value)
+                        for logical, value in rows.items()
+                        if (
+                            Path(logical).name
+                            == Path(relative).name
+                            and value[2]
+                            in historical_blob_digests
+                        )
                     ]
             if len(candidates) == 1:
                 _historical_logical, row = candidates[0]
