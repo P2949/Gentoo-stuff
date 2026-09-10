@@ -43,9 +43,39 @@ new_marker() {
 
 case_off_is_noop() (
     new_marker off
+
+    context_guard=${TMP}/context-abi-guard
+    context_log=${TMP}/context-abi-guard.log
+
+    cat >"${context_guard}" <<'EOF_QA_CONTEXT'
+#!/usr/bin/env bash
+set -eu
+printf 'ED=%s\nROOT=%s\n' \
+    "${ED-}" \
+    "${ROOT-}" \
+    >"${GENTOO_OPT_QA_CONTEXT_LOG}"
+EOF_QA_CONTEXT
+
+    chmod +x "${context_guard}"
+
+    GENTOO_OPT_ABI_GUARD=${context_guard}
+    GENTOO_OPT_QA_CONTEXT_LOG=${context_log}
+    export GENTOO_OPT_ABI_GUARD GENTOO_OPT_QA_CONTEXT_LOG
+
+    # Portage's install-QA implementation keeps these as shell locals.  Use
+    # spaces as well so the fixture proves both explicit forwarding and exact
+    # argument quoting at the child-process boundary.
+    ED="${TMP}/image root"
+    ROOT="${TMP}/installed root"
+    export -n ED ROOT
+    unset D EROOT
+
     GENTOO_OPT_MODE=off
     source "${HOOK}"
+
     [[ -f ${PORTAGE_BUILDDIR}/.installed ]]
+    grep -Fx -- "ED=${ED}" "${context_log}" >/dev/null
+    grep -Fx -- "ROOT=${ROOT}" "${context_log}" >/dev/null
 )
 
 case_test_override_forbidden_in_ebuild_phase() (
