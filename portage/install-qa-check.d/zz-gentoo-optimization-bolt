@@ -36,7 +36,7 @@ fi
 # relying on child-process export semantics.
 hook_ed=${ED:-${D:-$(pwd -P)}}
 hook_root=${ROOT:-${EROOT:-/}}
-env ED=${hook_ed} ROOT=${hook_root} "${abi_guard}" || \
+env ED="${hook_ed}" ROOT="${hook_root}" "${abi_guard}" || \
     gentoo_opt_hook_abort 'replacement DSO failed exported-ABI guard'
 unset hook_ed hook_root
 
