@@ -31,7 +31,11 @@ if [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 || -n ${GENTOO_OPT_ABI_GUARD:-} ]]; then
     abi_guard=${GENTOO_OPT_ABI_GUARD}
 fi
 [[ -x ${abi_guard} ]] || gentoo_opt_hook_abort 'production ABI guard helper is missing'
-"${abi_guard}" || gentoo_opt_hook_abort 'replacement DSO failed exported-ABI guard'
+# Portage keeps ED/ROOT as shell locals while sourcing install-QA hooks; pass
+# those authenticated roots explicitly to the standalone verifier rather than
+# relying on child-process export semantics.
+ED=${ED-} ROOT=${ROOT-} "${abi_guard}" || \
+    gentoo_opt_hook_abort 'replacement DSO failed exported-ABI guard'
 
 requested_stage=off
 case ${GENTOO_OPT_MODE:-off} in
