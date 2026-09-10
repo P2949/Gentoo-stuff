@@ -190,7 +190,7 @@
     ],
     "prefix_groups": [
       {
-        "expected_count": 59,
+        "expected_count": 60,
         "expected_names": [
           "bash-syntax:bench/compare-two-commands.sh",
           "bash-syntax:bench/perf-stat.sh",
@@ -235,6 +235,7 @@
           "bash-syntax:scripts/pgo/package-profile-path.sh",
           "bash-syntax:scripts/pgo/pgo-path.sh",
           "bash-syntax:tests/optimization/fixtures/framework-bootstrap/deployed-v1/render.sh",
+          "bash-syntax:tests/optimization/test-abi-guard.sh",
           "bash-syntax:tests/optimization/test-bolt-command-policy.sh",
           "bash-syntax:tests/optimization/test-bolt-hooks.sh",
           "bash-syntax:tests/optimization/test-bolt-transaction.sh",
@@ -258,8 +259,8 @@
   },
   "unittest_suites": [
     {
-      "expected_count": 45,
-      "subtest_names_sha256": "d7801ec8aec3f54e61521c9ca69e81837fe01059810818ee7891a5cdbb6b67d3",
+      "expected_count": 47,
+      "subtest_names_sha256": "60f409d7ced842781d8001f29461e7f8c453bcf02e05b5b2df06234c6d067286",
       "test": "phase2-evidence-contract"
     },
     {
