@@ -282,12 +282,32 @@ declare -a HELPER_SOURCE_RELATIVE=(
 # this reviewed additive migration; the whole fixed tree is exchanged for the
 # current layout while Portage is quiescent and all framework/project/
 # generation locks are held.  The later, never-deployed twelve-helper hybrid
-# from 19a46b78 is deliberately not an accepted migration source.
+# from the later deployed 5a48ac70... intermediate is accepted only by the
+# exact authenticated matcher below; no arbitrary hybrid tree is accepted.
 declare -ar LEGACY_BOOTSTRAP_HELPER_RELATIVE=(
     bolt/artifact_tool.py
     bolt/capture-input.sh
     bolt/deploy-output.sh
     bolt/register-output.sh
+    pgo/profile-identity.py
+    pgo/profile_locks.py
+    pgo/validate-profile.py
+    recovery/verify-binpkg-snapshot.py
+    scripts/optimization/lib/state.py
+    scripts/optimization/verify/reconcile-state.py
+)
+
+# A previously deployed framework (commit 5a48ac70...) contains the two
+# production-profile helpers added after the original ten-helper migration,
+# but predates the current ABI guard.  It is authenticated by the live
+# framework manifest and is accepted only as a one-way migration source.
+declare -ar DEPLOYED_INTERMEDIATE_BOOTSTRAP_HELPER_RELATIVE=(
+    bolt/artifact_tool.py
+    bolt/capture-input.sh
+    bolt/deploy-output.sh
+    bolt/register-output.sh
+    pgo/authorization-token-scan.py
+    pgo/production-profile-lock-transaction.py
     pgo/profile-identity.py
     pgo/profile_locks.py
     pgo/validate-profile.py
@@ -2403,6 +2423,23 @@ legacy_bootstrap_tree_matches() {
     done
 }
 
+deployed_intermediate_bootstrap_tree_matches() {
+    local root=$1 relative temporary
+    local -a actual=()
+    [[ -d ${root} && ! -L ${root} ]] || return 1
+    mapfile -t actual < <(find "${root}" -mindepth 1 -printf '%y\t%P\n' | sort)
+    [[ ${actual[*]} == $'d\tbolt\nd\tpgo\nd\trecovery\nd\tscripts\nd\tscripts/optimization\nd\tscripts/optimization/lib\nd\tscripts/optimization/verify\nf\tbolt/artifact_tool.py\nf\tbolt/capture-input.sh\nf\tbolt/deploy-output.sh\nf\tbolt/register-output.sh\nf\tpgo/authorization-token-scan.py\nf\tpgo/production-profile-lock-transaction.py\nf\tpgo/profile-identity.py\nf\tpgo/profile_locks.py\nf\tpgo/validate-profile.py\nf\trecovery/verify-binpkg-snapshot.py\nf\tscripts/optimization/lib/state.py\nf\tscripts/optimization/verify/reconcile-state.py' ]] || return 1
+    for relative in "${DEPLOYED_INTERMEDIATE_BOOTSTRAP_HELPER_RELATIVE[@]}"; do
+        temporary=$(mktemp "${BASE}/.helper-bootstrap-check.XXXXXXXX")
+        render_helper_bootstrap "${relative}" >"${temporary}"
+        if ! cmp -s -- "${temporary}" "${root}/${relative}"; then
+            rm -f -- "${temporary}"
+            return 1
+        fi
+        rm -f -- "${temporary}"
+    done
+}
+
 legacy_python_bootstrap_tree_matches() {
     local root=$1 relative temporary
     local -a actual=()
@@ -2437,6 +2474,7 @@ require_stable_bootstrap_compatibility() {
         return 0
     fi
     bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+        deployed_intermediate_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         legacy_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         legacy_python_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         fail 'stable-bootstrap migration required: installed helper bootstraps differ from the reviewed invariant bytes'
