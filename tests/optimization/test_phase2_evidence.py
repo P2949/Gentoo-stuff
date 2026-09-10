@@ -509,6 +509,41 @@ class EvidenceFixture:
 
 class Phase2EvidenceTests(unittest.TestCase):
     def test_candidate_b_commands_bind_their_active_python_runtime(self) -> None:
+        runbook = (
+            REPOSITORY / "docs/phase2-production-profile-transaction.md"
+        ).read_text(encoding="utf-8")
+        runbook_lines = runbook.splitlines()
+
+        source_mode = (
+            "root_run /usr/bin/install -d -o root -g root -m 0711 " + chr(92)
+        )
+        source_mode_index = runbook_lines.index(source_mode)
+        self.assertEqual(
+            runbook_lines[source_mode_index + 1],
+            '  "${SOURCE%/*}"',
+        )
+        self.assertNotIn(
+            '  "${BUNDLE%/*}" "${SOURCE%/*}" "${ROOT_GIT_HOME%/*}"',
+            runbook_lines,
+        )
+        self.assertIn(
+            "root_run /usr/bin/runuser -u portage -- /usr/bin/stat " + chr(92),
+            runbook_lines,
+        )
+        self.assertIn(
+            "root_run /usr/bin/runuser -u portage -- /usr/bin/test -r " + chr(92),
+            runbook_lines,
+        )
+        self.assertIn(
+            "PRODUCTION_EVIDENCE=/var/lib/gentoo-optimization/reports/"
+            "phase2-production-sample-${RUN_ID}",
+            runbook_lines,
+        )
+        self.assertNotIn(
+            "PRODUCTION_EVIDENCE=${EVIDENCE_ROOT}/production-sample-pgo",
+            runbook_lines,
+        )
+
         manifest = json.loads(
             (REPOSITORY / "optimization/phase2-tool-manifest.json").read_text(
                 encoding="utf-8"

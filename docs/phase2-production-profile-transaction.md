@@ -198,8 +198,13 @@ root_absent() {
     '[[ ! -e $1 && ! -L $1 ]]' bash "$1"
 }
 
+# Bundles and isolated Git configuration remain root-private.  The frozen
+# checkout parent is traversal-only: Portage userpriv must be able to inspect
+# the exact coordinator-bound child executable, but cannot list or modify it.
 root_run /usr/bin/install -d -o root -g root -m 0700 \
-  "${BUNDLE%/*}" "${SOURCE%/*}" "${ROOT_GIT_HOME%/*}"
+  "${BUNDLE%/*}" "${ROOT_GIT_HOME%/*}"
+root_run /usr/bin/install -d -o root -g root -m 0711 \
+  "${SOURCE%/*}"
 root_absent "$ROOT_GIT_HOME"
 root_run /usr/bin/install -d -o root -g root -m 0700 "$ROOT_GIT_HOME"
 root_absent "$BUNDLE"
@@ -241,6 +246,15 @@ root_run /usr/bin/sync -f "$SOURCE" "${SOURCE%/*}"
 ROOT_SOURCE_COMMIT=$(root_git -C "$SOURCE" rev-parse --verify 'HEAD^{commit}')
 [[ ${ROOT_SOURCE_COMMIT} == "${COMMIT}" ]]
 root_git -C "$SOURCE" bundle verify "$BUNDLE"
+
+# verify-active is reached from Portage userpriv.  Prove that identity can
+# traverse the frozen authority and inspect/read the exact production child
+# before starting any expensive host or production gate.
+root_run /usr/bin/runuser -u portage -- /usr/bin/stat \
+  "$SOURCE/tests/optimization/test-portage-sample-pgo-integration.sh" \
+  >/dev/null
+root_run /usr/bin/runuser -u portage -- /usr/bin/test -r \
+  "$SOURCE/tests/optimization/test-portage-sample-pgo-integration.sh"
 ```
 
 Retain each candidate's bundle, digest, private Git home, and root-owned
@@ -414,7 +428,7 @@ INVENTORY_SHA256=$(doas sha256sum "$VALIDATION_INPUT" | awk '{print $1}')
 WORK=/var/tmp/gentoo-optimization/phase2-sample-work-${RUN_ID}
 PROFILE=/var/cache/gentoo-optimization/pgo/clang-sample/phase2-sample-gate-${RUN_ID}
 STATE=/var/lib/gentoo-optimization/generations/${GENERATION_ID}/phase2-sample-gate-${RUN_ID}
-PRODUCTION_EVIDENCE=${EVIDENCE_ROOT}/production-sample-pgo
+PRODUCTION_EVIDENCE=/var/lib/gentoo-optimization/reports/phase2-production-sample-${RUN_ID}
 TOKEN_SCAN=${STATE}/coordinator-token-scan.tsv
 doas test ! -e "$WORK" && doas test ! -e "$PROFILE" && \
   doas test ! -e "$STATE" && doas test ! -e "$PRODUCTION_EVIDENCE"
