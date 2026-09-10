@@ -13,7 +13,11 @@ gentoo_opt_hook_abort() {
             rm -f -- "${marker}" || :
         fi
     fi
-    die "gentoo-optimization: ${message}"
+    if declare -F die >/dev/null 2>&1; then
+        die "gentoo-optimization: ${message}"
+    fi
+    printf 'gentoo-optimization: %s\n' "${message}" >&2
+    return 1
 }
 
 # Check replacement DSOs before Portage strips or admits them.  This is an
