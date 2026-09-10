@@ -20,7 +20,9 @@ gentoo_opt_hook_abort() {
 # ABI safety net for ordinary package installs, independent of BOLT mode.
 abi_guard=${GENTOO_OPT_ABI_GUARD:-/usr/local/libexec/gentoo-optimization/scripts/optimization/verify/abi-guard.py}
 if [[ -x ${abi_guard} || -f ${abi_guard} ]]; then
-    ED=${ED:-} ROOT=${ROOT:-/} python3 "${abi_guard}" || \
+    # Portage exports ED and ROOT (and marks them readonly in the QA shell);
+    # inherit those authoritative values rather than rebinding them here.
+    python3 "${abi_guard}" || \
         gentoo_opt_hook_abort 'replacement DSO failed exported-ABI guard'
 fi
 
