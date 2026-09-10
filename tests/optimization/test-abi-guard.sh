@@ -22,3 +22,21 @@ if ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"; then
     exit 1
 fi
 echo 'PASS: ABI guard rejects catastrophic exported-symbol loss'
+
+printf 'INPUT(libcanary.so.1)\n' >"${work}/root/usr/lib/libscript.so.1"
+printf 'INPUT(libcanary.so.1)\n' >"${work}/ed/usr/lib/libscript.so.1"
+ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
+if ED="${work}/ed" ROOT="${work}/root" python3 "${guard}" >/dev/null 2>&1; then :; fi
+if env -u ED ROOT="${work}/root" python3 "${guard}" >/dev/null 2>&1; then
+    echo 'ABI guard accepted missing ED context' >&2
+    exit 1
+fi
+echo 'PASS: ABI guard skips linker scripts and rejects missing context'
+
+cp "${work}/root/usr/lib/libcanary.so.1" "${work}/root/usr/lib/libreplace.so.1"
+printf 'not an ELF DSO\n' >"${work}/ed/usr/lib/libreplace.so.1"
+if ED="${work}/ed" ROOT="${work}/root" python3 "${guard}" >/dev/null 2>&1; then
+    echo 'ABI guard accepted ELF to non-ELF replacement' >&2
+    exit 1
+fi
+echo 'PASS: ABI guard rejects ELF to non-ELF replacement'

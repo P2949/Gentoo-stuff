@@ -7,6 +7,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+ELF_MAGIC = b"\x7fELF"
+
+
+def is_elf(path: Path) -> bool:
+    try:
+        with path.open("rb") as stream:
+            return stream.read(4) == ELF_MAGIC
+    except OSError:
+        return False
+
 
 def inspect(path: Path) -> tuple[str, str | None, set[str]]:
     try:
@@ -40,17 +50,33 @@ def inspect(path: Path) -> tuple[str, str | None, set[str]]:
 
 
 def main() -> int:
-    ed = Path(os.environ.get("ED", ""))
-    root = Path(os.environ.get("ROOT", "/"))
+    raw_ed = os.environ.get("ED")
+    raw_root = os.environ.get("ROOT")
+    if not raw_ed or not raw_root:
+        print("gentoo-optimization ABI guard: ED and ROOT are required", file=sys.stderr)
+        return 1
+    ed = Path(raw_ed)
+    root = Path(raw_root)
+    if not ed.is_absolute() or not root.is_absolute() or ed == Path("/"):
+        print("gentoo-optimization ABI guard: invalid ED/ROOT context", file=sys.stderr)
+        return 1
     if not ed.is_dir() or not root.is_dir():
-        return 0
+        print("gentoo-optimization ABI guard: ED and ROOT must be directories", file=sys.stderr)
+        return 1
     failures: list[str] = []
     for candidate in ed.rglob("*"):
-        if not candidate.is_file() or ".so" not in candidate.name:
+        if candidate.is_symlink() or not candidate.is_file() or ".so" not in candidate.name:
             continue
         rel = candidate.relative_to(ed)
         installed = root / rel
         if not installed.is_file():
+            continue
+        old_is_elf = is_elf(installed)
+        new_is_elf = is_elf(candidate)
+        if not old_is_elf:
+            continue
+        if not new_is_elf:
+            failures.append(f"{rel}: established ELF DSO replaced by non-ELF content")
             continue
         try:
             old_type, old_soname, old = inspect(installed)

@@ -23,7 +23,11 @@ gentoo_opt_hook_abort() {
 # Check replacement DSOs before Portage strips or admits them.  This is an
 # ABI safety net for ordinary package installs, independent of BOLT mode.
 abi_guard=/usr/local/libexec/gentoo-optimization/scripts/optimization/verify/abi-guard.py
-if [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 && -n ${GENTOO_OPT_ABI_GUARD:-} ]]; then
+if [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 || -n ${GENTOO_OPT_ABI_GUARD:-} ]]; then
+    [[ -z ${EBUILD_PHASE-} ]] || \
+        gentoo_opt_hook_abort 'test-only ABI guard override is forbidden in an ebuild phase'
+    [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 && -n ${GENTOO_OPT_ABI_GUARD:-} ]] || \
+        gentoo_opt_hook_abort 'incomplete ABI guard fixture override'
     abi_guard=${GENTOO_OPT_ABI_GUARD}
 fi
 [[ -x ${abi_guard} ]] || gentoo_opt_hook_abort 'production ABI guard helper is missing'

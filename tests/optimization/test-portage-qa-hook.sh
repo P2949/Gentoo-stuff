@@ -48,6 +48,18 @@ case_off_is_noop() (
     [[ -f ${PORTAGE_BUILDDIR}/.installed ]]
 )
 
+case_test_override_forbidden_in_ebuild_phase() (
+    new_marker ebuild-override
+    EBUILD_PHASE=install
+    export EBUILD_PHASE
+    die() { exit 97; }
+    set +e
+    ( source "${HOOK}" ) >/dev/null 2>&1
+    status=$?
+    set -e
+    [[ ${status} -eq 97 && ! -e ${PORTAGE_BUILDDIR}/.installed ]]
+)
+
 case_lost_active_state_is_fatal() (
     new_marker lost
     GENTOO_OPT_MODE=bolt-capture
@@ -182,8 +194,8 @@ with tempfile.TemporaryDirectory() as temporary:
         parents=True
     )
 
-    candidate.write_bytes(b"candidate")
-    installed.write_bytes(b"installed")
+    candidate.write_bytes(b"\x7fELFcandidate")
+    installed.write_bytes(b"\x7fELFinstalled")
 
     old_exports = {
         "_ZN4Tiny3oneEv",
@@ -274,6 +286,7 @@ PY_ABI_HOOK
     exit 1
 }
 run_case 'off state is a strict no-op' case_off_is_noop
+run_case 'test ABI override is forbidden in ebuild phase' case_test_override_forbidden_in_ebuild_phase
 run_case 'lost active state invalidates the install' case_lost_active_state_is_fatal
 run_case 'requested/active mismatch invalidates the install' case_mismatched_active_state_is_fatal
 run_case 'missing transaction function invalidates the install' case_missing_transaction_function_is_fatal
