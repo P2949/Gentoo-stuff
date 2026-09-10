@@ -580,15 +580,15 @@ phase2_evidence_tool() {
     "$EVIDENCE_PY" -I -B "$EVIDENCE_TOOL" "$@"
 }
 
-# Publish the immutable retry disposition before any component consumes it.
-# The reconciliation input is canonical JSON, root-owned, non-symlink, private,
-# and its keys must exactly equal the externally reconciled transaction IDs.
-doas test ! -e "$JSONSCHEMA_RETRY_DISPOSITION"
-phase2_evidence_tool prerequisite-retry-disposition --production \
-  --state-root /var/lib/gentoo-optimization/state/project \
-  --success-state "$JSONSCHEMA_PREREQUISITE_SUCCESS" \
-  --reconciliation /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-reconciliation.json \
-  --output "$JSONSCHEMA_RETRY_DISPOSITION"
+# Publish the immutable retry disposition once. Later authorization runs
+# consume and revalidate this historical authority without replacing it.
+if ! doas test -e "$JSONSCHEMA_RETRY_DISPOSITION"; then
+  phase2_evidence_tool prerequisite-retry-disposition --production \
+    --state-root /var/lib/gentoo-optimization/state/project \
+    --success-state "$JSONSCHEMA_PREREQUISITE_SUCCESS" \
+    --reconciliation /var/lib/gentoo-optimization/state/project/jsonschema-prerequisite-reconciliation.json \
+    --output "$JSONSCHEMA_RETRY_DISPOSITION"
+fi
 
 doas test ! -e "$COMPONENT_ROOT/automation.json"
 phase2_evidence_tool component-state --production \

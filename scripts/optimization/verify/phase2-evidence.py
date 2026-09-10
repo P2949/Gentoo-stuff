@@ -9947,7 +9947,18 @@ def prerequisite_retry_disposition_command(arguments: argparse.Namespace) -> Non
             evidence = reconciliation.get(tid)
             if not isinstance(evidence, list) or not evidence:
                 fail(f"reconciliation evidence required for {tid}")
-            evidence = sorted(evidence, key=lambda item: (item["path"], item["purpose"], item["sha256"]))
+            normalized = []
+            for item in evidence:
+                item = require_object(item, "retry reconciliation evidence", {"path", "purpose", "sha256"})
+                item = {
+                    "path": os.fspath(absolute_path(item["path"], "retry reconciliation evidence path")),
+                    "purpose": require_string(item["purpose"], "retry reconciliation evidence purpose"),
+                    "sha256": require_string(item["sha256"], "retry reconciliation evidence sha256"),
+                }
+                if not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]):
+                    fail("retry reconciliation evidence sha256 is invalid")
+                normalized.append(item)
+            evidence = sorted(normalized, key=lambda item: (item["path"], item["purpose"], item["sha256"]))
             row["reconciliation"] = {"transaction_id": tid, "reusable": False, "states": evidence}
         rows.append(row)
     document = {"schema": "gentoo-optimization-jsonschema-prerequisite-retry-disposition-v1", "rows": rows}

@@ -39,6 +39,7 @@
       "docs/bolt-global.md",
       "optimization/exact-cpv-contract.json",
       "portage/install-qa-check.d/zz-gentoo-optimization-bolt",
+        "scripts/optimization/verify/abi-guard.py",
         "scripts/bolt/bolt-package-binaries.sh",
         "scripts/bolt/collect-profile.sh",
         "scripts/bolt/list-package-binaries.sh",
@@ -49,7 +50,9 @@
         "scripts/optimization/bolt/register-output.sh",
         "tests/optimization/test-bolt-command-policy.sh",
         "tests/optimization/test-bolt-hooks.sh",
-        "tests/optimization/test-no-legacy-bolt.sh"
+        "tests/optimization/test-no-legacy-bolt.sh",
+        "tests/optimization/test-abi-guard.sh",
+        "tests/optimization/test-portage-qa-hook.sh"
       ]
     },
     {
@@ -115,7 +118,7 @@
   "required_authoritative": true,
   "required_component_states": [
     {"external_evidence_labels": ["jsonschema-bootstrap-manifest", "jsonschema-post-checkpoint-offline-restore-receipt", "jsonschema-post-checkpoint-operator-manifest", "jsonschema-post-checkpoint-terminal-state", "jsonschema-pre-checkpoint-offline-restore-receipt", "jsonschema-pre-checkpoint-operator-manifest", "jsonschema-pre-checkpoint-terminal-state", "jsonschema-prerequisite-retry-disposition", "jsonschema-prerequisite-success-state"], "name": "automation", "required_test_names": ["driver-cli-self-test", "phase2-evidence-contract", "phase2-run-provenance-start", "phase2-test-contract-static", "production-profile-lock-crash-stress", "python-source-compilation", "python-unit-tests:tests/optimization", "python-unit-tests:tests/optimization/recovery", "shellcheck"], "required_test_prefixes": []},
-    {"external_evidence_labels": [], "name": "bolt-hooks", "required_test_names": ["bolt-command-policy", "bolt-pre-strip-hooks", "bolt-transaction-fixture", "no-legacy-bolt"], "required_test_prefixes": []},
+    {"external_evidence_labels": [], "name": "bolt-hooks", "required_test_names": ["abi-guard-fixture", "bolt-command-policy", "bolt-pre-strip-hooks", "bolt-transaction-fixture", "no-legacy-bolt", "portage-qa-hook-state"], "required_test_prefixes": []},
     {"external_evidence_labels": [], "name": "capability-bolt", "required_test_names": [], "required_test_prefixes": ["capability:bolt"]},
     {"external_evidence_labels": [], "name": "capability-clang-ir", "required_test_names": [], "required_test_prefixes": ["capability:clang-ir"]},
     {"external_evidence_labels": [], "name": "capability-clang-sample", "required_test_names": [], "required_test_prefixes": ["capability:clang-sample"]},

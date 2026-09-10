@@ -13,6 +13,10 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/gentoo-opt-qa-hook.XXXXXX")
 trap 'rm -rf -- "${TMP}"' EXIT HUP INT TERM
 PASS=0
 FAIL=0
+PASSING_GUARD=${TMP}/passing-abi-guard.py
+printf '#!/usr/bin/env python3\n' > "${PASSING_GUARD}"
+printf 'raise SystemExit(0)\n' >> "${PASSING_GUARD}"
+chmod +x "${PASSING_GUARD}"
 
 run_case() {
     local name=$1
@@ -32,7 +36,9 @@ new_marker() {
     PORTAGE_BUILDDIR=${PORTAGE_TMPDIR}/portage/app-test/fixture-1
     mkdir -p -- "${PORTAGE_BUILDDIR}"
     : > "${PORTAGE_BUILDDIR}/.installed"
-    export PORTAGE_TMPDIR PORTAGE_BUILDDIR
+    GENTOO_OPT_TEST_MODE=1
+    GENTOO_OPT_ABI_GUARD=${PASSING_GUARD}
+    export PORTAGE_TMPDIR PORTAGE_BUILDDIR GENTOO_OPT_TEST_MODE GENTOO_OPT_ABI_GUARD
 }
 
 case_off_is_noop() (
@@ -107,6 +113,8 @@ namespace = runpy.run_path(
 )
 
 sample = """\
+  Type: DYN (Shared object file)\n\
+ 0x000000000000000e (SONAME)             Library soname: [libfixture.so.1]\n\
 Symbol table '.dynsym' contains 5 entries:
    Num:    Value          Size Type    Bind   Vis      Ndx Name
      1: 0000000000001000    16 FUNC    GLOBAL DEFAULT   12 _ZN7Example3fooEv
@@ -121,10 +129,12 @@ with mock.patch.object(
     "check_output",
     return_value=sample,
 ):
-    observed = namespace["symbols"](
+    observed_type, observed_soname, observed = namespace["inspect"](
         Path("/tmp/libfixture.so")
     )
 
+assert observed_type == "DYN"
+assert observed_soname == "libfixture.so.1"
 assert observed == {
     "_ZN7Example3fooEv",
     "_ZN7Example3barEv",
@@ -186,16 +196,16 @@ with tempfile.TemporaryDirectory() as temporary:
         "_ZN4Tiny8differentEv",
     }
 
-    def fake_symbols(path: Path):
+    def fake_inspect(path: Path):
         if path == installed:
-            return old_exports
+            return ("DYN", "libtiny.so.1", old_exports)
 
         if path == candidate:
-            return replacement_exports
+            return ("DYN", "libtiny.so.1", replacement_exports)
 
-        return set()
+        return ("", None, set())
 
-    namespace["main"].__globals__["symbols"] = fake_symbols
+    namespace["main"].__globals__["inspect"] = fake_inspect
 
     stderr = io.StringIO()
 
@@ -226,8 +236,15 @@ case_abi_guard_failure_invalidates_install() (
     failing_guard=${TMP}/failing-abi-guard.py
 
     cat >"${failing_guard}" <<'PY_ABI_HOOK'
+#!/usr/bin/env python3
+import os
+from pathlib import Path
+Path(os.environ["ABI_GUARD_SENTINEL"]).write_text("ran\n")
 raise SystemExit(1)
 PY_ABI_HOOK
+    chmod +x "${failing_guard}"
+    ABI_GUARD_SENTINEL=${TMP}/failing-guard-ran
+    export ABI_GUARD_SENTINEL
 
     GENTOO_OPT_ABI_GUARD=${failing_guard}
     GENTOO_OPT_TEST_MODE=1
@@ -248,6 +265,7 @@ PY_ABI_HOOK
     set -e
 
     [[ ${status} -eq 98 ]]
+    [[ -f ${TMP}/failing-guard-ran ]]
     [[ ! -e ${PORTAGE_BUILDDIR}/.installed ]]
 )
 
