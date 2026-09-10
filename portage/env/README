@@ -24,8 +24,10 @@ Ordinary global axes:
         -Wl,--icf=safe
 
     Visibility/internalization pressure
-        -fvisibility=hidden
-        -fvisibility-inlines-hidden for C++
+        Hidden visibility is opt-in per package; it is not part of the
+        global baseline. Use no-hidden-no-forced-libs.conf for public ABI
+        compatibility lanes. The pre-strip ABI guard remains active for
+        ordinary replacements.
 
     Optimization remarks
         -fsave-optimization-record=yaml

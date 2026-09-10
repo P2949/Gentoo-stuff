@@ -153,6 +153,7 @@
   "schema": "gentoo-optimization-phase2-authoritative-test-contract-v1",
   "top_level": {
     "exact_names": [
+      "abi-guard-fixture",
       "bolt-command-policy",
       "bolt-pre-strip-hooks",
       "bolt-transaction-fixture",

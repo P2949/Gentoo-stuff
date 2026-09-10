@@ -1,4 +1,5 @@
-# Public C ABI libraries/tools: global -fvisibility=hidden hides exported API.
+# Public ABI libraries/tools: hidden visibility is an opt-in experiment and
+# these packages remain on the ABI-safe compatibility lane.
 # libbsd: hidden reallocarray@LIBBSD_0.7 caused Xwayland runtime lookup failure.
 # gpgme: hidden gpgme_* API caused gpgme-tool/gpgme-json link failures.
 dev-libs/libbsd no-hidden-no-forced-libs.conf
@@ -12,7 +13,7 @@ dev-libs/newt no-hidden-no-forced-libs.conf
 
 # Hyprland ecosystem public C++ ABIs.
 #
-# The global hidden-visibility tier hides unannotated public symbols in
+# A hidden-visibility experiment can hide unannotated public symbols in
 # Aquamarine and hyprutils. The forced mixed libc++/libstdc++ link set is
 # also unnecessary for this consistently libc++-built stack.
 

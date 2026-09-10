@@ -230,6 +230,7 @@ raise SystemExit(1)
 PY_ABI_HOOK
 
     GENTOO_OPT_ABI_GUARD=${failing_guard}
+    GENTOO_OPT_TEST_MODE=1
     GENTOO_OPT_MODE=off
 
     die() {
