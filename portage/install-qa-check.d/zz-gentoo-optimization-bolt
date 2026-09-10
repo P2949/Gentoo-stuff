@@ -34,8 +34,8 @@ fi
 # Portage keeps ED/ROOT as shell locals while sourcing install-QA hooks; pass
 # those authenticated roots explicitly to the standalone verifier rather than
 # relying on child-process export semantics.
-hook_ed=${ED:-${D-}}
-hook_root=${ROOT:-${EROOT-}}
+hook_ed=${ED:-${D:-$(pwd -P)}}
+hook_root=${ROOT:-${EROOT:-/}}
 env ED=${hook_ed} ROOT=${hook_root} "${abi_guard}" || \
     gentoo_opt_hook_abort 'replacement DSO failed exported-ABI guard'
 unset hook_ed hook_root
