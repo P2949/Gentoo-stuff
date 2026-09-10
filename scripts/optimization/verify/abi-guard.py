@@ -87,23 +87,21 @@ def main() -> int:
         except RuntimeError as exc:
             failures.append(str(exc))
             continue
-        if old_type != "DYN" or new_type != "DYN" or not old_soname or old_soname != new_soname:
+        if old_type == "DYN" and new_type != "DYN":
+            failures.append(f"{rel}: established DYN DSO replaced by ELF type {new_type or 'unknown'}")
+            continue
+        if old_type != "DYN" or not old_soname:
+            continue
+        if not new_soname:
+            failures.append(f"{rel}: established SONAME {old_soname} disappeared")
+            continue
+        if old_soname != new_soname:
+            failures.append(f"{rel}: established SONAME changed {old_soname} -> {new_soname}")
             continue
         if not old:
             continue
         missing = old - new
-        # Losing every established export is catastrophic regardless of DSO
-        # size.  For larger established ABIs also reject severe count loss or
-        # loss of at least half of the previous exported names.
-        catastrophic_loss = (
-            missing == old
-            or len(new) * 4 < len(old)
-            or (
-                len(old) >= 20
-                and len(missing) * 2 >= len(old)
-            )
-        )
-        if catastrophic_loss:
+        if missing:
             sample = ",".join(sorted(missing)[:12])
             failures.append(f"{rel}: old={len(old)} new={len(new)} missing={sample}")
     if failures:

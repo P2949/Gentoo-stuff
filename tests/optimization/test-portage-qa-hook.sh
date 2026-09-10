@@ -272,6 +272,52 @@ with tempfile.TemporaryDirectory() as temporary:
 PY_ABI_SMALL
 )
 
+case_abi_guard_rejects_established_metadata_changes() (
+    python3 - "${ABI_GUARD}" <<'PY_ABI_METADATA'
+from pathlib import Path
+from unittest import mock
+import contextlib
+import io
+import os
+import runpy
+import sys
+import tempfile
+
+namespace = runpy.run_path(os.fspath(Path(sys.argv[1])))
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = Path(temporary)
+    ed = root / "ed"
+    installed_root = root / "root"
+    candidate = ed / "usr/lib64/libmeta.so.1"
+    installed = installed_root / "usr/lib64/libmeta.so.1"
+    candidate.parent.mkdir(parents=True)
+    installed.parent.mkdir(parents=True)
+    candidate.write_bytes(b"\x7fELFcandidate")
+    installed.write_bytes(b"\x7fELFinstalled")
+    old_exports = {"api"}
+
+    def run_case(new_type, new_soname):
+        def fake_inspect(path):
+            if path == installed:
+                return ("DYN", "libmeta.so.1", old_exports)
+            return (new_type, new_soname, old_exports)
+        namespace["main"].__globals__["inspect"] = fake_inspect
+        stderr = io.StringIO()
+        with mock.patch.dict(
+            os.environ,
+            {"ED": os.fspath(ed), "ROOT": os.fspath(installed_root)},
+            clear=False,
+        ), contextlib.redirect_stderr(stderr):
+            result = namespace["main"]()
+        assert result == 1, (new_type, new_soname, stderr.getvalue())
+
+    run_case("EXEC", "libmeta.so.1")
+    run_case("DYN", None)
+    run_case("DYN", "libother.so.1")
+PY_ABI_METADATA
+)
+
 case_abi_guard_failure_invalidates_install() (
     new_marker abi-guard-failure
 
@@ -311,6 +357,34 @@ PY_ABI_HOOK
     [[ ! -e ${PORTAGE_BUILDDIR}/.installed ]]
 )
 
+case_command_shadowing_cannot_bypass_guard_or_marker_invalidation() (
+    new_marker command-shadowing
+    failing_guard=${TMP}/shadowed-failing-abi-guard.py
+    sentinel=${TMP}/shadowed-guard-ran
+    cat >"${failing_guard}" <<'PY_SHADOW_GUARD'
+#!/usr/bin/env python3
+import os
+from pathlib import Path
+Path(os.environ["ABI_GUARD_SENTINEL"]).write_text("ran\n")
+raise SystemExit(1)
+PY_SHADOW_GUARD
+    chmod +x "${failing_guard}"
+    export ABI_GUARD_SENTINEL=${sentinel}
+    GENTOO_OPT_ABI_GUARD=${failing_guard}
+    GENTOO_OPT_TEST_MODE=1
+    GENTOO_OPT_MODE=off
+    env() { return 0; }
+    rm() { return 0; }
+    die() { exit 99; }
+    set +e
+    ( source "${HOOK}" ) >/dev/null 2>&1
+    status=$?
+    set -e
+    [[ ${status} -eq 99 ]]
+    [[ -f ${sentinel} ]]
+    [[ ! -e ${PORTAGE_BUILDDIR}/.installed ]]
+)
+
 [[ -f ${HOOK} ]] || {
     printf 'FAIL: hook is absent: %s\n' "${HOOK}" >&2
     exit 1
@@ -323,6 +397,8 @@ run_case 'missing transaction function invalidates the install' case_missing_tra
 run_case 'active transaction runs exactly once' case_active_transaction_runs_exactly_once
 run_case 'ABI guard tracks C++ and GNU-unique exports' case_abi_guard_tracks_cpp_and_unique_exports
 run_case 'ABI guard rejects complete replacement of a small ABI' case_abi_guard_rejects_small_complete_abi_replacement
+run_case 'ABI guard rejects established DSO metadata changes' case_abi_guard_rejects_established_metadata_changes
 run_case 'ABI guard failure invalidates the install' case_abi_guard_failure_invalidates_install
+run_case 'command shadowing cannot bypass ABI guard or marker invalidation' case_command_shadowing_cannot_bypass_guard_or_marker_invalidation
 printf 'SUMMARY: pass=%d fail=%d total=%d\n' "${PASS}" "${FAIL}" "$((PASS + FAIL))"
 ((FAIL == 0))

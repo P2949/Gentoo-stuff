@@ -10,7 +10,7 @@ gentoo_opt_hook_abort() {
         ${portage_tmp} != / && ${builddir} == "${portage_tmp%/}/portage/"* ]]; then
         marker=${builddir}/.installed
         if [[ ! -L ${marker} && ( ! -e ${marker} || -f ${marker} ) ]]; then
-            rm -f -- "${marker}" || :
+            /usr/bin/rm -f -- "${marker}" || :
         fi
     fi
     if declare -F die >/dev/null 2>&1; then
@@ -34,9 +34,9 @@ fi
 # Portage keeps ED/ROOT as shell locals while sourcing install-QA hooks; pass
 # those authenticated roots explicitly to the standalone verifier rather than
 # relying on child-process export semantics.
-hook_ed=${ED:-${D:-$(pwd -P)}}
+hook_ed=${ED:-${D:-$(builtin pwd -P)}}
 hook_root=${ROOT:-${EROOT:-/}}
-env ED="${hook_ed}" ROOT="${hook_root}" "${abi_guard}" || \
+/usr/bin/env ED="${hook_ed}" ROOT="${hook_root}" "${abi_guard}" || \
     gentoo_opt_hook_abort 'replacement DSO failed exported-ABI guard'
 unset hook_ed hook_root
 
