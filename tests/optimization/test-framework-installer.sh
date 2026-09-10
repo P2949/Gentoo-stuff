@@ -1642,6 +1642,8 @@ GENTOO_OPT_TEST_GENERATION_PROBE=1 \
 if grep -Fq 'NEW-GENERATION-HELPER' "${shell_helper_log}"; then exit 86; fi
 grep -Fq 'usage:' "${shell_helper_log}"
 GENTOO_OPT_TEST_QA_GENERATION=old-bound
+GENTOO_OPT_TEST_MODE=1
+GENTOO_OPT_ABI_GUARD=/bin/true
 source "${qa_bootstrap}"
 [[ ${GENTOO_OPT_TEST_QA_GENERATION} == old-bound ]]
 die() { return 98; }
