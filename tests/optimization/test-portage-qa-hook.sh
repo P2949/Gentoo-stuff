@@ -2,7 +2,7 @@
 # The fixture deliberately supplies variables/functions that are consumed only
 # by the dynamically selected QA hook below.
 # SC2317/SC2329 cover callbacks invoked indirectly by traps and fixture hooks.
-# shellcheck disable=SC1090,SC2034,SC2317,SC2329
+# shellcheck disable=SC1090,SC2030,SC2031,SC2034,SC2317,SC2329
 set -Eeuo pipefail
 IFS=$'\n\t'
 
