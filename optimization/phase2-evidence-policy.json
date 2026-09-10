@@ -39,7 +39,6 @@
       "docs/bolt-global.md",
       "optimization/exact-cpv-contract.json",
       "portage/install-qa-check.d/zz-gentoo-optimization-bolt",
-        "scripts/optimization/verify/abi-guard.py",
         "scripts/bolt/bolt-package-binaries.sh",
         "scripts/bolt/collect-profile.sh",
         "scripts/bolt/list-package-binaries.sh",
@@ -48,10 +47,11 @@
         "scripts/optimization/bolt/capture-input.sh",
         "scripts/optimization/bolt/deploy-output.sh",
         "scripts/optimization/bolt/register-output.sh",
+        "scripts/optimization/verify/abi-guard.py",
+        "tests/optimization/test-abi-guard.sh",
         "tests/optimization/test-bolt-command-policy.sh",
         "tests/optimization/test-bolt-hooks.sh",
         "tests/optimization/test-no-legacy-bolt.sh",
-        "tests/optimization/test-abi-guard.sh",
         "tests/optimization/test-portage-qa-hook.sh"
       ]
     },
@@ -130,6 +130,7 @@
     {"external_evidence_labels": ["production-child-identity", "production-publication-context", "production-token-scan", "production-transaction-receipt", "production-validation-input"], "name": "sample-pgo", "required_test_names": ["portage-sample-pgo-integration", "portage-sample-pgo-live-policy-integration", "portage-sample-production-env"], "required_test_prefixes": []}
   ],
   "required_passing_test_names": [
+    "abi-guard-fixture",
     "bolt-command-policy",
     "bolt-pre-strip-hooks",
     "bolt-transaction-fixture",
