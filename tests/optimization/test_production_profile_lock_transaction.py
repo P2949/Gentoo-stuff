@@ -723,7 +723,12 @@ class ProductionProfileLockTransactionTests(unittest.TestCase):
                 )
         except coordinator.TransactionError as error:
             self.skipTest(f"HOST-SKIP: functional pidfd preflight failed: {error}")
-        self.assertEqual(len(descriptors), 2)
+        # Python 3.15's Popen.wait uses an internal pidfd on Linux; the
+        # coordinator itself still opens exactly one descriptor.  Keep the
+        # assertion exact for the supported runtimes without mistaking that
+        # interpreter-internal descriptor for a second coordinator open.
+        expected_descriptors = 2 if sys.version_info >= (3, 15) else 1
+        self.assertEqual(len(descriptors), expected_descriptors)
         with self.assertRaises(OSError) as closed:
             os.fstat(descriptors[0])
         self.assertEqual(closed.exception.errno, errno.EBADF)
