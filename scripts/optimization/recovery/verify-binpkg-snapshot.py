@@ -575,16 +575,37 @@ def _process_group_has_live_members(
     ``setsid`` descendants while preventing unrelated host processes from
     making an already-dead zstd group appear to survive SIGKILL.
     """
-    del pid_namespace  # killpg is scoped by the kernel, not a /proc snapshot.
+    del pid_namespace  # the verifier runs in the same trusted namespace.
+    proc = Path("/proc")
     try:
-        os.killpg(process_group, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+        entries = tuple(proc.iterdir())
     except OSError:
+        # Retain the conservative kernel probe if procfs is unavailable.
+        try:
+            os.killpg(process_group, 0)
+        except ProcessLookupError:
+            return False
+        except OSError:
+            return True
         return True
-    return True
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            record = (entry / "stat").read_text(encoding="ascii")
+            closing = record.rfind(")")
+            fields = record[closing + 2 :].split()
+            # After the comm field: state is field 3 and pgrp is field 5.
+            if len(fields) < 3:
+                continue
+            pgrp = int(fields[2])
+        except (OSError, UnicodeDecodeError, ValueError):
+            continue
+        if pgrp != process_group:
+            continue
+        if fields[0] != "Z":
+            return True
+    return False
 
 
 def _terminate_process_group(
