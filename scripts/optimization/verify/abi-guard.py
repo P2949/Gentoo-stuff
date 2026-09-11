@@ -52,14 +52,19 @@ def inspect(path: Path) -> tuple[str, str | None, set[str]]:
 def resolve_tree_link(link: Path, tree: Path) -> Path | None:
     """Resolve one staged/live symlink without permitting tree escape."""
     try:
+        tree_root = tree.resolve(strict=True)
         target = os.readlink(link)
         raw = Path(target)
-        resolved = (tree / raw.lstrip("/")) if raw.is_absolute() else (link.parent / raw)
-        resolved = resolved.resolve(strict=True)
-        resolved.relative_to(tree.resolve(strict=True))
+        unresolved = (
+            tree_root / target.lstrip("/")
+            if raw.is_absolute()
+            else link.parent / raw
+        )
+        resolved = unresolved.resolve(strict=True)
+        resolved.relative_to(tree_root)
     except (OSError, RuntimeError, ValueError):
         return None
-    return resolved if resolved.is_file() and not resolved.is_symlink() else None
+    return resolved if resolved.is_file() else None
 
 
 def compare_pair(rel: Path, installed: Path, candidate: Path, failures: list[str]) -> None:
@@ -116,19 +121,35 @@ def main() -> int:
             continue
         rel = candidate.relative_to(ed)
         installed = root / rel
-        if candidate.is_symlink():
-            if not installed.is_symlink():
+        candidate_is_link = candidate.is_symlink()
+        installed_is_link = installed.is_symlink()
+
+        if candidate_is_link:
+            candidate_target = resolve_tree_link(candidate, ed)
+            if candidate_target is None:
+                if installed_is_link or installed.is_file():
+                    failures.append(
+                        f"{rel}: candidate DSO symlink target is invalid or escapes its tree"
+                    )
                 continue
-            old_target = resolve_tree_link(installed, root)
-            new_target = resolve_tree_link(candidate, ed)
-            if old_target is None or new_target is None:
-                failures.append(f"{rel}: versioned DSO symlink target is invalid or escapes its tree")
+        elif candidate.is_file():
+            candidate_target = candidate
+        else:
+            continue
+
+        if installed_is_link:
+            installed_target = resolve_tree_link(installed, root)
+            if installed_target is None:
+                failures.append(
+                    f"{rel}: installed DSO symlink target is invalid or escapes its tree"
+                )
                 continue
-            compare_pair(rel, old_target, new_target, failures)
+        elif installed.is_file():
+            installed_target = installed
+        else:
             continue
-        if not candidate.is_file() or not installed.is_file():
-            continue
-        compare_pair(rel, installed, candidate, failures)
+
+        compare_pair(rel, installed_target, candidate_target, failures)
     if failures:
         print("gentoo-optimization ABI guard: exported ABI loss", file=sys.stderr)
         print("\n".join(failures), file=sys.stderr)

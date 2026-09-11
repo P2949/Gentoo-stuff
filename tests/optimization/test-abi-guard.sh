@@ -64,3 +64,27 @@ echo 'PASS: ABI guard rejects versioned symlink export loss'
 cp "${work}/root/usr/lib/libsymlink.so.1.0" "${work}/ed/usr/lib/libsymlink.so.1.1"
 ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
 echo 'PASS: ABI guard accepts versioned symlink with retained exports'
+
+# Absolute SONAME links are interpreted within ROOT/ED, never against the host
+# filesystem, and therefore exercise the tree-rooted absolute-target path.
+rm -f --     "${work}/root/usr/lib/libsymlink.so.1"     "${work}/ed/usr/lib/libsymlink.so.1"
+ln -s /usr/lib/libsymlink.so.1.0 "${work}/root/usr/lib/libsymlink.so.1"
+ln -s /usr/lib/libsymlink.so.1.1 "${work}/ed/usr/lib/libsymlink.so.1"
+ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
+echo 'PASS: ABI guard resolves absolute versioned symlinks inside each tree'
+
+# A regular installed DSO transitioning to a staged symlink must still compare
+# the established ABI against the symlink target rather than being skipped.
+cp "${work}/root/usr/lib/libsymlink.so.1.0"     "${work}/root/usr/lib/libregular-to-link.so.1"
+cc -shared -fPIC "${work}/new.c" -Wl,-soname,libregular-to-link.so.1     -o "${work}/ed/usr/lib/libregular-to-link.so.1.1"
+ln -s libregular-to-link.so.1.1     "${work}/ed/usr/lib/libregular-to-link.so.1"
+
+if ED="${work}/ed" ROOT="${work}/root" python3 "${guard}" >/dev/null 2>&1; then
+    echo 'ABI guard accepted regular-DSO to symlink export loss' >&2
+    exit 1
+fi
+echo 'PASS: ABI guard rejects regular-DSO to symlink export loss'
+
+cp "${work}/root/usr/lib/libregular-to-link.so.1"     "${work}/ed/usr/lib/libregular-to-link.so.1.1"
+ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
+echo 'PASS: ABI guard accepts regular-DSO to symlink with retained exports'
