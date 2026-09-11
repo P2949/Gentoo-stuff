@@ -1099,6 +1099,14 @@ scan_portage_processes() {
 scan_vdb_handles() {
     local output=$1 proc pid object target map_line maps_fd
     : >"${output}"
+
+    # Fixture roots never mutate or expose the host Portage VDB.  Avoid a
+    # host-wide /proc descriptor and maps scan when the VDB path is synthetic;
+    # the fixture's fake lock/process evidence is authoritative for this lane.
+    if ((FIXTURE_MODE)); then
+        return 0
+    fi
+
     for proc in /proc/[0-9]*; do
         [[ -d ${proc} ]] || continue
         pid=${proc##*/}
