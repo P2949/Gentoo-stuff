@@ -45,3 +45,22 @@ if ED="${work}/ed" ROOT="${work}/root" python3 "${guard}" >/dev/null 2>&1; then
     exit 1
 fi
 echo 'PASS: ABI guard rejects ELF to non-ELF replacement'
+rm -f -- "${work}/ed/usr/lib/libreplace.so.1"
+
+# Versioned SONAME symlinks must compare the resolved old/new DSOs rather than
+# silently skipping the link entry itself.
+cc -shared -fPIC "${work}/old.c" -Wl,-soname,libsymlink.so.1 \
+    -o "${work}/root/usr/lib/libsymlink.so.1.0"
+cc -shared -fPIC "${work}/new.c" -Wl,-soname,libsymlink.so.1 \
+    -o "${work}/ed/usr/lib/libsymlink.so.1.1"
+ln -s libsymlink.so.1.0 "${work}/root/usr/lib/libsymlink.so.1"
+ln -s libsymlink.so.1.1 "${work}/ed/usr/lib/libsymlink.so.1"
+if ED="${work}/ed" ROOT="${work}/root" python3 "${guard}" >/dev/null 2>&1; then
+    echo 'ABI guard accepted versioned symlink export loss' >&2
+    exit 1
+fi
+echo 'PASS: ABI guard rejects versioned symlink export loss'
+
+cp "${work}/root/usr/lib/libsymlink.so.1.0" "${work}/ed/usr/lib/libsymlink.so.1.1"
+ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
+echo 'PASS: ABI guard accepts versioned symlink with retained exports'
