@@ -4030,10 +4030,14 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             try:
                 entered = self.fixture.control / "vdb-lock-prebind-entered"
                 deadline = time.monotonic() + 20
-                while not entered.is_file() and process.poll() is None and time.monotonic() < deadline:
+                while (
+                    (not entered.is_file() or not entered.read_text().strip())
+                    and process.poll() is None
+                    and time.monotonic() < deadline
+                ):
                     observed.update(snapshot_descendants(root.pid))
                     time.sleep(0.02)
-                if not entered.is_file():
+                if not entered.is_file() or not entered.read_text().strip():
                     self.fail(
                         "VDB lock holder did not enter the pre-binding barrier: "
                         f"rc={process.poll()}\nstdout:\n{read_capture(stdout_file)}\n"
