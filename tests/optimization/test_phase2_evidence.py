@@ -2152,8 +2152,14 @@ namespace["require_active_python_matches_reviewed_tools"](
                 }
             ),
         )
+        # Bind fixture-owned bytes and inode topology, independent of hardlinks
+        # introduced by the host package manager or other host fixtures.
+        native_tool = self.fixture.root / "native-tool"
+        shutil.copyfile(Path("/usr/bin/true").resolve(strict=True), native_tool)
+        native_tool.chmod(0o755)
+        self.assertEqual(native_tool.stat().st_nlink, 1)
         native_settings = {
-            variable: os.fspath(Path("/usr/bin/true").resolve(strict=True))
+            variable: os.fspath(native_tool)
             for variable in producer["NATIVE_BUILD_COMMAND_DEFAULTS"]
         }
         native_toolchain = cast(
