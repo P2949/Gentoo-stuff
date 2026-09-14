@@ -10420,14 +10420,20 @@ def validate_component_external_semantics(
     # transaction journal and child identity.  Bind to that root directly;
     # production workflows may choose their own root below the trusted report
     # base and must not be forced into an invented nested suffix.
-    recorded_output_root = receipt["transaction_journal"].get(
-        "evidence_output_root"
+    journal_child_contract = require_object(
+        receipt["transaction_journal"].get("child_contract"),
+        "receipt transaction journal child contract",
     )
-    expected_output_root = (
-        absolute_path(recorded_output_root, "receipt production evidence output root")
-        if recorded_output_root is not None
-        else evidence_root / "production-sample-pgo"
+    recorded_output_root = journal_child_contract.get("evidence_output_root")
+    expected_output_root = absolute_path(
+        recorded_output_root, "receipt production evidence output root"
     )
+    if production:
+        trusted_report_root = Path("/var/lib/gentoo-optimization/reports")
+        try:
+            expected_output_root.relative_to(trusted_report_root)
+        except ValueError:
+            fail("receipt production evidence output root is outside trusted reports")
     if (
         receipt["schema"]
         != "gentoo-optimization-production-profile-lock-receipt-v1"

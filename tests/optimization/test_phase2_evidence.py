@@ -3647,7 +3647,7 @@ namespace["require_active_python_matches_reviewed_tools"](
         pretty = namespace["pretty_json"]
         hash_bytes = namespace["sha256"]
         error_type = namespace["EvidenceError"]
-        production_output = self.fixture.evidence / "production-sample-pgo"
+        production_output = self.fixture.evidence / "custom-production-output-root"
         production_output.mkdir()
         publication_path = production_output / "publication-context.tsv"
         receipt_path = self.fixture.root / "transactions/passed.receipt.json"
@@ -4623,13 +4623,254 @@ namespace["require_active_python_matches_reviewed_tools"](
     def test_retry_classification_uses_highest_durable_phase(self) -> None:
         ns = runpy.run_path(os.fspath(TOOL))
         classify = ns["prerequisite_retry_classification"]
-        self.assertEqual(classify({"preparation-attempt.json", "prepared.json", "armed.json"}), "externally-reconciled-consumed-nonterminal")
-        self.assertEqual(classify({"preparation-attempt.json", "prepared.json"}), "prepared-only-consumed")
-        self.assertEqual(classify({"locked-authority.json"}), "locked-authority-only-consumed")
+
+        self.assertEqual(
+            classify(
+                {
+                    "preparation-attempt.json",
+                    "prepared.json",
+                    "armed.json",
+                }
+            ),
+            "externally-reconciled-consumed-nonterminal",
+        )
+        self.assertEqual(
+            classify(
+                {
+                    "preparation-attempt.json",
+                    "prepared.json",
+                }
+            ),
+            "prepared-only-consumed",
+        )
+        self.assertEqual(
+            classify({"locked-authority.json"}),
+            "locked-authority-only-consumed",
+        )
+
         with self.assertRaises(Exception):
             classify({"success.json"})
+
         with self.assertRaises(Exception):
-            classify({"rolled-back.json", "recovery-failed.json"})
+            classify(
+                {
+                    "rolled-back.json",
+                    "recovery-failed.json",
+                }
+            )
+
+        validate = ns[
+            "validate_prerequisite_retry_disposition"
+        ]
+        error_type = ns["EvidenceError"]
+        canonical_json = ns[
+            "prerequisite_canonical_json"
+        ]
+        tool_sha256 = ns["sha256"]
+
+        globals_map = validate.__globals__
+
+        legacy_names = (
+            "LEGACY_PREREQUISITE_RETRY_DISPOSITION_PATH",
+            "LEGACY_PREREQUISITE_RETRY_DISPOSITION_SHA256",
+            "LEGACY_PREREQUISITE_RETRY_ROWS_SHA256",
+            "LEGACY_PREREQUISITE_RETRY_PURPOSE",
+            "LEGACY_PREREQUISITE_RETRY_RECONCILIATION_IDS",
+            "validate_root_trust",
+        )
+
+        original_globals = {
+            name: globals_map[name]
+            for name in legacy_names
+        }
+
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="phase2-retry-legacy."
+            ) as temporary:
+                root = Path(temporary)
+                state_root = root / "state"
+                state_root.mkdir()
+
+                transaction_id = (
+                    "jsonschema-source-legacy-fixture"
+                )
+                successful_id = (
+                    "jsonschema-source-success-fixture"
+                )
+
+                state_rows = []
+
+                # Historical retained reconciliation order is intentionally
+                # not the newer path-sorted independent-report order.
+                for suffix in (
+                    "prepared.json",
+                    "armed.json",
+                ):
+                    state_file = state_root / (
+                        "jsonschema-prerequisite-"
+                        f"{transaction_id}.{suffix}"
+                    )
+
+                    state_payload = (
+                        json.dumps(
+                            {
+                                "transaction_id": transaction_id,
+                                "phase": suffix.removesuffix(
+                                    ".json"
+                                ),
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                        + "\n"
+                    ).encode()
+
+                    state_file.write_bytes(
+                        state_payload
+                    )
+
+                    state_rows.append(
+                        {
+                            "path": os.fspath(
+                                state_file
+                            ),
+                            "sha256": digest(
+                                state_payload
+                            ),
+                        }
+                    )
+
+                purpose = (
+                    "retained rollback/reconciliation state"
+                )
+
+                reconciliation_states = [
+                    {
+                        **state,
+                        "purpose": purpose,
+                    }
+                    for state in state_rows
+                ]
+
+                self.assertNotEqual(
+                    reconciliation_states,
+                    sorted(
+                        reconciliation_states,
+                        key=lambda item: (
+                            item["path"],
+                            item["purpose"],
+                            item["sha256"],
+                        ),
+                    ),
+                )
+
+                rows = [
+                    {
+                        "transaction_id": transaction_id,
+                        "classification": (
+                            "externally-reconciled-"
+                            "consumed-nonterminal"
+                        ),
+                        "states": state_rows,
+                        "reusable": False,
+                        "reconciliation": {
+                            "transaction_id": transaction_id,
+                            "reusable": False,
+                            "states": reconciliation_states,
+                        },
+                    }
+                ]
+
+                rows_sha256 = tool_sha256(
+                    canonical_json(rows)
+                )
+
+                document = {
+                    "schema": (
+                        "gentoo-optimization-jsonschema-"
+                        "prerequisite-retry-disposition-v1"
+                    ),
+                    "rows": rows,
+                    "rows_sha256": rows_sha256,
+                }
+
+                payload = (
+                    json.dumps(
+                        document,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode()
+
+                retry_file = root / "retry.json"
+                retry_file.write_bytes(payload)
+
+                globals_map[
+                    "LEGACY_PREREQUISITE_RETRY_DISPOSITION_PATH"
+                ] = retry_file
+
+                globals_map[
+                    "LEGACY_PREREQUISITE_RETRY_DISPOSITION_SHA256"
+                ] = tool_sha256(payload)
+
+                globals_map[
+                    "LEGACY_PREREQUISITE_RETRY_ROWS_SHA256"
+                ] = rows_sha256
+
+                globals_map[
+                    "LEGACY_PREREQUISITE_RETRY_PURPOSE"
+                ] = purpose
+
+                globals_map[
+                    "LEGACY_PREREQUISITE_RETRY_RECONCILIATION_IDS"
+                ] = frozenset(
+                    {transaction_id}
+                )
+
+                # Files live under a temporary portable fixture rather than
+                # the root-owned production hierarchy. Production ownership
+                # semantics are covered by the live root-owned probe.
+                globals_map[
+                    "validate_root_trust"
+                ] = (
+                    lambda *args, **kwargs: None
+                )
+
+                validate(
+                    payload,
+                    retry_file,
+                    production=True,
+                    successful_transaction_id=successful_id,
+                    state_root=state_root,
+                )
+
+                # The same state-root reconciliation must fail when the
+                # complete retained-disposition path identity no longer
+                # matches the explicit legacy exception.
+                globals_map[
+                    "LEGACY_PREREQUISITE_RETRY_DISPOSITION_PATH"
+                ] = root / "not-retained.json"
+
+                with self.assertRaises(
+                    error_type
+                ) as rejected:
+                    validate(
+                        payload,
+                        retry_file,
+                        production=True,
+                        successful_transaction_id=successful_id,
+                        state_root=state_root,
+                    )
+
+                self.assertIn(
+                    "outside its transaction namespace",
+                    str(rejected.exception),
+                )
+        finally:
+            for name, value in original_globals.items():
+                globals_map[name] = value
 
 
 class HistoricalCheckpointToolPathHistoryTest(
