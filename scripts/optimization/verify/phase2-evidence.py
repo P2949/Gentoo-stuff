@@ -10416,7 +10416,18 @@ def validate_component_external_semantics(
         / str(generation["generation_id"])
         / f"phase2-sample-gate-{receipt['gate_run_id']}"
     )
-    expected_output_root = evidence_root / "production-sample-pgo"
+    # The coordinator authenticates the concrete production output root in the
+    # transaction journal and child identity.  Bind to that root directly;
+    # production workflows may choose their own root below the trusted report
+    # base and must not be forced into an invented nested suffix.
+    recorded_output_root = receipt["transaction_journal"].get(
+        "evidence_output_root"
+    )
+    expected_output_root = (
+        absolute_path(recorded_output_root, "receipt production evidence output root")
+        if recorded_output_root is not None
+        else evidence_root / "production-sample-pgo"
+    )
     if (
         receipt["schema"]
         != "gentoo-optimization-production-profile-lock-receipt-v1"
