@@ -69,6 +69,39 @@ PREREQUISITE_TRANSACTION_PATH = (
     "/usr/bin:/usr/lib/llvm/22/bin:/bin:/usr/sbin:/sbin"
 )
 
+# One immutable retry-disposition authority was published before reconciliation
+# evidence was normalized into independent transaction-report objects.  Later
+# authorization runs deliberately consume that historical object rather than
+# replacing it.  Admit only that byte-exact retained authority; new
+# dispositions remain subject to the stricter report-scoped contract below.
+LEGACY_PREREQUISITE_RETRY_DISPOSITION_PATH = Path(
+    "/var/lib/gentoo-optimization/state/project/"
+    "jsonschema-prerequisite-retry-disposition.json"
+)
+LEGACY_PREREQUISITE_RETRY_DISPOSITION_SHA256 = (
+    "2f7d5c5d96c1b6c108f3a23fd46bfa49dead80f29998f36c74abc87032da8d8e"
+)
+LEGACY_PREREQUISITE_RETRY_ROWS_SHA256 = (
+    "dd2e28288e0e1f8fc16c98f53f44ca62ccf84a0f5aa5f3ef76a25a0580a83b03"
+)
+LEGACY_PREREQUISITE_RETRY_PURPOSE = "retained rollback/reconciliation state"
+LEGACY_PREREQUISITE_RETRY_RECONCILIATION_IDS = frozenset(
+    {
+        "jsonschema-source-20260905T200300Z",
+        "jsonschema-source-20260905T201000Z",
+        "jsonschema-source-20260905T222000Z",
+        "jsonschema-source-20260906T031500Z",
+        "jsonschema-source-20260906T050000Z",
+        "jsonschema-source-20260906T051500Z",
+        "jsonschema-source-20260906T063000Z",
+        "jsonschema-source-20260906T070000Z",
+        "jsonschema-source-20260906T080000Z",
+        "jsonschema-source-20260906T090000Z",
+        "jsonschema-source-20260907T013000Z",
+        "jsonschema-source-20260907T180000Z",
+    }
+)
+
 
 class EvidenceError(RuntimeError):
     """A fail-closed evidence-contract violation."""
@@ -9656,6 +9689,13 @@ def validate_prerequisite_retry_disposition(
         fail("jsonschema prerequisite retry disposition schema differs")
     if disposition["rows_sha256"] != sha256(prerequisite_canonical_json(rows)):
         fail("jsonschema prerequisite retry disposition is not canonically bound")
+    legacy_retained_disposition = (
+        production
+        and path == LEGACY_PREREQUISITE_RETRY_DISPOSITION_PATH
+        and sha256(payload) == LEGACY_PREREQUISITE_RETRY_DISPOSITION_SHA256
+        and disposition["rows_sha256"] == LEGACY_PREREQUISITE_RETRY_ROWS_SHA256
+    )
+    legacy_reconciliation_ids: set[str] = set()
     seen: set[str] = set()
     state_root = absolute_path(os.fspath(state_root), "prerequisite state root")
     canonical_states: dict[str, set[str]] = {}
@@ -9746,36 +9786,179 @@ def validate_prerequisite_retry_disposition(
             reconciliation_states = require_list(reconciliation.get("states"), "jsonschema retry reconciliation states")
             if not reconciliation_states:
                 fail("jsonschema retry reconciliation omits evidence")
+
+            legacy_state_reconciliation = (
+                legacy_retained_disposition
+                and tid in LEGACY_PREREQUISITE_RETRY_RECONCILIATION_IDS
+            )
+            if legacy_state_reconciliation:
+                legacy_reconciliation_ids.add(tid)
+                declared_state_digests = {
+                    os.fspath(
+                        absolute_path(
+                            item["path"],
+                            "legacy jsonschema retry state path",
+                        )
+                    ): require_string(
+                        item["sha256"],
+                        "legacy jsonschema retry state digest",
+                        SHA256_RE,
+                    )
+                    for item in states
+                }
+            else:
+                declared_state_digests = {}
+
             for evidence in reconciliation_states:
                 evidence = require_object(evidence, "jsonschema retry reconciliation evidence", {"path", "sha256", "purpose"})
-                require_string(evidence["purpose"], "jsonschema retry reconciliation purpose")
+                purpose = require_string(
+                    evidence["purpose"],
+                    "jsonschema retry reconciliation purpose",
+                )
+                evidence_digest = require_string(
+                    evidence["sha256"],
+                    "jsonschema retry reconciliation digest",
+                    SHA256_RE,
+                )
                 evidence_path = absolute_path(evidence["path"], "jsonschema retry reconciliation path")
-                expected_state_prefix = state_root / f"jsonschema-prerequisite-{tid}."
-                reports_root = Path("/var/lib/gentoo-optimization/reports") / f"jsonschema-prerequisite-{tid}"
-                if not (
-                    (reports_root in evidence_path.parents)
-                    and evidence_path != reports_root
-                ):
-                    fail("jsonschema retry reconciliation evidence is outside its transaction namespace")
-                if evidence_path.name.endswith(("prepared.json", "armed.json", "rollback-in-progress.json", "recovery-failed.json", "rolled-back.json", "success.json", "locked-authority.json", "preparation-attempt.json")):
-                    fail("jsonschema retry reconciliation evidence must be independent report evidence")
+
+                if legacy_state_reconciliation:
+                    state_match = re.fullmatch(
+                        r"jsonschema-prerequisite-(jsonschema-source-[^./]+)\.(.+)",
+                        evidence_path.name,
+                    )
+                    if (
+                        purpose != LEGACY_PREREQUISITE_RETRY_PURPOSE
+                        or evidence_path.parent != state_root
+                        or state_match is None
+                        or state_match.group(1) != tid
+                        or state_match.group(2) not in known_suffixes
+                        or declared_state_digests.get(os.fspath(evidence_path))
+                        != evidence_digest
+                    ):
+                        fail(
+                            "legacy jsonschema retry reconciliation evidence "
+                            "does not exactly bind its retained transaction state"
+                        )
+                else:
+                    reports_root = (
+                        Path("/var/lib/gentoo-optimization/reports")
+                        / f"jsonschema-prerequisite-{tid}"
+                    )
+                    if not (
+                        (reports_root in evidence_path.parents)
+                        and evidence_path != reports_root
+                    ):
+                        fail(
+                            "jsonschema retry reconciliation evidence is "
+                            "outside its transaction namespace"
+                        )
+                    if evidence_path.name.endswith(
+                        (
+                            "prepared.json",
+                            "armed.json",
+                            "rollback-in-progress.json",
+                            "recovery-failed.json",
+                            "rolled-back.json",
+                            "success.json",
+                            "locked-authority.json",
+                            "preparation-attempt.json",
+                        )
+                    ):
+                        fail(
+                            "jsonschema retry reconciliation evidence must be "
+                            "independent report evidence"
+                        )
+
                 if not evidence_path.is_file() or evidence_path.is_symlink():
                     fail("jsonschema retry reconciliation evidence is not a regular file")
                 if production:
-                    validate_root_trust(evidence_path, "jsonschema retry reconciliation evidence", allow_hardlinks=True)
-                observed, _ = read_regular(evidence_path, "jsonschema retry reconciliation evidence", allow_hardlinks=True)
-                if sha256(observed) != evidence["sha256"]:
+                    validate_root_trust(
+                        evidence_path,
+                        "jsonschema retry reconciliation evidence",
+                        allow_hardlinks=True,
+                    )
+                observed, _ = read_regular(
+                    evidence_path,
+                    "jsonschema retry reconciliation evidence",
+                    allow_hardlinks=True,
+                )
+                if sha256(observed) != evidence_digest:
                     fail("jsonschema retry reconciliation evidence digest changed")
-                structured = parse_json_bytes(observed, "jsonschema retry reconciliation evidence")
+                structured = parse_json_bytes(
+                    observed,
+                    "jsonschema retry reconciliation evidence",
+                )
                 if not isinstance(structured, dict):
-                    fail("jsonschema retry reconciliation evidence must be a JSON object")
-                if isinstance(structured.get("transaction_id"), str) and structured["transaction_id"] != tid:
-                    fail("jsonschema retry reconciliation evidence transaction differs")
-            evidence_paths = [absolute_path(item["path"], "jsonschema retry reconciliation path") for item in reconciliation_states]
+                    fail(
+                        "jsonschema retry reconciliation evidence must be a JSON object"
+                    )
+                if (
+                    isinstance(structured.get("transaction_id"), str)
+                    and structured["transaction_id"] != tid
+                ):
+                    fail(
+                        "jsonschema retry reconciliation evidence transaction differs"
+                    )
+
+            evidence_paths = [
+                absolute_path(
+                    item["path"],
+                    "jsonschema retry reconciliation path",
+                )
+                for item in reconciliation_states
+            ]
             if len(evidence_paths) != len(set(evidence_paths)):
                 fail("jsonschema retry reconciliation repeats an evidence path")
-            if reconciliation_states != sorted(reconciliation_states, key=lambda item: (item["path"], item["purpose"], item["sha256"])):
-                fail("jsonschema retry reconciliation evidence is not canonically ordered")
+
+            if legacy_state_reconciliation:
+                observed_legacy_states = {
+                    (
+                        os.fspath(
+                            absolute_path(
+                                item["path"],
+                                "legacy jsonschema retry reconciliation path",
+                            )
+                        ),
+                        require_string(
+                            item["sha256"],
+                            "legacy jsonschema retry reconciliation digest",
+                            SHA256_RE,
+                        ),
+                    )
+                    for item in reconciliation_states
+                }
+                expected_legacy_states = set(declared_state_digests.items())
+                if (
+                    len(reconciliation_states) != len(states)
+                    or observed_legacy_states != expected_legacy_states
+                ):
+                    fail(
+                        "legacy jsonschema retry reconciliation state set "
+                        "differs from its retained row authority"
+                    )
+            elif reconciliation_states != sorted(
+                reconciliation_states,
+                key=lambda item: (
+                    item["path"],
+                    item["purpose"],
+                    item["sha256"],
+                ),
+            ):
+                fail(
+                    "jsonschema retry reconciliation evidence is not "
+                    "canonically ordered"
+                )
+
+    if (
+        legacy_retained_disposition
+        and legacy_reconciliation_ids
+        != LEGACY_PREREQUISITE_RETRY_RECONCILIATION_IDS
+    ):
+        fail(
+            "legacy jsonschema retry disposition reconciliation membership "
+            "differs from its reviewed historical authority"
+        )
     if seen != actual_retry_ids:
         fail("jsonschema retry disposition does not enumerate every retained prerequisite transaction")
     if [r["transaction_id"] for r in rows] != sorted(seen):
