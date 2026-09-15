@@ -160,6 +160,24 @@ gentoo_opt_bind_framework_target || {
     if [[ ${BASH_SOURCE[0]} == "$0" ]]; then exit 1; fi
     return 1
 }
+
+# Keep framework publication mutually exclusive with every active Portage
+# process.  The installer takes this stable inode exclusively while publishing
+# a generation; retaining a shared descriptor here prevents framework-current
+# from changing after this shell has bound its policy.  Test dispatcher
+# fixtures do not provide the production runtime-lock namespace.
+gentoo_opt_framework_project_lock_fd=
+if [[ ${GENTOO_OPT_DISPATCHER_TEST_MODE:-0} != 1 &&
+    ( -n ${EBUILD_PHASE-} || -L /var/lib/gentoo-optimization/framework-current ) ]]; then
+    [[ -f /run/gentoo-optimization/project.lock &&
+        ! -L /run/gentoo-optimization/project.lock ]] || {
+        gentoo_opt_abort 'framework project lock is unavailable' || return 1
+    }
+    if ! exec {gentoo_opt_framework_project_lock_fd}< /run/gentoo-optimization/project.lock ||
+        ! flock -s "${gentoo_opt_framework_project_lock_fd}"; then
+        gentoo_opt_abort 'cannot acquire shared framework project lock' || return 1
+    fi
+fi
 unset -f gentoo_opt_bind_framework_target
 unset gentoo_opt_embedded_framework_target gentoo_opt_embedded_framework_base \
     gentoo_opt_embedded_framework_trust_anchor gentoo_opt_embedded_framework_expected_uid
