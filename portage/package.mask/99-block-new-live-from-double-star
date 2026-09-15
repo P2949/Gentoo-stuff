@@ -98,6 +98,7 @@
 =dev-qt/qtmultimedia-6.11.9999*
 =dev-qt/qtnetworkauth-6.11.9999*
 =dev-qt/qt5compat-6.11.9999*
+=dev-qt/qtwayland-6.11.9999*
 
 =dev-vcs/git-9999*
 
