@@ -165,7 +165,9 @@
 
 # Phase 1: keep the Vulkan SDK helper stack internally consistent on release versions.
 =dev-util/vulkan-headers-9999
+=dev-util/vulkan-headers-1.4.357.0*
 =dev-util/spirv-headers-9999
+=dev-util/spirv-headers-1.4.357.0*
 =dev-util/vulkan-utility-libraries-9999
 =dev-util/vulkan-utility-libraries-1.4.357.0*
 
