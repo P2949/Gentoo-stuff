@@ -73,6 +73,7 @@
 
 # Catch versioned binutils live snapshots too.
 =sys-devel/binutils-2.46.9999
+=sys-devel/binutils-2.47.9999*
 
 # Avoid unnecessary live library subslot churn during phase 1.
 =dev-libs/libevent-9999
