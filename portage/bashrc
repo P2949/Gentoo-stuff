@@ -168,6 +168,7 @@ gentoo_opt_bind_framework_target || {
 # fixtures do not provide the production runtime-lock namespace.
 gentoo_opt_framework_project_lock_fd=
 if [[ ${GENTOO_OPT_DISPATCHER_TEST_MODE:-0} != 1 &&
+    ${GENTOO_OPT_PORTAGE_FIXTURE_MODE:-0} != 1 &&
     ( -n ${EBUILD_PHASE-} || -L /var/lib/gentoo-optimization/framework-current ) ]]; then
     [[ -f /run/gentoo-optimization/project.lock &&
         ! -L /run/gentoo-optimization/project.lock ]] || {
