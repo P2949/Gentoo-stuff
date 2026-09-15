@@ -149,6 +149,7 @@
 =dev-util/vulkan-tools-1.4.357.0*
 =media-libs/vulkan-layers-9999*
 =media-libs/vulkan-layers-1.4.357.0*
+=media-libs/shaderc-2026.3*
 =media-libs/libepoxy-9999*
 =media-libs/libaom-9999*
 =x11-libs/libxcvt-9999*
