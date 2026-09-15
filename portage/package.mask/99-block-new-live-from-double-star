@@ -200,3 +200,14 @@
 # Hyprland issue with libde265 and libheif-9999 
 =media-libs/libde265-9999*
 =media-libs/libheif-9999*
+# Phase 3 ABI guard evidence: Qt 6.9999 private/public export drift; retain stable 6.11.2 lane.
+=dev-qt/qtbase-6.9999
+=dev-qt/qtsvg-6.9999
+=dev-qt/qtshadertools-6.9999
+=dev-qt/qtdeclarative-6.9999
+=dev-qt/qttools-6.9999
+=dev-qt/qttranslations-6.9999
+=dev-qt/qtmultimedia-6.9999
+=dev-qt/qtnetworkauth-6.9999
+=dev-qt/qt5compat-6.9999
+=dev-qt/qtwayland-6.9999
