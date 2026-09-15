@@ -130,6 +130,10 @@
 # Phase 3 resolver evidence: Rust 1.98.1 is self-referential at build time
 # under the selected system-LLVM configuration.
 =dev-lang/rust-1.98.1*
+=dev-lang/rust-1.97.1*
+
+# Phase 3 configure evidence: Python 3.14 live patch no longer applies.
+=dev-lang/python-0.3.14.9999*
 
 # Phase 1: more non-core live ebuilds that already caused build/fetch/install failures.
 =sys-process/numactl-9999
@@ -163,6 +167,7 @@
 =dev-util/vulkan-headers-9999
 =dev-util/spirv-headers-9999
 =dev-util/vulkan-utility-libraries-9999
+=dev-util/vulkan-utility-libraries-1.4.357.0*
 
 # Phase 1: no live legacy Xorg DDX drivers.
 =x11-drivers/xf86-video-amdgpu-9999
