@@ -29,3 +29,4 @@ net-libs/gnutls no-polly.conf
 sys-apps/busybox no-polly.conf
 # cargo-audit does not work with polly it seems
 dev-util/cargo-audit no-polly.conf
+dev-libs/openssl-compat no-polly.conf
