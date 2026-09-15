@@ -6,7 +6,7 @@ already-linked consumers; the current implementation does not need to read it.
 
 --- a/src/gui/openurljob.cpp
 +++ b/src/gui/openurljob.cpp
-@@ -28,6 +28,10 @@
+@@ -28,6 +28,9 @@
  #include <QOperatingSystemVersion>
  #include <mimetypefinderjob.h>
  
