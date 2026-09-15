@@ -634,6 +634,7 @@ dev-util/re2c
 dev-util/rocm-smi
 dev-util/rustup
 dev-util/shadowman
+dev-util/shellcheck-bin
 dev-util/source-highlight
 dev-util/spirv-headers
 dev-util/spirv-llvm-translator
