@@ -1,0 +1,10 @@
+dev-util/vulkan-headers
+dev-util/spirv-headers
+dev-util/spirv-tools
+dev-util/vulkan-utility-libraries
+dev-util/glslang
+media-libs/shaderc
+dev-util/vulkan-tools
+media-libs/vulkan-layers
+gui-libs/wlroots
+gui-wm/hyprland
