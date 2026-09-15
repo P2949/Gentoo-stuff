@@ -2354,7 +2354,9 @@ portage_quiescent() {
         [[ -r ${proc}/cmdline ]] || continue
         cmdline=$(/usr/bin/tr '\0' ' ' <"${proc}/cmdline" 2>/dev/null || true)
         case ${cmdline} in
-            *'/usr/bin/emerge '*|*'/usr/bin/ebuild '*|*'/usr/bin/emaint '*|*'/usr/bin/quickpkg '*)
+            *'/usr/bin/emerge '*|*'/usr/bin/ebuild '*|*'/usr/bin/emaint '*|*'/usr/bin/quickpkg '*|\
+            *'/python-exec/'*'/emerge '*|*'/python-exec/'*'/ebuild '*|\
+            *'/python-exec/'*'/emaint '*|*'/python-exec/'*'/quickpkg '*)
                 fail "Portage command is active (pid ${proc##*/})"
                 ;;
         esac
