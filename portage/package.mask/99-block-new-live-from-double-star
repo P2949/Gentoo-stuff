@@ -250,3 +250,5 @@
 =dev-qt/qtwayland-6.9999
 # Phase 3 configure evidence: bzip2 live ebuild fails multilib Meson configure.
 =app-arch/bzip2-9999
+# Phase 3 ABI guard evidence: Ruby 3.4.10 removes five exported GMP symbols.
+=dev-lang/ruby-3.4.10*
