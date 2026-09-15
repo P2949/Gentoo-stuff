@@ -218,6 +218,12 @@
 =gui-libs/kddockwidgets-2.4.1*
 # OpenJDK 28 alpha13 removes the exported libnio fchmodat symbol.
 =dev-java/openjdk-28_alpha13*
+# Python 0.3.15.9999 installs build metadata into a nonexistent python3.15t path.
+=dev-lang/python-0.3.15.9999*
+# Meson live crashes while generating the documentation reference manual.
+=dev-build/meson-9999*
+# ujson 6.0.0 leaves an optimization-record YAML file at site-packages top level.
+=dev-python/ujson-6.0.0*
 
 # Phase 1: avoid live ebuild churn while completing world migration.
 =dev-lang/rust-9999*
