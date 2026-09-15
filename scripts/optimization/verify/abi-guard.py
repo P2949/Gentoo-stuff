@@ -44,7 +44,11 @@ def inspect(path: Path) -> tuple[str, str | None, set[str]]:
         if fields[5] not in {"DEFAULT", "PROTECTED"} or fields[6] == "UND":
             continue
         name = fields[7]
-        if name:
+        # Qt deliberately versions its private ABI namespace on patch-level
+        # updates (for example QtPrivate_6_11_1 -> QtPrivate_6_11_2).  These
+        # symbols are explicitly tagged Qt_6_PRIVATE_API and are not part of
+        # the public compatibility contract that this guard protects.
+        if name and "@Qt_6_PRIVATE_API" not in name:
             result.add(name)
     return elf_type or "", soname, result
 
