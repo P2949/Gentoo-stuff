@@ -211,3 +211,5 @@
 =dev-qt/qtnetworkauth-6.9999
 =dev-qt/qt5compat-6.9999
 =dev-qt/qtwayland-6.9999
+# Phase 3 configure evidence: bzip2 live ebuild fails multilib Meson configure.
+=app-arch/bzip2-9999
