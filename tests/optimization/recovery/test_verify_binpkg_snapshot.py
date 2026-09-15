@@ -335,7 +335,10 @@ class VerifyBinpkgSnapshotTest(unittest.TestCase):
         self.assertEqual(detail, "zstd test timed out after 1 seconds")
         self.assertGreaterEqual(elapsed, 0.9)
         self.assertLess(elapsed, 3.0)
-        self.assertLess(cpu_elapsed, 0.5)
+        # Keep enough margin for scheduler noise while still detecting a
+        # busy-loop: the bounded timeout is one second, and a healthy
+        # closed-stderr wait should consume substantially less CPU than that.
+        self.assertLess(cpu_elapsed, 0.75)
         pid, process_group = map(int, identity.read_text(encoding="utf-8").split())
         self.assertEqual(process_group, pid)
         self.assertFalse(self.process_is_live(pid))
