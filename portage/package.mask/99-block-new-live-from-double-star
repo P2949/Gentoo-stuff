@@ -66,6 +66,7 @@
 =dev-qt/qtmultimedia-6.12.9999
 =dev-qt/qtnetworkauth-6.12.9999
 =dev-qt/qt5compat-6.12.9999
+=dev-qt/qtwayland-6.12.9999
 
 # Catch versioned multimedia live snapshots too.
 =media-video/pipewire-1.6.9999
