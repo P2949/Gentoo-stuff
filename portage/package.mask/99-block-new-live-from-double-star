@@ -125,6 +125,11 @@
 # Phase 3 ABI evidence: z3 5.1 changes the established SONAME; defer until
 # the dependent graph has an explicitly verified transition path.
 =sci-mathematics/z3-5.1.0*
+=sci-mathematics/z3-5.0.0*
+
+# Phase 3 resolver evidence: Rust 1.98.1 is self-referential at build time
+# under the selected system-LLVM configuration.
+=dev-lang/rust-1.98.1*
 
 # Phase 1: more non-core live ebuilds that already caused build/fetch/install failures.
 =sys-process/numactl-9999
