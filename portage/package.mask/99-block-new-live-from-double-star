@@ -213,6 +213,12 @@
 >=llvm-runtimes/clang-stdlib-config-23
 >=dev-util/spirv-llvm-translator-23
 
+# 2026-09-15: exact-source ABI guard failures during userspace rebuild.
+# KDDockWidgets 2.4.1 removes eight exported serialization/window symbols.
+=gui-libs/kddockwidgets-2.4.1*
+# OpenJDK 28 alpha13 removes the exported libnio fchmodat symbol.
+=dev-java/openjdk-28_alpha13*
+
 # Phase 1: avoid live ebuild churn while completing world migration.
 =dev-lang/rust-9999*
 =dev-db/sqlite-9999*
