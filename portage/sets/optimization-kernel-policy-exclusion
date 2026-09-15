@@ -9,3 +9,5 @@ sys-kernel/linux-headers
 sys-kernel/scx
 sys-kernel/scx-loader
 sys-kernel/zen-sources
+sys-firmware/intel-microcode
+sys-firmware/sof-firmware

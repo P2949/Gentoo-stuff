@@ -1001,8 +1001,6 @@ sys-devel/gettext
 sys-devel/gnuconfig
 sys-devel/m4
 sys-devel/patch
-sys-firmware/intel-microcode
-sys-firmware/sof-firmware
 sys-fs/cryptsetup
 sys-fs/dosfstools
 sys-fs/e2fsprogs
