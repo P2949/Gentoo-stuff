@@ -1,18 +1,18 @@
 --- a/Source/WTF/wtf/ParallelJobsGeneric.h
 +++ b/Source/WTF/wtf/ParallelJobsGeneric.h
-@@ -39,7 +39,7 @@
+@@ -39,3 +39,3 @@
  namespace WTF {
  
 -class ParallelEnvironment {
 +class WTF_EXPORT_DECLARATION ParallelEnvironment {
 --- a/Source/WTF/wtf/ParallelJobsGeneric.cpp
 +++ b/Source/WTF/wtf/ParallelJobsGeneric.cpp
-@@ -36,7 +36,7 @@
+@@ -36,3 +36,3 @@
  Vector< RefPtr<ParallelEnvironment::ThreadPrivate> >* ParallelEnvironment::s_threadPool = nullptr;
  
 -ParallelEnvironment::ParallelEnvironment(ThreadFunction threadFunction, size_t sizeOfParameter, int requestedJobNumber) :
 +__attribute__((visibility("default"), used, noinline)) ParallelEnvironment::ParallelEnvironment(ThreadFunction threadFunction, size_t sizeOfParameter, int requestedJobNumber) :
-@@ -64,7 +64,7 @@
+@@ -64,3 +64,3 @@
  }
  
 -void ParallelEnvironment::execute(std::span<uint8_t> parameters)
