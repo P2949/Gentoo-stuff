@@ -1,0 +1,10 @@
+--- a/Source/WTF/wtf/ParallelJobsGeneric.h
++++ b/Source/WTF/wtf/ParallelJobsGeneric.h
+@@ -39,7 +39,7 @@
+ namespace WTF {
+ 
+-class ParallelEnvironment {
++class WTF_EXPORT_PRIVATE ParallelEnvironment {
+     WTF_DEPRECATED_MAKE_FAST_ALLOCATED(ParallelEnvironment);
+ public:
+*** End Patch
