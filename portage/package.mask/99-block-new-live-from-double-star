@@ -164,7 +164,6 @@
 =dev-util/vulkan-headers-9999
 =dev-util/spirv-headers-9999
 =dev-util/vulkan-utility-libraries-9999
-=dev-util/vulkan-utility-libraries-1.4.357.0*
 
 # Phase 1: no live legacy Xorg DDX drivers.
 =x11-drivers/xf86-video-amdgpu-9999
