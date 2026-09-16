@@ -5,5 +5,15 @@
  
 -class ParallelEnvironment {
 +class WTF_EXPORT_DECLARATION ParallelEnvironment {
-     WTF_DEPRECATED_MAKE_FAST_ALLOCATED(ParallelEnvironment);
- public:
+*** a/Source/WTF/wtf/ParallelJobsGeneric.cpp
+--- b/Source/WTF/wtf/ParallelJobsGeneric.cpp
+@@ -36,7 +36,7 @@
+ Vector< RefPtr<ParallelEnvironment::ThreadPrivate> >* ParallelEnvironment::s_threadPool = nullptr;
+ 
+-ParallelEnvironment::ParallelEnvironment(ThreadFunction threadFunction, size_t sizeOfParameter, int requestedJobNumber) :
++__attribute__((visibility("default"), used, noinline)) ParallelEnvironment::ParallelEnvironment(ThreadFunction threadFunction, size_t sizeOfParameter, int requestedJobNumber) :
+@@ -64,7 +64,7 @@
+ }
+ 
+-void ParallelEnvironment::execute(std::span<uint8_t> parameters)
++__attribute__((visibility("default"), used, noinline)) void ParallelEnvironment::execute(std::span<uint8_t> parameters)
