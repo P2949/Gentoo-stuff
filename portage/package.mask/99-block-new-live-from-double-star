@@ -153,7 +153,6 @@
 =dev-util/spirv-tools-9999*
 =dev-util/glslang-9999*
 =dev-util/vulkan-tools-9999*
-=dev-util/vulkan-tools-1.4.357.0*
 =media-libs/vulkan-layers-9999*
 =media-libs/shaderc-2026.3*
 =media-libs/libepoxy-9999*
