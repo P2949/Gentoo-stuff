@@ -1,0 +1,8 @@
+--- a/Source/WTF/wtf/ParallelJobsGeneric.h
++++ b/Source/WTF/wtf/ParallelJobsGeneric.h
+@@ -43,7 +43,7 @@
+-    WTF_EXPORT_PRIVATE ParallelEnvironment(ThreadFunction, size_t sizeOfParameter, int requestedJobNumber);
++    WTF_EXPORT_DECLARATION ParallelEnvironment(ThreadFunction, size_t sizeOfParameter, int requestedJobNumber);
+@@ -51,7 +51,7 @@
+-    WTF_EXPORT_PRIVATE void execute(std::span<uint8_t> parameters);
++    WTF_EXPORT_DECLARATION void execute(std::span<uint8_t> parameters);
