@@ -6,7 +6,7 @@
 -class ParallelEnvironment {
 +class WTF_EXPORT_DECLARATION ParallelEnvironment {
 --- a/Source/WTF/wtf/ParallelJobsGeneric.cpp
---- b/Source/WTF/wtf/ParallelJobsGeneric.cpp
++++ b/Source/WTF/wtf/ParallelJobsGeneric.cpp
 @@ -36,7 +36,7 @@
  Vector< RefPtr<ParallelEnvironment::ThreadPrivate> >* ParallelEnvironment::s_threadPool = nullptr;
  
