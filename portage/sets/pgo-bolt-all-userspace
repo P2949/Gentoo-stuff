@@ -339,8 +339,8 @@ dev-libs/spdlog
 dev-libs/stb
 dev-libs/tinyxml2
 dev-libs/tllist
-dev-libs/tree-sitter
-dev-libs/tree-sitter-bash
+=dev-libs/tree-sitter-0.26.13
+=dev-libs/tree-sitter-bash-0.25.1
 dev-libs/udis86
 dev-libs/userspace-rcu
 dev-libs/uthash
@@ -505,7 +505,7 @@ dev-python/snakeoil
 dev-python/soupsieve
 dev-python/strict-rfc3339
 dev-python/tomli-w
-dev-python/tree-sitter
+=dev-python/tree-sitter-0.26.0_p20260816
 dev-python/trove-classifiers
 dev-python/truststore
 dev-python/typing-extensions
@@ -640,7 +640,7 @@ dev-util/spirv-headers
 dev-util/spirv-llvm-translator
 dev-util/spirv-tools
 dev-util/unifdef
-dev-util/vulkan-headers
+=dev-util/vulkan-headers-1.4.357.0
 dev-util/vulkan-tools
 dev-util/vulkan-utility-libraries
 dev-util/wayland-scanner
@@ -754,7 +754,7 @@ llvm-runtimes/clang-stdlib-config
 llvm-runtimes/clang-unwindlib-config
 llvm-runtimes/compiler-rt
 llvm-runtimes/compiler-rt-sanitizers
-llvm-runtimes/libclc
+=llvm-runtimes/libclc-22.1.8
 llvm-runtimes/libcxx
 llvm-runtimes/libcxxabi
 llvm-runtimes/libunwind
@@ -792,8 +792,8 @@ media-libs/graphene
 media-libs/gst-plugins-base
 media-libs/gstreamer
 media-libs/harfbuzz
-media-libs/imgui
-media-libs/implot
+=media-libs/imgui-1.91.6-r1
+=media-libs/implot-0.16-r3
 media-libs/kvazaar
 media-libs/lcms
 media-libs/libaom
@@ -801,7 +801,7 @@ media-libs/libass
 media-libs/libavif
 media-libs/libcanberra
 media-libs/libde265
-media-libs/libdisplay-info
+=media-libs/libdisplay-info-0.3.0
 media-libs/libdmtx
 media-libs/libebur128
 media-libs/libepoxy
