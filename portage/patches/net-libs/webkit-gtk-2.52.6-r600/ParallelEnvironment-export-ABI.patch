@@ -4,6 +4,6 @@
  namespace WTF {
  
 -class ParallelEnvironment {
-+class WTF_EXPORT_PRIVATE ParallelEnvironment {
++class WTF_EXPORT_DECLARATION ParallelEnvironment {
      WTF_DEPRECATED_MAKE_FAST_ALLOCATED(ParallelEnvironment);
  public:
