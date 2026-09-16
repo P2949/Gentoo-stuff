@@ -152,7 +152,6 @@
 # Phase 1: keep Vulkan/SPIR-V userspace tools on releases while LLVM/offload migrates.
 =dev-util/spirv-tools-9999*
 =dev-util/glslang-9999*
-=dev-util/glslang-1.4.357.0*
 =dev-util/vulkan-tools-9999*
 =dev-util/vulkan-tools-1.4.357.0*
 =media-libs/vulkan-layers-9999*
