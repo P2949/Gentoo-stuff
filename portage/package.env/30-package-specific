@@ -9,6 +9,11 @@ media-gfx/gimp gimp.conf
 dev-tcltk/tix tix-gnu89.conf
 sys-fs/xfsprogs mount-defines.conf
 dev-util/source-highlight no-hidden-visibility.conf
+# ujson's extension build emits *.so-opt.ld.yaml beside the module when
+# optimization remarks are enabled; Portage rejects those files as stray
+# top-level site-packages payload. Keep the optimization policy narrow while
+# removing only that generated-record side effect.
+dev-python/ujson no-opt-remarks.conf
 # Java: ccache and sandboxing break the build; OpenJDK rejects Polly flags.
 dev-java/openjdk unsafe-no-ccache-no-sandbox.conf no-polly.conf
 gui-libs/hyprutils O2.conf
