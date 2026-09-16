@@ -11,9 +11,9 @@
  Vector< RefPtr<ParallelEnvironment::ThreadPrivate> >* ParallelEnvironment::s_threadPool = nullptr;
  
 -ParallelEnvironment::ParallelEnvironment(ThreadFunction threadFunction, size_t sizeOfParameter, int requestedJobNumber) :
-+__attribute__((visibility("default"), used, noinline)) ParallelEnvironment::ParallelEnvironment(ThreadFunction threadFunction, size_t sizeOfParameter, int requestedJobNumber) :
++__attribute__((visibility("default"), used, retain, noinline)) ParallelEnvironment::ParallelEnvironment(ThreadFunction threadFunction, size_t sizeOfParameter, int requestedJobNumber) :
 @@ -64,3 +64,3 @@
  }
  
 -void ParallelEnvironment::execute(std::span<uint8_t> parameters)
-+__attribute__((visibility("default"), used, noinline)) void ParallelEnvironment::execute(std::span<uint8_t> parameters)
++__attribute__((visibility("default"), used, retain, noinline)) void ParallelEnvironment::execute(std::span<uint8_t> parameters)
