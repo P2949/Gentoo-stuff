@@ -610,7 +610,7 @@
 =dev-util/gdbus-codegen-2.88.2
 =dev-util/github-cli-9999
 =dev-util/glib-utils-2.88.2
-=dev-util/glslang-1.4.350.0
+=dev-util/glslang-1.4.357.0
 =dev-util/gperf-3.3
 =dev-util/gtk-doc-1.34.0-r2
 =dev-util/gtk-update-icon-cache-3.24.42
@@ -634,10 +634,10 @@
 =dev-util/source-highlight-3.1.9-r2
 =dev-util/spirv-headers-1.4.357.0
 =dev-util/spirv-llvm-translator-22.1.4
-=dev-util/spirv-tools-1.4.350.0
+=dev-util/spirv-tools-1.4.357.0
 =dev-util/unifdef-2.12-r2
 =dev-util/vulkan-headers-1.4.357.0
-=dev-util/vulkan-tools-1.4.350.0
+=dev-util/vulkan-tools-1.4.357.0
 =dev-util/vulkan-utility-libraries-1.4.350.0
 =dev-util/wayland-scanner-9999
 =dev-util/xxd-2025.08.24-r1
