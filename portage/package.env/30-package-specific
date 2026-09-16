@@ -19,7 +19,7 @@ dev-python/ujson no-opt-remarks.conf
 net-libs/webkit-gtk no-hidden-visibility.conf
 # libsecret's installed DSO exports its internal helper ABI; avoid hiding
 # those established symbols during the optimized rebuild.
-app-crypt/libsecret no-polly-no-lto.conf
+app-crypt/libsecret no-polly-no-lto-no-bsymbolic.conf
 # Java: ccache and sandboxing break the build; OpenJDK rejects Polly flags.
 dev-java/openjdk unsafe-no-ccache-no-sandbox.conf no-polly.conf
 gui-libs/hyprutils O2.conf
