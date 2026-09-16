@@ -1,6 +1,6 @@
 --- a/libsecret/secret-private.h
 +++ b/libsecret/secret-private.h
-@@ -21,6 +21,8 @@
+@@ -21,4 +21,6 @@
  
  G_BEGIN_DECLS
 +
@@ -9,7 +9,7 @@
  typedef struct {
 --- a/libsecret/secret-backend.h
 +++ b/libsecret/secret-backend.h
-@@ -20,6 +20,8 @@
+@@ -20,4 +20,6 @@
  
  G_BEGIN_DECLS
 +
