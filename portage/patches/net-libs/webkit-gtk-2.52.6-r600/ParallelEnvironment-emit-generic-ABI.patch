@@ -21,7 +21,7 @@
 -#if ENABLE(THREADING_GENERIC)
 -
  #include <wtf/NumberOfCores.h>
-@@ -132,3 +130,1 @@
+@@ -132,3 +130,2 @@
  }
  
 -#endif // ENABLE(THREADING_GENERIC)
