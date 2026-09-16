@@ -1,12 +1,12 @@
 --- a/Source/WTF/wtf/ParallelJobsGeneric.h
 +++ b/Source/WTF/wtf/ParallelJobsGeneric.h
-@@ -34,8 +34,6 @@
+@@ -34,5 +34,3 @@
  #include <wtf/Platform.h>
  
 -#if ENABLE(THREADING_GENERIC)
 -
  #include <wtf/Condition.h>
-@@ -84,8 +82,6 @@
+@@ -84,6 +82,4 @@
  } // namespace WTF
  
 -#endif // ENABLE(THREADING_GENERIC)
@@ -15,13 +15,13 @@
  #endif // ParallelJobsGeneric_h
 --- a/Source/WTF/wtf/ParallelJobsGeneric.cpp
 +++ b/Source/WTF/wtf/ParallelJobsGeneric.cpp
-@@ -27,8 +27,6 @@
+@@ -27,5 +27,3 @@
  #include <wtf/ParallelJobsGeneric.h>
  
 -#if ENABLE(THREADING_GENERIC)
 -
  #include <wtf/NumberOfCores.h>
-@@ -132,8 +130,6 @@
+@@ -132,3 +130,1 @@
  }
  
 -#endif // ENABLE(THREADING_GENERIC)
