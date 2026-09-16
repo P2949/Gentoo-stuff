@@ -93,13 +93,15 @@ def compare_pair(rel: Path, installed: Path, candidate: Path, failures: list[str
     if not new_soname:
         failures.append(f"{rel}: established SONAME {old_soname} disappeared")
         return
-    if old_soname != new_soname:
-        failures.append(f"{rel}: established SONAME changed {old_soname} -> {new_soname}")
-        return
     missing = old - new
     if missing:
         sample = ",".join(sorted(missing)[:12])
-        failures.append(f"{rel}: old={len(old)} new={len(new)} missing={sample}")
+        soname_note = (
+            f" SONAME changed {old_soname} -> {new_soname};"
+            if old_soname != new_soname
+            else ""
+        )
+        failures.append(f"{rel}:{soname_note} old={len(old)} new={len(new)} missing={sample}")
 
 
 def main() -> int:

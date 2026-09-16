@@ -88,3 +88,13 @@ echo 'PASS: ABI guard rejects regular-DSO to symlink export loss'
 cp "${work}/root/usr/lib/libregular-to-link.so.1"     "${work}/ed/usr/lib/libregular-to-link.so.1.1"
 ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
 echo 'PASS: ABI guard accepts regular-DSO to symlink with retained exports'
+
+# A deliberate SONAME transition with the complete established export set is
+# a valid ABI transition; the guard protects symbol retention rather than
+# rejecting every intentional library-version bump.
+cc -shared -fPIC "${work}/old.c" -Wl,-soname,libtransition.so.1 \
+    -o "${work}/root/usr/lib/libtransition.so.1"
+cc -shared -fPIC "${work}/old.c" -Wl,-soname,libtransition.so.2 \
+    -o "${work}/ed/usr/lib/libtransition.so.2"
+ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
+echo 'PASS: ABI guard accepts SONAME transition with retained exports'
