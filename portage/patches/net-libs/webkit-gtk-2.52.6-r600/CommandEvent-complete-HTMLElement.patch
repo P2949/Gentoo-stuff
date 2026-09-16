@@ -1,0 +1,7 @@
+--- a/Source/WebCore/dom/CommandEvent.h
++++ b/Source/WebCore/dom/CommandEvent.h
+@@
+ #include "Event.h"
+ #include "EventInit.h"
++#include "HTMLElement.h"
+ #include <wtf/Forward.h>
