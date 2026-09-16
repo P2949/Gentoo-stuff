@@ -612,7 +612,7 @@ dev-util/ftjam
 dev-util/gdbus-codegen
 dev-util/github-cli
 dev-util/glib-utils
-dev-util/glslang
+=dev-util/glslang-1.4.357.0
 dev-util/gperf
 dev-util/gtk-doc
 dev-util/gtk-update-icon-cache
@@ -636,12 +636,12 @@ dev-util/rustup
 dev-util/shadowman
 dev-util/shellcheck-bin
 dev-util/source-highlight
-dev-util/spirv-headers
+=dev-util/spirv-headers-1.4.357.0
 dev-util/spirv-llvm-translator
-dev-util/spirv-tools
+=dev-util/spirv-tools-1.4.357.0
 dev-util/unifdef
 =dev-util/vulkan-headers-1.4.357.0
-dev-util/vulkan-tools
+=dev-util/vulkan-tools-1.4.357.0
 dev-util/vulkan-utility-libraries
 dev-util/wayland-scanner
 dev-util/xxd
