@@ -1,6 +1,6 @@
 --- a/Source/WebCore/dom/CommandEvent.h
 +++ b/Source/WebCore/dom/CommandEvent.h
-@@
+@@ -26,6 +26,7 @@
  #include "Event.h"
  #include "EventInit.h"
 +#include "HTMLElement.h"
