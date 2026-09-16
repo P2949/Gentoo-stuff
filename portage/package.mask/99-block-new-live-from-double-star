@@ -252,3 +252,11 @@
 =app-arch/bzip2-9999
 # Phase 3 ABI guard evidence: Ruby 3.4.10 removes five exported GMP symbols.
 =dev-lang/ruby-3.4.10*
+# Phase 3 ABI guard evidence: OpenCV 4.14 changes all established 4.12 SONAMEs.
+=media-libs/opencv-4.14.0*
+# Phase 3 ABI guard evidence: Wine live loses client_surface_update from win32u.
+=app-emulation/wine-staging-9999*
+# Phase 3 ABI guard evidence: Firefox 156 removes two established libmozsandbox exports.
+=www-client/firefox-bin-156.0*
+# Phase 3 install QA evidence: ujson 5.13.0 leaves a top-level optimization record.
+=dev-python/ujson-5.13.0*
