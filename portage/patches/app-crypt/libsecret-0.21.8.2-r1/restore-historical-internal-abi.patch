@@ -1,6 +1,6 @@
 --- a/libsecret/libsecret.map
 +++ b/libsecret/libsecret.map
-@@ -3,5 +3,3 @@
+@@ -2,6 +2,4 @@
    secret_*;
    SECRET_*;
    SECMEM_*;
