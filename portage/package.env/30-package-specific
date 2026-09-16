@@ -14,6 +14,12 @@ dev-util/source-highlight no-hidden-visibility.conf
 # top-level site-packages payload. Keep the optimization policy narrow while
 # removing only that generated-record side effect.
 dev-python/ujson no-opt-remarks.conf
+# Preserve established public C++ exports in WebKit's JavaScriptCore/WTF
+# DSOs while retaining the rest of the optimization policy.
+net-libs/webkit-gtk no-hidden-visibility.conf
+# libsecret's installed DSO exports its internal helper ABI; avoid hiding
+# those established symbols during the optimized rebuild.
+app-crypt/libsecret no-hidden-visibility.conf
 # Java: ccache and sandboxing break the build; OpenJDK rejects Polly flags.
 dev-java/openjdk unsafe-no-ccache-no-sandbox.conf no-polly.conf
 gui-libs/hyprutils O2.conf
