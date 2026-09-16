@@ -7,4 +7,3 @@
 +class WTF_EXPORT_PRIVATE ParallelEnvironment {
      WTF_DEPRECATED_MAKE_FAST_ALLOCATED(ParallelEnvironment);
  public:
-*** End Patch
