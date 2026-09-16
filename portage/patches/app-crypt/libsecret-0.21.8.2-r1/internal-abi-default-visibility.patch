@@ -5,13 +5,8 @@
  G_BEGIN_DECLS
 +
 +#pragma GCC visibility push(default)
-@@ -104,5 +106,7 @@
  
- G_END_DECLS
-+
-+#pragma GCC visibility pop
- 
- #endif /* __SECRET_PRIVATE_H___ */
+ typedef struct {
 --- a/libsecret/secret-backend.h
 +++ b/libsecret/secret-backend.h
 @@ -20,6 +20,8 @@
@@ -19,10 +14,5 @@
  G_BEGIN_DECLS
 +
 +#pragma GCC visibility push(default)
-@@ -111,5 +113,7 @@
  
- G_END_DECLS
-+
-+#pragma GCC visibility pop
- 
- #endif /* __SECRET_BACKEND_H__ */
+ typedef struct _SecretBackend SecretBackend;
