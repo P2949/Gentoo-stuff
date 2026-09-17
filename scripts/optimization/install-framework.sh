@@ -1350,24 +1350,16 @@ snapshot_frozen_inventory() {
                 .classification == "not-applicable" and
                 (.resolution | directory_resolution) and
                 ($cpv_set[$entry.owner_cpv] // false))) and
-        ((reduce .owned_paths[] as $entry
-            ({count: 0, previous: null, seen: {}, ok: true};
-             ($entry.owner_cpv + "\u0000" + $entry.path) as $key |
-             .ok = (.ok and (.previous == null or $key > .previous) and (.seen[$key] // false | not)) |
-             .previous = $key |
-             .seen[$key] = true |
-             .count += 1) as $path_contract |
-        (reduce .owned_directories[] as $entry
-            ({count: 0, previous: null, seen: {}, ok: true};
-             ($entry.owner_cpv + "\u0000" + $entry.path) as $key |
-             .ok = (.ok and (.previous == null or $key > .previous) and (.seen[$key] // false | not)) |
-             .previous = $key |
-             .seen[$key] = true |
-             .count += 1) as $directory_contract |
-        (reduce .owned_paths[] as $entry ({};
-             .[$entry.path] = true)) as $path_set |
-            $path_contract.ok and $directory_contract.ok and
-            all(.owned_directories[]; (.path as $path | ($path_set[$path] // false) | not))))
+        ([.owned_paths[] | [.owner_cpv, .path]] as $paths |
+         [.owned_directories[] | [.owner_cpv, .path]] as $directories |
+         ($paths | sort) as $sorted_paths |
+         ($directories | sort) as $sorted_directories |
+         (reduce $paths[] as $path ({}; .[($path | tojson)] = true)) as $path_set |
+            $paths == $sorted_paths and
+            ($sorted_paths | length) == ($sorted_paths | unique | length) and
+            $directories == $sorted_directories and
+            ($sorted_directories | length) == ($sorted_directories | unique | length) and
+            all($directories[]; . as $directory | ($path_set[($directory | tojson)] // false) | not))
         ) then
         {
             cpvs: [.packages[].cpv],
