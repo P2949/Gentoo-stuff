@@ -51,7 +51,8 @@ def main():
         rec=dict(old); rec['owner_cpv']=dirs[p]; outdirs.append(rec)
       else:
         unresolved.append(p); outdirs.append({'owner_cpv':dirs[p],'path':p,'uid':uid,'gid':gid,'mode':mode,'classification':'unresolved','resolution':{'reason_code':'requires-directory-review','registry_version':'1'}})
-    result={'generation_id':a.generation_id,'inventory_id':a.generation_id+'-v1','owned_directories':outdirs,'owned_paths':sorted(set(paths),key=lambda x:(x['path'],x['owner_cpv'])),'packages':sorted(packages,key=lambda x:x['cpv']),'record_type':'frozen-inventory','schema_version':2}
+    unique_paths={(x['owner_cpv'],x['path']):x for x in paths}
+    result={'generation_id':a.generation_id,'inventory_id':a.generation_id+'-v1','owned_directories':outdirs,'owned_paths':sorted(unique_paths.values(),key=lambda x:(x['path'],x['owner_cpv'])),'packages':sorted(packages,key=lambda x:x['cpv']),'record_type':'frozen-inventory','schema_version':2}
     pathlib.Path(a.output).parent.mkdir(parents=True,exist_ok=True)
     with open(a.output,'w') as f: json.dump(result,f,sort_keys=True,indent=2); f.write('\n')
     print(json.dumps({'packages':len(packages),'owned_paths':len(result['owned_paths']),'owned_directories':len(outdirs),'unresolved_directories':len(unresolved),'output':a.output},sort_keys=True))
