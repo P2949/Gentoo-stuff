@@ -1,15 +1,9 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -95,1 +95,2 @@
-+enable_language(ASM)
+@@ -95,1 +95,1 @@
 -add_library(hyprgraphics SHARED ${SRCFILES})
-+add_library(hyprgraphics SHARED ${SRCFILES} src/compat/legacy-unexpect.S)
++add_library(hyprgraphics SHARED ${SRCFILES} src/compat/legacy-unexpect.c)
 --- /dev/null
-+++ b/src/compat/legacy-unexpect.S
-@@ -0,0 +1,6 @@
-+.section .rodata
-+.globl _ZNSt3__18unexpectE
-+.type _ZNSt3__18unexpectE,@object
-+.size _ZNSt3__18unexpectE,1
-+_ZNSt3__18unexpectE:
-+.byte 0
++++ b/src/compat/legacy-unexpect.c
+@@ -0,0 +1,1 @@
++__attribute__((visibility("default"), used)) char legacy_unexpect asm("_ZNSt3__18unexpectE") = 0;
