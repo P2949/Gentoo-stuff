@@ -11,6 +11,27 @@ import argparse, hashlib, json, os, pathlib, stat
 def sha(obj):
     return hashlib.sha256(json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
+def parse_contents_line(line):
+    """Parse a Portage CONTENTS record without splitting spaces in paths."""
+    line = line.rstrip("\n")
+    if " " not in line:
+        return None
+    kind, rest = line.split(" ", 1)
+    if kind == "dir":
+        return kind, rest, []
+    if kind == "obj":
+        fields = rest.rsplit(" ", 2)
+        if len(fields) != 3:
+            return None
+        path, digest, mtime = fields
+        return kind, path, [digest, mtime]
+    if kind == "sym":
+        if " -> " not in rest:
+            return None
+        path, target = rest.split(" -> ", 1)
+        return kind, path, ["->", target]
+    return None
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--vdb',default='/var/db/pkg'); ap.add_argument('--previous',required=True)
@@ -31,11 +52,11 @@ def main():
           if os.path.isfile(p): meta[n]=open(p,errors='replace').read().strip()
         entries=[]
         for line in open(contents,errors='replace'):
-          q=line.split()
-          if len(q)<2 or q[0] not in ('obj','sym','dir'): continue
-          path=q[1]; entries.append([q[0],path,q[2:]])
-          if q[0] != 'dir': paths.append({'owner_cpv':cpv,'path':path}); owners.setdefault(path,cpv)
-          if q[0]=='dir': dirs.setdefault(path,cpv)
+          parsed=parse_contents_line(line)
+          if parsed is None: continue
+          kind,path,tail=parsed; entries.append([kind,path,tail])
+          if kind != 'dir': paths.append({'owner_cpv':cpv,'path':path}); owners.setdefault(path,cpv)
+          if kind=='dir': dirs.setdefault(path,cpv)
         packages.append({'cpv':cpv,'entry_sha256':sha({'metadata':meta,'contents':entries})})
     # Include parent directories of owned paths, using live stat data.
     for p in list(owners):
