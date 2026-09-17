@@ -16,7 +16,6 @@ import json
 import os
 import posixpath
 import re
-import shlex
 import shutil
 import stat
 import subprocess
