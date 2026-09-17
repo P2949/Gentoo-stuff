@@ -1,6 +1,6 @@
 --- a/source/CMakeLists.txt
 +++ b/source/CMakeLists.txt
-@@
+@@ -350,7 +350,11 @@
 -set_target_properties(${SPIRV_TOOLS}-shared PROPERTIES CXX_VISIBILITY_PRESET hidden)
 +# The shared target is the installed public C++ library on Gentoo.  Keep its
 +# complete ABI visible; the global optimization profile already supplies the
