@@ -40,7 +40,7 @@ def main():
     # Include parent directories of owned paths, using live stat data.
     for p in list(owners):
       cur=pathlib.PurePosixPath(p).parent
-      while str(cur) not in ('','.'):
+      while str(cur) not in ('','.', '/'):
         dirs.setdefault(str(cur), owners[p]); cur=cur.parent
     outdirs=[]; unresolved=[]
     for p in sorted(dirs):
