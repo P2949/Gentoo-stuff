@@ -145,10 +145,12 @@ gentoo_opt_bind_framework_target() {
     [[ -f ${embedded}/portage/bashrc && ! -L ${embedded}/portage/bashrc ]] || {
         gentoo_opt_abort 'installed framework target lacks its regular Portage policy' || return 1
     }
-    [[ -z ${existing} || ${existing} == "${embedded}" ]] || {
+    if [[ -n ${existing} && ${existing} != "${embedded}" &&
+        ( ${EBUILD_PHASE:-} != prerm && ${EBUILD_PHASE:-} != postrm ||
+          ${GENTOO_OPT_REPLACEMENT_TRANSACTION:-0} != 1 ) ]]; then
         gentoo_opt_abort \
             "Portage process attempted to cross framework generations (${existing} -> ${embedded})" || return 1
-    }
+    fi
     if [[ -z ${existing} ]]; then
         GENTOO_OPT_FRAMEWORK_TARGET=${embedded}
         export GENTOO_OPT_FRAMEWORK_TARGET

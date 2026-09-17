@@ -25,8 +25,8 @@ def main():
   # The framework requires root-owned generation spools with a sticky,
   # writable leaf so the unprivileged Portage sandbox can emit profiles.
   subprocess.run(['doas','install','-d','-o','root','-g','root','-m','01777',profile_path],check=True)
-  env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256'];env.setdefault('GENTOO_OPT_ABI','amd64')
-  subprocess.run(['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path,'emerge','--oneshot','--buildpkg','='+cpv],env=env,check=True)
+  env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256'];env['GENTOO_OPT_REPLACEMENT_TRANSACTION']='1';env.setdefault('GENTOO_OPT_ABI','amd64')
+  subprocess.run(['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path,'emerge','--oneshot','--buildpkg','='+cpv],env=env,check=True)
   # Run the exact reviewed representative recipes after the instrumented
   # package transaction.  This is the profile payload collection point; a
   # recipe failure is terminal for the wave and is recorded by the caller.
