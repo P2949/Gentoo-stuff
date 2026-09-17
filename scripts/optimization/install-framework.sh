@@ -1352,11 +1352,13 @@ snapshot_frozen_inventory() {
                 ($cpv_set[$entry.owner_cpv] // false))) and
         ([.owned_paths[] | [.owner_cpv, .path]] as $paths |
          [.owned_directories[] | [.owner_cpv, .path]] as $directories |
+         ($paths | sort) as $sorted_paths |
+         ($directories | sort) as $sorted_directories |
          (reduce $paths[] as $path ({}; .[($path | tojson)] = true)) as $path_set |
-            $paths == ($paths | sort) and
-            ($paths | length) == ($paths | unique | length) and
-            $directories == ($directories | sort) and
-            ($directories | length) == ($directories | unique | length) and
+            $paths == $sorted_paths and
+            ($sorted_paths | length) == ($sorted_paths | unique | length) and
+            $directories == $sorted_directories and
+            ($sorted_directories | length) == ($sorted_directories | unique | length) and
             all($directories[]; . as $directory | ($path_set[($directory | tojson)] // false) | not))
         ) then
         {
