@@ -15,6 +15,9 @@ def main():
   if not os.path.isfile(fingerprint_file):
    raise SystemExit(f'REFUSED: missing reviewed fingerprint file for {cpv}: {fingerprint_file}')
   profile_path=item['profile_path']
+  # A retry must never merge a failed transaction's partial gcda set with a
+  # fresh native training run.  The runner owns this generation spool.
+  subprocess.run(['doas','rm','-rf','--',profile_path],check=True)
   # The framework requires root-owned generation spools with a sticky,
   # writable leaf so the unprivileged Portage sandbox can emit profiles.
   subprocess.run(['doas','install','-d','-o','root','-g','root','-m','01777',profile_path],check=True)

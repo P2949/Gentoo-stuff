@@ -1115,10 +1115,21 @@ gentoo_opt_apply_primary_mode() {
             gentoo_opt_append_flag_once CXXFLAGS -fsample-profile-use-profi
             ;;
         gcc-generate)
-            flag="-fprofile-generate=${GENTOO_OPT_PROFILE_PATH}"
-            gentoo_opt_append_flag_once CFLAGS "${flag}"
-            gentoo_opt_append_flag_once CXXFLAGS "${flag}"
-            gentoo_opt_append_flag_once LDFLAGS "${flag}"
+            # Gentoo's sys-devel/gcc eclass owns its profiledbootstrap-lean
+            # training and profile merge.  Injecting the generic external
+            # profile flag into GCC itself mixes stage data with the eclass
+            # bootstrap spool and can produce gcda merge mismatches.  Keep
+            # GCC in the explicit PGO lane, but hand profile ownership to
+            # the native bootstrap for this exact package only.
+            if [[ ${CATEGORY:-}/${PF:-} == sys-devel/gcc-* ]]; then
+                GENTOO_OPT_NATIVE_PGO_HANDOFF=1
+                export GENTOO_OPT_NATIVE_PGO_HANDOFF
+            else
+                flag="-fprofile-generate=${GENTOO_OPT_PROFILE_PATH}"
+                gentoo_opt_append_flag_once CFLAGS "${flag}"
+                gentoo_opt_append_flag_once CXXFLAGS "${flag}"
+                gentoo_opt_append_flag_once LDFLAGS "${flag}"
+            fi
             ;;
         gcc-use)
             flag="-fprofile-use=${GENTOO_OPT_PROFILE_PATH}"
