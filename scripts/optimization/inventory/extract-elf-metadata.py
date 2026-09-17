@@ -19,7 +19,7 @@ def main():
   p=x['path']
   try: h=run(['-h'],p); ph=run(['-l'],p); d=run(['-d'],p); n=run(['-n'],p)
   except RuntimeError as e:
-   rows.append({'owner_cpv':x['owner_cpv'],'path':p,'error':str(e)}); continue
+   out.append({'owner_cpv':x['owner_cpv'],'path':p,'error':str(e),'build_id':None,'interpreter':None}); continue
   deps=[l.split('[',1)[1].split(']',1)[0] for l in d.splitlines() if '(NEEDED)' in l and '[' in l]
   interp=None
   for l in ph.splitlines():
