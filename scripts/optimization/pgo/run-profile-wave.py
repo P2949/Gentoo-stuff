@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,json,os,subprocess,sys
+import argparse,json,os,subprocess,sys,time,hashlib
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
  if active!=a.framework_generation:raise SystemExit(f'REFUSED: active framework {active} != authorized generation {a.framework_generation}')
@@ -25,4 +25,20 @@ def main():
   subprocess.run(['doas','install','-d','-o','root','-g','root','-m','01777',profile_path],check=True)
   env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256'];env.setdefault('GENTOO_OPT_ABI','amd64')
   subprocess.run(['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path,'emerge','--oneshot','--buildpkg','='+cpv],env=env,check=True)
+  # Run the exact reviewed representative recipes after the instrumented
+  # package transaction.  This is the profile payload collection point; a
+  # recipe failure is terminal for the wave and is recorded by the caller.
+  for recipe in item.get('recipes',[]):
+   path=recipe.get('path'); argv=recipe.get('argv')
+   if recipe.get('safe_path') is not True or not isinstance(path,str) or not isinstance(argv,list) or not argv or argv[0] != path:
+    raise SystemExit(f'REFUSED: unsafe workload recipe for {cpv}: {path}')
+   run_env=env.copy(); run_env.update(recipe.get('environment',{})); start=time.monotonic()
+   try:
+    result=subprocess.run(argv,cwd=recipe.get('cwd','/'),env=run_env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=30,check=False)
+   except (OSError,subprocess.TimeoutExpired) as e:
+    raise SystemExit(f'REFUSED: workload recipe failed for {cpv}: {path}: {e}')
+   if result.returncode != 0:
+    raise SystemExit(f'REFUSED: workload recipe exited {result.returncode} for {cpv}: {path}')
+   if not result.stdout:
+    raise SystemExit(f'REFUSED: workload recipe produced no output for {cpv}: {path}')
 if __name__=='__main__':main()
