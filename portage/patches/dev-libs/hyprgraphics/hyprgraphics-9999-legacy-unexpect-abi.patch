@@ -1,0 +1,19 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -86,7 +86,7 @@
+ configure_file(hyprgraphics.pc.in hyprgraphics.pc @ONLY)
+ 
+-add_library(hyprgraphics SHARED ${SRCFILES})
++add_library(hyprgraphics SHARED ${SRCFILES} src/compat/legacy-unexpect.S)
+ target_include_directories(
+   hyprgraphics
+   PUBLIC "./include"
+--- /dev/null
++++ b/src/compat/legacy-unexpect.S
+@@ -0,0 +1,7 @@
++.section .rodata
++.globl _ZNSt3__18unexpectE
++.type _ZNSt3__18unexpectE,@object
++.size _ZNSt3__18unexpectE,1
++_ZNSt3__18unexpectE:
++.byte 0
