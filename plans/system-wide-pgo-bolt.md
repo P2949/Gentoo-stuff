@@ -3097,3 +3097,7 @@ immutable; detached root-owned state and evidence record the result. Any later
 plan correction creates a new candidate and invalidates that authorization.
 
 The project is complete only when the live installed system—not merely the repository—passes the final strict completion conditions.
+
+### 2026-09-17 live inventory generator
+
+The previously frozen Phase 3 inventory is no longer mutation-authoritative because the live VDB has seven added CPV identities and six removed identities after the ABI repair work. Added `scripts/optimization/inventory/generate-live-inventory.py`, which deterministically derives package entry hashes and owned paths from the live VDB and emits directory records using live stat data. Existing reviewed directory records are retained only when their uid/gid/mode still match; changed or new directories are marked `requires-directory-review`. The generator output is a candidate and is not activated as framework inventory until that review and exact-source authorization are complete.
