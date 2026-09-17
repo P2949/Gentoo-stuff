@@ -1378,17 +1378,7 @@ PY
             return 1
             ;;
     esac
-    if match=$(/usr/bin/portageq match / "${atom}" 2>/dev/null); then
-        status=0
-    else
-        status=$?
-    fi
-    ((status == 0)) || {
-        fail "Portage live atom match failed with status ${status}: ${atom}"
-        return 1
-    }
-    [[ -n ${match} ]] || \
-        fail "generated package.env atom does not match the live installed universe: ${atom}"
+    PRODUCTION_ATOMS+=("${atom}")
 }
 
 validate_generated_policy_grammar() {
@@ -1400,7 +1390,7 @@ validate_generated_policy_grammar() {
     local version_revision_re="${version_re}(-r[0-9]+)?"
     local canonical_atom_re="^=(${category_re}/${package_re}-${version_revision_re})$"
     local -A pairs=() referenced=() files=() variables=()
-    local -a top_entries=()
+    local -a top_entries=() PRODUCTION_ATOMS=()
     mapfile -t top_entries < <(
         find "${source}" -mindepth 1 -maxdepth 1 -printf '%y\t%f\n' | sort
     )
@@ -1433,6 +1423,28 @@ validate_generated_policy_grammar() {
         pairs["${cpv}\t${environment}"]=1
         referenced["${basename}"]=1
     done <"${source}/package.env"
+
+    if [[ -z ${TEST_ROOT} && ${#PRODUCTION_ATOMS[@]} -gt 0 ]]; then
+        if printf '%s\n' "${PRODUCTION_ATOMS[@]}" |
+            /usr/bin/python3 -I -B -c '
+import sys
+try:
+    import portage
+    db = portage.db["/"]["vartree"].dbapi
+    missing = [line.strip() for line in sys.stdin if line.strip() and not db.cpv_exists(line.strip()[1:])]
+except Exception:
+    raise SystemExit(70)
+raise SystemExit(65 if missing else 0)
+' >/dev/null 2>&1; then
+            :
+        else
+            status=$?
+            case ${status} in
+                65) fail 'generated package.env contains an atom absent from the live installed universe' ;;
+                *) fail "Portage live database validation failed with status ${status}" ;;
+            esac
+        fi
+    fi
 
     while IFS= read -r -d '' file; do
         basename=${file##*/}
