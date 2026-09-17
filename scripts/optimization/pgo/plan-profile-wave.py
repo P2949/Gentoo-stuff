@@ -2,7 +2,7 @@
 import argparse,json,hashlib,collections
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--bindings',required=True);ap.add_argument('--recipes',required=True);ap.add_argument('--output',required=True);ap.add_argument('--per-lane',type=int,default=4);a=ap.parse_args();b=json.load(open(a.bindings));r=json.load(open(a.recipes)); rec={x['cpv']:x for x in r['packages']}; by=collections.defaultdict(list)
- for x in b['records']:
+ for x in b.get('records', b.get('packages', [])):
   if x['lane'].startswith('pgo-') and rec.get(x['cpv'],{}).get('recipes'):
    by[x['lane']].append({'cpv':x['cpv'],'lane':x['lane'],'compiler_sha256':x['compiler_sha256'],'profile_path':x['profile_path'],'recipes':rec[x['cpv']]['recipes']})
  wave=[]
