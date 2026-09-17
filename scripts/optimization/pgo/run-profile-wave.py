@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse,json,os,subprocess,sys,time,hashlib
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
+ ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
  if active!=a.framework_generation:raise SystemExit(f'REFUSED: active framework {active} != authorized generation {a.framework_generation}')
  if r.get('source_wave')!=w.get('sha256') or r.get('ready_count')!=len(w['packages']) or r.get('invalid_inputs'):raise SystemExit('REFUSED: wave readiness is incomplete or belongs to another wave')
  if not a.execute:print('READY: all technical gates pass; rerun with --execute to invoke the controlled transaction');return
@@ -10,6 +10,7 @@ def main():
  # revision-qualified CPV is supplied; bare CPVs are category/package names,
  # not valid transaction atoms.
  identity_root=a.identity_root or os.path.join(os.path.dirname(a.wave),'identity')
+ payloads=[]
  for item in w['packages']:
   cpv=item['cpv']; key=cpv.replace('/','_')+'.fingerprint.env'; fingerprint_file=os.path.join(identity_root,key)
   if not os.path.isfile(fingerprint_file):
@@ -41,4 +42,13 @@ def main():
     raise SystemExit(f'REFUSED: workload recipe exited {result.returncode} for {cpv}: {path}')
    if not result.stdout:
     raise SystemExit(f'REFUSED: workload recipe produced no output for {cpv}: {path}')
+  for root,dirs,files in os.walk(profile_path):
+   for name in files:
+    path=os.path.join(root,name)
+    if os.path.isfile(path):
+     with open(path,'rb') as stream: payloads.append({'cpv':cpv,'path':path,'sha256':hashlib.sha256(stream.read()).hexdigest()})
+ if a.receipt:
+  receipt={'record_type':'profile-wave-transaction-receipt','schema_version':1,'wave_sha256':hashlib.sha256(open(a.wave,'rb').read()).hexdigest(),'readiness_sha256':hashlib.sha256(open(a.readiness,'rb').read()).hexdigest(),'package_count':len(w['packages']),'packages':[x['cpv'] for x in w['packages']],'state':'completed','authorization':'profile-payloads-collected','profile_payloads':sorted(payloads,key=lambda x:(x['cpv'],x['path']))}
+  receipt['sha256']=hashlib.sha256(json.dumps(receipt,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+  with open(a.receipt,'w') as stream: json.dump(receipt,stream,sort_keys=True,indent=2); stream.write('\n')
 if __name__=='__main__':main()
