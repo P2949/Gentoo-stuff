@@ -1412,9 +1412,6 @@ validate_generated_policy_grammar() {
             fail "generated package.env atom is not canonical =CPV: ${atom}"
         [[ -n ${FROZEN_CPVS["${cpv}"]+x} ]] || \
             fail "generated package.env atom is absent from the frozen inventory: ${atom}"
-        if [[ -z ${TEST_ROOT} ]]; then
-            validate_production_generated_atom "${atom}"
-        fi
         [[ ${environment} =~ ^optimization/generated/([A-Za-z0-9][A-Za-z0-9_.-]*\.conf)$ ]] || \
             fail "generated environment path escapes optimization/generated: ${environment}"
         basename=${BASH_REMATCH[1]}
@@ -1430,8 +1427,18 @@ validate_generated_policy_grammar() {
 import sys
 try:
     import portage
+    from portage.dep import Atom
     db = portage.db["/"]["vartree"].dbapi
-    missing = [line.strip() for line in sys.stdin if line.strip() and not db.cpv_exists(line.strip()[1:])]
+    missing = []
+    for line in sys.stdin:
+        atom = line.strip()
+        if not atom:
+            continue
+        parsed = Atom(atom, allow_wildcard=False, allow_repo=False, allow_build_id=False)
+        if (str(parsed) != atom or parsed.operator != "=" or str(parsed.cpv) != atom[1:] or
+                parsed.slot is not None or parsed.repo is not None or parsed.use is not None or
+                parsed.blocker or parsed.build_id is not None or not db.cpv_exists(atom[1:])):
+            missing.append(atom)
 except Exception:
     raise SystemExit(70)
 raise SystemExit(65 if missing else 0)
