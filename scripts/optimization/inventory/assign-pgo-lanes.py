@@ -3,7 +3,7 @@ import argparse,json,hashlib,collections
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--states',required=True);ap.add_argument('--backends',required=True);ap.add_argument('--output',required=True);a=ap.parse_args();s=json.load(open(a.states));b={x['cpv']:x for x in json.load(open(a.backends))['packages']}; rows=[]
  for x in s['records']:
-  cpv=x['cpv']; ev=b[cpv]['backend_evidence']
+  cpv=x['cpv']; ev=sorted(set(b[cpv]['backend_evidence']+b[cpv]['inherits']))
   if x['state']!='pending-pgo-classification': lane=x['state']; reason=x['reason_code']
   elif any('cargo' in z or z in ('rust','rust-toolchain') for z in ev): lane='pgo-rust';reason='cargo-or-rust-eclass'
   elif any('go' in z for z in ev): lane='pgo-go';reason='go-eclass'
