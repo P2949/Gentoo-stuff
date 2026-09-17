@@ -1351,11 +1351,12 @@ snapshot_frozen_inventory() {
                 ($cpvs | index($entry.owner_cpv)) != null)) and
         ([.owned_paths[] | [.owner_cpv, .path]] as $paths |
          [.owned_directories[] | [.owner_cpv, .path]] as $directories |
+         (reduce $paths[] as $path ({}; .[($path | tojson)] = true)) as $path_set |
             $paths == ($paths | sort) and
             ($paths | length) == ($paths | unique | length) and
             $directories == ($directories | sort) and
             ($directories | length) == ($directories | unique | length) and
-            all($directories[]; . as $directory | ($paths | index($directory)) == null))
+            all($directories[]; . as $directory | ($path_set[($directory | tojson)] // false) | not))
         ) then
         {
             cpvs: [.packages[].cpv],
