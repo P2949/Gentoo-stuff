@@ -1327,6 +1327,7 @@ snapshot_frozen_inventory() {
             keys == ["cpv", "entry_sha256"] and
             (.cpv | exact_cpv) and (.entry_sha256 | sha256)) and
         ([.packages[].cpv] as $cpvs |
+         (reduce $cpvs[] as $cpv ({}; .[$cpv] = true)) as $cpv_set |
             $cpvs == ($cpvs | sort) and
             ($cpvs | length) == ($cpvs | unique | length) and
             (.owned_paths | type == "array") and
@@ -1335,7 +1336,7 @@ snapshot_frozen_inventory() {
                 keys == ["owner_cpv", "path"] and
                 (.owner_cpv | exact_cpv) and
                 (.path | canonical_absolute) and
-                ($cpvs | index($entry.owner_cpv)) != null) and
+                ($cpv_set[$entry.owner_cpv] // false)) and
             (.owned_directories | type == "array") and
             all(.owned_directories[];
                 . as $entry |
@@ -1348,7 +1349,7 @@ snapshot_frozen_inventory() {
                 (.gid | nonnegative_integer) and
                 .classification == "not-applicable" and
                 (.resolution | directory_resolution) and
-                ($cpvs | index($entry.owner_cpv)) != null)) and
+                ($cpv_set[$entry.owner_cpv] // false))) and
         ([.owned_paths[] | [.owner_cpv, .path]] as $paths |
          [.owned_directories[] | [.owner_cpv, .path]] as $directories |
          (reduce $paths[] as $path ({}; .[($path | tojson)] = true)) as $path_set |
