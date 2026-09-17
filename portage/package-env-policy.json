@@ -15,6 +15,13 @@
       ],
       "rationale": "The sandbox and ccache FEATURES exception is independent of the no-Polly compiler tier."
     },
+    "dev-util/spirv-tools": {
+      "environments": [
+        "O2.conf",
+        "no-hidden-no-forced-libs.conf"
+      ],
+      "rationale": "The O2 compiler tier is followed by the reviewed public-ABI visibility lane, which retains established SPIR-V Tools exports while disabling forced libraries."
+    },
     "dev-util/cargo-c": {
       "environments": [
         "no-lto.conf",
@@ -50,6 +57,13 @@
         "no-ccache-only.conf"
       ],
       "rationale": "The reviewed GCC compiler lane and ccache FEATURES removal affect independent settings."
+    },
+    "net-libs/webkit-gtk": {
+      "environments": [
+        "O2.conf",
+        "no-hidden-visibility.conf"
+      ],
+      "rationale": "The O2 compiler tier is followed by the reviewed WebKit public-ABI visibility lane for JavaScriptCore and WTF DSOs."
     },
     "sys-fs/zfs": {
       "environments": [

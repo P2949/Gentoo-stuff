@@ -24,4 +24,3 @@ app-crypt/libsecret no-polly-no-lto-no-bsymbolic.conf
 dev-java/openjdk unsafe-no-ccache-no-sandbox.conf no-polly.conf
 gui-libs/hyprutils O2.conf
 # Autodesk OpenSSL 1.1.1 compatibility source rejects the host Polly flags.
-dev-libs/openssl-compat no-polly.conf
