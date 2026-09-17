@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse,json,hashlib,os,collections
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--manifest',required=True);ap.add_argument('--identity',required=True);ap.add_argument('--output',required=True);a=ap.parse_args();w=json.load(open(a.wave));m=set(json.load(open(a.manifest))['cpvs']);i=json.load(open(a.identity));bad=[]; rows=[]
+ ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--manifest',required=True);ap.add_argument('--identity',required=True);ap.add_argument('--output',required=True);a=ap.parse_args();w=json.load(open(a.wave));md=json.load(open(a.manifest));m=set(md.get('cpvs',[x['cpv'] for x in md.get('packages',[])]));i=json.load(open(a.identity));bad=[]; rows=[]
  spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw'); wave_cpvs={x['cpv'] for x in w['packages']}
  for x in w['packages']:
   p=x['profile_path']; canonical=os.path.realpath(p) if isinstance(p,str) else ''
