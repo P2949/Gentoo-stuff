@@ -1611,27 +1611,39 @@ def parse_vdb_contents(path: Path) -> dict[str, tuple[str, str | None]]:
     except OSError as error:
         raise StateValidationError(f"{path}: {error}") from error
     for line_number, line in enumerate(lines, 1):
-        try:
-            fields = shlex.split(line)
-        except ValueError as error:
-            raise StateValidationError(f"{path}:{line_number}: {error}") from error
-        if not fields:
+        if not line:
             continue
-        if fields[0] not in {"obj", "sym", "fif", "dev", "dir"} or len(fields) < 2:
+        kind, separator, remainder = line.partition(" ")
+        if not separator or kind not in {"obj", "sym", "fif", "dev", "dir"}:
             raise StateValidationError(f"{path}:{line_number}: unsupported CONTENTS row")
-        installed = fields[1]
+        # Portage CONTENTS paths are not shell-quoted.  Split only the
+        # trailing digest/timestamp fields; spaces and apostrophes are valid
+        # path characters (and are common in vendor packages).
+        fields = remainder.rsplit(" ", 2)
+        if kind in {"obj", "fif", "dev"}:
+            if len(fields) != 3:
+                raise StateValidationError(f"{path}:{line_number}: malformed {kind} row")
+            installed = fields[0]
+        elif kind == "dir":
+            installed = remainder
+            if not installed:
+                raise StateValidationError(f"{path}:{line_number}: malformed directory row")
+        else:
+            marker = " -> "
+            if marker not in remainder:
+                raise StateValidationError(f"{path}:{line_number}: malformed symlink row")
+            installed, target_and_timestamp = remainder.split(marker, 1)
+            target_parts = target_and_timestamp.rsplit(" ", 1)
+            if len(target_parts) != 2:
+                raise StateValidationError(f"{path}:{line_number}: malformed symlink row")
+            target = target_parts[0]
         if not installed.startswith("/") or posixpath.normpath(installed) != installed:
             raise StateValidationError(f"{path}:{line_number}: noncanonical installed path")
         if installed in result:
             raise StateValidationError(f"{path}:{line_number}: duplicate installed path {installed}")
-        target: str | None = None
-        if fields[0] == "sym":
-            if len(fields) < 5 or fields[2] != "->":
-                raise StateValidationError(f"{path}:{line_number}: malformed symlink row")
-            target = fields[3]
-        elif fields[0] == "dir" and len(fields) != 2:
-            raise StateValidationError(f"{path}:{line_number}: malformed directory row")
-        result[installed] = (fields[0], target)
+        if kind != "sym":
+            target = None
+        result[installed] = (kind, target)
     return result
 
 
