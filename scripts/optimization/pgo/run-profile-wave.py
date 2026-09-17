@@ -41,7 +41,7 @@ def main():
     raise SystemExit(f'REFUSED: workload recipe failed for {cpv}: {path}: {e}')
    if result.returncode != 0:
     raise SystemExit(f'REFUSED: workload recipe exited {result.returncode} for {cpv}: {path}')
-   if not result.stdout:
+   if not result.stdout and not recipe.get('allow_empty_output',False):
     raise SystemExit(f'REFUSED: workload recipe produced no output for {cpv}: {path}')
   for root,dirs,files in os.walk(profile_path):
    for name in files:
