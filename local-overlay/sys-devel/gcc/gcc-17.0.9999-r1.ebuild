@@ -17,6 +17,21 @@ inherit toolchain
 EGIT_COMMIT="336f25a0ad83cc74b6a18137ffd177eefa4a81b0"
 EGIT_BRANCH=""
 
+src_unpack() {
+	# Keep the pinned commit for the GCC checkout.  The toolchain eclass
+	# fetches Gentoo's independent patch repository through git-r3 as well;
+	# do not let the GCC commit selector leak into that second repository.
+	git-r3_src_unpack
+	echo "${EGIT_VERSION}" > "${S}"/gcc/REVISION || die
+	if [[ -z ${PATCH_VER} ]] && ! use vanilla; then
+		local gcc_commit=${EGIT_COMMIT}
+		EGIT_COMMIT=
+		toolchain_fetch_git_patches
+		EGIT_COMMIT=${gcc_commit}
+	fi
+	default
+}
+
 if [[ ${CATEGORY} != cross-* ]] ; then
 	RDEPEND="elibc_glibc? ( sys-libs/glibc[cet(-)?] )"
 	DEPEND="${RDEPEND}"
