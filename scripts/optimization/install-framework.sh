@@ -2979,7 +2979,7 @@ CANDIDATE_FINAL=${BASE}/framework-${FRAMEWORK_AGGREGATE}
 CANDIDATE_STAGE=${CANDIDATE_FINAL}.partial.$$
 EXPECTED_MANIFEST=${BASE}/.framework-expected-manifest.$$
 
-if [[ ${PREVIOUS_TARGET} != none && -f ${PREVIOUS_TARGET}/install.manifest ]] && \
+if [[ ${GENTOO_OPT_INSTALLER_CHECK_REEXEC:-0} != 1 && ${PREVIOUS_TARGET} != none && -f ${PREVIOUS_TARGET}/install.manifest ]] && \
     grep -Fxq "installer_sha256=${INSTALLER_SHA256}" "${PREVIOUS_TARGET}/install.manifest" && \
     grep -Fxq "source_aggregate_sha256=${SOURCE_AGGREGATE}" "${PREVIOUS_TARGET}/install.manifest" && \
     grep -Fxq "git_commit=${GIT_COMMIT}" "${PREVIOUS_TARGET}/install.manifest" && \
@@ -3017,11 +3017,11 @@ if [[ ${PREVIOUS_TARGET} != none && -f ${PREVIOUS_TARGET}/install.manifest ]] &&
         # predates --exchange would exercise a different tool on the second
         # half of one transaction.  Production never has TEST_ROOT and can
         # therefore never carry this override across the boundary.
-        exec env -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
+        exec env GENTOO_OPT_INSTALLER_CHECK_REEXEC=1 -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
             GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL="${EXCHANGE_TOOL}" \
             "${REEXEC_ARGS[@]}"
     fi
-    exec env -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
+    exec env GENTOO_OPT_INSTALLER_CHECK_REEXEC=1 -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
         "${REEXEC_ARGS[@]}"
 fi
 
