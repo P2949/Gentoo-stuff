@@ -19,6 +19,11 @@ dev-libs/newt no-hidden-no-forced-libs.conf
 
 dev-cpp/muParser no-hidden-no-forced-libs.conf
 
+# SPIR-V Tools installs public shared C++ libraries consumed by glslang,
+# shaderc, and Vulkan tooling.  Keep their exported API visible; the global
+# hidden-visibility lane removes newly introduced template and pass symbols.
+dev-util/spirv-tools no-hidden-no-forced-libs.conf
+
 dev-libs/hyprlang no-hidden-no-forced-libs.conf
 gui-libs/hyprwire no-hidden-no-forced-libs.conf
 gui-libs/aquamarine no-hidden-no-forced-libs.conf
