@@ -5,7 +5,7 @@ def main():
  for cpv in m['cpvs']:
   cat,pf=cpv.split('/',1); root=a.vdb+'/'+cat+'/'+pf; pn=open(root+'/PN').read().strip() if os.path.isfile(root+'/PN') else re.sub(r'-[^-]+$','',pf); repo=open(root+'/REPOSITORY').read().strip() if os.path.isfile(root+'/REPOSITORY') else ''
   direct=a.repos+'/'+repo+'/'+cat+'/'+pn+'/'+pf+'.ebuild' if repo else ''
-  ep=direct if direct and os.path.isfile(direct) else None; text=open(ep,errors='replace').read() if ep else ''
+  installed=root+'/'+pf+'.ebuild'; ep=direct if direct and os.path.isfile(direct) else (installed if os.path.isfile(installed) else None); text=open(ep,errors='replace').read() if ep else ''
   inherits=[]
   for line in text.splitlines():
    if re.match(r'\s*inherit\s+',line): inherits.extend(line.split()[1:])
