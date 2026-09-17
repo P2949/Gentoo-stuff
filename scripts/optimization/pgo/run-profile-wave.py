@@ -14,6 +14,10 @@ def main():
   cpv=item['cpv']; key=cpv.replace('/','_')+'.fingerprint.env'; fingerprint_file=os.path.join(identity_root,key)
   if not os.path.isfile(fingerprint_file):
    raise SystemExit(f'REFUSED: missing reviewed fingerprint file for {cpv}: {fingerprint_file}')
+  profile_path=item['profile_path']
+  # The framework requires root-owned generation spools with a sticky,
+  # writable leaf so the unprivileged Portage sandbox can emit profiles.
+  subprocess.run(['doas','install','-d','-o','root','-g','root','-m','01777',profile_path],check=True)
   env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256'];env.setdefault('GENTOO_OPT_ABI','amd64')
-  subprocess.run(['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'emerge','--oneshot','--buildpkg','='+cpv],env=env,check=True)
+  subprocess.run(['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path,'emerge','--oneshot','--buildpkg','='+cpv],env=env,check=True)
 if __name__=='__main__':main()
