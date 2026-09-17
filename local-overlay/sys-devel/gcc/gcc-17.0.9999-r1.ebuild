@@ -5,6 +5,9 @@ EAPI=8
 
 TOOLCHAIN_HAS_TESTS=1
 PATCH_GCC_VER="17.0.0"
+# Freeze Gentoo's patch payload for successor builds; the successful bridge
+# build used the equivalent moving checkout before this pin was added.
+PATCH_VER="9"
 MUSL_GCC_VER="17.0.0"
 PYTHON_COMPAT=( python3_{11..14} )
 
