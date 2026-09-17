@@ -104,6 +104,24 @@ def compare_pair(rel: Path, installed: Path, candidate: Path, failures: list[str
         failures.append(f"{rel}:{soname_note} old={len(old)} new={len(new)} missing={sample}")
 
 
+def collect_soname_providers(tree: Path) -> dict[str, tuple[Path, set[str]]]:
+    """Return established ELF DSO providers keyed by their SONAME."""
+    providers: dict[str, tuple[Path, set[str]]] = {}
+    for path in tree.rglob("*"):
+        if ".so" not in path.name:
+            continue
+        resolved = resolve_tree_link(path, tree) if path.is_symlink() else path
+        if resolved is None or not resolved.is_file() or not is_elf(resolved):
+            continue
+        try:
+            elf_type, soname, symbols = inspect(resolved)
+        except RuntimeError:
+            continue
+        if elf_type == "DYN" and soname:
+            providers.setdefault(soname, (resolved, symbols))
+    return providers
+
+
 def main() -> int:
     if "--help" in sys.argv[1:]:
         print(__doc__)
@@ -122,6 +140,23 @@ def main() -> int:
         print("gentoo-optimization ABI guard: ED and ROOT must be directories", file=sys.stderr)
         return 1
     failures: list[str] = []
+    # Compare from the installed ABI-provider side as well as by relative
+    # path.  A replacement such as libfoo.so.1 -> libfoo.so.2 otherwise has
+    # no same-path pair and could silently remove the established ABI.
+    installed_providers = collect_soname_providers(root)
+    candidate_providers = collect_soname_providers(ed)
+    for soname, (installed_path, installed_symbols) in installed_providers.items():
+        candidate = candidate_providers.get(soname)
+        if candidate is None:
+            failures.append(f"{installed_path.relative_to(root)}: established SONAME {soname} disappeared")
+            continue
+        missing = installed_symbols - candidate[1]
+        if missing:
+            sample = ",".join(sorted(missing)[:12])
+            failures.append(
+                f"{installed_path.relative_to(root)}: SONAME {soname} "
+                f"provider ABI loss old={len(installed_symbols)} new={len(candidate[1])} missing={sample}"
+            )
     for candidate in ed.rglob("*"):
         if ".so" not in candidate.name:
             continue

@@ -27,6 +27,10 @@ echo 'PASS: ABI guard rejects catastrophic exported-symbol loss'
 # before beginning independent positive cases so whole-ED validation does not
 # carry the expected failure into later assertions.
 rm -f -- "${work}/ed/usr/lib/libcanary.so.1"
+# Keep the established provider present for the independent positive cases;
+# absence of this provider is itself a rejection under the installed-side
+# SONAME policy exercised below.
+cp "${work}/root/usr/lib/libcanary.so.1" "${work}/ed/usr/lib/libcanary.so.1"
 
 printf 'INPUT(libcanary.so.1)\n' >"${work}/root/usr/lib/libscript.so.1"
 printf 'INPUT(libcanary.so.1)\n' >"${work}/ed/usr/lib/libscript.so.1"
@@ -89,12 +93,21 @@ cp "${work}/root/usr/lib/libregular-to-link.so.1"     "${work}/ed/usr/lib/libreg
 ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
 echo 'PASS: ABI guard accepts regular-DSO to symlink with retained exports'
 
-# A deliberate SONAME transition with the complete established export set is
-# a valid ABI transition; the guard protects symbol retention rather than
-# rejecting every intentional library-version bump.
+# A SONAME transition without a retained provider for the established ABI is
+# rejected even when the replacement happens at a different relative path.
 cc -shared -fPIC "${work}/old.c" -Wl,-soname,libtransition.so.1 \
     -o "${work}/root/usr/lib/libtransition.so.1"
 cc -shared -fPIC "${work}/old.c" -Wl,-soname,libtransition.so.2 \
     -o "${work}/ed/usr/lib/libtransition.so.2"
+if ED="${work}/ed" ROOT="${work}/root" python3 "${guard}" >/dev/null 2>&1; then
+    echo 'ABI guard accepted disappearance of established SONAME provider' >&2
+    exit 1
+fi
+echo 'PASS: ABI guard rejects SONAME provider disappearance'
+
+# A genuine compatibility provider at the new path retains the old SONAME;
+# the new SONAME may coexist without weakening the established ABI check.
+cc -shared -fPIC "${work}/old.c" -Wl,-soname,libtransition.so.1 \
+    -o "${work}/ed/usr/lib/libtransition.so.1"
 ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
-echo 'PASS: ABI guard accepts SONAME transition with retained exports'
+echo 'PASS: ABI guard accepts SONAME transition with retained compatibility provider'
