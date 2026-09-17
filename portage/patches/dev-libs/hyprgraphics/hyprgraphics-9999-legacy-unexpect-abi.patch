@@ -2,7 +2,8 @@
 +++ b/CMakeLists.txt
 @@ -95,1 +95,2 @@
 +enable_language(ASM)
- add_library(hyprgraphics SHARED ${SRCFILES} src/compat/legacy-unexpect.S)
+-add_library(hyprgraphics SHARED ${SRCFILES})
++add_library(hyprgraphics SHARED ${SRCFILES} src/compat/legacy-unexpect.S)
 +add_library(hyprgraphics SHARED ${SRCFILES} src/compat/legacy-unexpect.S)
 --- /dev/null
 +++ b/src/compat/legacy-unexpect.S
