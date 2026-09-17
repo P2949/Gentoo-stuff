@@ -1,15 +1,17 @@
 # Gentoo-stuff
 
 Gentoo Portage policy and a fail-closed framework for a system-wide PGO and
-BOLT project. The project is currently in Phase 2. No optimization generation
-is authorized or active, the Phase 3 installed-package inventory is not frozen,
-and none of the repository-only fixtures constitute live-system coverage.
+BOLT project. Phase 2 is complete and authorized; the active execution frontier
+is Phase 3 userspace inventory and optimization. The current live inventory is
+still a candidate and is not yet mutation authority, and repository-only
+fixtures do not constitute live-system coverage.
 
-Phase 2 is scope-frozen until Candidate B authorization. Do not add a new
-subsystem, optimization-policy axis, evidence category, or broad refactor
-unless an existing required Phase 2 gate exposes a reproducible blocker that
-cannot be fixed within the current architecture. This freeze does not permit
-skipping or weakening an existing safeguard.
+Phase 2 remains scope-frozen after authorization. Phase 3 work may proceed
+within the authoritative plan, but must not add a new subsystem,
+optimization-policy axis, evidence category, or broad refactor unless an
+existing required gate exposes a reproducible blocker that cannot be fixed
+within the current architecture. This freeze does not permit skipping or
+weakening an existing safeguard.
 
 ## Boot and kernel safety boundary
 
