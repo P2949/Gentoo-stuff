@@ -5,6 +5,7 @@ def main():
  m=json.load(open(a.manifest)); c=json.load(open(a.census)); owners={x['owner_cpv'] for x in c['artifacts'] if x['kind'] in ('regular','symlink') and x.get('elf')}; k=set(x.strip() for x in open(a.kernel_set) if x.strip()); atoms={}
  for cpv in m['cpvs']:
   cat,pf=cpv.split('/',1); p=a.vdb+'/'+cat+'/'+pf+'/P'; atoms[cpv]=cat+'/'+(open(p).read().strip() if __import__('os').path.isfile(p) else pf.rsplit('-',1)[0])
+ rows=[]
  for cpv in m['cpvs']:
   if atoms[cpv] in k: state,reason='kernel-policy-exclusion','kernel-policy-exclusion'
   elif cpv not in owners: state,reason='not-applicable','no-owned-elf-artifact'
