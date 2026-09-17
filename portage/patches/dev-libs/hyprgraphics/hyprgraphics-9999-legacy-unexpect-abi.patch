@@ -5,7 +5,7 @@
 +add_library(hyprgraphics SHARED ${SRCFILES} src/compat/legacy-unexpect.S)
 --- /dev/null
 +++ b/src/compat/legacy-unexpect.S
-@@ -0,0 +1,7 @@
+@@ -0,0 +1,6 @@
 +.section .rodata
 +.globl _ZNSt3__18unexpectE
 +.type _ZNSt3__18unexpectE,@object
