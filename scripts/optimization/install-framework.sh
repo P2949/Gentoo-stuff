@@ -209,6 +209,11 @@ TMPFILES_INIT=$(physical /etc/init.d/systemd-tmpfiles-setup)
 TMPFILES_BOOT_LINK=$(physical /etc/runlevels/boot/systemd-tmpfiles-setup)
 TMPFILES_RULE_SYMLINK_TARGET=../../var/lib/gentoo-optimization/framework-current/share/tmpfiles/gentoo-optimization.conf
 JQ_PATH=$(physical /usr/bin/jq)
+if [[ -n ${TEST_ROOT} ]]; then
+    FROZEN_VERIFIER_PATH=${ROOT}/scripts/optimization/verify/frozen-inventory.py
+else
+    FROZEN_VERIFIER_PATH=${BASE}/bootstrap/verify-frozen-inventory.py
+fi
 GENERATIONS_ROOT=${BASE}/generations
 PGO_CACHE=$(physical /var/cache/gentoo-optimization/pgo)
 PGO_RAW=$(physical /var/tmp/gentoo-optimization/pgo-raw)
@@ -217,7 +222,7 @@ readonly BASE FRAMEWORK_CURRENT ACTIVATION_JOURNAL STATE_ROOT MANIFEST CACHE_ROO
     LIBEXEC_ROOT SHARE_ROOT ETC_PORTAGE LOCK_PATH PROJECT_LOCK_PATH \
     GENERATION_LOCK_PATH RUNTIME_ROOT TMPFILES_ROOT TMPFILES_RULE TMPFILES_TOOL \
     TMPFILES_INIT TMPFILES_BOOT_LINK TMPFILES_RULE_SYMLINK_TARGET \
-    JQ_PATH GENERATIONS_ROOT \
+    JQ_PATH FROZEN_VERIFIER_PATH GENERATIONS_ROOT \
     PGO_CACHE PGO_RAW VAR_TMP_BOUNDARY PORTAGE_GID \
     PROFILE_TRANSACTION_ROOT PROFILE_TRANSACTION_JOURNAL \
     PROFILE_TRANSACTION_JOURNAL_PARTIAL
@@ -239,6 +244,7 @@ declare -a INPUT_FILES=(
     scripts/optimization/lib/state.py
     scripts/optimization/verify/reconcile-state.py
     scripts/optimization/verify/abi-guard.py
+    scripts/optimization/verify/frozen-inventory.py
     scripts/optimization/recovery/verify-binpkg-snapshot.py
     optimization/tmpfiles/gentoo-optimization.conf
     optimization/schema/package-state.schema.json
@@ -1271,107 +1277,14 @@ snapshot_frozen_inventory() {
     # CPVs/hashes, complete terminal directory records, canonical absolute
     # paths, valid owners, and disjoint file/directory namespaces.
     # shellcheck disable=SC2016 # jq variables are intentionally single-quoted.
-    validation_json=$("${JQ_PATH}" -ce --arg inventory_sha256 "${before}" '
-        def safe_id:
-            type == "string" and test("^[A-Za-z0-9+_.:@-]+$");
-        def exact_cpv:
-            "[A-Za-z0-9_][A-Za-z0-9+_.-]*" as $category |
-            "[A-Za-z0-9_][A-Za-z0-9+_-]*" as $package |
-            "[0-9]+(?:\\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)*(?:-r[0-9]+)?" as $version_revision |
-            type == "string" and
-            (test("[^A-Za-z0-9_+./-]") | not) and
-            test("^" + $category + "/(?!" + $package + "-" +
-                 $version_revision + "-" + $version_revision + "$)" +
-                 $package + "-" + $version_revision + "$");
-        def sha256:
-            type == "string" and test("^[0-9a-f]{64}$");
-        def nonempty_string:
-            type == "string" and length > 0 and (contains("\u0000") | not);
-        def nonnegative_integer:
-            type == "number" and . >= 0 and floor == .;
-        def canonical_absolute:
-            type == "string" and startswith("/") and . != "/" and
-            (test("[\u0000-\u001f]") | not) and
-            (contains("//") | not) and
-            (test("/(?:[.]{1,2})(?:/|$)") | not) and
-            (endswith("/") | not);
-        def evidence_kind:
-            . == "binary" or . == "binpkg" or . == "command-output" or
-            . == "config" or . == "log" or . == "manifest" or
-            . == "profile" or . == "report" or . == "sidecar" or
-            . == "source" or . == "transaction" or . == "other";
-        def terminal_evidence:
-            keys == ["kind", "path", "sha256"] and
-            (.path | canonical_absolute) and (.sha256 | sha256) and
-            (.kind | evidence_kind);
-        def directory_resolution:
-            keys == ["evidence", "reason_code", "registry_version",
-                     "reviewed_at", "reviewed_by"] and
-            .registry_version == "1" and
-            .reason_code == "not-machine-code" and
-            (.reviewed_by | nonempty_string) and
-            (.reviewed_at | type == "string" and
-                test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
-            (.evidence | type == "array" and length > 0) and
-            all(.evidence[]; terminal_evidence) and
-            ([.evidence[] | [.path, .sha256, .kind]] as $evidence |
-                $evidence == ($evidence | sort) and
-                ($evidence | length) == ($evidence | unique | length));
-        if (
-        keys == ["generation_id", "inventory_id", "owned_directories",
-                 "owned_paths", "packages", "record_type", "schema_version"] and
-        .schema_version == 2 and .record_type == "frozen-inventory" and
-        (.generation_id | safe_id) and (.inventory_id | safe_id) and
-        (.packages | type == "array" and length > 0) and
-        all(.packages[];
-            keys == ["cpv", "entry_sha256"] and
-            (.cpv | exact_cpv) and (.entry_sha256 | sha256)) and
-        ([.packages[].cpv] as $cpvs |
-         (reduce $cpvs[] as $cpv ({}; .[$cpv] = true)) as $cpv_set |
-            $cpvs == ($cpvs | sort) and
-            ($cpvs | length) == ($cpvs | unique | length) and
-            (.owned_paths | type == "array") and
-            all(.owned_paths[];
-                . as $entry |
-                keys == ["owner_cpv", "path"] and
-                (.owner_cpv | exact_cpv) and
-                (.path | canonical_absolute) and
-                ($cpv_set[$entry.owner_cpv] // false)) and
-            (.owned_directories | type == "array") and
-            all(.owned_directories[];
-                . as $entry |
-                keys == ["classification", "gid", "mode", "owner_cpv",
-                         "path", "resolution", "uid"] and
-                (.owner_cpv | exact_cpv) and
-                (.path | canonical_absolute) and
-                (.mode | nonnegative_integer and . <= 4095) and
-                (.uid | nonnegative_integer) and
-                (.gid | nonnegative_integer) and
-                .classification == "not-applicable" and
-                (.resolution | directory_resolution) and
-                ($cpv_set[$entry.owner_cpv] // false))) and
-        ([.owned_paths[] | [.owner_cpv, .path]] as $paths |
-         [.owned_directories[] | [.owner_cpv, .path]] as $directories |
-         ($paths | sort) as $sorted_paths |
-         ($directories | sort) as $sorted_directories |
-         (reduce $paths[] as $path ({}; .[($path | tojson)] = true)) as $path_set |
-            $paths == $sorted_paths and
-            ($sorted_paths | length) == ($sorted_paths | unique | length) and
-            $directories == $sorted_directories and
-            ($sorted_directories | length) == ($sorted_directories | unique | length) and
-            all($directories[]; . as $directory | ($path_set[($directory | tojson)] // false) | not))
-        ) then
-        {
-            cpvs: [.packages[].cpv],
-            generation_id: .generation_id,
-            inventory_id: .inventory_id,
-            inventory_sha256: $inventory_sha256,
-            owned_directory_count: (.owned_directories | length),
-            owned_path_count: (.owned_paths | length),
-            package_count: (.packages | length)
-        }
-        else error("frozen inventory violates the strict semantic contract") end
-    ' "${FROZEN_INVENTORY_INPUT}") || \
+    verify_existing_ancestor_chain "${FROZEN_VERIFIER_PATH%/*}"
+    verify_regular_trusted "${FROZEN_VERIFIER_PATH}" 0755
+    if [[ -z ${TEST_ROOT} ]]; then
+        verifier_sha256=$(sha256sum -- "${FROZEN_VERIFIER_PATH}"); verifier_sha256=${verifier_sha256%% *}
+        [[ ${verifier_sha256} == c9dbc0c0ac2a772654230f7bfb0bd75ae0e1695fbba628fa88574da9147474ee ]] || \
+            fail 'trusted frozen-inventory verifier hash is not authorized'
+    fi
+    validation_json=$(python3 "${FROZEN_VERIFIER_PATH}" "${FROZEN_INVENTORY_INPUT}") || \
         fail 'strict frozen-inventory semantic validation failed'
     "${JQ_PATH}" -e '
         keys == ["cpvs", "generation_id", "inventory_id", "inventory_sha256",
