@@ -3017,11 +3017,11 @@ if [[ ${GENTOO_OPT_INSTALLER_CHECK_REEXEC:-0} != 1 && ${PREVIOUS_TARGET} != none
         # predates --exchange would exercise a different tool on the second
         # half of one transaction.  Production never has TEST_ROOT and can
         # therefore never carry this override across the boundary.
-        exec env GENTOO_OPT_INSTALLER_CHECK_REEXEC=1 -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
+        exec env -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT GENTOO_OPT_INSTALLER_CHECK_REEXEC=1 \
             GENTOO_OPT_INSTALLER_TEST_EXCHANGE_TOOL="${EXCHANGE_TOOL}" \
             "${REEXEC_ARGS[@]}"
     fi
-    exec env GENTOO_OPT_INSTALLER_CHECK_REEXEC=1 -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT \
+    exec env -u GENTOO_OPT_INSTALLER_FAIL_AT -u GENTOO_OPT_INSTALLER_PAUSE_AT GENTOO_OPT_INSTALLER_CHECK_REEXEC=1 \
         "${REEXEC_ARGS[@]}"
 fi
 
