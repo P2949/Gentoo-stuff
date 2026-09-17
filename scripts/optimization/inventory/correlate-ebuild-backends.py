@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-import argparse,json,os,re,hashlib,collections,glob
+import argparse,json,os,re,hashlib,collections
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--vdb',default='/var/db/pkg');ap.add_argument('--repos',default='/var/db/repos');ap.add_argument('--output',required=True);a=ap.parse_args();m=json.load(open(a.manifest)); rows=[]
  for cpv in m['cpvs']:
   cat,pf=cpv.split('/',1); root=a.vdb+'/'+cat+'/'+pf; pn=open(root+'/PN').read().strip() if os.path.isfile(root+'/PN') else re.sub(r'-[^-]+$','',pf); repo=open(root+'/REPOSITORY').read().strip() if os.path.isfile(root+'/REPOSITORY') else ''
-  matches=glob.glob(a.repos+'/**/'+cat+'/'+pn+'/'+pf+'.ebuild',recursive=True); ep=matches[0] if matches else None; text=open(ep,errors='replace').read() if ep else ''
+  direct=a.repos+'/'+repo+'/'+cat+'/'+pn+'/'+pf+'.ebuild' if repo else ''
+  ep=direct if direct and os.path.isfile(direct) else None; text=open(ep,errors='replace').read() if ep else ''
   inherits=[]
   for line in text.splitlines():
    if re.match(r'\s*inherit\s+',line): inherits.extend(line.split()[1:])
