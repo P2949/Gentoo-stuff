@@ -2,8 +2,12 @@
 """Extract authoritative ELF header, loader, dependency and build-ID metadata."""
 import argparse,json,subprocess,hashlib,os
 def run(args,path):
- try:return subprocess.run(['readelf',*args,path],text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=4).stdout
- except (OSError,subprocess.TimeoutExpired):return ''
+ try:
+  p=subprocess.run(['readelf',*args,path],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=4)
+  if p.returncode != 0: raise RuntimeError(f'readelf failed ({p.returncode})')
+  return p.stdout
+ except (OSError,subprocess.TimeoutExpired,RuntimeError) as e:
+  raise RuntimeError(f'readelf invocation failed for {path}: {e}') from e
 def field(text,label):
  for l in text.splitlines():
   if l.strip().startswith(label+':'): return l.split(':',1)[1].strip()
@@ -12,7 +16,10 @@ def main():
  ap=argparse.ArgumentParser();ap.add_argument('--census',required=True);ap.add_argument('--output',required=True);a=ap.parse_args(); c=json.load(open(a.census)); out=[]
  for i,x in enumerate(c['artifacts']):
   if not x.get('elf'): continue
-  p=x['path']; h=run(['-h'],p); ph=run(['-l'],p); d=run(['-d'],p); n=run(['-n'],p)
+  p=x['path']
+  try: h=run(['-h'],p); ph=run(['-l'],p); d=run(['-d'],p); n=run(['-n'],p)
+  except RuntimeError as e:
+   rows.append({'owner_cpv':x['owner_cpv'],'path':p,'error':str(e)}); continue
   deps=[l.split('[',1)[1].split(']',1)[0] for l in d.splitlines() if '(NEEDED)' in l and '[' in l]
   interp=None
   for l in ph.splitlines():

@@ -4,7 +4,7 @@ def main():
  ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--census',required=True);ap.add_argument('--kernel-set',required=True);ap.add_argument('--output',required=True);ap.add_argument('--vdb',default='/var/db/pkg');a=ap.parse_args()
  m=json.load(open(a.manifest)); c=json.load(open(a.census)); owners={x['owner_cpv'] for x in c['artifacts'] if x['kind'] in ('regular','symlink') and x.get('elf')}; k=set(x.strip() for x in open(a.kernel_set) if x.strip()); atoms={}
  for cpv in m['cpvs']:
-  cat,pf=cpv.split('/',1); p=a.vdb+'/'+cat+'/'+pf+'/P'; atoms[cpv]=cat+'/'+(open(p).read().strip() if __import__('os').path.isfile(p) else pf.rsplit('-',1)[0])
+  cat,pf=cpv.split('/',1); p=a.vdb+'/'+cat+'/'+pf+'/PN'; pn=open(p).read().strip() if __import__('os').path.isfile(p) else pf.rsplit('-',1)[0]; atoms[cpv]=cat+'/'+pn
  rows=[]
  for cpv in m['cpvs']:
   if atoms[cpv] in k: state,reason='kernel-policy-exclusion','kernel-policy-exclusion'
