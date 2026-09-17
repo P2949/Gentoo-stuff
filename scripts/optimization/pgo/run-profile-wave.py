@@ -9,5 +9,5 @@ def main():
  # readiness manifest.  Portage requires the explicit =CPV atom form when a
  # revision-qualified CPV is supplied; bare CPVs are category/package names,
  # not valid transaction atoms.
- atoms=['='+x['cpv'] for x in w['packages']]; env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256']; subprocess.run(['doas','emerge','--oneshot','--buildpkg']+atoms,env=env,check=True)
+ atoms=['='+x['cpv'] for x in w['packages']]; env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256']; env.setdefault('GENTOO_OPT_ABI','amd64'); subprocess.run(['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'emerge','--oneshot','--buildpkg']+atoms,env=env,check=True)
 if __name__=='__main__':main()
