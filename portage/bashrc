@@ -9,6 +9,10 @@
 
 # Capture the one-shot production-gate authorization before any helper is
 # launched, then remove every bearer/test value from the exported environment.
+# Never inherit an LLVM runtime output destination into Portage orchestration or QA.
+# Generation workloads assign their own pattern explicitly in the runner.
+unset LLVM_PROFILE_FILE
+
 # These shell-only copies are cleared immediately after the coordinator has
 # verified the active transaction.  In particular, no compiler, configure
 # process, or framework helper inherits the raw bearer token.
