@@ -3546,3 +3546,7 @@ The newer successful live4 profile-use merges had durable logs and installed has
 ### Live4 ABI-guard immediate-directory scaling regression (2026-09-18)
 
 The ABI guard traversal repair was independently rechecked after the latest source change. The focused ABI suite passed all 11 cases and the Portage QA-hook suite passed all 11 cases. The regression fixture now places 2,000 unrelated files beneath a nested descendant of a candidate DSO directory; the guard completes within the bounded timeout because provider discovery examines only immediate candidate-parent entries. The zero-DSO fixture likewise returns without traversing an unrelated 2,000-file tree. The candidate framework was republished and its root-owned strict `--check` passed. No ABI semantics were weakened and no boot/kernel state was touched.
+
+### Phase-3 coverage authority join repair (2026-09-18)
+
+The coverage verifier had been filtering the authoritative ELF census on a nonexistent `elf` field, producing a vacuous `elf_count: 0` result. It now joins the census records by their emitted `class` and `type` fields, rejects an empty authority set, and has a regression test for both the valid join and the former false-pass shape. The root-owned live4 coverage artifact was regenerated and independently hashed: `elf_count=16642`, `elf_missing_classification=0`, `coverage_pass=true`; 14,114 ELF records remain outside the current BOLT safety-review subset and are retained as pending safety work rather than treated as covered.
