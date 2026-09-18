@@ -3662,3 +3662,7 @@ The successor framework was republished after the cpio profile transaction. The 
 ### Dpkg Clang IR PGO wave (2026-09-18)
 
 `app-arch/dpkg-1.22.21` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-dpkg.json` records nine profraw payloads, successful merge, and completion of the reviewed dpkg workload. No kernel, boot, EFI, or initramfs state was touched.
+
+### Gzip Clang IR PGO wave (2026-09-18)
+
+`app-arch/gzip-1.14_p20260901` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-gzip.json` records one profraw payload, successful merge, and completion of the reviewed gzip workload. No kernel, boot, EFI, or initramfs state was touched.
