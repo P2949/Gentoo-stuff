@@ -3614,3 +3614,7 @@ With the lane-specific no-cross-LLVM-LTO policy active, `dev-util/bpf-linker-0.1
 ### Maturin Rust PGO attempt (2026-09-18)
 
 `dev-util/maturin-1.15.0` reached a completed Rust build but failed during the ebuild's multi-Python compile phase because the expected `target/release/maturin` artifact was absent after the lane-specific target/LTO environment. The package did not merge; the previously installed `maturin 1.15.0` remained intact. A binary-package restoration attempt was rejected before mutation by the framework-generation cross-boundary guard and is retained as evidence. This CPV remains pending package-specific Rust/Python build-path remediation.
+
+### Maturin host-layout repair and correctness result (2026-09-18)
+
+The Rust dispatcher now supports an authenticated `GENTOO_OPT_RUST_HOST_LAYOUT=1` exception for `dev-util/maturin-1.15.0`, preserving the explicit Rust target while leaving Cargo artifacts in `target/release` as required by the Python build backend (commit `5433eae`). The rerun reached the correct artifact path, but the instrumented `maturin` binary segfaulted during the ebuild's `maturin completions bash` step; the same binary reproduced SIGSEGV with `LLVM_PROFILE_FILE=/dev/null`. No merge occurred. This is retained as a package-specific correctness failure after the layout remediation.
