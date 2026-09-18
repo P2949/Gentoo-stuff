@@ -3484,3 +3484,7 @@ The first exact `app-arch/unzip-6.0_p31` generation transaction merged, but `fun
 ### Live4 unzip profile-use deployment (2026-09-18)
 
 After correcting the invalid `funzip --help` workload to `/usr/bin/unzip -v`, the validated unzip profile was published through the live4 dispatcher and policy framework. The exact `app-arch/unzip-6.0_p31` rebuild entered `clang-ir-use`, completed install-QA and merge, and installed `/usr/bin/unzip` (SHA-256 `8502d158e0429abf2caeb302c5e32bbf100c154d2986805d01e435b60f0d9405`). The durable log records 39 `-fprofile-use` occurrences and zero new raw profiles. Receipt `profile-use-receipt-unzip.json` records the deployment hashes. No BOLT deployment is claimed.
+
+### Live4 zstd late-payload sealing failure (2026-09-18)
+
+The exact `app-arch/zstd-1.5.7-r1` generation transaction completed through install-QA and merge and all reviewed workloads ran, but the shared raw spool continued receiving late `.profraw` payloads after the runner completed. The initial receipt listed eight payloads; successive reconciliations observed ten, twelve, and fourteen payloads, and the independent merger correctly refused each receipt because the directory was still changing. No zstd profile was admitted or merged, and no profile-use deployment is claimed. The original receipt and attempt journal remain preserved for a runner process-group/quiescence repair.
