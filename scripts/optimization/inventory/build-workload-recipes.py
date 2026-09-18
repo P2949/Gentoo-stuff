@@ -3,6 +3,11 @@ import argparse,json,hashlib,collections,os,re
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--output',required=True);a=ap.parse_args();m=json.load(open(a.manifest)); rows=[]
  for x in m['packages']:
+  if x['lane']=='pgo-go':
+   # Go PGO requires a sampling/pprof-producing workload.  A generic
+   # --help invocation is only a smoke test and cannot create default.pgo.
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'generic entrypoint smoke tests cannot collect Go pprof data'})
+   continue
   recipes=[]
   for e in x['entrypoints']:
    p=e['path']; safe=p.startswith(('/usr/bin/','/usr/sbin/','/bin/','/sbin/')) and not os.path.islink(p)
