@@ -3764,3 +3764,7 @@ The first `app-misc/evtest-1.36` attempt correctly refused its generated `--help
 ### Fastfetch Clang IR PGO wave (2026-09-19)
 
 `app-misc/fastfetch-2.68.1-r1` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records one nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed fastfetch workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-misc_fastfetch-2.68.1-r1.profdata`, with root-owned evidence in `profile-merge-fastfetch.json`. No BOLT deployment is claimed.
+
+### Cpuid2cpuflags Clang IR PGO wave (2026-09-19)
+
+`app-portage/cpuid2cpuflags-18` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records one nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-portage_cpuid2cpuflags-18.profdata`, with root-owned evidence in `profile-merge-cpuid2cpuflags.json`. No BOLT deployment is claimed.
