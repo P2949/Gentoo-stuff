@@ -46,7 +46,6 @@ def main():
         if not target.exists(): shutil.copyfile(source, target)
         lines.append(f"={cpv} optimization/generated/{name}")
     (out / "package.env").write_text("\n".join(lines) + "\n")
-    (out / ".identity").write_text(a.identity + "\n")
     print(json.dumps({"records": len(records), "output": str(out), "identity": a.identity}))
 
 if __name__ == "__main__": main()
