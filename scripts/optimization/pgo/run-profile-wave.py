@@ -131,6 +131,9 @@ def main():
      break
     previous=current
     time.sleep(0.5)
+   # Portage helper processes may be reaped asynchronously after the first
+   # quiet interval.  Give their LLVM runtime a final bounded flush window.
+   time.sleep(15)
    package_payloads=[]
    for root,dirs,files in os.walk(profile_path):
     for name in files:
