@@ -152,7 +152,9 @@ def main():
     time.sleep(0.5)
    # Portage helper processes may be reaped asynchronously after the first
    # quiet interval.  Give their LLVM runtime a final bounded flush window.
-   time.sleep(15)
+   # Some multilib/helper processes flush well after Portage has returned;
+   # keep the final grace window long enough to catch those late writers.
+   time.sleep(60)
    # Seal only after a complete post-transaction snapshot remains unchanged.
    # Instrumented helper processes can flush more than one batch after emerge
    # returns; one fixed grace sleep is therefore insufficient and creates
