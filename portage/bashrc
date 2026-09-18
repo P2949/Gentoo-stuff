@@ -11,7 +11,7 @@
 # launched, then remove every bearer/test value from the exported environment.
 # Never inherit an LLVM runtime output destination into Portage orchestration or QA.
 # Generation workloads assign their own pattern explicitly in the runner.
-unset LLVM_PROFILE_FILE
+export LLVM_PROFILE_FILE=/dev/null
 unset __LLVM_PROFILE_RT_INIT_ONCE
 
 # These shell-only copies are cleared immediately after the coordinator has
