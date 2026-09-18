@@ -3618,3 +3618,7 @@ With the lane-specific no-cross-LLVM-LTO policy active, `dev-util/bpf-linker-0.1
 ### Maturin host-layout repair and correctness result (2026-09-18)
 
 The Rust dispatcher now supports an authenticated `GENTOO_OPT_RUST_HOST_LAYOUT=1` exception for `dev-util/maturin-1.15.0`, preserving the explicit Rust target while leaving Cargo artifacts in `target/release` as required by the Python build backend (commit `5433eae`). The rerun reached the correct artifact path, but the instrumented `maturin` binary segfaulted during the ebuild's `maturin completions bash` step; the same binary reproduced SIGSEGV with `LLVM_PROFILE_FILE=/dev/null`. No merge occurred. This is retained as a package-specific correctness failure after the layout remediation.
+
+### Rustup Rust PGO correctness stop (2026-09-18)
+
+`dev-util/rustup-1.29.0` completed its Rust PGO compilation, but the install phase's generated completion command (`./rustup completions bash`) segfaulted. The package did not merge; the failed attempt and build log are retained. This is a package-specific correctness failure after successful profile instrumentation, analogous to maturin's completion-path failure.
