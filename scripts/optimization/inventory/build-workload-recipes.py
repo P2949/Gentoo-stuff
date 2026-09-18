@@ -47,10 +47,19 @@ def main():
    # --help/usage paths return nonzero status (zipnote returns 16).
    elif x['cpv'].startswith('app-arch/zip-'):
     argv=[p,'-v']; allow_empty_output=False
+   # argon2 requires both a minimum-length salt and password input. Use a
+   # fixed, root-owned fixture so the representative workload is
+   # deterministic and never prompts during profile collection.
+   elif x['cpv'].startswith('app-crypt/argon2-') and p == '/usr/bin/argon2':
+    argv=[p,'12345678','-id','-t','1','-m','5','-p','1']; allow_empty_output=False
+    stdin_path='/var/lib/gentoo-optimization/workloads/argon2/password'
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
-    recipes.append({'path':p,'build_id':e['build_id'],'argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'execution_state':'not-run'})
+    recipe={'path':p,'build_id':e['build_id'],'argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'execution_state':'not-run'}
+    if x['cpv'].startswith('app-crypt/argon2-') and p == '/usr/bin/argon2':
+     recipe['stdin_path']=stdin_path
+    recipes.append(recipe)
   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':recipes,'state':'recipe-ready' if recipes else 'no-runnable-entrypoint'})
  out={'record_type':'representative-workload-recipes','schema_version':1,'source_manifest':m['sha256'],'packages':rows};out['counts']=dict(collections.Counter(x['state'] for x in rows));out['recipe_count']=sum(len(x['recipes']) for x in rows);out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest();json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(out['counts'],out['recipe_count'])
 if __name__=='__main__':main()

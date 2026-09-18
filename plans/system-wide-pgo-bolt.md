@@ -3702,3 +3702,7 @@ The successor framework was republished after the cpio profile transaction. The 
 ### Zstd Clang IR PGO wave (2026-09-19)
 
 `app-arch/zstd-1.5.7-r1` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-zstd.json` records the completed merge, reviewed zstd workload, and all sealed profraw payloads. No kernel, boot, EFI, or initramfs state was touched.
+
+### Argon2 workload correction and Clang IR wave (2026-09-19)
+
+The initial `app-crypt/argon2-20190702-r1` wave exposed a workload-definition defect: invoking `argon2` without a salt and password fixture exited before exercising the binary. The workload generator now emits a deterministic minimum-cost Argon2id command with a root-owned password fixture under `/var/lib/gentoo-optimization/workloads/argon2/password`; the regenerated successor workload artifact passed readiness validation. The corrected rerun completed the Clang IR transaction and sealed one profraw payload in `profile-wave-receipt-argon2fix.json`.
