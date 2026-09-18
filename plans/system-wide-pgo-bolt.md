@@ -3400,3 +3400,7 @@ After correcting the CPV-specific fingerprint, profile path, and deterministic m
 ### Live4 gzip profile generation and dispatcher candidate (2026-09-18)
 
 The exact `app-arch/gzip-1.14_p20260901` Clang-IR wave passed readiness (`1/1`, zero invalid inputs), completed the generate-lane Portage rebuild and workload, and collected one nonempty raw payload. Receipt verification passed; LLVM 22 merged the payload into `merged-profiles/app-arch_gzip-1.14_p20260901.profdata`, and `validate-profile.py produce` accepted it under the live4 fingerprint. The immutable cache payload was published and the dispatcher emitted candidate record `9aad86f48f8ac3d694ddf29d48e5bf86bfad0edbe13dbfb257f8b386af71644e`. Profile-use policy publication and the exact use rebuild remain pending.
+
+### Live4 gzip profile-use deployment (2026-09-18)
+
+The exact `app-arch/gzip-1.14_p20260901` profile-use policy was published and the controlled rebuild completed through install-QA and merge under the live4 framework. The durable log records `clang-ir-use` dispatch with the exact cache profile and 64 `-fprofile-use` occurrences, zero new raw profiles, and successful installation of `/bin/gzip-reference`. Receipt `profile-use-gzip-receipt.json` records the profile, log, binary, framework, and content hashes.
