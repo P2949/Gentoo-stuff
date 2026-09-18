@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,json,os,subprocess,sys,time,hashlib,tempfile,atexit
+import argparse,json,os,signal,subprocess,sys,time,hashlib,tempfile,atexit
 from pathlib import Path
 from profile_locks import profile_lock_hierarchy
 _active_attempt=None
