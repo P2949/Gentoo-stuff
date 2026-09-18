@@ -55,23 +55,26 @@ def main():
           parsed=parse_contents_line(line)
           if parsed is None: continue
           kind,path,tail=parsed; entries.append([kind,path,tail])
-          if kind != 'dir': paths.append({'owner_cpv':cpv,'path':path}); owners.setdefault(path,cpv)
-          if kind=='dir': dirs.setdefault(path,cpv)
+          if kind != 'dir': paths.append({'owner_cpv':cpv,'path':path}); owners.setdefault(path,set()).add(cpv)
+          if kind=='dir': dirs.setdefault(path,set()).add(cpv)
         packages.append({'cpv':cpv,'entry_sha256':sha({'metadata':meta,'contents':entries})})
     # Include parent directories of owned paths, using live stat data.
     for p in list(owners):
       cur=pathlib.PurePosixPath(p).parent
       while str(cur) not in ('','.', '/'):
-        dirs.setdefault(str(cur), owners[p]); cur=cur.parent
+        dirs.setdefault(str(cur), set()).update(owners[p]); cur=cur.parent
     outdirs=[]; unresolved=[]
     for p in sorted(dirs):
       old=old_dirs.get(p)
       try: s=os.stat(p); uid,gid,mode=s.st_uid,s.st_gid,stat.S_IMODE(s.st_mode)
       except OSError: uid=gid=mode=None
       if old and old.get('uid')==uid and old.get('gid')==gid and old.get('mode')==mode:
-        rec=dict(old); rec['owner_cpv']=dirs[p]; outdirs.append(rec)
+        for owner in sorted(dirs[p]):
+          rec=dict(old); rec['owner_cpv']=owner; outdirs.append(rec)
       else:
-        unresolved.append(p); outdirs.append({'owner_cpv':dirs[p],'path':p,'uid':uid,'gid':gid,'mode':mode,'classification':'unresolved','resolution':{'reason_code':'requires-directory-review','registry_version':'1'}})
+        unresolved.append(p)
+        for owner in sorted(dirs[p]):
+          outdirs.append({'owner_cpv':owner,'path':p,'uid':uid,'gid':gid,'mode':mode,'classification':'unresolved','resolution':{'reason_code':'requires-directory-review','registry_version':'1'}})
     unique_paths={(x['owner_cpv'],x['path']):x for x in paths}
     result={'generation_id':a.generation_id,'inventory_id':a.generation_id+'-v1','owned_directories':sorted(outdirs,key=lambda x:(x['owner_cpv'],x['path'])),'owned_paths':sorted(unique_paths.values(),key=lambda x:(x['owner_cpv'],x['path'])),'packages':sorted(packages,key=lambda x:x['cpv']),'record_type':'frozen-inventory','schema_version':2}
     pathlib.Path(a.output).parent.mkdir(parents=True,exist_ok=True)
