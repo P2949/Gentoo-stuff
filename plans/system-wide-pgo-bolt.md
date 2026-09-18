@@ -3698,3 +3698,7 @@ The successor framework was republished after the cpio profile transaction. The 
 ### Zip Clang IR PGO wave (2026-09-19)
 
 `app-arch/zip-3.0_p16` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-zip.json` records the completed merge and all profraw payloads from the reviewed zip workload. No kernel, boot, EFI, or initramfs state was touched.
+
+### Zstd Clang IR PGO wave (2026-09-19)
+
+`app-arch/zstd-1.5.7-r1` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-zstd.json` records the completed merge, reviewed zstd workload, and all sealed profraw payloads. No kernel, boot, EFI, or initramfs state was touched.
