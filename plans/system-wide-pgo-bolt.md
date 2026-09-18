@@ -3606,3 +3606,7 @@ With the lane-specific no-cross-LLVM-LTO policy active, `dev-util/bpf-linker-0.1
 ### Cargo-c Rust PGO wave (2026-09-18)
 
 `dev-util/cargo-c-0.10.25` completed the isolated Rust PGO transaction, merge, and workload execution. The sealed receipt `profile-wave-receipt-cargo-c.json` contains four profile payloads. This package is now independently verified as a successful Rust profile-generation result.
+
+### Cbindgen Rust PGO wave (2026-09-18)
+
+`dev-util/cbindgen-0.29.4` completed the isolated Rust PGO rebuild, merge, and workload. Its sealed receipt `profile-wave-receipt-cbindgen.json` contains one profraw payload and a completed transaction state.
