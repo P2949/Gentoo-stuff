@@ -3746,3 +3746,11 @@ The first `app-crypt/rpm-sequoia-1.10.2` Rust wave exposed the same target-layou
 ### Uchardet Clang IR PGO wave (2026-09-19)
 
 `app-i18n/uchardet-0.0.8` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-uchardet.json` records two profraw payloads, successful merge, and completion of the reviewed uchardet workload. No kernel, boot, EFI, or initramfs state was touched.
+
+### jq Clang IR PGO wave (2026-09-19)
+
+`app-misc/jq-1.8.2` completed the exact successor `pgo-clang-ir` profile wave. The root-owned sealed receipt `profile-wave-receipt-jq.json` records two nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed jq workload; independent receipt verification passed against the generation-bound wave and readiness artifacts. No kernel, boot, EFI, or initramfs state was touched.
+
+### jq Clang IR PGO wave (2026-09-19)
+
+`app-misc/jq-1.8.2` completed the exact successor `pgo-clang-ir` profile wave. The root-owned sealed receipt `profile-wave-receipt-jq.json` records two nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed jq workload; independent receipt verification passed against the generation-bound wave and readiness artifacts. No kernel, boot, EFI, or initramfs state was touched.
