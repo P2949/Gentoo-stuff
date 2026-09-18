@@ -2,6 +2,10 @@
 import argparse,json,os,signal,subprocess,sys,time,hashlib,tempfile,atexit
 from pathlib import Path
 from profile_locks import profile_lock_hierarchy
+# The orchestration process itself must never emit package profile payloads.
+# Clear inherited hook variables before any subprocess or helper runs.
+os.environ.pop("LLVM_PROFILE_FILE", None)
+os.environ.pop("GENTOO_OPT_PROFILE_PATH", None)
 _active_attempt=None
 _attempt_root=None
 def _write_attempt(record):
