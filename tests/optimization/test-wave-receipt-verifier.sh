@@ -23,7 +23,7 @@ python3 scripts/optimization/pgo/verify-wave-receipt.py \
   --receipt "$root/receipt.json" --wave "$root/wave.json" --readiness "$root/readiness.json"
 python3 - "$root" <<'PY'
 import json, pathlib, sys
-p = pathlib.Path(sys.argv[1]) / 'receipt.json'; d = json.loads(p.read_text()); d['profile_payloads'] = []; d['sha256'] = __import__('hashlib').sha256(json.dumps(d, sort_keys=True, separators=(',', ':')).encode()).hexdigest(); p.write_text(json.dumps(d))
+p = pathlib.Path(sys.argv[1]) / 'receipt.json'; d = json.loads(p.read_text()); d['profile_payloads'] = []; d.pop('sha256', None); d['sha256'] = __import__('hashlib').sha256(json.dumps(d, sort_keys=True, separators=(',', ':')).encode()).hexdigest(); p.write_text(json.dumps(d))
 PY
 if python3 scripts/optimization/pgo/verify-wave-receipt.py --receipt "$root/receipt.json" --wave "$root/wave.json" --readiness "$root/readiness.json"; then
   echo 'FAIL: empty completed receipt was accepted' >&2
