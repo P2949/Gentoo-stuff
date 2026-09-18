@@ -3626,3 +3626,7 @@ The Rust dispatcher now supports an authenticated `GENTOO_OPT_RUST_HOST_LAYOUT=1
 ### AMDGPU top Rust PGO wave (2026-09-18)
 
 `sys-apps/amdgpu_top-0.11.5` completed the isolated Rust no-cross-LLVM-LTO profile wave. The sealed receipt `profile-wave-receipt-amdgpu-top.json` records one profraw payload, exact successor inventory binding, and completed transaction state. The wave used the authenticated Rust target and preserved the lane's `RUSTFLAGS=-C lto=off -C linker-plugin-lto=no` isolation; no kernel or boot artifacts were touched.
+
+### Successor framework republish after AMDGPU top wave (2026-09-18)
+
+The successor framework was republished from the committed source with its exact post-sync generated policy and frozen inventory. The root-owned production installer completed the atomic publication, and an independent strict `--check` passed. The active framework remains bound to the same exact successor generation and inventory; no package, profile policy, or boot/kernel state was changed by this publication.
