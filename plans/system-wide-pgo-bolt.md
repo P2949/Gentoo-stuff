@@ -3578,3 +3578,7 @@ The successor policy tree was materialized and its content-addressed inventory w
 ### Post-sync bounded profile-wave planning (2026-09-18)
 
 The successor policy bindings and workload recipes produced a new bounded two-package wave plan (`pgo-clang-ir` and `pgo-rust`, one package per lane). The independent readiness verifier accepted both inputs (`ready_count=2`, `invalid_inputs=0`) against the exact successor inventory, compiler identities, and root-owned fingerprint directory. The readiness state remains `pending-framework-terminal-check`; no package transaction or workload execution was started while the successor framework remains inactive.
+
+### Post-sync workload-exclusion coverage repair (2026-09-18)
+
+The fresh workload audit initially found six PGO-lane packages marked `no-profile-producing-workload` that were absent from the exclusion manifest, leaving six missing records. `classify-no-entrypoint.py` now emits explicit workload exclusions for both `no-runnable-entrypoint` and `no-profile-producing-workload`, preserving the exact terminal reason. The regenerated successor audit passes with 544 PGO packages, 296 recipe-ready packages, 248 exclusions, and zero overlap, missing, or extra records. No workload execution is claimed.
