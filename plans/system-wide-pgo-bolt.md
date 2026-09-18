@@ -3570,3 +3570,7 @@ The post-sync successor workload chain was regenerated from its fresh lane and E
 ### Post-sync policy-binding regeneration (2026-09-18)
 
 The successor lane set was bound to the current compiler identities and copied exact existing per-CPV fingerprint evidence into its generation-local identity directory. `build-policy-bindings.py` completed without missing or malformed supported-lane fingerprints and emitted binding digest `cbf912cc04546ff01161322d66bb3b3d1909387e82e9ea88594006ffa01390c2`. A candidate policy tree was materialized from the reviewed environment files and validated for its 1,301 exact CPV assignments. It remains a candidate only: the synchronized SPIR-V resolver conflict and stale framework authority still prohibit activation or profile-wave execution.
+
+### Successor policy identity boundary (2026-09-18)
+
+The successor policy tree was materialized and its content-addressed inventory was checked against the installer’s canonical tree hash. A production installer `--check` was then attempted with the new successor inventory and policy. The installer correctly refused before activation because `.identity` and the frozen-inventory binding are generated inside the framework candidate transaction, not supplied as mutable source inputs; the existing active framework identity remains bound to the older live4 generation. This refusal is retained as non-authorizing evidence. No active framework, Portage policy, package state, or boot/kernel state was changed.
