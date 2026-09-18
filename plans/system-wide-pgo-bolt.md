@@ -3760,3 +3760,7 @@ The jq receipt-bound raw payloads were independently merged with LLVM 22 into `/
 ### Evtest workload correction and Clang IR PGO wave (2026-09-19)
 
 The first `app-misc/evtest-1.36` attempt correctly refused its generated `--help` workload because evtest does not implement that option and returned status 1. The authoritative workload generator now selects the supported non-destructive `--version` action; the framework was republished and its root-owned strict check passed. The corrected exact wave rebuilt and merged evtest, collected one nonempty profraw payload, passed independent receipt verification, and merged the payload with LLVM 22 into `/var/lib/gentoo-optimization/merged-profiles/app-misc_evtest-1.36.profdata`, with root-owned merge evidence in `profile-merge-evtest.json`. No BOLT deployment is claimed.
+
+### Fastfetch Clang IR PGO wave (2026-09-19)
+
+`app-misc/fastfetch-2.68.1-r1` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records one nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed fastfetch workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-misc_fastfetch-2.68.1-r1.profdata`, with root-owned evidence in `profile-merge-fastfetch.json`. No BOLT deployment is claimed.
