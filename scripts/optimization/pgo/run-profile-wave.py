@@ -1,9 +1,31 @@
 #!/usr/bin/env python3
-import argparse,json,os,subprocess,sys,time,hashlib,tempfile
+import argparse,json,os,subprocess,sys,time,hashlib,tempfile,atexit
 from pathlib import Path
 from profile_locks import profile_lock_hierarchy
+_active_attempt=None
+_attempt_root=None
+def _write_attempt(record):
+ path=os.path.join(_attempt_root,record['attempt_id']+'.json')
+ subprocess.run(['doas','install','-d','-o','root','-g','root','-m','0750','--',_attempt_root],check=True)
+ os.makedirs('/tmp/gentoo-optimization-attempts',exist_ok=True)
+ fd,tmp=tempfile.mkstemp(prefix='.attempt-',suffix='.json',dir='/tmp/gentoo-optimization-attempts')
+ try:
+  with os.fdopen(fd,'w') as f: json.dump(record,f,sort_keys=True,indent=2); f.write('\n'); f.flush(); os.fsync(f.fileno())
+  subprocess.run(['doas','install','-o','root','-g','root','-m','0644','--',tmp,path],check=True)
+ finally:
+  try: os.unlink(tmp)
+  except FileNotFoundError: pass
+def _finish_failed_attempt():
+ global _active_attempt
+ if _active_attempt is not None:
+  _active_attempt['state']='failed'; _active_attempt['completed_at']=time.time(); _active_attempt['failure_observed_by']='runner-exit'
+  try: _write_attempt(_active_attempt)
+  except Exception: pass
+atexit.register(_finish_failed_attempt)
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--generation-id');ap.add_argument('--inventory-id');ap.add_argument('--inventory-sha256');ap.add_argument('--authorization-root',default='/run/gentoo-optimization');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
+ ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--attempt-root',default='/var/lib/gentoo-optimization/profile-attempts');ap.add_argument('--generation-id');ap.add_argument('--inventory-id');ap.add_argument('--inventory-sha256');ap.add_argument('--authorization-root',default='/run/gentoo-optimization');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
+ global _attempt_root,_active_attempt
+ _attempt_root=a.attempt_root
  if active!=a.framework_generation:raise SystemExit(f'REFUSED: active framework {active} != authorized generation {a.framework_generation}')
  framework_marker=os.path.join(a.framework_generation,'.candidate-inventory')
  framework_identity=os.path.join(a.framework_generation,'generated-policy','.identity')
@@ -48,6 +70,8 @@ def main():
   payloads=[]
   for item in w['packages']:
    cpv=item['cpv']; key=cpv.replace('/','_')+'.fingerprint.env'; fingerprint_file=os.path.join(identity_root,key)
+   _active_attempt={'record_type':'profile-wave-package-attempt','schema_version':1,'attempt_id':w['sha256']+'-'+cpv.replace('/','_')+'-'+hashlib.sha256(os.urandom(16)).hexdigest()[:16],'wave_sha256':w['sha256'],'cpv':cpv,'lane':item.get('lane'),'state':'started','started_at':time.time(),'generation':expected_generation,'framework_generation':active,'profile_path':item.get('profile_path'),'pre_transaction_identity':item.get('fingerprint')}
+   _write_attempt(_active_attempt)
    if not os.path.isfile(fingerprint_file):
     raise SystemExit(f'REFUSED: missing reviewed fingerprint file for {cpv}: {fingerprint_file}')
    profile_path=item['profile_path']; spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw'); canonical=os.path.realpath(profile_path)
@@ -93,8 +117,9 @@ def main():
    for root,dirs,files in os.walk(profile_path):
     for name in files:
      path=os.path.join(root,name)
-    if os.path.isfile(path):
+   if os.path.isfile(path):
      with open(path,'rb') as stream: payloads.append({'cpv':cpv,'path':path,'sha256':hashlib.sha256(stream.read()).hexdigest()})
+   _active_attempt['state']='completed'; _active_attempt['completed_at']=time.time(); _active_attempt['profile_payloads']=[x for x in payloads if x['cpv']==cpv]; _write_attempt(_active_attempt); _active_attempt=None
  if not payloads:
   raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
  if a.receipt:
