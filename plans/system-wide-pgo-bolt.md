@@ -3646,3 +3646,7 @@ The successor framework was republished again after the 7zip transaction so the 
 ### Successor framework republish after bzip2 wave (2026-09-18)
 
 The exact successor framework was republished after the bzip2 profile transaction, and the root-owned strict installer check passed against the successor generated policy and frozen inventory. The active framework therefore remains synchronized with the committed source and current Phase-3 authority inputs.
+
+### Cabextract Clang IR wave fetch failure (2026-09-18)
+
+The bounded `app-arch/cabextract-9999` Clang IR wave reached the ebuild unpack phase but could not fetch its configured `kyz/libmspack` git source: the authenticated fetch timed out after 300 seconds with DNS resolution failure. No package merge or profile payload was produced, and the installed package state was not changed. The failed attempt and Portage build log remain preserved; this CPV stays pending for a later network-available retry rather than being classified as a package correctness exclusion.
