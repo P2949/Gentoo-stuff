@@ -3582,3 +3582,7 @@ The successor policy bindings and workload recipes produced a new bounded two-pa
 ### Post-sync workload-exclusion coverage repair (2026-09-18)
 
 The fresh workload audit initially found six PGO-lane packages marked `no-profile-producing-workload` that were absent from the exclusion manifest, leaving six missing records. `classify-no-entrypoint.py` now emits explicit workload exclusions for both `no-runnable-entrypoint` and `no-profile-producing-workload`, preserving the exact terminal reason. The regenerated successor audit passes with 544 PGO packages, 296 recipe-ready packages, 248 exclusions, and zero overlap, missing, or extra records. No workload execution is claimed.
+
+## 2026-09-18 bounded profile-wave checkpoint
+
+The successor framework was republished and strict-checked after correcting the profile-wave runner's Rust compatibility probe to use the reviewed absolute Clang identity when no unversioned `clang` exists on `PATH` (commit `de7ee5d`). The exact `app-admin/doas-6.8.2` `pgo-clang-ir` wave completed with a sealed receipt and three profraw payloads. `dev-lang/ruby-4.0.6` and `dev-util/bindgen-0.72.1` were refused before profile collection because their Rust LLVM 23 lane is incompatible with the active LLVM 22 LTO toolchain; the current lane manifest records Ruby as `unsupported-by-upstream-toolchain` with exact mismatch evidence. No incompatible Rust profile was forced.
