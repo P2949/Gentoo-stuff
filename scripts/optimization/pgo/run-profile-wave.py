@@ -130,12 +130,32 @@ def main():
      stdin_handle=open(canonical,'rb')
     start=time.monotonic()
     try:
-     result=subprocess.run(argv,cwd=recipe.get('cwd','/'),env=run_env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,stdin=stdin_handle,timeout=30,check=False)
+     proc=subprocess.Popen(argv,cwd=recipe.get('cwd','/'),env=run_env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,stdin=stdin_handle, start_new_session=True)
+     try:
+      result_stdout,_=proc.communicate(timeout=30)
+      result=subprocess.CompletedProcess(proc.args,proc.returncode,result_stdout,None)
+     except subprocess.TimeoutExpired:
+      try: os.killpg(proc.pid, signal.SIGTERM)
+      except ProcessLookupError: pass
+      proc.wait(timeout=5)
+      raise
     except (OSError,subprocess.TimeoutExpired) as e:
      raise SystemExit(f'REFUSED: workload recipe failed for {cpv}: {path}: {e}')
     finally:
      if stdin_handle is not None:
       stdin_handle.close()
+    # Keep the profile destination private to this recipe session.  A workload
+    # may spawn helpers that outlive its direct child; wait for the whole session
+    # before sealing, otherwise those helpers can create late profraw payloads.
+    session_deadline=time.monotonic()+30
+    while time.monotonic() < session_deadline:
+     try:
+      os.killpg(proc.pid, 0)
+     except ProcessLookupError:
+      break
+     time.sleep(0.2)
+    else:
+     raise SystemExit(f'REFUSED: workload descendants did not quiesce for {cpv}: {path}')
     if result.returncode != 0:
      raise SystemExit(f'REFUSED: workload recipe exited {result.returncode} for {cpv}: {path}')
     if not result.stdout and not recipe.get('allow_empty_output',False):
