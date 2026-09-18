@@ -3586,3 +3586,7 @@ The fresh workload audit initially found six PGO-lane packages marked `no-profil
 ## 2026-09-18 bounded profile-wave checkpoint
 
 The successor framework was republished and strict-checked after correcting the profile-wave runner's Rust compatibility probe to use the reviewed absolute Clang identity when no unversioned `clang` exists on `PATH` (commit `de7ee5d`). The exact `app-admin/doas-6.8.2` `pgo-clang-ir` wave completed with a sealed receipt and three profraw payloads. `dev-lang/ruby-4.0.6` and `dev-util/bindgen-0.72.1` were refused before profile collection because their Rust LLVM 23 lane is incompatible with the active LLVM 22 LTO toolchain; the current lane manifest records Ruby as `unsupported-by-upstream-toolchain` with exact mismatch evidence. No incompatible Rust profile was forced.
+
+### Rust LLVM compatibility gate (2026-09-18)
+
+A focused bindgen wave confirmed that the Rust lane mismatch is a real mixed-LTO ABI failure: Rust LLVM 23 objects were rejected by the active LLVM 22 linker (`Producer LLVM23.1.1-rust-1.100.0-nightly`, `Reader LLVM 22.1.8+libcxx`). The runner's fail-closed Rust/Clang compatibility probe is retained and restored in commit `7a879ad`; Ruby and bindgen remain terminal `unsupported-by-upstream-toolchain` until a matching Rust/Clang toolchain is available. The failed attempt and linker evidence are preserved; no incompatible package was merged.
