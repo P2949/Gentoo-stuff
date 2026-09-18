@@ -5,14 +5,16 @@ def main():
  if active!=a.framework_generation:raise SystemExit(f'REFUSED: active framework {active} != authorized generation {a.framework_generation}')
  framework_marker=os.path.join(a.framework_generation,'.candidate-inventory')
  framework_identity=os.path.join(a.framework_generation,'generated-policy','.identity')
+ framework_manifest=os.path.join(a.framework_generation,'install.manifest')
  if not os.path.isfile(framework_marker):
   raise SystemExit('REFUSED: framework generation has no candidate inventory marker')
  try:
   marker_size=os.path.getsize(framework_marker)
   policy_identity=open(framework_identity,encoding='utf-8').read().strip()
+  manifest_lines={line.split('=',1)[0]:line.split('=',1)[1] for line in open(framework_manifest,encoding='utf-8') if '=' in line}
  except OSError as exc:
   raise SystemExit(f'REFUSED: framework generation identity is unreadable: {exc}')
- if marker_size == 0 or policy_identity in ('', 'empty-v1'):
+ if marker_size == 0 or policy_identity in ('', 'empty-v1') or manifest_lines.get('candidate_inventory_sha256') in (None, '', 'none') or manifest_lines.get('frozen_inventory_sha256') in (None, '', 'none'):
   raise SystemExit('REFUSED: framework generation is an empty or non-authoritative policy')
  identity_root=a.identity_root or os.path.join(os.path.dirname(a.wave),'identity')
  missing=[x['cpv'] for x in w['packages'] if not os.path.isfile(os.path.join(identity_root,x['cpv'].replace('/','_')+'.fingerprint.env'))]

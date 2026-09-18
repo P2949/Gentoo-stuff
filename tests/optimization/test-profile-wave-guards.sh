@@ -7,6 +7,10 @@ framework="$root/framework"
 mkdir -p "$framework/generated-policy"
 printf 'empty-v1\n' >"$framework/generated-policy/.identity"
 touch "$framework/.candidate-inventory"
+cat >"$framework/install.manifest" <<'EOF'
+candidate_inventory_sha256=none
+frozen_inventory_sha256=none
+EOF
 ln -s "$framework" "$root/current"
 
 cat >"$root/wave.json" <<'EOF'
