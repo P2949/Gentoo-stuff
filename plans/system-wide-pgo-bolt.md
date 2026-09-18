@@ -3542,3 +3542,7 @@ The BOLT hook fixture was rerun under shell tracing with a 45-second bound. It p
 
 ### Live4 profile-use receipt reconciliation (2026-09-18)
 The newer successful live4 profile-use merges had durable logs and installed hashes but lacked formal deployment receipts. Receipts were generated additively from the root-owned logs, current framework target, immutable cached profiles, and live installed binaries for doas, 7zip, libarchive, lz4, zip, gzip, cpio, tar, ncompress, and zstd. A separate verifier reopened all 15 live4 `profile-use-receipt-*.json` records, recomputed each receipt digest, and confirmed every referenced log, profile, and installed binary exists. All 15 receipts verified successfully; no BOLT deployment is claimed.
+
+### Live4 ABI-guard immediate-directory scaling regression (2026-09-18)
+
+The ABI guard traversal repair was independently rechecked after the latest source change. The focused ABI suite passed all 11 cases and the Portage QA-hook suite passed all 11 cases. The regression fixture now places 2,000 unrelated files beneath a nested descendant of a candidate DSO directory; the guard completes within the bounded timeout because provider discovery examines only immediate candidate-parent entries. The zero-DSO fixture likewise returns without traversing an unrelated 2,000-file tree. The candidate framework was republished and its root-owned strict `--check` passed. No ABI semantics were weakened and no boot/kernel state was touched.
