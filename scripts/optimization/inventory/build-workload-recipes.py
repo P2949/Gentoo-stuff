@@ -29,6 +29,10 @@ def main():
    # --version is a successful, non-destructive representative workload.
    elif x['cpv'].startswith('app-arch/libarchive-'):
     argv=[p,'--version']; allow_empty_output=False
+   # ncompress uses its historical -V switch; --version is parsed as an
+   # unknown option and exits unsuccessfully.
+   elif x['cpv'].startswith('app-arch/ncompress-'):
+    argv=[p,'-V']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
