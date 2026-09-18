@@ -456,6 +456,9 @@ def run_tool(
             "LC_ALL": "C",
             "PATH": "/usr/bin:/bin",
             "TZ": "UTC",
+            # The validator's observed tools may themselves be LLVM-instrumented.
+            # Never let their runtime create package profile payloads.
+            "LLVM_PROFILE_FILE": "/dev/null",
         }
         completed = subprocess.run(
             [os.fspath(path), *arguments],
