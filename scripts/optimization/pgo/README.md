@@ -1,5 +1,29 @@
 # Exact PGO identity tools
 
+## Policy binding generation
+
+`build-policy-bindings.py` is the fail-closed producer for the per-CPV policy
+manifest consumed by wave planning. It binds the lane manifest to the exact
+compiler identities and per-package fingerprint files; it never invents a
+fingerprint or falls back to a package-name/version heuristic.
+
+```sh
+scripts/optimization/pgo/build-policy-bindings.py \
+  --lanes /absolute/path/pgo-lane-candidates.json \
+  --identity-root /absolute/path/identity \
+  --compiler-identities /absolute/path/compiler-identities.json \
+  --profile-root /var/tmp/gentoo-optimization/pgo-raw \
+  --generation-id phase3-live-candidate-YYYYMMDD \
+  --output /absolute/path/pgo-policy-bindings.json
+```
+
+The command refuses duplicate or malformed CPV records, missing compiler
+identity hashes, missing per-CPV fingerprints, and malformed fingerprint
+values. A binding set is therefore publishable only after every supported lane
+has an exact current identity. Workload, wave, readiness, and receipt files
+must be regenerated from the resulting binding digest; an older derived file
+must never be mixed with a repaired lane set.
+
 `profile-identity.py` is the fail-closed identity boundary between package
 classification and the Portage PGO dispatcher. It does not infer a profile
 from `CATEGORY/PN`, and it never searches for a profile merely because a file
