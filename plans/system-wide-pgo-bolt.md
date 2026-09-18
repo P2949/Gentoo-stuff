@@ -3539,3 +3539,6 @@ The live4 BOLT safety review initially aborted on an uncaught `UnicodeDecodeErro
 
 ### BOLT hook fixture bounded validation (2026-09-18)
 The BOLT hook fixture was rerun under shell tracing with a 45-second bound. It progressed through all provenance, count, build-ID, `.text`, rollback, and deployment checks and reached fixture cleanup before the observation window returned; no live state was touched. The production command-policy test passes independently. The current installed doas binary has no GNU build ID, so it cannot be used as a production BOLT input; exact pre-strip capture must occur during a package rebuild with `bolt-capture` enabled. No BOLT deployment is claimed.
+
+### Live4 profile-use receipt reconciliation (2026-09-18)
+The newer successful live4 profile-use merges had durable logs and installed hashes but lacked formal deployment receipts. Receipts were generated additively from the root-owned logs, current framework target, immutable cached profiles, and live installed binaries for doas, 7zip, libarchive, lz4, zip, gzip, cpio, tar, ncompress, and zstd. A separate verifier reopened all 15 live4 `profile-use-receipt-*.json` records, recomputed each receipt digest, and confirmed every referenced log, profile, and installed binary exists. All 15 receipts verified successfully; no BOLT deployment is claimed.
