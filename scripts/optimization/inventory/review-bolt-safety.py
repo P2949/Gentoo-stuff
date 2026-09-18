@@ -6,7 +6,7 @@ def read(args,p):
   r=subprocess.run(['readelf',*args,p],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5)
   if r.returncode != 0: raise RuntimeError(f'readelf failed ({r.returncode})')
   return r.stdout
- except (OSError,subprocess.TimeoutExpired,RuntimeError) as e:
+ except (OSError,subprocess.TimeoutExpired,RuntimeError,UnicodeError) as e:
   raise RuntimeError(f'readelf invocation failed for {p}: {e}') from e
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--metadata',required=True);ap.add_argument('--classification',required=True);ap.add_argument('--output',required=True);a=ap.parse_args(); m=json.load(open(a.metadata)); c=json.load(open(a.classification)); cand={x['path'] for x in c['records'] if x['state']=='candidate-bolt-eligible'}; rows=[]

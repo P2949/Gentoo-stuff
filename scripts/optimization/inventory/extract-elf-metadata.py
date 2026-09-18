@@ -6,7 +6,7 @@ def run(args,path):
   p=subprocess.run(['readelf',*args,path],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=4)
   if p.returncode != 0: raise RuntimeError(f'readelf failed ({p.returncode})')
   return p.stdout
- except (OSError,subprocess.TimeoutExpired,RuntimeError) as e:
+ except (OSError,subprocess.TimeoutExpired,RuntimeError,UnicodeError) as e:
   raise RuntimeError(f'readelf invocation failed for {path}: {e}') from e
 def field(text,label):
  for l in text.splitlines():
