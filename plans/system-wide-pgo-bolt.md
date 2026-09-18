@@ -3734,3 +3734,7 @@ The committed argon2 workload-generator correction and regenerated workload arti
 ### GPGME Clang IR PGO wave (2026-09-19)
 
 `app-crypt/gpgme-2.2.0` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-gpgme.json` records three profraw payloads, successful merge, and completion of the reviewed GPGME workload. No kernel, boot, EFI, or initramfs state was touched.
+
+### Rpm-sequoia Rust host-layout repair and workload boundary (2026-09-19)
+
+The first `app-crypt/rpm-sequoia-1.10.2` Rust wave exposed the same target-layout mismatch previously seen with maturin: the ebuild's install phase expected `target/release/librpm_sequoia.so` while the explicit target setting placed artifacts below the target-specific directory. The runner now grants this CPV the authenticated `GENTOO_OPT_RUST_HOST_LAYOUT=1` exception (commit `33e4589`); the framework was republished and strict-checked. The corrected rerun reached and completed the expected host-layout build/install path, but this CPV is `no-runnable-entrypoint` in the workload manifest, so no profile receipt was issued and it is not counted as optimized.
