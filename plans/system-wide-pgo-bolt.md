@@ -3382,3 +3382,7 @@ Fixed the profile-wave runner so helper suppression does not leak `LLVM_PROFILE_
 ### Workload recipe reproducibility repair (2026-09-18)
 
 The live cabextract wave established that `/usr/bin/cabextract --help` prints usage but exits 1, while `--version` is a successful non-destructive representative workload that collected the validated profile payload. The authoritative `build-workload-recipes.py` generator now emits `--version` for cabextract so regenerated workload manifests reproduce the accepted recipe rather than depending on a manually corrected derived file. The generator was compiled and regenerated against live4; the exact cabextract record contains the expected `['/usr/bin/cabextract', '--version']` argv.
+
+### Ruby Rust-lane terminal classification (2026-09-18)
+
+A readiness-authorized exact `dev-lang/ruby-4.0.6` wave was refused before mutation by the profile runner because Ruby's bundled Rust toolchain reports LLVM 23 while the active Clang/profile toolchain is LLVM 22. The runner correctly rejected generation as ABI-incompatible; no package transaction or profile payload was admitted. This is retained as package-specific evidence in `wave-ruby-prep.json` and `readiness-ruby-prep.json`. A derived override candidate records the exact CPV as `unsupported-by-upstream-toolchain` with reason `rust-bundled-llvm23-incompatible-with-active-llvm22`; regenerated live4 lane candidates now contain 229 unsupported records and 27 remaining Rust-lane records. The active framework and authority were not changed by this candidate classification.
