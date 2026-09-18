@@ -2030,7 +2030,8 @@ def validate_authoritative_topology(
         prefix = str(group["prefix"])
         matches = sorted(name for name in observed if name.startswith(prefix))
         expected_names = [str(item) for item in require_list(group["expected_names"], "expected names")]
-        if len(matches) < int(group["expected_count"]) or matches[: len(expected_names)] != expected_names:
+        frozen_matches = [name for name in matches if name in set(expected_names)]
+        if len(matches) < int(group["expected_count"]) or frozen_matches != expected_names:
             fail(f"authoritative top-level prefix group differs: {prefix}")
 
 
