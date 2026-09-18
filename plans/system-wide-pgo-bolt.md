@@ -3610,3 +3610,7 @@ With the lane-specific no-cross-LLVM-LTO policy active, `dev-util/bpf-linker-0.1
 ### Cbindgen Rust PGO wave (2026-09-18)
 
 `dev-util/cbindgen-0.29.4` completed the isolated Rust PGO rebuild, merge, and workload. Its sealed receipt `profile-wave-receipt-cbindgen.json` contains one profraw payload and a completed transaction state.
+
+### Maturin Rust PGO attempt (2026-09-18)
+
+`dev-util/maturin-1.15.0` reached a completed Rust build but failed during the ebuild's multi-Python compile phase because the expected `target/release/maturin` artifact was absent after the lane-specific target/LTO environment. The package did not merge; the previously installed `maturin 1.15.0` remained intact. A binary-package restoration attempt was rejected before mutation by the framework-generation cross-boundary guard and is retained as evidence. This CPV remains pending package-specific Rust/Python build-path remediation.
