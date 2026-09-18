@@ -5,7 +5,7 @@ def main():
  if active!=a.framework_generation:raise SystemExit(f'REFUSED: active framework {active} != authorized generation {a.framework_generation}')
  identity_root=a.identity_root or os.path.join(os.path.dirname(a.wave),'identity')
  missing=[x['cpv'] for x in w['packages'] if not os.path.isfile(os.path.join(identity_root,x['cpv'].replace('/','_')+'.fingerprint.env'))]
- if r.get('source_wave')!=w.get('sha256') or r.get('ready_count')!=len(w['packages']) or r.get('invalid_inputs') or missing:raise SystemExit('REFUSED: wave readiness is incomplete, belongs to another wave, or lacks fingerprint inputs')
+ if not isinstance(w.get('sha256'),str) or not isinstance(r.get('sha256'),str) or r.get('source_wave')!=w.get('sha256') or r.get('ready_count')!=len(w['packages']) or r.get('invalid_inputs') or missing:raise SystemExit('REFUSED: wave readiness is incomplete, belongs to another wave, or lacks fingerprint inputs')
  if not a.execute:print('READY: all technical gates pass; rerun with --execute to invoke the controlled transaction');return
  lane_modes={'pgo-clang-ir':'clang-ir-generate','pgo-gcc':'gcc-generate','pgo-rust':'rust-generate'}
  unsupported=[x['cpv'] for x in w['packages'] if x.get('lane') == 'pgo-go']
@@ -58,7 +58,7 @@ def main():
  if not payloads:
   raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
  if a.receipt:
-  receipt={'record_type':'profile-wave-transaction-receipt','schema_version':1,'wave_sha256':hashlib.sha256(open(a.wave,'rb').read()).hexdigest(),'readiness_sha256':hashlib.sha256(open(a.readiness,'rb').read()).hexdigest(),'package_count':len(w['packages']),'packages':[x['cpv'] for x in w['packages']],'state':'completed','authorization':'profile-payloads-collected','profile_payloads':sorted(payloads,key=lambda x:(x['cpv'],x['path']))}
+  receipt={'record_type':'profile-wave-transaction-receipt','schema_version':1,'wave_sha256':w['sha256'],'readiness_sha256':r['sha256'],'package_count':len(w['packages']),'packages':[x['cpv'] for x in w['packages']],'state':'completed','authorization':'profile-payloads-collected','profile_payloads':sorted(payloads,key=lambda x:(x['cpv'],x['path']))}
   receipt['sha256']=hashlib.sha256(json.dumps(receipt,sort_keys=True,separators=(',',':')).encode()).hexdigest()
   # Generation directories are deliberately root-owned.  Write the receipt
   # in the caller's temporary area, then install it atomically through the
