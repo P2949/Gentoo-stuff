@@ -1316,7 +1316,7 @@ snapshot_frozen_inventory() {
 }
 
 validate_production_generated_atom() {
-    local atom=$1 status match
+    local atom=$1 status
     # Portable validation above is deliberately independent of Gentoo Python
     # modules.  Production adds Portage's parser and live-universe authority,
     # with distinct diagnostics for an unavailable parser and a rejected atom.
