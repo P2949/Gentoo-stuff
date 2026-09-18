@@ -3686,3 +3686,7 @@ The successor framework was republished after the cpio profile transaction. The 
 ### Tar Clang IR PGO wave (2026-09-18)
 
 `app-arch/tar-1.35-r1` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-tar.json` records one profraw payload, successful merge, and completion of the reviewed tar workload. No kernel, boot, EFI, or initramfs state was touched.
+
+### Unzip Clang IR PGO wave (2026-09-19)
+
+`app-arch/unzip-6.0_p31` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-unzip.json` records two profraw payloads, successful merge, and completion of the reviewed unzip workload. No kernel, boot, EFI, or initramfs state was touched.
