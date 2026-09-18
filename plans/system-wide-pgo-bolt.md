@@ -3722,3 +3722,7 @@ The committed argon2 workload-generator correction and regenerated workload arti
 ### Libmd workload-accounting refusal (2026-09-19)
 
 `app-crypt/libmd-1.2.0` is classified `no-runnable-entrypoint` in the regenerated workload manifest. A manual profile-wave probe was therefore not authorized by the workload chain; it was run only to validate fail-closed behavior and was refused at payload sealing because no workload made the profile directory quiescent. No verified profile receipt was issued and the package is not counted as optimized.
+
+### Pinentry Clang IR PGO wave (2026-09-19)
+
+`app-crypt/pinentry-1.3.3` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-pinentry.json` records two profraw payloads, successful merge, and completion of the reviewed pinentry workload. No kernel, boot, EFI, or initramfs state was touched.
