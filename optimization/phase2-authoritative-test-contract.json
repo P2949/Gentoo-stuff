@@ -191,7 +191,7 @@
     ],
     "prefix_groups": [
       {
-        "expected_count": 60,
+        "expected_count": 63,
         "expected_names": [
           "bash-syntax:bench/compare-two-commands.sh",
           "bash-syntax:bench/perf-stat.sh",
@@ -241,6 +241,7 @@
           "bash-syntax:tests/optimization/test-bolt-hooks.sh",
           "bash-syntax:tests/optimization/test-bolt-transaction.sh",
           "bash-syntax:tests/optimization/test-framework-installer.sh",
+          "bash-syntax:tests/optimization/test-generation-authorization.sh",
           "bash-syntax:tests/optimization/test-no-legacy-bolt.sh",
           "bash-syntax:tests/optimization/test-no-legacy-pgo.sh",
           "bash-syntax:tests/optimization/test-pgo-dispatcher.sh",
@@ -251,7 +252,9 @@
           "bash-syntax:tests/optimization/test-portage-qa-hook.sh",
           "bash-syntax:tests/optimization/test-portage-sample-pgo-integration.sh",
           "bash-syntax:tests/optimization/test-portage-sample-production-env.sh",
+          "bash-syntax:tests/optimization/test-profile-wave-guards.sh",
           "bash-syntax:tests/optimization/test-run-optimization-tests.sh",
+          "bash-syntax:tests/optimization/test-wave-receipt-verifier.sh",
           "bash-syntax:tests/run-optimization-tests.sh"
         ],
         "prefix": "bash-syntax:"
