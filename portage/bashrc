@@ -977,7 +977,7 @@ gentoo_opt_validate_profile_format() {
     [[ -s ${metadata} ]] || {
         gentoo_opt_error "profile metadata is empty: ${metadata}"; return 1;
     }
-    "${validator}" verify --manifest "${GENTOO_OPT_PROFILE_MANIFEST}" \
+    LLVM_PROFILE_FILE=/dev/null "${validator}" verify --manifest "${GENTOO_OPT_PROFILE_MANIFEST}" \
         --metadata "${metadata}" || {
         gentoo_opt_error 'authoritative profile manifest/sidecar verification failed'; return 1;
     }
