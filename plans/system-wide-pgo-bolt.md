@@ -3464,3 +3464,7 @@ The new input-bound workload machinery was exercised end-to-end for `app-arch/rp
 ### Live4 cabextract profile-use retry (2026-09-18)
 
 The existing validated cabextract profile and dispatcher mapping were independently checked. A fresh exact profile-use rebuild entered `clang-ir-use` with the expected fingerprint and cached profile, but the ebuild stalled again while fetching `kyz/libmspack.git` with no progress for more than two minutes. The process group was terminated cleanly and the fetch-stage log remains under `profile-use-logs-cabextract-retry/`; no profile-use deployment is claimed from this retry. The validated cabextract profile remains candidate evidence pending a fetch-cache override analogous to the successful xz repair.
+
+### Live4 cabextract profile-use deployment (2026-09-18)
+
+The cabextract profile-use fetch interruption was resolved with the authenticated cached `kyz/libmspack` repository via `EGIT_OVERRIDE_REPO_KYZ_LIBMSPACK=file:///var/cache/distfiles/git3-src/kyz_libmspack.git`. The exact rebuild entered `clang-ir-use`, completed through install-QA and merge, and installed `/usr/bin/cabextract` (SHA-256 `6f2730ca242387559ec6811c0a5c80c556849c350598ecffc61975e53c72e7de`). The durable log records 12 `-fprofile-use` occurrences and zero new raw profiles. Receipt `profile-use-receipt-cabextract.json` records the framework, profile, binary, and log hashes. No BOLT deployment is claimed.
