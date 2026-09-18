@@ -3788,3 +3788,7 @@ The first `app-text/scdoc-9999` attempt correctly refused the generic `--help` w
 ### Libpaper workload correction and Clang IR PGO wave (2026-09-19)
 
 The first `app-text/libpaper-2.1.3` attempt correctly refused the generic `paperconf --help` workload because paperconf uses single-letter query actions. The authoritative workload generator now uses the successful documented `paperconf -h` query; the framework was republished and its strict check passed. The corrected exact wave rebuilt and merged libpaper, collected four nonempty profraw payloads, passed independent receipt verification, and merged with LLVM 22 into `/var/lib/gentoo-optimization/merged-profiles/app-text_libpaper-2.1.3.profdata`, with root-owned evidence in `profile-merge-libpaper.json`. No BOLT deployment is claimed.
+
+### Enchant workload correction and Clang IR PGO wave (2026-09-19)
+
+The first `app-text/enchant-2.8.16` attempt correctly refused the generic `enchant-lsmod-2 --help` workload because that utility uses single-dash options. The authoritative workload generator now uses its successful documented `-help` action; the framework was republished and its strict check passed. The corrected exact wave rebuilt and merged enchant, collected four nonempty profraw payloads, passed independent receipt verification, and merged with LLVM 22 into `/var/lib/gentoo-optimization/merged-profiles/app-text_enchant-2.8.16.profdata`, with root-owned evidence in `profile-merge-enchant.json`. No BOLT deployment is claimed.
