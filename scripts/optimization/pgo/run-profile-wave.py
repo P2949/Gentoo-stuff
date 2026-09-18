@@ -48,6 +48,8 @@ def main():
     path=os.path.join(root,name)
     if os.path.isfile(path):
      with open(path,'rb') as stream: payloads.append({'cpv':cpv,'path':path,'sha256':hashlib.sha256(stream.read()).hexdigest()})
+ if not payloads:
+  raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
  if a.receipt:
   receipt={'record_type':'profile-wave-transaction-receipt','schema_version':1,'wave_sha256':hashlib.sha256(open(a.wave,'rb').read()).hexdigest(),'readiness_sha256':hashlib.sha256(open(a.readiness,'rb').read()).hexdigest(),'package_count':len(w['packages']),'packages':[x['cpv'] for x in w['packages']],'state':'completed','authorization':'profile-payloads-collected','profile_payloads':sorted(payloads,key=lambda x:(x['cpv'],x['path']))}
   receipt['sha256']=hashlib.sha256(json.dumps(receipt,sort_keys=True,separators=(',',':')).encode()).hexdigest()
