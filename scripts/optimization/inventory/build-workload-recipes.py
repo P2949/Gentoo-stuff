@@ -64,6 +64,10 @@ def main():
    elif p == '/usr/bin/scdoc':
     argv=[p]; allow_empty_output=False
     stdin_path='/var/lib/gentoo-optimization/workloads/scdoc/fixture.scd'
+   # paperconf uses single-letter query actions and rejects GNU-style
+   # --help/--version; -h returns the configured paper height successfully.
+   elif p == '/usr/bin/paperconf':
+    argv=[p,'-h']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
