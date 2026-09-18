@@ -1089,8 +1089,15 @@ gentoo_opt_require_rust_target_isolation() {
         ${CARGO_BUILD_TARGET} != "${GENTOO_OPT_RUST_TARGET}" ]]; then
         gentoo_opt_error 'CARGO_BUILD_TARGET and GENTOO_OPT_RUST_TARGET differ'; return 1
     fi
-    CARGO_BUILD_TARGET=${GENTOO_OPT_RUST_TARGET}
-    export CARGO_BUILD_TARGET
+    # Some Rust/Python build backends (notably maturin) require Cargo's host
+    # target/release layout while still compiling for the authenticated host
+    # target.  The runner may opt into that exact layout explicitly.
+    if [[ ${GENTOO_OPT_RUST_HOST_LAYOUT:-0} != 1 ]]; then
+        CARGO_BUILD_TARGET=${GENTOO_OPT_RUST_TARGET}
+        export CARGO_BUILD_TARGET
+    else
+        unset CARGO_BUILD_TARGET
+    fi
 }
 
 gentoo_opt_require_go_single_main() {
