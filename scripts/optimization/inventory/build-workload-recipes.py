@@ -53,6 +53,11 @@ def main():
    elif x['cpv'].startswith('app-crypt/argon2-') and p == '/usr/bin/argon2':
     argv=[p,'12345678','-id','-t','1','-m','5','-p','1']; allow_empty_output=False
     stdin_path='/var/lib/gentoo-optimization/workloads/argon2/password'
+   # evtest does not implement --help and exits nonzero after printing usage;
+   # --version is a successful, non-destructive workload that needs no input
+   # device and still exercises the installed executable.
+   elif p == '/usr/bin/evtest':
+    argv=[p,'--version']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
