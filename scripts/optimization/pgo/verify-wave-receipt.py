@@ -40,6 +40,25 @@ def main():
             raise SystemExit("REFUSED: completed receipt lacks payload authorization")
         if not isinstance(payloads, list) or not payloads:
             raise SystemExit("REFUSED: completed receipt contains no profile payloads")
+        seen = set()
+        for payload in payloads:
+            if not isinstance(payload, dict):
+                raise SystemExit("REFUSED: profile payload record is not an object")
+            cpv = payload.get("cpv")
+            path_value = payload.get("path")
+            digest = payload.get("sha256")
+            if cpv not in packages or not isinstance(path_value, str) or not path_value.startswith("/"):
+                raise SystemExit("REFUSED: profile payload has an invalid package or path")
+            path = Path(path_value)
+            key = (cpv, path_value)
+            if key in seen:
+                raise SystemExit("REFUSED: duplicate profile payload record")
+            seen.add(key)
+            if not path.is_file() or not isinstance(digest, str):
+                raise SystemExit("REFUSED: profile payload file is missing or has no digest")
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            if actual != digest:
+                raise SystemExit("REFUSED: profile payload digest mismatch")
     elif payloads not in ([], None):
         raise SystemExit("REFUSED: non-completed receipt contains profile payloads")
     print("PASS: profile-wave receipt is internally consistent")
