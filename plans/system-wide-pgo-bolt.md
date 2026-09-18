@@ -3509,3 +3509,6 @@ After republishing the framework with `LLVM_PROFILE_FILE=/dev/null` exported at 
 
 ### Live4 zip profile-use deployment (2026-09-18)
 The exact `app-arch/zip-3.0_p16` profile-use rebuild entered `clang-ir-use` with the live4 fingerprint `84b75f3a0d0e50972c2ca08dadd4bdecff5a437070cefe653fd73cb1e9479889`, consumed the immutable cached profile `/var/cache/gentoo-optimization/pgo/phase3-live-candidate-20260918-live4/app-arch_zip-3.0_p16/profile.profdata`, completed compilation, install-QA, and merge, and installed `/usr/bin/zip`, `zipnote`, `zipcloak`, and `zipsplit`. The durable log is `/tmp/zip-profile-use.log`; it contains 168 `-fprofile-use` flag occurrences and no LLVM profile-write errors. Installed binary hashes were captured immediately after merge. No BOLT deployment is claimed.
+
+### Live4 gzip profile-use deployment (2026-09-18)
+The exact `app-arch/gzip-1.14_p20260901` rebuild entered `clang-ir-use` with fingerprint `f0a16fadb6579d31c529bb8464f1eea091febbd0a1bcd1f20af0103eab1c7f44`, consumed the live4 cached profile, completed compilation, install-QA, and merge, and installed the gzip reference and helper binaries. The durable log `/tmp/gzip-profile-use.log` records 176 `-fprofile-use` flag occurrences and no LLVM profile-write errors. Installed hashes were captured after merge. No BOLT deployment is claimed.
