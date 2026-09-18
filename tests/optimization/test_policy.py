@@ -167,7 +167,7 @@ class OptimizationPolicyTests(unittest.TestCase):
                 self.assertIn(historical_commit, history_map)
         self.assertIn("Evidence-bearing ancestors are immutable.", history_map)
         readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 2 is scope-frozen until Candidate B authorization.", readme)
+        self.assertIn("Phase 2 remains scope-frozen after authorization.", readme)
         bolt_legacy = (
             REPOSITORY_ROOT / "docs/bolt-global.md"
         ).read_text(encoding="utf-8")

@@ -111,3 +111,19 @@ cc -shared -fPIC "${work}/old.c" -Wl,-soname,libtransition.so.1 \
     -o "${work}/ed/usr/lib/libtransition.so.1"
 ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
 echo 'PASS: ABI guard accepts SONAME transition with retained compatibility provider'
+
+# A package with no staged DSO candidates must not trigger a ROOT-wide walk.
+rm -rf -- "${work}/ed" "${work}/root"
+mkdir -p "${work}/ed/opt/dotnet-nugets" "${work}/root/unrelated/deep"
+for n in $(seq 1 2000); do printf x >"${work}/root/unrelated/deep/file-${n}"; done
+ED="${work}/ed" ROOT="${work}/root" /usr/bin/timeout 5 python3 "${guard}"
+echo 'PASS: empty staged DSO set returns without ROOT traversal'
+
+# Provider discovery is immediate-directory scoped; nested unrelated files do
+# not become candidate providers merely because the parent is a library dir.
+mkdir -p "${work}/ed/usr/lib" "${work}/root/usr/lib/unrelated/deep"
+cc -shared -fPIC "${work}/old.c" -Wl,-soname,libscoped.so.1 -o "${work}/root/usr/lib/libscoped.so.1"
+cp "${work}/root/usr/lib/libscoped.so.1" "${work}/ed/usr/lib/libscoped.so.1"
+cp "${work}/root/usr/lib/libscoped.so.1" "${work}/root/usr/lib/unrelated/deep/libscoped.so.1"
+ED="${work}/ed" ROOT="${work}/root" /usr/bin/timeout 5 python3 "${guard}"
+echo 'PASS: provider discovery does not recurse below candidate parent'

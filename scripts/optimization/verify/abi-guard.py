@@ -111,11 +111,13 @@ def collect_soname_providers(
 ) -> dict[str, tuple[Path, set[str]]]:
     """Return established ELF DSO providers keyed by their SONAME."""
     providers: dict[str, tuple[Path, set[str]]] = {}
-    roots = [tree / rel for rel in sorted(relative_dirs or {Path(".")})]
+    if relative_dirs is not None and not relative_dirs:
+        return providers
+    roots = [tree] if relative_dirs is None else [tree / rel for rel in sorted(relative_dirs)]
     for root in roots:
         if not root.is_dir():
             continue
-        for path in root.rglob("*"):
+        for path in root.iterdir() if relative_dirs is not None else root.rglob("*"):
             if ".so" not in path.name:
                 continue
             if families is not None and path.name.split(".so", 1)[0] + ".so" not in families:
@@ -153,16 +155,13 @@ def main() -> int:
     # Compare from the installed ABI-provider side as well as by relative
     # path.  A replacement such as libfoo.so.1 -> libfoo.so.2 otherwise has
     # no same-path pair and could silently remove the established ABI.
+    candidate_paths = [path for path in ed.rglob("*") if ".so" in path.name]
+    if not candidate_paths:
+        return 0
     candidate_families = {
-        path.name.split(".so", 1)[0] + ".so"
-        for path in ed.rglob("*")
-        if ".so" in path.name
+        path.name.split(".so", 1)[0] + ".so" for path in candidate_paths
     }
-    candidate_dirs = {
-        path.relative_to(ed).parent
-        for path in ed.rglob("*")
-        if ".so" in path.name
-    }
+    candidate_dirs = {path.relative_to(ed).parent for path in candidate_paths}
     candidate_providers = collect_soname_providers(
         ed, candidate_families, candidate_dirs
     )
@@ -188,9 +187,7 @@ def main() -> int:
                 f"{installed_path.relative_to(root)}: SONAME {soname} "
                 f"provider ABI loss old={len(installed_symbols)} new={len(candidate[1])} missing={sample}"
             )
-    for candidate in ed.rglob("*"):
-        if ".so" not in candidate.name:
-            continue
+    for candidate in candidate_paths:
         rel = candidate.relative_to(ed)
         installed = root / rel
         candidate_is_link = candidate.is_symlink()

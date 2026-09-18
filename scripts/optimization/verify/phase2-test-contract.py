@@ -328,6 +328,28 @@ def canonical(value: dict[str, Any]) -> str:
     return json.dumps(value, indent=2, sort_keys=True) + "\n"
 
 
+def phase2_contract_view(current: dict[str, Any], generated: dict[str, Any]) -> dict[str, Any]:
+    """Compare the immutable Phase-2 topology while allowing additive tests."""
+    view: dict[str, Any] = json.loads(json.dumps(generated))
+    frozen_groups = current.get("top_level", {}).get("prefix_groups", [])
+    discovered_groups = view.get("top_level", {}).get("prefix_groups", [])
+    if not frozen_groups:
+        return view
+    if len(frozen_groups) != len(discovered_groups):
+        raise ContractError("authoritative shell prefix-group topology changed")
+    for frozen, discovered in zip(frozen_groups, discovered_groups, strict=True):
+        frozen_names = frozen.get("expected_names", [])
+        discovered_names = discovered.get("expected_names", [])
+        if not set(frozen_names).issubset(discovered_names):
+            raise ContractError("an immutable Phase-2 shell test was removed or renamed")
+        discovered_by_name = set(discovered_names)
+        if len(discovered_by_name) != len(discovered_names):
+            raise ContractError("discovered shell topology contains duplicate names")
+        discovered["expected_names"] = list(frozen_names)
+        discovered["expected_count"] = len(frozen_names)
+    return view
+
+
 def write_output(path: Path | None, payload: str) -> None:
     if path is None:
         sys.stdout.write(payload)
@@ -367,11 +389,16 @@ def main() -> int:
         if arguments.output:
             raise ContractError("--output is valid only with generate")
         current_text = canonical(current)
-        if current_text != generated_text:
+        try:
+            frozen_view_text = canonical(phase2_contract_view(current, generated))
+        except ContractError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        if current_text != frozen_view_text:
             sys.stderr.writelines(
                 difflib.unified_diff(
                     current_text.splitlines(keepends=True),
-                    generated_text.splitlines(keepends=True),
+                    frozen_view_text.splitlines(keepends=True),
                     fromfile=os.fspath(contract_path),
                     tofile="discovered-test-contract",
                 )
