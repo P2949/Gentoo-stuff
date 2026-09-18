@@ -125,5 +125,6 @@ mkdir -p "${work}/ed/usr/lib" "${work}/root/usr/lib/unrelated/deep"
 cc -shared -fPIC "${work}/old.c" -Wl,-soname,libscoped.so.1 -o "${work}/root/usr/lib/libscoped.so.1"
 cp "${work}/root/usr/lib/libscoped.so.1" "${work}/ed/usr/lib/libscoped.so.1"
 cp "${work}/root/usr/lib/libscoped.so.1" "${work}/root/usr/lib/unrelated/deep/libscoped.so.1"
+for n in $(seq 1 2000); do printf x >"${work}/root/usr/lib/unrelated/deep/file-${n}"; done
 ED="${work}/ed" ROOT="${work}/root" /usr/bin/timeout 5 python3 "${guard}"
 echo 'PASS: provider discovery does not recurse below candidate parent'
