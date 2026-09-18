@@ -1973,6 +1973,7 @@ elif ! preflight_recovery_abi_lanes; then
         "${PREFLIGHT_REASON}; the C++ ABI lane fixture was not run"
 else
     run_case recovery-rollback-fixture \
+        env PATH="/usr/lib/llvm/22/bin:${PATH}" \
         "${BASH_BIN}" -- "${ROLLBACK_FIXTURE}"
 fi
 
