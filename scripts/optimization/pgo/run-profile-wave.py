@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,json,os,subprocess,sys,time,hashlib
+import argparse,json,os,subprocess,sys,time,hashlib,tempfile
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
  if active!=a.framework_generation:raise SystemExit(f'REFUSED: active framework {active} != authorized generation {a.framework_generation}')
@@ -51,5 +51,16 @@ def main():
  if a.receipt:
   receipt={'record_type':'profile-wave-transaction-receipt','schema_version':1,'wave_sha256':hashlib.sha256(open(a.wave,'rb').read()).hexdigest(),'readiness_sha256':hashlib.sha256(open(a.readiness,'rb').read()).hexdigest(),'package_count':len(w['packages']),'packages':[x['cpv'] for x in w['packages']],'state':'completed','authorization':'profile-payloads-collected','profile_payloads':sorted(payloads,key=lambda x:(x['cpv'],x['path']))}
   receipt['sha256']=hashlib.sha256(json.dumps(receipt,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-  with open(a.receipt,'w') as stream: json.dump(receipt,stream,sort_keys=True,indent=2); stream.write('\n')
+  # Generation directories are deliberately root-owned.  Write the receipt
+  # in the caller's temporary area, then install it atomically through the
+  # same narrowly scoped privilege boundary used for the package transaction.
+  parent=os.path.dirname(os.path.realpath(a.receipt))
+  fd,tmp=tempfile.mkstemp(prefix='.profile-wave-receipt-',suffix='.json',dir='/tmp')
+  try:
+   with os.fdopen(fd,'w') as stream:
+    json.dump(receipt,stream,sort_keys=True,indent=2); stream.write('\n')
+   subprocess.run(['doas','install','-o','root','-g','root','-m','0644','--',tmp,a.receipt],check=True)
+  finally:
+   try: os.unlink(tmp)
+   except FileNotFoundError: pass
 if __name__=='__main__':main()
