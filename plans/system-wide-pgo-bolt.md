@@ -3776,3 +3776,7 @@ The first `app-misc/evtest-1.36` attempt correctly refused its generated `--help
 ### Dos2unix Clang IR PGO wave (2026-09-19)
 
 `app-text/dos2unix-7.5.6` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records two nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed workload; independent receipt verification passed. LLVM 22 merged the payloads into `/var/lib/gentoo-optimization/merged-profiles/app-text_dos2unix-7.5.6.profdata`, with root-owned evidence in `profile-merge-dos2unix.json`. No BOLT deployment is claimed.
+
+### Lowdown Clang IR PGO wave (2026-09-19)
+
+`app-text/lowdown-3.1.1` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records four nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed lowdown workload; independent receipt verification passed. LLVM 22 merged the payloads into `/var/lib/gentoo-optimization/merged-profiles/app-text_lowdown-3.1.1.profdata`, with root-owned evidence in `profile-merge-lowdown.json`. No BOLT deployment is claimed.
