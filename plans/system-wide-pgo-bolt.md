@@ -3694,3 +3694,7 @@ The successor framework was republished after the cpio profile transaction. The 
 ### Xz-utils Clang IR wave quiescence stop (2026-09-19)
 
 `app-arch/xz-utils-9999` completed its Clang IR build and staged install, but the profile-wave runner refused to seal the transaction because the profile payload directory did not quiesce after workload execution. No receipt was issued and the package merge was not accepted as a verified profile result. The attempt directory and payload evidence remain preserved for diagnosis; no framework or ABI guard was bypassed.
+
+### Zip Clang IR PGO wave (2026-09-19)
+
+`app-arch/zip-3.0_p16` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-zip.json` records the completed merge and all profraw payloads from the reviewed zip workload. No kernel, boot, EFI, or initramfs state was touched.
