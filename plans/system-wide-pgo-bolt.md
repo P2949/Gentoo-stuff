@@ -3718,3 +3718,7 @@ The committed argon2 workload-generator correction and regenerated workload arti
 ### Libb2 workload-accounting refusal (2026-09-19)
 
 `app-crypt/libb2-0.98.1-r3` was not recipe-ready in the regenerated workload manifest, so no representative workload was authorized. A manually constructed one-package probe therefore reached the build but was correctly refused at payload sealing because the profile directory did not quiesce without a workload. No verified profile receipt was issued. This CPV remains a workload-accounting exclusion/pending case and will not be counted as optimized until a valid representative workload is generated.
+
+### Libmd workload-accounting refusal (2026-09-19)
+
+`app-crypt/libmd-1.2.0` is classified `no-runnable-entrypoint` in the regenerated workload manifest. A manual profile-wave probe was therefore not authorized by the workload chain; it was run only to validate fail-closed behavior and was refused at payload sealing because no workload made the profile directory quiescent. No verified profile receipt was issued and the package is not counted as optimized.
