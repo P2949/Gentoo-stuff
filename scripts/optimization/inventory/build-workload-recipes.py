@@ -68,6 +68,10 @@ def main():
    # --help/--version; -h returns the configured paper height successfully.
    elif p == '/usr/bin/paperconf':
     argv=[p,'-h']; allow_empty_output=False
+   # enchant-lsmod-2 uses single-dash command options; -help is its
+   # successful non-destructive query while --help is rejected.
+   elif p == '/usr/bin/enchant-lsmod-2':
+    argv=[p,'-help']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
