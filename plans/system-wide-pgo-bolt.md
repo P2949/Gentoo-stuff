@@ -3472,3 +3472,7 @@ The cabextract profile-use fetch interruption was resolved with the authenticate
 ### Live4 dpkg Clang profile generation (2026-09-18)
 
 The exact `app-arch/dpkg-1.22.21` wave was planned against the authoritative live4 lane, compiler, and fingerprint manifests. Readiness passed (`1/1`, zero invalid inputs); the real generate-lane transaction completed through install-QA and merge, the reviewed dpkg utility workloads ran, receipt verification passed, and LLVM 22 merged the payload. Independent merge evidence is `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-live4/profile-merge-dpkg-live4.json` with digest `8d07d4f31c664e1c9678c3e504cd346a529319edc6503de7c74323f4b1034a0a`. Profile validation, dispatcher publication, and exact profile-use deployment remain pending.
+
+### Live4 dpkg profile-use deployment (2026-09-18)
+
+The validated dpkg profile was published through the live4 dispatcher and policy framework. The exact `app-arch/dpkg-1.22.21` rebuild entered `clang-ir-use`, completed compilation, install-QA, and merge, and installed `/usr/bin/dpkg` (SHA-256 `be404f6650ddf1a640b31855b974fb883c67469baa29956d0925ae950c06b954`). The durable log records 258 `-fprofile-use` occurrences and zero new raw profiles. Receipt `profile-use-receipt-dpkg.json` records the deployment hashes. No BOLT deployment is claimed.
