@@ -722,12 +722,22 @@ gentoo_opt_is_compiler_wrapper() {
 }
 
 gentoo_opt_resolve_compiler_tool() {
-    local variable=$1 fallback=$2 value directory candidate canonical
+    local variable=$1 fallback=$2 value compiler directory candidate canonical
     value=${!variable:-${fallback}}
-    [[ ${value} != *[$'\n\r\t ']* && ${value} != *[\;\&\|\<\>\`]* ]] || {
+    # Some legacy ebuilds append ordinary compiler arguments to CC/CXX.  The
+    # dispatcher only needs the executable for identity and lane selection;
+    # Portage's flags remain in CFLAGS/CXXFLAGS.  Accept that safe form while
+    # rejecting all shell syntax and control quoting.
+    [[ ${value} != *[$'\n\r\t']* && ${value} != *[\;\&\|\<\>\`\"\'\$\(\)]* ]] || {
         gentoo_opt_error "${variable} must name one compiler command without shell syntax"
         return 1
     }
+    compiler=${value%%[[:space:]]*}
+    [[ -n ${compiler} ]] || {
+        gentoo_opt_error "${variable} does not contain a compiler command"
+        return 1
+    }
+    value=${compiler}
     if [[ ${value} == */* ]]; then
         [[ -x ${value} ]] || {
             gentoo_opt_error "cannot execute ${variable} compiler: ${value}"
