@@ -3726,3 +3726,7 @@ The committed argon2 workload-generator correction and regenerated workload arti
 ### Pinentry Clang IR PGO wave (2026-09-19)
 
 `app-crypt/pinentry-1.3.3` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-pinentry.json` records two profraw payloads, successful merge, and completion of the reviewed pinentry workload. No kernel, boot, EFI, or initramfs state was touched.
+
+### GnuPG Clang IR PGO wave (2026-09-19)
+
+`app-crypt/gnupg-2.5.22` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-gnupg.json` records the completed merge, reviewed GnuPG workload, and all profraw payloads. No kernel, boot, EFI, or initramfs state was touched.
