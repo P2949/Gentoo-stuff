@@ -114,6 +114,23 @@ def main():
      raise SystemExit(f'REFUSED: workload recipe exited {result.returncode} for {cpv}: {path}')
     if not result.stdout and not recipe.get('allow_empty_output',False):
      raise SystemExit(f'REFUSED: workload recipe produced no output for {cpv}: {path}')
+   # Instrumented helper processes can flush their profile files just after
+   # emerge returns.  Wait for the package spool to become quiescent before
+   # sealing the receipt, otherwise a valid late payload becomes an
+   # unreceipted file at merge time.
+   previous=None
+   for _ in range(20):
+    snapshot=[]
+    for root,dirs,files in os.walk(profile_path):
+     for name in files:
+      path=os.path.join(root,name)
+      try: snapshot.append((path, os.stat(path).st_size, os.stat(path).st_mtime_ns))
+      except FileNotFoundError: pass
+    current=tuple(sorted(snapshot))
+    if current and current == previous:
+     break
+    previous=current
+    time.sleep(0.5)
    package_payloads=[]
    for root,dirs,files in os.walk(profile_path):
     for name in files:
