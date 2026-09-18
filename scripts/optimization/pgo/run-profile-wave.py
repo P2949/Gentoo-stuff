@@ -139,31 +139,34 @@ def main():
    # Portage helper processes may be reaped asynchronously after the first
    # quiet interval.  Give their LLVM runtime a final bounded flush window.
    time.sleep(15)
-   package_payloads=[]
-   for root,dirs,files in os.walk(profile_path):
-    for name in files:
-     path=os.path.join(root,name)
-     if not os.path.isfile(path):
-      continue
-     with open(path,'rb') as stream:
-      record={'cpv':cpv,'path':path,'sha256':hashlib.sha256(stream.read()).hexdigest()}
-     payloads.append(record)
-     package_payloads.append(record)
-   # A final delayed flush can occur while the first payload list is being
-   # hashed.  Re-scan after the bounded grace period so the sealed receipt
-   # covers the complete directory snapshot.
-   time.sleep(15)
+   # Seal only after a complete post-transaction snapshot remains unchanged.
+   # Instrumented helper processes can flush more than one batch after emerge
+   # returns; one fixed grace sleep is therefore insufficient and creates
+   # unreceipted payloads that the independent merger must reject.
+   def snapshot_payloads():
+    records=[]
+    for root,dirs,files in os.walk(profile_path):
+     for name in files:
+      path=os.path.join(root,name)
+      if not os.path.isfile(path):
+       continue
+      with open(path,'rb') as stream:
+       data=stream.read()
+      records.append({'cpv':cpv,'path':path,'sha256':hashlib.sha256(data).hexdigest(),'size':len(data)})
+    return sorted(records,key=lambda x:x['path'])
+   sealed=None
+   for _ in range(24):
+    candidate=snapshot_payloads()
+    time.sleep(5)
+    confirm=snapshot_payloads()
+    if candidate and [(x['path'],x['sha256'],x['size']) for x in candidate] == [(x['path'],x['sha256'],x['size']) for x in confirm]:
+     sealed=confirm
+     break
+   if sealed is None:
+    raise SystemExit(f'REFUSED: profile payload directory did not quiesce for {cpv}')
    payloads=[x for x in payloads if x['cpv'] != cpv]
-   package_payloads=[]
-   for root,dirs,files in os.walk(profile_path):
-    for name in files:
-     path=os.path.join(root,name)
-     if not os.path.isfile(path):
-      continue
-     with open(path,'rb') as stream:
-      record={'cpv':cpv,'path':path,'sha256':hashlib.sha256(stream.read()).hexdigest()}
-     payloads.append(record)
-     package_payloads.append(record)
+   package_payloads=[{'cpv':x['cpv'],'path':x['path'],'sha256':x['sha256']} for x in sealed]
+   payloads.extend(package_payloads)
    _active_attempt['state']='completed'; _active_attempt['completed_at']=time.time(); _active_attempt['profile_payloads']=package_payloads; _write_attempt(_active_attempt); _active_attempt=None
  if not payloads:
   raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
