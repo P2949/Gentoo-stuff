@@ -3352,3 +3352,11 @@ The live4-refresh bzip2 profile was validated and published from the earlier mer
 ## Live4 bzip2 profile-use rejection and safe revert (2026-09-18)
 
 A live4-refresh bzip2 profile-use rebuild reached install-QA but was rejected by the exported-ABI guard because the staged `libbz2.so.1` provider lost `__llvm_write_custom_profile` (36 old exports versus 35 new). No replacement merged. The failed log is retained under the live4 `profile-use-logs-bzip2` directory. The active policy was transactionally reverted to the proven doas/7zip profile-use mapping with bzip2 back in generate mode; framework `framework-b064688ef5eed8796a70ad51815d409653846ae40d9f3c4e8aae1fbd2a499b04` and live4 authority verification passed.
+
+### Live4 cabextract wave fetch interruption (2026-09-18)
+
+A fresh exact `app-arch/cabextract-9999` Clang-generation wave passed readiness (`1/1`, zero invalid inputs) and entered the real Portage transaction under the active live4 authority. Its ebuild stalled in the network sandbox while fetching the `kyz/libmspack` Git repository: the fetch had no socket, CPU, or log progress for more than four minutes and never reached compilation or installation. The runner and child transaction were terminated cleanly; the attempt journal remains under `profile-wave-attempt-cabextract/`, no package merge occurred, and independent live4 authority verification still passes. This is preserved as a fetch-stage attempt failure, not a PGO result or an authorization bypass.
+
+## Live4 cabextract wave fetch interruption (2026-09-18)
+
+The fresh exact `app-arch/cabextract-9999` Clang-generation wave passed readiness (`1/1`) but stalled in the ebuild network sandbox fetching `kyz/libmspack` with no progress for more than four minutes. The transaction was terminated before compilation or installation, its attempt journal is preserved, and live4 authority verification still passes. No package merge or PGO result is claimed.
