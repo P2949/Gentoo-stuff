@@ -21,6 +21,10 @@ def main():
    # without requiring a policy file or a child command.
    if p == '/usr/bin/doas':
     argv=[p,'-L']; allow_empty_output=True
+   # cabextract prints help text but returns status 1; --version is the
+   # successful, non-destructive representative entrypoint.
+   elif p == '/usr/bin/cabextract':
+    argv=[p,'--version']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:

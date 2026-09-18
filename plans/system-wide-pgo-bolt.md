@@ -3378,3 +3378,7 @@ A fresh cabextract generation wave then collected one nonempty raw payload after
 ## Live4 cabextract profile collection and use deployment (2026-09-18)
 
 Fixed the profile-wave runner so helper suppression does not leak `LLVM_PROFILE_FILE=/dev/null` into representative generated workloads. A fresh cabextract wave then collected one nonempty raw payload with the corrected `--version` recipe, passed receipt verification, merged, and validated under live4. The profile-use mapping was published and a controlled cabextract rebuild completed through install-QA/merge with 12 exact `-fprofile-use` occurrences. No BOLT deployment is claimed.
+
+### Workload recipe reproducibility repair (2026-09-18)
+
+The live cabextract wave established that `/usr/bin/cabextract --help` prints usage but exits 1, while `--version` is a successful non-destructive representative workload that collected the validated profile payload. The authoritative `build-workload-recipes.py` generator now emits `--version` for cabextract so regenerated workload manifests reproduce the accepted recipe rather than depending on a manually corrected derived file. The generator was compiled and regenerated against live4; the exact cabextract record contains the expected `['/usr/bin/cabextract', '--version']` argv.
