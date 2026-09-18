@@ -3622,3 +3622,7 @@ The Rust dispatcher now supports an authenticated `GENTOO_OPT_RUST_HOST_LAYOUT=1
 ### Rustup Rust PGO correctness stop (2026-09-18)
 
 `dev-util/rustup-1.29.0` completed its Rust PGO compilation, but the install phase's generated completion command (`./rustup completions bash`) segfaulted. The package did not merge; the failed attempt and build log are retained. This is a package-specific correctness failure after successful profile instrumentation, analogous to maturin's completion-path failure.
+
+### AMDGPU top Rust PGO wave (2026-09-18)
+
+`sys-apps/amdgpu_top-0.11.5` completed the isolated Rust no-cross-LLVM-LTO profile wave. The sealed receipt `profile-wave-receipt-amdgpu-top.json` records one profraw payload, exact successor inventory binding, and completed transaction state. The wave used the authenticated Rust target and preserved the lane's `RUSTFLAGS=-C lto=off -C linker-plugin-lto=no` isolation; no kernel or boot artifacts were touched.
