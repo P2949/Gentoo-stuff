@@ -3521,3 +3521,6 @@ The exact `app-arch/tar-1.35-r1` rebuild entered `clang-ir-use` with fingerprint
 
 ### Live4 ncompress profile-use deployment (2026-09-18)
 The exact `app-arch/ncompress-5.0-r2` rebuild entered `clang-ir-use` with fingerprint `1835dd4484815f6d391ab0860a437125dbbe132646864c0bf2413e752f27f3e2`, consumed the live4 cached profile, completed compilation, install-QA, and merge, and installed `/usr/bin/compress` plus its `uncompress` symlink. The durable log `/tmp/ncompress-profile-use.log` contains the profile-use compiler invocation and no LLVM profile-write errors. The installed executable was hashed after merge. No BOLT deployment is claimed.
+
+### Live4 doas profile-use deployment (2026-09-18)
+The exact `app-admin/doas-6.8.2` rebuild entered `clang-ir-use` with fingerprint `f42b79adee26541f72732db1728bdc226ad99521c8a1a57141a4e373df90674e`, consumed the live4 cached profile, completed compilation, install-QA, and merge, and installed the PAM configuration and setuid `/usr/bin/doas`. The durable log `/tmp/doas-profile-use.log` records the profile-use compiler/linker invocations and no LLVM profile-write errors. The installed executable was hashed after merge. No BOLT deployment is claimed.
