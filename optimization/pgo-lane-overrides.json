@@ -655,6 +655,16 @@
       },
       "lane": "pgo-clang-ir",
       "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "dev-dotnet/dotnet-sdk-bin-10.0.400",
+      "evidence": {
+        "ebuild": "/var/db/pkg/dev-dotnet/dotnet-sdk-bin-10.0.400/dotnet-sdk-bin-10.0.400.ebuild",
+        "inherits": [],
+        "phase_functions": []
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-managed-runtime"
     }
   ],
   "record_type": "pgo-lane-reviewed-overrides",
