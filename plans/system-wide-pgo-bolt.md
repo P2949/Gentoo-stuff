@@ -3527,3 +3527,6 @@ The exact `app-admin/doas-6.8.2` rebuild entered `clang-ir-use` with fingerprint
 
 ### Live4 7zip profile-use deployment (2026-09-18)
 The exact `app-arch/7zip-26.03` rebuild entered `clang-ir-use` with fingerprint `146f20cfa51ad69e9485bbd4a185ee70cc0058b7a76022d4fd2b26c64f71cd48`, consumed the live4 cached profile, completed its large Clang build, install-QA, qmerge, and merge, and installed `/usr/bin/7zz`, its 7z/7za/7zr symlinks, and `/usr/lib64/7z.so`. The durable log `/tmp/7zip-profile-use.log` records the profile-use compiler invocations; only expected incomplete-profile warnings were emitted, with no LLVM profile-write errors. Installed executable and DSO hashes were captured after merge. No BOLT deployment is claimed.
+
+### Live4 libarchive profile-use deployment (2026-09-18)
+The exact `app-arch/libarchive-3.8.9` rebuild entered `clang-ir-use` with fingerprint `5fb936c5e7abbb337ee27111b5b26fdf139e6564fb5f647a6d8d153246e255fb`, consumed the live4 cached profile, completed both multilib builds, install-QA, qmerge, and merge, and installed the libarchive shared library plus `bsdtar`, `bsdcpio`, `bsdcat`, and `bsdunzip`. The durable log `/tmp/libarchive-profile-use.log` contains no LLVM profile-write errors and the transaction completed successfully; installed library and executable hashes were captured after merge. No BOLT deployment is claimed.
