@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse,json,os,subprocess,sys,time,hashlib,tempfile
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
+ ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--generation-id');ap.add_argument('--inventory-id');ap.add_argument('--inventory-sha256');ap.add_argument('--authorization-root',default='/run/gentoo-optimization');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
  if active!=a.framework_generation:raise SystemExit(f'REFUSED: active framework {active} != authorized generation {a.framework_generation}')
  framework_marker=os.path.join(a.framework_generation,'.candidate-inventory')
  framework_identity=os.path.join(a.framework_generation,'generated-policy','.identity')
@@ -20,6 +20,12 @@ def main():
  missing=[x['cpv'] for x in w['packages'] if not os.path.isfile(os.path.join(identity_root,x['cpv'].replace('/','_')+'.fingerprint.env'))]
  if not isinstance(w.get('sha256'),str) or not isinstance(r.get('sha256'),str) or r.get('source_wave')!=w.get('sha256') or r.get('ready_count')!=len(w['packages']) or r.get('invalid_inputs') or missing:raise SystemExit('REFUSED: wave readiness is incomplete, belongs to another wave, or lacks fingerprint inputs')
  if not a.execute:print('READY: all technical gates pass; rerun with --execute to invoke the controlled transaction');return
+ if not all((a.generation_id,a.inventory_id,a.inventory_sha256)):
+  raise SystemExit('REFUSED: live profile generation requires an explicit authorized generation triple')
+ authorization=os.path.join(os.path.dirname(__file__),'generation-authorization.py')
+ authority=subprocess.run([sys.executable,authorization,'verify','--root',a.authorization_root,'--generation-id',a.generation_id,'--inventory-id',a.inventory_id,'--inventory-sha256',a.inventory_sha256],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+ if authority.returncode != 0:
+  raise SystemExit('REFUSED: Phase-3 generation authority is absent or mismatched: '+authority.stdout.strip())
  lane_modes={'pgo-clang-ir':'clang-ir-generate','pgo-gcc':'gcc-generate','pgo-rust':'rust-generate'}
  unsupported=[x['cpv'] for x in w['packages'] if x.get('lane') == 'pgo-go']
  if unsupported:
@@ -88,7 +94,7 @@ def main():
  if not payloads:
   raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
  if a.receipt:
-  receipt={'record_type':'profile-wave-transaction-receipt','schema_version':1,'wave_sha256':w['sha256'],'readiness_sha256':r['sha256'],'package_count':len(w['packages']),'packages':[x['cpv'] for x in w['packages']],'state':'completed','authorization':'profile-payloads-collected','profile_payloads':sorted(payloads,key=lambda x:(x['cpv'],x['path']))}
+  receipt={'record_type':'profile-wave-transaction-receipt','schema_version':2,'wave_sha256':w['sha256'],'readiness_sha256':r['sha256'],'package_count':len(w['packages']),'packages':[x['cpv'] for x in w['packages']],'state':'completed','authorization':'profile-payloads-collected','generation':{'generation_id':a.generation_id,'inventory_id':a.inventory_id,'inventory_sha256':a.inventory_sha256},'framework_generation':active,'profile_payloads':sorted(payloads,key=lambda x:(x['cpv'],x['path']))}
   receipt['sha256']=hashlib.sha256(json.dumps(receipt,sort_keys=True,separators=(',',':')).encode()).hexdigest()
   # Generation directories are deliberately root-owned.  Write the receipt
   # in the caller's temporary area, then install it atomically through the
