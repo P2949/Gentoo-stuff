@@ -3512,3 +3512,6 @@ The exact `app-arch/zip-3.0_p16` profile-use rebuild entered `clang-ir-use` with
 
 ### Live4 gzip profile-use deployment (2026-09-18)
 The exact `app-arch/gzip-1.14_p20260901` rebuild entered `clang-ir-use` with fingerprint `f0a16fadb6579d31c529bb8464f1eea091febbd0a1bcd1f20af0103eab1c7f44`, consumed the live4 cached profile, completed compilation, install-QA, and merge, and installed the gzip reference and helper binaries. The durable log `/tmp/gzip-profile-use.log` records 176 `-fprofile-use` flag occurrences and no LLVM profile-write errors. Installed hashes were captured after merge. No BOLT deployment is claimed.
+
+### Live4 cpio profile-use deployment (2026-09-18)
+The exact `app-arch/cpio-2.15` rebuild entered `clang-ir-use` with fingerprint `fb70adec2af76eff875c2450e45f16e2e1bec2384812a0fc3df27be389e6bf22`, consumed the live4 cached profile, completed compilation, install-QA, and merge, and installed `/bin/gcpio`. The durable log `/tmp/cpio-profile-use.log` records 196 `-fprofile-use` flag occurrences, no LLVM profile-write errors, and a successful merge. Installed `/bin/gcpio` was hashed after merge. No BOLT deployment is claimed.
