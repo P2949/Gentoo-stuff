@@ -11,6 +11,11 @@ def main():
   recipes=[]
   for e in x['entrypoints']:
    p=e['path']; safe=p.startswith(('/usr/bin/','/usr/sbin/','/bin/','/sbin/')) and not os.path.islink(p)
+   # Recovery-only helpers require an input archive and are not standalone
+   # representative workloads. Prefer the package's normal compressor entry
+   # point when both are present.
+   if os.path.basename(p) in {'bzip2recover'}:
+    continue
    # doas has no --help mode: it treats the option as a command-line error.
    # -L is its documented, non-destructive diagnostic action and succeeds
    # without requiring a policy file or a child command.
