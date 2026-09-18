@@ -3530,3 +3530,6 @@ The exact `app-arch/7zip-26.03` rebuild entered `clang-ir-use` with fingerprint 
 
 ### Live4 libarchive profile-use deployment (2026-09-18)
 The exact `app-arch/libarchive-3.8.9` rebuild entered `clang-ir-use` with fingerprint `5fb936c5e7abbb337ee27111b5b26fdf139e6564fb5f647a6d8d153246e255fb`, consumed the live4 cached profile, completed both multilib builds, install-QA, qmerge, and merge, and installed the libarchive shared library plus `bsdtar`, `bsdcpio`, `bsdcat`, and `bsdunzip`. The durable log `/tmp/libarchive-profile-use.log` contains no LLVM profile-write errors and the transaction completed successfully; installed library and executable hashes were captured after merge. No BOLT deployment is claimed.
+
+### Live4 lz4 profile-use deployment (2026-09-18)
+The exact `app-arch/lz4-1.10.0-r1` rebuild entered `clang-ir-use` with fingerprint `5b468d533f727c8fb86569bf6621aced57f6ddfa1cb43d1f22ba3f87c139621d`, consumed the live4 cached profile, completed both multilib builds, install-QA, qmerge, and merge, and installed `/usr/bin/lz4` with its compatibility symlinks plus 32-bit and 64-bit liblz4 DSOs. The durable log `/tmp/lz4-profile-use.log` contains no LLVM profile-write errors and the transaction completed successfully; installed executable and DSO hashes were captured after merge. No BOLT deployment is claimed.
