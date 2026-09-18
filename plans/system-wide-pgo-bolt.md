@@ -3290,3 +3290,7 @@ After the live4 inventory-bearing framework publication and independent strict c
 ### Phase-3 coverage audit correction and live4 result (2026-09-18)
 
 The repository coverage auditor still contained a schema regression: it expected a top-level `cpvs` array and ELF class labels that the live inventory does not emit. It now derives package identities from `packages`, derives authoritative ELF identities from the independent owned-artifact census (`elf` metadata present), and compares those identities against the classification and safety records. The corrected script compiles and the live4 audit passes: 1,301 packages, 16,644 authoritative ELF records, zero missing classifications, and zero missing safety records. This is coverage accounting; the 11,021 pending ELF safety reviews remain explicit and no BOLT deployment is claimed.
+
+### Live4 authority rotation after coverage correction (2026-09-18)
+
+The coverage-auditor schema correction changed the source aggregate after the first live4 publication. The prior authority was explicitly deactivated, the corrected source was republished, and an independent strict installer check passed for framework `/var/lib/gentoo-optimization/framework-eca2741b00e1e1c9bbb37f7ecbf3761d8b8e9fb4946dd6920fd560c5c7e9dfda`. The same live4 generation triple was then reactivated transactionally and independently verified. No package mutation occurred during this authority rotation.
