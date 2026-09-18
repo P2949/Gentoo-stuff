@@ -1815,6 +1815,19 @@ def _command_verify_locked(
     if manifest_payload != expected_payload:
         fail("dispatcher manifest content is not the exact canonical eight-line form")
     if metadata != observed_metadata:
+        differences = []
+        def collect_differences(expected, observed, path=""):
+            if isinstance(expected, dict) and isinstance(observed, dict):
+                for key in sorted(set(expected) | set(observed)):
+                    child = f"{path}.{key}" if path else key
+                    if key not in expected or key not in observed:
+                        differences.append(child)
+                    else:
+                        collect_differences(expected[key], observed[key], child)
+            elif expected != observed:
+                differences.append(path)
+        collect_differences(metadata, observed_metadata)
+        print("REFUSED: validation metadata differs at: " + ", ".join(differences[:32]), file=sys.stderr)
         fail("validation metadata no longer matches current complete identities and proof")
     # The sidecar is an authenticated immutable artifact, not merely a JSON
     # value.  Require the exact canonical bytes emitted by ``produce`` so
