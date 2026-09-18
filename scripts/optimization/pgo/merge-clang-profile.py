@@ -22,7 +22,11 @@ def main():
   if not p.is_file() or p.stat().st_size==0 or sha(p)!=item.get('sha256'): raise SystemExit('REFUSED: receipt payload is missing or digest-mismatched')
   listed.append(p)
  if not listed: raise SystemExit('REFUSED: receipt contains no payload for package')
- actual=sorted(p for p in root.rglob('*.profraw') if p.is_file() and p.stat().st_size>0)
+ # The raw root is shared by the whole generation.  Compare only the exact
+ # package spool represented by this receipt; unrelated completed waves must
+ # not invalidate an otherwise complete package receipt.
+ package_roots={p.parent.resolve() for p in listed}
+ actual=sorted(p for package_root in package_roots for p in package_root.rglob('*.profraw') if p.is_file() and p.stat().st_size>0)
  if sorted(listed)!=actual: raise SystemExit('REFUSED: raw profile directory contains unreceipted or missing payloads')
  out=pathlib.Path(a.output)
  if out.exists(): raise SystemExit('REFUSED: refusing to overwrite existing merged profile')
