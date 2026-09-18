@@ -166,6 +166,15 @@ def main():
        continue
       with open(path,'rb') as stream:
        data=stream.read()
+      # LLVM may create an empty placeholder when a process exits before
+      # writing counters.  It is not a profile payload and must never enter a
+      # completed receipt or remain as an unreceipted extra for the merger.
+      if not data:
+       try:
+        os.unlink(path)
+       except FileNotFoundError:
+        pass
+       continue
       records.append({'cpv':cpv,'path':path,'sha256':hashlib.sha256(data).hexdigest(),'size':len(data)})
     return sorted(records,key=lambda x:x['path'])
    sealed=None
