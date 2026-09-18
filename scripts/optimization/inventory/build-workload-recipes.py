@@ -18,7 +18,8 @@ def main():
     argv=[p,'-L']; allow_empty_output=True
    else:
     argv=[p,'--help']; allow_empty_output=False
-   recipes.append({'path':p,'build_id':e['build_id'],'argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':safe,'allow_empty_output':allow_empty_output,'execution_state':'not-run'})
+   if safe:
+    recipes.append({'path':p,'build_id':e['build_id'],'argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'execution_state':'not-run'})
   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':recipes,'state':'recipe-ready' if recipes else 'no-runnable-entrypoint'})
  out={'record_type':'representative-workload-recipes','schema_version':1,'source_manifest':m['sha256'],'packages':rows};out['counts']=dict(collections.Counter(x['state'] for x in rows));out['recipe_count']=sum(len(x['recipes']) for x in rows);out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest();json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(out['counts'],out['recipe_count'])
 if __name__=='__main__':main()
