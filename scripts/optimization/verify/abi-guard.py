@@ -44,6 +44,12 @@ def inspect(path: Path) -> tuple[str, str | None, set[str]]:
         if fields[5] not in {"DEFAULT", "PROTECTED"} or fields[6] == "UND":
             continue
         name = fields[7]
+        # LLVM IR instrumentation emits this runtime helper into staged DSOs.
+        # It is not a package-provided ABI symbol and is intentionally absent
+        # from profile-use and ordinary builds; comparing it would reject the
+        # valid transition from a training image to a deployable image.
+        if name == "__llvm_write_custom_profile":
+            continue
         # Qt deliberately versions its private ABI namespace on patch-level
         # updates (for example QtPrivate_6_11_1 -> QtPrivate_6_11_2).  These
         # symbols are explicitly tagged Qt_6_PRIVATE_API and are not part of
