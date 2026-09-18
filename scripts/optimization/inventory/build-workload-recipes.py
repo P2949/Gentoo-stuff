@@ -33,6 +33,10 @@ def main():
    # unknown option and exits unsuccessfully.
    elif x['cpv'].startswith('app-arch/ncompress-'):
     argv=[p,'-V']; allow_empty_output=False
+   # The zip helper programs use -v for a successful version query; their
+   # --help/usage paths return nonzero status (zipnote returns 16).
+   elif x['cpv'].startswith('app-arch/zip-'):
+    argv=[p,'-v']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
