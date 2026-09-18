@@ -1828,6 +1828,13 @@ def _command_verify_locked(
                 differences.append(path)
         collect_differences(metadata, observed_metadata)
         print("REFUSED: validation metadata differs at: " + ", ".join(differences[:32]), file=sys.stderr)
+        for path in differences[:8]:
+            left = metadata
+            right = observed_metadata
+            for part in path.split("."):
+                left = left.get(part) if isinstance(left, dict) else None
+                right = right.get(part) if isinstance(right, dict) else None
+            print(f"REFUSED: {path}: recorded={left!r} observed={right!r}", file=sys.stderr)
         fail("validation metadata no longer matches current complete identities and proof")
     # The sidecar is an authenticated immutable artifact, not merely a JSON
     # value.  Require the exact canonical bytes emitted by ``produce`` so
