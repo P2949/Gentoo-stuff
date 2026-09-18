@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Publish an immutable, exact-CPV Clang profile-use dispatcher fragment."""
 from __future__ import annotations
-import argparse, hashlib, json, os, re, tempfile
+import argparse, hashlib, json, os, re, tempfile, grp, stat
 from pathlib import Path
 
 HEX = re.compile(r'^[0-9a-f]{64}$')
@@ -52,6 +52,14 @@ def main():
     if not HEX.fullmatch(lines['fingerprint']) or not HEX.fullmatch(lines['profile_sha256']): raise SystemExit('REFUSED: malformed manifest identity')
     profile=Path(lines['profile_path']).resolve(); safe(profile,cache,'profile')
     if hashlib.sha256(profile.read_bytes()).hexdigest()!=lines['profile_sha256']: raise SystemExit('REFUSED: profile digest mismatch')
+    if os.geteuid() != 0: raise SystemExit('REFUSED: publication requires root-owned cache publication')
+    try: portage_gid = grp.getgrnam('portage').gr_gid
+    except KeyError: raise SystemExit('REFUSED: portage group is unavailable')
+    for item in (profile, a.manifest, a.metadata):
+        st=item.stat()
+        if st.st_uid != 0: raise SystemExit(f'REFUSED: cache input is not root-owned: {item}')
+        os.chown(item, 0, portage_gid); os.chmod(item, stat.S_IMODE(st.st_mode) | stat.S_IRGRP)
+    os.chown(profile.parent, 0, portage_gid); os.chmod(profile.parent, stat.S_IMODE(profile.parent.stat().st_mode) | stat.S_IXGRP)
     fp=a.fingerprint_file.read_text().strip()
     if fp != f"fingerprint={lines['fingerprint']}": raise SystemExit('REFUSED: fingerprint mismatch')
     meta=json.loads(a.metadata.read_text())
