@@ -3690,3 +3690,7 @@ The successor framework was republished after the cpio profile transaction. The 
 ### Unzip Clang IR PGO wave (2026-09-19)
 
 `app-arch/unzip-6.0_p31` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-unzip.json` records two profraw payloads, successful merge, and completion of the reviewed unzip workload. No kernel, boot, EFI, or initramfs state was touched.
+
+### Xz-utils Clang IR wave quiescence stop (2026-09-19)
+
+`app-arch/xz-utils-9999` completed its Clang IR build and staged install, but the profile-wave runner refused to seal the transaction because the profile payload directory did not quiesce after workload execution. No receipt was issued and the package merge was not accepted as a verified profile result. The attempt directory and payload evidence remain preserved for diagnosis; no framework or ABI guard was bypassed.
