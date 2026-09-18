@@ -3674,3 +3674,7 @@ The successor framework was republished after the cpio profile transaction. The 
 ### Lz4 Clang IR PGO wave (2026-09-18)
 
 `app-arch/lz4-1.10.0-r1` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-lz4.json` records one profraw payload, successful merge, and completion of the reviewed lz4 workload. No kernel, boot, EFI, or initramfs state was touched.
+
+### Ncompress Clang IR PGO wave (2026-09-18)
+
+`app-arch/ncompress-5.0-r2` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-ncompress.json` records one profraw payload, successful merge, and completion of the reviewed ncompress workload. No kernel, boot, EFI, or initramfs state was touched.
