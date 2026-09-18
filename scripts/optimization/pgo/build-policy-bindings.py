@@ -19,13 +19,19 @@ def main():
     a = ap.parse_args()
     lanes = json.load(open(a.lanes)); comp = json.load(open(a.compiler_identities))
     records = []
+    seen = set()
     for item in lanes['packages']:
         cpv, lane = item['cpv'], item['lane']
+        if not isinstance(cpv, str) or '/' not in cpv or not isinstance(lane, str):
+            raise SystemExit(f'REFUSED: malformed lane record: {item!r}')
+        if cpv in seen:
+            raise SystemExit(f'REFUSED: duplicate CPV in lane manifest: {cpv}')
+        seen.add(cpv)
         key = cpv.replace('/', '_')
         fp = os.path.join(a.identity_root, key + '.fingerprint.env')
         if lane.startswith('pgo-'):
             family = COMPILER.get(lane)
-            if family is None or family not in comp:
+            if family is None or family not in comp or not isinstance(comp[family].get('sha256'), str):
                 raise SystemExit(f'REFUSED: no compiler identity for {cpv} ({lane})')
             if not os.path.isfile(fp):
                 raise SystemExit(f'REFUSED: missing fingerprint for {cpv}: {fp}')
