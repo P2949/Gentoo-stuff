@@ -3518,3 +3518,6 @@ The exact `app-arch/cpio-2.15` rebuild entered `clang-ir-use` with fingerprint `
 
 ### Live4 tar profile-use deployment (2026-09-18)
 The exact `app-arch/tar-1.35-r1` rebuild entered `clang-ir-use` with fingerprint `0d69bbda6fb82d7727e60f5d3dbc64bfa38e50194ce7f94ad953b01e3af00678`, consumed the live4 cached profile, completed compilation, install-QA, and merge, and installed `/bin/gtar`. The durable log `/tmp/tar-profile-use.log` records the exact profile-use compiler path and no LLVM profile-write errors; the installed binary was hashed after merge. No BOLT deployment is claimed.
+
+### Live4 ncompress profile-use deployment (2026-09-18)
+The exact `app-arch/ncompress-5.0-r2` rebuild entered `clang-ir-use` with fingerprint `1835dd4484815f6d391ab0860a437125dbbe132646864c0bf2413e752f27f3e2`, consumed the live4 cached profile, completed compilation, install-QA, and merge, and installed `/usr/bin/compress` plus its `uncompress` symlink. The durable log `/tmp/ncompress-profile-use.log` contains the profile-use compiler invocation and no LLVM profile-write errors. The installed executable was hashed after merge. No BOLT deployment is claimed.
