@@ -13,11 +13,21 @@ def read(root, name, required=True):
     return p.read_text(errors='replace').strip()
 
 def compiler(path, family, fmt):
-    out = subprocess.run([path, '--version'] if family != 'go' else [path, 'version'], text=True,
+    out = subprocess.run([path, '--version', '--verbose'] if family == 'rustc' else ([path, 'version'] if family == 'go' else [path, '--version']), text=True,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True).stdout
     m = re.search(r'(?:clang version|gcc \(.*?\)|rustc|go version go)\s*([0-9]+)', out)
     if not m: raise ValueError(f'cannot determine {family} major from {path}')
-    return {'path': path, 'family': family, 'major': int(m.group(1)), 'profile_format': fmt}
+    extra = {}
+    if family == 'rustc':
+        llvm = re.search(r'^LLVM version:\s*(\S+)', out, re.MULTILINE)
+        if not llvm: raise ValueError(f'cannot determine bundled LLVM version from {path}')
+        fmt = 'rust-llvm-' + llvm.group(1)
+        host = re.search(r'^host:\s*(\S+)', out, re.MULTILINE)
+        if not host: raise ValueError(f'cannot determine rust host target from {path}')
+        extra = {'rust_target_triple': host.group(1), 'rustc_llvm_version': llvm.group(1)}
+    elif family == 'go':
+        fmt = 'go-pprof-' + re.search(r'go version go(\S+)', out).group(1)
+    return {'path': path, 'family': family, 'major': int(m.group(1)), 'profile_format': fmt, **extra}
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--vdb',default='/var/db/pkg'); ap.add_argument('--lanes',required=True)
@@ -38,16 +48,21 @@ def main():
                 for line in package_env.read_text(errors='replace').splitlines():
                     bits=line.split();
                     if bits and (bits[0]==cpv or bits[0]==cat+'/*'): env.extend(bits[1:])
+            compiler_obj=compiler(ci[family]['path'],family,fmt)
+            rust_target=compiler_obj.pop('rust_target_triple',None); rust_llvm=compiler_obj.pop('rustc_llvm_version',None)
             data={'schema_version':3,'category':cat,'pf':pf,'slot':slot_parts[0],'subslot':slot_parts[1],
              'repository':read(root,'REPOSITORY',False) or read(root,'repository',False) or 'unknown',
              'ebuild_sha256':hashlib.sha256(ebuild.read_bytes()).hexdigest(),'eapi':read(root,'EAPI'),
              'chost':read(root,'CHOST'),'abi':'amd64' if 'abi_x86_64' in use or 'amd64' in use else 'x86',
-             'compiler':compiler(ci[family]['path'],family,fmt),'use_flags':use,
+             'compiler':compiler_obj,'use_flags':use,
              'cflags':read(root,'CFLAGS'),'cxxflags':read(root,'CXXFLAGS'),'ldflags':read(root,'LDFLAGS'),
              'rustflags':read(root,'RUSTFLAGS',False),'goflags':read(root,'GOFLAGS',False),
              'features':read(root,'FEATURES').split(),'package_env_files':env,
              'extra_econf':'','extra_emeson':'','extra_ecmake':'','kernel_module':False,'kernel_release':None,
              'rust_target_triple':None,'rustc_llvm_version':None}
+            if family == 'rustc':
+                data['rust_target_triple'] = rust_target
+                data['rustc_llvm_version'] = rust_llvm
             out.append({'cpv':cpv,'lane':item['lane'],'input':data})
         except (OSError,ValueError,subprocess.CalledProcessError) as e:
             raise SystemExit(f'REFUSED: cannot construct authoritative fingerprint input for {cpv}: {e}')
