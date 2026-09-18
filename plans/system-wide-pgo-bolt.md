@@ -3706,3 +3706,7 @@ The successor framework was republished after the cpio profile transaction. The 
 ### Argon2 workload correction and Clang IR wave (2026-09-19)
 
 The initial `app-crypt/argon2-20190702-r1` wave exposed a workload-definition defect: invoking `argon2` without a salt and password fixture exited before exercising the binary. The workload generator now emits a deterministic minimum-cost Argon2id command with a root-owned password fixture under `/var/lib/gentoo-optimization/workloads/argon2/password`; the regenerated successor workload artifact passed readiness validation. The corrected rerun completed the Clang IR transaction and sealed one profraw payload in `profile-wave-receipt-argon2fix.json`.
+
+### Successor framework republish after argon2 workload correction (2026-09-19)
+
+The committed argon2 workload-generator correction and regenerated workload artifact were republished through the root-owned installer. The independent strict framework check passed against the exact successor policy and frozen inventory. An intermediate check command contained a generated-policy basename typo and failed before mutation; the corrected check passed.
