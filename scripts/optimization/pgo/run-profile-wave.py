@@ -7,6 +7,13 @@ def main():
  missing=[x['cpv'] for x in w['packages'] if not os.path.isfile(os.path.join(identity_root,x['cpv'].replace('/','_')+'.fingerprint.env'))]
  if r.get('source_wave')!=w.get('sha256') or r.get('ready_count')!=len(w['packages']) or r.get('invalid_inputs') or missing:raise SystemExit('REFUSED: wave readiness is incomplete, belongs to another wave, or lacks fingerprint inputs')
  if not a.execute:print('READY: all technical gates pass; rerun with --execute to invoke the controlled transaction');return
+ lane_modes={'pgo-clang-ir':'clang-ir-generate','pgo-gcc':'gcc-generate','pgo-rust':'rust-generate'}
+ unsupported=[x['cpv'] for x in w['packages'] if x.get('lane') == 'pgo-go']
+ if unsupported:
+  raise SystemExit('REFUSED: pgo-go collection requires a profile-producing sampling workload recipe: '+', '.join(unsupported))
+ unknown=[x.get('lane') for x in w['packages'] if x.get('lane') not in lane_modes]
+ if unknown:
+  raise SystemExit('REFUSED: wave contains unsupported generation lanes: '+', '.join(sorted(set(unknown))))
  # Pin the transaction to the exact installed identities recorded by the
  # readiness manifest.  Portage requires the explicit =CPV atom form when a
  # revision-qualified CPV is supplied; bare CPVs are category/package names,
@@ -25,8 +32,8 @@ def main():
   # The framework requires root-owned generation spools with a sticky,
   # writable leaf so the unprivileged Portage sandbox can emit profiles.
   subprocess.run(['doas','install','-d','-o','root','-g','root','-m','01777',profile_path],check=True)
-  env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256'];env['GENTOO_OPT_REPLACEMENT_TRANSACTION']='1';env.setdefault('GENTOO_OPT_ABI','amd64')
-  subprocess.run(['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path,'emerge','--oneshot','--buildpkg','='+cpv],env=env,check=True)
+  env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256'];env['GENTOO_OPT_REPLACEMENT_TRANSACTION']='1';env['GENTOO_OPT_ABI']='amd64';env['GENTOO_OPT_MODE']=lane_modes[item['lane']];env['GENTOO_OPT_PROFILE_PATH']=profile_path
+  subprocess.run(['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_MODE='+env['GENTOO_OPT_MODE'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path,'emerge','--oneshot','--buildpkg','='+cpv],env=env,check=True)
   # Run the exact reviewed representative recipes after the instrumented
   # package transaction.  This is the profile payload collection point; a
   # recipe failure is terminal for the wave and is recorded by the caller.
