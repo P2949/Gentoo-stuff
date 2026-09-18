@@ -25,6 +25,10 @@ def main():
    # successful, non-destructive representative entrypoint.
    elif p == '/usr/bin/cabextract':
     argv=[p,'--version']; allow_empty_output=False
+   # libarchive's BSD utilities print usage for --help but return status 1;
+   # --version is a successful, non-destructive representative workload.
+   elif x['cpv'].startswith('app-arch/libarchive-'):
+    argv=[p,'--version']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
