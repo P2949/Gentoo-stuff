@@ -3780,3 +3780,7 @@ The first `app-misc/evtest-1.36` attempt correctly refused its generated `--help
 ### Lowdown Clang IR PGO wave (2026-09-19)
 
 `app-text/lowdown-3.1.1` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records four nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed lowdown workload; independent receipt verification passed. LLVM 22 merged the payloads into `/var/lib/gentoo-optimization/merged-profiles/app-text_lowdown-3.1.1.profdata`, with root-owned evidence in `profile-merge-lowdown.json`. No BOLT deployment is claimed.
+
+### Scdoc workload correction and Clang IR PGO wave (2026-09-19)
+
+The first `app-text/scdoc-9999` attempt correctly refused the generic `--help` workload because scdoc is a stdin filter and exits nonzero without input. The authoritative workload generator now supplies a deterministic root-owned minimal manpage fixture at `/var/lib/gentoo-optimization/workloads/scdoc/fixture.scd`; the framework was republished and its strict check passed. The corrected exact wave rebuilt and merged scdoc, collected one nonempty profraw payload, passed independent receipt verification, and merged with LLVM 22 into `/var/lib/gentoo-optimization/merged-profiles/app-text_scdoc-9999.profdata`, with root-owned evidence in `profile-merge-scdoc.json`. No BOLT deployment is claimed.
