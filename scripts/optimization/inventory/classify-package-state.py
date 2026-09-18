@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 import argparse,json,hashlib,collections
+from portage.versions import catpkgsplit
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--census',required=True);ap.add_argument('--kernel-set',required=True);ap.add_argument('--output',required=True);ap.add_argument('--vdb',default='/var/db/pkg');a=ap.parse_args()
  m=json.load(open(a.manifest)); c=json.load(open(a.census)); owners={x['owner_cpv'] for x in c['artifacts'] if x['kind'] in ('regular','symlink') and x.get('elf')}; k=set(x.strip() for x in open(a.kernel_set) if x.strip()); atoms={}
  for cpv in [x['cpv'] for x in m['packages']]:
   cat,pf=cpv.split('/',1); root=a.vdb+'/'+cat+'/'+pf
   category_file=root+'/CATEGORY'; pn_file=root+'/PN'
-  if not __import__('os').path.isfile(category_file) or not __import__('os').path.isfile(pn_file):
-   raise SystemExit(f'REFUSED: authoritative VDB CATEGORY/PN metadata missing for {cpv}')
-  category=open(category_file).read().strip(); pn=open(pn_file).read().strip()
+  if not __import__('os').path.isfile(category_file):
+   raise SystemExit(f'REFUSED: authoritative VDB CATEGORY metadata missing for {cpv}')
+  category=open(category_file).read().strip()
+  pn=open(pn_file).read().strip() if __import__('os').path.isfile(pn_file) else ''
+  if not pn:
+   split=catpkgsplit(pf)
+   if not split or split[0] != 'null':
+    raise SystemExit(f'REFUSED: cannot derive authoritative PN for {cpv}')
+   pn=split[1]
   if category != cat or not category or not pn or '/' in pn:
    raise SystemExit(f'REFUSED: invalid authoritative VDB CATEGORY/PN metadata for {cpv}')
   atoms[cpv]=category+'/'+pn
