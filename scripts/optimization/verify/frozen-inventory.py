@@ -36,15 +36,18 @@ def verify(path: Path) -> dict:
     owners=set(cpvs)
     paths=d.get('owned_paths'); dirs=d.get('owned_directories')
     if not isinstance(paths,list) or not isinstance(dirs,list): fail('path arrays missing')
-    path_keys=[]; path_set=set()
+    path_set=set(); previous_path_key=None
     for e in paths:
         if list(e) != ['owner_cpv','path'] or e['owner_cpv'] not in owners or not canonical_path(e['path']): fail('invalid owned path')
-        k=(e['owner_cpv'],e['path']); path_keys.append(k); path_set.add(e['path'])
-    dir_keys=[]
+        k=(e['owner_cpv'],e['path'])
+        if previous_path_key is not None and k <= previous_path_key: fail('owned paths not sorted and unique')
+        previous_path_key=k; path_set.add(e['path'])
+    previous_dir_key=None
     for e in dirs:
         if list(e) != ['classification','gid','mode','owner_cpv','path','resolution','uid'] or e['owner_cpv'] not in owners or not canonical_path(e['path']) or e['classification'] != 'not-applicable' or not isinstance(e['mode'],int) or e['mode']<0 or e['mode']>4095 or not isinstance(e['uid'],int) or e['uid']<0 or not isinstance(e['gid'],int) or e['gid']<0: fail('invalid owned directory')
-        directory_resolution(e['resolution']); dir_keys.append((e['owner_cpv'],e['path']))
-    if path_keys != sorted(path_keys) or len(path_keys)!=len(set(path_keys)) or dir_keys != sorted(dir_keys) or len(dir_keys)!=len(set(dir_keys)): fail('ownership records not sorted and unique')
+        directory_resolution(e['resolution']); key=(e['owner_cpv'],e['path'])
+        if previous_dir_key is not None and key <= previous_dir_key: fail('owned directories not sorted and unique')
+        previous_dir_key=key
     if any(e['path'] in path_set for e in dirs): fail('file and directory namespaces overlap')
     return {'cpvs':cpvs,'generation_id':d['generation_id'],'inventory_id':d['inventory_id'],'inventory_sha256':digest,'owned_path_count':len(paths),'owned_directory_count':len(dirs),'package_count':len(packages)}
 

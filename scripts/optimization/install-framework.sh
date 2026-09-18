@@ -1281,7 +1281,7 @@ snapshot_frozen_inventory() {
     verify_regular_trusted "${FROZEN_VERIFIER_PATH}" 0755
     if [[ -z ${TEST_ROOT} ]]; then
         verifier_sha256=$(sha256sum -- "${FROZEN_VERIFIER_PATH}"); verifier_sha256=${verifier_sha256%% *}
-        [[ ${verifier_sha256} == c9dbc0c0ac2a772654230f7bfb0bd75ae0e1695fbba628fa88574da9147474ee ]] || \
+        [[ ${verifier_sha256} == 583afd47d095ac7222e1c402bed1690f616d78c8dc4109bda116eb8c0e727741 ]] || \
             fail 'trusted frozen-inventory verifier hash is not authorized'
     fi
     validation_json=$(python3 "${FROZEN_VERIFIER_PATH}" "${FROZEN_INVENTORY_INPUT}") || \
