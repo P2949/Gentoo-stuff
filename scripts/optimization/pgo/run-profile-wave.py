@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,json,os,signal,subprocess,sys,time,hashlib,tempfile,atexit
+import argparse,json,os,signal,subprocess,sys,time,hashlib,tempfile,atexit,shutil
 from pathlib import Path
 from profile_locks import profile_lock_hierarchy
 # The orchestration process itself must never emit package profile payloads.
@@ -92,6 +92,18 @@ def main():
     rustv=subprocess.run(['rustc','-vV'],text=True,stdout=subprocess.PIPE,check=True).stdout
     target=next((line.split(':',1)[1].strip() for line in rustv.splitlines() if line.startswith('host:')),None)
     if not target: raise SystemExit('REFUSED: active rustc identity has no host target')
+    llvm=next((line.split(':',1)[1].strip().split('.')[0] for line in rustv.splitlines() if line.startswith('LLVM version:')),None)
+    clang_command=shutil.which('clang')
+    if not clang_command:
+     identity_file=Path(identity_root).parent/'compiler-identities.json'
+     try: clang_command=json.load(identity_file.open(encoding='utf-8'))['clang']['path']
+     except (OSError,KeyError,TypeError,ValueError): raise SystemExit('REFUSED: active Clang identity has no executable path')
+    if not os.path.isfile(clang_command) or not os.access(clang_command,os.X_OK):
+     raise SystemExit(f'REFUSED: reviewed Clang executable is unavailable: {clang_command}')
+    clangv=subprocess.run([clang_command,'--version'],text=True,stdout=subprocess.PIPE,check=True).stdout
+    clang_major=next((part.split('.')[0] for part in clangv.split() if part[:1].isdigit()),None)
+    if llvm and clang_major and llvm != clang_major:
+     raise SystemExit(f'REFUSED: Rust bundled LLVM {llvm} differs from active Clang LLVM {clang_major}; LTO profile generation is ABI-incompatible')
     env['GENTOO_OPT_RUST_TARGET']=target
    command=['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_MODE='+env['GENTOO_OPT_MODE'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path]
    if 'GENTOO_OPT_RUST_TARGET' in env: command.append('GENTOO_OPT_RUST_TARGET='+env['GENTOO_OPT_RUST_TARGET'])
