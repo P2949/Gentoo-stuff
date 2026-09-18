@@ -3598,3 +3598,7 @@ The confirmed LLVM23/LLVM22 linker mismatch was isolated to inherited system LTO
 ### Additional Rust PGO wave (2026-09-18)
 
 With the lane-specific no-cross-LLVM-LTO policy active, `dev-util/bpf-linker-0.11.1` completed its Rust PGO rebuild, merge, and reviewed workload. The sealed receipt `profile-wave-receipt-rust-next.json` contains one profraw payload. The Rust lane now has independently verified successful bindgen and bpf-linker payload collection; mixed-LTO Ruby remains excluded with linker evidence.
+
+### Cargo-audit Rust PGO correctness stop (2026-09-18)
+
+`dev-util/cargo-audit-0.22.2` compiled and staged with the Rust no-cross-LLVM-LTO lane, but its reviewed `/usr/bin/cargo-audit --help` workload exited SIGSEGV. The installed instrumented binary also reproduced SIGSEGV under `LLVM_PROFILE_FILE=/dev/null`, while the preserved pre-wave binary package `cargo-audit-0.22.2-1.gpkg.tar` passed `cargo-audit --version`. The failed profile-wave receipt and build log are retained; the known-good binary package was restored immediately. This CPV remains a terminal correctness failure pending package-specific remediation and is not counted as an optimized payload.
