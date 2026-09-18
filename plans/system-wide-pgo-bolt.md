@@ -3602,3 +3602,7 @@ With the lane-specific no-cross-LLVM-LTO policy active, `dev-util/bpf-linker-0.1
 ### Cargo-audit Rust PGO correctness stop (2026-09-18)
 
 `dev-util/cargo-audit-0.22.2` compiled and staged with the Rust no-cross-LLVM-LTO lane, but its reviewed `/usr/bin/cargo-audit --help` workload exited SIGSEGV. The installed instrumented binary also reproduced SIGSEGV under `LLVM_PROFILE_FILE=/dev/null`, while the preserved pre-wave binary package `cargo-audit-0.22.2-1.gpkg.tar` passed `cargo-audit --version`. The failed profile-wave receipt and build log are retained; the known-good binary package was restored immediately. This CPV remains a terminal correctness failure pending package-specific remediation and is not counted as an optimized payload.
+
+### Cargo-c Rust PGO wave (2026-09-18)
+
+`dev-util/cargo-c-0.10.25` completed the isolated Rust PGO transaction, merge, and workload execution. The sealed receipt `profile-wave-receipt-cargo-c.json` contains four profile payloads. This package is now independently verified as a successful Rust profile-generation result.
