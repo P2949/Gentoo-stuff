@@ -665,6 +665,16 @@
       },
       "lane": "unsupported-by-upstream-toolchain",
       "reason_code": "prebuilt-managed-runtime"
+    },
+    {
+      "cpv": "dev-lang/ruby-3.4.9",
+      "evidence": {
+        "ebuild": "absent-from-configured-repositories",
+        "installed_cpv": "dev-lang/ruby-3.4.9",
+        "pretend_result": "no ebuilds to satisfy exact CPV"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "binary-only-no-rebuild-source"
     }
   ],
   "record_type": "pgo-lane-reviewed-overrides",
