@@ -3336,3 +3336,11 @@ The first rebuild exposed a publication-permissions defect: root-owned cache pay
 ## Live4 first profile-use deployment (2026-09-18)
 
 The exact `app-arch/7zip-26.03` profile-use mapping was published through the normal framework transaction and the live4 authority was reactivated against framework `framework-acbeee5ddfbe7bfcfaa1fe95f6377d36161ed4b23762916746db734117e9f582`. The first build exposed and corrected a cache-permission defect: validated root-owned profile payloads must be group-readable/traversable by the Portage user while remaining immutable. The publisher now enforces that contract. A controlled exact rebuild completed successfully with 596 durable `-fprofile-use` occurrences in the Portage log and zero new `.profraw` files after the transaction start. Receipt SHA-256: `4ebe1a023859c59a8815da25fc9ba648d4cab31c4a6c5ac8ec9c546f941412ae`. No BOLT deployment is claimed.
+
+### Live4 second profile-use deployment (2026-09-18)
+
+Published the validated `app-admin/doas-6.8.2` profile-use fragment and rebuilt the exact CPV under a new generated-policy/framework transaction. The clean policy candidate used generated-policy identity `a5409aed24565011a460786d19941c4f2bb7a1cf25ec46e19b2f0755472811c5`; framework publication passed and live4 authority was reactivated against framework `/var/lib/gentoo-optimization/framework-5d4cd4710236760e5428d16287a3eb3986e7e4fec6676422da03a48605b83cb5`. The controlled rebuild completed through install-QA with 11 durable exact `-fprofile-use` flag occurrences, zero new raw profiles, and successful merge. Receipt `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-live4/profile-use-doas-receipt.json` has SHA-256 `bc19be1c7b5be32420d0068f07afe003f5598214d97de71adbbb012f585f46ed`.
+
+## Live4 second profile-use deployment (2026-09-18)
+
+Published and rebuilt exact `app-admin/doas-6.8.2` under the live4 profile-use dispatcher. The clean generated-policy identity was `a5409aed24565011a460786d19941c4f2bb7a1cf25ec46e19b2f0755472811c5`; framework publication and authority reactivation passed. Durable log evidence records 11 exact `-fprofile-use` flag occurrences, zero new raw profiles, and successful install-QA/merge. Receipt SHA-256: `bc19be1c7b5be32420d0068f07afe003f5598214d97de71adbbb012f585f46ed`.
