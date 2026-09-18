@@ -41,6 +41,11 @@ def main():
    rustv=subprocess.run(['rustc','-vV'],text=True,stdout=subprocess.PIPE,check=True).stdout
    target=next((line.split(':',1)[1].strip() for line in rustv.splitlines() if line.startswith('host:')),None)
    if not target: raise SystemExit('REFUSED: active rustc identity has no host target')
+   llvm=next((line.split(':',1)[1].strip().split('.')[0] for line in rustv.splitlines() if line.startswith('LLVM version:')),None)
+   clangv=subprocess.run(['clang','--version'],text=True,stdout=subprocess.PIPE,check=True).stdout
+   clang_major=next((part.split('.')[0] for part in clangv.split() if part[:1].isdigit()),None)
+   if llvm and clang_major and llvm != clang_major:
+    raise SystemExit(f'REFUSED: Rust bundled LLVM {llvm} differs from active Clang LLVM {clang_major}; LTO profile generation is ABI-incompatible')
    env['GENTOO_OPT_RUST_TARGET']=target
   command=['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_MODE='+env['GENTOO_OPT_MODE'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path]
   if 'GENTOO_OPT_RUST_TARGET' in env: command.append('GENTOO_OPT_RUST_TARGET='+env['GENTOO_OPT_RUST_TARGET'])
