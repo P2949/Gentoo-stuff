@@ -3630,3 +3630,7 @@ The Rust dispatcher now supports an authenticated `GENTOO_OPT_RUST_HOST_LAYOUT=1
 ### Successor framework republish after AMDGPU top wave (2026-09-18)
 
 The successor framework was republished from the committed source with its exact post-sync generated policy and frozen inventory. The root-owned production installer completed the atomic publication, and an independent strict `--check` passed. The active framework remains bound to the same exact successor generation and inventory; no package, profile policy, or boot/kernel state was changed by this publication.
+
+### 7zip Clang IR PGO wave (2026-09-18)
+
+`app-arch/7zip-26.03` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-7zip.json` records one profraw payload, the reviewed Clang identity, exact inventory binding, successful merge, and completed `7zz --help` workload execution. The transaction stayed within userspace; no kernel, boot, or EFI state was touched.
