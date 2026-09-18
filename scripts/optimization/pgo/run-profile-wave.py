@@ -119,11 +119,23 @@ def main():
      run_env['LLVM_PROFILE_FILE']=os.path.join(profile_path, '%m-%p.profraw')
     elif item['lane'] == 'pgo-go' and env.get('GENTOO_OPT_MODE','').endswith('generate'):
      run_env.pop('LLVM_PROFILE_FILE', None)
+    stdin_handle=None
+    stdin_path=recipe.get('stdin_path')
+    if stdin_path is not None:
+     trusted='/var/lib/gentoo-optimization/workloads/'
+     canonical=os.path.realpath(stdin_path)
+     if (not isinstance(stdin_path,str) or not canonical.startswith(trusted)
+         or not os.path.isfile(canonical) or os.path.islink(stdin_path)):
+      raise SystemExit(f'REFUSED: unsafe workload stdin fixture for {cpv}: {stdin_path}')
+     stdin_handle=open(canonical,'rb')
     start=time.monotonic()
     try:
-     result=subprocess.run(argv,cwd=recipe.get('cwd','/'),env=run_env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=30,check=False)
+     result=subprocess.run(argv,cwd=recipe.get('cwd','/'),env=run_env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,stdin=stdin_handle,timeout=30,check=False)
     except (OSError,subprocess.TimeoutExpired) as e:
      raise SystemExit(f'REFUSED: workload recipe failed for {cpv}: {path}: {e}')
+    finally:
+     if stdin_handle is not None:
+      stdin_handle.close()
     if result.returncode != 0:
      raise SystemExit(f'REFUSED: workload recipe exited {result.returncode} for {cpv}: {path}')
     if not result.stdout and not recipe.get('allow_empty_output',False):

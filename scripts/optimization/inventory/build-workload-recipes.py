@@ -19,6 +19,10 @@ def main():
    # doas has no --help mode: it treats the option as a command-line error.
    # -L is its documented, non-destructive diagnostic action and succeeds
    # without requiring a policy file or a child command.
+   if x['cpv'].startswith('app-arch/rpm2targz-') and p == '/usr/bin/rpmoffset':
+    argv=[p]; allow_empty_output=True
+    recipes.append({'path':p,'build_id':e['build_id'],'argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'stdin_path':'/var/lib/gentoo-optimization/workloads/rpm2targz/minimal.rpm','execution_state':'not-run'})
+    continue
    if p == '/usr/bin/doas':
     argv=[p,'-L']; allow_empty_output=True
    # cabextract prints help text but returns status 1; --version is the
