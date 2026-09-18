@@ -3714,3 +3714,7 @@ The committed argon2 workload-generator correction and regenerated workload arti
 ### GCR Clang IR PGO wave with Mesa dependency rebuild (2026-09-19)
 
 `app-crypt/gcr-4.4.0.1-r1` completed the exact successor `pgo-clang-ir` wave. Portage correctly rebuilt its required `dev-util/mesa_clc-9999` dependency in the same transaction; the sealed receipt is bound to the requested GCR CPV and records its profraw payloads, successful merge, and reviewed workload completion. The resolver's SPIR-V conflict warning remained fail-closed and did not authorize unrelated consumer upgrades.
+
+### Libb2 workload-accounting refusal (2026-09-19)
+
+`app-crypt/libb2-0.98.1-r3` was not recipe-ready in the regenerated workload manifest, so no representative workload was authorized. A manually constructed one-package probe therefore reached the build but was correctly refused at payload sealing because the profile directory did not quiesce without a workload. No verified profile receipt was issued. This CPV remains a workload-accounting exclusion/pending case and will not be counted as optimized until a valid representative workload is generated.
