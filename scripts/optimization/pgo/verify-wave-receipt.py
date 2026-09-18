@@ -25,6 +25,17 @@ def main():
     readiness = json.loads(args.readiness.read_text())
     if receipt.get("record_type") != "profile-wave-transaction-receipt":
         raise SystemExit("REFUSED: receipt has an invalid record type")
+    if receipt.get("schema_version") != 2:
+        raise SystemExit("REFUSED: completed wave receipt is not authority-bound schema v2")
+    generation = receipt.get("generation")
+    if not isinstance(generation, dict) or set(generation) != {"generation_id", "inventory_id", "inventory_sha256"}:
+        raise SystemExit("REFUSED: receipt lacks an exact generation triple")
+    if not all(isinstance(generation.get(k), str) and generation[k] for k in generation):
+        raise SystemExit("REFUSED: receipt generation identity is malformed")
+    if len(generation["inventory_sha256"]) != 64 or any(c not in "0123456789abcdef" for c in generation["inventory_sha256"]):
+        raise SystemExit("REFUSED: receipt inventory digest is not a lowercase SHA-256")
+    if not isinstance(receipt.get("framework_generation"), str) or not receipt["framework_generation"].startswith("/"):
+        raise SystemExit("REFUSED: receipt lacks an absolute active framework target")
     if receipt.get("sha256") != digest_document(receipt):
         raise SystemExit("REFUSED: receipt self-digest mismatch")
     if receipt.get("wave_sha256") != wave.get("sha256"):

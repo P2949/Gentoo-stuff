@@ -10,10 +10,12 @@ import hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1]); digest = sys.argv[2]
 wave = {'sha256': 'a' * 64, 'packages': [{'cpv': 'app/test-1'}]}
 readiness = {'sha256': 'b' * 64}
-receipt = {'record_type': 'profile-wave-transaction-receipt', 'schema_version': 1,
+receipt = {'record_type': 'profile-wave-transaction-receipt', 'schema_version': 2,
            'wave_sha256': wave['sha256'], 'readiness_sha256': readiness['sha256'],
            'package_count': 1, 'packages': ['app/test-1'], 'state': 'completed',
            'authorization': 'profile-payloads-collected',
+           'generation': {'generation_id': 'framework-test', 'inventory_id': 'inventory-test', 'inventory_sha256': 'c' * 64},
+           'framework_generation': '/var/lib/gentoo-optimization/framework-test',
            'profile_payloads': [{'cpv': 'app/test-1', 'path': str(root / 'payload.profraw'), 'sha256': digest}]}
 receipt['sha256'] = hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 for name, value in [('wave.json', wave), ('readiness.json', readiness), ('receipt.json', receipt)]:
