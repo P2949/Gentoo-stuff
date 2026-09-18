@@ -3670,3 +3670,7 @@ The successor framework was republished after the cpio profile transaction. The 
 ### Libarchive Clang IR wave ABI-guard stop (2026-09-18)
 
 `app-arch/libarchive-3.8.9` compiled and staged under the exact successor Clang IR lane, but the fail-closed install-QA ABI guard rejected the replacement for exported-symbol loss in `libarchive.so.13` (old provider 603 exported symbols, staged provider 453; the missing set includes `__archive_*` and `PPMD8_kExpEscape`). The package did not merge and no profile receipt was issued. The rejection and build log are preserved as package-specific ABI evidence; the guard was not bypassed.
+
+### Lz4 Clang IR PGO wave (2026-09-18)
+
+`app-arch/lz4-1.10.0-r1` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-lz4.json` records one profraw payload, successful merge, and completion of the reviewed lz4 workload. No kernel, boot, EFI, or initramfs state was touched.
