@@ -58,11 +58,19 @@ def main():
    # device and still exercises the installed executable.
    elif p == '/usr/bin/evtest':
     argv=[p,'--version']; allow_empty_output=False
+   # scdoc is a filter and has no standalone help/version action.  Feed a
+   # deterministic minimal document so the workload exercises parsing and
+   # roff emission without reading arbitrary user files.
+   elif p == '/usr/bin/scdoc':
+    argv=[p]; allow_empty_output=False
+    stdin_path='/var/lib/gentoo-optimization/workloads/scdoc/fixture.scd'
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
     recipe={'path':p,'build_id':e['build_id'],'argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'execution_state':'not-run'}
     if x['cpv'].startswith('app-crypt/argon2-') and p == '/usr/bin/argon2':
+     recipe['stdin_path']=stdin_path
+    if p in {'/usr/bin/evtest','/usr/bin/scdoc'}:
      recipe['stdin_path']=stdin_path
     recipes.append(recipe)
   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':recipes,'state':'recipe-ready' if recipes else 'no-runnable-entrypoint'})
