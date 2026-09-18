@@ -26,9 +26,17 @@ def main():
  if sorted(listed)!=actual: raise SystemExit('REFUSED: raw profile directory contains unreceipted or missing payloads')
  out=pathlib.Path(a.output)
  if out.exists(): raise SystemExit('REFUSED: refusing to overwrite existing merged profile')
- out.parent.mkdir(parents=True,exist_ok=True); subprocess.run([a.llvm_profdata,'merge','-sparse',*(str(p) for p in listed),'-o',str(out)],check=True)
- shown=subprocess.run([a.llvm_profdata,'show','--counts','--all-functions',str(out)],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
- if not shown.stdout.strip(): raise SystemExit('REFUSED: llvm-profdata produced no readable profile description')
+ out.parent.mkdir(parents=True,exist_ok=True)
+ fd,tmpout=tempfile.mkstemp(prefix='.profdata-',dir=str(out.parent)); os.close(fd); os.unlink(tmpout)
+ try:
+  subprocess.run([a.llvm_profdata,'merge','-sparse',*(str(p) for p in listed),'-o',tmpout],check=True)
+  shown=subprocess.run([a.llvm_profdata,'show','--counts','--all-functions',tmpout],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  if not shown.stdout.strip(): raise SystemExit('REFUSED: llvm-profdata produced no readable profile description')
+  os.replace(tmpout,out)
+ except Exception:
+  try: os.unlink(tmpout)
+  except FileNotFoundError: pass
+  raise
  evidence={'record_type':'clang-ir-profile-merge','schema_version':2,'receipt':str(pathlib.Path(a.receipt).resolve()),'receipt_sha256':sha(pathlib.Path(a.receipt)),'package':a.package,'generation':expected,'raw_files':[{'path':str(p),'size':p.stat().st_size,'sha256':sha(p)} for p in listed],'llvm_profdata':str(pathlib.Path(a.llvm_profdata).resolve()),'merged_profile':str(out.resolve()),'merged_sha256':sha(out),'inspection_sha256':hashlib.sha256(shown.stdout.encode()).hexdigest(),'state':'profile-merged-pending-dispatcher-authorization'}
  evidence['sha256']=hashlib.sha256(json.dumps(evidence,sort_keys=True,separators=(',',':')).encode()).hexdigest(); fd,tmp=tempfile.mkstemp(prefix='.merge-',dir=str(pathlib.Path(a.evidence).parent))
  with os.fdopen(fd,'w') as f: json.dump(evidence,f,sort_keys=True,indent=2); f.write('\n'); f.flush(); os.fsync(f.fileno())
