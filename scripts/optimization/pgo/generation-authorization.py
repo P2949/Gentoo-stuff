@@ -47,12 +47,9 @@ def read_lock(path: Path) -> bytes:
 
 def framework_identity(current: Path, generation: dict[str, str]) -> dict[str, Any]:
     target = Path(os.path.realpath(current))
-    requested = Path(generation["generation_id"])
-    # generation_id is an identity, while the framework-current symlink target
-    # is the authoritative installed generation path.  Accept either the
-    # absolute target or its final directory name, never an unrelated target.
-    if target.name != requested.name and str(target) != str(requested):
-        raise RuntimeError(f"framework-current target {target} != requested {requested}")
+    # generation_id is the frozen inventory identity; the framework target is
+    # a separate content-addressed installation identity.  Bind them through
+    # the manifest's inventory digest rather than assuming their names match.
     manifest = target / "install.manifest"
     if not manifest.is_file():
         raise RuntimeError(f"framework manifest is unreadable: {manifest}")
