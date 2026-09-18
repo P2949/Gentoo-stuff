@@ -3754,3 +3754,5 @@ The first `app-crypt/rpm-sequoia-1.10.2` Rust wave exposed the same target-layou
 ### jq Clang IR PGO wave (2026-09-19)
 
 `app-misc/jq-1.8.2` completed the exact successor `pgo-clang-ir` profile wave. The root-owned sealed receipt `profile-wave-receipt-jq.json` records two nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed jq workload; independent receipt verification passed against the generation-bound wave and readiness artifacts. No kernel, boot, EFI, or initramfs state was touched.
+
+The jq receipt-bound raw payloads were independently merged with LLVM 22 into `/var/lib/gentoo-optimization/merged-profiles/app-misc_jq-1.8.2.profdata`; merge evidence is the adjacent root-owned `profile-merge-jq.json` (digest `ea1c9873f7cc7acf1cd034dd63fe5008d3184e2853905c3ace1cb1a33272e00f`). The profile remains pending dispatcher authorization and has not been deployed for profile-use.
