@@ -14,6 +14,10 @@ def main():
  unknown=[x.get('lane') for x in w['packages'] if x.get('lane') not in lane_modes]
  if unknown:
   raise SystemExit('REFUSED: wave contains unsupported generation lanes: '+', '.join(sorted(set(unknown))))
+ for item in w['packages']:
+  probe=subprocess.run(['emerge','--pretend','--quiet','='+item['cpv']],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+  if probe.returncode != 0:
+   raise SystemExit(f"REFUSED: exact CPV is not currently buildable: {item['cpv']}: {probe.stdout.strip()[-400:]}")
  # Pin the transaction to the exact installed identities recorded by the
  # readiness manifest.  Portage requires the explicit =CPV atom form when a
  # revision-qualified CPV is supplied; bare CPVs are category/package names,
@@ -33,7 +37,15 @@ def main():
   # writable leaf so the unprivileged Portage sandbox can emit profiles.
   subprocess.run(['doas','install','-d','-o','root','-g','root','-m','01777',profile_path],check=True)
   env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256'];env['GENTOO_OPT_REPLACEMENT_TRANSACTION']='1';env['GENTOO_OPT_ABI']='amd64';env['GENTOO_OPT_MODE']=lane_modes[item['lane']];env['GENTOO_OPT_PROFILE_PATH']=profile_path
-  subprocess.run(['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_MODE='+env['GENTOO_OPT_MODE'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path,'emerge','--oneshot','--buildpkg','='+cpv],env=env,check=True)
+  if item['lane']=='pgo-rust':
+   rustv=subprocess.run(['rustc','-vV'],text=True,stdout=subprocess.PIPE,check=True).stdout
+   target=next((line.split(':',1)[1].strip() for line in rustv.splitlines() if line.startswith('host:')),None)
+   if not target: raise SystemExit('REFUSED: active rustc identity has no host target')
+   env['GENTOO_OPT_RUST_TARGET']=target
+  command=['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_MODE='+env['GENTOO_OPT_MODE'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path]
+  if 'GENTOO_OPT_RUST_TARGET' in env: command.append('GENTOO_OPT_RUST_TARGET='+env['GENTOO_OPT_RUST_TARGET'])
+  command += ['emerge','--oneshot','--buildpkg','='+cpv]
+  subprocess.run(command,env=env,check=True)
   # Run the exact reviewed representative recipes after the instrumented
   # package transaction.  This is the profile payload collection point; a
   # recipe failure is terminal for the wave and is recorded by the caller.
