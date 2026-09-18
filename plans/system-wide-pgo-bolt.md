@@ -3642,3 +3642,7 @@ The successor framework was republished again after the 7zip transaction so the 
 ### Bzip2 Clang IR PGO wave (2026-09-18)
 
 `app-arch/bzip2-1.0.8-r5` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-bzip2.json` records two profraw payloads, successful merge, and the reviewed `/bin/bzip2-reference --help` workload. The existing LLVM profile-output handling was preserved; no kernel, boot, EFI, or initramfs state was touched.
+
+### Successor framework republish after bzip2 wave (2026-09-18)
+
+The exact successor framework was republished after the bzip2 profile transaction, and the root-owned strict installer check passed against the successor generated policy and frozen inventory. The active framework therefore remains synchronized with the committed source and current Phase-3 authority inputs.
