@@ -3658,3 +3658,7 @@ The bounded `app-arch/cabextract-9999` Clang IR wave reached the ebuild unpack p
 ### Successor framework republish after cpio wave (2026-09-18)
 
 The successor framework was republished after the cpio profile transaction. The root-owned installer completed publication and the independent strict check passed against the exact generated policy and frozen inventory. The earlier failed check invocation used a command-line policy basename typo; it was corrected and did not mutate framework state.
+
+### Dpkg Clang IR PGO wave (2026-09-18)
+
+`app-arch/dpkg-1.22.21` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-dpkg.json` records nine profraw payloads, successful merge, and completion of the reviewed dpkg workload. No kernel, boot, EFI, or initramfs state was touched.
