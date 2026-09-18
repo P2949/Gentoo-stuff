@@ -3768,3 +3768,7 @@ The first `app-misc/evtest-1.36` attempt correctly refused its generated `--help
 ### Cpuid2cpuflags Clang IR PGO wave (2026-09-19)
 
 `app-portage/cpuid2cpuflags-18` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records one nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-portage_cpuid2cpuflags-18.profdata`, with root-owned evidence in `profile-merge-cpuid2cpuflags.json`. No BOLT deployment is claimed.
+
+### Quoter Clang IR PGO wave (2026-09-19)
+
+`app-shells/quoter-4.2` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records one nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-shells_quoter-4.2.profdata`, with root-owned evidence in `profile-merge-quoter.json`. No BOLT deployment is claimed.
