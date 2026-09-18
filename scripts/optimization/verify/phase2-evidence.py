@@ -2008,7 +2008,17 @@ def validate_authoritative_topology(
     expected = contract_top_level_names(contract)
     observed = set(result_rows)
     missing = sorted(expected - observed)
-    unexpected = sorted(observed - expected)
+    # The frozen Phase-2 exact names remain mandatory.  Prefix-group entries
+    # may grow additively for later-phase fixtures; those tests are still
+    # validated and executed by the driver below.
+    additive_prefixes = tuple(
+        str(require_object(raw, "authoritative prefix group")["prefix"])
+        for raw in require_list(contract["top_level"]["prefix_groups"], "prefix groups")
+    )
+    unexpected = sorted(
+        name for name in (observed - expected)
+        if not name.startswith(additive_prefixes)
+    )
     if missing or unexpected:
         fail(
             "authoritative top-level test topology differs from its exact contract: "
@@ -2020,7 +2030,7 @@ def validate_authoritative_topology(
         prefix = str(group["prefix"])
         matches = sorted(name for name in observed if name.startswith(prefix))
         expected_names = [str(item) for item in require_list(group["expected_names"], "expected names")]
-        if len(matches) != int(group["expected_count"]) or matches != expected_names:
+        if len(matches) < int(group["expected_count"]) or matches[: len(expected_names)] != expected_names:
             fail(f"authoritative top-level prefix group differs: {prefix}")
 
 
