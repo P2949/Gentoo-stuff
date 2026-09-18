@@ -435,6 +435,18 @@ verify_existing_ancestor_chain() {
         mode=$(stat -c %a -- "${current}")
         [[ ${uid} == "${EXPECTED_UID}" ]] || fail "test trust root has the wrong owner: ${current}"
         mode_is_trusted "${mode}" || fail "test trust root is group/world-writable: ${current}"
+    elif [[ -n ${TEST_ROOT} && (${path} == "${ROOT}" || ${path} == "${ROOT}"/*) ]]; then
+        # The copied fixture source tree intentionally lives outside the
+        # hermetic installation root.  In test mode it is trusted under the
+        # invoking user's ownership, while the live filesystem root remains
+        # strictly root-owned in production mode.
+        current=${ROOT}
+        remainder=${path#"${ROOT}"/}
+        [[ ${path} != "${ROOT}" ]] || remainder=
+        uid=$(stat -c %u -- "${current}")
+        mode=$(stat -c %a -- "${current}")
+        [[ ${uid} == "${EXPECTED_UID}" ]] || fail "test source root has the wrong owner: ${current}"
+        mode_is_trusted "${mode}" || fail "test source root is group/world-writable: ${current}"
     else
         [[ -d / && ! -L / ]] || fail 'filesystem root is not a non-symlink directory'
         uid=$(stat -c %u -- /)

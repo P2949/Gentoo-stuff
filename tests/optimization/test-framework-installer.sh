@@ -2119,7 +2119,7 @@ POLICY=${POLICY_PARENT}/generated-policy-${POLICY_HASH}
 mv -- "${POLICY_STAGE}" "${POLICY}"
 FROZEN_INVENTORY=${TARGET}/var/lib/gentoo-optimization/generations/fixture/frozen-inventory.json
 mkdir -p -- "${FROZEN_INVENTORY%/*}"
-VALID_FROZEN_INVENTORY='{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/example-1","entry_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"owned_paths":[],"owned_directories":[{"owner_cpv":"app-misc/example-1","path":"/usr/bin","mode":493,"uid":0,"gid":0,"classification":"not-applicable","resolution":{"registry_version":"1","reason_code":"not-machine-code","reviewed_by":"framework-installer-fixture","reviewed_at":"2026-08-29T00:00:00Z","evidence":[{"path":"/var/lib/gentoo-optimization/reports/frozen-directory-review.json","sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","kind":"report"}]}}]}'
+VALID_FROZEN_INVENTORY='{"generation_id":"fixture","inventory_id":"fixture-inventory","owned_directories":[{"classification":"not-applicable","gid":0,"mode":493,"owner_cpv":"app-misc/example-1","path":"/usr/bin","resolution":{"evidence":[{"kind":"report","path":"/var/lib/gentoo-optimization/reports/frozen-directory-review.json","sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}],"reason_code":"not-machine-code","registry_version":"1","reviewed_at":"2026-08-29T00:00:00Z","reviewed_by":"framework-installer-fixture"},"uid":0}],"owned_paths":[],"packages":[{"cpv":"app-misc/example-1","entry_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"record_type":"frozen-inventory","schema_version":2}'
 write_valid_frozen_inventory() {
     printf '%s\n' "${VALID_FROZEN_INVENTORY}" >"${FROZEN_INVENTORY}"
 }
@@ -2177,16 +2177,16 @@ done
 # policy basename intentionally remains bound to the original fixture content.
 jq -n --slurpfile contract "${EXACT_CPV_CONTRACT}" '
     {
-        schema_version: 2,
-        record_type: "frozen-inventory",
         generation_id: "fixture",
         inventory_id: "fixture-inventory",
+        owned_directories: [],
+        owned_paths: [],
         packages: ($contract[0].valid_cpvs | sort | map({
             cpv: .,
             entry_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         })),
-        owned_paths: [],
-        owned_directories: []
+        record_type: "frozen-inventory",
+        schema_version: 2
     }
 ' >"${FROZEN_INVENTORY}"
 : >"${POLICY}/package.env"
@@ -2194,6 +2194,8 @@ for cpv in "${CONTRACT_VALID_CPVS[@]}"; do
     printf '=%s optimization/generated/example.conf\n' "${cpv}" \
         >>"${POLICY}/package.env"
 done
+# The exact-CPV corpus above is exercised by the independent validity loop and
+# remains the authority for the generated-policy cross-binding probe.
 expect_failure 'generated policy content hash ' \
     run_installer --generated-policy-generation "${POLICY}" \
     --frozen-inventory "${FROZEN_INVENTORY}"
@@ -2285,7 +2287,7 @@ printf '=app-misc/example-1 optimization/generated/example.conf\n' >"${POLICY}/p
 expect_failure 'a nonempty generated policy requires --frozen-inventory' \
     run_installer --generated-policy-generation "${POLICY}"
 printf '%s\n' \
-    '{"schema_version":2,"record_type":"frozen-inventory","generation_id":"fixture","inventory_id":"fixture-inventory","packages":[{"cpv":"app-misc/different-1","entry_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],"owned_paths":[],"owned_directories":[]}' \
+    '{"generation_id":"fixture","inventory_id":"fixture-inventory","owned_directories":[],"owned_paths":[],"packages":[{"cpv":"app-misc/different-1","entry_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],"record_type":"frozen-inventory","schema_version":2}' \
     >"${FROZEN_INVENTORY}"
 expect_failure 'generated package.env atom is absent from the frozen inventory' \
     run_installer --generated-policy-generation "${POLICY}" \
