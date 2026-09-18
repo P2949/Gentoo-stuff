@@ -74,9 +74,7 @@ def main():
    _write_attempt(_active_attempt)
    if not os.path.isfile(fingerprint_file):
     raise SystemExit(f'REFUSED: missing reviewed fingerprint file for {cpv}: {fingerprint_file}')
-   requested_profile_path=item['profile_path']; attempt_leaf='attempt-'+_active_attempt['attempt_id']; profile_path=os.path.join(requested_profile_path,attempt_leaf)
-   _active_attempt['profile_path']=profile_path
-   spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw'); canonical=os.path.realpath(profile_path)
+   profile_path=item['profile_path']; spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw'); canonical=os.path.realpath(profile_path)
    if not isinstance(profile_path,str) or not profile_path.startswith(spool+'/') or not canonical.startswith(spool+'/'):
     raise SystemExit(f'REFUSED: profile path escapes trusted spool: {profile_path}')
    # A retry must never merge a failed transaction's partial gcda set with a
