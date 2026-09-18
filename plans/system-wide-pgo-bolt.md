@@ -3360,3 +3360,11 @@ A fresh exact `app-arch/cabextract-9999` Clang-generation wave passed readiness 
 ## Live4 cabextract wave fetch interruption (2026-09-18)
 
 The fresh exact `app-arch/cabextract-9999` Clang-generation wave passed readiness (`1/1`) but stalled in the ebuild network sandbox fetching `kyz/libmspack` with no progress for more than four minutes. The transaction was terminated before compilation or installation, its attempt journal is preserved, and live4 authority verification still passes. No package merge or PGO result is claimed.
+
+### Live4 cabextract retry and workload correction (2026-09-18)
+
+The first cabextract attempt’s Git fetch interruption was retried successfully; the exact package rebuilt and merged in `clang-ir-generate` mode. Its generated workload recipe used `cabextract --help`, which correctly prints usage but exits status 1, so the runner rejected the package after merge and retained the attempt. A corrected derived wave changed the recipe to `cabextract --version`, passed readiness, and rebuilt/merged the package again, but the instrumented workload produced no `.profraw` files and the runner remained in its bounded post-transaction quiescence wait. That second attempt was terminated without profile admission. Both attempt journals are preserved; cabextract remains in generation state with no validated profile payload and no profile-use deployment claim.
+
+## Live4 cabextract retry and workload correction (2026-09-18)
+
+The cabextract fetch interruption was retried successfully and the package merged in generate mode. Its original `--help` recipe exited 1 after printing usage, so a corrected `--version` recipe was tested in a fresh wave. The corrected transaction merged but emitted no raw profile and remained in the runner's bounded quiescence wait; it was terminated without profile admission. Attempt journals are preserved and no cabextract profile-use result is claimed.
