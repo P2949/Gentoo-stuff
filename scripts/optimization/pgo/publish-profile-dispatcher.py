@@ -40,7 +40,7 @@ def main():
     generation=Path('/var/lib/gentoo-optimization/generations').resolve()
     for p,root,label in ((a.manifest,cache,'manifest'),(a.metadata,cache,'metadata'),(a.fingerprint_file,generation,'fingerprint')): safe(p.resolve(),root,label)
     if a.metadata != Path(str(a.manifest)+'.metadata.json'): raise SystemExit('REFUSED: metadata is not the manifest sidecar')
-    if not CPV.fullmatch(a.cpv): raise SystemExit('REFUSED: malformed CPV')
+    if not CPV.match(a.cpv) or '/' not in a.cpv: raise SystemExit('REFUSED: malformed CPV')
     lines={}
     for line in a.manifest.read_text().splitlines():
         if '=' not in line: raise SystemExit('REFUSED: malformed manifest')
