@@ -3,6 +3,17 @@ import argparse,json,os,subprocess,sys,time,hashlib,tempfile
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
  if active!=a.framework_generation:raise SystemExit(f'REFUSED: active framework {active} != authorized generation {a.framework_generation}')
+ framework_marker=os.path.join(a.framework_generation,'.candidate-inventory')
+ framework_identity=os.path.join(a.framework_generation,'generated-policy','.identity')
+ if not os.path.isfile(framework_marker):
+  raise SystemExit('REFUSED: framework generation has no candidate inventory marker')
+ try:
+  marker_size=os.path.getsize(framework_marker)
+  policy_identity=open(framework_identity,encoding='utf-8').read().strip()
+ except OSError as exc:
+  raise SystemExit(f'REFUSED: framework generation identity is unreadable: {exc}')
+ if marker_size == 0 or policy_identity in ('', 'empty-v1'):
+  raise SystemExit('REFUSED: framework generation is an empty or non-authoritative policy')
  identity_root=a.identity_root or os.path.join(os.path.dirname(a.wave),'identity')
  missing=[x['cpv'] for x in w['packages'] if not os.path.isfile(os.path.join(identity_root,x['cpv'].replace('/','_')+'.fingerprint.env'))]
  if not isinstance(w.get('sha256'),str) or not isinstance(r.get('sha256'),str) or r.get('source_wave')!=w.get('sha256') or r.get('ready_count')!=len(w['packages']) or r.get('invalid_inputs') or missing:raise SystemExit('REFUSED: wave readiness is incomplete, belongs to another wave, or lacks fingerprint inputs')
