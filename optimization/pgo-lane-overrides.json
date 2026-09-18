@@ -1,0 +1,664 @@
+{
+  "overrides": [
+    {
+      "cpv": "app-arch/cpio-2.15",
+      "evidence": {
+        "ebuild": "/var/db/pkg/app-arch/cpio-2.15/cpio-2.15.ebuild",
+        "inherits": [
+          "flag-o-matic",
+          "multiprocessing"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "src_configure",
+          "src_test"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "app-arch/gzip-1.14_p20260901",
+      "evidence": {
+        "ebuild": "/var/db/pkg/app-arch/gzip-1.14_p20260901/gzip-1.14_p20260901.ebuild",
+        "inherits": [
+          "eapi9-ver",
+          "flag-o-matic",
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "app-editors/vscode-1.137.0",
+      "evidence": {
+        "ebuild": "/var/db/pkg/app-editors/vscode-1.137.0/vscode-1.137.0.ebuild",
+        "inherits": [
+          "chromium-2",
+          "desktop",
+          "optfeature",
+          "pax-utils",
+          "shell-completion",
+          "xdg"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "src_configure",
+          "src_install",
+          "src_prepare",
+          "src_unpack"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "app-portage/cpuid2cpuflags-18",
+      "evidence": {
+        "ebuild": "/var/db/pkg/app-portage/cpuid2cpuflags-18/cpuid2cpuflags-18.ebuild",
+        "inherits": [],
+        "phase_functions": []
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-utility-ebuild"
+    },
+    {
+      "cpv": "app-text/libpaper-2.1.3",
+      "evidence": {
+        "ebuild": "/var/db/pkg/app-text/libpaper-2.1.3/libpaper-2.1.3.ebuild",
+        "inherits": [],
+        "phase_functions": [
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "dev-build/bmake-20260508",
+      "evidence": {
+        "ebuild": "/var/db/pkg/dev-build/bmake-20260508/bmake-20260508.ebuild",
+        "inherits": [
+          "lua-single"
+        ],
+        "phase_functions": [
+          "pkg_setup",
+          "src_compile",
+          "src_configure",
+          "src_install",
+          "src_prepare",
+          "src_test"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "dev-lang/vala-0.56.19",
+      "evidence": {
+        "ebuild": "/var/db/pkg/dev-lang/vala-0.56.19/vala-0.56.19.ebuild",
+        "inherits": [
+          "gnome2"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "dev-libs/hyphen-2.8.8-r2",
+      "evidence": {
+        "ebuild": "/var/db/pkg/dev-libs/hyphen-2.8.8-r2/hyphen-2.8.8-r2.ebuild",
+        "inherits": [],
+        "phase_functions": [
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "dev-libs/mpdecimal-4.0.1",
+      "evidence": {
+        "ebuild": "/var/db/pkg/dev-libs/mpdecimal-4.0.1/mpdecimal-4.0.1.ebuild",
+        "inherits": [],
+        "phase_functions": [
+          "src_configure",
+          "src_install",
+          "src_prepare",
+          "src_test",
+          "src_unpack"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "dev-libs/tree-sitter-bash-0.25.1",
+      "evidence": {
+        "ebuild": "/var/db/pkg/dev-libs/tree-sitter-bash-0.25.1/tree-sitter-bash-0.25.1.ebuild",
+        "inherits": [
+          "tree-sitter-grammar"
+        ],
+        "phase_functions": []
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "generated-native-parser"
+    },
+    {
+      "cpv": "dev-util/clinfo-9999",
+      "evidence": {
+        "ebuild": "/var/db/pkg/dev-util/clinfo-9999/clinfo-9999.ebuild",
+        "inherits": [
+          "git-r3"
+        ],
+        "phase_functions": [
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-utility-ebuild"
+    },
+    {
+      "cpv": "dev-util/gperf-3.3",
+      "evidence": {
+        "ebuild": "/var/db/pkg/dev-util/gperf-3.3/gperf-3.3.ebuild",
+        "inherits": [],
+        "phase_functions": [
+          "src_configure",
+          "src_prepare"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "mate-extra/mate-polkit-1.28.1-r2",
+      "evidence": {
+        "ebuild": "/var/db/pkg/mate-extra/mate-polkit-1.28.1-r2/mate-polkit-1.28.1-r2.ebuild",
+        "inherits": [
+          "mate"
+        ],
+        "phase_functions": [
+          "src_configure"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "media-libs/libnsgif-1.0.0-r1",
+      "evidence": {
+        "ebuild": "/var/db/pkg/media-libs/libnsgif-1.0.0-r1/libnsgif-1.0.0-r1.ebuild",
+        "inherits": [
+          "netsurf"
+        ],
+        "phase_functions": [
+          "src_compile",
+          "src_install",
+          "src_prepare",
+          "src_test"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "media-sound/alsa-utils-1.2.16",
+      "evidence": {
+        "ebuild": "/var/db/pkg/media-sound/alsa-utils-1.2.16/alsa-utils-1.2.16.ebuild",
+        "inherits": [
+          "systemd",
+          "udev",
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "pkg_postrm",
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "media-video/movit-1.7.1",
+      "evidence": {
+        "ebuild": "/var/db/pkg/media-video/movit-1.7.1/movit-1.7.1.ebuild",
+        "inherits": [],
+        "phase_functions": [
+          "src_compile",
+          "src_install",
+          "src_test"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "net-libs/libmnl-1.0.5",
+      "evidence": {
+        "ebuild": "/var/db/pkg/net-libs/libmnl-1.0.5/libmnl-1.0.5.ebuild",
+        "inherits": [
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-library-ebuild"
+    },
+    {
+      "cpv": "sys-apps/diffutils-3.12",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-apps/diffutils-3.12/diffutils-3.12.ebuild",
+        "inherits": [
+          "branding",
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_prepare"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-apps/ethtool-7.0",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-apps/ethtool-7.0/ethtool-7.0.ebuild",
+        "inherits": [],
+        "phase_functions": [
+          "src_configure"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-apps/gawk-5.4.1a",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-apps/gawk-5.4.1a/gawk-5.4.1a.ebuild",
+        "inherits": [
+          "flag-o-matic",
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_install",
+          "src_prepare",
+          "src_test"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-apps/grep-3.12",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-apps/grep-3.12/grep-3.12.ebuild",
+        "inherits": [
+          "branding",
+          "flag-o-matic",
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_install",
+          "src_prepare"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-apps/help2man-1.49.3",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-apps/help2man-1.49.3/help2man-1.49.3.ebuild",
+        "inherits": [],
+        "phase_functions": [
+          "src_configure",
+          "src_prepare"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-apps/iucode_tool-2.3.1-r2",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-apps/iucode_tool-2.3.1-r2/iucode_tool-2.3.1-r2.ebuild",
+        "inherits": [],
+        "phase_functions": []
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-utility-ebuild"
+    },
+    {
+      "cpv": "sys-apps/sed-4.10-r1",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-apps/sed-4.10-r1/sed-4.10-r1.ebuild",
+        "inherits": [
+          "branding",
+          "flag-o-matic",
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_install",
+          "src_test"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-block/parted-3.7",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-block/parted-3.7/parted-3.7.ebuild",
+        "inherits": [
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_install",
+          "src_prepare"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-devel/bison-3.8.2-r3",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-devel/bison-3.8.2-r3/bison-3.8.2-r3.ebuild",
+        "inherits": [
+          "flag-o-matic",
+          "multiprocessing",
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "src_configure",
+          "src_install",
+          "src_prepare",
+          "src_test"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-devel/m4-1.4.21",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-devel/m4-1.4.21/m4-1.4.21.ebuild",
+        "inherits": [
+          "branding",
+          "flag-o-matic",
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_install",
+          "src_prepare",
+          "src_test"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-devel/patch-2.8-r1",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-devel/patch-2.8-r1/patch-2.8-r1.ebuild",
+        "inherits": [
+          "flag-o-matic",
+          "git-r3",
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_install",
+          "src_test",
+          "src_unpack"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-fs/cryptsetup-2.8.8",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-fs/cryptsetup-2.8.8/cryptsetup-2.8.8.ebuild",
+        "inherits": [
+          "linux-info",
+          "tmpfiles",
+          "verify-sig"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "pkg_setup",
+          "src_configure",
+          "src_install",
+          "src_unpack"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-fs/dosfstools-4.2",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-fs/dosfstools-4.2/dosfstools-4.2.ebuild",
+        "inherits": [],
+        "phase_functions": [
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-fs/xfsprogs-7.1.1",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-fs/xfsprogs-7.1.1/xfsprogs-7.1.1.ebuild",
+        "inherits": [
+          "flag-o-matic",
+          "systemd",
+          "udev"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "pkg_postrm",
+          "src_compile",
+          "src_configure",
+          "src_install",
+          "src_prepare"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-libs/mtdev-1.1.7",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-libs/mtdev-1.1.7/mtdev-1.1.7.ebuild",
+        "inherits": [],
+        "phase_functions": [
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-process/cronie-1.7.2-r1",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-process/cronie-1.7.2-r1/cronie-1.7.2-r1.ebuild",
+        "inherits": [
+          "cron",
+          "flag-o-matic",
+          "pam",
+          "systemd"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "sys-process/time-1.10",
+      "evidence": {
+        "ebuild": "/var/db/pkg/sys-process/time-1.10/time-1.10.ebuild",
+        "inherits": [],
+        "phase_functions": []
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-utility-ebuild"
+    },
+    {
+      "cpv": "x11-libs/gtksourceview-3.24.11-r4",
+      "evidence": {
+        "ebuild": "/var/db/pkg/x11-libs/gtksourceview-3.24.11-r4/gtksourceview-3.24.11-r4.ebuild",
+        "inherits": [
+          "gnome2",
+          "vala",
+          "virtualx"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_install",
+          "src_test"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "xfce-base/garcon-4.20.0",
+      "evidence": {
+        "ebuild": "/var/db/pkg/xfce-base/garcon-4.20.0/garcon-4.20.0.ebuild",
+        "inherits": [
+          "xdg-utils"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "pkg_postrm",
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "xfce-base/libxfce4ui-4.20.2",
+      "evidence": {
+        "ebuild": "/var/db/pkg/xfce-base/libxfce4ui-4.20.2/libxfce4ui-4.20.2.ebuild",
+        "inherits": [
+          "vala",
+          "xdg-utils"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "pkg_postrm",
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "xfce-base/libxfce4util-4.20.1",
+      "evidence": {
+        "ebuild": "/var/db/pkg/xfce-base/libxfce4util-4.20.1/libxfce4util-4.20.1.ebuild",
+        "inherits": [
+          "vala"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "xfce-base/thunar-4.20.10",
+      "evidence": {
+        "ebuild": "/var/db/pkg/xfce-base/thunar-4.20.10/thunar-4.20.10.ebuild",
+        "inherits": [
+          "xdg-utils"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "pkg_postrm",
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "xfce-base/xfce4-panel-4.20.8",
+      "evidence": {
+        "ebuild": "/var/db/pkg/xfce-base/xfce4-panel-4.20.8/xfce4-panel-4.20.8.ebuild",
+        "inherits": [
+          "vala",
+          "xdg-utils"
+        ],
+        "phase_functions": [
+          "pkg_postinst",
+          "pkg_postrm",
+          "src_configure",
+          "src_install"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    },
+    {
+      "cpv": "xfce-base/xfconf-4.20.0",
+      "evidence": {
+        "ebuild": "/var/db/pkg/xfce-base/xfconf-4.20.0/xfconf-4.20.0.ebuild",
+        "inherits": [
+          "bash-completion-r1",
+          "vala"
+        ],
+        "phase_functions": [
+          "src_configure",
+          "src_install",
+          "src_test"
+        ]
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "native-compiled-eclass-or-phase"
+    }
+  ],
+  "record_type": "pgo-lane-reviewed-overrides",
+  "schema_version": 1,
+  "sha256": "427c5814766ff7c06c80eecbb414295816b031d90597d82c0387e1b76564de3a",
+  "source_backend_correlation": "841a85d0c6fcaa0f9920587c04e75d01f379e7847d4d5c91dbf63b90d5fe8061"
+}
