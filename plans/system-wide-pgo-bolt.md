@@ -3594,3 +3594,7 @@ A focused bindgen wave confirmed that the Rust lane mismatch is a real mixed-LTO
 ### Rust-only PGO lane isolation (2026-09-18)
 
 The confirmed LLVM23/LLVM22 linker mismatch was isolated to inherited system LTO flags rather than Rust instrumentation itself. The profile-wave runner now sets `RUSTFLAGS=-C lto=off -C linker-plugin-lto=no` plus minimal C/C++/linker flags only for the `pgo-rust` transaction, preserving rustc's own `-Cprofile-generate` payload. After republishing the framework, `dev-util/bindgen-0.72.1` completed its Rust PGO rebuild, merge, and workload path with one sealed profraw payload in `profile-wave-receipt-bindgen-rust-nolto2.json`. Mixed-LTO packages such as Ruby remain refused until their Rust and Clang LLVM versions can be aligned.
+
+### Additional Rust PGO wave (2026-09-18)
+
+With the lane-specific no-cross-LLVM-LTO policy active, `dev-util/bpf-linker-0.11.1` completed its Rust PGO rebuild, merge, and reviewed workload. The sealed receipt `profile-wave-receipt-rust-next.json` contains one profraw payload. The Rust lane now has independently verified successful bindgen and bpf-linker payload collection; mixed-LTO Ruby remains excluded with linker evidence.
