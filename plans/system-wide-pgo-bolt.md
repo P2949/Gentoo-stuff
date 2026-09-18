@@ -3784,3 +3784,7 @@ The first `app-misc/evtest-1.36` attempt correctly refused its generated `--help
 ### Scdoc workload correction and Clang IR PGO wave (2026-09-19)
 
 The first `app-text/scdoc-9999` attempt correctly refused the generic `--help` workload because scdoc is a stdin filter and exits nonzero without input. The authoritative workload generator now supplies a deterministic root-owned minimal manpage fixture at `/var/lib/gentoo-optimization/workloads/scdoc/fixture.scd`; the framework was republished and its strict check passed. The corrected exact wave rebuilt and merged scdoc, collected one nonempty profraw payload, passed independent receipt verification, and merged with LLVM 22 into `/var/lib/gentoo-optimization/merged-profiles/app-text_scdoc-9999.profdata`, with root-owned evidence in `profile-merge-scdoc.json`. No BOLT deployment is claimed.
+
+### Libpaper workload correction and Clang IR PGO wave (2026-09-19)
+
+The first `app-text/libpaper-2.1.3` attempt correctly refused the generic `paperconf --help` workload because paperconf uses single-letter query actions. The authoritative workload generator now uses the successful documented `paperconf -h` query; the framework was republished and its strict check passed. The corrected exact wave rebuilt and merged libpaper, collected four nonempty profraw payloads, passed independent receipt verification, and merged with LLVM 22 into `/var/lib/gentoo-optimization/merged-profiles/app-text_libpaper-2.1.3.profdata`, with root-owned evidence in `profile-merge-libpaper.json`. No BOLT deployment is claimed.
