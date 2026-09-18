@@ -3634,3 +3634,7 @@ The successor framework was republished from the committed source with its exact
 ### 7zip Clang IR PGO wave (2026-09-18)
 
 `app-arch/7zip-26.03` completed the exact successor `pgo-clang-ir` profile wave. The sealed receipt `profile-wave-receipt-7zip.json` records one profraw payload, the reviewed Clang identity, exact inventory binding, successful merge, and completed `7zz --help` workload execution. The transaction stayed within userspace; no kernel, boot, or EFI state was touched.
+
+### Successor framework republish after 7zip wave (2026-09-18)
+
+The successor framework was republished again after the 7zip transaction so the live source aggregate, generated policy, and frozen inventory are synchronized. The root-owned installer completed publication and a fresh strict `--check` passed against the exact successor artifacts. No boot, kernel, EFI, or initramfs state was touched.
