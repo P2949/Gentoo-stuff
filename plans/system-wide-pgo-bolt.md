@@ -3574,3 +3574,7 @@ The successor lane set was bound to the current compiler identities and copied e
 ### Successor policy identity boundary (2026-09-18)
 
 The successor policy tree was materialized and its content-addressed inventory was checked against the installer’s canonical tree hash. A production installer `--check` was then attempted with the new successor inventory and policy. The installer correctly refused before activation because `.identity` and the frozen-inventory binding are generated inside the framework candidate transaction, not supplied as mutable source inputs; the existing active framework identity remains bound to the older live4 generation. This refusal is retained as non-authorizing evidence. No active framework, Portage policy, package state, or boot/kernel state was changed.
+
+### Post-sync bounded profile-wave planning (2026-09-18)
+
+The successor policy bindings and workload recipes produced a new bounded two-package wave plan (`pgo-clang-ir` and `pgo-rust`, one package per lane). The independent readiness verifier accepted both inputs (`ready_count=2`, `invalid_inputs=0`) against the exact successor inventory, compiler identities, and root-owned fingerprint directory. The readiness state remains `pending-framework-terminal-check`; no package transaction or workload execution was started while the successor framework remains inactive.
