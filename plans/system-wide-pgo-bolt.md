@@ -3344,3 +3344,11 @@ Published the validated `app-admin/doas-6.8.2` profile-use fragment and rebuilt 
 ## Live4 second profile-use deployment (2026-09-18)
 
 Published and rebuilt exact `app-admin/doas-6.8.2` under the live4 profile-use dispatcher. The clean generated-policy identity was `a5409aed24565011a460786d19941c4f2bb7a1cf25ec46e19b2f0755472811c5`; framework publication and authority reactivation passed. Durable log evidence records 11 exact `-fprofile-use` flag occurrences, zero new raw profiles, and successful install-QA/merge. Receipt SHA-256: `bc19be1c7b5be32420d0068f07afe003f5598214d97de71adbbb012f585f46ed`.
+
+### Live4 bzip2 profile-use rejection and safe revert (2026-09-18)
+
+The live4-refresh bzip2 profile was validated and published from the earlier merged payload, then tested in an exact profile-use rebuild. The build reached install-QA but the unchanged exported-ABI guard rejected the staged DSOs: `libbz2.so.1` and its symlink/provider set lost `__llvm_write_custom_profile` (old export count 36, new count 35). No replacement was merged. The complete failed Portage log is `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-live4/profile-use-logs-bzip2/app-arch:bzip2-1.0.8-r5:20260918-154724.log`. The active policy was transactionally reverted to the previously proven doas/7zip profile-use mapping with bzip2 back in its generate lane; framework `/var/lib/gentoo-optimization/framework-b064688ef5eed8796a70ad51815d409653846ae40d9f3c4e8aae1fbd2a499b04` passed publication and live4 authority verification. This is retained correctness-failure evidence, not a bypass or a terminal package exclusion yet.
+
+## Live4 bzip2 profile-use rejection and safe revert (2026-09-18)
+
+A live4-refresh bzip2 profile-use rebuild reached install-QA but was rejected by the exported-ABI guard because the staged `libbz2.so.1` provider lost `__llvm_write_custom_profile` (36 old exports versus 35 new). No replacement merged. The failed log is retained under the live4 `profile-use-logs-bzip2` directory. The active policy was transactionally reverted to the proven doas/7zip profile-use mapping with bzip2 back in generate mode; framework `framework-b064688ef5eed8796a70ad51815d409653846ae40d9f3c4e8aae1fbd2a499b04` and live4 authority verification passed.
