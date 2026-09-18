@@ -3368,3 +3368,13 @@ The first cabextract attempt’s Git fetch interruption was retried successfully
 ## Live4 cabextract retry and workload correction (2026-09-18)
 
 The cabextract fetch interruption was retried successfully and the package merged in generate mode. Its original `--help` recipe exited 1 after printing usage, so a corrected `--version` recipe was tested in a fresh wave. The corrected transaction merged but emitted no raw profile and remained in the runner's bounded quiescence wait; it was terminated without profile admission. Attempt journals are preserved and no cabextract profile-use result is claimed.
+
+### Live4 cabextract profile collection and use deployment (2026-09-18)
+
+The cabextract no-profile result exposed a runner bug: the outer helper suppression `LLVM_PROFILE_FILE=/dev/null` leaked into representative workload recipes. `run-profile-wave.py` now explicitly assigns the package spool pattern for generated-lane workloads while keeping privileged helper output suppressed. The corrected source was published and live4 authority reactivated against framework `/var/lib/gentoo-optimization/framework-bede83f4a2eb5ab896fa7e9de8b76d4262e9cf12dc1696f2150f81ddb69c7701`.
+
+A fresh cabextract generation wave then collected one nonempty raw payload after the corrected `--version` recipe, passed receipt verification, and merged with LLVM 22. The validated live4 profile was published under `app-arch_cabextract-9999-live4`; exact profile-use policy publication passed as framework `/var/lib/gentoo-optimization/framework-ca322a63563098c2ef649617bce33e31bdafac2811d086fce784e25bc8d0381a`. A controlled profile-use rebuild completed through install-QA and merge with 12 durable `-fprofile-use` occurrences. No BOLT deployment is claimed yet.
+
+## Live4 cabextract profile collection and use deployment (2026-09-18)
+
+Fixed the profile-wave runner so helper suppression does not leak `LLVM_PROFILE_FILE=/dev/null` into representative generated workloads. A fresh cabextract wave then collected one nonempty raw payload with the corrected `--version` recipe, passed receipt verification, merged, and validated under live4. The profile-use mapping was published and a controlled cabextract rebuild completed through install-QA/merge with 12 exact `-fprofile-use` occurrences. No BOLT deployment is claimed.
