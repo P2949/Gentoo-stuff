@@ -3480,3 +3480,7 @@ The validated dpkg profile was published through the live4 dispatcher and policy
 ### Live4 unzip workload correction and generation (2026-09-18)
 
 The first exact `app-arch/unzip-6.0_p31` generation transaction merged, but `funzip --help` exited 3 because funzip requires archive input. The authoritative workload generator now excludes `funzip` and `unzipsfx` and emits the successful standalone `/usr/bin/unzip -v` recipe. A fresh readiness-authorized wave passed (`1/1`, zero invalid inputs), rebuilt and merged the package, ran the corrected workload, passed receipt verification, and merged the raw payload with LLVM 22. Independent merge evidence is `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-live4/profile-merge-unzip-live4.json` with digest `1d6b830dbaadb1a5daabb614b476cc7788dfbf3f191e13b0ada9918377647ab3`. Profile validation, dispatcher publication, and profile-use deployment remain pending.
+
+### Live4 unzip profile-use deployment (2026-09-18)
+
+After correcting the invalid `funzip --help` workload to `/usr/bin/unzip -v`, the validated unzip profile was published through the live4 dispatcher and policy framework. The exact `app-arch/unzip-6.0_p31` rebuild entered `clang-ir-use`, completed install-QA and merge, and installed `/usr/bin/unzip` (SHA-256 `8502d158e0429abf2caeb302c5e32bbf100c154d2986805d01e435b60f0d9405`). The durable log records 39 `-fprofile-use` occurrences and zero new raw profiles. Receipt `profile-use-receipt-unzip.json` records the deployment hashes. No BOLT deployment is claimed.
