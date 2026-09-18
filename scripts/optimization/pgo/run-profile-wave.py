@@ -119,7 +119,8 @@ def main():
    # sealing the receipt, otherwise a valid late payload becomes an
    # unreceipted file at merge time.
    previous=None
-   for _ in range(20):
+   stable_intervals=0
+   for _ in range(120):
     snapshot=[]
     for root,dirs,files in os.walk(profile_path):
      for name in files:
@@ -128,7 +129,11 @@ def main():
       except FileNotFoundError: pass
     current=tuple(sorted(snapshot))
     if current and current == previous:
-     break
+     stable_intervals += 1
+     if stable_intervals >= 10:
+      break
+    else:
+     stable_intervals=0
     previous=current
     time.sleep(0.5)
    # Portage helper processes may be reaped asynchronously after the first
