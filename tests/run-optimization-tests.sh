@@ -1876,10 +1876,14 @@ preflight_recovery_abi_lanes() {
     local clang_compile_log clang_run_log gcc_compile_log gcc_run_log
     local status
 
-    resolve_executable clang++ || {
-        PREFLIGHT_REASON='Clang/libc++ ABI probe compiler is unavailable: clang++'
-        return 1
-    }
+    if ! resolve_executable clang++; then
+        if [[ -x /usr/lib/llvm/22/bin/clang++ ]]; then
+            RESOLVED_TOOL=/usr/lib/llvm/22/bin/clang++
+        else
+            PREFLIGHT_REASON='Clang/libc++ ABI probe compiler is unavailable: clang++'
+            return 1
+        fi
+    fi
     clangxx_path=${RESOLVED_TOOL}
     resolve_executable g++ || {
         PREFLIGHT_REASON='GCC/libstdc++ ABI probe compiler is unavailable: g++'
@@ -1960,7 +1964,7 @@ preflight_recovery_abi_lanes() {
 
 if [[ ! -f ${ROLLBACK_FIXTURE} ]]; then
     skip_case recovery-rollback-fixture "fixture is absent: ${ROLLBACK_FIXTURE}"
-elif ! require_commands bash clang++ g++ readelf md5sum sha256sum \
+elif ! require_commands bash g++ readelf md5sum sha256sum \
     stat realpath flock rm; then
     skip_case recovery-rollback-fixture \
         "${PREFLIGHT_REASON}; the C++ ABI lane fixture was not run"
