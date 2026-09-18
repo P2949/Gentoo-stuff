@@ -3590,3 +3590,7 @@ The successor framework was republished and strict-checked after correcting the 
 ### Rust LLVM compatibility gate (2026-09-18)
 
 A focused bindgen wave confirmed that the Rust lane mismatch is a real mixed-LTO ABI failure: Rust LLVM 23 objects were rejected by the active LLVM 22 linker (`Producer LLVM23.1.1-rust-1.100.0-nightly`, `Reader LLVM 22.1.8+libcxx`). The runner's fail-closed Rust/Clang compatibility probe is retained and restored in commit `7a879ad`; Ruby and bindgen remain terminal `unsupported-by-upstream-toolchain` until a matching Rust/Clang toolchain is available. The failed attempt and linker evidence are preserved; no incompatible package was merged.
+
+### Rust-only PGO lane isolation (2026-09-18)
+
+The confirmed LLVM23/LLVM22 linker mismatch was isolated to inherited system LTO flags rather than Rust instrumentation itself. The profile-wave runner now sets `RUSTFLAGS=-C lto=off -C linker-plugin-lto=no` plus minimal C/C++/linker flags only for the `pgo-rust` transaction, preserving rustc's own `-Cprofile-generate` payload. After republishing the framework, `dev-util/bindgen-0.72.1` completed its Rust PGO rebuild, merge, and workload path with one sealed profraw payload in `profile-wave-receipt-bindgen-rust-nolto2.json`. Mixed-LTO packages such as Ruby remain refused until their Rust and Clang LLVM versions can be aligned.
