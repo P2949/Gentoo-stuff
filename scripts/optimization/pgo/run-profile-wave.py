@@ -97,7 +97,16 @@ def main():
    command=['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_MODE='+env['GENTOO_OPT_MODE'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path]
    if 'GENTOO_OPT_RUST_TARGET' in env: command.append('GENTOO_OPT_RUST_TARGET='+env['GENTOO_OPT_RUST_TARGET'])
    command += ['emerge','--oneshot','--buildpkg','='+cpv]
-   subprocess.run(command,env=env,check=True)
+   # Do not expose the package profile path to the privileged doas helper
+   # itself.  The path is supplied explicitly in the doas environment for
+   # emerge; inheriting it in doas makes the instrumented helper write its own
+   # administrative profiles into the package spool and invalidates receipt
+   # sealing.  Suppress only helper-runtime output while preserving the
+   # compiler-instrumented package binaries' embedded profile path.
+   command_env=env.copy()
+   command_env.pop('GENTOO_OPT_PROFILE_PATH',None)
+   command_env['LLVM_PROFILE_FILE']='/dev/null'
+   subprocess.run(command,env=command_env,check=True)
    # Run the exact reviewed representative recipes after the instrumented
    # package transaction.  This is the profile payload collection point; a
    # recipe failure is terminal for the wave and is recorded by the caller.
