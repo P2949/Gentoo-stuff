@@ -104,11 +104,15 @@ def compare_pair(rel: Path, installed: Path, candidate: Path, failures: list[str
         failures.append(f"{rel}:{soname_note} old={len(old)} new={len(new)} missing={sample}")
 
 
-def collect_soname_providers(tree: Path) -> dict[str, tuple[Path, set[str]]]:
+def collect_soname_providers(
+    tree: Path, families: set[str] | None = None
+) -> dict[str, tuple[Path, set[str]]]:
     """Return established ELF DSO providers keyed by their SONAME."""
     providers: dict[str, tuple[Path, set[str]]] = {}
     for path in tree.rglob("*"):
         if ".so" not in path.name:
+            continue
+        if families is not None and path.name.split(".so", 1)[0] + ".so" not in families:
             continue
         resolved = resolve_tree_link(path, tree) if path.is_symlink() else path
         if resolved is None or not resolved.is_file() or not is_elf(resolved):
@@ -143,20 +147,19 @@ def main() -> int:
     # Compare from the installed ABI-provider side as well as by relative
     # path.  A replacement such as libfoo.so.1 -> libfoo.so.2 otherwise has
     # no same-path pair and could silently remove the established ABI.
-    candidate_providers = collect_soname_providers(ed)
-    # Restrict installed-side discovery to the candidate's library families;
-    # ROOT contains the whole system, whereas ED contains one package image.
-    # For example, libstdc++.so.6.0.36 and .6.0.37 share the family
-    # ``libstdc++.so`` even though the versioned relative path changes.
     candidate_families = {
         path.name.split(".so", 1)[0] + ".so"
         for path in ed.rglob("*")
         if ".so" in path.name
     }
+    candidate_providers = collect_soname_providers(ed, candidate_families)
+    # Restrict installed-side discovery to the candidate's library families;
+    # ROOT contains the whole system, whereas ED contains one package image.
+    # For example, libstdc++.so.6.0.36 and .6.0.37 share the family
+    # ``libstdc++.so`` even though the versioned relative path changes.
     installed_providers = {
         soname: value
-        for soname, value in collect_soname_providers(root).items()
-        if value[0].name.split(".so", 1)[0] + ".so" in candidate_families
+        for soname, value in collect_soname_providers(root, candidate_families).items()
     }
     for soname, (installed_path, installed_symbols) in installed_providers.items():
         candidate = candidate_providers.get(soname)
