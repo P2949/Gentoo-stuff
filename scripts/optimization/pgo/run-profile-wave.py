@@ -114,12 +114,17 @@ def main():
      raise SystemExit(f'REFUSED: workload recipe exited {result.returncode} for {cpv}: {path}')
     if not result.stdout and not recipe.get('allow_empty_output',False):
      raise SystemExit(f'REFUSED: workload recipe produced no output for {cpv}: {path}')
+   package_payloads=[]
    for root,dirs,files in os.walk(profile_path):
     for name in files:
      path=os.path.join(root,name)
-   if os.path.isfile(path):
-     with open(path,'rb') as stream: payloads.append({'cpv':cpv,'path':path,'sha256':hashlib.sha256(stream.read()).hexdigest()})
-   _active_attempt['state']='completed'; _active_attempt['completed_at']=time.time(); _active_attempt['profile_payloads']=[x for x in payloads if x['cpv']==cpv]; _write_attempt(_active_attempt); _active_attempt=None
+     if not os.path.isfile(path):
+      continue
+     with open(path,'rb') as stream:
+      record={'cpv':cpv,'path':path,'sha256':hashlib.sha256(stream.read()).hexdigest()}
+     payloads.append(record)
+     package_payloads.append(record)
+   _active_attempt['state']='completed'; _active_attempt['completed_at']=time.time(); _active_attempt['profile_payloads']=package_payloads; _write_attempt(_active_attempt); _active_attempt=None
  if not payloads:
   raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
  if a.receipt:
