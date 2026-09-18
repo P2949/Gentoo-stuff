@@ -3468,3 +3468,7 @@ The existing validated cabextract profile and dispatcher mapping were independen
 ### Live4 cabextract profile-use deployment (2026-09-18)
 
 The cabextract profile-use fetch interruption was resolved with the authenticated cached `kyz/libmspack` repository via `EGIT_OVERRIDE_REPO_KYZ_LIBMSPACK=file:///var/cache/distfiles/git3-src/kyz_libmspack.git`. The exact rebuild entered `clang-ir-use`, completed through install-QA and merge, and installed `/usr/bin/cabextract` (SHA-256 `6f2730ca242387559ec6811c0a5c80c556849c350598ecffc61975e53c72e7de`). The durable log records 12 `-fprofile-use` occurrences and zero new raw profiles. Receipt `profile-use-receipt-cabextract.json` records the framework, profile, binary, and log hashes. No BOLT deployment is claimed.
+
+### Live4 dpkg Clang profile generation (2026-09-18)
+
+The exact `app-arch/dpkg-1.22.21` wave was planned against the authoritative live4 lane, compiler, and fingerprint manifests. Readiness passed (`1/1`, zero invalid inputs); the real generate-lane transaction completed through install-QA and merge, the reviewed dpkg utility workloads ran, receipt verification passed, and LLVM 22 merged the payload. Independent merge evidence is `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-live4/profile-merge-dpkg-live4.json` with digest `8d07d4f31c664e1c9678c3e504cd346a529319edc6503de7c74323f4b1034a0a`. Profile validation, dispatcher publication, and exact profile-use deployment remain pending.
