@@ -3566,3 +3566,7 @@ After repository synchronization, a fresh candidate `phase3-live-candidate-20260
 ### Post-sync workload accounting regeneration (2026-09-18)
 
 The post-sync successor workload chain was regenerated from its fresh lane and ELF manifests. It covers 550 PGO-lane package records: 324 workload candidates and 220 packages without runnable entrypoints in the workload manifest; recipe generation produced 296 recipe-ready packages, 242 explicit no-runnable-entrypoint records, and 6 `no-profile-producing-workload` records. Every generated JSON artifact in the successor chain was independently reopened and its embedded SHA-256 recomputed successfully. These are accounting artifacts only; no workload or profile wave has been authorized from the stale pre-sync framework.
+
+### Post-sync policy-binding regeneration (2026-09-18)
+
+The successor lane set was bound to the current compiler identities and copied exact existing per-CPV fingerprint evidence into its generation-local identity directory. `build-policy-bindings.py` completed without missing or malformed supported-lane fingerprints and emitted binding digest `cbf912cc04546ff01161322d66bb3b3d1909387e82e9ea88594006ffa01390c2`. A candidate policy tree was materialized from the reviewed environment files and validated for its 1,301 exact CPV assignments. It remains a candidate only: the synchronized SPIR-V resolver conflict and stale framework authority still prohibit activation or profile-wave execution.
