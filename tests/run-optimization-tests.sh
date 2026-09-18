@@ -1972,8 +1972,11 @@ elif ! preflight_recovery_abi_lanes; then
     skip_case recovery-rollback-fixture \
         "${PREFLIGHT_REASON}; the C++ ABI lane fixture was not run"
 else
+    RECOVERY_CLANGXX_DIR=${RUN_ROOT}/preflight/recovery-clangxx-bin
+    mkdir -p -- "${RECOVERY_CLANGXX_DIR}"
+    ln -s -- /usr/lib/llvm/22/bin/clang++ "${RECOVERY_CLANGXX_DIR}/clang++"
     run_case recovery-rollback-fixture \
-        env PATH="/usr/lib/llvm/22/bin:${PATH}" \
+        env PATH="${RECOVERY_CLANGXX_DIR}:${PATH}" \
         "${BASH_BIN}" -- "${ROLLBACK_FIXTURE}"
 fi
 
