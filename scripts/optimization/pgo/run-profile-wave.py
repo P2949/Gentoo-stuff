@@ -113,7 +113,7 @@ def main():
    if 'GENTOO_OPT_RUST_TARGET' in env: command.append('GENTOO_OPT_RUST_TARGET='+env['GENTOO_OPT_RUST_TARGET'])
    if item['lane']=='pgo-rust' and env.get('GENTOO_OPT_RUST_NO_LTO')=='1':
     command += ['GENTOO_OPT_RUST_NO_LTO=1','CFLAGS=-O2 -pipe','CXXFLAGS=-O2 -pipe','LDFLAGS=-Wl,--as-needed','RUSTFLAGS=-C lto=off -C linker-plugin-lto=no']
-   if item['cpv']=='dev-util/maturin-1.15.0':
+   if item['cpv'] in {'dev-util/maturin-1.15.0','app-crypt/rpm-sequoia-1.10.2'}:
     command.append('GENTOO_OPT_RUST_HOST_LAYOUT=1')
    command += ['emerge','--oneshot','--buildpkg','='+cpv]
    # Do not expose the package profile path to the privileged doas helper
