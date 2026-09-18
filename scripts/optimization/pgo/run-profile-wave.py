@@ -144,6 +144,27 @@ def main():
    # emerge returns.  Wait for the package spool to become quiescent before
    # sealing the receipt, otherwise a valid late payload becomes an
    # unreceipted file at merge time.
+   # Portage may leave compiler-instrumented descendants alive after emerge
+   # returns.  A fixed sleep cannot prove that those writers are gone.  Scan
+   # authenticated process environments for this exact profile destination and
+   # wait until no live writer still carries it.
+   writer_deadline=time.monotonic()+300
+   while time.monotonic() < writer_deadline:
+    writers=[]
+    for proc in os.listdir('/proc'):
+     if not proc.isdigit():
+      continue
+     try:
+      env_data=open('/proc/'+proc+'/environ','rb').read()
+      if profile_path.encode() in env_data:
+       writers.append(proc)
+     except (OSError,PermissionError):
+      continue
+    if not writers:
+     break
+    time.sleep(1)
+   else:
+    raise SystemExit(f'REFUSED: profile writer processes did not quiesce for {cpv}: {writers[:12]}')
    previous=None
    stable_intervals=0
    for _ in range(120):
@@ -162,11 +183,9 @@ def main():
      stable_intervals=0
     previous=current
     time.sleep(0.5)
-   # Portage helper processes may be reaped asynchronously after the first
-   # quiet interval.  Give their LLVM runtime a final bounded flush window.
-   # Some multilib/helper processes flush well after Portage has returned;
-   # keep the final grace window long enough to catch those late writers.
-   time.sleep(60)
+   # Give runtimes a short bounded flush window after the writer scan, then
+   # require a complete stable snapshot below.
+   time.sleep(5)
    # Seal only after a complete post-transaction snapshot remains unchanged.
    # Instrumented helper processes can flush more than one batch after emerge
    # returns; one fixed grace sleep is therefore insufficient and creates
