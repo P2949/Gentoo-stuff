@@ -28,7 +28,7 @@ def main():
     out = a.output_root
     if out.exists():
         raise SystemExit("REFUSED: policy output already exists")
-    (out / "env" / "optimization" / "generated").mkdir(parents=True)
+    (out / "env").mkdir(parents=True)
     lines = []
     seen = set()
     for row in sorted(records, key=lambda x: x["cpv"]):
@@ -42,7 +42,7 @@ def main():
         source = a.env_root / name
         if not source.is_file():
             raise SystemExit(f"REFUSED: missing reviewed environment: {source}")
-        target = out / "env" / "optimization" / "generated" / name
+        target = out / "env" / name
         if not target.exists(): shutil.copyfile(source, target)
         lines.append(f"={cpv} optimization/generated/{name}")
     (out / "package.env").write_text("\n".join(lines) + "\n")
