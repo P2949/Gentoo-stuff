@@ -114,7 +114,12 @@ def main():
     path=recipe.get('path'); argv=recipe.get('argv')
     if recipe.get('safe_path') is not True or not isinstance(path,str) or not isinstance(argv,list) or not argv or argv[0] != path:
      raise SystemExit(f'REFUSED: unsafe workload recipe for {cpv}: {path}')
-    run_env=env.copy(); run_env.update(recipe.get('environment',{})); start=time.monotonic()
+    run_env=env.copy(); run_env.update(recipe.get('environment',{}))
+    if item['lane'] in ('pgo-clang-ir', 'pgo-gcc', 'pgo-rust') and env.get('GENTOO_OPT_MODE','').endswith('generate'):
+     run_env['LLVM_PROFILE_FILE']=os.path.join(profile_path, '%m-%p.profraw')
+    elif item['lane'] == 'pgo-go' and env.get('GENTOO_OPT_MODE','').endswith('generate'):
+     run_env.pop('LLVM_PROFILE_FILE', None)
+    start=time.monotonic()
     try:
      result=subprocess.run(argv,cwd=recipe.get('cwd','/'),env=run_env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=30,check=False)
     except (OSError,subprocess.TimeoutExpired) as e:
