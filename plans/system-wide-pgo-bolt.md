@@ -5899,3 +5899,13 @@ install-QA and workload execution. Its sealed receipt passed independent
 verification, and LLVM 22 merged the authenticated raw payload to
 `/var/lib/gentoo-optimization/merged-profiles/dev-cpp_sdbus-c++-2.3.1-v1.profdata`.
 The merged profile SHA-256 is `ea015ff80a0d297733dcbc0761c3b2d02e2d0828afc48cba457b98d17273d8a9`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-cpp/highway lane-dispatch boundary
+
+The exact current-generation `dev-cpp/highway-9999` attempt was rejected in
+setup before compilation. The policy lane requested `pgo-clang-ir`, but the
+package selected `/usr/x86_64-pc-linux-gnu/gcc-bin/17/x86_64-pc-linux-gnu-gcc`;
+the fail-closed dispatcher reported a compiler-family mismatch and aborted.
+No install, receipt, or profile was admitted, and no terminal exclusion is
+claimed. The package requires a package-specific compiler-selection correction
+or revised artifact evidence before retry.
