@@ -5487,3 +5487,11 @@ threshold; the root-owned attempt record and build evidence are preserved.
 No merge, receipt, or profile payload was admitted, and xz-utils remains a
 package-specific source-fetch failure requiring a cached or reachable exact
 source revision.
+
+### bash profile-wave retry (2026-09-19)
+The exact `app-shells/bash-9999` wave passed dependency and readiness checks,
+including the package-local `USE=-pgo` Clang-lane safeguard, but its moving
+Savannah Git source fetch remained alive with zero transfer and zero CPU for
+more than one minute. The fetch and Portage process group were terminated at
+the source-acquisition threshold. The failed attempt is retained and no
+package merge, receipt, or profile payload was admitted.
