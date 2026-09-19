@@ -4741,3 +4741,14 @@ passed, and independent receipt verification passed. LLVM 22 merged the
 authenticated raw payload into `merged-profiles/app-arch_zip-3.0_p16.profdata`;
 merge evidence was published for the current generation. No profile-use
 deployment or BOLT output is claimed.
+
+### zsh Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-shells/zsh-9999` successor wave completed
+under `phase3-live-candidate-20260918-postsync-r1`. The reviewed `/bin/zsh
+--help` and `/bin/zsh-9999 --help` workloads completed, install-QA passed,
+and independent receipt verification passed. LLVM 22 merged the authenticated
+raw payload into `merged-profiles/app-shells_zsh-9999.profdata`; merge evidence
+digest is `bd661d984b154076286bdf6b004c49ad48a263416aef2cb1abd8347a77d6f7a9`.
+LLVM reported counter-mismatch warnings during merge, which are preserved in
+the merge output; no profile-use deployment or BOLT output is claimed.
