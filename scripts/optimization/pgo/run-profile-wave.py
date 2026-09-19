@@ -125,6 +125,11 @@ def main():
    # Keep Portage's own Python/administrative helpers from inheriting a
    # compiler profile destination; doas only receives the explicit env argv.
    command.append('LLVM_PROFILE_FILE=/dev/null')
+   # Instrumented host helper shells may still open their compiler runtime's
+   # implicit default.profraw with O_CREAT after Portage filters the variable.
+   # Permit only this disposable repository-local path; it is removed before
+   # receipt sealing and is never admitted as a package payload.
+   command.append('SANDBOX_WRITE=/home/p2949/Desktop/Gentoo-stuff/default.profraw')
    command += ['emerge','--oneshot','--buildpkg','='+cpv]
    # Do not expose the package profile path to the privileged doas helper
    # itself.  The path is supplied explicitly in the doas environment for
