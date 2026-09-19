@@ -3006,6 +3006,7 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                     "bolt_origin_sections"
                 ]:
                     fail(f"deployed file lacks BOLT transformation evidence: {paths[0]}")
+            remove_implicit_profile(ed)
             _final_artifacts, final_identity = collect_ed_identity(
                 ed, readelf, objcopy, scratch_root / "complete-final-rescan"
             )
@@ -3042,6 +3043,7 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                     )
                     for partial, destination in restore:
                         os.replace(partial, destination)
+                remove_implicit_profile(ed)
                 _restored_artifacts, restored_identity = collect_ed_identity(
                     ed, readelf, objcopy, scratch_root / "rollback-verification"
                 )
