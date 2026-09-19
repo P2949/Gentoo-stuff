@@ -4624,3 +4624,12 @@ LLVM 22 merged the authenticated raw payload set into
 `merged-profiles/app-text_enchant-2.8.16.profdata`; merge evidence digest is
 `a930047b6d7d7f235ea8b0f60b601176bd08cc167b33320a538e6c5444d6a75f`.
 No profile-use deployment or BOLT output is claimed.
+
+### gspell Clang IR workload timeout (2026-09-19)
+
+The current-generation `app-text/gspell-1.14.4` transaction rebuilt and
+installed successfully and passed install-QA, but the reviewed
+`/usr/bin/gspell-app1 --help` workload exceeded the runner's 30-second command
+limit. The runner correctly refused to seal a receipt or admit profiles. The
+failed attempt and package logs remain preserved; no terminal exclusion or PGO
+result is claimed.
