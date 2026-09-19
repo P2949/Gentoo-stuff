@@ -5181,3 +5181,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-fs_e2fsprogs-1.47.4.profdata`; merge evidence digest is
 `1b9178bf08e7161f21a341fce1a8a0d1797eeefbdca651da3ded85f4238b594c`. No
 profile-use deployment or BOLT output is claimed.
+
+### gdbm Clang IR profile wave (2026-09-19)
+
+The exact `sys-libs/gdbm-1.26` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/bin/gdbmtool
+--version` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-libs_gdbm-1.26.profdata`; merge evidence digest is
+`de0cde41f6782e5f934dc1b11f5008de9ac2cdda8cbb22570d51c234f7124236`. No
+profile-use deployment or BOLT output is claimed.
