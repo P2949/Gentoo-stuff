@@ -5668,3 +5668,11 @@ payload was merged to the generation-bound v2 profile path with evidence
 profile-merge-fribidi-live-v2.json. Its merged profile digest is
 1c8a30f7f600acd08921cdddd48122f1d48cec01eebc7257263cecb9360bef6a.
 No profile-use deployment or BOLT output is inferred.
+
+### json-glib Clang IR profile wave (2026-09-19)
+The exact dev-libs/json-glib-1.10.8 wave completed under the active
+generation, and its receipt passed independent verification. The current
+authenticated payload was merged to the generation-bound v2 profile path with
+evidence profile-merge-json-glib-live-v2.json. Its merged profile digest is
+2ef649e0d92ddb75aa1c63bc6b8e6c4eb4510b495c4a15ab32ced56e8c00e1cf.
+No profile-use deployment or BOLT output is inferred.
