@@ -4166,3 +4166,14 @@ was admitted. This is the same privileged-helper profile-output propagation
 boundary addressed in the Bash runner hardening; the failed attempt and full
 sandbox evidence remain preserved for a fresh retry after that propagation is
 verified across the Portage helper path.
+
+### Portage helper profile-output hardening (2026-09-19)
+
+The shell-wave failures exposed that the dispatcher re-exported the raw LLVM
+profile destination while Portage entered install and package-QA phases. The
+bashrc now resets `LLVM_PROFILE_FILE=/dev/null` for `pkg_*`, install, and
+package-hook phases; the profile-wave runner continues to assign the raw
+workload destination only after the transaction. This preserves build/test
+profile collection while preventing administrative helper shells from creating
+unreceipted `default.profraw` files. Bash syntax validation passed; a fresh
+shell-package retry is required before this repair is considered live-verified.
