@@ -1136,17 +1136,25 @@ gentoo_opt_apply_primary_mode() {
             # behind and Clang then treats `%m-%p.profraw` as an input file.
             # The flag without an operand is equivalent and the exported
             # runtime path preserves the generation-bound payload contract.
-            case ${EBUILD_PHASE-}:${MISC_FUNCTIONS_ARGS-} in
-                pkg_*:*|install:*|preinst:*|postinst:*|prerm:*|postrm:*)
-                    LLVM_PROFILE_FILE=/dev/null
-                    ;;
-                *:die_hooks*)
-                    LLVM_PROFILE_FILE=/dev/null
-                    ;;
-                *)
-                    LLVM_PROFILE_FILE="${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
-                    ;;
-            esac
+            if [[ -z ${EBUILD_PHASE-} && -n ${MISC_FUNCTIONS_ARGS-} ]]; then
+                # Portage's privileged misc-functions helpers can source the
+                # dispatcher without an EBUILD_PHASE.  They are administrative
+                # processes, never reviewed workload processes, so they must
+                # not inherit the raw compiler profile destination.
+                LLVM_PROFILE_FILE=/dev/null
+            else
+                case ${EBUILD_PHASE-}:${MISC_FUNCTIONS_ARGS-} in
+                    pkg_*:*|install:*|preinst:*|postinst:*|prerm:*|postrm:*)
+                        LLVM_PROFILE_FILE=/dev/null
+                        ;;
+                    *:die_hooks*)
+                        LLVM_PROFILE_FILE=/dev/null
+                        ;;
+                    *)
+                        LLVM_PROFILE_FILE="${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
+                        ;;
+                esac
+            fi
             export LLVM_PROFILE_FILE
             flag="-fprofile-instr-generate"
             gentoo_opt_append_flag_once CFLAGS "${flag}"
