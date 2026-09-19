@@ -1164,6 +1164,13 @@ def tree_snapshot(root: Path) -> list[dict[str, Any]]:
     return records
 
 
+def remove_implicit_profile(ed: Path) -> None:
+    """Remove only the host-instrumentation residue, never package payload."""
+    residue = ed / "default.profraw"
+    if residue.is_file() and not residue.is_symlink():
+        residue.unlink()
+
+
 def scan_tree(root: Path) -> tuple[list[tuple[list[str], os.stat_result]], list[dict[str, Any]]]:
     groups: dict[tuple[int, int], tuple[list[str], os.stat_result]] = {}
     symlinks: list[dict[str, Any]] = []
@@ -2248,9 +2255,7 @@ def command_capture(arguments: argparse.Namespace) -> None:
     # the current working directory (ED) even when the child was given an
     # explicit discard pattern.  This exact disposable name is never package
     # payload; remove it before and after the immutable ED snapshot.
-    implicit_profile = ed / "default.profraw"
-    if implicit_profile.is_file() and not implicit_profile.is_symlink():
-        implicit_profile.unlink()
+    remove_implicit_profile(ed)
     before = tree_snapshot(ed)
     try:
         with tempfile.TemporaryDirectory(prefix="classify-", dir=stage) as scratch_text:
@@ -2260,8 +2265,7 @@ def command_capture(arguments: argparse.Namespace) -> None:
             )
         elf_total = len(artifacts)
         eligible_total = sum(bool(item["eligible"]) for item in artifacts)
-        if implicit_profile.is_file() and not implicit_profile.is_symlink():
-            implicit_profile.unlink()
+        remove_implicit_profile(ed)
         after = tree_snapshot(ed)
         if before != after:
             before_by_path = {item["path"]: item for item in before}
@@ -2810,6 +2814,7 @@ def command_deploy(arguments: argparse.Namespace) -> None:
         prefix="bolt-deploy-validate-", dir=diagnostics
     ) as temporary:
         scratch_root = Path(temporary)
+        remove_implicit_profile(ed)
         current_artifacts, current_ed_identity = collect_ed_identity(
             ed, readelf, objcopy, scratch_root / "full-ed-rescan"
         )
