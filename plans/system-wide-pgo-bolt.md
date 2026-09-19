@@ -6271,3 +6271,11 @@ payload to `/var/lib/gentoo-optimization/merged-profiles/kde-frameworks_kiconthe
 The merged profile SHA-256 is
 `088b901345e9fc38367b661e644c1eb0503861fa9b1672799545e044c025cf0b`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — kde-frameworks/kio-6.30.0 workload rejected
+
+The exact current-generation `kde-frameworks/kio-6.30.0` wave completed
+compilation, package merge, and install-QA, but the reviewed
+`/usr/bin/ktelnetservice6` workload exited with status 2. The runner refused
+to seal a receipt or merge a profile; the full diagnostic log is
+`/tmp/kio.log`.
