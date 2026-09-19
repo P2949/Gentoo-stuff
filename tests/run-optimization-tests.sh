@@ -19,6 +19,19 @@ readonly SCRIPT_DIR
 REPOSITORY_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd -P)
 readonly REPOSITORY_ROOT
 
+# Some host tools are instrumented before this shell can export
+# LLVM_PROFILE_FILE. Remove only the implicit artifact they may have created
+# at startup so it cannot contaminate repository-policy tests.
+"${PYTHON_BIN:-/usr/bin/python3}" - "${REPOSITORY_ROOT}" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+for relative in ("default.profraw", "tests/default.profraw"):
+    path = root / relative
+    if path.exists():
+        path.unlink()
+PY
+
 MODE=${OPTIMIZATION_TEST_MODE:-smoke}
 OUTPUT_DIR=
 KEEP_TEMP=0
