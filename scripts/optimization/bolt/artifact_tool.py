@@ -2255,7 +2255,14 @@ def command_capture(arguments: argparse.Namespace) -> None:
         eligible_total = sum(bool(item["eligible"]) for item in artifacts)
         after = tree_snapshot(ed)
         if before != after:
-            fail("ED metadata/topology changed during capture")
+            before_by_path = {item["path"]: item for item in before}
+            after_by_path = {item["path"]: item for item in after}
+            changed = []
+            for path in sorted(set(before_by_path) | set(after_by_path)):
+                if before_by_path.get(path) != after_by_path.get(path):
+                    changed.append(path)
+            sample = ",".join(changed[:12])
+            fail(f"ED metadata/topology changed during capture: {sample}")
         if eligible_total != arguments.expected_eligible_count:
             fail(
                 "captured BOLT-eligible count differs from the frozen inventory: "
