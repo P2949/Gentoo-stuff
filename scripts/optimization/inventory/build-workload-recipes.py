@@ -100,6 +100,10 @@ def main():
     continue
    elif p == '/usr/bin/hunzip':
     argv=[p,'--help']; allow_empty_output=True
+   elif x['cpv'].startswith('app-text/mandoc-') and p == '/usr/bin/mandoc':
+    argv=[p,'-h']; allow_empty_output=True
+   elif x['cpv'].startswith('app-text/mandoc-'):
+    continue
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
