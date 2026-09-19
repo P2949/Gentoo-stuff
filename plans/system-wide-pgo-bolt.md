@@ -4764,3 +4764,15 @@ the authenticated raw payload into
 `merged-profiles/dev-util_unifdef-2.12-r2.profdata`; merge evidence digest is
 `89a7db1313234fb086aac5bb14700f0163e5d30c1d7f2c56ec0be4cb9cfd0ccc`. No
 profile-use deployment or BOLT output is claimed.
+
+### xxd Clang IR profile wave and workload correction (2026-09-19)
+
+The initial `dev-util/xxd-2025.08.24-r1` wave built and merged but its
+reviewed `xxd --help` recipe exited 1. Direct probing showed that `xxd
+--version` is the supported successful probe. The recipe was corrected
+narrowly, rerun against the same current generation, and completed with
+install-QA and independent receipt verification passing. LLVM 22 merged the
+authenticated raw payload into
+`merged-profiles/dev-util_xxd-2025.08.24-r1.profdata`; merge evidence digest is
+`f318ace4e81461578ee37b49adabc4f298a9397ff4a9373e5f8b95e9d82751f9`. No
+profile-use deployment or BOLT output is claimed.
