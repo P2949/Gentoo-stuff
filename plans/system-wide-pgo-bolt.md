@@ -6140,3 +6140,12 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `e484e8887ed31147db889e0443c7d97264948cdfddde10e32d1b96c4654a9d12`;
 no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — gui-apps/wl-clipboard-9999 wave deferred
+
+The exact current-generation `gui-apps/wl-clipboard-9999` wave was started
+with the sealed plan and readiness manifest, but its upstream Git fetch made
+no progress for more than four minutes. The fetch was interrupted at the
+bounded stall threshold; no package receipt or merged profile was produced.
+The preserved diagnostic log is `/tmp/wl-clipboard.log`. This is a fetch
+availability failure, not evidence of a profile or ABI result.
