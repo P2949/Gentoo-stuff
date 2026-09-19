@@ -6099,3 +6099,13 @@ raw payload to
 The merged profile SHA-256 is
 `3a157314dcd31d93ba5174aa5abc328b4148551b0ff5f71669b9f53dc695f4f9`;
 no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — gnome-extra/zenity-4.2.2 Clang IR profile wave
+
+The exact current-generation `gnome-extra/zenity-4.2.2` wave completed through
+install-QA and the reviewed `zenity --help` workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/gnome-extra_zenity-4.2.2-v1.profdata`.
+The merged profile SHA-256 is
+`48443d1ccbd6115740d12a0ef4c2e4eefacc788367f675cf7bee41b9896cfc81`;
+no profile-use rebuild or BOLT deployment is inferred.
