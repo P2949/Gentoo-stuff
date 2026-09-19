@@ -1499,7 +1499,7 @@ gentoo_opt_run_bolt_wrapper() {
             ;;
     esac
     gentoo_opt_bolt_wrapper_path "${operation}" || return 1
-    "${GENTOO_OPT_BOLT_WRAPPER}" --ed "${ED}" \
+    LLVM_PROFILE_FILE=/dev/null "${GENTOO_OPT_BOLT_WRAPPER}" --ed "${ED}" \
         --cache-root "${cache}" --fingerprint "${fingerprint}" \
         --expected-eligible-count "${GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT}" \
         --inventory-proof "${GENTOO_OPT_BOLT_INVENTORY_PROOF}" \
