@@ -6405,3 +6405,7 @@ The package transaction completed under the `pgo-clang-ir` lane, but the profile
 ### 2026-09-20 — media-libs/libpulse-17.0 workload rejection
 
 The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libpulse-17.0` because `/usr/bin/pax11publish` exited with status 1. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
+
+### 2026-09-20 — media-libs/libv4l-1.32.0-r1 workload rejection
+
+The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libv4l-1.32.0-r1` because `/usr/bin/edid-decode` exited with status 255. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
