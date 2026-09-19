@@ -4731,3 +4731,13 @@ under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
 receipt verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_which-2.23.profdata`; merge evidence was published
 for the current generation. No profile-use deployment or BOLT output is claimed.
+
+### zip Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-arch/zip-3.0_p16` successor wave completed
+under `phase3-live-candidate-20260918-postsync-r1`. The reviewed `zip`,
+`zipcloak`, `zipnote`, and `zipsplit` version workloads completed, install-QA
+passed, and independent receipt verification passed. LLVM 22 merged the
+authenticated raw payload into `merged-profiles/app-arch_zip-3.0_p16.profdata`;
+merge evidence was published for the current generation. No profile-use
+deployment or BOLT output is claimed.
