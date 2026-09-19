@@ -6231,3 +6231,13 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `b02396c6f292dcdc448769c948ebfbfbd4134b75abeaa64476c2f4a83f4b78af`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — kde-frameworks/kdbusaddons-6.30.0 Clang IR profile wave
+
+The exact current-generation `kde-frameworks/kdbusaddons-6.30.0` wave
+completed through install-QA and its reviewed workload. Its sealed receipt
+passed independent verification, and LLVM 22 merged the authenticated raw
+payload to `/var/lib/gentoo-optimization/merged-profiles/kde-frameworks_kdbusaddons-6.30.0-v1.profdata`.
+The merged profile SHA-256 is
+`130916143314a5e00d44c3551106d72b477fca56554ce617367ca9045c8b417b`; no
+profile-use rebuild or BOLT deployment is inferred.
