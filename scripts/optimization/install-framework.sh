@@ -366,7 +366,7 @@ source_git() {
         LANG=C
         LC_ALL=C
         PATH=/usr/bin:/bin
-        LLVM_PROFILE_FILE=/dev/null
+        LLVM_PROFILE_FILE=/var/tmp/gentoo-optimization-installer-%p.profraw
         GIT_NO_REPLACE_OBJECTS=1
         GIT_CONFIG_NOSYSTEM=1
         GIT_CONFIG_GLOBAL=/dev/null
