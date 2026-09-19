@@ -3,6 +3,12 @@
 # sources this after package post_src_install and all earlier QA normalization,
 # immediately before its remaining compression/metadata/strip pipeline.
 
+# Portage may invoke install-QA from an instrumented bash process after it has
+# filtered phase-local profiling variables.  Keep the guard/capture boundary
+# from creating an implicit default.profraw in ED while it snapshots the staged
+# tree.  Explicit profile-wave workloads set their own absolute pattern.
+export LLVM_PROFILE_FILE=/dev/null
+
 gentoo_opt_hook_abort() {
     local message=$1 builddir=${PORTAGE_BUILDDIR-} portage_tmp=${PORTAGE_TMPDIR-}
     local marker
