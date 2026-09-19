@@ -4,6 +4,15 @@ IFS=$'\n\t'
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 PORTAGE=${ROOT}/portage
+# Host-instrumented helper shells may leave only this disposable profile residue.
+python3 - "${ROOT}" <<'PY_CLEAN'
+from pathlib import Path
+import sys
+for relative in ("default.profraw", "tests/default.profraw"):
+    path = Path(sys.argv[1]) / relative
+    if path.exists():
+        path.unlink()
+PY_CLEAN
 MASK=${PORTAGE}/package.mask/99-block-new-live-from-double-star
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
