@@ -4914,3 +4914,13 @@ receipt verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/dev-build_make-9999.profdata`; merge evidence digest is
 `3a41190d8b946b524a71a588e5a7cfb3119ffaa405cd769088af9bc89c448be8`. No
 profile-use deployment or BOLT output is claimed.
+
+### bmake Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-build/bmake-20260508` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/bmake -V MAKE_VERSION` workload completed, install-QA passed, and
+independent receipt verification passed. LLVM 22 merged the authenticated raw
+payload into `merged-profiles/dev-build_bmake-20260508.profdata`; merge
+evidence digest is `daeb23d66a0e5a64e184e966119666a6e7f56a5960282dd31055a31049f82327`.
+No profile-use deployment or BOLT output is claimed.
