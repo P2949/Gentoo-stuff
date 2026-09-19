@@ -4893,3 +4893,14 @@ and independent receipt verification passed. LLVM 22 merged the authenticated
 raw payload into `merged-profiles/app-shells_dash-9999.profdata`; merge
 evidence digest is `8d0ae249b686aa41e0a5bbd70708b6c6f78f8201ec96b0121fd57f95cac8e958`.
 No profile-use deployment or BOLT output is claimed.
+
+### diffutils Clang IR profile wave (2026-09-19)
+
+The exact current-generation `sys-apps/diffutils-3.12` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`cmp`, `diff`, `diff3`, and `sdiff` help workloads completed, install-QA
+passed, and independent receipt verification passed. LLVM 22 merged the
+authenticated raw payload into
+`merged-profiles/sys-apps_diffutils-3.12.profdata`; merge evidence digest is
+`de1eca53b7dbb3f36eaa5fdef27201ccba05d6574c776a3c5b93062e194be607`. No
+profile-use deployment or BOLT output is claimed.
