@@ -183,6 +183,7 @@ record_required_subtest PASS installer.atomic-exchange-tool \
 
 run_installer() {
     LLVM_PROFILE_FILE=/dev/null \
+    LLVM_PROFILE_FILE=/dev/null \
     GENTOO_OPT_INSTALLER_TEST_MODE=1 \
         bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
         --test-root "${TARGET}" "$@"
