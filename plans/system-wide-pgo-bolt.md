@@ -5566,3 +5566,11 @@ verification, and LLVM 22 merged the authenticated raw payload. Root-owned
 merge evidence is `profile-merge-libmd.json` with merged profile digest
 `6a4a18107fff7d9f44efd4d475654132459f035bc1f689272c16f2d3e293430b`.
 No profile-use deployment or BOLT output is inferred.
+
+### gspell Clang IR profile-wave workload timeout (2026-09-19)
+The exact `app-text/gspell-1.14.4` transaction completed and merged under the
+active generation, but its reviewed `/usr/bin/gspell-app1 --help` workload did
+not terminate within the runner's 30-second bound. No receipt or merged profile
+was admitted; the package-specific workload attempt and build evidence remain
+preserved as a terminal workload failure requiring either a bounded safe
+invocation or an evidence-backed correctness exclusion.
