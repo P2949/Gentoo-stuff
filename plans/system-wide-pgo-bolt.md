@@ -6013,3 +6013,13 @@ payload to
 The merged profile SHA-256 is
 `7886b5677d47b2bbb6148fc2f28194cb4d5434fc371bc6c4c77cdb768e03fe99`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — sys-devel/m4 Clang IR profile wave
+
+The exact current-generation `sys-devel/m4-1.4.21` wave completed through
+install-QA and the reviewed `m4 --help` workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/sys-devel_m4-1.4.21-v1.profdata`.
+The merged profile SHA-256 is
+`1a9254af8596d40883e171d833051c7b6b5b702bf925538acdaffe86ed0fd84b`; no
+profile-use rebuild or BOLT deployment is inferred.
