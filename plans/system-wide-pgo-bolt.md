@@ -4552,3 +4552,17 @@ to create a synthetic tracing event and exits 255 in the current tracefs
 runtime. The runner correctly refused to seal a receipt or admit profiles.
 The failed attempt remains preserved; no PGO result is claimed and no tracing
 or kernel state was mutated.
+
+### libgcrypt Clang IR profile wave and merge scalability repair (2026-09-19)
+
+The exact current-generation `dev-libs/libgcrypt-1.12.4` successor wave
+completed both configured ABIs under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `dumpsexp`, `hmac256`, `mpicalc`, and `mpicalc --help` workloads
+completed, install-QA passed, and the sealed receipt passed independent
+verification. The first merge attempt exposed `E2BIG` because the raw payload
+list exceeded the operating system argument-vector limit. The merge tool was
+repaired to merge deterministic batches of 256 raw profiles and then merge the
+intermediate profiles. The authenticated payloads were merged successfully
+with evidence digest
+`16dbc4096b73237ce75586ff8239fff2c2134fc91d7d6ce4a39550ec8e09b246`.
+No profile-use deployment or BOLT output is claimed.

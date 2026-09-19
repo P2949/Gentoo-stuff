@@ -33,7 +33,31 @@ def main():
  out.parent.mkdir(parents=True,exist_ok=True)
  fd,tmpout=tempfile.mkstemp(prefix='.profdata-',dir=str(out.parent)); os.close(fd); os.unlink(tmpout)
  try:
-  subprocess.run([a.llvm_profdata,'merge','-sparse',*(str(p) for p in listed),'-o',tmpout],check=True)
+  # Keep each execve argument vector bounded.  Large instrumented builds can
+  # emit thousands of raw payloads, and passing every path in one invocation
+  # fails before llvm-profdata starts with E2BIG.  Merge deterministic chunks,
+  # then merge the chunk profiles into the exact final output.
+  chunk_size = 256
+  chunk_outputs = []
+  for index in range(0, len(listed), chunk_size):
+   chunk_fd, chunk_path = tempfile.mkstemp(prefix='.profchunk-', dir=str(out.parent))
+   os.close(chunk_fd)
+   os.unlink(chunk_path)
+   chunk_outputs.append(chunk_path)
+   subprocess.run(
+    [a.llvm_profdata, 'merge', '-sparse',
+     *(str(p) for p in listed[index:index + chunk_size]), '-o', chunk_path],
+    check=True,
+   )
+  subprocess.run(
+   [a.llvm_profdata, 'merge', '-sparse', *chunk_outputs, '-o', tmpout],
+   check=True,
+  )
+  for chunk_path in chunk_outputs:
+   try:
+    os.unlink(chunk_path)
+   except FileNotFoundError:
+    pass
   shown=subprocess.run([a.llvm_profdata,'show','--counts','--all-functions',tmpout],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   if not shown.stdout.strip(): raise SystemExit('REFUSED: llvm-profdata produced no readable profile description')
   os.replace(tmpout,out)
