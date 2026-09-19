@@ -5432,3 +5432,6 @@ The exact `dev-util/debugedit-5.3` wave completed under the current Phase-3 fram
 
 ### colm profile-wave build failure (2026-09-19)
 The `dev-util/colm-0.14.7-r4` candidate exited nonzero during its profile wave before producing a receipt. No profile was admitted; the failed attempt is retained and no optimization claim is made.
+
+### source-highlight profile-wave build failure (2026-09-19)
+The `dev-util/source-highlight-3.1.9-r2` candidate reached package QA but exited nonzero because the transaction encountered a `default.profraw` collision under the active profile environment. No receipt or profile was admitted. The failure is retained as package-specific evidence; the global LLVM profile suppression remains active for unrelated maintenance operations.
