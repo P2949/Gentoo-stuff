@@ -1136,8 +1136,11 @@ gentoo_opt_apply_primary_mode() {
             # behind and Clang then treats `%m-%p.profraw` as an input file.
             # The flag without an operand is equivalent and the exported
             # runtime path preserves the generation-bound payload contract.
-            case ${EBUILD_PHASE-} in
-                pkg_*|install|preinst|postinst|prerm|postrm)
+            case ${EBUILD_PHASE-}:${MISC_FUNCTIONS_ARGS-} in
+                pkg_*:*|install:*|preinst:*|postinst:*|prerm:*|postrm:*)
+                    LLVM_PROFILE_FILE=/dev/null
+                    ;;
+                *:die_hooks*)
                     LLVM_PROFILE_FILE=/dev/null
                     ;;
                 *)
