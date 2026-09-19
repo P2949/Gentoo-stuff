@@ -6431,3 +6431,7 @@ The package transaction completed under the `pgo-clang-ir` lane, but the profile
 ### 2026-09-20 — media-libs/libv4l-1.32.0-r1 workload rejection
 
 The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libv4l-1.32.0-r1` because `/usr/bin/edid-decode` exited with status 255. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
+
+### 2026-09-20 — media-libs/tiff-4.7.1 exported-ABI rejection
+
+The `pgo-clang-ir` wave reached the completed install image, but the install-QA ABI guard rejected the replacement because both established SONAMEs disappeared: `libtiff.so.5` and `libtiffxx.so.5`. No receipt or merged profile was accepted; the exported-ABI failure is preserved as the terminal reason for this attempt.
