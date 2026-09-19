@@ -2878,7 +2878,7 @@ if [[ ${MODE} == check ]]; then
         "frozen_inventory=${FROZEN_INVENTORY_SHA256}" \
         "previous=${ACTIVE_PREVIOUS}" | sha256sum | awk '{print $1}')
     [[ ${ACTIVE_TARGET} == "${BASE}/framework-${FRAMEWORK_AGGREGATE}" ]] || \
-        fail 'active generation identity does not match the reviewed input snapshot'
+        fail "active generation identity does not match the reviewed input snapshot: target=${ACTIVE_TARGET##*-} expected=${FRAMEWORK_AGGREGATE} git=${GIT_COMMIT} dirty=${GIT_DIRTY} status=${SOURCE_STATUS}"
     CANDIDATE_INVENTORY_SHA=$(sha256sum -- "${ACTIVE_TARGET}/.candidate-inventory" | awk '{print $1}')
     EXPECTED_CHECK_MANIFEST=$(mktemp "${BASE}/.framework-check-manifest.XXXXXXXX")
     render_manifest "${CANDIDATE_INVENTORY_SHA}" "${ACTIVE_TARGET}" "${ACTIVE_PREVIOUS}" \
