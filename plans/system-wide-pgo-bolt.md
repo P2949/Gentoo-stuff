@@ -6353,3 +6353,7 @@ profile-use rebuild or BOLT deployment is inferred.
 ### 2026-09-19 — media-gfx/argyllcms-3.4.1 profile wave compile failure
 
 The `pgo-clang-ir` wave for `media-gfx/argyllcms-3.4.1` was executed against generation `phase3-live-candidate-20260918-postsync-r1` with the current inventory and readiness bindings. The transaction reached compilation but failed in the compile phase when `clang-22` crashed with exit code 139. No profile-wave receipt was produced, so no merged profile was accepted. This is recorded as a package/compiler execution failure pending separate root-cause work; the wave runner and ABI guard were not bypassed.
+
+### 2026-09-19 — media-gfx/qrencode-4.1.1-r1 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1` with receipt/readiness verification passing. The workload receipt was independently verified and merged into `/var/lib/gentoo-optimization/merged-profiles/media-gfx_qrencode-4.1.1-r1-v1.profdata`; merge evidence SHA-256 is `f5ea3260b05e9a145e620a5068121467a518a4728bf2ed1c441ce462f6ce3329`.
