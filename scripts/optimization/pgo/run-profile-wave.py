@@ -208,7 +208,7 @@ def main():
    # returns.  A fixed sleep cannot prove that those writers are gone.  Scan
    # authenticated process environments for this exact profile destination and
    # wait until no live writer still carries it.
-   if os.path.isdir(profile_path) and any(os.scandir(profile_path)):
+   if os.path.isdir(profile_path) and any(entry.is_file() for entry in os.scandir(profile_path)):
     writer_deadline=time.monotonic()+300
     while time.monotonic() < writer_deadline:
      writers=[]
