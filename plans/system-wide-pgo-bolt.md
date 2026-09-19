@@ -6400,6 +6400,10 @@ The candidate policy incorrectly assigned `media-libs/libjxl-9999` to the Clang 
 
 The corrected lane manifest was regenerated from the authoritative generation inputs and stored as `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-postsync-r1/pgo-lane-candidates-corrected-20260920.json` (SHA-256 `2f7681761b5d6d142433efa0700f225a40105a7295aa97da8843760118dae6de`). Corrected policy bindings were regenerated with GCC identities for both packages and stored as `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-postsync-r1/pgo-policy-bindings-corrected-20260920.json` (SHA-256 `1477565d9e406d4031d224695241efd9e79e7a20818f57611c7a75828d189b2e`). These are candidate derived evidence only; the active framework has not been replaced.
 
+### 2026-09-20 — dev-cpp/highway-9999 GCC-lane ABI rejection
+
+The corrected `pgo-gcc` retry compiled and staged successfully, but the existing exported-ABI guard rejected the replacement `libhwy_contrib.so.1` providers because `_ZN3hwy17Fill16BytesSecureEPv@@HWY_0` was absent from the candidate while present in the installed ABI (137 old exports versus 146 new exports). No merge, receipt, or profile acceptance occurred. This remains a correctness failure after the package-environment lane correction and is retained as terminal evidence for this wave.
+
 ### 2026-09-20 — media-libs/libpng-1.6.58 workload rejection
 
 The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libpng-1.6.58` because `/usr/bin/png-fix-itxt` produced no output. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
