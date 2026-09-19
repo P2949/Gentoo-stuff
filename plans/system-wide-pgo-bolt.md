@@ -5505,3 +5505,11 @@ to emit the profile payload; the same behavior is reproducible with the exact
 generation `LLVM_PROFILE_FILE` and does not occur without profile output. No
 receipt or profile merge was admitted. The build and failed workload evidence
 remain preserved as a package-specific Rust runtime/profile incompatibility.
+
+### maturin Rust profile-wave retry (2026-09-19)
+The exact `dev-util/maturin-1.15.0` wave was retried after the Portage Rust
+helper-output repair. Its vendored Rust build again completed, but the ebuild's
+`maturin completions bash` invocation segfaulted during `python_compile` even
+with `LLVM_PROFILE_FILE=/dev/null`; no package merge, receipt, or profile
+payload was admitted. This is a reproducible package/toolchain incompatibility
+in executing the Rust-instrumented helper, retained with both failed attempts.
