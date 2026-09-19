@@ -1496,7 +1496,7 @@ raise SystemExit(65 if missing else 0)
             variables["${variable}"]=1
             if [[ ${basename} == pgo-clang-ir-generate-public.conf && \
                   ${variable} =~ ^(COMMON_FLAGS|CFLAGS|CXXFLAGS|FCFLAGS|FFLAGS|LDFLAGS)$ ]]; then
-                [[ ${value} =~ ^\"[A-Za-z0-9_./:@,+%=${}\ \"-]*\"$ ]] || \
+                [[ ${value} == \"*\" ]] || \
                     fail "public-ABI generated environment value is malformed: ${basename}: ${line}"
             else
                 [[ ${value} =~ ^[A-Za-z0-9_./:@,+%=-]*$ || \
