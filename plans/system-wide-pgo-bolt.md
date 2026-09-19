@@ -5981,3 +5981,13 @@ verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `d15735ff5d16d232e86e96dc24b95d8a88d7c368f4e5f8c668f8a620c8895a1c`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-arch/7zip Clang IR profile wave
+
+The exact current-generation `app-arch/7zip-26.03` wave completed through
+install-QA and the reviewed `7zz --help` workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/app-arch_7zip-26.03-v1.profdata`.
+The merged profile SHA-256 is
+`f019489d69a60b95b24777ab27f404d1e4addfd63fb096fcc612a164a6a00521`; no
+profile-use rebuild or BOLT deployment is inferred.
