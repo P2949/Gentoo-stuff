@@ -4873,3 +4873,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/dev-build_b2-5.5.3.profdata`; merge evidence digest is
 `f64932cabd34e72a0036b49b90c8e713058422c34f7b996990f670d3f939ad55`. No
 profile-use deployment or BOLT output is claimed.
+
+### cpuid2cpuflags Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-portage/cpuid2cpuflags-18` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/cpuid2cpuflags --help` workload completed, install-QA passed, and
+independent receipt verification passed. LLVM 22 merged the authenticated raw
+payload into `merged-profiles/app-portage_cpuid2cpuflags-18.profdata`; merge
+evidence digest is `6de58874ac8dd96f908976dbb95cc9556a80e5bc2462849d797abff13ed70fdb`.
+No profile-use deployment or BOLT output is claimed.
