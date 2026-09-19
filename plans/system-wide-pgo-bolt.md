@@ -3976,3 +3976,7 @@ The exact `app-text/opensp-1.5.2-r10` wave reached compilation under the require
 ### Ragel Clang IR PGO wave (2026-09-19)
 
 `dev-util/ragel-7.0.4-r3` completed the exact successor `pgo-clang-ir` wave across its configured C++ build outputs. The sealed receipt records nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed `ragel --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_ragel-7.0.4-r3.profdata`, with root-owned merge evidence in `profile-merge-ragel.json`. No profile-use deployment or BOLT output is claimed.
+
+### Colm exported-ABI stop (2026-09-19)
+
+The exact `dev-util/colm-0.14.7-r4` wave reached install-QA but was correctly rejected by the unchanged exported-ABI guard. The staged `libfsm-0.14.7.so`/`libfsm.so` providers lost ten installed C++ symbol identities, including `DList`, `BstSet`, `Vector`, `SVector`, `AvlBasic`, and `std::__cxx11::basic_stringbuf` symbols. No package merge or profile receipt was admitted; the failed attempt and complete Portage log remain preserved for a package-specific ABI remediation.
