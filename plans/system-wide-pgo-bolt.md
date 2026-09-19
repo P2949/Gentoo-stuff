@@ -5808,3 +5808,7 @@ The exact current-generation `app-crypt/pinentry-1.3.3` wave completed through i
 ### 2026-09-19 — app-crypt/gpgme Clang IR profile wave
 
 The exact current-generation `app-crypt/gpgme-2.2.0` library wave completed through install-QA and merge. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-crypt_gpgme-2.2.0-v1.profdata`. The merged profile SHA-256 is `976b744df5a12e27ee1dfd23ce569db9170522cf7554ff91eaa4ebc72b54bea0`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-crypt/gnupg Clang IR profile wave
+
+The exact current-generation `app-crypt/gnupg-2.5.22` wave completed through install-QA and merge. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-crypt_gnupg-2.5.22-v1.profdata`. The merged profile SHA-256 is `c24eccf8a604494f6f36e9a70538ba15f58c397cb1c62fe1347082f183efbc8d`; no profile-use rebuild or BOLT deployment is inferred.
