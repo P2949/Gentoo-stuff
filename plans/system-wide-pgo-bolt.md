@@ -4633,3 +4633,13 @@ installed successfully and passed install-QA, but the reviewed
 limit. The runner correctly refused to seal a receipt or admit profiles. The
 failed attempt and package logs remain preserved; no terminal exclusion or PGO
 result is claimed.
+
+### scdoc Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-text/scdoc-9999` successor wave rebuilt and
+passed install-QA under `phase3-live-candidate-20260918-postsync-r1`. Its
+input-bound `/usr/bin/scdoc` fixture workload completed, the sealed receipt
+passed independent verification, and LLVM 22 merged the authenticated raw
+payload set into `merged-profiles/app-text_scdoc-9999.profdata`; merge evidence
+digest is `dc7f6b26f87f5d504e67998ae414729f4a44552453881fe4113695a785b2c9ff`.
+No profile-use deployment or BOLT output is claimed.
