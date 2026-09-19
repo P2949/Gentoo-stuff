@@ -5417,3 +5417,6 @@ The exact `sys-apps/util-linux-2.42.3` wave completed under the current Phase-3 
 
 ### xkbcomp Clang IR profile wave (2026-09-19)
 The exact `x11-apps/xkbcomp-1.5.0-r2` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/xkbcomp -version` completed successfully; the merged profile is `merged-profiles/x11-apps-xkbcomp-1.5.0-r2.profdata` with digest `071e0980ee7f197151b53f72454ff3e4e65bd64892ba6d1de01321399ffb83db`. No profile-use deployment or BOLT output is claimed.
+
+### xwininfo Clang IR profile wave (2026-09-19)
+The exact `x11-apps/xwininfo-1.1.7` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/xwininfo -version` completed successfully; the merged profile is `merged-profiles/x11-apps-xwininfo-1.1.7.profdata` with digest `444f59261aa41f082cae7868d769da1e6f3aab36cb028f9d1631a04cc28e952a`. No profile-use deployment or BOLT output is claimed.
