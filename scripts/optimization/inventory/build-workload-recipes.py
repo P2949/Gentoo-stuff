@@ -14,6 +14,12 @@ def main():
   if x['cpv'].startswith('app-text/gspell-'):
    rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'gspell-app1 has no configured language dictionaries on the live system'})
    continue
+  # sqlhist requires a live tracefs control path and cannot run safely as a
+  # deterministic userspace workload in this boundary; retain accounting as
+  # an explicit terminal workload exclusion rather than accepting exit 255.
+  if x['cpv'].startswith('dev-libs/libtracefs-'):
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'sqlhist requires live tracefs control access and exits 255 without it'})
+   continue
   recipes=[]
   for e in x['entrypoints']:
    p=e['path']; safe=p.startswith(('/usr/bin/','/usr/sbin/','/bin/','/sbin/')) and not os.path.islink(p)
