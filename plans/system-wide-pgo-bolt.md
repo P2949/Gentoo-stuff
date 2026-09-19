@@ -4486,3 +4486,14 @@ authenticated raw payload set into
 `merged-profiles/dev-libs_fribidi-1.0.16.profdata`; merge evidence digest is
 `88c8258b856024797b3284b9013181cd91724f6b9429b7c0a673fce715449518`.
 No profile-use deployment or BOLT output is claimed.
+
+### expat Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-libs/expat-2.8.4` successor wave completed
+both configured ABIs under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `/usr/bin/xmlwf --help` workload completed, install-QA passed,
+and the sealed receipt passed independent verification. LLVM 22 merged the
+authenticated raw payload set into
+`merged-profiles/dev-libs_expat-2.8.4.profdata`; merge evidence digest is
+`779a0aa41cea93ec700f99fdbfbc3585b8d1b9fd5dc0a496c859576e652e0af2`.
+No profile-use deployment or BOLT output is claimed.
