@@ -27,14 +27,13 @@ def main():
  lane = {x['cpv'] for x in l.get('records', l.get('packages', []))}
  ep = {(x.get('owner_cpv'), x['path']) for x in ec.get('records', ec.get('artifacts', []))}
  sp = {(x.get('owner_cpv'), x['path']) for x in es.get('records', es.get('artifacts', []))}
- # elf-metadata-census.py emits one record per authoritative ELF artifact;
- # its schema identifies ELF entries with class/type, not an ``elf`` field.
- # Filtering on the latter made the old audit report zero artifacts and
- # allowed every classification check to pass vacuously.
+ # owned-artifact-census.json is the authoritative identity source.  Its
+ # records mark ELF entries with an ``elf`` metadata object; class/type metadata is a
+ # separate input and must not be used to define the authority set.
  authoritative = {
   (x.get('owner_cpv'), x['path'])
   for x in authority.get('artifacts', authority.get('records', []))
-  if x.get('class') and x.get('type')
+  if isinstance(x.get('elf'), dict)
  }
  if not authoritative:
   raise SystemExit('elf authority contains no classified ELF artifact records')

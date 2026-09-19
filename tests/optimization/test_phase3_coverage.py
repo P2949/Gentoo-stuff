@@ -62,8 +62,7 @@ def main() -> None:
                 {
                     "owner_cpv": "cat/pkg-1",
                     "path": "/usr/bin/tool",
-                    "class": "ELF64",
-                    "type": "DYN",
+                    "elf": {"class": 2, "type": 3},
                 }
             ],
             "sha256": "fixture",
@@ -74,7 +73,7 @@ def main() -> None:
     assert report["coverage_pass"] is True
 
     try:
-        run_case({"artifacts": [{"owner_cpv": "cat/pkg-1", "path": "/usr/bin/tool"}]})
+        run_case({"artifacts": [{"owner_cpv": "cat/pkg-1", "path": "/usr/bin/tool", "elf": None}]})
     except subprocess.CalledProcessError:
         pass
     else:
