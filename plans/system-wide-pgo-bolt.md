@@ -4237,3 +4237,16 @@ Exploratory edits to installed Portage phase scripts were tested and reverted;
 none are retained as project state. The evidence confirms the remaining repair
 belongs at Portage's child-environment construction boundary, not in the ABI
 guard or package ebuild.
+
+### Portage child environment profile sink (2026-09-19)
+
+The syscall trace showed that `doebuild.py` built phase-child environments
+before bashrc sourcing, so the instrumented Bash runtime started without an
+LLVM destination. The live Portage Python 3.13, 3.14, and 3.15 `doebuild.py`
+variants now default `LLVM_PROFILE_FILE` to `/dev/null` in both the EAPI-9
+copied-environment branch and the pre-EAPI-9 direct-environment branch, while
+preserving any explicit runner-selected profile path. The bounded live
+`dev-dotnet/dotnet-runtime-nugets-10.0.11` reinstall then completed
+successfully; no `default.profraw` collision remained. The focused ABI guard
+suite also passes. This is a live Portage integration repair; no PGO receipt or
+profile-use deployment is claimed for the maintenance reinstall.
