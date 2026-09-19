@@ -4108,3 +4108,14 @@ workload; independent receipt verification passed. LLVM 22 merged the payload
 into `/var/lib/gentoo-optimization/merged-profiles/app-portage_eix-0.36.9.profdata`,
 with root-owned merge evidence in `profile-merge-eix.json`. No profile-use
 deployment or BOLT output is claimed.
+
+### Portage-utils Clang IR PGO wave (2026-09-19)
+
+`app-portage/portage-utils-9999` completed the exact successor
+`pgo-clang-ir` wave. The moving-source checkout resolved and built
+successfully; the sealed receipt records nonempty profraw payloads, successful
+install-QA ABI guarding, and completion of the reviewed `q --help` workload;
+independent receipt verification passed. LLVM 22 merged the payload into
+`/var/lib/gentoo-optimization/merged-profiles/app-portage_portage-utils-9999.profdata`,
+with root-owned merge evidence in `profile-merge-portage-utils.json`. No
+profile-use deployment or BOLT output is claimed.
