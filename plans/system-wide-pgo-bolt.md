@@ -5756,3 +5756,7 @@ The initial exact `dev-lang/lua-5.4.8` wave preserved a generated `--help` workl
 ### 2026-09-19 — dev-lang/nasm corrected Clang IR profile wave
 
 The initial exact `dev-lang/nasm-3.02` wave preserved a generated `--help` workload failure from `ndisasm`. Direct validation showed both `nasm -v` and `ndisasm -v` exit successfully, so a hash-bound successor workload and wave replaced only those probes. The successor transaction completed, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_nasm-3.02-v1.profdata`. The merged profile SHA-256 is `23c39fda2d2204c129e6ab00726be4bde8c45be5eb1dbc3493e8509976a2bbbf`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-lang/orc Clang IR profile wave
+
+The exact `dev-lang/orc-0.4.42` wave completed under the active generation. The transaction merged through install-QA, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_orc-0.4.42-v1.profdata`. The merged profile SHA-256 is `543da78d839e3e33792fee1f2feeeadbce520106a6587aab2189b6df3b0d8417`; no profile-use rebuild or BOLT deployment is inferred.
