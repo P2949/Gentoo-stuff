@@ -4451,3 +4451,15 @@ the mirror fetch remained idle. The controller terminated that attempt after
 5m51s, preserved the raw fetch/build log, and recorded a durable failed attempt
 with the exact source-fetch timeout reason. No package merge, profile receipt,
 or profile merge was admitted.
+
+### zstd Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-arch/zstd-1.5.7-r1` successor wave completed
+both configured ABIs under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `/usr/bin/pzstd --help`, `/usr/bin/zstd --help`, and
+`/usr/bin/zstd-frugal --help` workloads completed, install-QA passed, and the
+sealed receipt passed independent verification. LLVM 22 merged the authenticated
+raw payload set into
+`merged-profiles/app-arch_zstd-1.5.7-r1.profdata`; merge evidence digest is
+`5cf1225981243a988c6c3239ee27549a91a25c83e65ba45e71e85c13c1998cb9`.
+No profile-use deployment or BOLT output is claimed.
