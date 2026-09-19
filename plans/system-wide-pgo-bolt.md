@@ -5161,3 +5161,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_kmod-34.2.profdata`; merge evidence digest is
 `9f5c960bf5a2ad97d43506f0511f7580327c492a6e9e1430f86c01772ca942fa`. No
 profile-use deployment or BOLT output is claimed.
+
+### dosfstools Clang IR profile wave (2026-09-19)
+
+The exact `sys-fs/dosfstools-4.2` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The non-mutating
+`/usr/sbin/fatlabel --help` workload completed, install-QA passed, and
+independent receipt verification passed. LLVM 22 merged the authenticated raw
+payload into `merged-profiles/sys-fs_dosfstools-4.2.profdata`; merge evidence
+digest is `62609c0f48c12e33a762d4877af35fa289e4eb5aad6c620cb0694f07ab6f6e2f`.
+No profile-use deployment or BOLT output is claimed.
