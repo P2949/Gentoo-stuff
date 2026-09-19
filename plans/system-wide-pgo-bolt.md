@@ -5574,3 +5574,12 @@ not terminate within the runner's 30-second bound. No receipt or merged profile
 was admitted; the package-specific workload attempt and build evidence remain
 preserved as a terminal workload failure requiring either a bounded safe
 invocation or an evidence-backed correctness exclusion.
+
+### grep Clang IR profile wave (2026-09-19)
+The exact `sys-apps/grep-3.12` wave completed under the active generation, and
+its receipt passed independent verification. The original merged-profile path
+already contained an older non-generation-bound artifact, so the merger's
+fail-closed no-overwrite guard rejected replacement; the authenticated current
+payload was merged to the distinct root-owned `sys-apps_grep-3.12-v2.profdata`
+path with evidence `profile-merge-grep-live-v2.json`. Its merged digest is
+`bc8493fbad94c6fcb10040f8a31a2a77a66307dd36ef774fe3df21ca0935a1de`.
