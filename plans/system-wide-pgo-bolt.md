@@ -5242,3 +5242,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-process_time-1.10.profdata`; merge evidence digest is
 `134ef86caac7f35b6640ec85ba8cc1ddaf02fe45f833ddee819dfa5c56b3b42f`. No
 profile-use deployment or BOLT output is claimed.
+
+### iproute2 Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/iproute2-7.2.0` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The read-only `/sbin/ip
+-Version` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_iproute2-7.2.0.profdata`; merge evidence digest is
+`0abc7c604b40b21e5f6616af67c75650777bfcd608d42d19b70e90a24ea28427`. No
+profile-use deployment or BOLT output is claimed.
