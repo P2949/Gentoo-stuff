@@ -3912,3 +3912,7 @@ The first exact `dev-util/unifdef-2.12-r2` generation attempt rebuilt and merged
 ### XXD workload correction and Clang IR PGO wave (2026-09-19)
 
 The first exact `dev-util/xxd-2025.08.24-r1` generation attempt rebuilt and merged, but the generic `xxd --help` workload returned status 1. Direct probing confirmed `xxd -version` is the successful non-destructive query. The authoritative workload generator now uses that form. The fresh `xxd-v2` wave completed, passed independent receipt verification, and LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_xxd-2025.08.24-r1.profdata`; root-owned merge evidence is `profile-merge-xxd-v2.json`. No profile-use deployment or BOLT output is claimed.
+
+### Which Clang IR PGO wave (2026-09-19)
+
+`sys-apps/which-2.23` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `which --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_which-2.23.profdata`, with root-owned merge evidence in `profile-merge-which.json`. No profile-use deployment or BOLT output is claimed.
