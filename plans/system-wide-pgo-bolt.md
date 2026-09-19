@@ -5408,3 +5408,6 @@ The exact `x11-apps/mkfontscale-1.2.4` wave completed under the current Phase-3 
 
 ### OpenSSH Clang IR profile wave (2026-09-19)
 The exact `net-misc/openssh-10.5_p1` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/ssh -V` completed successfully; the merged profile is `merged-profiles/net-misc-openssh-10.5_p1.profdata` with digest `584489a730b40515fbccf2fb575312f74f4404ae0b1aa5ee0b5ad316a5fa0a53`. No profile-use deployment or BOLT output is claimed.
+
+### iputils Clang IR profile wave (2026-09-19)
+The exact `net-misc/iputils-99999999` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/ping -V` completed successfully without network traffic; the merged profile is `merged-profiles/net-misc-iputils-99999999.profdata` with digest `8b650dd43f5c1a24203c28cf6fb2d3f95f6f0894eeb0caad25d1c55c3b9cab1c`. No profile-use deployment or BOLT output is claimed.
