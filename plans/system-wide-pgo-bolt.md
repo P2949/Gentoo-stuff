@@ -5583,3 +5583,10 @@ fail-closed no-overwrite guard rejected replacement; the authenticated current
 payload was merged to the distinct root-owned `sys-apps_grep-3.12-v2.profdata`
 path with evidence `profile-merge-grep-live-v2.json`. Its merged digest is
 `bc8493fbad94c6fcb10040f8a31a2a77a66307dd36ef774fe3df21ca0935a1de`.
+
+### acl Clang IR profile-wave workload failure (2026-09-19)
+The exact `sys-apps/acl-9999` wave completed its controlled transaction and
+merged successfully, but the reviewed `/bin/chacl` workload exited with status
+1. No receipt or merged profile was admitted; the package-specific workload
+failure and transaction evidence remain preserved for later remediation or
+terminal classification.
