@@ -991,6 +991,7 @@ else
 fi
 run_check() {
     local supplied_token=\$1 supplied_authorization=\$2
+    LLVM_PROFILE_FILE=/dev/null \
     GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN=\${supplied_token} \
     GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION=\${supplied_authorization} \
