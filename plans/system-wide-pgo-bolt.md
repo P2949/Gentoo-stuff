@@ -4508,3 +4508,14 @@ independent verification. LLVM 22 merged the authenticated raw payload set
 into `merged-profiles/dev-libs_libgpg-error-1.61.profdata`; merge evidence
 digest is `1aecbdd4f69e0e6a9eb4942ac53bebd233adad9d4b61ef68dbefb239d7c59b7f`.
 No profile-use deployment or BOLT output is claimed.
+
+### libtasn1 Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-libs/libtasn1-4.21.0` successor wave
+completed both configured ABIs under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `/usr/bin/asn1Coding --help`, `/usr/bin/asn1Decoding --help`, and
+`/usr/bin/asn1Parser --help` workloads completed, install-QA passed, and the
+sealed receipt passed independent verification. LLVM 22 merged the authenticated
+raw payload set into `merged-profiles/dev-libs_libtasn1-4.21.0.profdata`; merge
+evidence digest is `65d198466b9722687e3cf909ed9e75cddbafd9153e672839d0006a68094060fb`.
+No profile-use deployment or BOLT output is claimed.
