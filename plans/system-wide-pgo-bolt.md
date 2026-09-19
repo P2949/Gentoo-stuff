@@ -5724,3 +5724,11 @@ independent verification, and LLVM 22 merged the authenticated payload to the
 root-owned corrected profile path. Evidence is profile-merge-libpaper-corrected.json
 with merged digest 205e2078a099d0487220a36c6dbd57ae5924c3e450b2454c4bb55cc75b4cb0dd.
 No profile-use deployment or BOLT output is inferred.
+
+### lowdown Clang IR profile wave (2026-09-19)
+The exact app-text/lowdown-3.1.1 wave completed under the active generation,
+and its receipt passed independent verification. The current authenticated
+payload was merged to the generation-bound v2 profile path with evidence
+profile-merge-lowdown-live-v2.json. Its merged profile digest is
+046944ed19a744a010abd513f85c10c99a74db56b77525257f0553ab4f1eaa1a.
+No profile-use deployment or BOLT output is inferred.
