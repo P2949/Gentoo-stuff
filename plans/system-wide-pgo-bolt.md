@@ -5788,3 +5788,7 @@ The exact `dev-libs/dbus-glib-0.114` wave completed under the active generation.
 ### 2026-09-19 — dev-libs/appstream Clang IR profile wave
 
 The exact `dev-libs/appstream-1.0.6` wave completed under the active generation. Its transaction merged through install-QA, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-libs_appstream-1.0.6-v1.profdata`. The merged profile SHA-256 is `9b072addec444c8de7db58b1d1ec48acbd875df9ea0f15672ee9d0c3d37554ac`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-libs/appstream-glib Clang IR profile wave
+
+The exact `dev-libs/appstream-glib-0.8.3` wave completed under the active generation. Its receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-libs_appstream-glib-0.8.3-v1.profdata`. The merged profile SHA-256 is `a0bd9096f0890564059026965ce090e95274a61c01d60da4718096131e503d78`; no profile-use rebuild or BOLT deployment is inferred.
