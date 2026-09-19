@@ -9,7 +9,14 @@ TEMPLATE=${ROOT}/optimization/fixtures/portage/phase2-sample-pgo-fixture-1.ebuil
 AUTHORIZATION_TOKEN_SCANNER=${ROOT}/scripts/optimization/pgo/authorization-token-scan.py
 INSTALLER=/var/lib/gentoo-optimization/bootstrap/install-framework.sh
 FRAMEWORK_MANIFEST=/var/lib/gentoo-optimization/framework-current/install.manifest
-GENERATED_POLICY_ID=$(sed -n "s/^generated_policy=//p" "${FRAMEWORK_MANIFEST}")
+if [[ -r ${FRAMEWORK_MANIFEST} ]]; then
+    GENERATED_POLICY_ID=$(sed -n "s/^generated_policy=//p" "${FRAMEWORK_MANIFEST}")
+else
+    # Non-root live-policy probes must be able to classify an unreadable
+    # root-owned framework manifest as an observation boundary; defer any
+    # policy-generation use until a mutating/production path validates it.
+    GENERATED_POLICY_ID=
+fi
 GENERATED_POLICY_INPUT=/var/lib/gentoo-optimization/generated-policy-sources/generated-policy-${GENERATED_POLICY_ID}
 FROZEN_INVENTORY=/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-postsync-r1/frozen-inventory.json
 PROFILE_IDENTITY=/usr/local/libexec/gentoo-optimization/pgo/profile-identity.py
