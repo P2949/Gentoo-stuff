@@ -3908,3 +3908,7 @@ The first `dev-libs/libgcrypt-1.12.4` attempt exposed a libtool interaction in t
 ### Unifdef workload correction and Clang IR PGO wave (2026-09-19)
 
 The first exact `dev-util/unifdef-2.12-r2` generation attempt rebuilt and merged, but the generic `unifdef --help` workload returned status 2. Direct probing confirmed the supported standalone query is `unifdef -h`; the authoritative workload generator now uses that form. The fresh `unifdef-v2` wave completed, passed independent receipt verification, and LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_unifdef-2.12-r2.profdata`; root-owned merge evidence is `profile-merge-unifdef-v2.json`. No profile-use deployment or BOLT output is claimed.
+
+### XXD workload correction and Clang IR PGO wave (2026-09-19)
+
+The first exact `dev-util/xxd-2025.08.24-r1` generation attempt rebuilt and merged, but the generic `xxd --help` workload returned status 1. Direct probing confirmed `xxd -version` is the successful non-destructive query. The authoritative workload generator now uses that form. The fresh `xxd-v2` wave completed, passed independent receipt verification, and LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_xxd-2025.08.24-r1.profdata`; root-owned merge evidence is `profile-merge-xxd-v2.json`. No profile-use deployment or BOLT output is claimed.
