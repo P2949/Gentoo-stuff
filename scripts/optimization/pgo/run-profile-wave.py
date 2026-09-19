@@ -278,6 +278,8 @@ def main():
     candidate=snapshot_payloads()
     time.sleep(5)
     confirm=snapshot_payloads()
+    if not candidate and not confirm:
+     raise SystemExit(f'REFUSED: package produced no profile payloads for {cpv}')
     if candidate and [(x['path'],x['sha256'],x['size']) for x in candidate] == [(x['path'],x['sha256'],x['size']) for x in confirm]:
      sealed=confirm
      break
