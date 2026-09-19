@@ -4278,3 +4278,16 @@ the authenticated raw payload set into
 `merged-profiles/dev-db_sqlite-3.53.4.profdata`; merge evidence digest is
 `7798f0cc2523ad561cae4e4fbe5ffb97d982f3454b086a72e89d3b96115e1734`.
 No profile-use deployment or BOLT output is claimed.
+
+### doas Clang IR profile wave (2026-09-19)
+
+The exact `app-admin/doas-6.8.2` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active Phase-3 generation
+authority. The reviewed workload completed and the runner emitted a completed
+transaction receipt; independent receipt verification passed after one profile
+file flushed after receipt sealing was preserved outside the authoritative
+spool. LLVM 22 merged the authenticated payload set into
+`merged-profiles/app-admin_doas-6.8.2.profdata`; merge evidence digest is
+`67f63041536492794c21915bd26fc93e0cef4422930c44ef4decc04e9e1a8de7`.
+The late post-seal payload remains preserved separately for audit and was not
+admitted to the merge. No profile-use deployment or BOLT output is claimed.
