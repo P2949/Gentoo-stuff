@@ -5294,3 +5294,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-fs_cryptsetup-2.8.8.profdata`; merge evidence digest is
 `15a7e4aa48e310e807a473e02792e183a3c23972308767f2d4a5a6557b67be46`. No
 profile-use deployment or BOLT output is claimed.
+
+### gptfdisk Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/gptfdisk-1.0.10-r1` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The read-only `/usr/sbin/sgdisk
+--version` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_gptfdisk-1.0.10-r1.profdata`; merge evidence digest
+is `c4d9458ae8da5726d118f36a13f871b965fdf3371c384653cad9085cec830c28`. No
+profile-use deployment or BOLT output is claimed.
