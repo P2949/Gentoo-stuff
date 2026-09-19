@@ -1136,7 +1136,14 @@ gentoo_opt_apply_primary_mode() {
             # behind and Clang then treats `%m-%p.profraw` as an input file.
             # The flag without an operand is equivalent and the exported
             # runtime path preserves the generation-bound payload contract.
-            LLVM_PROFILE_FILE="${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
+            case ${EBUILD_PHASE-} in
+                pkg_*|install|preinst|postinst|prerm|postrm)
+                    LLVM_PROFILE_FILE=/dev/null
+                    ;;
+                *)
+                    LLVM_PROFILE_FILE="${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
+                    ;;
+            esac
             export LLVM_PROFILE_FILE
             flag="-fprofile-instr-generate"
             gentoo_opt_append_flag_once CFLAGS "${flag}"
