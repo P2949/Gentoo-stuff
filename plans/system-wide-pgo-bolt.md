@@ -5684,3 +5684,11 @@ authenticated payload was merged to the generation-bound v2 profile path with
 evidence profile-merge-libtasn1-live-v2.json. Its merged profile digest is
 43b97fefc9fa6c07973ba02bd151423ec70dbee16b95167f3aae86dfddcbbc89.
 No profile-use deployment or BOLT output is inferred.
+
+### libgpg-error Clang IR profile wave (2026-09-19)
+The exact dev-libs/libgpg-error-1.61 wave completed under the active
+generation, and its receipt passed independent verification. The current
+authenticated payload was merged to the generation-bound v2 profile path with
+evidence profile-merge-libgpg-error-live-v2.json. Its merged profile digest is
+358473faf55ee17567035918bc3270d10cb86c3710e64819518225d9f5f20c6d.
+No profile-use deployment or BOLT output is inferred.
