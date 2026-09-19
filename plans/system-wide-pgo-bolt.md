@@ -3896,3 +3896,7 @@ The first exact `app-text/hunspell-1.7.2-r1` wave merged successfully but its ge
 ### Mandoc workload correction and Clang IR PGO wave (2026-09-19)
 
 The first exact `app-text/mandoc-1.14.6-r1` generation attempt rebuilt and merged, but the generated `apropos --help` workload returned mandoc's database error status 5. Direct probes showed that only the installed `mandoc` parser has a valid standalone invocation (`mandoc -h`); the other wrappers require a generated man database or input. The authoritative workload generator now records `mandoc -h` with empty output permitted and excludes the database-dependent wrappers. The fresh `mandoc-v3` wave completed, passed independent receipt verification, and LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-text_mandoc-1.14.6-r1.profdata`; root-owned merge evidence is `profile-merge-mandoc-v3.json`. No profile-use deployment or BOLT output is claimed.
+
+### Patchelf Clang IR PGO wave (2026-09-19)
+
+`dev-util/patchelf-0.19.1` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `patchelf --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_patchelf-0.19.1.profdata`, with root-owned merge evidence in `profile-merge-patchelf.json`. No profile-use deployment or BOLT output is claimed.
