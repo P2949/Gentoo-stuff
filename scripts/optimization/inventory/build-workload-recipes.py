@@ -104,6 +104,8 @@ def main():
     argv=[p,'-h']; allow_empty_output=True
    elif x['cpv'].startswith('app-text/mandoc-'):
     continue
+   elif p == '/usr/bin/unifdef':
+    argv=[p,'-h']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
