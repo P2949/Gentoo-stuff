@@ -94,6 +94,8 @@ def main():
     continue
    elif p == '/usr/bin/nettle-hash':
     argv=[p,'-a','sha256','/etc/hostname']; allow_empty_output=False
+   elif p == '/usr/bin/stemwords':
+    argv=[p,'-l','english','-i','/etc/hostname']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
