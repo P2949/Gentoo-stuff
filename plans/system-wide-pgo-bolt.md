@@ -3948,3 +3948,7 @@ The first exact `dev-util/xxd-2025.08.24-r1` generation attempt rebuilt and merg
 ### ACL workload correction and Clang IR PGO wave (2026-09-19)
 
 The first exact `sys-apps/acl-9999` generation attempt rebuilt and merged, but the generic `chacl --help` workload returned status 1. Direct probing established the supported read-only ACL query `chacl -l /etc/hostname`; the authoritative workload generator now uses that command. The fresh `acl-v2` wave completed across both configured ABIs, passed independent receipt verification, and LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_acl-9999.profdata`; root-owned merge evidence is `profile-merge-acl-v2.json`. No profile-use deployment or BOLT output is claimed.
+
+### Attr workload correction and Clang IR PGO wave (2026-09-19)
+
+The first exact `sys-apps/attr-9999` generation attempt rebuilt and merged, but the generic `attr --help` workload returned status 1. Direct probing established the successful read-only extended-attribute listing `attr -l /etc/hostname`; the authoritative workload generator now uses that command and permits empty output. The fresh `attr-v2` wave completed across both configured ABIs, passed independent receipt verification, and LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_attr-9999.profdata`; root-owned merge evidence is `profile-merge-attr-v2.json`. No profile-use deployment or BOLT output is claimed.
