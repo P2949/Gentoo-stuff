@@ -4438,3 +4438,16 @@ receipt passed independent verification, and LLVM 22 merged the authenticated
 payload set into `merged-profiles/app-arch_unzip-6.0_p31.profdata`; merge
 evidence digest is `1fb1ef987d82e10b09f78c65df362dd18eb449226f54fd3bea6f8bc3a4b72da3`.
 No profile-use deployment or BOLT output is claimed.
+
+### ABI guard and xz wave boundary (2026-09-19)
+
+The focused ABI guard implementation now has explicit empty-directory semantics,
+an immediate no-DSO return, and immediate-directory provider discovery. Its
+regression fixture covers a staged package with no `.so` candidates, nested
+unrelated providers, and a 2,000-file descendant tree; all 12 cases pass.
+The attempted `app-arch/xz-utils-9999` successor profile wave did not reach
+build or receipt creation: the upstream Git fetch timed out after 300007 ms and
+the mirror fetch remained idle. The controller terminated that attempt after
+5m51s, preserved the raw fetch/build log, and recorded a durable failed attempt
+with the exact source-fetch timeout reason. No package merge, profile receipt,
+or profile merge was admitted.
