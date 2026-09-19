@@ -4098,3 +4098,13 @@ LLVM 22 merged the payload into
 `/var/lib/gentoo-optimization/merged-profiles/app-misc_ddcutil-2.2.6.profdata`,
 with root-owned merge evidence in `profile-merge-ddcutil.json`. No hardware
 operation, profile-use deployment, or BOLT output is claimed.
+
+### Eix Clang IR PGO wave (2026-09-19)
+
+`app-portage/eix-0.36.9` completed the exact successor `pgo-clang-ir`
+wave. The sealed receipt records nonempty profraw payloads, successful
+install-QA ABI guarding, and completion of the reviewed `eix --help`
+workload; independent receipt verification passed. LLVM 22 merged the payload
+into `/var/lib/gentoo-optimization/merged-profiles/app-portage_eix-0.36.9.profdata`,
+with root-owned merge evidence in `profile-merge-eix.json`. No profile-use
+deployment or BOLT output is claimed.
