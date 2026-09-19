@@ -4,6 +4,14 @@ IFS=$'\n\t'
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 PORTAGE=${ROOT}/portage
+DEFAULT_PROFRAW_BACKUP=$(mktemp)
+if [[ -f ${ROOT}/default.profraw && ! -L ${ROOT}/default.profraw ]]; then
+    cp -- "${ROOT}/default.profraw" "${DEFAULT_PROFRAW_BACKUP}"
+    RESTORE_DEFAULT_PROFRAW=1
+else
+    RESTORE_DEFAULT_PROFRAW=0
+fi
+trap 'if (( RESTORE_DEFAULT_PROFRAW )); then cp -- "${DEFAULT_PROFRAW_BACKUP}" "${ROOT}/default.profraw"; else rm -f -- "${ROOT}/default.profraw"; fi; rm -f -- "${DEFAULT_PROFRAW_BACKUP}"' EXIT
 # Host-instrumented helper shells may leave only this disposable profile residue.
 python3 - "${ROOT}" <<'PY_CLEAN'
 from pathlib import Path
