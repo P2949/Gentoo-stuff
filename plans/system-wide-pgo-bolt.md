@@ -5381,3 +5381,6 @@ The exact `sys-apps/xdg-dbus-proxy-0.1.8` wave completed under the current Phase
 
 ### xz-utils profile-wave fetch failure (2026-09-19)
 The `app-arch/xz-utils-9999` candidate was attempted under the current generation, but its live Git source fetch remained unproductive and was terminated before compilation. No receipt or profile was admitted; this remains a retained package-specific source-fetch failure.
+
+### libxml2-compat profile-wave build failure (2026-09-19)
+The `dev-libs/libxml2-compat-2.13.9` candidate reached source compilation under the Clang IR lane but the emerge transaction exited nonzero before producing a receipt. No profile was admitted. The failed build remains a package-specific correctness/build result and is not converted into an optimization claim.
