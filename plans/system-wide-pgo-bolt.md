@@ -6408,6 +6408,10 @@ The corrected `pgo-gcc` retry compiled and staged successfully, but the existing
 
 The corrected `pgo-gcc` wave completed successfully. The receipt passed independent verification, the package transaction and workload gate completed without rejection, and the GCC `.gcda` payload was validated with GCC 17 `gcov-tool`. The published profile manifest is `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-postsync-r1/profile-manifest-libjxl-gcc-v1.json` with sidecar metadata at `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-postsync-r1/profile-manifest-libjxl-gcc-v1.json.metadata.json`.
 
+### 2026-09-20 — media-libs/libwebp-1.6.0 workload rejection
+
+The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libwebp-1.6.0` because `/usr/bin/cwebp` exited with status 1. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
+
 ### 2026-09-20 — media-libs/libpng-1.6.58 workload rejection
 
 The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libpng-1.6.58` because `/usr/bin/png-fix-itxt` produced no output. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
