@@ -5372,3 +5372,6 @@ The `sys-apps/less-9999` candidate was attempted under the current generation, b
 
 ### net-tools Clang IR profile wave (2026-09-19)
 The exact `sys-apps/net-tools-9999` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/netstat -V` completed successfully; the merged profile is `merged-profiles/sys-apps-net-tools-9999.profdata` with digest `0f6f5060a07121d2bb1df5d8b811fdb2fd8a97e8b4c227ff0475a403d85ed11c`. No profile-use deployment or BOLT output is claimed.
+
+### kbd Clang IR profile wave (2026-09-19)
+The exact `sys-apps/kbd-2.10.0` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/loadkeys --version` completed successfully; the merged profile is `merged-profiles/sys-apps-kbd-2.10.0.profdata` with digest `602f7d90837665c2e3811edf2e11c10cb65e6385533ac49f01ade491e3e9fe15`. No profile-use deployment or BOLT output is claimed.
