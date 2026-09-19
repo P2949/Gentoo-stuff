@@ -4667,3 +4667,14 @@ authenticated raw payload into
 `merged-profiles/app-text_libpaper-2.1.3.profdata`; merge evidence digest is
 `1a20846d333e4a43662fa1b407075a143e88e0e36a4b339cc951ea8bfc2fba53`. No
 profile-use deployment or BOLT output is claimed.
+
+### uchardet Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-i18n/uchardet-0.0.8` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/uchardet --help` workload completed, install-QA passed with the
+repaired ABI guard, and independent receipt verification passed. LLVM 22
+merged the authenticated raw payload into
+`merged-profiles/app-i18n_uchardet-0.0.8.profdata`; merge evidence digest is
+`038d8812601d89d16687b53deb31b474153e256196012fdba840fd7e941a4bd5`. No
+profile-use deployment or BOLT output is claimed.
