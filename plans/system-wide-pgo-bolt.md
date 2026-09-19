@@ -5274,3 +5274,13 @@ wave rerun; the same file/version mismatch reproduced. No merged profile or
 optimization claim is admitted for this CPV. The package remains pending
 instrumentation-version remediation, with both receipts and merge failures
 preserved under `/tmp` and the generation spool.
+
+### parted Clang IR profile wave (2026-09-19)
+
+The exact `sys-block/parted-3.7` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The read-only `/sbin/parted
+--version` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-block_parted-3.7.profdata`; merge evidence digest is
+`a804ba2603c4c7b5d649226e3dc5eb2801a468b5b9c55698598bb75896463d82`. No
+profile-use deployment or BOLT output is claimed.
