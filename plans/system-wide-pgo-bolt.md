@@ -6119,3 +6119,14 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `0d80f718ee17b725ea2128da62be8ae8f2e7d6a435d99fde8207113e0f233834`;
 no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — gui-apps/mako-9999 Clang IR profile wave
+
+The exact current-generation `gui-apps/mako-9999` wave completed through
+install-QA and both reviewed workloads (`mako --help` and `makoctl --help`).
+Its sealed receipt passed independent verification, and LLVM 22 merged the
+authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/gui-apps_mako-9999-v1.profdata`.
+The merged profile SHA-256 is
+`daf9a688974ca95a0bbc6068535c2020356e0a3dd063a5e6997b18749fad25ae`;
+no profile-use rebuild or BOLT deployment is inferred.
