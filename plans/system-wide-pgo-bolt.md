@@ -5141,3 +5141,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-devel_patch-2.8-r1.profdata`; merge evidence digest is
 `d400f5a5a62b4ad942462ed6e79f810c1c3936719feffefe42e9eb7e56047bbb`. No
 profile-use deployment or BOLT output is claimed.
+
+### ethtool Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/ethtool-7.0` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/sbin/ethtool
+--version` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_ethtool-7.0.profdata`; merge evidence digest is
+`a63b0abe3d953e7abe42858ebebaa859931fbf676ecc521c7bcccb3bb72cf2f5`. No
+profile-use deployment or BOLT output is claimed.
