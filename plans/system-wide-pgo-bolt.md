@@ -5111,3 +5111,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-devel_m4-1.4.21.profdata`; merge evidence digest is
 `a82f3feadfcbd35a640210e56ab3c4dcebe2ed9691376bf65547b88d1050db2c`. No
 profile-use deployment or BOLT output is claimed.
+
+### flex Clang IR profile wave (2026-09-19)
+
+The exact `sys-devel/flex-2.6.4-r6` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/bin/flex --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-devel_flex-2.6.4-r6.profdata`; merge evidence digest is
+`c997a13d997a772444c011b0dce5c1670779d110d271046699edf997bc517a5e`. No
+profile-use deployment or BOLT output is claimed.
