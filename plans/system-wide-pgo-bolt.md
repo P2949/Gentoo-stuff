@@ -4580,3 +4580,15 @@ authenticated raw payload set into `merged-profiles/dev-libs_nettle-3.10.2.profd
 merge evidence digest is
 `9258f08329c349e29ef5503c37f4837dc431b9c8a140141d3a66ed22edfacc8c`.
 No profile-use deployment or BOLT output is claimed.
+
+### snowball-stemmer Clang IR profile wave and workload correction (2026-09-19)
+
+The first current-generation `dev-libs/snowball-stemmer-3.1.1` attempt
+correctly rejected the reviewed `/usr/bin/stemwords --help` recipe because the
+program accepts `-h` and exits 1 for the long option. The recipe was corrected
+to `/usr/bin/stemwords -h`; a fresh wave then rebuilt the package, passed
+install-QA, completed the corrected workload, and passed independent receipt
+verification. LLVM 22 merged the authenticated raw payload set into
+`merged-profiles/dev-libs_snowball-stemmer-3.1.1.profdata`; merge evidence
+digest is `387df02595b80331522b4c1982335e48faeee0bbbfdc6a1cdfa215f3f88eae4c`.
+No profile-use deployment or BOLT output is claimed.
