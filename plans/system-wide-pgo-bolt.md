@@ -5513,3 +5513,12 @@ helper-output repair. Its vendored Rust build again completed, but the ebuild's
 with `LLVM_PROFILE_FILE=/dev/null`; no package merge, receipt, or profile
 payload was admitted. This is a reproducible package/toolchain incompatibility
 in executing the Rust-instrumented helper, retained with both failed attempts.
+
+### rustup Rust profile-wave attempt (2026-09-19)
+The exact `dev-util/rustup-1.29.0` wave passed dependency resolution and the
+generation-bound readiness gates. Its 328-crate Rust build completed, but the
+ebuild's `rustup completions bash` install helper segfaulted in `src_install`
+after the instrumented binary was built, matching the existing maturin helper
+failure pattern. No package merge, receipt, or profile payload was admitted;
+the root-owned build log and attempt evidence remain preserved for this
+package-specific Rust runtime incompatibility.
