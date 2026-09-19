@@ -5191,3 +5191,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-libs_gdbm-1.26.profdata`; merge evidence digest is
 `de0cde41f6782e5f934dc1b11f5008de9ac2cdda8cbb22570d51c234f7124236`. No
 profile-use deployment or BOLT output is claimed.
+
+### libcap Clang IR profile wave (2026-09-19)
+
+The exact `sys-libs/libcap-2.78` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The read-only `/sbin/capsh
+--help` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-libs_libcap-2.78.profdata`; merge evidence digest is
+`d7e7d0bf495d58eb5934c03f46434f88de54af5440f4a1375d8001a5c203a1f9`. No
+profile-use deployment or BOLT output is claimed.
