@@ -6002,3 +6002,14 @@ raw payload to
 The merged profile SHA-256 is
 `16293604ab802c1770b79dc325b6b99266c5008354aadb136aeb247211c20842`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-arch/cabextract Clang IR profile wave
+
+The exact current-generation `app-arch/cabextract-9999` wave completed through
+install-QA and the reviewed `cabextract --version` workload. Its sealed receipt
+passed independent verification, and LLVM 22 merged the authenticated raw
+payload to
+`/var/lib/gentoo-optimization/merged-profiles/app-arch_cabextract-9999-v1.profdata`.
+The merged profile SHA-256 is
+`7886b5677d47b2bbb6148fc2f28194cb4d5434fc371bc6c4c77cdb768e03fe99`; no
+profile-use rebuild or BOLT deployment is inferred.
