@@ -5744,3 +5744,7 @@ No profile-use deployment or BOLT output is inferred.
 ### 2026-09-19 — app-text/mandoc corrected profile wave
 
 Executed the corrected `app-text/mandoc-1.14.6-r1` Clang IR profile wave against the active Phase-3 generation. The receipt passed independent wave/readiness consistency verification, and `merge-clang-profile.py` produced `/var/lib/gentoo-optimization/merged-profiles/app-text_mandoc-1.14.6-r1-v1.profdata` with SHA-256 `f8790ec5326a662c73d6cc31d9896c33bf1f44bf5c0ff4a4773c3675d61be654`. This records profile collection and merge only; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-libs/libpcre2 Clang IR profile wave
+
+Constructed a fresh single-package wave from the current policy bindings and successor workload manifest for `dev-libs/libpcre2-10.48`. The generation-bound transaction completed with install-QA ABI guarding, the receipt passed independent verification with 11,197 authenticated raw payloads, and LLVM 22 merged the payload to `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libpcre2-10.48-v1.profdata`. The merged profile SHA-256 is `2026894b279aff441bbe6f0d93847127888eb41d4f6c9cab4a858fb57fe6e643`; evidence is `profile-merge-libpcre2-v1.json`. No profile-use rebuild or BOLT deployment is inferred.
