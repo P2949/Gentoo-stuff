@@ -4603,3 +4603,13 @@ linking `onsgmls`; the package never reached install-QA or workload execution.
 No receipt or profile merge was admitted, and no terminal exclusion was claimed.
 The complete Portage build log and durable failed attempt remain preserved for
 package-specific compiler/link remediation.
+
+### lowdown Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-text/lowdown-3.1.1` successor wave rebuilt
+and passed install-QA under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `/usr/bin/lowdown --help` workload completed, the sealed receipt
+passed independent verification, and LLVM 22 merged the authenticated raw
+payload set into `merged-profiles/app-text_lowdown-3.1.1.profdata`; merge
+evidence digest is `ec27cb79ae668aa286b3ea32743be00ec382f14344203cc8add95ffc12c63dae`.
+No profile-use deployment or BOLT output is claimed.
