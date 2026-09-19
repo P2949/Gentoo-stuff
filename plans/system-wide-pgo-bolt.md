@@ -5836,3 +5836,7 @@ The exact current-generation `app-admin/doas-6.8.2` wave completed through insta
 ### 2026-09-19 — app-crypt/libb2 Clang IR profile wave
 
 The exact current-generation `app-crypt/libb2-0.98.1-r3` multilib wave completed through install-QA and workload execution. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-crypt_libb2-0.98.1-r3-v1.profdata`. The merged profile SHA-256 is `807df16742ff3a6fbdeca645963857a950aeab5ae27e76c9766c38dd9be6e65d`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-crypt/libmd Clang IR profile wave
+
+The exact current-generation `app-crypt/libmd-1.2.0` multilib wave completed through install-QA and workload execution. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-crypt_libmd-1.2.0-v1.profdata`. The merged profile SHA-256 is `bc4f74c761f16f96f211ddc94cf1053a558a3c966accc25c8d374b51e4082302`; no profile-use rebuild or BOLT deployment is inferred.
