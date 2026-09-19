@@ -4975,3 +4975,16 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/app-misc_jq-1.8.2.profdata`; merge evidence digest is
 `feea9003557bb8c907ed06206ed88bd79daffb5b733954e35b18fb9a32445eb8`. No
 profile-use deployment or BOLT output is claimed.
+
+### gentoo-functions Clang IR profile wave and TTY workload correction (2026-09-19)
+
+The initial `sys-apps/gentoo-functions-9999` wave built and merged but the
+direct `/bin/consoletype --help` probe exited 1 because `consoletype` requires
+a terminal. A PTY-backed probe using `/usr/bin/script -q -c /bin/consoletype
+/dev/null` was verified successful. The recipe path was rebound to the safe
+`script` executable while retaining the consoletype invocation, and the wave
+was rerun against the same generation. Install-QA and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_gentoo-functions-9999.profdata`; merge evidence
+digest is `339a483ac333e5dba104b28d82e9e9d7fe74171e29ff1627808c88c61bf690f8`.
+No profile-use deployment or BOLT output is claimed.
