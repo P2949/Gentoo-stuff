@@ -4025,3 +4025,15 @@ the nonempty payload into
 `/var/lib/gentoo-optimization/merged-profiles/sys-apps_lm-sensors-3.6.2.profdata`;
 root-owned merge evidence is `profile-merge-lm-sensors-v2.json`. No hardware
 mutation, profile-use deployment, or BOLT output is claimed.
+
+### Bzip2 Clang IR PGO wave (2026-09-19)
+
+`app-arch/bzip2-1.0.8-r5` completed the exact successor `pgo-clang-ir`
+wave with the reviewed `/bin/bzip2-reference --help` workload. The sealed
+receipt passed independent verification and LLVM 22 merged the two nonempty
+profile payloads into
+`/var/lib/gentoo-optimization/merged-profiles/app-arch_bzip2-1.0.8-r5.profdata`;
+root-owned merge evidence is `profile-merge-bzip2.json`. Older unreceipted raw
+payloads from prior attempts were moved into the generation's preserved
+failure evidence directory before merge. No profile-use deployment or BOLT
+output is claimed.
