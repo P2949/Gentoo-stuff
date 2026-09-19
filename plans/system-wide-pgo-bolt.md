@@ -5390,3 +5390,6 @@ The exact `sys-apps/help2man-1.49.3` wave completed under the current Phase-3 fr
 
 ### lsof Clang IR profile wave (2026-09-19)
 The exact `sys-process/lsof-4.99.7` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/lsof -v` completed successfully; the merged profile is `merged-profiles/sys-process-lsof-4.99.7.profdata` with digest `481b983bfd930636427242a7a30337f0fe9038b05a7ebeb97f4020bec533efaf`. No profile-use deployment or BOLT output is claimed.
+
+### socat Clang IR profile wave (2026-09-19)
+The exact `net-misc/socat-1.8.1.3` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/socat -V` completed successfully; the merged profile is `merged-profiles/net-misc-socat-1.8.1.3.profdata` with digest `bbb825dd2fcc374f2af65fcacc1fbed8b335a51ee5a0fa2d9383f708b2e52dc5`. No profile-use deployment or BOLT output is claimed.
