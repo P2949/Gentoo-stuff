@@ -5933,3 +5933,11 @@ install-QA and the reviewed bash workload. Its sealed receipt passed independent
 verification, and LLVM 22 merged the authenticated raw payload to
 `/var/lib/gentoo-optimization/merged-profiles/app-shells_bash-9999-v1.profdata`.
 The merged profile SHA-256 is `b29ede16ccff72ba6ecf22bad9a6b9ead87d04bf40e9d3b675c9f8d7ebd96488`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-shells/zsh Clang IR profile wave
+
+The exact current-generation `app-shells/zsh-9999` wave completed through
+install-QA and the reviewed zsh workload. Its sealed receipt passed independent
+verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/app-shells_zsh-9999-v1.profdata`.
+The merged profile SHA-256 is `d074b9626ce89cf46dd49223cf48c2c674208eb776e1102ef582ba4fd5edcd97`; no profile-use rebuild or BOLT deployment is inferred.
