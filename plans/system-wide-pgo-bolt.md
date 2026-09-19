@@ -4177,3 +4177,14 @@ workload destination only after the transaction. This preserves build/test
 profile collection while preventing administrative helper shells from creating
 unreceipted `default.profraw` files. Bash syntax validation passed; a fresh
 shell-package retry is required before this repair is considered live-verified.
+
+### Phase-3 coverage verifier schema compatibility (2026-09-19)
+
+The live generation uses `records` for lane, classification, and safety
+artifacts and the ELF census uses `artifacts`; the verifier previously assumed
+only the older fixture keys and failed before auditing. The verifier now accepts
+both authenticated representations while retaining its non-empty ELF-authority
+gate. Regression coverage passes, and an independent live audit reports 1,301
+packages, 16,642 authoritative ELF records, zero missing lane records, zero
+missing classifications, and zero missing safety joins. This is coverage
+accounting only; profile-use and BOLT deployment remain unclaimed.
