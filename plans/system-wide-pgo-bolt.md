@@ -6023,3 +6023,13 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `1a9254af8596d40883e171d833051c7b6b5b702bf925538acdaffe86ed0fd84b`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — sys-apps/less Clang IR profile wave
+
+The exact current-generation `sys-apps/less-9999` wave completed through
+install-QA and the reviewed `less --help` workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/sys-apps_less-9999-v1.profdata`.
+The merged profile SHA-256 is
+`46b9dfa94025e478c4838fd23b39cccf583e9706794d1bbe775658498460b90d`; no
+profile-use rebuild or BOLT deployment is inferred.
