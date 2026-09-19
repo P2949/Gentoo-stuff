@@ -5828,3 +5828,7 @@ The exact current-generation `dev-libs/elfutils-0.196` multilib wave completed t
 ### 2026-09-19 — dev-libs/protobuf ABI-guard boundary
 
 The exact current-generation `dev-libs/protobuf-34.2` profile wave completed the multilib build and reached install-QA, but the fail-closed exported-ABI guard rejected the staged replacement before merge. Both `libprotobuf-lite.so.34.2.0` and `libprotobuf.so.34.2.0` lost an exported `EpsCopyInputStream::ReadPackedVarintArray` symbol relative to the installed providers. No receipt or merged profile was admitted, and no terminal exclusion or profile-use/BOLT claim is made. The package requires a package-specific ABI-preserving build correction or an evidence-backed terminal classification before a profile wave can be retried.
+
+### 2026-09-19 — app-admin/doas Clang IR profile wave
+
+The exact current-generation `app-admin/doas-6.8.2` wave completed through install-QA and the reviewed `doas -L` workload. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-admin_doas-6.8.2-v1.profdata`. The merged profile SHA-256 is `72c0e61d0d730d450bcd01ce6b5d0151ca1d61baa9a28ac2f61df8b0eed77515`; no profile-use rebuild or BOLT deployment is inferred.
