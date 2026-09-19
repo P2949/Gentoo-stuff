@@ -79,6 +79,17 @@ class StructuredResult(unittest.TextTestResult):
         self.skipped_diagnostic = 0
         self._subtest_index = 0
 
+    def startTest(self, test: unittest.case.TestCase) -> None:
+        # Instrumented host helpers can emit an implicit default.profraw after
+        # a child clears LLVM_PROFILE_FILE. Remove only the known test residue
+        # before each case so repository-policy assertions remain meaningful.
+        repository = Path(__file__).resolve().parents[3]
+        for relative in ("default.profraw", "tests/default.profraw"):
+            path = repository / relative
+            if path.exists():
+                path.unlink()
+        super().startTest(test)
+
     def record(
         self,
         status: str,
