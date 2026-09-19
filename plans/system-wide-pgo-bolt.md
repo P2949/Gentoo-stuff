@@ -6373,3 +6373,7 @@ The `pgo-clang-ir` wave reached the Meson configure phase but failed because the
 ### 2026-09-20 — media-libs/giflib-6.1.3 workload rejection
 
 The package transaction completed, but the profile-wave workload gate rejected `media-libs/giflib-6.1.3` because `/usr/bin/gifbuild` exited with status 1. No receipt or merged profile was accepted. The workload failure is preserved as the terminal reason for this attempt.
+
+### 2026-09-20 — media-libs/glew-2.2.0-r1 workload rejection
+
+The package transaction completed, but the profile-wave workload gate rejected `media-libs/glew-2.2.0-r1` because `/usr/bin/glewinfo` exited with status 1. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
