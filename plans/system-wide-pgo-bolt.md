@@ -5201,3 +5201,14 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-libs_libcap-2.78.profdata`; merge evidence digest is
 `d7e7d0bf495d58eb5934c03f46434f88de54af5440f4a1375d8001a5c203a1f9`. No
 profile-use deployment or BOLT output is claimed.
+
+### slang Clang IR profile wave (2026-09-19)
+
+The exact `sys-libs/slang-2.3.3-r2` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`, including its configured 32-bit
+and 64-bit outputs. The `/usr/bin/slsh --version` workload completed,
+install-QA passed, and independent receipt verification passed. LLVM 22 merged
+the authenticated raw payload into
+`merged-profiles/sys-libs_slang-2.3.3-r2.profdata`; merge evidence digest is
+`07fe1985763d46776d75937c004c50e54ec29c726229a0c925a3b569f01173a7`. No
+profile-use deployment or BOLT output is claimed.
