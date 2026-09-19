@@ -1,0 +1,18 @@
+--- a/configure	2026-09-19 04:56:44.041031775 +0100
++++ b/configure	2026-09-19 04:56:58.687748023 +0100
+@@ -25809,6 +25809,7 @@
+ 	;;
+ esac
+ 
++if test "x${GENTOO_OPT_PUBLIC_ABI}" != "x1"; then
+ saved_CFLAGS="$CFLAGS"
+ CFLAGS="$CFLAGS -fvisibility=hidden -Werror"
+ { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether compiler supports visibility annotations" >&5
+@@ -25839,6 +25840,7 @@
+ fi
+ rm -f core conftest.err conftest.$ac_objext conftest.beam \
+     conftest$ac_exeext conftest.$ac_ext
++fi
+ 
+ # Ensure test directories are present if building out-of-tree
+ ac_config_commands="$ac_config_commands mkdirs"
