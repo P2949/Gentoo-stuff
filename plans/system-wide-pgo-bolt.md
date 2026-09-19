@@ -4827,3 +4827,14 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/app-shells_bash-9999.profdata`; merge evidence digest is
 `5218a436fe3c495d2062494035769da96aa2f44e40a10d39b12b45700a3995dc`. No
 profile-use deployment or BOLT output is claimed.
+
+### argon2 Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-crypt/argon2-20190702-r1` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/argon2 12345678 -id -t 1 -m 5 -p 1` workload completed, install-QA
+passed, and independent receipt verification passed. LLVM 22 merged the
+authenticated raw payload into
+`merged-profiles/app-crypt_argon2-20190702-r1.profdata`; merge evidence digest
+is `6b6fe4d3b225ae64d7cc7fe98ca6a0737385cae0e99e10d3d07521845ddaf273`. No
+profile-use deployment or BOLT output is claimed.
