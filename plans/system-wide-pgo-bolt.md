@@ -5252,3 +5252,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_iproute2-7.2.0.profdata`; merge evidence digest is
 `0abc7c604b40b21e5f6616af67c75650777bfcd608d42d19b70e90a24ea28427`. No
 profile-use deployment or BOLT output is claimed.
+
+### fuse-overlayfs Clang IR profile wave (2026-09-19)
+
+The exact `sys-fs/fuse-overlayfs-1.17` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The read-only
+`/usr/bin/fuse-overlayfs --version` workload completed, install-QA passed,
+and independent receipt verification passed. LLVM 22 merged the authenticated
+raw payload into `merged-profiles/sys-fs_fuse-overlayfs-1.17.profdata`; merge
+evidence digest is `1b1050ef1b575b580fa83e946b174a16f9a71887782fa4e0b3e8a1531e44154c`.
+No profile-use deployment or BOLT output is claimed.
