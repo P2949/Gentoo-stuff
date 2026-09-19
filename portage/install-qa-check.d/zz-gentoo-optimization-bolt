@@ -42,6 +42,13 @@ fi
 # relying on child-process export semantics.
 hook_ed=${ED:-${D:-$(builtin pwd -P)}}
 hook_root=${ROOT:-${EROOT:-/}}
+# Instrumented helper processes may leave an implicit LLVM profile in ED even
+# when the transaction discards runtime output.  It is transient orchestration
+# residue, never a package payload, and must be removed before collision QA.
+if [[ ${LLVM_PROFILE_FILE:-} == /dev/null && -f ${hook_ed}/default.profraw ]]; then
+    /usr/bin/rm -f -- "${hook_ed}/default.profraw" || \
+        gentoo_opt_hook_abort 'unable to remove transient default.profraw residue'
+fi
 /usr/bin/env ED="${hook_ed}" ROOT="${hook_root}" "${abi_guard}" || \
     gentoo_opt_hook_abort 'replacement DSO failed exported-ABI guard'
 unset hook_ed hook_root
