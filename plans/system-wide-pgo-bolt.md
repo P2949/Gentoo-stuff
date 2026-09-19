@@ -6211,3 +6211,13 @@ The exact current-generation wave completed compilation, package merge, and
 install-QA, but the reviewed `/usr/bin/kdenlive_render` workload exited with
 status 1. The runner therefore refused to seal a receipt or merge a profile.
 The complete diagnostic log is `/tmp/kdenlive.log`.
+
+### 2026-09-19 — kde-frameworks/kcmutils-6.30.0 Clang IR profile wave
+
+The exact current-generation `kde-frameworks/kcmutils-6.30.0` wave completed
+through install-QA and its reviewed workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/kde-frameworks_kcmutils-6.30.0-v1.profdata`.
+The merged profile SHA-256 is
+`a6e3d3b54b3d7aede1a5b73afa25c8ddbec310d973ffa48757a20d999922d8d5`; no
+profile-use rebuild or BOLT deployment is inferred.
