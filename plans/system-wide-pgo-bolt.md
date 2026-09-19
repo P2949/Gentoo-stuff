@@ -5715,3 +5715,12 @@ active generation, but its reviewed paperconf workload exited nonzero. No
 receipt or merged profile was admitted; the package-specific workload failure
 and transaction evidence remain preserved for remediation or terminal
 classification.
+
+### corrected libpaper Clang IR wave (2026-09-19)
+The active libpaper wave had a stale paperconf --help recipe, which exited 1.
+The generator's validated paperconf -h recipe was used in a hash-bound
+successor wave. The corrected transaction completed, its receipt passed
+independent verification, and LLVM 22 merged the authenticated payload to the
+root-owned corrected profile path. Evidence is profile-merge-libpaper-corrected.json
+with merged digest 205e2078a099d0487220a36c6dbd57ae5924c3e450b2454c4bb55cc75b4cb0dd.
+No profile-use deployment or BOLT output is inferred.
