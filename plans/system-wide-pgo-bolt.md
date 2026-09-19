@@ -6065,3 +6065,14 @@ verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `13b55599757177a23103aa156d782680259f989ea4d292bac16e465baab2d6fd`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-lang/vala Clang IR profile wave
+
+After the framework republish narrowed the disposable eltpatch sandbox grant,
+the exact current-generation `dev-lang/vala-0.56.19` wave completed through
+install-QA and its reviewed Vala workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/dev-lang_vala-0.56.19-v1.profdata`.
+The merged profile SHA-256 is
+`a7632e6e0cd072b9589946035810dddf78e8cb4faff6ad0780077dd70a58c91d`; no
+profile-use rebuild or BOLT deployment is inferred.
