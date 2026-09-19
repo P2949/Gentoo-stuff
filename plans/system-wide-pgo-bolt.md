@@ -4955,3 +4955,13 @@ independent receipt verification passed. LLVM 22 merged the authenticated raw
 payload into `merged-profiles/app-misc_evtest-1.36.profdata`; merge evidence
 digest is `0098549e5a0dfa9ef2d2ef34c63de186b74cd6f6a7736ad4506506c226f14f64`.
 No profile-use deployment or BOLT output is claimed.
+
+### fastfetch Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-misc/fastfetch-2.68.1-r1` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/fastfetch --help` workload completed, install-QA passed, and
+independent receipt verification passed. LLVM 22 merged the authenticated raw
+payload into `merged-profiles/app-misc_fastfetch-2.68.1-r1.profdata`; merge
+evidence digest is `b68bed10b1482b51153c0be3d69559755700a3f213fed9ffe9379a45766a821b`.
+No profile-use deployment or BOLT output is claimed.
