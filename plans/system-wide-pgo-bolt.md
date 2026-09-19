@@ -5232,3 +5232,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-process_psmisc-23.7.profdata`; merge evidence digest is
 `73bc254456e9e8bad5803dcb820afd14c6408193267b80d22138f62f4cae4f9`. No
 profile-use deployment or BOLT output is claimed.
+
+### time Clang IR profile wave (2026-09-19)
+
+The exact `sys-process/time-1.10` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/bin/time --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-process_time-1.10.profdata`; merge evidence digest is
+`134ef86caac7f35b6640ec85ba8cc1ddaf02fe45f833ddee819dfa5c56b3b42f`. No
+profile-use deployment or BOLT output is claimed.
