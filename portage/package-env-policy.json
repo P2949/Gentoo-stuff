@@ -1,13 +1,6 @@
 {
   "schema_version": 1,
   "reviewed_multi_environment_stacks": {
-    "dev-build/make": {
-      "environments": [
-        "gcc.conf",
-        "make-no-discarded-qualifiers-werror.conf"
-      ],
-      "rationale": "The reviewed mixed GCC lane is followed by one append-only C warning override required by live GNU make sources."
-    },
     "dev-java/openjdk": {
       "environments": [
         "unsafe-no-ccache-no-sandbox.conf",

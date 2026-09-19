@@ -1176,6 +1176,7 @@ class SampleConversionTest(unittest.TestCase):
             completed = subprocess.run(
                 [os.fspath(legacy), "cat", "pkg", "/bin/true", "/tmp/perf.data"],
                 cwd=directory,
+                env={**os.environ, "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

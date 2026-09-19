@@ -4,6 +4,9 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 export PYTHONDONTWRITEBYTECODE=1
+# Test helpers and instrumented host utilities must never emit an implicit
+# default.profraw into the repository or a temporary fixture directory.
+export LLVM_PROFILE_FILE=/dev/null
 
 SCRIPT_SOURCE=${BASH_SOURCE[0]}
 if [[ ${SCRIPT_SOURCE} == */* ]]; then

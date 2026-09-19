@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+# The disabled compatibility entrypoint must never allow an instrumented
+# helper (for example /bin/cat) to create an implicit default.profraw in its
+# caller's working directory.
+export LLVM_PROFILE_FILE=/dev/null
+
 cat >&2 <<'EOF'
 ERROR: this legacy sample-profile producer is permanently disabled.
 
