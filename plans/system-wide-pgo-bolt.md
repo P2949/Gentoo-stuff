@@ -6279,3 +6279,13 @@ compilation, package merge, and install-QA, but the reviewed
 `/usr/bin/ktelnetservice6` workload exited with status 2. The runner refused
 to seal a receipt or merge a profile; the full diagnostic log is
 `/tmp/kio.log`.
+
+### 2026-09-19 — kde-frameworks/knewstuff-6.30.0 Clang IR profile wave
+
+The exact current-generation `kde-frameworks/knewstuff-6.30.0` wave
+completed through install-QA and its reviewed workload. Its sealed receipt
+passed independent verification, and LLVM 22 merged the authenticated raw
+payload to `/var/lib/gentoo-optimization/merged-profiles/kde-frameworks_knewstuff-6.30.0-v1.profdata`.
+The merged profile SHA-256 is
+`82671386cfe830d9d4448b62b7e137f5cc93464a32e832d687a39c828bbf565e`; no
+profile-use rebuild or BOLT deployment is inferred.
