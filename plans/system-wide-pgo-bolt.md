@@ -3920,3 +3920,7 @@ The first exact `dev-util/xxd-2025.08.24-r1` generation attempt rebuilt and merg
 ### Diffutils Clang IR PGO wave (2026-09-19)
 
 `sys-apps/diffutils-3.12` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `cmp --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_diffutils-3.12.profdata`, with root-owned merge evidence in `profile-merge-diffutils.json`. No profile-use deployment or BOLT output is claimed.
+
+### Grep Clang IR PGO wave (2026-09-19)
+
+`sys-apps/grep-3.12` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `grep --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_grep-3.12.profdata`, with root-owned merge evidence in `profile-merge-grep.json`. No profile-use deployment or BOLT output is claimed.
