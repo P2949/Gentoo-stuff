@@ -4087,3 +4087,14 @@ independent receipt verification passed. LLVM 22 merged the payload into
 `/var/lib/gentoo-optimization/merged-profiles/app-i18n_uchardet-0.0.8.profdata`,
 with root-owned merge evidence in `profile-merge-uchardet.json`. No
 profile-use deployment or BOLT output is claimed.
+
+### DDCutil Clang IR PGO wave (2026-09-19)
+
+`app-misc/ddcutil-2.2.6` completed the exact successor `pgo-clang-ir`
+wave. Its reviewed `ddcutil --help` workload is non-mutating; the sealed
+receipt records nonempty profraw payloads, successful install-QA ABI guarding,
+and completed workload execution, and independent receipt verification passed.
+LLVM 22 merged the payload into
+`/var/lib/gentoo-optimization/merged-profiles/app-misc_ddcutil-2.2.6.profdata`,
+with root-owned merge evidence in `profile-merge-ddcutil.json`. No hardware
+operation, profile-use deployment, or BOLT output is claimed.
