@@ -6109,3 +6109,13 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `48443d1ccbd6115740d12a0ef4c2e4eefacc788367f675cf7bee41b9896cfc81`;
 no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — gui-apps/fuzzel-1.14.1 Clang IR profile wave
+
+The exact current-generation `gui-apps/fuzzel-1.14.1` wave completed through
+install-QA and the reviewed `fuzzel --help` workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/gui-apps_fuzzel-1.14.1-v1.profdata`.
+The merged profile SHA-256 is
+`0d80f718ee17b725ea2128da62be8ae8f2e7d6a435d99fde8207113e0f233834`;
+no profile-use rebuild or BOLT deployment is inferred.
