@@ -3988,3 +3988,7 @@ The exact `dev-util/colm-0.14.7-r4` wave reached install-QA but was correctly re
 ### Ccache Clang IR PGO wave (2026-09-19)
 
 `dev-util/ccache-4.14` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records nonempty profraw payloads across the C++ build, successful install-QA ABI guarding, and completion of the reviewed `ccache --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_ccache-4.14.profdata`, with root-owned merge evidence in `profile-merge-ccache.json`. No profile-use deployment or BOLT output is claimed.
+
+### Wayland-scanner Clang IR PGO wave (2026-09-19)
+
+`dev-util/wayland-scanner-9999` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `wayland-scanner --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_wayland-scanner-9999.profdata`, with root-owned merge evidence in `profile-merge-wayland-scanner.json`. No profile-use deployment or BOLT output is claimed.
