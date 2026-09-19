@@ -5866,3 +5866,11 @@ C++ build but failed while linking the generated binary. `ld.lld` reported
 unresolved libc++ `std::__1` string, stream, and runtime symbols. No install
 occurred, no receipt or profile was admitted, and no terminal exclusion is
 claimed. This is a package-specific custom-build C++ runtime-linkage failure.
+
+### 2026-09-19 — dev-cpp/muParser profile-wave boundary
+
+The exact current-generation `dev-cpp/muParser-2.3.5` attempt failed during its
+CMake/Ninja compile while linking the example target. `ld.lld` reported
+unresolved libc++ `std::__1` locale, stream, and iostream symbols. No install
+occurred, no receipt or profile was admitted, and no terminal exclusion is
+claimed. This is a package-specific CMake C++ runtime-linkage failure.
