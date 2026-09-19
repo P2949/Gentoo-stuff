@@ -5776,3 +5776,7 @@ The exact `dev-libs/flatbuffers-25.12.19` wave completed under the active genera
 ### 2026-09-19 — dev-lang/tcl corrected Clang IR profile wave
 
 The exact `dev-lang/tcl-8.6.17` transaction completed, but the generated `tclsh8.6 --help` probe produced no output under the original nonempty-output contract. That attempt is preserved. A hash-bound successor retained the same safe interpreter invocation with `allow_empty_output=true`, completed through install-QA, passed independent receipt verification, and merged an authenticated LLVM 22 profile to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_tcl-8.6.17-v1.profdata`. The merged profile SHA-256 is `815444e42c99448c0663688c2079ea88c2276f2391745b8043adaf31e38e0404`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-lang/swig Clang IR profile wave
+
+The exact `dev-lang/swig-4.4.1` wave completed under the active generation. Its transaction merged through install-QA, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_swig-4.4.1-v1.profdata`. The merged profile SHA-256 is `87412fef9d481c863f42df0ace7b4f7d117df7f0f47a9e45156e4b8e1fca3a7f`; no profile-use rebuild or BOLT deployment is inferred.
