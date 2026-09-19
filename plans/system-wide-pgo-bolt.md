@@ -5051,3 +5051,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_debianutils-5.23.2.profdata`; merge evidence digest
 is `030c946926b71d5524cb23a528faa73f7e3848bd8bdea8a1fbab99658065dd82`. No
 profile-use deployment or BOLT output is claimed.
+
+### dmidecode Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/dmidecode-3.7` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/sbin/dmidecode
+--version` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_dmidecode-3.7.profdata`; merge evidence digest is
+`383016f34c8125c75592266d74ce8a85c13d7b860053b06ea16c3ed33f8e582a`. No
+profile-use deployment or BOLT output is claimed.
