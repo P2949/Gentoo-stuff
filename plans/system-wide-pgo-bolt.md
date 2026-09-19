@@ -5796,3 +5796,7 @@ The exact `dev-libs/appstream-glib-0.8.3` wave completed under the active genera
 ### 2026-09-19 — app-crypt/argon2 Clang IR profile wave
 
 The exact current-generation `app-crypt/argon2-20190702-r1` wave completed through install-QA and merge. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-crypt_argon2-20190702-r1-v1.profdata`. The merged profile SHA-256 is `0696b93078c162bc9a8f96c66f64e3cf186ad380bf5ed7436df4526b084d0331`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-crypt/rhash Clang IR profile wave
+
+The exact current-generation `app-crypt/rhash-1.4.6-r1` wave completed its multilib build through install-QA and merge. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-crypt_rhash-1.4.6-r1-v1.profdata`. The merged profile SHA-256 is `b037d74c5dae70b0968e42529d9c107251668faa06f4a54a19e63f60bfddf905`; no profile-use rebuild or BOLT deployment is inferred.
