@@ -64,7 +64,7 @@ def main():
   if unknown:
    raise SystemExit('REFUSED: wave contains unsupported generation lanes: '+', '.join(sorted(set(unknown))))
   for item in w['packages']:
-   probe=subprocess.run(['emerge','--pretend','--quiet','='+item['cpv']],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+   probe=subprocess.run(['emerge','--pretend','--quiet','='+item['cpv']],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
    if probe.returncode != 0:
     raise SystemExit(f"REFUSED: exact CPV is not currently buildable: {item['cpv']}: {probe.stdout.strip()[-400:]}")
   # Pin the transaction to the exact installed identities recorded by the
