@@ -5748,3 +5748,7 @@ Executed the corrected `app-text/mandoc-1.14.6-r1` Clang IR profile wave against
 ### 2026-09-19 — dev-libs/libpcre2 Clang IR profile wave
 
 Constructed a fresh single-package wave from the current policy bindings and successor workload manifest for `dev-libs/libpcre2-10.48`. The generation-bound transaction completed with install-QA ABI guarding, the receipt passed independent verification with 11,197 authenticated raw payloads, and LLVM 22 merged the payload to `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libpcre2-10.48-v1.profdata`. The merged profile SHA-256 is `2026894b279aff441bbe6f0d93847127888eb41d4f6c9cab4a858fb57fe6e643`; evidence is `profile-merge-libpcre2-v1.json`. No profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-lang/lua corrected Clang IR profile wave
+
+The initial exact `dev-lang/lua-5.4.8` wave preserved a generated `--help` workload failure (`lua5.4` exited 1). Direct validation showed `lua5.4 -v` and `luac5.4 -v` exit 0, so a hash-bound successor workload and wave replaced only those probes. The successor transaction completed, its receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_lua-5.4.8-v1.profdata`. The merged profile SHA-256 is `89e8ad49926a69df2e1d47ed94e4acc7c07d613edc3074123b1450976b3b4483`; no profile-use rebuild or BOLT deployment is inferred.
