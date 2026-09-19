@@ -4057,3 +4057,13 @@ independent receipt verification passed. LLVM 22 merged the payload into
 `/var/lib/gentoo-optimization/merged-profiles/app-crypt_gcr-4.4.0.1-r1.profdata`,
 with root-owned merge evidence in `profile-merge-gcr.json`. The transaction
 remained in userspace; no profile-use deployment or BOLT output is claimed.
+
+### GnuPG Clang IR PGO wave (2026-09-19)
+
+`app-crypt/gnupg-2.5.22` completed the exact successor `pgo-clang-ir`
+wave. The sealed receipt records nonempty profraw payloads, successful
+install-QA ABI guarding, and completion of the reviewed GnuPG workload;
+independent receipt verification passed. LLVM 22 merged the payload into
+`/var/lib/gentoo-optimization/merged-profiles/app-crypt_gnupg-2.5.22.profdata`,
+with root-owned merge evidence in `profile-merge-gnupg.json`. No profile-use
+deployment or BOLT output is claimed.
