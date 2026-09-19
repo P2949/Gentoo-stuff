@@ -5816,3 +5816,7 @@ The exact current-generation `app-crypt/gnupg-2.5.22` wave completed through ins
 ### 2026-09-19 — app-crypt/gcr Clang IR profile wave
 
 The exact current-generation `app-crypt/gcr-4.4.0.1-r1` wave completed through install-QA and merge. Portage rebuilt the required `dev-util/mesa_clc-9999` dependency in the same transaction; the resolver again reported the known SPIR-V 1.4.350/1.4.357 conflict without forcing that transition. The sealed gcr receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-crypt_gcr-4.4.0.1-r1-v1.profdata`. The merged profile SHA-256 is `4b4bdf855d3f0aeb6546c21a06c8f6796a64e267bd738a2064edb9eb56990f68`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-db/sqlite Clang IR profile wave
+
+The exact current-generation `dev-db/sqlite-3.53.4` multilib wave completed through install-QA and workload execution. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/dev-db_sqlite-3.53.4-v1.profdata`. The merged profile SHA-256 is `84490d6fb783246940e0f28b00d59b362036c61b9f344b05e6c254f24624dde3`; no profile-use rebuild or BOLT deployment is inferred.
