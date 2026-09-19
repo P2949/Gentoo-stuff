@@ -5476,3 +5476,14 @@ LLVM 22 merged the authenticated raw payload. Root-owned merge evidence is
 `profile-merge-libarchive.json` with digest
 `f66218d626308046a3bc166517c0c61f23df34c85f4926123be30e73d9ea42e4`. No
 profile-use deployment or BOLT output is claimed.
+
+### xz-utils profile-wave retry (2026-09-19)
+The exact `app-arch/xz-utils-9999` wave was retried against the current
+framework after the earlier moving-source failure. Dependency resolution and
+the technical readiness gate passed, but the upstream Git fetch remained alive
+with zero transfer and zero CPU for more than one minute. The fetch and its
+Portage process group were terminated at the documented source-acquisition
+threshold; the root-owned attempt record and build evidence are preserved.
+No merge, receipt, or profile payload was admitted, and xz-utils remains a
+package-specific source-fetch failure requiring a cached or reachable exact
+source revision.
