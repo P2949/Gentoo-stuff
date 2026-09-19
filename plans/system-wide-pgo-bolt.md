@@ -5780,3 +5780,7 @@ The exact `dev-lang/tcl-8.6.17` transaction completed, but the generated `tclsh8
 ### 2026-09-19 — dev-lang/swig Clang IR profile wave
 
 The exact `dev-lang/swig-4.4.1` wave completed under the active generation. Its transaction merged through install-QA, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_swig-4.4.1-v1.profdata`. The merged profile SHA-256 is `87412fef9d481c863f42df0ace7b4f7d117df7f0f47a9e45156e4b8e1fca3a7f`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-libs/dbus-glib Clang IR profile wave
+
+The exact `dev-libs/dbus-glib-0.114` wave completed under the active generation. Its transaction merged through install-QA, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-libs_dbus-glib-0.114-v1.profdata`. The merged profile SHA-256 is `89175b6616a1d352a1fc8affc2aa85a199110820611e5e37eefa55de8c55f0ff`; no profile-use rebuild or BOLT deployment is inferred.
