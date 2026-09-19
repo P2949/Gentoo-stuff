@@ -4077,3 +4077,13 @@ independent receipt verification passed. LLVM 22 merged the payload into
 `/var/lib/gentoo-optimization/merged-profiles/app-crypt_gpgme-2.2.0.profdata`,
 with root-owned merge evidence in `profile-merge-gpgme.json`. No profile-use
 deployment or BOLT output is claimed.
+
+### Uchardet Clang IR PGO wave (2026-09-19)
+
+`app-i18n/uchardet-0.0.8` completed the exact successor `pgo-clang-ir`
+wave. The sealed receipt records nonempty profraw payloads, successful
+install-QA ABI guarding, and completion of the reviewed uchardet workload;
+independent receipt verification passed. LLVM 22 merged the payload into
+`/var/lib/gentoo-optimization/merged-profiles/app-i18n_uchardet-0.0.8.profdata`,
+with root-owned merge evidence in `profile-merge-uchardet.json`. No
+profile-use deployment or BOLT output is claimed.
