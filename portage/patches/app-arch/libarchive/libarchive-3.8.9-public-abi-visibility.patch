@@ -1,28 +1,18 @@
---- a/configure.ac
-+++ b/configure.ac
-@@ -1401,14 +1401,18 @@ case "$host_os" in
+--- a/configure.ac	2026-09-19 04:54:13.050372558 +0100
++++ b/configure.ac	2026-09-19 04:54:13.062811745 +0100
+@@ -1400,6 +1400,7 @@
  esac
  
  dnl Visibility annotations...
--saved_CFLAGS="$CFLAGS"
--CFLAGS="$CFLAGS -fvisibility=hidden -Werror"
--AC_MSG_CHECKING(whether compiler supports visibility annotations)
--AC_LINK_IFELSE([AC_LANG_PROGRAM([
--                 int foo( void ) __attribute__((visibility("default")));
--               ])],
--               [CFLAGS="$saved_CFLAGS -fvisibility=hidden -D__LIBARCHIVE_ENABLE_VISIBILITY";
--                AC_MSG_RESULT(yes)],
--               [CFLAGS="$saved_CFLAGS"
--                AC_MSG_RESULT(no)])
 +if test "x${GENTOO_OPT_PUBLIC_ABI}" != "x1"; then
-+  saved_CFLAGS="$CFLAGS"
-+  CFLAGS="$CFLAGS -fvisibility=hidden -Werror"
-+  AC_MSG_CHECKING(whether compiler supports visibility annotations)
-+  AC_LINK_IFELSE([AC_LANG_PROGRAM([
-+                   int foo( void ) __attribute__((visibility("default")));
-+                 ])],
-+                 [CFLAGS="$saved_CFLAGS -fvisibility=hidden -D__LIBARCHIVE_ENABLE_VISIBILITY";
-+                  AC_MSG_RESULT(yes)],
-+                 [CFLAGS="$saved_CFLAGS"
-+                  AC_MSG_RESULT(no)])
+ saved_CFLAGS="$CFLAGS"
+ CFLAGS="$CFLAGS -fvisibility=hidden -Werror"
+ AC_MSG_CHECKING(whether compiler supports visibility annotations)
+@@ -1410,6 +1411,7 @@
+                 AC_MSG_RESULT(yes)],
+                [CFLAGS="$saved_CFLAGS"
+                 AC_MSG_RESULT(no)])
 +fi
+ 
+ # Ensure test directories are present if building out-of-tree
+ AC_CONFIG_COMMANDS([mkdirs],
