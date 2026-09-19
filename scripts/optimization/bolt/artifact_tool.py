@@ -2814,8 +2814,14 @@ def command_deploy(arguments: argparse.Namespace) -> None:
             ed, readelf, objcopy, scratch_root / "full-ed-rescan"
         )
         if current_ed_identity != capture.get("ed_identity"):
+            expected_identity = capture.get("ed_identity") or {}
+            changed_identity = [
+                key for key in sorted(set(expected_identity) | set(current_ed_identity))
+                if expected_identity.get(key) != current_ed_identity.get(key)
+            ]
             fail(
-                "complete ED topology/file/ELF classification differs from the captured input"
+                "complete ED topology/file/ELF classification differs from the captured input: "
+                + ",".join(changed_identity)
             )
         captured_artifact_identity = [
             {key: value for key, value in item.items() if key not in ("source_device", "source_inode", "cache_object")}
