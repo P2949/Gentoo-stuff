@@ -5991,3 +5991,14 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `f019489d69a60b95b24777ab27f404d1e4addfd63fb096fcc612a164a6a00521`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-arch/bzip2 Clang IR profile wave
+
+The exact current-generation `app-arch/bzip2-1.0.8-r5` wave completed through
+install-QA and the reviewed `bzip2-reference --help` workload. Its sealed
+receipt passed independent verification, and LLVM 22 merged the authenticated
+raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/app-arch_bzip2-1.0.8-r5-v1.profdata`.
+The merged profile SHA-256 is
+`16293604ab802c1770b79dc325b6b99266c5008354aadb136aeb247211c20842`; no
+profile-use rebuild or BOLT deployment is inferred.
