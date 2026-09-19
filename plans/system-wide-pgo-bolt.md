@@ -5700,3 +5700,11 @@ authenticated payload was merged to the generation-bound v2 profile path with
 evidence profile-merge-libpcre-live-v2.json. Its merged profile digest is
 d06afa55a0b2ae7d5d7c3775d8494996004409d338e647580b7b79be757c5f47.
 No profile-use deployment or BOLT output is inferred.
+
+### libgcrypt Clang IR profile wave (2026-09-19)
+The corrected exact dev-libs/libgcrypt-1.12.4 wave completed under the active
+generation, and its receipt passed independent verification. The current
+authenticated payload was merged to the generation-bound v3 profile path with
+evidence profile-merge-libgcrypt-v3.json. Its merged profile digest is
+5506c027edc6363d4e6a5ee8dca9d86138170edbe05c21b1149bf6910567d3c2.
+No profile-use deployment or BOLT output is inferred.
