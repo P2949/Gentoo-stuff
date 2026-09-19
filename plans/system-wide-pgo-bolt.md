@@ -4463,3 +4463,15 @@ raw payload set into
 `merged-profiles/app-arch_zstd-1.5.7-r1.profdata`; merge evidence digest is
 `5cf1225981243a988c6c3239ee27549a91a25c83e65ba45e71e85c13c1998cb9`.
 No profile-use deployment or BOLT output is claimed.
+
+### json-glib Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-libs/json-glib-1.10.8` successor wave
+completed both configured ABIs under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `/usr/bin/json-glib-format --help` and
+`/usr/bin/json-glib-validate --help` workloads completed, install-QA passed,
+and the sealed receipt passed independent verification. LLVM 22 merged the
+authenticated raw payload set into
+`merged-profiles/dev-libs_json-glib-1.10.8.profdata`; merge evidence digest is
+`f49c942cc7a8271b39ef5a6c19f2a6659220218f11d51f2923eff60f837ab483`.
+No profile-use deployment or BOLT output is claimed.
