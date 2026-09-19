@@ -4497,3 +4497,14 @@ authenticated raw payload set into
 `merged-profiles/dev-libs_expat-2.8.4.profdata`; merge evidence digest is
 `779a0aa41cea93ec700f99fdbfbc3585b8d1b9fd5dc0a496c859576e652e0af2`.
 No profile-use deployment or BOLT output is claimed.
+
+### libgpg-error Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-libs/libgpg-error-1.61` successor wave
+completed both configured ABIs under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `/usr/bin/gpg-error --help` and `/usr/bin/gpgrt-config --help`
+workloads completed, install-QA passed, and the sealed receipt passed
+independent verification. LLVM 22 merged the authenticated raw payload set
+into `merged-profiles/dev-libs_libgpg-error-1.61.profdata`; merge evidence
+digest is `1aecbdd4f69e0e6a9eb4942ac53bebd233adad9d4b61ef68dbefb239d7c59b7f`.
+No profile-use deployment or BOLT output is claimed.
