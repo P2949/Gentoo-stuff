@@ -6385,3 +6385,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — media-libs/kvazaar-9999 profile wave fetch stall
 
 The `pgo-clang-ir` wave was started under generation `phase3-live-candidate-20260918-postsync-r1`, but the upstream Git fetch for `https://github.com/ultravideo/kvazaar` made no progress for more than three minutes. The run was terminated without a receipt or profile; the package remains an evidence-backed terminal fetch-stall outcome for this attempt and was not bypassed.
+
+### 2026-09-20 — media-libs/lcms-2.19.1 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt passed independent verification and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/media-libs_lcms-2.19.1-v1.profdata`; merge evidence SHA-256 is `25e4d287f5615ed130812c606fb0b2730cc90b07d09b974335fd78e77cbf5b41`.
