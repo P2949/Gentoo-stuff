@@ -4883,3 +4883,13 @@ independent receipt verification passed. LLVM 22 merged the authenticated raw
 payload into `merged-profiles/app-portage_cpuid2cpuflags-18.profdata`; merge
 evidence digest is `6de58874ac8dd96f908976dbb95cc9556a80e5bc2462849d797abff13ed70fdb`.
 No profile-use deployment or BOLT output is claimed.
+
+### dash Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-shells/dash-9999` successor wave completed
+under `phase3-live-candidate-20260918-postsync-r1`. The reviewed shell
+workload `/bin/dash -c 'printf dash-workload'` completed, install-QA passed,
+and independent receipt verification passed. LLVM 22 merged the authenticated
+raw payload into `merged-profiles/app-shells_dash-9999.profdata`; merge
+evidence digest is `8d0ae249b686aa41e0a5bbd70708b6c6f78f8201ec96b0121fd57f95cac8e958`.
+No profile-use deployment or BOLT output is claimed.
