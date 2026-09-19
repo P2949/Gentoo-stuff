@@ -3796,3 +3796,7 @@ The first `app-text/enchant-2.8.16` attempt correctly refused the generic `encha
 ### Gspell workload-accounting exclusion (2026-09-19)
 
 `app-text/gspell-1.14.4` rebuilt and merged in the exact successor generation, but its `gspell-app1` workload cannot terminate meaningfully on this live installation: Enchant reports no available language dictionaries and the stdin consumer remains unusable for deterministic profile collection. The failed attempt and profraw evidence remain preserved. The authoritative workload generator now records this CPV as `no-profile-producing-workload` with reason `gspell-app1 has no configured language dictionaries on the live system`; the framework was republished and its strict check passed. No profile receipt or BOLT deployment is claimed.
+
+### Xmlto Clang IR PGO wave (2026-09-19)
+
+`app-text/xmlto-0.0.28-r11` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records one nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed xmlto workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-text_xmlto-0.0.28-r11.profdata`, with root-owned evidence in `profile-merge-xmlto.json`. No BOLT deployment is claimed.
