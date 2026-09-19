@@ -318,6 +318,71 @@ with tempfile.TemporaryDirectory() as temporary:
 PY_ABI_METADATA
 )
 
+case_abi_guard_empty_candidate_does_not_scan_root() (
+    python3 - "${ABI_GUARD}" <<'PY_ABI_EMPTY'
+from pathlib import Path
+import os
+import runpy
+import sys
+import tempfile
+
+namespace = runpy.run_path(os.fspath(Path(sys.argv[1])))
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = Path(temporary)
+    ed = root / "ed"
+    installed = root / "installed"
+    ed.mkdir()
+    installed.mkdir()
+    unrelated = installed / "huge-unrelated-tree"
+    unrelated.mkdir()
+    for index in range(2000):
+        (unrelated / f"file-{index}").write_text("x")
+    old_rglob = Path.rglob
+    def guarded_rglob(self, pattern):
+        if self == installed:
+            raise AssertionError(f"unexpected installed-root traversal: {self} {pattern}")
+        return old_rglob(self, pattern)
+    Path.rglob = guarded_rglob
+    try:
+        os.environ.update(ED=os.fspath(ed), ROOT=os.fspath(installed))
+        assert namespace["main"]() == 0
+    finally:
+        Path.rglob = old_rglob
+PY_ABI_EMPTY
+)
+
+case_abi_guard_does_not_pollute_provider_scope_from_descendants() (
+    python3 - "${ABI_GUARD}" <<'PY_ABI_SCOPE'
+from pathlib import Path
+import os
+import runpy
+import sys
+import tempfile
+
+namespace = runpy.run_path(os.fspath(Path(sys.argv[1])))
+
+with tempfile.TemporaryDirectory() as temporary:
+    tree = Path(temporary)
+    direct = tree / "usr/lib"
+    nested = direct / "unrelated/deep"
+    direct.mkdir(parents=True)
+    nested.mkdir(parents=True)
+    (direct / "libcandidate.so.1").write_bytes(b"candidate")
+    (nested / "libcandidate.so.1").write_bytes(b"nested")
+    old_rglob = Path.rglob
+    def forbidden_rglob(self, pattern):
+        raise AssertionError(f"recursive provider traversal: {self} {pattern}")
+    Path.rglob = forbidden_rglob
+    try:
+        namespace["collect_soname_providers"](
+            tree, {"libcandidate.so"}, {Path("usr/lib")}
+        )
+    finally:
+        Path.rglob = old_rglob
+PY_ABI_SCOPE
+)
+
 case_abi_guard_failure_invalidates_install() (
     new_marker abi-guard-failure
 
@@ -398,6 +463,8 @@ run_case 'active transaction runs exactly once' case_active_transaction_runs_exa
 run_case 'ABI guard tracks C++ and GNU-unique exports' case_abi_guard_tracks_cpp_and_unique_exports
 run_case 'ABI guard rejects complete replacement of a small ABI' case_abi_guard_rejects_small_complete_abi_replacement
 run_case 'ABI guard rejects established DSO metadata changes' case_abi_guard_rejects_established_metadata_changes
+run_case 'ABI guard empty candidate does not scan root' case_abi_guard_empty_candidate_does_not_scan_root
+run_case 'ABI guard does not pollute provider scope from descendants' case_abi_guard_does_not_pollute_provider_scope_from_descendants
 run_case 'ABI guard failure invalidates the install' case_abi_guard_failure_invalidates_install
 run_case 'command shadowing cannot bypass ABI guard or marker invalidation' case_command_shadowing_cannot_bypass_guard_or_marker_invalidation
 printf 'SUMMARY: pass=%d fail=%d total=%d\n' "${PASS}" "${FAIL}" "$((PASS + FAIL))"
