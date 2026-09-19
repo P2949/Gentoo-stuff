@@ -5375,3 +5375,6 @@ The exact `sys-apps/net-tools-9999` wave completed under the current Phase-3 fra
 
 ### kbd Clang IR profile wave (2026-09-19)
 The exact `sys-apps/kbd-2.10.0` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/loadkeys --version` completed successfully; the merged profile is `merged-profiles/sys-apps-kbd-2.10.0.profdata` with digest `602f7d90837665c2e3811edf2e11c10cb65e6385533ac49f01ade491e3e9fe15`. No profile-use deployment or BOLT output is claimed.
+
+### xdg-dbus-proxy Clang IR profile wave (2026-09-19)
+The exact `sys-apps/xdg-dbus-proxy-0.1.8` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/xdg-dbus-proxy --version` completed successfully; the merged profile is `merged-profiles/sys-apps-xdg-dbus-proxy-0.1.8.profdata` with digest `193e7f301cd78643e936ed8fd8980a0eeae8ffbd393d9da8958130abb01e4fd3`. No profile-use deployment or BOLT output is claimed.
