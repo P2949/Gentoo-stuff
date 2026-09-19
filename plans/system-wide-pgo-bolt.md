@@ -4999,3 +4999,14 @@ sealed receipt passed independent verification. LLVM 22 merged the payload into
 `merged-profiles/app-crypt_libmd-1.2.0.profdata`; merge evidence digest is
 `4778ea6490f95fe7e11322b983a61f53fe5dd36d2aa04cb228372f739d668abc`. No
 profile-use deployment or BOLT output is claimed.
+
+### libb2 Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-crypt/libb2-0.98.1-r3` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`, including its
+configured 32-bit and 64-bit outputs. This library-only wave had no executable
+workload recipes; the instrumented build produced an authenticated raw profile
+payload, install-QA passed, and independent receipt verification passed. LLVM
+22 merged the payload into `merged-profiles/app-crypt_libb2-0.98.1-r3.profdata`;
+merge evidence digest is `b68a526b78691823785b5eb0bfe897705e568519e4241ea5c307582042656cb1`.
+No profile-use deployment or BOLT output is claimed.
