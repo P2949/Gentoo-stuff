@@ -4428,3 +4428,13 @@ receipt passed independent verification, and LLVM 22 merged the authenticated
 payload set into `merged-profiles/app-arch_tar-1.35-r1.profdata`; merge
  evidence digest is `e76d61dcea05b4339b9265b2812d4d6ac3c70b8c013e2aff03d0b8c255d632c6`.
 No profile-use deployment or BOLT output is claimed.
+
+### unzip Clang IR profile wave (2026-09-19)
+
+The exact `app-arch/unzip-6.0_p31` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active Phase-3 generation
+authority. The reviewed `/usr/bin/unzip -v` workload completed, the sealed
+receipt passed independent verification, and LLVM 22 merged the authenticated
+payload set into `merged-profiles/app-arch_unzip-6.0_p31.profdata`; merge
+evidence digest is `1fb1ef987d82e10b09f78c65df362dd18eb449226f54fd3bea6f8bc3a4b72da3`.
+No profile-use deployment or BOLT output is claimed.
