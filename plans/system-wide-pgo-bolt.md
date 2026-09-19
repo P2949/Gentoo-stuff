@@ -5121,3 +5121,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-devel_flex-2.6.4-r6.profdata`; merge evidence digest is
 `c997a13d997a772444c011b0dce5c1670779d110d271046699edf997bc517a5e`. No
 profile-use deployment or BOLT output is claimed.
+
+### bison Clang IR profile wave (2026-09-19)
+
+The exact `sys-devel/bison-3.8.2-r3` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/bin/bison --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-devel_bison-3.8.2-r3.profdata`; merge evidence digest is
+`f51807b4bbd32bd9257238c25b05b1c099ce495a9deb19ee2dd27d6e61e97abd`. No
+profile-use deployment or BOLT output is claimed.
