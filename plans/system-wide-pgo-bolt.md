@@ -4291,3 +4291,13 @@ spool. LLVM 22 merged the authenticated payload set into
 `67f63041536492794c21915bd26fc93e0cef4422930c44ef4decc04e9e1a8de7`.
 The late post-seal payload remains preserved separately for audit and was not
 admitted to the merge. No profile-use deployment or BOLT output is claimed.
+
+### 7zip Clang IR profile wave (2026-09-19)
+
+The exact `app-arch/7zip-26.03` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active Phase-3 generation
+authority. The reviewed `/usr/bin/7zz --help` workload completed, the sealed
+receipt passed independent verification, and LLVM 22 merged the authenticated
+payload set into `merged-profiles/app-arch_7zip-26.03.profdata`; merge evidence
+digest is `bb28ff6da72b2017e0e923eca02fade11dd0169f3429879990e543e2d366fc3e`.
+No profile-use deployment or BOLT output is claimed.
