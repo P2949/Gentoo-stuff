@@ -5660,3 +5660,11 @@ payload was merged to the generation-bound v2 profile path with evidence
 profile-merge-expat-live-v2.json. Its merged profile digest is
 35ddb4e93b3424b1196cda6d728bdfb25f66281d217c04b8da752f3f94bbf58f.
 No profile-use deployment or BOLT output is inferred.
+
+### fribidi Clang IR profile wave (2026-09-19)
+The exact dev-libs/fribidi-1.0.16 wave completed under the active generation,
+and its receipt passed independent verification. The current authenticated
+payload was merged to the generation-bound v2 profile path with evidence
+profile-merge-fribidi-live-v2.json. Its merged profile digest is
+1c8a30f7f600acd08921cdddd48122f1d48cec01eebc7257263cecb9360bef6a.
+No profile-use deployment or BOLT output is inferred.
