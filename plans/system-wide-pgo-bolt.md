@@ -3972,3 +3972,7 @@ The exact `app-text/opensp-1.5.2-r10` wave reached compilation under the require
 ### Gperf Clang IR PGO wave (2026-09-19)
 
 `dev-util/gperf-3.3` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `gperf --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_gperf-3.3.profdata`, with root-owned merge evidence in `profile-merge-gperf.json`. No profile-use deployment or BOLT output is claimed.
+
+### Ragel Clang IR PGO wave (2026-09-19)
+
+`dev-util/ragel-7.0.4-r3` completed the exact successor `pgo-clang-ir` wave across its configured C++ build outputs. The sealed receipt records nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed `ragel --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_ragel-7.0.4-r3.profdata`, with root-owned merge evidence in `profile-merge-ragel.json`. No profile-use deployment or BOLT output is claimed.
