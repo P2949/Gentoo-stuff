@@ -5081,3 +5081,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_sed-4.10-r1.profdata`; merge evidence digest is
 `7da82a2421eaddc0235d35d13cf6dfc08fc19682daa58bde6761195a67471a15`. No
 profile-use deployment or BOLT output is claimed.
+
+### gawk Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/gawk-5.4.1a` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/bin/gawk --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_gawk-5.4.1a.profdata`; merge evidence digest is
+`7aacc91da6d8ff3e789849c0837eff867b255c502677516adadf01b08b36051a`. No
+profile-use deployment or BOLT output is claimed.
