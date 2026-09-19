@@ -5402,3 +5402,6 @@ The exact `sys-process/btop-1.4.7` wave completed under the current Phase-3 fram
 
 ### xauth Clang IR profile wave (2026-09-19)
 The exact `x11-apps/xauth-1.1.5` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/xauth -V` completed successfully; the merged profile is `merged-profiles/x11-apps-xauth-1.1.5.profdata` with digest `64db2c3975c90594075aca01f30ef3cb1769a1409991979a515ccda6c6d4c98d`. No profile-use deployment or BOLT output is claimed.
+
+### mkfontscale Clang IR profile wave (2026-09-19)
+The exact `x11-apps/mkfontscale-1.2.4` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/mkfontscale --version` completed successfully; the merged profile is `merged-profiles/x11-apps-mkfontscale-1.2.4.profdata` with digest `fee97d6e1457c0e17df084496ea85e9b27e90337c11838093fe97ce3e016d091`. No profile-use deployment or BOLT output is claimed.
