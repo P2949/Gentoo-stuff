@@ -5399,3 +5399,6 @@ The exact `sys-process/numactl-2.0.19` wave completed under the current Phase-3 
 
 ### btop Clang IR profile wave (2026-09-19)
 The exact `sys-process/btop-1.4.7` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/btop --version` completed successfully; the merged profile is `merged-profiles/sys-process-btop-1.4.7.profdata` with digest `478cf92091ac94f77b22dc933f340fdad8dfb1987f2b09000d1455ce30510f8f`. No profile-use deployment or BOLT output is claimed.
+
+### xauth Clang IR profile wave (2026-09-19)
+The exact `x11-apps/xauth-1.1.5` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/xauth -V` completed successfully; the merged profile is `merged-profiles/x11-apps-xauth-1.1.5.profdata` with digest `64db2c3975c90594075aca01f30ef3cb1769a1409991979a515ccda6c6d4c98d`. No profile-use deployment or BOLT output is claimed.
