@@ -6076,3 +6076,14 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `a7632e6e0cd072b9589946035810dddf78e8cb4faff6ad0780077dd70a58c91d`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-util/hipcc-7.2.0 Clang IR profile wave
+
+The exact current-generation `dev-util/hipcc-7.2.0` wave completed through
+install-QA and both reviewed workloads (`hipcc --help` and `hipconfig --help`).
+Its sealed receipt passed independent verification, and LLVM 22 merged the
+authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/dev-util_hipcc-7.2.0-v1.profdata`.
+The merged profile SHA-256 is
+`91451b468ab2a22ea458c7b5e301a11564100a72c214101014894ba655a1c82f`;
+no profile-use rebuild or BOLT deployment is inferred.
