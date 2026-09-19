@@ -3924,3 +3924,7 @@ The first exact `dev-util/xxd-2025.08.24-r1` generation attempt rebuilt and merg
 ### Grep Clang IR PGO wave (2026-09-19)
 
 `sys-apps/grep-3.12` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `grep --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_grep-3.12.profdata`, with root-owned merge evidence in `profile-merge-grep.json`. No profile-use deployment or BOLT output is claimed.
+
+### Sed Clang IR PGO wave (2026-09-19)
+
+`sys-apps/sed-4.10-r1` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `gsed --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_sed-4.10-r1.profdata`, with root-owned merge evidence in `profile-merge-sed.json`. No profile-use deployment or BOLT output is claimed.
