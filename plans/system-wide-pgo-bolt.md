@@ -6401,3 +6401,7 @@ The candidate policy incorrectly assigned `media-libs/libjxl-9999` to the Clang 
 ### 2026-09-20 — media-libs/libpng-1.6.58 workload rejection
 
 The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libpng-1.6.58` because `/usr/bin/png-fix-itxt` produced no output. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
+
+### 2026-09-20 — media-libs/libpulse-17.0 workload rejection
+
+The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libpulse-17.0` because `/usr/bin/pax11publish` exited with status 1. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
