@@ -4776,3 +4776,14 @@ authenticated raw payload into
 `merged-profiles/dev-util_xxd-2025.08.24-r1.profdata`; merge evidence digest is
 `f318ace4e81461578ee37b49adabc4f298a9397ff4a9373e5f8b95e9d82751f9`. No
 profile-use deployment or BOLT output is claimed.
+
+### portage-utils Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-portage/portage-utils-9999` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/q --help` workload completed, install-QA passed, and independent
+receipt verification passed. The large raw payload was merged with the
+batched LLVM 22 merger into
+`merged-profiles/app-portage_portage-utils-9999.profdata`; merge evidence
+digest is `0ec170f8c8f9600c69b30b4dec2e6bf61d673dd1c1ca37a37732332bf9499a69`.
+No profile-use deployment or BOLT output is claimed.
