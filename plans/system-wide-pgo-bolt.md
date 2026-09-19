@@ -5429,3 +5429,6 @@ The `dev-util/pkgconf-9999` candidate exited nonzero during its profile wave bef
 
 ### debugedit Clang IR profile wave (2026-09-19)
 The exact `dev-util/debugedit-5.3` wave completed under the current Phase-3 framework. Receipt verification passed using the root-owned verifier path (the raw profile payload is intentionally root-owned); the merged profile is `merged-profiles/dev-util-debugedit-5.3.profdata` with digest `d9c3bf182610533152c2bd50ac2986e32d3e4f07a075b641ce4c9bfb97528b54`. The read-only workload `/usr/bin/debugedit --version` completed successfully. No profile-use deployment or BOLT output is claimed.
+
+### colm profile-wave build failure (2026-09-19)
+The `dev-util/colm-0.14.7-r4` candidate exited nonzero during its profile wave before producing a receipt. No profile was admitted; the failed attempt is retained and no optimization claim is made.
