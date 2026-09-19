@@ -3792,3 +3792,7 @@ The first `app-text/libpaper-2.1.3` attempt correctly refused the generic `paper
 ### Enchant workload correction and Clang IR PGO wave (2026-09-19)
 
 The first `app-text/enchant-2.8.16` attempt correctly refused the generic `enchant-lsmod-2 --help` workload because that utility uses single-dash options. The authoritative workload generator now uses its successful documented `-help` action; the framework was republished and its strict check passed. The corrected exact wave rebuilt and merged enchant, collected four nonempty profraw payloads, passed independent receipt verification, and merged with LLVM 22 into `/var/lib/gentoo-optimization/merged-profiles/app-text_enchant-2.8.16.profdata`, with root-owned evidence in `profile-merge-enchant.json`. No BOLT deployment is claimed.
+
+### Gspell workload-accounting exclusion (2026-09-19)
+
+`app-text/gspell-1.14.4` rebuilt and merged in the exact successor generation, but its `gspell-app1` workload cannot terminate meaningfully on this live installation: Enchant reports no available language dictionaries and the stdin consumer remains unusable for deterministic profile collection. The failed attempt and profraw evidence remain preserved. The authoritative workload generator now records this CPV as `no-profile-producing-workload` with reason `gspell-app1 has no configured language dictionaries on the live system`; the framework was republished and its strict check passed. No profile receipt or BOLT deployment is claimed.
