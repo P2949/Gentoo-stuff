@@ -6455,3 +6455,7 @@ The `pgo-clang-ir` wave failed during the package's 32-bit multilib configure ph
 ### 2026-09-20 — dev-libs/hidapi-0.15.0 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_hidapi-0.15.0-v1.profdata`; merge evidence SHA-256 is `8b5c7c3003808dff071d161315a060a33edd31be1ec7885c4d39b913dff12513`.
+
+### 2026-09-20 — dev-libs/hyphen-2.8.8-r2 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_hyphen-2.8.8-r2-v1.profdata`; merge evidence SHA-256 is `16f65e7db251819f9c8aec53f932ceede4d47387e59ca6e691b82909ea1283e1`.
