@@ -5652,3 +5652,11 @@ authenticated payload was merged to the generation-bound v2 profile path with
 evidence profile-merge-gzip-live-v2.json. Its merged profile digest is
 e66765817fba09427ff9dff2062679e3ed24518722e0926eef2f554eb3cbdd4f.
 No profile-use deployment or BOLT output is inferred.
+
+### expat Clang IR profile wave (2026-09-19)
+The exact dev-libs/expat-2.8.4 wave completed under the active generation,
+and its receipt passed independent verification. The current authenticated
+payload was merged to the generation-bound v2 profile path with evidence
+profile-merge-expat-live-v2.json. Its merged profile digest is
+35ddb4e93b3424b1196cda6d728bdfb25f66281d217c04b8da752f3f94bbf58f.
+No profile-use deployment or BOLT output is inferred.
