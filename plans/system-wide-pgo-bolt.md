@@ -4678,3 +4678,15 @@ merged the authenticated raw payload into
 `merged-profiles/app-i18n_uchardet-0.0.8.profdata`; merge evidence digest is
 `038d8812601d89d16687b53deb31b474153e256196012fdba840fd7e941a4bd5`. No
 profile-use deployment or BOLT output is claimed.
+
+### pkgconf successor wave failure (2026-09-19)
+
+The exact current-generation `dev-util/pkgconf-9999` wave was admitted through
+readiness (`1/1`, zero invalid inputs) but failed during `src_prepare` before
+compilation. The live Git HEAD fetched by the ebuild contains no
+`configure.ac`, while the Gentoo `pkgconf-9999.ebuild` unconditionally runs
+`eautoreconf` for the 9999 revision; `aclocal` therefore failed with
+`configure.ac is required`. The runner preserved the failed attempt and
+Portage build log; no package merge, receipt, or profile merge was admitted.
+This is a package-source/ebuild mismatch to remediate separately, not an ABI
+guard or profile-runner failure.
