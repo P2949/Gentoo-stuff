@@ -5891,3 +5891,11 @@ install-QA and workload execution. Its sealed receipt passed independent
 verification, and LLVM 22 merged the authenticated raw payload to
 `/var/lib/gentoo-optimization/merged-profiles/dev-debug_strace-9999-v1.profdata`.
 The merged profile SHA-256 is `4e07a49d8bbc2d2c3eb898efcc70fbf495361ebccbb21ed97bd47a6878158086`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-cpp/sdbus-c++ Clang IR profile wave
+
+The exact current-generation `dev-cpp/sdbus-c++-2.3.1` wave completed through
+install-QA and workload execution. Its sealed receipt passed independent
+verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/dev-cpp_sdbus-c++-2.3.1-v1.profdata`.
+The merged profile SHA-256 is `ea015ff80a0d297733dcbc0761c3b2d02e2d0828afc48cba457b98d17273d8a9`; no profile-use rebuild or BOLT deployment is inferred.
