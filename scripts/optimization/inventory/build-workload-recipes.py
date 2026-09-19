@@ -111,6 +111,8 @@ def main():
     argv=[p,'-h']; allow_empty_output=False
    elif p == '/usr/bin/xxd':
     argv=[p,'-version']; allow_empty_output=False
+   elif p == '/bin/chacl':
+    argv=[p,'-l','/etc/hostname']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:

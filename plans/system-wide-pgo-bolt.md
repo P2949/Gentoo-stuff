@@ -3944,3 +3944,7 @@ The first exact `dev-util/xxd-2025.08.24-r1` generation attempt rebuilt and merg
 ### Debianutils Clang IR PGO wave (2026-09-19)
 
 `sys-apps/debianutils-5.23.2` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `run-parts --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_debianutils-5.23.2.profdata`, with root-owned merge evidence in `profile-merge-debianutils.json`. No profile-use deployment or BOLT output is claimed.
+
+### ACL workload correction and Clang IR PGO wave (2026-09-19)
+
+The first exact `sys-apps/acl-9999` generation attempt rebuilt and merged, but the generic `chacl --help` workload returned status 1. Direct probing established the supported read-only ACL query `chacl -l /etc/hostname`; the authoritative workload generator now uses that command. The fresh `acl-v2` wave completed across both configured ABIs, passed independent receipt verification, and LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_acl-9999.profdata`; root-owned merge evidence is `profile-merge-acl-v2.json`. No profile-use deployment or BOLT output is claimed.
