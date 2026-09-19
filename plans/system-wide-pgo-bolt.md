@@ -6412,6 +6412,10 @@ The corrected `pgo-gcc` wave completed successfully. The receipt passed independ
 
 The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libwebp-1.6.0` because `/usr/bin/cwebp` exited with status 1. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
 
+### 2026-09-20 — media-libs/openal-1.25.2 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt passed independent verification and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/media-libs_openal-1.25.2-v1.profdata`; merge evidence SHA-256 is `796113bed3edde10298f0659aa882d9c34ccc03b9bcd4e3ceca88f397dfbd9b9`.
+
 ### 2026-09-20 — media-libs/libpng-1.6.58 workload rejection
 
 The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libpng-1.6.58` because `/usr/bin/png-fix-itxt` produced no output. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
