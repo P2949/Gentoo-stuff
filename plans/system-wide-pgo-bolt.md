@@ -4613,3 +4613,14 @@ passed independent verification, and LLVM 22 merged the authenticated raw
 payload set into `merged-profiles/app-text_lowdown-3.1.1.profdata`; merge
 evidence digest is `ec27cb79ae668aa286b3ea32743be00ec382f14344203cc8add95ffc12c63dae`.
 No profile-use deployment or BOLT output is claimed.
+
+### enchant Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-text/enchant-2.8.16` successor wave rebuilt
+and passed install-QA under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `/usr/bin/enchant-2 --help` and `/usr/bin/enchant-lsmod-2 --help`
+workloads completed, the sealed receipt passed independent verification, and
+LLVM 22 merged the authenticated raw payload set into
+`merged-profiles/app-text_enchant-2.8.16.profdata`; merge evidence digest is
+`a930047b6d7d7f235ea8b0f60b601176bd08cc167b33320a538e6c5444d6a75f`.
+No profile-use deployment or BOLT output is claimed.
