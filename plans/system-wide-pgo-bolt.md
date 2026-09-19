@@ -6183,3 +6183,10 @@ while fetching its upstream Git repository for more than four minutes. The
 fetch was interrupted at the bounded stall threshold; no package receipt or
 merged profile was produced. The preserved diagnostic log is
 `/tmp/hyprwire.log`.
+
+### 2026-09-19 — gui-libs/xdg-desktop-portal-hyprland-9999 ABI guard rejection
+
+The exact current-generation wave reached install-QA, but dependency
+`gui-libs/hyprutils-0.14.2` again failed the exported-ABI guard. The staged
+replacement DSO was not admitted, and no receipt or profile was produced. The
+preserved diagnostic log is `/tmp/xdph.log`.
