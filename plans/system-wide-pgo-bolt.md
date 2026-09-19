@@ -6377,3 +6377,7 @@ The package transaction completed, but the profile-wave workload gate rejected `
 ### 2026-09-20 — media-libs/glew-2.2.0-r1 workload rejection
 
 The package transaction completed, but the profile-wave workload gate rejected `media-libs/glew-2.2.0-r1` because `/usr/bin/glewinfo` exited with status 1. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
+
+### 2026-09-20 — media-libs/gst-plugins-base-1.26.11 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt passed independent verification and the profile was merged into `/var/lib/gentoo-optimization/merged-profiles/media-libs_gst-plugins-base-1.26.11-v1.profdata`; merge evidence SHA-256 is `dbdea499f7da780a72a1c0928a8847847bcd28bbbebd72b93e02317103f30f3b`.
