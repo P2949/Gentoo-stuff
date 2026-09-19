@@ -5590,3 +5590,10 @@ merged successfully, but the reviewed `/bin/chacl` workload exited with status
 1. No receipt or merged profile was admitted; the package-specific workload
 failure and transaction evidence remain preserved for later remediation or
 terminal classification.
+
+### attr Clang IR profile-wave workload failure (2026-09-19)
+The exact `sys-apps/attr-9999` wave completed its controlled transaction and
+merged successfully, but the reviewed `/bin/attr` workload exited with status
+1. No receipt or merged profile was admitted; the package-specific workload
+failure and transaction evidence remain preserved for later remediation or
+terminal classification.
