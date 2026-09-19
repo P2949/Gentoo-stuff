@@ -5031,3 +5031,13 @@ receipt verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/app-text_dos2unix-7.5.6.profdata`; merge evidence digest is
 `f94de9ebc89aba39757717aa9e0a186bf8a28e96def9a8a2f9c950e2547cd5a3`. No
 profile-use deployment or BOLT output is claimed.
+
+### hunspell Clang IR profile wave (2026-09-19)
+
+The exact `app-text/hunspell-1.7.2-r1` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/bin/hunspell -h`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/app-text_hunspell-1.7.2-r1.profdata`; merge evidence digest is
+`dc771f21c5cfab1f02334c4e487cb074da720ee3fec69c4bfd841969cb9a02fb`. No
+profile-use deployment or BOLT output is claimed.
