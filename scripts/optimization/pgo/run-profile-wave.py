@@ -208,25 +208,26 @@ def main():
    # returns.  A fixed sleep cannot prove that those writers are gone.  Scan
    # authenticated process environments for this exact profile destination and
    # wait until no live writer still carries it.
-   writer_deadline=time.monotonic()+300
-   while time.monotonic() < writer_deadline:
-    writers=[]
-    for proc in os.listdir('/proc'):
-     if not proc.isdigit():
-      continue
-     if proc == str(os.getpid()):
-      continue
-     try:
-      env_data=open('/proc/'+proc+'/environ','rb').read()
-      if profile_path.encode() in env_data:
-       writers.append(proc)
-     except (OSError,PermissionError):
-      continue
-    if not writers:
-     break
-    time.sleep(1)
-   else:
-    raise SystemExit(f'REFUSED: profile writer processes did not quiesce for {cpv}: {writers[:12]}')
+   if os.path.isdir(profile_path) and any(os.scandir(profile_path)):
+    writer_deadline=time.monotonic()+300
+    while time.monotonic() < writer_deadline:
+     writers=[]
+     for proc in os.listdir('/proc'):
+      if not proc.isdigit():
+       continue
+      if proc == str(os.getpid()):
+       continue
+      try:
+       env_data=open('/proc/'+proc+'/environ','rb').read()
+       if profile_path.encode() in env_data:
+        writers.append(proc)
+      except (OSError,PermissionError):
+       continue
+     if not writers:
+      break
+     time.sleep(1)
+    else:
+     raise SystemExit(f'REFUSED: profile writer processes did not quiesce for {cpv}: {writers[:12]}')
    previous=None
    stable_intervals=0
    for _ in range(120):
