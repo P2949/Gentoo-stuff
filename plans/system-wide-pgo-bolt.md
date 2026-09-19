@@ -5597,3 +5597,11 @@ merged successfully, but the reviewed `/bin/attr` workload exited with status
 1. No receipt or merged profile was admitted; the package-specific workload
 failure and transaction evidence remain preserved for later remediation or
 terminal classification.
+
+### 7zip Clang IR profile wave (2026-09-19)
+The exact `app-arch/7zip-26.03` wave completed under the active generation.
+Its controlled transaction merged successfully, the receipt passed independent
+verification, and LLVM 22 merged the authenticated raw payload. Root-owned
+merge evidence is `profile-merge-7zip-live.json` with merged profile digest
+`1020583e12d2e4bde29182d49e27af31e14229ea9d0f888d0f75261795325894`.
+No profile-use deployment or BOLT output is inferred.
