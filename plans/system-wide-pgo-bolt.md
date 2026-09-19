@@ -4701,3 +4701,14 @@ authenticated raw payload into
 `merged-profiles/dev-util_patchelf-0.19.1.profdata`; merge evidence digest is
 `79ca4510b8a676c0a94ed1d0a9f9056707372fb5f35d511a9cc2388f5223439b`. No
 profile-use deployment or BOLT output is claimed.
+
+### rhash Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-crypt/rhash-1.4.6-r1` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`, including its
+configured 32-bit and 64-bit build outputs. The reviewed `/usr/bin/rhash
+--help` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/app-crypt_rhash-1.4.6-r1.profdata`; merge evidence digest is
+`585e571408b0f994adbafd00639fc1faca4c17f234edb32d5596d172aba3e7fb`. No
+profile-use deployment or BOLT output is claimed.
