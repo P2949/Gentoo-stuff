@@ -5453,3 +5453,12 @@ deployment, or optimization claim is admitted from that failure. The two
 explicit skips remain the documented Rust LLVM-version mismatch and the
 capability-dependent diagnostic skip. Evidence is retained at
 `/var/tmp/gentoo-optimization/optimization-tests.dm6euzc2/`.
+
+The current workload manifest independently records the six Go-lane packages
+(`direnv`, `go`, `github-cli`, `git-lfs`, `tailscale`, and `earlyoom`) as
+`no-profile-producing-workload`: their installed entrypoints cannot emit a
+Go `default.pgo` payload from a deterministic userspace invocation. They are
+therefore explicit workload terminal exclusions with reasons, not silently
+omitted packages. The remaining supported Clang IR, Rust, and GCC lanes have
+completed receipts or package-specific preserved terminal attempts; no
+profile-use or BOLT deployment is inferred from workload accounting.
