@@ -4000,3 +4000,7 @@ The exact `dev-util/colm-0.14.7-r4` wave reached install-QA but was correctly re
 ### Breakpad workload correction and Clang IR PGO wave (2026-09-19)
 
 The first exact `dev-util/breakpad-2024.02.16` generation attempt rebuilt and merged, but its generated `microdump_stackwalk --help` workload returned status 1. Direct probing confirmed the installed Breakpad tools accept `-h` as a successful empty-output query; the authoritative workload generator now uses `-h` for all three stackwalk/dump tools and permits empty output. The fresh `breakpad-v2` wave completed, passed independent receipt verification, and LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_breakpad-2024.02.16.profdata`; root-owned merge evidence is `profile-merge-breakpad-v2.json`. No profile-use deployment or BOLT output is claimed.
+
+### Pkgconf source-fetch stop (2026-09-19)
+
+The exact `dev-util/pkgconf-9999` wave was stopped in the unpack phase after the moving upstream git fetch remained silent with zero CPU. The fetch subprocesses were terminated; Portage preserved the failed unpack log and wave attempt, and no package merge or profile receipt was admitted. This is a source-acquisition failure for the moving `9999` ebuild and does not authorize bypassing the source identity contract.
