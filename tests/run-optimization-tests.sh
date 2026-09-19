@@ -1172,6 +1172,10 @@ run_case_with_deadline() {
     local fragment_identity=
     local deadline_state=within-limit process_group_cleanup=clean
 
+    # Instrumented helper processes may leave only these disposable profile files
+    # in the checkout; clear them before the next surface-sensitive case.
+    rm -f -- "${REPOSITORY_ROOT}/default.profraw" "${REPOSITORY_ROOT}/tests/default.profraw" || true
+
     printf 'RUN:  %s\n' "${name}"
     {
         printf 'COMMAND'
