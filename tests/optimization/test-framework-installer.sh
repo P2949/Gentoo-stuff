@@ -1012,6 +1012,8 @@ chmod 0700 -- "${PROFILE_TRANSACTION_CHILD_COMMAND}"
 # Remove only the known repository-local residue before the identity-bound check.
 rm -f -- "${REPOSITORY}/default.profraw" "${REPOSITORY}/tests/default.profraw"
 
+(
+cd /tmp
 /usr/bin/env -i HOME="${HOME}" USER="${USER:-fixture}" LOGNAME="${LOGNAME:-fixture}" \
     SHELL=/bin/bash PATH=/usr/bin:/bin LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null TZ=UTC \
     PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -I -B \
@@ -1032,7 +1034,8 @@ rm -f -- "${REPOSITORY}/default.profraw" "${REPOSITORY}/tests/default.profraw"
     --token-scan-root "${PROFILE_TRANSACTION_EVIDENCE}" \
     --token-scan-output "${PROFILE_TRANSACTION_SCAN}" \
     --evidence-output-root "${PROFILE_TRANSACTION_EVIDENCE}" -- \
-    "${PROFILE_TRANSACTION_CHILD_COMMAND}" >"${LOG}" 2>&1 || {
+    "${PROFILE_TRANSACTION_CHILD_COMMAND}" >"${LOG}" 2>&1
+) || {
         sed -n '1,260p' "${LOG}" >&2
         fail 'coordinator-supervised installer check failed'
     }
