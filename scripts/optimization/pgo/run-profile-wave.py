@@ -125,7 +125,6 @@ def main():
    # Keep Portage's own Python/administrative helpers from inheriting a
    # compiler profile destination; doas only receives the explicit env argv.
    command.append('LLVM_PROFILE_FILE=/dev/null')
-   command.append('PORTAGE_SAVED_READONLY_VARS=LLVM_PROFILE_FILE')
    # Instrumented host helper shells may still open their compiler runtime's
    # implicit default.profraw with O_CREAT after Portage filters the variable.
    # Permit only this disposable repository-local path; it is removed before
