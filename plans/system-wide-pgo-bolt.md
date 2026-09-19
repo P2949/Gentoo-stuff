@@ -5423,3 +5423,6 @@ The exact `x11-apps/xwininfo-1.1.7` wave completed under the current Phase-3 fra
 
 ### sandbox Clang IR profile wave (2026-09-19)
 The exact `sys-apps/sandbox-9999` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/sandbox -h` completed successfully; the merged profile is `merged-profiles/sys-apps-sandbox-9999.profdata` with digest `b35fd29dc80b0cc76b8988429efda28ea4edba287cd8e9162888e80c4a6e89a6`. No profile-use deployment or BOLT output is claimed.
+
+### pkgconf profile-wave build failure (2026-09-19)
+The `dev-util/pkgconf-9999` candidate exited nonzero during its profile wave before producing a receipt. No profile was admitted; the package-specific failed attempt is retained and no optimization claim is made.
