@@ -5858,3 +5858,11 @@ and `__gxx_personality_v0` symbols. No install occurred, no receipt or
 profile was admitted, and no terminal exclusion is claimed. This remains a
 package-specific build-backend/link-policy failure requiring a corrected
 C++ runtime linkage or an evidence-backed terminal classification.
+
+### 2026-09-19 — app-text/yodl profile-wave boundary
+
+The exact current-generation `app-text/yodl-4.05.00` attempt reached its custom
+C++ build but failed while linking the generated binary. `ld.lld` reported
+unresolved libc++ `std::__1` string, stream, and runtime symbols. No install
+occurred, no receipt or profile was admitted, and no terminal exclusion is
+claimed. This is a package-specific custom-build C++ runtime-linkage failure.
