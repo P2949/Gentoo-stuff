@@ -5618,3 +5618,13 @@ Root-owned merge evidence and digests are:
 - `profile-merge-attr-corrected.json`: `7edc79852f5435b5b80345d4c8b67176c215c06e8f59fb913dd0a62a6fc3d5e1`
 
 No profile-use deployment or BOLT output is inferred.
+
+### cabextract corrected successor attempt (2026-09-19)
+The regenerated workload successor for app-arch/cabextract-9999 binds the
+validated cabextract --version recipe. Its generation-bound transaction was
+started, but the moving upstream kyz/libmspack Git fetch remained stalled at
+zero transfer during source unpack. The Portage process group was terminated
+at the bounded source-acquisition threshold; no merge, receipt, or profile
+payload was admitted. The prior stale-recipes issue is corrected in the
+successor definition, while this attempt remains a source-fetch terminal
+failure.
