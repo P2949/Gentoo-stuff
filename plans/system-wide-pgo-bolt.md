@@ -4418,3 +4418,13 @@ LLVM 22 merged the authenticated payload set into
 `merged-profiles/app-arch_rpm2targz-2021.03.16.profdata`; merge evidence digest
 is `4d01ffc70ea838a7eaa8989e1f7dab6651c7ba178311732b01907279b475ac6d`.
 No profile-use deployment or BOLT output is claimed.
+
+### tar Clang IR profile wave (2026-09-19)
+
+The exact `app-arch/tar-1.35-r1` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active Phase-3 generation
+authority. The reviewed `/bin/gtar --help` workload completed, the sealed
+receipt passed independent verification, and LLVM 22 merged the authenticated
+payload set into `merged-profiles/app-arch_tar-1.35-r1.profdata`; merge
+ evidence digest is `e76d61dcea05b4339b9265b2812d4d6ac3c70b8c013e2aff03d0b8c255d632c6`.
+No profile-use deployment or BOLT output is claimed.
