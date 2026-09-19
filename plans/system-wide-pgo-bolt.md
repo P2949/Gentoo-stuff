@@ -6087,3 +6087,15 @@ authenticated raw payload to
 The merged profile SHA-256 is
 `91451b468ab2a22ea458c7b5e301a11564100a72c214101014894ba655a1c82f`;
 no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-util/source-highlight-3.1.9-r2 Clang IR profile wave
+
+The exact current-generation `dev-util/source-highlight-3.1.9-r2` wave completed through
+install-QA and the three reviewed workloads (`check-regexp --help`,
+`source-highlight --help`, and `source-highlight-settings --help`). Its sealed
+receipt passed independent verification, and LLVM 22 merged the authenticated
+raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/dev-util_source-highlight-3.1.9-r2-v1.profdata`.
+The merged profile SHA-256 is
+`3a157314dcd31d93ba5174aa5abc328b4148551b0ff5f71669b9f53dc695f4f9`;
+no profile-use rebuild or BOLT deployment is inferred.
