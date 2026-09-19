@@ -4380,3 +4380,20 @@ receipt passed independent verification, and LLVM 22 merged the authenticated
 payload set into `merged-profiles/app-arch_lz4-1.10.0-r1.profdata`; merge
 evidence digest is `40f21fa92192dbf62e5fe67129f5694a9eb5991df9cd70117a4daee531b7e098`.
 No profile-use deployment or BOLT output is claimed.
+
+### libarchive public-ABI lane repair and successor wave (2026-09-19)
+
+The earlier libarchive ABI rejection was repaired through the existing
+public-ABI architecture. The content-addressed policy generator now emits an
+explicit `pgo-clang-ir-generate-public.conf` lane for the reviewed CPV, the
+installer validates its quoted compiler-flag expressions only for that exact
+lane, and a package patch prevents libarchive's generated configure script
+from reintroducing hidden visibility when `GENTOO_OPT_PUBLIC_ABI=1`. The
+bootstrap framework was republished and its strict check passed. A fresh
+current-generation `app-arch/libarchive-3.8.9` wave then completed both
+multilib builds, passed install-QA ABI validation, produced a sealed receipt,
+and passed independent receipt verification. LLVM 22 merged the authenticated
+payload set into `merged-profiles/app-arch_libarchive-3.8.9.profdata`; merge
+evidence digest is
+`4da86814f314626710ff70319a5267b624d5d66fe9f5cbb7ea34d1ab4370dee2`.
+No profile-use deployment or BOLT output is claimed.
