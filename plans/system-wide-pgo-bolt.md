@@ -4335,3 +4335,14 @@ receipt passed independent verification, and LLVM 22 merged the authenticated
 payload set into `merged-profiles/app-arch_cpio-2.15.profdata`; merge evidence
 digest is `6a3d2b438d98998004fcecf30bc810cf6755eed96e05a7c8a41d5dd8fec47ac9`.
 No profile-use deployment or BOLT output is claimed.
+
+### dpkg Clang IR profile wave (2026-09-19)
+
+The stale live4 dpkg attempt was retained separately after its generation
+mismatch was detected. A fresh `app-arch/dpkg-1.22.21` transaction was then
+run against the active Phase-3 generation. The reviewed `/usr/bin/dpkg --help`
+workload completed, the current-generation receipt passed independent
+verification, and LLVM 22 merged its authenticated payload set into
+`merged-profiles/app-arch_dpkg-1.22.21.profdata`; merge evidence digest is
+`c57a15e471bd9da83c663addcc30f59f84c35450629bcac1b110bbabad98ffda`.
+No profile-use deployment or BOLT output is claimed.
