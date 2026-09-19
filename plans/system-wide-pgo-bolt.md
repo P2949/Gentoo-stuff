@@ -6361,3 +6361,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — media-gfx/renderdoc-1.36-r1 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt passed independent verification and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/media-gfx_renderdoc-1.36-r1-v1.profdata`; merge evidence SHA-256 is `d7c2ee1bb8f9471baaeb8d7fb968e55aab7ad597714aaf8182ee758d2023cec9`.
+
+### 2026-09-20 — media-libs/babl-0.1.128 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the profile was merged into `/var/lib/gentoo-optimization/merged-profiles/media-libs_babl-0.1.128-v1.profdata`; merge evidence SHA-256 is `b4d4278bf925b5c4e82f6f76c353afde1d69f1999fb7e33bd093433811781c64`.
