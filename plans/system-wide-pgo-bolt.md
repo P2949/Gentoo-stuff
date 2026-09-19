@@ -4566,3 +4566,17 @@ intermediate profiles. The authenticated payloads were merged successfully
 with evidence digest
 `16dbc4096b73237ce75586ff8239fff2c2134fc91d7d6ce4a39550ec8e09b246`.
 No profile-use deployment or BOLT output is claimed.
+
+### nettle Clang IR profile wave and workload correction (2026-09-19)
+
+The first current-generation `dev-libs/nettle-3.10.2` attempt correctly
+rejected the reviewed `/usr/bin/nettle-lfib-stream --help` recipe because that
+program accepts a seed rather than a help option and exited 1. The recipe was
+corrected by removing that invalid invocation; the valid `nettle-hash --help`
+and `nettle-pbkdf2 --help` workloads were retained. A fresh current-generation
+wave then rebuilt both configured ABIs, passed install-QA, completed both valid
+workloads, and passed independent receipt verification. LLVM 22 merged the
+authenticated raw payload set into `merged-profiles/dev-libs_nettle-3.10.2.profdata`;
+merge evidence digest is
+`9258f08329c349e29ef5503c37f4837dc431b9c8a140141d3a66ed22edfacc8c`.
+No profile-use deployment or BOLT output is claimed.
