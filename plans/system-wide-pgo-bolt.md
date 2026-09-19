@@ -4301,3 +4301,16 @@ receipt passed independent verification, and LLVM 22 merged the authenticated
 payload set into `merged-profiles/app-arch_7zip-26.03.profdata`; merge evidence
 digest is `bb28ff6da72b2017e0e923eca02fade11dd0169f3429879990e543e2d366fc3e`.
 No profile-use deployment or BOLT output is claimed.
+
+### bzip2 Clang IR profile wave (2026-09-19)
+
+The exact `app-arch/bzip2-1.0.8-r5` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active Phase-3 generation
+authority, including both configured ABIs. The reviewed
+`/bin/bzip2-reference --help` workload completed, the sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated payload set
+into `merged-profiles/app-arch_bzip2-1.0.8-r5.profdata`; merge evidence digest
+is `b1b00fc8392873a520e1da1dc6cbc7a03c120d0e5ad405ef5aefe20b2393d3ae`.
+The transaction emitted existing ldconfig warnings for non-ELF LLVM YAML
+optimization records; install-QA and merge completed. No profile-use deployment
+or BOLT output is claimed.
