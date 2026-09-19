@@ -129,7 +129,7 @@ def main():
    # implicit default.profraw with O_CREAT after Portage filters the variable.
    # Permit only this disposable repository-local path; it is removed before
    # receipt sealing and is never admitted as a package payload.
-   command.append('SANDBOX_WRITE=/home/p2949/Desktop/Gentoo-stuff/default.profraw')
+   command.append('SANDBOX_WRITE=/home/p2949/Desktop/Gentoo-stuff/default.profraw:/usr/share/elt-patches/default.profraw')
    command += ['emerge','--oneshot','--buildpkg','='+cpv]
    # Do not expose the package profile path to the privileged doas helper
    # itself.  The path is supplied explicitly in the doas environment for
@@ -140,7 +140,13 @@ def main():
    command_env=env.copy()
    command_env.pop('GENTOO_OPT_PROFILE_PATH',None)
    command_env['LLVM_PROFILE_FILE']='/dev/null'
-   subprocess.run(command,env=command_env,check=True)
+   try:
+    subprocess.run(command,env=command_env,check=True)
+   finally:
+    # Instrumented host helpers such as eltpatch may still create this exact
+    # disposable residue even when LLVM_PROFILE_FILE is filtered by Portage.
+    # Remove only the known file that was granted by SANDBOX_WRITE.
+    subprocess.run(['doas','rm','-f','--','/usr/share/elt-patches/default.profraw'],check=False)
    # Run the exact reviewed representative recipes after the instrumented
    # package transaction.  This is the profile payload collection point; a
    # recipe failure is terminal for the wave and is recorded by the caller.
