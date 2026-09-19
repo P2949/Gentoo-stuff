@@ -5964,3 +5964,10 @@ but install-QA rejected the replacement for exported-ABI loss. The generated
 `libluajit-5.1.so.2` retained the same symbol count but lost the versioned
 `luaJIT_version_2_1_1782726002` export relative to the installed provider. No
 receipt or merged profile was admitted, and no terminal exclusion is claimed.
+
+### 2026-09-19 — dev-lang/deno-bin Clang IR profile wave
+
+The exact current-generation `dev-lang/deno-bin-2.9.6` binary wave completed
+through install-QA and the reviewed `deno --help` workload. Its sealed receipt
+passed independent verification, and LLVM 22 merged the authenticated raw
+payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_deno-bin-2.9.6-v1.profdata`. The merged profile SHA-256 is `b8be68ba795012014e741368c6f8f247b26c79a2c198dbfcfebdc4491398e815`; no profile-use rebuild or BOLT deployment is inferred.
