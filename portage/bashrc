@@ -1202,6 +1202,15 @@ gentoo_opt_apply_primary_mode() {
             ;;
         rust-generate)
             gentoo_opt_require_rust_target_isolation || return 1
+            # Rust eclasses may execute the freshly instrumented helper during
+            # compile/package phases (for example, to generate completions).
+            # Those administrative invocations are not the reviewed workload;
+            # discard their runtime output so they cannot create an implicit
+            # default.profraw or crash on a mismatched Rust LLVM runtime.
+            if [[ -n ${EBUILD_PHASE-} ]]; then
+                LLVM_PROFILE_FILE=/dev/null
+                export LLVM_PROFILE_FILE
+            fi
             gentoo_opt_append_flag_once RUSTFLAGS "-Cprofile-generate=${GENTOO_OPT_PROFILE_PATH}"
             ;;
         rust-use)
