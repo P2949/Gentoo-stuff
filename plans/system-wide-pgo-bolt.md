@@ -6365,3 +6365,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — media-libs/babl-0.1.128 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the profile was merged into `/var/lib/gentoo-optimization/merged-profiles/media-libs_babl-0.1.128-v1.profdata`; merge evidence SHA-256 is `b4d4278bf925b5c4e82f6f76c353afde1d69f1999fb7e33bd093433811781c64`.
+
+### 2026-09-20 — media-libs/dav1d-9999 profile wave configure failure
+
+The `pgo-clang-ir` wave reached the Meson configure phase but failed because the source configuration reported `Atomics not supported` (`meson.build:218`). No receipt or profile was produced; the package remains an evidence-backed terminal execution failure for this wave and was not bypassed.
