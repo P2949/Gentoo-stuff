@@ -5925,3 +5925,11 @@ through install-QA and workload execution. Its sealed receipt passed independent
 verification, and LLVM 22 merged the authenticated raw payload to
 `/var/lib/gentoo-optimization/merged-profiles/dev-build_bmake-20260508-v1.profdata`.
 The merged profile SHA-256 is `d60f9ff06fffb099b177dd32423574bb511ba66199b7f8f1416227e3bd08cc7d`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-shells/bash Clang IR profile wave
+
+The exact current-generation `app-shells/bash-9999` wave completed through
+install-QA and the reviewed bash workload. Its sealed receipt passed independent
+verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/app-shells_bash-9999-v1.profdata`.
+The merged profile SHA-256 is `b29ede16ccff72ba6ecf22bad9a6b9ead87d04bf40e9d3b675c9f8d7ebd96488`; no profile-use rebuild or BOLT deployment is inferred.
