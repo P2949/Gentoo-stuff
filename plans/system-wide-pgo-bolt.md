@@ -6404,6 +6404,10 @@ The corrected lane manifest was regenerated from the authoritative generation in
 
 The corrected `pgo-gcc` retry compiled and staged successfully, but the existing exported-ABI guard rejected the replacement `libhwy_contrib.so.1` providers because `_ZN3hwy17Fill16BytesSecureEPv@@HWY_0` was absent from the candidate while present in the installed ABI (137 old exports versus 146 new exports). No merge, receipt, or profile acceptance occurred. This remains a correctness failure after the package-environment lane correction and is retained as terminal evidence for this wave.
 
+### 2026-09-20 — media-libs/libjxl-9999 GCC profile wave
+
+The corrected `pgo-gcc` wave completed successfully. The receipt passed independent verification, the package transaction and workload gate completed without rejection, and the GCC `.gcda` payload was validated with GCC 17 `gcov-tool`. The published profile manifest is `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-postsync-r1/profile-manifest-libjxl-gcc-v1.json` with sidecar metadata at `/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-postsync-r1/profile-manifest-libjxl-gcc-v1.json.metadata.json`.
+
 ### 2026-09-20 — media-libs/libpng-1.6.58 workload rejection
 
 The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libpng-1.6.58` because `/usr/bin/png-fix-itxt` produced no output. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
