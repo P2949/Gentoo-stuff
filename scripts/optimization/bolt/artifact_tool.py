@@ -2831,6 +2831,13 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                         changed_identity.append(
                             "regular_group_fields=" + ",".join(group_keys)
                         )
+                        changed_identity.append(
+                            "regular_group_values=" + repr({
+                                key: (expected_group.get(key), actual_group.get(key))
+                                for key in group_keys
+                                if key in {"file_sha256", "size", "paths", "elf_artifact_id"}
+                            })
+                        )
                         break
             fail(
                 "complete ED topology/file/ELF classification differs from the captured input: "
