@@ -5378,3 +5378,6 @@ The exact `sys-apps/kbd-2.10.0` wave completed under the current Phase-3 framewo
 
 ### xdg-dbus-proxy Clang IR profile wave (2026-09-19)
 The exact `sys-apps/xdg-dbus-proxy-0.1.8` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/xdg-dbus-proxy --version` completed successfully; the merged profile is `merged-profiles/sys-apps-xdg-dbus-proxy-0.1.8.profdata` with digest `193e7f301cd78643e936ed8fd8980a0eeae8ffbd393d9da8958130abb01e4fd3`. No profile-use deployment or BOLT output is claimed.
+
+### xz-utils profile-wave fetch failure (2026-09-19)
+The `app-arch/xz-utils-9999` candidate was attempted under the current generation, but its live Git source fetch remained unproductive and was terminated before compilation. No receipt or profile was admitted; this remains a retained package-specific source-fetch failure.
