@@ -4934,3 +4934,14 @@ progress. The bounded attempt was terminated, preserving the runner failure
 and no package merge, workload, receipt, or profile merge was admitted. This
 is a source-fetch/network remediation item, separate from package build or
 profile validation.
+
+### pinentry Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-crypt/pinentry-1.3.3` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`pinentry-curses --help` and `pinentry-tty --help` workloads completed,
+install-QA passed, and independent receipt verification passed. LLVM 22 merged
+the authenticated raw payload into
+`merged-profiles/app-crypt_pinentry-1.3.3.profdata`; merge evidence digest is
+`771ba004e5ecc237a8a33830df2d48381580d8d7ec73459a32b6792438b9c562`. No
+profile-use deployment or BOLT output is claimed.
