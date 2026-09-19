@@ -5262,3 +5262,15 @@ and independent receipt verification passed. LLVM 22 merged the authenticated
 raw payload into `merged-profiles/sys-fs_fuse-overlayfs-1.17.profdata`; merge
 evidence digest is `1b1050ef1b575b580fa83e946b174a16f9a71887782fa4e0b3e8a1531e44154c`.
 No profile-use deployment or BOLT output is claimed.
+
+### xfsprogs profile merge incompatibility (2026-09-19)
+
+The exact `sys-fs/xfsprogs-7.1.1` wave built, installed, and produced a sealed
+receipt whose workload and install-QA completed. Both merge attempts failed
+closed because one generated raw payload (`6193553815871224956_0-1168.profraw`)
+uses raw profile format version 11 while the LLVM 22 `llvm-profdata` merger
+expects version 10. The transient raw directory was cleaned and the exact
+wave rerun; the same file/version mismatch reproduced. No merged profile or
+optimization claim is admitted for this CPV. The package remains pending
+instrumentation-version remediation, with both receipts and merge failures
+preserved under `/tmp` and the generation spool.
