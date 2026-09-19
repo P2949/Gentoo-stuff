@@ -4541,3 +4541,14 @@ authenticated raw payload set into
 `merged-profiles/dev-libs_xxhash-0.8.3-r2.profdata`; merge evidence digest is
 `d894ccde89a8920b9f0a27479777f537c20d16b1e8b302382d850a583efeb2e3`.
 No profile-use deployment or BOLT output is claimed.
+
+### libtracefs workload rejection (2026-09-19)
+
+The current-generation `dev-libs/libtracefs-1.8.3` training transaction rebuilt
+and installed successfully and passed install-QA, but its reviewed workload
+`/usr/bin/sqlhist --help` exited 255 because `sqlhist` does not implement a
+`--help` option. A direct probe confirmed that even an empty SQL input attempts
+to create a synthetic tracing event and exits 255 in the current tracefs
+runtime. The runner correctly refused to seal a receipt or admit profiles.
+The failed attempt remains preserved; no PGO result is claimed and no tracing
+or kernel state was mutated.
