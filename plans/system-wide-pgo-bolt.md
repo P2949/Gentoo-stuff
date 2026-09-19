@@ -4519,3 +4519,14 @@ sealed receipt passed independent verification. LLVM 22 merged the authenticated
 raw payload set into `merged-profiles/dev-libs_libtasn1-4.21.0.profdata`; merge
 evidence digest is `65d198466b9722687e3cf909ed9e75cddbafd9153e672839d0006a68094060fb`.
 No profile-use deployment or BOLT output is claimed.
+
+### libpcre Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-libs/libpcre-8.45-r4` successor wave
+completed both configured ABIs under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `/usr/bin/pcregrep --help` and `/usr/bin/pcretest --help`
+workloads completed, install-QA passed, and the sealed receipt passed
+independent verification. LLVM 22 merged the authenticated raw payload set
+into `merged-profiles/dev-libs_libpcre-8.45-r4.profdata`; merge evidence
+digest is `5ea21bb7dcc3c67d3238c961e71aee9c6ec9c45d76e77e47adc28642fe855f30`.
+No profile-use deployment or BOLT output is claimed.
