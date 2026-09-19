@@ -4008,3 +4008,7 @@ The exact `dev-util/pkgconf-9999` wave was stopped in the unpack phase after the
 ### Iucode-tool Clang IR PGO wave (2026-09-19)
 
 `sys-apps/iucode_tool-2.3.1-r2` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `iucode_tool --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_iucode_tool-2.3.1-r2.profdata`, with root-owned merge evidence in `profile-merge-iucode-tool.json`. No firmware, boot, or kernel artifact was touched; no profile-use deployment or BOLT output is claimed.
+
+### Ethtool Clang IR PGO wave (2026-09-19)
+
+`sys-apps/ethtool-7.0` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `ethtool --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_ethtool-7.0.profdata`, with root-owned merge evidence in `profile-merge-ethtool.json`. The workload performed no hardware mutation; no profile-use deployment or BOLT output is claimed.
