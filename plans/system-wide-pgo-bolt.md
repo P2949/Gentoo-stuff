@@ -4722,3 +4722,12 @@ receipt verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/app-text_xmlto-0.0.28-r11.profdata`; merge evidence digest is
 `3cd01603fb71587e5a570259e93bdd592b229c60cefbf871668d1683a289632d`. No
 profile-use deployment or BOLT output is claimed.
+
+### which Clang IR profile wave (2026-09-19)
+
+The exact current-generation `sys-apps/which-2.23` successor wave completed
+under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/which --help` workload completed, install-QA passed, and independent
+receipt verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_which-2.23.profdata`; merge evidence was published
+for the current generation. No profile-use deployment or BOLT output is claimed.
