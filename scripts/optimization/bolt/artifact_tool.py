@@ -2244,6 +2244,13 @@ def command_capture(arguments: argparse.Namespace) -> None:
     if stage.exists():
         fail(f"stale capture stage exists: {stage}")
     stage.mkdir(mode=0o700)
+    # Host-instrumented Portage/Python shells can flush an implicit profile in
+    # the current working directory (ED) even when the child was given an
+    # explicit discard pattern.  This exact disposable name is never package
+    # payload; remove it before and after the immutable ED snapshot.
+    implicit_profile = ed / "default.profraw"
+    if implicit_profile.is_file() and not implicit_profile.is_symlink():
+        implicit_profile.unlink()
     before = tree_snapshot(ed)
     try:
         with tempfile.TemporaryDirectory(prefix="classify-", dir=stage) as scratch_text:
@@ -2253,6 +2260,8 @@ def command_capture(arguments: argparse.Namespace) -> None:
             )
         elf_total = len(artifacts)
         eligible_total = sum(bool(item["eligible"]) for item in artifacts)
+        if implicit_profile.is_file() and not implicit_profile.is_symlink():
+            implicit_profile.unlink()
         after = tree_snapshot(ed)
         if before != after:
             before_by_path = {item["path"]: item for item in before}
