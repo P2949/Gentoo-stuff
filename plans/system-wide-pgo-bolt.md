@@ -4314,3 +4314,14 @@ is `b1b00fc8392873a520e1da1dc6cbc7a03c120d0e5ad405ef5aefe20b2393d3ae`.
 The transaction emitted existing ldconfig warnings for non-ELF LLVM YAML
 optimization records; install-QA and merge completed. No profile-use deployment
 or BOLT output is claimed.
+
+### cabextract Clang IR profile wave (2026-09-19)
+
+The exact `app-arch/cabextract-9999` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active Phase-3 generation
+authority. The reviewed `/usr/bin/cabextract --version` workload completed,
+the sealed receipt passed independent verification, and LLVM 22 merged the
+authenticated payload set into `merged-profiles/app-arch_cabextract-9999.profdata`;
+merge evidence digest is
+`1dfb24dcd2d29ff41a02540a158ba61997bac0a8cae805a1f63de214ae787575`.
+No profile-use deployment or BOLT output is claimed.
