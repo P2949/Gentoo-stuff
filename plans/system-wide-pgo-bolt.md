@@ -5212,3 +5212,13 @@ the authenticated raw payload into
 `merged-profiles/sys-libs_slang-2.3.3-r2.profdata`; merge evidence digest is
 `07fe1985763d46776d75937c004c50e54ec29c726229a0c925a3b569f01173a7`. No
 profile-use deployment or BOLT output is claimed.
+
+### procps Clang IR profile wave (2026-09-19)
+
+The exact `sys-process/procps-4.0.6` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/bin/ps --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-process_procps-4.0.6.profdata`; merge evidence digest is
+`8fc325c8da69e4749b4d12768f653c734d5c5569d6c3060d1610796b0c1b93ab`. No
+profile-use deployment or BOLT output is claimed.
