@@ -1006,7 +1006,7 @@ EOF
 chmod 0700 -- "${PROFILE_TRANSACTION_CHILD_COMMAND}"
 
 /usr/bin/env -i HOME="${HOME}" USER="${USER:-fixture}" LOGNAME="${LOGNAME:-fixture}" \
-    SHELL=/bin/bash PATH=/usr/bin:/bin LANG=C LC_ALL=C TZ=UTC \
+    SHELL=/bin/bash PATH=/usr/bin:/bin LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null TZ=UTC \
     PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -I -B \
     "${REPOSITORY}/scripts/optimization/pgo/production-profile-lock-transaction.py" run \
     --test-mode --test-root "${TARGET}" \
