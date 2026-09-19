@@ -4188,3 +4188,17 @@ gate. Regression coverage passes, and an independent live audit reports 1,301
 packages, 16,642 authoritative ELF records, zero missing lane records, zero
 missing classifications, and zero missing safety joins. This is coverage
 accounting only; profile-use and BOLT deployment remain unclaimed.
+
+### Phase-less helper profile propagation repair (2026-09-19)
+
+The active framework was republished after the dispatcher repair so the
+installed Portage policy now contains the current helper handling. The
+policy additionally resets `LLVM_PROFILE_FILE` when Portage invokes the
+optimization dispatcher without `EBUILD_PHASE` but with a non-empty
+`MISC_FUNCTIONS_ARGS`, covering phase-less administrative misc-function
+helpers. The dispatcher regression suite remains 45/45 and the framework
+publication check passes. A bounded live rebuild of
+`dev-dotnet/dotnet-runtime-nugets-10.0.11` still produced a staged
+`/default.profraw` and was rejected by collision QA; the failed transaction
+and profile artifacts remain preserved for diagnosis. No package merge or
+profile receipt was admitted.
