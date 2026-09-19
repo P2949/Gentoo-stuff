@@ -5820,3 +5820,7 @@ The exact current-generation `app-crypt/gcr-4.4.0.1-r1` wave completed through i
 ### 2026-09-19 — dev-db/sqlite Clang IR profile wave
 
 The exact current-generation `dev-db/sqlite-3.53.4` multilib wave completed through install-QA and workload execution. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/dev-db_sqlite-3.53.4-v1.profdata`. The merged profile SHA-256 is `84490d6fb783246940e0f28b00d59b362036c61b9f344b05e6c254f24624dde3`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-libs/elfutils Clang IR profile wave
+
+The exact current-generation `dev-libs/elfutils-0.196` multilib wave completed through install-QA and workload execution. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/dev-libs_elfutils-0.196-v1.profdata`. The merged profile SHA-256 is `1480b103a8c2354311efa5e667f40413139a5e5b5784c668b2eaba128c397147`; no profile-use rebuild or BOLT deployment is inferred.
