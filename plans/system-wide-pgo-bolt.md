@@ -6443,3 +6443,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/boehm-gc-8.2.12 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed as root against the protected raw profile, and the profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_boehm-gc-8.2.12-v1.profdata`; merge evidence SHA-256 is `c069c7d81017057e0e8a2be07753fb6c39853547d7326969b59575ee88050a52`.
+
+### 2026-09-20 — dev-libs/double-conversion-3.4.0 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_double-conversion-3.4.0-v1.profdata`; merge evidence SHA-256 is `8de7c0c2bd68f0aacb90a75c4216f3ef68059e2342591a6fe3229156ff611015`.
