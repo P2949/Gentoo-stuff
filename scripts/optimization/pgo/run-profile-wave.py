@@ -125,11 +125,6 @@ def main():
    # Keep Portage's own Python/administrative helpers from inheriting a
    # compiler profile destination; doas only receives the explicit env argv.
    command.append('LLVM_PROFILE_FILE=/dev/null')
-   # Instrumented host helper shells may still open their compiler runtime's
-   # implicit default.profraw with O_CREAT after Portage filters the variable.
-   # Permit only this disposable repository-local path; it is removed before
-   # receipt sealing and is never admitted as a package payload.
-   command.append('SANDBOX_WRITE=/home/p2949/Desktop/Gentoo-stuff/default.profraw:/usr/share/elt-patches/default.profraw')
    command += ['emerge','--oneshot','--buildpkg','='+cpv]
    # Do not expose the package profile path to the privileged doas helper
    # itself.  The path is supplied explicitly in the doas environment for
@@ -143,10 +138,10 @@ def main():
    try:
     subprocess.run(command,env=command_env,check=True)
    finally:
-    # Instrumented host helpers such as eltpatch may still create this exact
-    # disposable residue even when LLVM_PROFILE_FILE is filtered by Portage.
-    # Remove only the known file that was granted by SANDBOX_WRITE.
-    subprocess.run(['doas','rm','-f','--','/usr/share/elt-patches/default.profraw'],check=False)
+    # No profile output path is granted to the privileged transaction.  This
+    # prevents disposable host-helper residue from becoming a staged package
+    # payload and colliding with Portage's install QA.
+    pass
    # Run the exact reviewed representative recipes after the instrumented
    # package transaction.  This is the profile payload collection point; a
    # recipe failure is terminal for the wave and is recorded by the caller.
