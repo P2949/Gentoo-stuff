@@ -4904,3 +4904,13 @@ authenticated raw payload into
 `merged-profiles/sys-apps_diffutils-3.12.profdata`; merge evidence digest is
 `de1eca53b7dbb3f36eaa5fdef27201ccba05d6574c776a3c5b93062e194be607`. No
 profile-use deployment or BOLT output is claimed.
+
+### make Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-build/make-9999` successor wave completed
+under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/gmake --help` workload completed, install-QA passed, and independent
+receipt verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/dev-build_make-9999.profdata`; merge evidence digest is
+`3a41190d8b946b524a71a588e5a7cfb3119ffaa405cd769088af9bc89c448be8`. No
+profile-use deployment or BOLT output is claimed.
