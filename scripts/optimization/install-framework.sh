@@ -1494,9 +1494,15 @@ raise SystemExit(65 if missing else 0)
             [[ -z ${variables["${variable}"]+x} ]] || \
                 fail "generated environment repeats ${variable}: ${basename}"
             variables["${variable}"]=1
-            [[ ${value} =~ ^[A-Za-z0-9_./:@,+%=-]*$ || \
-                ${value} =~ ^\"[A-Za-z0-9_./:@,+%=-]*\"$ ]] || \
-                fail "generated environment value contains shell syntax: ${basename}: ${line}"
+            if [[ ${basename} == pgo-clang-ir-generate-public.conf && \
+                  ${variable} =~ ^(COMMON_FLAGS|CFLAGS|CXXFLAGS|FCFLAGS|FFLAGS|LDFLAGS)$ ]]; then
+                [[ ${value} =~ ^\"[A-Za-z0-9_./:@,+%=${}\ \"-]*\"$ ]] || \
+                    fail "public-ABI generated environment value is malformed: ${basename}: ${line}"
+            else
+                [[ ${value} =~ ^[A-Za-z0-9_./:@,+%=-]*$ || \
+                    ${value} =~ ^\"[A-Za-z0-9_./:@,+%=-]*\"$ ]] || \
+                    fail "generated environment value contains shell syntax: ${basename}: ${line}"
+            fi
         done <"${file}"
     done < <(find "${source}/env" -mindepth 1 -maxdepth 1 -type f -print0 | sort -z)
     [[ $(find "${source}/env" -mindepth 1 ! -type f -print -quit) == '' ]] || \
