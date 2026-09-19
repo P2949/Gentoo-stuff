@@ -648,10 +648,14 @@ validate_authoritative_manifest_path_tools() {
     ((AUTHORITATIVE == 1)) || return 0
     for name in "${AUTHORITATIVE_PATH_TOOL_NAMES[@]}"; do
         expected=${AUTHORITATIVE_PATH_TOOL_PATHS["${name}"]}
-        selected=$(type -P -- "${name}" 2>/dev/null) ||
-            fail_usage "reviewed authoritative PATH tool is unavailable: ${name}=${expected}"
-        [[ ${selected} == "${expected}" ]] ||
-            fail_usage "authoritative PATH shadows reviewed ${name}: expected=${expected} selected=${selected}"
+        if [[ ${name} == shellcheck && -n ${SHELLCHECK:-} ]]; then
+            selected=${SHELLCHECK}
+        else
+            selected=$(type -P -- "${name}" 2>/dev/null) ||
+                fail_usage "reviewed authoritative PATH tool is unavailable: ${name}=${expected}"
+        fi
+        [[ ${selected} == "${expected}" && -x ${selected} && ! -d ${selected} ]] ||
+            fail_usage "authoritative ${name} entry point differs from the reviewed manifest: expected=${expected} selected=${selected}"
     done
     [[ ${PATH} == "${REVIEWED_AUTHORITATIVE_PATH}" ]] ||
         fail_usage "authoritative PATH differs from the reviewed execution path: expected=${REVIEWED_AUTHORITATIVE_PATH} actual=${PATH}"
