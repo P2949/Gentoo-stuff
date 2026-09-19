@@ -6167,3 +6167,11 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `e406776df4735ef9358aa29c1b3b0b90f3059c76fefcd34fcbc21927e8531b84`;
 no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — gui-libs/hyprcursor-9999 ABI guard rejection
+
+The exact current-generation wave reached install-QA, but its dependency
+`gui-libs/hyprutils-0.14.2` was rejected by the exported-ABI guard. The
+replacement `libhyprutils.so.0.14.2` lost twelve installed versioned symbols;
+the transaction was not admitted and no receipt or profile was produced. The
+full preserved log is `/tmp/hyprcursor.log`.
