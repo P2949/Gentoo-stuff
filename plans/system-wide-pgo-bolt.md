@@ -4924,3 +4924,13 @@ independent receipt verification passed. LLVM 22 merged the authenticated raw
 payload into `merged-profiles/dev-build_bmake-20260508.profdata`; merge
 evidence digest is `daeb23d66a0e5a64e184e966119666a6e7f56a5960282dd31055a31049f82327`.
 No profile-use deployment or BOLT output is claimed.
+
+### less successor wave fetch failure (2026-09-19)
+
+The exact current-generation `sys-apps/less-9999` wave was admitted with
+readiness `1/1`, but its moving Git source fetch from `github.com/gwsw/less`
+remained at zero CPU for nearly four minutes and produced no source/build
+progress. The bounded attempt was terminated, preserving the runner failure
+and no package merge, workload, receipt, or profile merge was admitted. This
+is a source-fetch/network remediation item, separate from package build or
+profile validation.
