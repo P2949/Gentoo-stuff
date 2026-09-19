@@ -6439,3 +6439,7 @@ The `pgo-clang-ir` wave reached the completed install image, but the install-QA 
 ### 2026-09-20 — dev-libs/date-3.0.3 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_date-3.0.3-v1.profdata`; merge evidence SHA-256 is `f23bcddb320787fb136ad4789d4c3a7ba107538aac6512241e19540dc221ccef`.
+
+### 2026-09-20 — dev-libs/boehm-gc-8.2.12 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed as root against the protected raw profile, and the profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_boehm-gc-8.2.12-v1.profdata`; merge evidence SHA-256 is `c069c7d81017057e0e8a2be07753fb6c39853547d7326969b59575ee88050a52`.
