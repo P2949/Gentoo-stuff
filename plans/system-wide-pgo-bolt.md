@@ -4370,3 +4370,13 @@ This reproduces the earlier libarchive ABI boundary under the successor
 inventory and requires the existing package-specific ABI-safe remediation
 before its profile payload can be accepted; the guard was not bypassed and no
 terminal exclusion has been claimed.
+
+### lz4 Clang IR profile wave (2026-09-19)
+
+The exact `app-arch/lz4-1.10.0-r1` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active Phase-3 generation
+authority. The reviewed `/usr/bin/lz4 --help` workload completed, the sealed
+receipt passed independent verification, and LLVM 22 merged the authenticated
+payload set into `merged-profiles/app-arch_lz4-1.10.0-r1.profdata`; merge
+evidence digest is `40f21fa92192dbf62e5fe67129f5694a9eb5991df9cd70117a4daee531b7e098`.
+No profile-use deployment or BOLT output is claimed.
