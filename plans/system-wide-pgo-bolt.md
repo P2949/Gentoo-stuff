@@ -3846,3 +3846,7 @@ The exact `dev-build/make-9999` wave initially stopped on a live package-env pre
 ### Pinentry Clang IR PGO wave (2026-09-19)
 
 `app-crypt/pinentry-1.3.3` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records the nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `pinentry-curses --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-crypt_pinentry-1.3.3.profdata`, with root-owned merge evidence in `profile-merge-pinentry.json`. No profile-use deployment or BOLT output is claimed.
+
+### Expat Clang IR PGO wave (2026-09-19)
+
+`dev-libs/expat-2.8.4` completed the exact successor `pgo-clang-ir` wave across its configured multilib builds. The sealed receipt records nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed `xmlwf --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_expat-2.8.4.profdata`, with root-owned merge evidence in `profile-merge-expat.json`. The transaction again reported pre-existing non-ELF LLVM optimization-record YAML warnings during `ldconfig`; no project files were altered for that unrelated warning. No profile-use deployment or BOLT output is claimed.
