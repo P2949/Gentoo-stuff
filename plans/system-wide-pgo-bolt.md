@@ -5917,3 +5917,11 @@ install-QA and workload execution. Its sealed receipt passed independent
 verification, and LLVM 22 merged the authenticated raw payload to
 `/var/lib/gentoo-optimization/merged-profiles/dev-build_b2-5.5.3-v1.profdata`.
 The merged profile SHA-256 is `2921d4326f2904fb0f590bfcdfb885da414ff56b51a4ab97a0f0754bb4b8eaa9`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-build/bmake Clang IR profile wave
+
+The exact current-generation `dev-build/bmake-20260508` multilib wave completed
+through install-QA and workload execution. Its sealed receipt passed independent
+verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/dev-build_bmake-20260508-v1.profdata`.
+The merged profile SHA-256 is `d60f9ff06fffb099b177dd32423574bb511ba66199b7f8f1416227e3bd08cc7d`; no profile-use rebuild or BOLT deployment is inferred.
