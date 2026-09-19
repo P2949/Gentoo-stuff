@@ -5522,3 +5522,14 @@ after the instrumented binary was built, matching the existing maturin helper
 failure pattern. No package merge, receipt, or profile payload was admitted;
 the root-owned build log and attempt evidence remain preserved for this
 package-specific Rust runtime incompatibility.
+
+### rpm-sequoia Rust profile-wave attempts (2026-09-19)
+The exact `app-crypt/rpm-sequoia-1.10.2` transaction repeatedly completed its
+171-crate Rust build, install-QA, and live merge. Its generated wave has no
+representative workload recipes and produced no profile files. The first
+runner revision hung treating an unchanged empty payload directory as unstable;
+that empty-snapshot condition was fixed in `d93f579`. A subsequent run exposed
+an additional post-transaction quiescence interaction and was stopped after
+its bounded writer wait failed to seal a receipt. The package merge evidence
+and all attempts remain preserved, but no profile receipt or merged profile is
+claimed for this package.
