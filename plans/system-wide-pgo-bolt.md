@@ -5334,3 +5334,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_busybox-1.38.0.profdata`; merge evidence digest is
 `b0d9f01e5a0f1a8f082f67407f9b9e6e0d49891f4746f94a46987f72b79f837d`. No
 profile-use deployment or BOLT output is claimed.
+
+### groff Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/groff-1.23.0-r2` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The read-only `/usr/bin/groff
+--version` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_groff-1.23.0-r2.profdata`; merge evidence digest is
+`d643f54371e5494cae61224d320c6a029558f67b961f03ddf76ac78386be9297`. No
+profile-use deployment or BOLT output is claimed.
