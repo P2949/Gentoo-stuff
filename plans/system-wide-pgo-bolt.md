@@ -5636,3 +5636,11 @@ path was already occupied by an older artifact, so the merger correctly
 refused overwrite; the authenticated current payload was merged to the
 generation-bound v2 path with evidence profile-merge-bzip2-live-v2.json. Its
 merged profile digest is 390132acd53efc07dec2c407eb68f83bc51377946044785665e2f87d9ad7aa83.
+
+### zstd Clang IR profile wave (2026-09-19)
+The exact app-arch/zstd-1.5.7-r1 wave completed under the active generation,
+and its receipt passed independent verification. The current authenticated
+payload was merged to the generation-bound v2 profile path with evidence
+profile-merge-zstd-live-v2.json. Its merged profile digest is
+792d77b054e44b0d914e243baa8f41973d947f7459bcf305c27887ffca89a4fc.
+No profile-use deployment or BOLT output is inferred.
