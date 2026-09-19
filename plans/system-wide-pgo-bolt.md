@@ -4037,3 +4037,13 @@ root-owned merge evidence is `profile-merge-bzip2.json`. Older unreceipted raw
 payloads from prior attempts were moved into the generation's preserved
 failure evidence directory before merge. No profile-use deployment or BOLT
 output is claimed.
+
+### Cabextract Clang IR PGO wave (2026-09-19)
+
+`app-arch/cabextract-9999` completed the exact successor `pgo-clang-ir`
+wave. The sealed receipt records a nonempty profraw payload, successful
+install-QA ABI guarding, and completion of the reviewed `cabextract --version`
+workload; independent receipt verification passed. LLVM 22 merged the payload
+into `/var/lib/gentoo-optimization/merged-profiles/app-arch_cabextract-9999.profdata`,
+with root-owned merge evidence in `profile-merge-cabextract.json`. No
+profile-use deployment or BOLT output is claimed.
