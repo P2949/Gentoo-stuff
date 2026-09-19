@@ -993,7 +993,6 @@ run_check() {
     GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN=\${supplied_token} \
     GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION=\${supplied_authorization} \
-    cd /tmp
     bash -- ${REPOSITORY@Q}/scripts/optimization/install-framework.sh \
         --test-root ${TARGET@Q} --check
 }
