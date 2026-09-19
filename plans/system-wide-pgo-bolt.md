@@ -6339,3 +6339,13 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `35ab37cd4aa7b9a0e21e0788dc33a6635565a8cb788c0b3be038bb19eec2fbd6`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — media-fonts/font-util-1.4.2 Clang IR profile wave
+
+The exact current-generation `media-fonts/font-util-1.4.2` wave completed
+through install-QA and its reviewed workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/media-fonts_font-util-1.4.2-v1.profdata`.
+The merged profile SHA-256 is
+`4d6fd56e6a0a7b33cbb30fffd680fdcaf90b7cc4d1063fb9793c81c82a914b90`; no
+profile-use rebuild or BOLT deployment is inferred.
