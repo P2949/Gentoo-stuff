@@ -5411,3 +5411,6 @@ The exact `net-misc/openssh-10.5_p1` wave completed under the current Phase-3 fr
 
 ### iputils Clang IR profile wave (2026-09-19)
 The exact `net-misc/iputils-99999999` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/ping -V` completed successfully without network traffic; the merged profile is `merged-profiles/net-misc-iputils-99999999.profdata` with digest `8b650dd43f5c1a24203c28cf6fb2d3f95f6f0894eeb0caad25d1c55c3b9cab1c`. No profile-use deployment or BOLT output is claimed.
+
+### util-linux Clang IR profile wave (2026-09-19)
+The exact `sys-apps/util-linux-2.42.3` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/lsblk --version` completed successfully; the merged profile is `merged-profiles/sys-apps-util-linux-2.42.3.profdata` with digest `6299e00f45d312900c3bc37700de56a01ed70dfe6dc221dfec837422733415c6`. No profile-use deployment or BOLT output is claimed.
