@@ -4850,3 +4850,15 @@ LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_acl-9999.profdata`; merge evidence digest is
 `1b236f26c077e08436c4be67295b506bdb14ca4905cd5bcf49e08751a02a2c17`. No
 profile-use deployment or BOLT output is claimed.
+
+### attr Clang IR profile wave and workload correction (2026-09-19)
+
+The `sys-apps/attr-9999` wave required two narrow workload corrections.
+`attr --help` exited 1; `attr -l /tmp` succeeded but legitimately produced
+no output, so its recipe was changed to allow empty output. `getfattr
+--version` and `setfattr --version` succeeded unchanged. The corrected wave
+completed against the current generation with install-QA and independent
+receipt verification passing. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_attr-9999.profdata`; merge evidence digest is
+`3026a2f053b4386f405c522b6e04a530a08777b60f1bfb786abc09734c10d96e`. No
+profile-use deployment or BOLT output is claimed.
