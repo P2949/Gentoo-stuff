@@ -3956,3 +3956,7 @@ The first exact `sys-apps/attr-9999` generation attempt rebuilt and merged, but 
 ### Less source-fetch stop (2026-09-19)
 
 The exact `sys-apps/less-9999` wave was stopped in the unpack phase after the upstream `git fetch https://github.com/gwsw/less` remained silent for more than three minutes with zero CPU. The fetch subprocesses were terminated; Portage preserved the failed attempt and unpack log, and no package merge or profile receipt was admitted. This is a source-acquisition failure for the moving `9999` ebuild, not an optimization-policy bypass; a later retry requires a usable cached or reachable source revision.
+
+### Dmidecode Clang IR PGO wave (2026-09-19)
+
+`sys-apps/dmidecode-3.7` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `biosdecode --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_dmidecode-3.7.profdata`, with root-owned merge evidence in `profile-merge-dmidecode.json`. No profile-use deployment or BOLT output is claimed.
