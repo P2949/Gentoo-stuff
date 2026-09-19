@@ -6198,3 +6198,9 @@ Clang/lld reported unresolved C++ runtime and ABI symbols, including
 `operator new`, `std::__format` internals, locale and exception runtime
 entries. No package receipt or profile was produced; the full diagnostic log is
 `/tmp/gamescope.log`.
+
+### 2026-09-19 — gui-wm/hyprland-9999 ABI guard rejection
+
+The exact current-generation wave reached install-QA but its dependency
+`gui-libs/hyprutils-0.14.2` failed the exported-ABI guard. No receipt or
+profile was produced; the complete diagnostic log is `/tmp/hyprland.log`.
