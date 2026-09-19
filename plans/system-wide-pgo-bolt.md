@@ -5021,3 +5021,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/app-text_mandoc-1.14.6-r1.profdata`; merge evidence digest is
 `4899da91b16cff33f4a2f2a9c52636d0ec154b6095df7d026ca660d828a1e850`. No
 profile-use deployment or BOLT output is claimed.
+
+### dos2unix Clang IR profile wave (2026-09-19)
+
+The exact `app-text/dos2unix-7.5.6` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `dos2unix --help` and
+`unix2dos --help` workloads completed, install-QA passed, and independent
+receipt verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/app-text_dos2unix-7.5.6.profdata`; merge evidence digest is
+`f94de9ebc89aba39757717aa9e0a186bf8a28e96def9a8a2f9c950e2547cd5a3`. No
+profile-use deployment or BOLT output is claimed.
