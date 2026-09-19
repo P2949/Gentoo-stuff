@@ -6381,3 +6381,7 @@ The package transaction completed, but the profile-wave workload gate rejected `
 ### 2026-09-20 — media-libs/gst-plugins-base-1.26.11 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt passed independent verification and the profile was merged into `/var/lib/gentoo-optimization/merged-profiles/media-libs_gst-plugins-base-1.26.11-v1.profdata`; merge evidence SHA-256 is `dbdea499f7da780a72a1c0928a8847847bcd28bbbebd72b93e02317103f30f3b`.
+
+### 2026-09-20 — media-libs/kvazaar-9999 profile wave fetch stall
+
+The `pgo-clang-ir` wave was started under generation `phase3-live-candidate-20260918-postsync-r1`, but the upstream Git fetch for `https://github.com/ultravideo/kvazaar` made no progress for more than three minutes. The run was terminated without a receipt or profile; the package remains an evidence-backed terminal fetch-stall outcome for this attempt and was not bypassed.
