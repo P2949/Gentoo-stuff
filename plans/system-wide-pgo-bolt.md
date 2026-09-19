@@ -5414,3 +5414,6 @@ The exact `net-misc/iputils-99999999` wave completed under the current Phase-3 f
 
 ### util-linux Clang IR profile wave (2026-09-19)
 The exact `sys-apps/util-linux-2.42.3` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/lsblk --version` completed successfully; the merged profile is `merged-profiles/sys-apps-util-linux-2.42.3.profdata` with digest `6299e00f45d312900c3bc37700de56a01ed70dfe6dc221dfec837422733415c6`. No profile-use deployment or BOLT output is claimed.
+
+### xkbcomp Clang IR profile wave (2026-09-19)
+The exact `x11-apps/xkbcomp-1.5.0-r2` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/xkbcomp -version` completed successfully; the merged profile is `merged-profiles/x11-apps-xkbcomp-1.5.0-r2.profdata` with digest `071e0980ee7f197151b53f72454ff3e4e65bd64892ba6d1de01321399ffb83db`. No profile-use deployment or BOLT output is claimed.
