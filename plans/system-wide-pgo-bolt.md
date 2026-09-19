@@ -5941,3 +5941,10 @@ install-QA and the reviewed zsh workload. Its sealed receipt passed independent
 verification, and LLVM 22 merged the authenticated raw payload to
 `/var/lib/gentoo-optimization/merged-profiles/app-shells_zsh-9999-v1.profdata`.
 The merged profile SHA-256 is `d074b9626ce89cf46dd49223cf48c2c674208eb776e1102ef582ba4fd5edcd97`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-embedded/libdisasm Clang IR profile wave
+
+The exact current-generation `dev-embedded/libdisasm-0.23-r1` wave completed
+through install-QA and workload execution. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/dev-embedded_libdisasm-0.23-r1-v1.profdata`. The merged profile SHA-256 is `9a3ed9ae4bf2bce027d934ce4dd50101d88158f7d67a2a4fe58ee1345b99877d`; no profile-use rebuild or BOLT deployment is inferred.
