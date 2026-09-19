@@ -6397,3 +6397,7 @@ The package transaction completed under the `pgo-clang-ir` lane, but the profile
 ### 2026-09-20 — media-libs/libjxl-9999 compiler-lane correction
 
 The candidate policy incorrectly assigned `media-libs/libjxl-9999` to the Clang IR lane even though its authoritative package environment explicitly forces `CC=gcc` and `CXX=g++` for the tested Highway/libjxl configuration. The wave failed closed in setup with `compiler-family mismatch: requested=clang, tool=/usr/x86_64-pc-linux-gnu/gcc-bin/17/x86_64-pc-linux-gnu-gcc`. The lane classifier now has exact overrides for `dev-cpp/highway-9999` and `media-libs/libjxl-9999` to use the existing GCC PGO lane with reason `package-env-forced-gcc`; the current derived policy must be regenerated before retrying either package. No receipt or profile was accepted.
+
+### 2026-09-20 — media-libs/libpng-1.6.58 workload rejection
+
+The package transaction completed under the `pgo-clang-ir` lane, but the profile-wave workload gate rejected `media-libs/libpng-1.6.58` because `/usr/bin/png-fix-itxt` produced no output. No receipt or merged profile was accepted; the workload failure is preserved as the terminal reason for this attempt.
