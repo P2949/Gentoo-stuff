@@ -1553,7 +1553,8 @@ snapshot_inputs() {
     GIT_COMMIT=$(resolve_raw_head_commit)
     verify_source_git_contract "${GIT_COMMIT}"
     git_status_before=$(source_git status --porcelain=v1 --untracked-files=all \
-        --ignore-submodules=none)
+        --ignore-submodules=none | sed \
+        '/^?? default[.]profraw$/d; /^?? tests\/default[.]profraw$/d')
     SOURCE_STATUS=$(printf '%s' "${git_status_before}" | sha256sum | awk '{print $1}')
     GIT_DIRTY=clean
     [[ -z ${git_status_before} ]] || GIT_DIRTY=dirty
@@ -1579,7 +1580,8 @@ snapshot_inputs() {
     after=$(source_identity "${ROOT}")
     snapshot_identity=$(source_identity "${SNAPSHOT}")
     git_status_after=$(source_git status --porcelain=v1 --untracked-files=all \
-        --ignore-submodules=none)
+        --ignore-submodules=none | sed \
+        '/^?? default[.]profraw$/d; /^?? tests\/default[.]profraw$/d')
     source_status_after=$(printf '%s' "${git_status_after}" | sha256sum | awk '{print $1}')
     commit_after=$(resolve_raw_head_commit)
     [[ ${before} == "${after}" && ${before} == "${snapshot_identity}" ]] || \
