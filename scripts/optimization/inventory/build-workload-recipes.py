@@ -96,6 +96,10 @@ def main():
     argv=[p,'-a','sha256','/etc/hostname']; allow_empty_output=False
    elif p == '/usr/bin/stemwords':
     argv=[p,'-l','english','-i','/etc/hostname']; allow_empty_output=False
+   elif x['cpv'].startswith('app-text/hunspell-') and p not in {'/usr/bin/hunspell','/usr/bin/hunzip'}:
+    continue
+   elif p == '/usr/bin/hunzip':
+    argv=[p,'--help']; allow_empty_output=True
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
