@@ -24,16 +24,16 @@ def main():
  with open(a.elf_authority) as stream:
   authority = json.load(stream)
  cpvs = {x['cpv'] for x in m['packages']}
- lane = {x['cpv'] for x in l['packages']}
- ep = {(x.get('owner_cpv'), x['path']) for x in ec['records']}
- sp = {(x.get('owner_cpv'), x['path']) for x in es['records']}
+ lane = {x['cpv'] for x in l.get('records', l.get('packages', []))}
+ ep = {(x.get('owner_cpv'), x['path']) for x in ec.get('records', ec.get('artifacts', []))}
+ sp = {(x.get('owner_cpv'), x['path']) for x in es.get('records', es.get('artifacts', []))}
  # elf-metadata-census.py emits one record per authoritative ELF artifact;
  # its schema identifies ELF entries with class/type, not an ``elf`` field.
  # Filtering on the latter made the old audit report zero artifacts and
  # allowed every classification check to pass vacuously.
  authoritative = {
   (x.get('owner_cpv'), x['path'])
-  for x in authority['artifacts']
+  for x in authority.get('artifacts', authority.get('records', []))
   if x.get('class') and x.get('type')
  }
  if not authoritative:
