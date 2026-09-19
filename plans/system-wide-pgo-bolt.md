@@ -5800,3 +5800,7 @@ The exact current-generation `app-crypt/argon2-20190702-r1` wave completed throu
 ### 2026-09-19 — app-crypt/rhash Clang IR profile wave
 
 The exact current-generation `app-crypt/rhash-1.4.6-r1` wave completed its multilib build through install-QA and merge. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-crypt_rhash-1.4.6-r1-v1.profdata`. The merged profile SHA-256 is `b037d74c5dae70b0968e42529d9c107251668faa06f4a54a19e63f60bfddf905`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-crypt/pinentry Clang IR profile wave
+
+The exact current-generation `app-crypt/pinentry-1.3.3` wave completed through install-QA and merge. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-crypt_pinentry-1.3.3-v1.profdata`. The merged profile SHA-256 is `6a56a3b10f136f4eb4badae40254c69e9dbe84dbaf5ea811c98fa6a2157a36d7`; no profile-use rebuild or BOLT deployment is inferred.
