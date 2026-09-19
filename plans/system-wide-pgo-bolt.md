@@ -4797,3 +4797,12 @@ receipt verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/app-shells_quoter-4.2.profdata`; merge evidence digest is
 `c31e2bb87ab29d522b1af2aa70380a1ed127d645200df1642f1eab4062fa5b25`. No
 profile-use deployment or BOLT output is claimed.
+
+### yodl successor wave failure (2026-09-19)
+
+The exact current-generation `app-text/yodl-4.05.00` wave reached compilation
+but failed at the C++ link stage. The instrumented build used libc++ and
+reported unresolved `std::__1` runtime symbols while linking the `yodl`
+programs. No package merge, workload execution, receipt, or profile merge was
+admitted; the complete Portage log and runner failure attempt remain
+preserved for a bounded toolchain/link remediation.
