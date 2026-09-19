@@ -4214,3 +4214,15 @@ privileged Bash, Python, and dotnet probes honor `/dev/null`; the remaining
 writer is therefore in Portage's phase/misc-functions execution path rather
 than the ABI guard. The failed attempt remains preserved and no package merge
 was admitted.
+
+
+### Portage env-filter probe (2026-09-19)
+
+The live Portage `phase-functions.sh` environment-filter probe was patched in
+all installed Python slots to pass `LLVM_PROFILE_FILE=/dev/null` to its
+`env -i` Bash census subprocess. The first edit used invalid `env` argument
+ordering and was corrected to `env -i -- LLVM_PROFILE_FILE=/dev/null ...`; the
+regression was rerun with the corrected form. The package still emitted
+`default.profraw`, so this census subprocess is not the sole writer. The live
+Portage edits are retained as diagnostic hardening, while the failed package
+transaction remains unmerged and its artifacts preserved.
