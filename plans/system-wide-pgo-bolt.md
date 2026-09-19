@@ -6055,3 +6055,13 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `267556a8331c5d09247d3e9ca7e3cb484ce3fa133ed36dd8f2c7f3f985c534e4`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-lang/tk Clang IR profile wave
+
+The exact current-generation `dev-lang/tk-8.6.17` wave completed through
+install-QA and its reviewed Tk workload. Its sealed receipt passed independent
+verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/dev-lang_tk-8.6.17-v1.profdata`.
+The merged profile SHA-256 is
+`13b55599757177a23103aa156d782680259f989ea4d292bac16e465baab2d6fd`; no
+profile-use rebuild or BOLT deployment is inferred.
