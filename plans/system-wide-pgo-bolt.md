@@ -5369,3 +5369,6 @@ The exact `sys-apps/nvme-cli-2.16` wave completed under the current Phase-3 fram
 
 ### less profile-wave fetch failure (2026-09-19)
 The `sys-apps/less-9999` candidate was attempted under the current generation, but its live Git source fetch remained unproductive for over a minute with no build progress. The fetch was interrupted; the runner retained a terminal failed attempt record under `profile-wave-attempts-less/`. No package receipt or profile was admitted, and no profile-use or BOLT claim is made. This is retained as a package-specific source-fetch failure while other candidates continue.
+
+### net-tools Clang IR profile wave (2026-09-19)
+The exact `sys-apps/net-tools-9999` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/netstat -V` completed successfully; the merged profile is `merged-profiles/sys-apps-net-tools-9999.profdata` with digest `0f6f5060a07121d2bb1df5d8b811fdb2fd8a97e8b4c227ff0475a403d85ed11c`. No profile-use deployment or BOLT output is claimed.
