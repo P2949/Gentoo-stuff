@@ -4806,3 +4806,14 @@ reported unresolved `std::__1` runtime symbols while linking the `yodl`
 programs. No package merge, workload execution, receipt, or profile merge was
 admitted; the complete Portage log and runner failure attempt remain
 preserved for a bounded toolchain/link remediation.
+
+### rpm-sequoia Rust profile wave failure (2026-09-19)
+
+The exact current-generation `app-crypt/rpm-sequoia-1.10.2` build completed
+and installed successfully under the Rust instrumentation lane, but its
+reviewed wave contains no workload recipes and produced no raw profile files.
+The runner therefore refused receipt creation at the fail-closed profile
+quiescence gate. No receipt or profile merge was admitted; the package build
+log and failed runner attempt remain preserved. This requires a representative
+Rust workload or an evidence-backed terminal accounting decision before the
+package can leave the profile frontier.
