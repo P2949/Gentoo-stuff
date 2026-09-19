@@ -4119,3 +4119,15 @@ independent receipt verification passed. LLVM 22 merged the payload into
 `/var/lib/gentoo-optimization/merged-profiles/app-portage_portage-utils-9999.profdata`,
 with root-owned merge evidence in `profile-merge-portage-utils.json`. No
 profile-use deployment or BOLT output is claimed.
+
+### Bash Clang IR wave stop (2026-09-19)
+
+The exact `app-shells/bash-9999` wave was stopped during compilation. The
+Gentoo ebuild's `pgo` USE implementation unconditionally appends GCC-style
+`-fprofile-generate=${T}/pgo` flags, while the selected Clang IR dispatcher
+already supplies `-fprofile-instr-generate`; Clang rejects the mixed pair before
+producing an image. No package merge or profile receipt was admitted. The
+complete build log and failed wave attempt are preserved. This is a
+package-specific native-PGO integration defect requiring remediation before a
+Bash profile wave can be retried; the framework and ABI guard were not
+bypassed.
