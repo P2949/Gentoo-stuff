@@ -3830,3 +3830,7 @@ The exact `dev-build/make-9999` wave initially stopped on a live package-env pre
 ### Cpio Clang IR PGO wave (2026-09-19)
 
 `app-arch/cpio-2.15` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records one nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `gcpio --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-arch_cpio-2.15.profdata`, with root-owned merge evidence in `profile-merge-cpio.json`. No profile-use deployment or BOLT output is claimed.
+
+### Gzip Clang IR PGO wave (2026-09-19)
+
+`app-arch/gzip-1.14_p20260901` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records one nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `gzip-reference --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-arch_gzip-1.14_p20260901.profdata`, with root-owned merge evidence in `profile-merge-gzip.json`. No profile-use deployment or BOLT output is claimed.
