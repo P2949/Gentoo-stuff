@@ -3814,3 +3814,7 @@ The local delimiter-safe yodl ebuild repair was staged in the root-owned local o
 ### Bmake workload correction and Clang IR PGO wave (2026-09-19)
 
 The first `dev-build/bmake-20260508` attempt correctly refused the generic `--help` workload because bmake treats help flags as usage errors. The authoritative workload generator now uses the successful built-in query `bmake -V MAKE_VERSION`; the framework was republished and its strict check passed. The corrected exact wave rebuilt and merged bmake, collected one nonempty profraw payload, passed independent receipt verification, and merged with LLVM 22 into `/var/lib/gentoo-optimization/merged-profiles/dev-build_bmake-20260508.profdata`, with root-owned evidence in `profile-merge-bmake.json`. No BOLT deployment is claimed.
+
+### Icmake Clang IR PGO wave (2026-09-19)
+
+`dev-build/icmake-9.03.01-r1` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records two nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed icmake workload; independent receipt verification passed. LLVM 22 merged the payloads into `/var/lib/gentoo-optimization/merged-profiles/dev-build_icmake-9.03.01-r1.profdata`, with root-owned evidence in `profile-merge-icmake.json`. No BOLT deployment is claimed.
