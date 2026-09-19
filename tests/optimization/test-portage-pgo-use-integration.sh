@@ -6,6 +6,10 @@ umask 077
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 TEMPLATE=${ROOT}/optimization/fixtures/portage/phase2-pgo-use-fixture-1.ebuild.in
 INSTALLER=/var/lib/gentoo-optimization/bootstrap/install-framework.sh
+FRAMEWORK_MANIFEST=/var/lib/gentoo-optimization/framework-current/install.manifest
+GENERATED_POLICY_ID=$(sed -n "s/^generated_policy=//p" "${FRAMEWORK_MANIFEST}")
+GENERATED_POLICY_INPUT=/var/lib/gentoo-optimization/generated-policy-sources/generated-policy-${GENERATED_POLICY_ID}
+FROZEN_INVENTORY=/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-postsync-r1/frozen-inventory.json
 VALIDATOR=/usr/local/libexec/gentoo-optimization/pgo/validate-profile.py
 CLANG=/usr/lib/llvm/22/bin/clang-22
 PROFDATA=/usr/lib/llvm/22/bin/llvm-profdata
@@ -17,7 +21,7 @@ for command in awk b2sum chmod chown ebuild grep python3 sed sha256sum sha512sum
 done
 [[ -f ${TEMPLATE} && -x ${INSTALLER} && -x ${VALIDATOR} &&
     -x ${CLANG} && -x ${PROFDATA} ]] || fail 'fixture or installed exact tool is absent'
-"${INSTALLER}" --source-root "${ROOT}" --check >/dev/null || \
+"${INSTALLER}" --source-root "${ROOT}" --generated-policy-generation "${GENERATED_POLICY_INPUT}" --frozen-inventory "${FROZEN_INVENTORY}" --check >/dev/null || \
     fail 'installed framework differs from reviewed source'
 
 WORK=$(mktemp -d /var/tmp/gentoo-phase2-pgo-portage.XXXXXX)

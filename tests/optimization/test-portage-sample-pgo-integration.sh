@@ -8,6 +8,10 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 TEMPLATE=${ROOT}/optimization/fixtures/portage/phase2-sample-pgo-fixture-1.ebuild.in
 AUTHORIZATION_TOKEN_SCANNER=${ROOT}/scripts/optimization/pgo/authorization-token-scan.py
 INSTALLER=/var/lib/gentoo-optimization/bootstrap/install-framework.sh
+FRAMEWORK_MANIFEST=/var/lib/gentoo-optimization/framework-current/install.manifest
+GENERATED_POLICY_ID=$(sed -n "s/^generated_policy=//p" "${FRAMEWORK_MANIFEST}")
+GENERATED_POLICY_INPUT=/var/lib/gentoo-optimization/generated-policy-sources/generated-policy-${GENERATED_POLICY_ID}
+FROZEN_INVENTORY=/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-postsync-r1/frozen-inventory.json
 PROFILE_IDENTITY=/usr/local/libexec/gentoo-optimization/pgo/profile-identity.py
 VALIDATOR=/usr/local/libexec/gentoo-optimization/pgo/validate-profile.py
 LLVM_ROOT=/usr/lib/llvm/22/bin
@@ -1004,7 +1008,7 @@ for tool in "${PROFILE_IDENTITY}" "${VALIDATOR}" "${CLANG_LINK}" \
     [[ -x ${tool} ]] || fail "required exact tool is absent: ${tool}"
 done
 if ((PRODUCTION_LOCKS == 0)); then
-    "${INSTALLER}" --source-root "${ROOT}" --check >/dev/null || \
+    "${INSTALLER}" --source-root "${ROOT}" --generated-policy-generation "${GENERATED_POLICY_INPUT}" --frozen-inventory "${FROZEN_INVENTORY}" --check >/dev/null || \
         fail 'installed framework differs from the reviewed repository source'
 fi
 FRAMEWORK_CURRENT=/var/lib/gentoo-optimization/framework-current
@@ -1775,7 +1779,7 @@ if ((PRODUCTION_LOCKS)); then
             "${TRANSACTION_CHILD_IDENTITY_SHA256}"
     ) || fail 'coordinator transaction authorization payload is not exact'
     production_authorized_command \
-        "${INSTALLER}" --source-root "${ROOT}" --check >/dev/null || \
+        "${INSTALLER}" --source-root "${ROOT}" --generated-policy-generation "${GENERATED_POLICY_INPUT}" --frozen-inventory "${FROZEN_INVENTORY}" --check >/dev/null || \
         fail 'installed framework differs from the reviewed repository source'
     install -d -o 0 -g "${PORTAGE_GID}" -m 0750 -- /run/gentoo-optimization
     umask 0077

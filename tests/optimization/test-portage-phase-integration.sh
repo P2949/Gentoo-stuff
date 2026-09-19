@@ -9,6 +9,10 @@ TEMPLATE=${ROOT}/optimization/fixtures/portage/phase2-portage-fixture-1.ebuild.i
 PROXY_TEMPLATE=${ROOT}/optimization/fixtures/portage/capture-proxy.sh.in
 CAPTURE_TOOL=${ROOT}/scripts/optimization/bolt/capture-input.sh
 FRAMEWORK_INSTALLER=/var/lib/gentoo-optimization/bootstrap/install-framework.sh
+FRAMEWORK_MANIFEST=/var/lib/gentoo-optimization/framework-current/install.manifest
+GENERATED_POLICY_ID=$(sed -n "s/^generated_policy=//p" "${FRAMEWORK_MANIFEST}")
+GENERATED_POLICY_INPUT=/var/lib/gentoo-optimization/generated-policy-sources/generated-policy-${GENERATED_POLICY_ID}
+FROZEN_INVENTORY=/var/lib/gentoo-optimization/generations/phase3-live-candidate-20260918-postsync-r1/frozen-inventory.json
 REGISTER_TOOL=/usr/local/libexec/gentoo-optimization/bolt/register-output.sh
 DEPLOY_TOOL=/usr/local/libexec/gentoo-optimization/bolt/deploy-output.sh
 LLVM_BOLT=/usr/lib/llvm/22/bin/llvm-bolt
@@ -29,7 +33,7 @@ done
 [[ -f ${TEMPLATE} && -f ${PROXY_TEMPLATE} && -x ${CAPTURE_TOOL} ]] || \
     fail 'fixture template, proxy template, or capture tool is absent'
 [[ -x ${FRAMEWORK_INSTALLER} ]] || fail 'root-owned framework installer is absent'
-"${FRAMEWORK_INSTALLER}" --source-root "${ROOT}" --check >/dev/null || \
+"${FRAMEWORK_INSTALLER}" --source-root "${ROOT}" --generated-policy-generation "${GENERATED_POLICY_INPUT}" --frozen-inventory "${FROZEN_INVENTORY}" --check >/dev/null || \
     fail 'live root-owned framework does not match the reviewed repository source'
 [[ -x ${REGISTER_TOOL} ]] || fail 'installed production BOLT output registrar is absent'
 [[ -x ${LLVM_BOLT} ]] || fail 'package-managed llvm-bolt 22 is absent'
