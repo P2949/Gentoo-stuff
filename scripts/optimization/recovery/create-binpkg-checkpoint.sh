@@ -911,7 +911,7 @@ try:
 finally:
     os.close(descriptor)
 PY
-    "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+    "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
         "${PYTHON}" -I -B -c "${code}" "${pid}" "${expected_start}" "${signal_name}" || status=$?
     return "${status}"
 }
@@ -1160,7 +1160,7 @@ activate_make_conf_overlay() {
     printf '%s\t%s\t%s\n' "${MAKE_CONF}" "${mounted_fields}" "${mounted_sha}" \
         >"${REPORT}/make-conf-mounted${suffix}.identity"
     run_tracked "${REPORT}/portage-features.freeze${suffix}.txt" "${REPORT}/portage-features.freeze${suffix}.stderr" 2m \
-        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
         "${PORTAGEQ}" envvar FEATURES
     [[ ${TRACKED_STATUS} -eq 0 ]] || die "portageq FEATURES probe failed with status ${TRACKED_STATUS}"
     features=$(<"${REPORT}/portage-features.freeze${suffix}.txt")
@@ -1285,7 +1285,7 @@ finally:
         fcntl.lockf(lock_file.fileno(), fcntl.LOCK_UN)
         lock_file.close()
 PY
-    ${SETSID} "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+    ${SETSID} "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
         "${PYTHON}" -I -B -c "${code}" "${VDB}" "${ready}" \
         "$([[ ${FIXTURE_MODE} -eq 1 ]] && printf fixture || printf production)" \
         "${COORDINATOR_PID}" "${barrier_request}" "${barrier_entered}" "${barrier_release}" \
@@ -1361,7 +1361,7 @@ if os.getppid() != expected_parent:
     raise SystemExit("coordinator disappeared before parent-death binding")
 os.execv(command[0], command)
 PY
-    ${SETSID} "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+    ${SETSID} "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
         "${PYTHON}" -I -B -c "${launcher_code}" "${COORDINATOR_PID}" \
         "${UNSHARE}" "${unshare_arguments[@]}" \
         "${TIMEOUT}" --signal=TERM --kill-after=30s "${deadline}" \
@@ -1800,7 +1800,7 @@ if os.getppid() != expected_parent:
 os.execv(command[0], command)
 PY
     partial=${destination}.partial.${COORDINATOR_PID}
-    ${SETSID} "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+    ${SETSID} "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
         "${PYTHON}" -I -B -c "${launcher_code}" "${COORDINATOR_PID}" \
         "${PYTHON}" -I -B -c "${code}" "${UNSHARE}" "${SLEEP}" "${PYTHON}" \
         >"${partial}" 2>"${error_output}" &
@@ -1862,7 +1862,7 @@ preflight_emerge_restore_cli() {
     path_absent "${stderr}" || die 'emerge restore CLI preflight stderr already exists'
     path_absent "${record}" || die 'emerge restore CLI preflight record already exists'
     run_tracked "${stdout}" "${stderr}" 5m --network-isolated \
-        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
+        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" \
         PKGDIR="${EXPECTED_SOURCE_TARGET}" TZ=UTC PORTAGE_BINHOST= GENTOO_MIRRORS= \
         FETCHCOMMAND=/bin/false RESUMECOMMAND=/bin/false EPYTHON="${EMERGE_EPYTHON}" \
         "${EMERGE}" "${RESTORE_EMERGE_OPTIONS[@]}" --help
@@ -1956,7 +1956,7 @@ bind_portage_implementation() {
     fi
     [[ ${ACTION} == create ]] || die 'bound Portage implementation record is absent'
     run_tracked "${match_stdout}" "${match_stderr}" 5m \
-        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
         "${PORTAGEQ}" match / sys-apps/portage
     [[ ${TRACKED_STATUS} -eq 0 && ! -s ${match_stderr} ]] || \
         die 'exact installed Portage package lookup failed'
@@ -1967,7 +1967,7 @@ bind_portage_implementation() {
     fi
     PORTAGE_CPV=${matches[0]}
     run_tracked "${qstdout}" "${qstderr}" 30m \
-        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
         "${QCHECK}" "=${PORTAGE_CPV}"
     [[ ${TRACKED_STATUS} -eq 0 ]] || die 'installed Portage package integrity check failed'
     match_sha=$(${SHA256SUM} -- "${match_stdout}"); match_sha=${match_sha%% *}
@@ -2212,7 +2212,7 @@ run_verifier() {
     revalidate_direct_verifier
     ((validate_payload)) && arguments+=(--validate-gpkg)
     run_tracked "${output}" "${output}.stderr" 8h \
-        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
         "${PYTHON}" -I -B "${arguments[@]}"
     status=${TRACKED_STATUS}
     [[ ${status} -eq 0 || ${status} -eq 1 ]] || die "snapshot verifier execution failed with ${status}: ${snapshot}"
@@ -2881,7 +2881,7 @@ if {key: value for key, value in a.items() if owned(key)} == {
 }:
     raise SystemExit("restored CPV VDB subtree did not change")
 PY
-    "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+    "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
         "${PYTHON}" -I -B -c "${code}" "${before}" "${after}" "${cpv}" || \
         die 'supervised offline restore VDB transition is not confined to the exact CPV'
 }
@@ -3607,7 +3607,7 @@ finalize_offline_restore_supervised() {
         printf -v portage_match_stdout '%s/portage-match.%03d.stdout' "${restore_dir}" "${attempt}"
         printf -v portage_match_stderr '%s/portage-match.%03d.stderr' "${restore_dir}" "${attempt}"
         run_tracked "${portage_match_stdout}" "${portage_match_stderr}" 5m \
-            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
             "${PORTAGEQ}" match / sys-apps/portage
         [[ ${TRACKED_STATUS} -eq 0 && ! -s ${portage_match_stderr} && \
            $(<"${portage_match_stdout}") == "${PORTAGE_CPV}" ]] || \
@@ -3617,7 +3617,7 @@ finalize_offline_restore_supervised() {
         printf -v portage_qcheck_before_stdout '%s/portage-qcheck.before.%03d.stdout' "${restore_dir}" "${attempt}"
         printf -v portage_qcheck_before_stderr '%s/portage-qcheck.before.%03d.stderr' "${restore_dir}" "${attempt}"
         run_tracked "${portage_qcheck_before_stdout}" "${portage_qcheck_before_stderr}" 30m \
-            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
             "${QCHECK}" "=${PORTAGE_CPV}"
         [[ ${TRACKED_STATUS} -eq 0 ]] || die 'Portage package integrity failed before offline restore'
         portage_qcheck_before_stdout_sha=$(${SHA256SUM} -- "${portage_qcheck_before_stdout}"); portage_qcheck_before_stdout_sha=${portage_qcheck_before_stdout_sha%% *}
@@ -3625,7 +3625,7 @@ finalize_offline_restore_supervised() {
         printf -v pretend_stdout '%s/emerge.pretend.stdout.%03d' "${restore_dir}" "${attempt}"
         printf -v pretend_stderr '%s/emerge.pretend.stderr.%03d' "${restore_dir}" "${attempt}"
         run_tracked "${pretend_stdout}" "${pretend_stderr}" 30m --network-isolated \
-            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
+            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" \
             PKGDIR="${DURABLE}" TZ=UTC PORTAGE_BINHOST= GENTOO_MIRRORS= \
             FETCHCOMMAND=/bin/false RESUMECOMMAND=/bin/false EPYTHON="${EMERGE_EPYTHON}" \
             "${EMERGE}" "${RESTORE_EMERGE_OPTIONS[@]}" --pretend "${archive_path}"
@@ -3788,7 +3788,7 @@ finalize_offline_restore_supervised() {
         printf -v stdout '%s/emerge.stdout.%03d' "${restore_dir}" "${attempt}"
         printf -v stderr '%s/emerge.stderr.%03d' "${restore_dir}" "${attempt}"
         run_tracked "${stdout}" "${stderr}" 4h --network-isolated \
-            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
+            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" \
             PKGDIR="${DURABLE}" TZ=UTC PORTAGE_BINHOST= GENTOO_MIRRORS= \
             FETCHCOMMAND=/bin/false RESUMECOMMAND=/bin/false EPYTHON="${EMERGE_EPYTHON}" \
             "${EMERGE}" "${RESTORE_EMERGE_OPTIONS[@]}" "${archive_path}"
@@ -3820,7 +3820,7 @@ finalize_offline_restore_supervised() {
         printf -v portage_qcheck_after_stdout '%s/portage-qcheck.after.%03d.stdout' "${restore_dir}" "${attempt}"
         printf -v portage_qcheck_after_stderr '%s/portage-qcheck.after.%03d.stderr' "${restore_dir}" "${attempt}"
         run_tracked "${portage_qcheck_after_stdout}" "${portage_qcheck_after_stderr}" 30m \
-            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" TZ=UTC \
+            "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" TZ=UTC \
             "${QCHECK}" "=${PORTAGE_CPV}"
         [[ ${TRACKED_STATUS} -eq 0 ]] || die 'Portage package integrity failed after offline restore'
         portage_qcheck_after_stdout_sha=$(${SHA256SUM} -- "${portage_qcheck_after_stdout}"); portage_qcheck_after_stdout_sha=${portage_qcheck_after_stdout_sha%% *}
@@ -3830,7 +3830,7 @@ finalize_offline_restore_supervised() {
         validate_vdb_transition_confined "${before}" "${after}" "${RESTORE_CPV}"
         printf -v qstdout '%s/qcheck.stdout.%03d' "${restore_dir}" "${attempt}"
         printf -v qstderr '%s/qcheck.stderr.%03d' "${restore_dir}" "${attempt}"
-        run_tracked "${qstdout}" "${qstderr}" 30m "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C \
+        run_tracked "${qstdout}" "${qstderr}" 30m "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null \
             PATH="${PATH_VALUE}" TZ=UTC "${QCHECK}" "=${RESTORE_CPV}"
         [[ ${TRACKED_STATUS} -eq 0 ]] || die "package-managed installed-file check failed with status ${TRACKED_STATUS}"
         stdout_sha=$(${SHA256SUM} -- "${stdout}"); stdout_sha=${stdout_sha%% *}; stderr_sha=$(${SHA256SUM} -- "${stderr}"); stderr_sha=${stderr_sha%% *}
@@ -4339,7 +4339,7 @@ validate_snapshot_tree_trust "${CACHE_PARTIAL}"
 
 if ((${#ATOMS[@]} > 0)); then
     run_tracked "${REPORT}/quickpkg.log" "${REPORT}/quickpkg.stderr" 8h \
-        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
+        "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" \
         PKGDIR="${CACHE_PARTIAL}" TZ=UTC \
         "${QUICKPKG}" --ignore-default-opts --include-config=n "${ATOMS[@]}"
     [[ ${TRACKED_STATUS} -eq 0 ]] || die "quickpkg failed with status ${TRACKED_STATUS}"
@@ -4348,12 +4348,12 @@ else
     : >"${REPORT}/quickpkg.stderr"
 fi
 run_tracked "${REPORT}/emaint-fix.log" "${REPORT}/emaint-fix.stderr" 2h \
-    "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
+    "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" \
     PKGDIR="${CACHE_PARTIAL}" TZ=UTC \
     "${EMAINT}" -f binhost
 [[ ${TRACKED_STATUS} -eq 0 ]] || die "emaint -f binhost failed with status ${TRACKED_STATUS}"
 run_tracked "${REPORT}/emaint-check.log" "${REPORT}/emaint-check.stderr" 2h \
-    "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C PATH="${PATH_VALUE}" \
+    "${ENV_TOOL}" -i HOME="${HOME_DIR}" LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null PATH="${PATH_VALUE}" \
     PKGDIR="${CACHE_PARTIAL}" TZ=UTC \
     "${EMAINT}" -c binhost
 [[ ${TRACKED_STATUS} -eq 0 ]] || die "emaint -c binhost failed with status ${TRACKED_STATUS}"

@@ -956,6 +956,7 @@ def run_contained_command(
                     "LANG": "C",
                     "LC_ALL": "C",
                     "PATH": "/usr/bin:/bin",
+                    "LLVM_PROFILE_FILE": "/dev/null",
                     "PYTHONDONTWRITEBYTECODE": "1",
                 },
                 stdin=subprocess.DEVNULL,
@@ -2337,7 +2338,7 @@ class CheckpointFixture:
                 extra_options=extra_options,
             ),
             cwd="/",
-            env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+            env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
             timeout=60,
             started_pids=started_pids,
         )
@@ -2354,7 +2355,7 @@ class CheckpointFixture:
         result = run_contained_command(
             command,
             cwd="/",
-            env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+            env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
             timeout=timeout,
             started_pids=started_pids,
         )
@@ -2507,6 +2508,7 @@ class CheckpointHarnessTest(unittest.TestCase):
                 "LANG": "C",
                 "LC_ALL": "C",
                 "PATH": "/usr/bin:/bin",
+                    "LLVM_PROFILE_FILE": "/dev/null",
             },
             timeout=3,
         )
@@ -2565,6 +2567,7 @@ class CheckpointHarnessTest(unittest.TestCase):
                         "LANG": "C",
                         "LC_ALL": "C",
                         "PATH": "/usr/bin:/bin",
+                    "LLVM_PROFILE_FILE": "/dev/null",
                     },
                     sort_keys=True,
                 )
@@ -2618,6 +2621,7 @@ class CheckpointHarnessTest(unittest.TestCase):
                     "LANG": "C",
                     "LC_ALL": "C",
                     "PATH": "/usr/bin:/bin",
+                    "LLVM_PROFILE_FILE": "/dev/null",
                     "PYTHONDONTWRITEBYTECODE": "1",
                 },
             )
@@ -2675,6 +2679,7 @@ class CheckpointHarnessTest(unittest.TestCase):
                             "LANG": "C",
                             "LC_ALL": "C",
                             "PATH": "/usr/bin:/bin",
+                    "LLVM_PROFILE_FILE": "/dev/null",
                             "PYTHONDONTWRITEBYTECODE": "1",
                         },
                         sort_keys=True,
@@ -2725,6 +2730,7 @@ class CheckpointHarnessTest(unittest.TestCase):
                         "LANG": "C",
                         "LC_ALL": "C",
                         "PATH": "/usr/bin:/bin",
+                    "LLVM_PROFILE_FILE": "/dev/null",
                         "PYTHONDONTWRITEBYTECODE": "1",
                     },
                     stdin=subprocess.DEVNULL,
@@ -2875,6 +2881,7 @@ class CheckpointHarnessTest(unittest.TestCase):
                         "LANG": "C",
                         "LC_ALL": "C",
                         "PATH": "/usr/bin:/bin",
+                    "LLVM_PROFILE_FILE": "/dev/null",
                     },
                     timeout=60,
                     fixture_force_supervisor_deadline=True,
@@ -2939,6 +2946,7 @@ class CheckpointHarnessTest(unittest.TestCase):
                             "LANG": "C",
                             "LC_ALL": "C",
                             "PATH": "/usr/bin:/bin",
+                    "LLVM_PROFILE_FILE": "/dev/null",
                         },
                         timeout=3,
                     )
@@ -2975,6 +2983,7 @@ class CheckpointHarnessTest(unittest.TestCase):
             "LANG": "C",
             "LC_ALL": "C",
             "PATH": "/usr/bin:/bin",
+                    "LLVM_PROFILE_FILE": "/dev/null",
         }
         ordinary = run_contained_command(
             ["/bin/sh", "-c", "exit 23"],
@@ -3019,7 +3028,7 @@ class CheckpointHarnessTest(unittest.TestCase):
                 run_contained_command(
                     ["/usr/bin/python3", "-I", "-B", "-c", code],
                     cwd="/",
-                    env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                    env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                     timeout=0.5,
                 )
             self.assertLess(time.monotonic() - started, 8)
@@ -4014,7 +4023,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.command(),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -4077,7 +4086,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.command(),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -4137,7 +4146,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.command(),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -4227,7 +4236,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.command(),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -4312,7 +4321,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.command(),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -4410,7 +4419,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.fake_unshare_command(workload),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -4511,7 +4520,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 command,
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -4644,7 +4653,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.fake_unshare_command(workload),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -4802,7 +4811,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.fake_unshare_command(workload),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -4889,7 +4898,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.fake_unshare_command(workload),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -4976,7 +4985,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.fake_unshare_command(workload),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -5067,7 +5076,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.fake_unshare_command(workload),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -5168,7 +5177,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.fake_unshare_command(workload),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -5283,7 +5292,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.fake_unshare_command(workload),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -5356,7 +5365,7 @@ class CreateBinpkgCheckpointTest(unittest.TestCase):
             process = subprocess.Popen(
                 self.fixture.command(),
                 cwd="/",
-                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin", "LLVM_PROFILE_FILE": "/dev/null"},
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
