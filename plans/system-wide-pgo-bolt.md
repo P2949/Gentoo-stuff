@@ -4155,3 +4155,14 @@ its moving Bash source fetch then remained silent with zero CPU; the fetch and
 transaction were terminated, with no merge or profile receipt admitted. The
 attempt remains preserved for a later retry after source acquisition is
 available.
+
+### Zsh profile-wave stop (2026-09-19)
+
+The exact `app-shells/zsh-9999` wave compiled and staged, but install-time
+Portage helper shells inherited the instrumented system Bash without a usable
+`LLVM_PROFILE_FILE` and attempted to write `default.profraw` in the repository.
+The transaction was rejected by sandbox policy and no profile receipt or merge
+was admitted. This is the same privileged-helper profile-output propagation
+boundary addressed in the Bash runner hardening; the failed attempt and full
+sandbox evidence remain preserved for a fresh retry after that propagation is
+verified across the Portage helper path.
