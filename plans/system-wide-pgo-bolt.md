@@ -5628,3 +5628,11 @@ at the bounded source-acquisition threshold; no merge, receipt, or profile
 payload was admitted. The prior stale-recipes issue is corrected in the
 successor definition, while this attempt remains a source-fetch terminal
 failure.
+
+### bzip2 Clang IR profile wave (2026-09-19)
+The exact app-arch/bzip2-1.0.8-r5 wave completed under the active generation,
+and its receipt passed independent verification. The original merged-profile
+path was already occupied by an older artifact, so the merger correctly
+refused overwrite; the authenticated current payload was merged to the
+generation-bound v2 path with evidence profile-merge-bzip2-live-v2.json. Its
+merged profile digest is 390132acd53efc07dec2c407eb68f83bc51377946044785665e2f87d9ad7aa83.
