@@ -6451,3 +6451,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/gmp-6.3.0-r2 profile-wave configure failure
 
 The `pgo-clang-ir` wave failed during the package's 32-bit multilib configure phase. GMP's C++ compiler probe for the `clang-22 -m32` lane failed (`std iostream`), so `econf` reported that the C++ compiler was unavailable. No receipt or profile was accepted; this is retained as a package/compiler configuration failure for the current multilib environment.
+
+### 2026-09-20 — dev-libs/hidapi-0.15.0 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_hidapi-0.15.0-v1.profdata`; merge evidence SHA-256 is `8b5c7c3003808dff071d161315a060a33edd31be1ec7885c4d39b913dff12513`.
