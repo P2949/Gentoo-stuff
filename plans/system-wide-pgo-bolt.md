@@ -5357,3 +5357,6 @@ profile-use deployment or BOLT output is claimed.
 
 ### lm-sensors Clang IR profile wave (2026-09-19)
 The exact `sys-apps/lm-sensors-3.6.2` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/sensors --version` completed successfully; the merged profile is `merged-profiles/sys-apps-lm-sensors-3.6.2.profdata` with digest `4dbd19de5f45151aa24bf39965fa3903596cf5542a1a61f8297aaa38db34f5aa`. No profile-use deployment or BOLT output is claimed.
+
+### pciutils Clang IR profile wave (2026-09-19)
+The exact `sys-apps/pciutils-3.15.0` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/sbin/lspci --version` completed successfully; the merged profile is `merged-profiles/sys-apps-pciutils-3.15.0.profdata` with digest `6b38ab734f01f840882b78e92112ebe5d4c9abadf5131cbd1981b06453e9c181`. No profile-use deployment or BOLT output is claimed.
