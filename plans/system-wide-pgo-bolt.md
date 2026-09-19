@@ -3842,3 +3842,7 @@ The exact `dev-build/make-9999` wave initially stopped on a live package-env pre
 ### RHash Clang IR PGO wave (2026-09-19)
 
 `app-crypt/rhash-1.4.6-r1` completed the exact successor `pgo-clang-ir` wave, including both ABI variants built by the package. The sealed receipt records the nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `rhash --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-crypt_rhash-1.4.6-r1.profdata`, with root-owned merge evidence in `profile-merge-rhash.json`. The same pre-existing non-ELF LLVM optimization-record YAML warnings appeared during `ldconfig`; no project files were removed or altered. No profile-use deployment or BOLT output is claimed.
+
+### Pinentry Clang IR PGO wave (2026-09-19)
+
+`app-crypt/pinentry-1.3.3` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records the nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `pinentry-curses --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-crypt_pinentry-1.3.3.profdata`, with root-owned merge evidence in `profile-merge-pinentry.json`. No profile-use deployment or BOLT output is claimed.
