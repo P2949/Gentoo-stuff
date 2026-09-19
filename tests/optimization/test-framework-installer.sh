@@ -5,7 +5,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 export LC_ALL=C
-export LLVM_PROFILE_FILE=/dev/null
+export LLVM_PROFILE_FILE=/tmp/gentoo-optimization-framework-profile-%p.profraw
 
 SOURCE_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 EXACT_CPV_CONTRACT=${SOURCE_ROOT}/optimization/exact-cpv-contract.json
@@ -182,8 +182,8 @@ record_required_subtest PASS installer.atomic-exchange-tool \
     "kind=${EXCHANGE_TOOL_KIND};path=${EXCHANGE_TOOL};sha256=${EXCHANGE_TOOL_SHA256}"
 
 run_installer() {
-    LLVM_PROFILE_FILE=/dev/null \
-    LLVM_PROFILE_FILE=/dev/null \
+    LLVM_PROFILE_FILE=/tmp/gentoo-optimization-framework-profile-%p.profraw \
+    LLVM_PROFILE_FILE=/tmp/gentoo-optimization-framework-profile-%p.profraw \
     GENTOO_OPT_INSTALLER_TEST_MODE=1 \
         bash -- "${REPOSITORY}/scripts/optimization/install-framework.sh" \
         --test-root "${TARGET}" "$@"
@@ -991,7 +991,7 @@ else
 fi
 run_check() {
     local supplied_token=\$1 supplied_authorization=\$2
-    LLVM_PROFILE_FILE=/dev/null \
+    LLVM_PROFILE_FILE=/tmp/gentoo-optimization-framework-profile-%p.profraw \
     GENTOO_OPT_INSTALLER_TEST_MODE=1 \
     GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_TOKEN=\${supplied_token} \
     GENTOO_OPT_PRODUCTION_PROFILE_TRANSACTION_AUTHORIZATION=\${supplied_authorization} \
@@ -1016,7 +1016,7 @@ rm -f -- "${REPOSITORY}/default.profraw" "${REPOSITORY}/tests/default.profraw"
 (
 cd /tmp
 /usr/bin/env -i HOME="${HOME}" USER="${USER:-fixture}" LOGNAME="${LOGNAME:-fixture}" \
-    SHELL=/bin/bash PATH=/usr/bin:/bin LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null TZ=UTC \
+    SHELL=/bin/bash PATH=/usr/bin:/bin LANG=C LC_ALL=C LLVM_PROFILE_FILE=/tmp/gentoo-optimization-framework-profile-%p.profraw TZ=UTC \
     PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -I -B \
     "${REPOSITORY}/scripts/optimization/pgo/production-profile-lock-transaction.py" run \
     --test-mode --test-root "${TARGET}" \
