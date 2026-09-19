@@ -3858,3 +3858,7 @@ The exact `dev-build/make-9999` wave initially stopped on a live package-env pre
 ### JSON-GLib Clang IR PGO wave (2026-09-19)
 
 `dev-libs/json-glib-1.10.8` completed the exact successor `pgo-clang-ir` wave across its configured multilib builds. The sealed receipt records nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed `json-glib-format --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_json-glib-1.10.8.profdata`, with root-owned merge evidence in `profile-merge-json-glib.json`. The known unrelated non-ELF optimization-record YAML warnings recurred during `ldconfig`; no project files were altered. No profile-use deployment or BOLT output is claimed.
+
+### PCRE Clang IR PGO wave (2026-09-19)
+
+`dev-libs/libpcre-8.45-r4` completed the exact successor `pgo-clang-ir` wave across its configured multilib builds. The sealed receipt records nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed `pcregrep --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libpcre-8.45-r4.profdata`, with root-owned merge evidence in `profile-merge-libpcre.json`. The known unrelated non-ELF optimization-record YAML warnings recurred during `ldconfig`; no project files were altered. No profile-use deployment or BOLT output is claimed.
