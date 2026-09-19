@@ -4226,3 +4226,14 @@ regression was rerun with the corrected form. The package still emitted
 `default.profraw`, so this census subprocess is not the sole writer. The live
 Portage edits are retained as diagnostic hardening, while the failed package
 transaction remains unmerged and its artifacts preserved.
+
+### Portage child-boundary syscall trace (2026-09-19)
+
+A bounded `strace` run identified repeated LLVM runtime opens of relative
+`default.profraw` from `/bin/bash -e -c` phase children and Portage QA helper
+children. The raw destination is absent at that exec boundary even though the
+later saved ebuild environment contains `LLVM_PROFILE_FILE=/dev/null`.
+Exploratory edits to installed Portage phase scripts were tested and reverted;
+none are retained as project state. The evidence confirms the remaining repair
+belongs at Portage's child-environment construction boundary, not in the ABI
+guard or package ebuild.
