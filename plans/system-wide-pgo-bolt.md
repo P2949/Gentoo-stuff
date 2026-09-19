@@ -5740,3 +5740,7 @@ authenticated payload was merged to the generation-bound v4 profile path with
 evidence profile-merge-hunspell-v4.json. Its merged profile digest is
 77b45045e311d9dcdedbe9a1845698556e7592d935a147bb0d1cccf3f8862175.
 No profile-use deployment or BOLT output is inferred.
+
+### 2026-09-19 — app-text/mandoc corrected profile wave
+
+Executed the corrected `app-text/mandoc-1.14.6-r1` Clang IR profile wave against the active Phase-3 generation. The receipt passed independent wave/readiness consistency verification, and `merge-clang-profile.py` produced `/var/lib/gentoo-optimization/merged-profiles/app-text_mandoc-1.14.6-r1-v1.profdata` with SHA-256 `f8790ec5326a662c73d6cc31d9896c33bf1f44bf5c0ff4a4773c3675d61be654`. This records profile collection and merge only; no profile-use rebuild or BOLT deployment is inferred.
