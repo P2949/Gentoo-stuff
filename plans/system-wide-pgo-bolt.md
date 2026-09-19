@@ -6045,3 +6045,13 @@ LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `cc6dcd5c3c642e0bc14e542ccc25c2542fae459e50a9a4cf9b4f5c9e7d75c163`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-build/cmake Clang IR profile wave
+
+The exact current-generation `dev-build/cmake-4.3.5` wave completed through
+install-QA and its reviewed CMake workload set. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/dev-build_cmake-4.3.5-v1.profdata`.
+The merged profile SHA-256 is
+`267556a8331c5d09247d3e9ca7e3cb484ce3fa133ed36dd8f2c7f3f985c534e4`; no
+profile-use rebuild or BOLT deployment is inferred.
