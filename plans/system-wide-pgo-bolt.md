@@ -5874,3 +5874,12 @@ CMake/Ninja compile while linking the example target. `ld.lld` reported
 unresolved libc++ `std::__1` locale, stream, and iostream symbols. No install
 occurred, no receipt or profile was admitted, and no terminal exclusion is
 claimed. This is a package-specific CMake C++ runtime-linkage failure.
+
+### 2026-09-19 — dev-cpp/tomlplusplus ABI-guard boundary
+
+The exact current-generation `dev-cpp/tomlplusplus-3.4.0` build completed and
+reached install-QA, but the fail-closed exported-ABI guard rejected the staged
+replacement. `libtomlplusplus.so.3` lost
+`toml::v3::table::is_array_of_tables() const` relative to the installed
+provider (old 219 exported symbols, new 218). No receipt or merged profile was
+admitted, and no terminal exclusion is claimed.
