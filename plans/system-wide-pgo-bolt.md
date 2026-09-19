@@ -4407,3 +4407,14 @@ receipt passed independent verification, and LLVM 22 merged the authenticated
 payload set into `merged-profiles/app-arch_ncompress-5.0-r2.profdata`; merge
 evidence digest is `349b01241f8b4e58dc967bf36d7cedbe5b860601be4f7045db15fed86c8b9bb3`.
 No profile-use deployment or BOLT output is claimed.
+
+### rpm2targz Clang IR profile wave (2026-09-19)
+
+The exact `app-arch/rpm2targz-2021.03.16` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active Phase-3 generation
+authority. Its reviewed input-bound `/usr/bin/rpmoffset` workload consumed the
+root-owned RPM fixture, the sealed receipt passed independent verification, and
+LLVM 22 merged the authenticated payload set into
+`merged-profiles/app-arch_rpm2targz-2021.03.16.profdata`; merge evidence digest
+is `4d01ffc70ea838a7eaa8989e1f7dab6651c7ba178311732b01907279b475ac6d`.
+No profile-use deployment or BOLT output is claimed.
