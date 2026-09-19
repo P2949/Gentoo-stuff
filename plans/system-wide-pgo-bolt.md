@@ -5752,3 +5752,7 @@ Constructed a fresh single-package wave from the current policy bindings and suc
 ### 2026-09-19 — dev-lang/lua corrected Clang IR profile wave
 
 The initial exact `dev-lang/lua-5.4.8` wave preserved a generated `--help` workload failure (`lua5.4` exited 1). Direct validation showed `lua5.4 -v` and `luac5.4 -v` exit 0, so a hash-bound successor workload and wave replaced only those probes. The successor transaction completed, its receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_lua-5.4.8-v1.profdata`. The merged profile SHA-256 is `89e8ad49926a69df2e1d47ed94e4acc7c07d613edc3074123b1450976b3b4483`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-lang/nasm corrected Clang IR profile wave
+
+The initial exact `dev-lang/nasm-3.02` wave preserved a generated `--help` workload failure from `ndisasm`. Direct validation showed both `nasm -v` and `ndisasm -v` exit successfully, so a hash-bound successor workload and wave replaced only those probes. The successor transaction completed, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_nasm-3.02-v1.profdata`. The merged profile SHA-256 is `23c39fda2d2204c129e6ab00726be4bde8c45be5eb1dbc3493e8509976a2bbbf`; no profile-use rebuild or BOLT deployment is inferred.
