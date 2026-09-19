@@ -5605,3 +5605,16 @@ verification, and LLVM 22 merged the authenticated raw payload. Root-owned
 merge evidence is `profile-merge-7zip-live.json` with merged profile digest
 `1020583e12d2e4bde29182d49e27af31e14229ea9d0f888d0f75261795325894`.
 No profile-use deployment or BOLT output is inferred.
+
+### corrected acl/attr Clang IR waves (2026-09-19)
+The stale `--help` recipes for `sys-apps/acl-9999` and `sys-apps/attr-9999`
+were replaced in a temporary hash-bound successor wave by the generator's
+validated probes (`chacl -l /etc/hostname` and `attr -l /etc/hostname`). The
+per-package successor waves each completed their live transactions, passed
+independent receipt verification, and merged authenticated LLVM 22 profiles.
+Root-owned merge evidence and digests are:
+
+- `profile-merge-acl-corrected.json`: `08f85e194ff43476e498abcbbbc6debe0abb7aec27f3898b12978670e4065bf8`
+- `profile-merge-attr-corrected.json`: `7edc79852f5435b5b80345d4c8b67176c215c06e8f59fb913dd0a62a6fc3d5e1`
+
+No profile-use deployment or BOLT output is inferred.
