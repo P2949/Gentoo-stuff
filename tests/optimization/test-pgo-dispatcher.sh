@@ -442,6 +442,7 @@ case_ir_use_and_exact_once() (
     [[ $(count_token "${CFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${CXXFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${LDFLAGS}" "${local_flag}") == 1 ]]
+    [[ ${LLVM_PROFILE_FILE} == "${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw" ]]
     [[ $(count_token "${FEATURES}" -ccache) == 1 && ${CCACHE_DISABLE} == 1 ]]
     [[ ${FCFLAGS} == fortran-c && ${FFLAGS} == fortran-f ]]
     [[ ${SANDBOX_WRITE} == /existing/write ]]
@@ -511,7 +512,7 @@ case_clang_generate_exact_once() (
     SANDBOX_WRITE='/existing/write'
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     source "${BASHRC}" >/dev/null 2>&1 || return 1
-    local_flag="-fprofile-instr-generate=${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
+    local_flag='-fprofile-instr-generate'
     [[ $(count_token "${CFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${CXXFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${LDFLAGS}" "${local_flag}") == 1 ]]

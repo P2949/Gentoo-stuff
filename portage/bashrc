@@ -1119,7 +1119,16 @@ gentoo_opt_apply_primary_mode() {
     gentoo_opt_prepare_profile_path "${mode}" || return 1
     case ${mode} in
         clang-ir-generate)
-            flag="-fprofile-instr-generate=${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
+            # Keep the runtime filename template in LLVM_PROFILE_FILE instead
+            # of embedding it as a separate compiler argument.  libtool's
+            # sanitizer removes profile-generation options from compile
+            # commands; with the `=path` form it can leave the path operand
+            # behind and Clang then treats `%m-%p.profraw` as an input file.
+            # The flag without an operand is equivalent and the exported
+            # runtime path preserves the generation-bound payload contract.
+            LLVM_PROFILE_FILE="${GENTOO_OPT_PROFILE_PATH}/%m-%p.profraw"
+            export LLVM_PROFILE_FILE
+            flag="-fprofile-instr-generate"
             gentoo_opt_append_flag_once CFLAGS "${flag}"
             gentoo_opt_append_flag_once CXXFLAGS "${flag}"
             gentoo_opt_append_flag_once LDFLAGS "${flag}"
