@@ -3818,3 +3818,7 @@ The first `dev-build/bmake-20260508` attempt correctly refused the generic `--he
 ### Icmake Clang IR PGO wave (2026-09-19)
 
 `dev-build/icmake-9.03.01-r1` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records two nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed icmake workload; independent receipt verification passed. LLVM 22 merged the payloads into `/var/lib/gentoo-optimization/merged-profiles/dev-build_icmake-9.03.01-r1.profdata`, with root-owned evidence in `profile-merge-icmake.json`. No BOLT deployment is claimed.
+
+### Make Clang IR wave policy-conflict stop (2026-09-19)
+
+The exact `dev-build/make-9999` wave was refused during setup before compilation. The live `/etc/portage/package.env/00-toolchain` contains a pre-existing `dev-build/make gcc.conf` assignment while the generation-bound Phase-3 policy assigns `=dev-build/make-9999` to `pgo-clang-ir-generate`; the resulting environment resolved GCC while the requested mode was Clang, and the fail-closed dispatcher rejected the compiler-family mismatch. No package mutation or profile receipt was admitted. The conflict and generated policy remain preserved for a later authoritative package-env precedence repair; the compiler-family guard was not bypassed.
