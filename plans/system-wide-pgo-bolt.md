@@ -3866,3 +3866,7 @@ The exact `dev-build/make-9999` wave initially stopped on a live package-env pre
 ### Libgpg-error Clang IR PGO wave (2026-09-19)
 
 `dev-libs/libgpg-error-1.61` completed the exact successor `pgo-clang-ir` wave across its configured multilib builds. The sealed receipt records nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed `gpg-error --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libgpg-error-1.61.profdata`, with root-owned merge evidence in `profile-merge-libgpg-error.json`. The known unrelated non-ELF optimization-record YAML warnings recurred during `ldconfig`; no project files were altered. No profile-use deployment or BOLT output is claimed.
+
+### XXHash Clang IR PGO wave (2026-09-19)
+
+`dev-libs/xxhash-0.8.3-r2` completed the exact successor `pgo-clang-ir` wave across its configured multilib builds. The sealed receipt records nonempty profraw payloads, successful install-QA ABI guarding, and completion of the reviewed `xxhsum --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_xxhash-0.8.3-r2.profdata`, with root-owned merge evidence in `profile-merge-xxhash.json`. The known unrelated non-ELF optimization-record YAML warnings recurred during `ldconfig`; no project files were altered. No profile-use deployment or BOLT output is claimed.
