@@ -5909,3 +5909,11 @@ the fail-closed dispatcher reported a compiler-family mismatch and aborted.
 No install, receipt, or profile was admitted, and no terminal exclusion is
 claimed. The package requires a package-specific compiler-selection correction
 or revised artifact evidence before retry.
+
+### 2026-09-19 — dev-build/b2 Clang IR profile wave
+
+The exact current-generation `dev-build/b2-5.5.3` wave completed through
+install-QA and workload execution. Its sealed receipt passed independent
+verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/dev-build_b2-5.5.3-v1.profdata`.
+The merged profile SHA-256 is `2921d4326f2904fb0f590bfcdfb885da414ff56b51a4ab97a0f0754bb4b8eaa9`; no profile-use rebuild or BOLT deployment is inferred.
