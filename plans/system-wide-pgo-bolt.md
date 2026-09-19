@@ -5644,3 +5644,11 @@ payload was merged to the generation-bound v2 profile path with evidence
 profile-merge-zstd-live-v2.json. Its merged profile digest is
 792d77b054e44b0d914e243baa8f41973d947f7459bcf305c27887ffca89a4fc.
 No profile-use deployment or BOLT output is inferred.
+
+### gzip Clang IR profile wave (2026-09-19)
+The exact app-arch/gzip-1.14_p20260901 wave completed under the active
+generation, and its receipt passed independent verification. The current
+authenticated payload was merged to the generation-bound v2 profile path with
+evidence profile-merge-gzip-live-v2.json. Its merged profile digest is
+e66765817fba09427ff9dff2062679e3ed24518722e0926eef2f554eb3cbdd4f.
+No profile-use deployment or BOLT output is inferred.
