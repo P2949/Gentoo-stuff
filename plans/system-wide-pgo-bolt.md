@@ -6241,3 +6241,13 @@ payload to `/var/lib/gentoo-optimization/merged-profiles/kde-frameworks_kdbusadd
 The merged profile SHA-256 is
 `130916143314a5e00d44c3551106d72b477fca56554ce617367ca9045c8b417b`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — kde-frameworks/kded-6.30.0 Clang IR profile wave
+
+The exact current-generation `kde-frameworks/kded-6.30.0` wave completed
+through install-QA and its reviewed workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/kde-frameworks_kded-6.30.0-v1.profdata`.
+The merged profile SHA-256 is
+`dc0bb8175a481479f7021a1c7a0c003a992580f58d9fc548bdfa245ea6a0bc08`; no
+profile-use rebuild or BOLT deployment is inferred.
