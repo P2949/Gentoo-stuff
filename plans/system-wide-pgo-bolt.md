@@ -5971,3 +5971,13 @@ The exact current-generation `dev-lang/deno-bin-2.9.6` binary wave completed
 through install-QA and the reviewed `deno --help` workload. Its sealed receipt
 passed independent verification, and LLVM 22 merged the authenticated raw
 payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_deno-bin-2.9.6-v1.profdata`. The merged profile SHA-256 is `b8be68ba795012014e741368c6f8f247b26c79a2c198dbfcfebdc4491398e815`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-lang/perl Clang IR profile wave
+
+The exact current-generation `dev-lang/perl-5.44.0` wave completed through
+install-QA and workload execution. Its sealed receipt passed independent
+verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/dev-lang_perl-5.44.0-v1.profdata`.
+The merged profile SHA-256 is
+`d15735ff5d16d232e86e96dc24b95d8a88d7c368f4e5f8c668f8a620c8895a1c`; no
+profile-use rebuild or BOLT deployment is inferred.
