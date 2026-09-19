@@ -4592,3 +4592,14 @@ verification. LLVM 22 merged the authenticated raw payload set into
 `merged-profiles/dev-libs_snowball-stemmer-3.1.1.profdata`; merge evidence
 digest is `387df02595b80331522b4c1982335e48faeee0bbbfdc6a1cdfa215f3f88eae4c`.
 No profile-use deployment or BOLT output is claimed.
+
+### OpenSP Clang IR wave failure (2026-09-19)
+
+The current-generation `app-text/opensp-1.5.2-r10` training transaction was
+preserved as a failed attempt during the link phase. Clang/LLD reported missing
+C++ ABI and exception-runtime symbols (`__gxx_personality_v0`, C++ typeinfo
+vtables, allocation operators, and related `libc++abi` identities) while
+linking `onsgmls`; the package never reached install-QA or workload execution.
+No receipt or profile merge was admitted, and no terminal exclusion was claimed.
+The complete Portage build log and durable failed attempt remain preserved for
+package-specific compiler/link remediation.
