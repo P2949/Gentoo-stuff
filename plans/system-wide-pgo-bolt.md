@@ -5101,3 +5101,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-devel_bc-1.08.2.profdata`; merge evidence digest is
 `e6e402a96d7ef20eceae97c99ad0d407a9a3cef8b49809f7f98c45cf85ed2da7`. No
 profile-use deployment or BOLT output is claimed.
+
+### m4 Clang IR profile wave (2026-09-19)
+
+The exact `sys-devel/m4-1.4.21` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/bin/m4 --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-devel_m4-1.4.21.profdata`; merge evidence digest is
+`a82f3feadfcbd35a640210e56ab3c4dcebe2ed9691376bf65547b88d1050db2c`. No
+profile-use deployment or BOLT output is claimed.
