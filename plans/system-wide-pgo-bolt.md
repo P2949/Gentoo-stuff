@@ -5071,3 +5071,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_grep-3.12.profdata`; merge evidence digest is
 `1fa35e1fcce11bd4df210cae5de28c6c5d95fbbaf2eabe57af0c706425fe102a`. No
 profile-use deployment or BOLT output is claimed.
+
+### sed Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/sed-4.10-r1` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/bin/sed --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_sed-4.10-r1.profdata`; merge evidence digest is
+`7da82a2421eaddc0235d35d13cf6dfc08fc19682daa58bde6761195a67471a15`. No
+profile-use deployment or BOLT output is claimed.
