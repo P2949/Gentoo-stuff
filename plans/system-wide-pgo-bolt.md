@@ -3996,3 +3996,7 @@ The exact `dev-util/colm-0.14.7-r4` wave reached install-QA but was correctly re
 ### GTK icon cache Clang IR PGO wave (2026-09-19)
 
 `dev-util/gtk-update-icon-cache-3.24.42` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `gtk-update-icon-cache --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_gtk-update-icon-cache-3.24.42.profdata`, with root-owned merge evidence in `profile-merge-gtk-update-icon-cache.json`. No profile-use deployment or BOLT output is claimed.
+
+### Breakpad workload correction and Clang IR PGO wave (2026-09-19)
+
+The first exact `dev-util/breakpad-2024.02.16` generation attempt rebuilt and merged, but its generated `microdump_stackwalk --help` workload returned status 1. Direct probing confirmed the installed Breakpad tools accept `-h` as a successful empty-output query; the authoritative workload generator now uses `-h` for all three stackwalk/dump tools and permits empty output. The fresh `breakpad-v2` wave completed, passed independent receipt verification, and LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/dev-util_breakpad-2024.02.16.profdata`; root-owned merge evidence is `profile-merge-breakpad-v2.json`. No profile-use deployment or BOLT output is claimed.

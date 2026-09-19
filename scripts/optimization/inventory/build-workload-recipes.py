@@ -115,6 +115,8 @@ def main():
     argv=[p,'-l','/etc/hostname']; allow_empty_output=False
    elif p == '/bin/attr':
     argv=[p,'-l','/etc/hostname']; allow_empty_output=True
+   elif x['cpv'].startswith('dev-util/breakpad-'):
+    argv=[p,'-h']; allow_empty_output=True
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
