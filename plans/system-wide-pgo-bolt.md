@@ -6190,3 +6190,11 @@ The exact current-generation wave reached install-QA, but dependency
 `gui-libs/hyprutils-0.14.2` again failed the exported-ABI guard. The staged
 replacement DSO was not admitted, and no receipt or profile was produced. The
 preserved diagnostic log is `/tmp/xdph.log`.
+
+### 2026-09-19 — gui-wm/gamescope-3.16.28 compile failure
+
+The exact current-generation wave failed during compilation before install-QA.
+Clang/lld reported unresolved C++ runtime and ABI symbols, including
+`operator new`, `std::__format` internals, locale and exception runtime
+entries. No package receipt or profile was produced; the full diagnostic log is
+`/tmp/gamescope.log`.
