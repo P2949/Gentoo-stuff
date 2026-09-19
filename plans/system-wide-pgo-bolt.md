@@ -5441,3 +5441,15 @@ The repaired installer and test-driver changes were committed and the portable-c
 
 ### BOLT install-QA profile-residue repair (2026-09-19)
 The focused real-Portage BOLT fixture initially exposed host-instrumented `default.profraw` files inside the staged ED. The capture/deploy artifact verifier now removes only that exact non-payload residue before each identity scan, while the QA hook and capture wrapper explicitly discard implicit profiles. The root-owned framework was republished from the committed source. The real Portage fixture now passes capture, deploy, rollback, fatal-marker, retry, and off-mode checks: `PASS: real Portage capture/deploy hooks, exact BOLT provenance, fatal markers, retries, and off mode`. ABI guard regressions remain green, including empty-DSO no-root-traversal and immediate-provider lookup. No production BOLT completion claim is made; this validates the install-QA transaction boundary only.
+### Fresh authoritative validation after install-QA repair (2026-09-19)
+The root-owned authoritative suite was rerun from the current committed source
+and freshly republished framework. Recovery, crash-stress, Phase-2 evidence,
+package-env, framework-installer, PGO-use, live-policy, ABI-guard, BOLT
+transaction, rollback, and all functional integration gates passed. The result
+was 96 PASS, 1 FAIL, and 2 explicit SKIP across 557 subtests. The sole failure
+was the separately classified `capability:bolt` probe, which exits 159
+(`Bad system call`) under this host's seccomp policy; no BOLT capability,
+deployment, or optimization claim is admitted from that failure. The two
+explicit skips remain the documented Rust LLVM-version mismatch and the
+capability-dependent diagnostic skip. Evidence is retained at
+`/var/tmp/gentoo-optimization/optimization-tests.dm6euzc2/`.
