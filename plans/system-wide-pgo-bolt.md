@@ -5222,3 +5222,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-process_procps-4.0.6.profdata`; merge evidence digest is
 `8fc325c8da69e4749b4d12768f653c734d5c5569d6c3060d1610796b0c1b93ab`. No
 profile-use deployment or BOLT output is claimed.
+
+### psmisc Clang IR profile wave (2026-09-19)
+
+The exact `sys-process/psmisc-23.7` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/bin/pstree --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-process_psmisc-23.7.profdata`; merge evidence digest is
+`73bc254456e9e8bad5803dcb820afd14c6408193267b80d22138f62f4cae4f9`. No
+profile-use deployment or BOLT output is claimed.
