@@ -4988,3 +4988,14 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_gentoo-functions-9999.profdata`; merge evidence
 digest is `339a483ac333e5dba104b28d82e9e9d7fe74171e29ff1627808c88c61bf690f8`.
 No profile-use deployment or BOLT output is claimed.
+
+### libmd Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-crypt/libmd-1.2.0` successor wave completed
+under `phase3-live-candidate-20260918-postsync-r1`. This library-only wave
+had no executable workload recipes; the instrumented build nevertheless
+produced an authenticated raw profile payload, install-QA passed, and the
+sealed receipt passed independent verification. LLVM 22 merged the payload into
+`merged-profiles/app-crypt_libmd-1.2.0.profdata`; merge evidence digest is
+`4778ea6490f95fe7e11322b983a61f53fe5dd36d2aa04cb228372f739d668abc`. No
+profile-use deployment or BOLT output is claimed.
