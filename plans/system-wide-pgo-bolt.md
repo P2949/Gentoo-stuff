@@ -6204,3 +6204,10 @@ entries. No package receipt or profile was produced; the full diagnostic log is
 The exact current-generation wave reached install-QA but its dependency
 `gui-libs/hyprutils-0.14.2` failed the exported-ABI guard. No receipt or
 profile was produced; the complete diagnostic log is `/tmp/hyprland.log`.
+
+### 2026-09-19 — kde-apps/kdenlive-26.08.1 workload rejected
+
+The exact current-generation wave completed compilation, package merge, and
+install-QA, but the reviewed `/usr/bin/kdenlive_render` workload exited with
+status 1. The runner therefore refused to seal a receipt or merge a profile.
+The complete diagnostic log is `/tmp/kdenlive.log`.
