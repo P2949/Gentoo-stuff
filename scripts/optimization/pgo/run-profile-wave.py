@@ -125,6 +125,10 @@ def main():
    # Keep Portage's own Python/administrative helpers from inheriting a
    # compiler profile destination; doas only receives the explicit env argv.
    command.append('LLVM_PROFILE_FILE=/dev/null')
+   # eltpatch may create one disposable helper profile after Portage filters
+   # the runtime variable.  Grant only that destination, never a source:path
+   # mapping from the repository (which can inject /default.profraw into ED).
+   command.append('SANDBOX_WRITE=/usr/share/elt-patches/default.profraw')
    command += ['emerge','--oneshot','--buildpkg','='+cpv]
    # Do not expose the package profile path to the privileged doas helper
    # itself.  The path is supplied explicitly in the doas environment for
