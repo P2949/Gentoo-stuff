@@ -4838,3 +4838,15 @@ authenticated raw payload into
 `merged-profiles/app-crypt_argon2-20190702-r1.profdata`; merge evidence digest
 is `6b6fe4d3b225ae64d7cc7fe98ca6a0737385cae0e99e10d3d07521845ddaf273`. No
 profile-use deployment or BOLT output is claimed.
+
+### acl Clang IR profile wave and workload correction (2026-09-19)
+
+The initial `sys-apps/acl-9999` wave built and merged but its reviewed
+`chacl --help` probe exited 1. Direct probing confirmed `chacl -l /tmp` as a
+safe successful inspection, while the `getfacl` and `setfacl` help probes
+passed unchanged. The corrected wave was rerun against the same current
+generation, completed install-QA, and passed independent receipt verification.
+LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_acl-9999.profdata`; merge evidence digest is
+`1b236f26c077e08436c4be67295b506bdb14ca4905cd5bcf49e08751a02a2c17`. No
+profile-use deployment or BOLT output is claimed.
