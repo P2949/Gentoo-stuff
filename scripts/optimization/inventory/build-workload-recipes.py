@@ -121,6 +121,10 @@ def main():
     if p != '/usr/bin/sensors':
      continue
     argv=[p,'--help']; allow_empty_output=False
+   elif x['cpv'].startswith('app-shells/dash-'):
+    if p != '/bin/dash':
+     continue
+    argv=[p,'-c','printf dash-workload']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:

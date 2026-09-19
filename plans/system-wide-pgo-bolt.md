@@ -4131,3 +4131,14 @@ complete build log and failed wave attempt are preserved. This is a
 package-specific native-PGO integration defect requiring remediation before a
 Bash profile wave can be retried; the framework and ABI guard were not
 bypassed.
+
+### Dash workload correction and Clang IR PGO wave (2026-09-19)
+
+The first exact `app-shells/dash-9999` attempt correctly refused the generic
+`dash --help` recipe because dash returns status 2 for that option. The
+workload generator now uses the deterministic non-mutating
+`/bin/dash -c 'printf dash-workload'` recipe. The fresh `dash-v2` wave
+completed, passed independent receipt verification, and LLVM 22 merged the
+payload into `/var/lib/gentoo-optimization/merged-profiles/app-shells_dash-9999.profdata`,
+with root-owned merge evidence in `profile-merge-dash-v2.json`. No
+profile-use deployment or BOLT output is claimed.
