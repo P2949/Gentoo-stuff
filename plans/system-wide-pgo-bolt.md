@@ -5061,3 +5061,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_dmidecode-3.7.profdata`; merge evidence digest is
 `383016f34c8125c75592266d74ce8a85c13d7b860053b06ea16c3ed33f8e582a`. No
 profile-use deployment or BOLT output is claimed.
+
+### grep Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/grep-3.12` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/bin/grep --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_grep-3.12.profdata`; merge evidence digest is
+`1fa35e1fcce11bd4df210cae5de28c6c5d95fbbaf2eabe57af0c706425fe102a`. No
+profile-use deployment or BOLT output is claimed.
