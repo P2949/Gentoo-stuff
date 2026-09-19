@@ -4712,3 +4712,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/app-crypt_rhash-1.4.6-r1.profdata`; merge evidence digest is
 `585e571408b0f994adbafd00639fc1faca4c17f234edb32d5596d172aba3e7fb`. No
 profile-use deployment or BOLT output is claimed.
+
+### xmlto Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-text/xmlto-0.0.28-r11` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/xmlif --help` workload completed, install-QA passed, and independent
+receipt verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/app-text_xmlto-0.0.28-r11.profdata`; merge evidence digest is
+`3cd01603fb71587e5a570259e93bdd592b229c60cefbf871668d1683a289632d`. No
+profile-use deployment or BOLT output is claimed.
