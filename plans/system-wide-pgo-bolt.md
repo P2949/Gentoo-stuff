@@ -5495,3 +5495,13 @@ Savannah Git source fetch remained alive with zero transfer and zero CPU for
 more than one minute. The fetch and Portage process group were terminated at
 the source-acquisition threshold. The failed attempt is retained and no
 package merge, receipt, or profile payload was admitted.
+
+### cargo-audit Rust profile-wave workload failure (2026-09-19)
+The exact `dev-util/cargo-audit-0.22.2` Rust lane compiled all 370 vendored
+crates and merged successfully under the generation-bound Rust profile mode.
+Its reviewed `/usr/bin/cargo-audit --help` workload printed the expected help
+text but terminated with SIGSEGV (-11) when the instrumented runtime attempted
+to emit the profile payload; the same behavior is reproducible with the exact
+generation `LLVM_PROFILE_FILE` and does not occur without profile output. No
+receipt or profile merge was admitted. The build and failed workload evidence
+remain preserved as a package-specific Rust runtime/profile incompatibility.
