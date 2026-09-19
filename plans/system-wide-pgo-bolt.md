@@ -6435,3 +6435,7 @@ The package transaction completed under the `pgo-clang-ir` lane, but the profile
 ### 2026-09-20 — media-libs/tiff-4.7.1 exported-ABI rejection
 
 The `pgo-clang-ir` wave reached the completed install image, but the install-QA ABI guard rejected the replacement because both established SONAMEs disappeared: `libtiff.so.5` and `libtiffxx.so.5`. No receipt or merged profile was accepted; the exported-ABI failure is preserved as the terminal reason for this attempt.
+
+### 2026-09-20 — dev-libs/date-3.0.3 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_date-3.0.3-v1.profdata`; merge evidence SHA-256 is `f23bcddb320787fb136ad4789d4c3a7ba107538aac6512241e19540dc221ccef`.
