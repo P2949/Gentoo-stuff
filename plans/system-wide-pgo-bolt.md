@@ -5768,3 +5768,7 @@ The exact `dev-lang/yasm-1.3.0-r2` transaction completed, but generated `--help`
 ### 2026-09-19 — dev-lang/sassc Clang IR profile wave
 
 The exact `dev-lang/sassc-3.6.2` wave completed under the active generation. Its transaction merged through install-QA, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_sassc-3.6.2-v1.profdata`. The merged profile SHA-256 is `eaa0909992f4482b78dc6355ff85bfe760cdd4c6063b8b079375d1d4976c8eb6`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-libs/flatbuffers Clang IR profile wave
+
+The exact `dev-libs/flatbuffers-25.12.19` wave completed under the active generation. Its transaction merged through install-QA, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-libs_flatbuffers-25.12.19-v1.profdata`. The merged profile SHA-256 is `76f4b12b52be9481d0f4d936e96149cde7920b75f9b51991e158ce0e09b3f9a5`; no profile-use rebuild or BOLT deployment is inferred.
