@@ -88,6 +88,12 @@ def main():
    # variable is a successful, non-destructive workload.
    elif p == '/usr/bin/bmake':
     argv=[p,'-V','MAKE_VERSION']; allow_empty_output=False
+   # nettle-lfib-stream has no successful standalone help mode. Use the
+   # package's hash utility with a fixed read-only system fixture.
+   elif p == '/usr/bin/nettle-lfib-stream':
+    continue
+   elif p == '/usr/bin/nettle-hash':
+    argv=[p,'-a','sha256','/etc/hostname']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
