@@ -4817,3 +4817,13 @@ quiescence gate. No receipt or profile merge was admitted; the package build
 log and failed runner attempt remain preserved. This requires a representative
 Rust workload or an evidence-backed terminal accounting decision before the
 package can leave the profile frontier.
+
+### bash Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-shells/bash-9999` successor wave completed
+under `phase3-live-candidate-20260918-postsync-r1`. The reviewed `/bin/bash
+--help` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/app-shells_bash-9999.profdata`; merge evidence digest is
+`5218a436fe3c495d2062494035769da96aa2f44e40a10d39b12b45700a3995dc`. No
+profile-use deployment or BOLT output is claimed.
