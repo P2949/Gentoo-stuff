@@ -5844,3 +5844,7 @@ The exact current-generation `app-crypt/libmd-1.2.0` multilib wave completed thr
 ### 2026-09-19 — app-arch/xz-utils Clang IR profile wave
 
 The exact current-generation `app-arch/xz-utils-9999` multilib wave completed through install-QA and workload execution. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-arch_xz-utils-9999-v1.profdata`. The merged profile SHA-256 is `57f1acc12d776a6d1e86965bf232ba16cb6b9876b17f826f9697a0320486acf6`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-text/gspell Clang IR profile wave
+
+The exact current-generation `app-text/gspell-1.14.4` wave completed through install-QA and workload execution. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-text_gspell-1.14.4-v1.profdata`. The merged profile SHA-256 is `468badc64070cf33595212663d4f19ab362c5e8d841124837653a07b6b26a7e7`; no profile-use rebuild or BOLT deployment is inferred.
