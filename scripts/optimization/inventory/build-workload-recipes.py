@@ -117,6 +117,10 @@ def main():
     argv=[p,'-l','/etc/hostname']; allow_empty_output=True
    elif x['cpv'].startswith('dev-util/breakpad-'):
     argv=[p,'-h']; allow_empty_output=True
+   elif x['cpv'].startswith('sys-apps/lm-sensors-'):
+    if p != '/usr/bin/sensors':
+     continue
+    argv=[p,'--help']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:

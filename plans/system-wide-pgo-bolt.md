@@ -4012,3 +4012,16 @@ The exact `dev-util/pkgconf-9999` wave was stopped in the unpack phase after the
 ### Ethtool Clang IR PGO wave (2026-09-19)
 
 `sys-apps/ethtool-7.0` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `ethtool --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_ethtool-7.0.profdata`, with root-owned merge evidence in `profile-merge-ethtool.json`. The workload performed no hardware mutation; no profile-use deployment or BOLT output is claimed.
+
+### LM sensors workload correction and Clang IR PGO wave (2026-09-19)
+
+The first exact `sys-apps/lm-sensors-3.6.2` generation attempt correctly
+refused the generated `isadump --help` recipe because that utility returns
+failure and is not a deterministic non-mutating standalone workload. The
+authoritative workload generator now retains only `/usr/bin/sensors --help`
+for this package, excluding the ISA probing tools. The fresh `lm-sensors-v2`
+wave completed, passed independent receipt verification, and LLVM 22 merged
+the nonempty payload into
+`/var/lib/gentoo-optimization/merged-profiles/sys-apps_lm-sensors-3.6.2.profdata`;
+root-owned merge evidence is `profile-merge-lm-sensors-v2.json`. No hardware
+mutation, profile-use deployment, or BOLT output is claimed.
