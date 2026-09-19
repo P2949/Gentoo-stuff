@@ -6349,3 +6349,7 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `4d6fd56e6a0a7b33cbb30fffd680fdcaf90b7cc4d1063fb9793c81c82a914b90`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — media-gfx/argyllcms-3.4.1 profile wave compile failure
+
+The `pgo-clang-ir` wave for `media-gfx/argyllcms-3.4.1` was executed against generation `phase3-live-candidate-20260918-postsync-r1` with the current inventory and readiness bindings. The transaction reached compilation but failed in the compile phase when `clang-22` crashed with exit code 139. No profile-wave receipt was produced, so no merged profile was accepted. This is recorded as a package/compiler execution failure pending separate root-cause work; the wave runner and ABI guard were not bypassed.
