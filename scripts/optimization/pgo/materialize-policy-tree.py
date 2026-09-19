@@ -12,6 +12,11 @@ ENV = {
     "kernel-policy-exclusion": "optimization-off.conf",
 }
 
+# Public-ABI packages need the same exact compiler lane while removing the
+# package-local hidden-visibility experiment.  Keep this mapping explicit and
+# content-addressed rather than allowing arbitrary generated flag overrides.
+PUBLIC_ABI_CPVS = {"app-arch/libarchive-3.8.9"}
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bindings", type=pathlib.Path, required=True)
@@ -38,7 +43,11 @@ def main():
         if cpv in seen:
             raise SystemExit(f"REFUSED: duplicate CPV binding: {cpv}")
         seen.add(cpv)
-        name = ENV[lane]
+        name = (
+            "pgo-clang-ir-generate-public.conf"
+            if cpv in PUBLIC_ABI_CPVS and lane == "pgo-clang-ir"
+            else ENV[lane]
+        )
         source = a.env_root / name
         if not source.is_file():
             raise SystemExit(f"REFUSED: missing reviewed environment: {source}")

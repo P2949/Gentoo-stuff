@@ -1486,6 +1486,9 @@ raise SystemExit(65 if missing else 0)
                 GENTOO_OPT_RUST_TARGET|GENTOO_OPT_GO_MAIN_COUNT|GENTOO_OPT_GO_BINARY|\
                 GENTOO_OPT_BOLT_CACHE_ROOT|GENTOO_OPT_BOLT_EXPECTED_ELIGIBLE_COUNT|\
                 GENTOO_OPT_BOLT_ELIGIBILITY_PROOF) ;;
+                COMMON_FLAGS|CFLAGS|CXXFLAGS|FCFLAGS|FFLAGS|LDFLAGS)
+                    [[ ${basename} == pgo-clang-ir-generate-public.conf ]] || \
+                        fail "generated environment assigns compiler flags outside the public-ABI lane: ${basename}" ;;
                 *) fail "generated environment assigns a forbidden variable: ${variable}" ;;
             esac
             [[ -z ${variables["${variable}"]+x} ]] || \
