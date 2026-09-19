@@ -78,6 +78,10 @@ def main():
    # successful non-destructive query while --help is rejected.
    elif p == '/usr/bin/enchant-lsmod-2':
     argv=[p,'-help']; allow_empty_output=False
+   # bmake rejects standalone help flags; querying its built-in version
+   # variable is a successful, non-destructive workload.
+   elif p == '/usr/bin/bmake':
+    argv=[p,'-V','MAKE_VERSION']; allow_empty_output=False
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
