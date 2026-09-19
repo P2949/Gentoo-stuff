@@ -4475,3 +4475,14 @@ authenticated raw payload set into
 `merged-profiles/dev-libs_json-glib-1.10.8.profdata`; merge evidence digest is
 `f49c942cc7a8271b39ef5a6c19f2a6659220218f11d51f2923eff60f837ab483`.
 No profile-use deployment or BOLT output is claimed.
+
+### fribidi Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-libs/fribidi-1.0.16` successor wave
+completed both configured ABIs under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `/usr/bin/fribidi --help` workload completed, install-QA passed,
+and the sealed receipt passed independent verification. LLVM 22 merged the
+authenticated raw payload set into
+`merged-profiles/dev-libs_fribidi-1.0.16.profdata`; merge evidence digest is
+`88c8258b856024797b3284b9013181cd91724f6b9429b7c0a673fce715449518`.
+No profile-use deployment or BOLT output is claimed.
