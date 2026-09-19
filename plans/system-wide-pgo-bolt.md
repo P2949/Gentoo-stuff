@@ -5396,3 +5396,6 @@ The exact `net-misc/socat-1.8.1.3` wave completed under the current Phase-3 fram
 
 ### numactl Clang IR profile wave (2026-09-19)
 The exact `sys-process/numactl-2.0.19` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/numactl --show` completed successfully; the merged profile is `merged-profiles/sys-process-numactl-2.0.19.profdata` with digest `9ac2e70e68cf9d4e4bb55ad933590c684db3cf727e5162093a57b6fba065ad23`. No profile-use deployment or BOLT output is claimed.
+
+### btop Clang IR profile wave (2026-09-19)
+The exact `sys-process/btop-1.4.7` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/btop --version` completed successfully; the merged profile is `merged-profiles/sys-process-btop-1.4.7.profdata` with digest `478cf92091ac94f77b22dc933f340fdad8dfb1987f2b09000d1455ce30510f8f`. No profile-use deployment or BOLT output is claimed.
