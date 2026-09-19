@@ -3952,3 +3952,7 @@ The first exact `sys-apps/acl-9999` generation attempt rebuilt and merged, but t
 ### Attr workload correction and Clang IR PGO wave (2026-09-19)
 
 The first exact `sys-apps/attr-9999` generation attempt rebuilt and merged, but the generic `attr --help` workload returned status 1. Direct probing established the successful read-only extended-attribute listing `attr -l /etc/hostname`; the authoritative workload generator now uses that command and permits empty output. The fresh `attr-v2` wave completed across both configured ABIs, passed independent receipt verification, and LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_attr-9999.profdata`; root-owned merge evidence is `profile-merge-attr-v2.json`. No profile-use deployment or BOLT output is claimed.
+
+### Less source-fetch stop (2026-09-19)
+
+The exact `sys-apps/less-9999` wave was stopped in the unpack phase after the upstream `git fetch https://github.com/gwsw/less` remained silent for more than three minutes with zero CPU. The fetch subprocesses were terminated; Portage preserved the failed attempt and unpack log, and no package merge or profile receipt was admitted. This is a source-acquisition failure for the moving `9999` ebuild, not an optimization-policy bypass; a later retry requires a usable cached or reachable source revision.
