@@ -6459,3 +6459,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/hyphen-2.8.8-r2 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_hyphen-2.8.8-r2-v1.profdata`; merge evidence SHA-256 is `16f65e7db251819f9c8aec53f932ceede4d47387e59ca6e691b82909ea1283e1`.
+
+### 2026-09-20 — dev-libs/inih-62 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_inih-62-v1.profdata`; merge evidence SHA-256 is `43c828052742b938894a9a84614223d90339eb80525136afb1a5d73f01eaa9e3`.
