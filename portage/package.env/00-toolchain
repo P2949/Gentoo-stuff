@@ -1,7 +1,9 @@
 # Toolchain packages. Fallback ladder: see /etc/portage/env/README.
 sys-devel/gcc gcc.conf no-ccache-only.conf
 dev-lang/fpc gcc.conf
-dev-build/make gcc.conf make-no-discarded-qualifiers-werror.conf
+# make-9999 is assigned by the generation-bound Phase-3 policy.  Keeping a
+# broad GCC assignment here overrides that exact mapping and causes the
+# fail-closed compiler-family guard to reject the Clang lane.
 sys-libs/glibc glibc.conf
 # linux-mod-r1 forces the kernel's gcc for the whole package, so flags
 # must be GCC-valid.
