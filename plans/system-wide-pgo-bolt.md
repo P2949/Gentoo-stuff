@@ -3960,3 +3960,7 @@ The exact `sys-apps/less-9999` wave was stopped in the unpack phase after the up
 ### Dmidecode Clang IR PGO wave (2026-09-19)
 
 `sys-apps/dmidecode-3.7` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `biosdecode --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_dmidecode-3.7.profdata`, with root-owned merge evidence in `profile-merge-dmidecode.json`. No profile-use deployment or BOLT output is claimed.
+
+### OpenSP Clang IR correctness stop (2026-09-19)
+
+The exact `app-text/opensp-1.5.2-r10` wave reached compilation under the required Clang IR lane but failed during the `onsgmls` C++ link with unresolved libc++/C++ ABI symbols under the active `--no-allow-shlib-undefined` policy. No package merge or profile receipt was admitted; the full Portage build log and failed wave attempt remain preserved. OpenSP remains a package-specific correctness failure requiring an ebuild/toolchain link-mode repair before profile collection can proceed.
