@@ -6149,3 +6149,11 @@ no progress for more than four minutes. The fetch was interrupted at the
 bounded stall threshold; no package receipt or merged profile was produced.
 The preserved diagnostic log is `/tmp/wl-clipboard.log`. This is a fetch
 availability failure, not evidence of a profile or ABI result.
+
+### 2026-09-19 — dev-libs/opencl-icd-loader-2026.05.29 workload rejected
+
+The exact current-generation wave completed its package transaction and
+install-QA, but the reviewed `/usr/bin/cllayerinfo --help` workload produced
+no output. The runner therefore refused to seal a receipt or profile merge;
+the preserved log is `/tmp/opencl.log`. This remains an explicit workload
+failure rather than profile evidence.
