@@ -4202,3 +4202,15 @@ publication check passes. A bounded live rebuild of
 `/default.profraw` and was rejected by collision QA; the failed transaction
 and profile artifacts remain preserved for diagnosis. No package merge or
 profile receipt was admitted.
+
+### Saved-profile environment investigation (2026-09-19)
+
+Removing the global `PORTAGE_SAVED_READONLY_VARS` declaration did not resolve
+the live no-DSO regression: Portage's saved ebuild environment still records
+`LLVM_PROFILE_FILE=/dev/null`, but the package transaction recreated LLVM raw
+profiles at the build root, `build-info/default.profraw`, and
+`image/default.profraw`, causing collision QA to reject the package. Direct
+privileged Bash, Python, and dotnet probes honor `/dev/null`; the remaining
+writer is therefore in Portage's phase/misc-functions execution path rather
+than the ABI guard. The failed attempt remains preserved and no package merge
+was admitted.
