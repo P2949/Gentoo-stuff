@@ -4690,3 +4690,14 @@ compilation. The live Git HEAD fetched by the ebuild contains no
 Portage build log; no package merge, receipt, or profile merge was admitted.
 This is a package-source/ebuild mismatch to remediate separately, not an ABI
 guard or profile-runner failure.
+
+### patchelf Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-util/patchelf-0.19.1` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/patchelf --help` workload completed, install-QA passed, and the
+sealed receipt passed independent verification. LLVM 22 merged the
+authenticated raw payload into
+`merged-profiles/dev-util_patchelf-0.19.1.profdata`; merge evidence digest is
+`79ca4510b8a676c0a94ed1d0a9f9056707372fb5f35d511a9cc2388f5223439b`. No
+profile-use deployment or BOLT output is claimed.
