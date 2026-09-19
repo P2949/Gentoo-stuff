@@ -5354,3 +5354,6 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_texinfo-7.3.profdata`; merge evidence digest is
 `4e62d21480454e88d8f446dc3a960bc70448491960fa0c87247e08ea79af9822`. No
 profile-use deployment or BOLT output is claimed.
+
+### lm-sensors Clang IR profile wave (2026-09-19)
+The exact `sys-apps/lm-sensors-3.6.2` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/sensors --version` completed successfully; the merged profile is `merged-profiles/sys-apps-lm-sensors-3.6.2.profdata` with digest `4dbd19de5f45151aa24bf39965fa3903596cf5542a1a61f8297aaa38db34f5aa`. No profile-use deployment or BOLT output is claimed.
