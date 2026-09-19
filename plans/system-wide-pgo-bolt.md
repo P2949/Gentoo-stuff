@@ -5848,3 +5848,13 @@ The exact current-generation `app-arch/xz-utils-9999` multilib wave completed th
 ### 2026-09-19 — app-text/gspell Clang IR profile wave
 
 The exact current-generation `app-text/gspell-1.14.4` wave completed through install-QA and workload execution. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/app-text_gspell-1.14.4-v1.profdata`. The merged profile SHA-256 is `468badc64070cf33595212663d4f19ab362c5e8d841124837653a07b6b26a7e7`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — app-text/opensp profile-wave boundary
+
+The exact current-generation `app-text/opensp-1.5.2-r10` attempt reached the
+compile phase but failed while linking `onsgmls` under the clang-ir lane.
+`ld.lld` reported unresolved C++ runtime allocation, RTTI/vtable, exception,
+and `__gxx_personality_v0` symbols. No install occurred, no receipt or
+profile was admitted, and no terminal exclusion is claimed. This remains a
+package-specific build-backend/link-policy failure requiring a corrected
+C++ runtime linkage or an evidence-backed terminal classification.
