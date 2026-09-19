@@ -6329,3 +6329,13 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `7781e750827bb203c5a9190336111341470b830da69de1dfbbd4ac3ea02b9194`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — kde-plasma/keditfiletype-6.7.5 Clang IR profile wave
+
+The exact current-generation `kde-plasma/keditfiletype-6.7.5` wave completed
+through install-QA and its reviewed workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/kde-plasma_keditfiletype-6.7.5-v1.profdata`.
+The merged profile SHA-256 is
+`35ab37cd4aa7b9a0e21e0788dc33a6635565a8cb788c0b3be038bb19eec2fbd6`; no
+profile-use rebuild or BOLT deployment is inferred.
