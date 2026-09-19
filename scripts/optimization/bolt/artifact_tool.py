@@ -2819,6 +2819,19 @@ def command_deploy(arguments: argparse.Namespace) -> None:
                 key for key in sorted(set(expected_identity) | set(current_ed_identity))
                 if expected_identity.get(key) != current_ed_identity.get(key)
             ]
+            if "regular_groups" in changed_identity:
+                expected_groups = expected_identity.get("regular_groups", [])
+                actual_groups = current_ed_identity.get("regular_groups", [])
+                for expected_group, actual_group in zip(expected_groups, actual_groups):
+                    if expected_group != actual_group:
+                        group_keys = [
+                            key for key in sorted(set(expected_group) | set(actual_group))
+                            if expected_group.get(key) != actual_group.get(key)
+                        ]
+                        changed_identity.append(
+                            "regular_group_fields=" + ",".join(group_keys)
+                        )
+                        break
             fail(
                 "complete ED topology/file/ELF classification differs from the captured input: "
                 + ",".join(changed_identity)
