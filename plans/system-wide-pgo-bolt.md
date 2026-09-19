@@ -6357,3 +6357,7 @@ The `pgo-clang-ir` wave for `media-gfx/argyllcms-3.4.1` was executed against gen
 ### 2026-09-19 — media-gfx/qrencode-4.1.1-r1 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1` with receipt/readiness verification passing. The workload receipt was independently verified and merged into `/var/lib/gentoo-optimization/merged-profiles/media-gfx_qrencode-4.1.1-r1-v1.profdata`; merge evidence SHA-256 is `f5ea3260b05e9a145e620a5068121467a518a4728bf2ed1c441ce462f6ce3329`.
+
+### 2026-09-20 — media-gfx/renderdoc-1.36-r1 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt passed independent verification and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/media-gfx_renderdoc-1.36-r1-v1.profdata`; merge evidence SHA-256 is `d7c2ee1bb8f9471baaeb8d7fb968e55aab7ad597714aaf8182ee758d2023cec9`.
