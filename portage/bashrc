@@ -1226,6 +1226,15 @@ gentoo_opt_apply_primary_mode() {
 
 gentoo_opt_apply_readiness_flags() {
     local family=${GENTOO_OPT_ACTIVE_COMPILER_FAMILY-} flag
+    # Instrumented binaries may be executed by eclasses during install and
+    # packaging.  Those administrative runs are not reviewed workloads and
+    # must never create an implicit default.profraw in ED or the image root.
+    case ${GENTOO_OPT_MODE:-off}:${EBUILD_PHASE:-} in
+        clang-ir-generate:src_install|clang-ir-generate:pkg_preinst|clang-ir-generate:pkg_postinst|clang-ir-generate:install)
+            LLVM_PROFILE_FILE=/dev/null
+            export LLVM_PROFILE_FILE
+            ;;
+    esac
     if [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 && ${family} != gcc ]]; then
         gentoo_opt_error 'bolt-gcc readiness cannot be applied outside the GCC lane'
         return 1
