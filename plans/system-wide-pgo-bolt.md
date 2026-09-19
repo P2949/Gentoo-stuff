@@ -4357,3 +4357,16 @@ authenticated payload set into
 `merged-profiles/app-arch_gzip-1.14_p20260901.profdata`; merge evidence digest
 is `c2ac7a58db463ac614b5711118b8b7a52ae23c19f0ecf6ff230c336870f5c8ae`.
 No profile-use deployment or BOLT output is claimed.
+
+### libarchive successor-wave ABI rejection (2026-09-19)
+
+The current-generation `app-arch/libarchive-3.8.9` Clang IR wave reached
+staging twice, but the unchanged fail-closed ABI guard rejected the image before
+merge. The staged `libarchive.so.13` provider exported 453 symbols versus 603
+from the installed provider; the missing set includes public `__archive_*`
+identities and `PPMD8_kExpEscape`. No profile receipt or merge was admitted.
+The package-specific build logs and failed attempt records remain preserved.
+This reproduces the earlier libarchive ABI boundary under the successor
+inventory and requires the existing package-specific ABI-safe remediation
+before its profile payload can be accepted; the guard was not bypassed and no
+terminal exclusion has been claimed.
