@@ -4752,3 +4752,15 @@ raw payload into `merged-profiles/app-shells_zsh-9999.profdata`; merge evidence
 digest is `bd661d984b154076286bdf6b004c49ad48a263416aef2cb1abd8347a77d6f7a9`.
 LLVM reported counter-mismatch warnings during merge, which are preserved in
 the merge output; no profile-use deployment or BOLT output is claimed.
+
+### unifdef Clang IR profile wave and workload correction (2026-09-19)
+
+The initial `dev-util/unifdef-2.12-r2` wave built and merged but its reviewed
+`unifdef --help` recipe exited 2, so no receipt was admitted. Direct probing
+confirmed the supported successful help form is `unifdef -h`. The wave was
+corrected narrowly, rerun against the same current generation, and completed
+with install-QA and independent receipt verification passing. LLVM 22 merged
+the authenticated raw payload into
+`merged-profiles/dev-util_unifdef-2.12-r2.profdata`; merge evidence digest is
+`89a7db1313234fb086aac5bb14700f0163e5d30c1d7f2c56ec0be4cb9cfd0ccc`. No
+profile-use deployment or BOLT output is claimed.
