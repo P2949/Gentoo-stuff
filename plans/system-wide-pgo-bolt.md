@@ -5550,3 +5550,11 @@ completed its transaction and exited promptly with the explicit terminal result
 sealing. The wave has no representative workload recipes and no profile
 payload is admitted; the package remains an evidence-backed no-workload
 terminal attempt rather than an optimization success.
+
+### libb2 Clang IR profile wave (2026-09-19)
+The exact `app-crypt/libb2-0.98.1-r3` wave completed under the active
+post-sync generation. Its controlled transaction merged successfully, the
+receipt passed independent verification, and LLVM 22 merged the authenticated
+raw payload. Root-owned merge evidence is `profile-merge-libb2.json` with
+merged profile digest `3a4a954c1c612c47f3a35d48205675d4bcb6202d7df6a7a7c8c8e11a09c0a96b`.
+No profile-use deployment or BOLT output is inferred.
