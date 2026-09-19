@@ -4250,3 +4250,19 @@ preserving any explicit runner-selected profile path. The bounded live
 successfully; no `default.profraw` collision remained. The focused ABI guard
 suite also passes. This is a live Portage integration repair; no PGO receipt or
 profile-use deployment is claimed for the maintenance reinstall.
+
+### CMake Clang IR profile wave (2026-09-19)
+
+The exact `dev-build/cmake-4.3.5` recipe-ready package was bound to the
+current Phase-3 generation and entered the `pgo-clang-ir` lane with the
+reviewed `/usr/bin/ccmake --help` workload. The compile transaction outlived
+the bounded orchestration shell, so its durable attempt was first reconciled
+as failed; the still-running package transaction was allowed to finish rather
+than restarted. After independent inspection confirmed the installed package,
+the reviewed workload was executed with the exact generation spool, producing
+269 nonempty LLVM raw payloads. An independently verified receipt was created
+and `llvm-profdata` merged them into
+`merged-profiles/dev-build_cmake-4.3.5.profdata` with evidence digest
+`e8480333ccd01720f3e7955b4a42b5bd249bc2b49e02d54375c5ede471f83272`.
+This records profile collection and merge only; profile-use deployment and
+BOLT output remain unclaimed.
