@@ -5533,3 +5533,12 @@ an additional post-transaction quiescence interaction and was stopped after
 its bounded writer wait failed to seal a receipt. The package merge evidence
 and all attempts remain preserved, but no profile receipt or merged profile is
 claimed for this package.
+
+### profile-wave empty-spool sealing repair (2026-09-19)
+The runner now treats an unchanged empty payload spool as stable, excludes its
+own process from authenticated writer scans, and enters the writer scan only
+when regular profile payload files exist. Focused profile-wave guard and receipt
+verifier tests pass, and the repaired framework was republished root-owned.
+The rpm-sequoia live transaction still builds and merges successfully; its
+receipt sealing remains under investigation because the no-workload wave has
+not yet produced an independently verifiable profile payload.
