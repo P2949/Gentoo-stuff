@@ -4325,3 +4325,13 @@ authenticated payload set into `merged-profiles/app-arch_cabextract-9999.profdat
 merge evidence digest is
 `1dfb24dcd2d29ff41a02540a158ba61997bac0a8cae805a1f63de214ae787575`.
 No profile-use deployment or BOLT output is claimed.
+
+### cpio Clang IR profile wave (2026-09-19)
+
+The exact `app-arch/cpio-2.15` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active Phase-3 generation
+authority. The reviewed `/bin/gcpio --help` workload completed, the sealed
+receipt passed independent verification, and LLVM 22 merged the authenticated
+payload set into `merged-profiles/app-arch_cpio-2.15.profdata`; merge evidence
+digest is `6a3d2b438d98998004fcecf30bc810cf6755eed96e05a7c8a41d5dd8fec47ac9`.
+No profile-use deployment or BOLT output is claimed.
