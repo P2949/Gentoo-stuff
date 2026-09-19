@@ -4530,3 +4530,14 @@ independent verification. LLVM 22 merged the authenticated raw payload set
 into `merged-profiles/dev-libs_libpcre-8.45-r4.profdata`; merge evidence
 digest is `5ea21bb7dcc3c67d3238c961e71aee9c6ec9c45d76e77e47adc28642fe855f30`.
 No profile-use deployment or BOLT output is claimed.
+
+### xxhash Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-libs/xxhash-0.8.3-r2` successor wave
+completed both configured ABIs under `phase3-live-candidate-20260918-postsync-r1`.
+The reviewed `/usr/bin/xxhsum --help` workload completed, install-QA passed,
+and the sealed receipt passed independent verification. LLVM 22 merged the
+authenticated raw payload set into
+`merged-profiles/dev-libs_xxhash-0.8.3-r2.profdata`; merge evidence digest is
+`d894ccde89a8920b9f0a27479777f537c20d16b1e8b302382d850a583efeb2e3`.
+No profile-use deployment or BOLT output is claimed.
