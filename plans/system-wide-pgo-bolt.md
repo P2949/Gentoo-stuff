@@ -6157,3 +6157,13 @@ install-QA, but the reviewed `/usr/bin/cllayerinfo --help` workload produced
 no output. The runner therefore refused to seal a receipt or profile merge;
 the preserved log is `/tmp/opencl.log`. This remains an explicit workload
 failure rather than profile evidence.
+
+### 2026-09-19 — gui-apps/wlr-randr-0.5.0 Clang IR profile wave
+
+The exact current-generation `gui-apps/wlr-randr-0.5.0` wave completed
+through install-QA and its reviewed workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/gui-apps_wlr-randr-0.5.0-v1.profdata`.
+The merged profile SHA-256 is
+`e406776df4735ef9358aa29c1b3b0b90f3059c76fefcd34fcbc21927e8531b84`;
+no profile-use rebuild or BOLT deployment is inferred.
