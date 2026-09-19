@@ -5824,3 +5824,7 @@ The exact current-generation `dev-db/sqlite-3.53.4` multilib wave completed thro
 ### 2026-09-19 — dev-libs/elfutils Clang IR profile wave
 
 The exact current-generation `dev-libs/elfutils-0.196` multilib wave completed through install-QA and workload execution. Its sealed receipt passed independent verification, and LLVM 22 merged the authenticated raw payload to `/var/lib/gentoo-optimization/merged-profiles/dev-libs_elfutils-0.196-v1.profdata`. The merged profile SHA-256 is `1480b103a8c2354311efa5e667f40413139a5e5b5784c668b2eaba128c397147`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-libs/protobuf ABI-guard boundary
+
+The exact current-generation `dev-libs/protobuf-34.2` profile wave completed the multilib build and reached install-QA, but the fail-closed exported-ABI guard rejected the staged replacement before merge. Both `libprotobuf-lite.so.34.2.0` and `libprotobuf.so.34.2.0` lost an exported `EpsCopyInputStream::ReadPackedVarintArray` symbol relative to the installed providers. No receipt or merged profile was admitted, and no terminal exclusion or profile-use/BOLT claim is made. The package requires a package-specific ABI-preserving build correction or an evidence-backed terminal classification before a profile wave can be retried.
