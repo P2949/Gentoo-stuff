@@ -5772,3 +5772,7 @@ The exact `dev-lang/sassc-3.6.2` wave completed under the active generation. Its
 ### 2026-09-19 — dev-libs/flatbuffers Clang IR profile wave
 
 The exact `dev-libs/flatbuffers-25.12.19` wave completed under the active generation. Its transaction merged through install-QA, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-libs_flatbuffers-25.12.19-v1.profdata`. The merged profile SHA-256 is `76f4b12b52be9481d0f4d936e96149cde7920b75f9b51991e158ce0e09b3f9a5`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-lang/tcl corrected Clang IR profile wave
+
+The exact `dev-lang/tcl-8.6.17` transaction completed, but the generated `tclsh8.6 --help` probe produced no output under the original nonempty-output contract. That attempt is preserved. A hash-bound successor retained the same safe interpreter invocation with `allow_empty_output=true`, completed through install-QA, passed independent receipt verification, and merged an authenticated LLVM 22 profile to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_tcl-8.6.17-v1.profdata`. The merged profile SHA-256 is `815444e42c99448c0663688c2079ea88c2276f2391745b8043adaf31e38e0404`; no profile-use rebuild or BOLT deployment is inferred.
