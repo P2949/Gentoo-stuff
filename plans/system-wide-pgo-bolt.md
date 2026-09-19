@@ -5284,3 +5284,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-block_parted-3.7.profdata`; merge evidence digest is
 `a804ba2603c4c7b5d649226e3dc5eb2801a468b5b9c55698598bb75896463d82`. No
 profile-use deployment or BOLT output is claimed.
+
+### cryptsetup Clang IR profile wave (2026-09-19)
+
+The exact `sys-fs/cryptsetup-2.8.8` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The read-only `/sbin/cryptsetup
+--version` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-fs_cryptsetup-2.8.8.profdata`; merge evidence digest is
+`15a7e4aa48e310e807a473e02792e183a3c23972308767f2d4a5a6557b67be46`. No
+profile-use deployment or BOLT output is claimed.
