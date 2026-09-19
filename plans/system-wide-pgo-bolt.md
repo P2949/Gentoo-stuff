@@ -5760,3 +5760,7 @@ The initial exact `dev-lang/nasm-3.02` wave preserved a generated `--help` workl
 ### 2026-09-19 — dev-lang/orc Clang IR profile wave
 
 The exact `dev-lang/orc-0.4.42` wave completed under the active generation. The transaction merged through install-QA, the receipt passed independent verification, and LLVM 22 merged the authenticated payload to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_orc-0.4.42-v1.profdata`. The merged profile SHA-256 is `543da78d839e3e33792fee1f2feeeadbce520106a6587aab2189b6df3b0d8417`; no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — dev-lang/yasm corrected Clang IR profile wave
+
+The exact `dev-lang/yasm-1.3.0-r2` transaction completed, but generated `--help` probes failed for `ytasm`, and the first corrected multi-entrypoint successors retained instrumented nonzero behavior for the auxiliary wrappers. Those failures remain preserved. A final hash-bound successor retained the stable `/usr/bin/yasm --version` entrypoint, completed the transaction, passed independent receipt verification, and merged an authenticated LLVM 22 profile to `/var/lib/gentoo-optimization/merged-profiles/dev-lang_yasm-1.3.0-r2-v1.profdata`. The merged profile SHA-256 is `d91ab60fa19c25381effc175d4baae334a6b115263d080c72b0ed69634d69616`; no profile-use rebuild or BOLT deployment is inferred.
