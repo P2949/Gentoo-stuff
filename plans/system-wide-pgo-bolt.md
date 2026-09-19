@@ -5314,3 +5314,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-fs_lvm2-2.03.39.profdata`; merge evidence digest is
 `8a88ecc4ac40cef25b725bec8115466c9edb8ba94958cbe615bb76e25e3ed37d`. No
 profile-use deployment or BOLT output is claimed.
+
+### openrc Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/openrc-0.64` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The read-only `/sbin/openrc
+--version` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_openrc-0.64.profdata`; merge evidence digest is
+`9c562da8a507ff076d0c2f6ad35f389508cb2404ef4ea51bf6ea33121a67b32e`. No
+profile-use deployment or BOLT output is claimed.
