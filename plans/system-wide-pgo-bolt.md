@@ -4004,3 +4004,7 @@ The first exact `dev-util/breakpad-2024.02.16` generation attempt rebuilt and me
 ### Pkgconf source-fetch stop (2026-09-19)
 
 The exact `dev-util/pkgconf-9999` wave was stopped in the unpack phase after the moving upstream git fetch remained silent with zero CPU. The fetch subprocesses were terminated; Portage preserved the failed unpack log and wave attempt, and no package merge or profile receipt was admitted. This is a source-acquisition failure for the moving `9999` ebuild and does not authorize bypassing the source identity contract.
+
+### Iucode-tool Clang IR PGO wave (2026-09-19)
+
+`sys-apps/iucode_tool-2.3.1-r2` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `iucode_tool --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_iucode_tool-2.3.1-r2.profdata`, with root-owned merge evidence in `profile-merge-iucode-tool.json`. No firmware, boot, or kernel artifact was touched; no profile-use deployment or BOLT output is claimed.
