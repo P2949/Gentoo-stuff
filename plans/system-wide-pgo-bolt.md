@@ -5542,3 +5542,11 @@ verifier tests pass, and the repaired framework was republished root-owned.
 The rpm-sequoia live transaction still builds and merges successfully; its
 receipt sealing remains under investigation because the no-workload wave has
 not yet produced an independently verifiable profile payload.
+
+### rpm-sequoia empty-payload sealing verification (2026-09-19)
+After the final runner repair, the exact `app-crypt/rpm-sequoia-1.10.2` wave
+completed its transaction and exited promptly with the explicit terminal result
+`REFUSED: package produced no profile payloads`. It no longer hangs in receipt
+sealing. The wave has no representative workload recipes and no profile
+payload is admitted; the package remains an evidence-backed no-workload
+terminal attempt rather than an optimization success.
