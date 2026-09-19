@@ -8,6 +8,12 @@ def main():
    # --help invocation is only a smoke test and cannot create default.pgo.
    rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'generic entrypoint smoke tests cannot collect Go pprof data'})
    continue
+  # gspell-app1 requires a configured Enchant dictionary and a terminating
+  # language-aware input stream.  This installation has no dictionaries, so
+  # no deterministic representative workload can produce a valid profile.
+  if x['cpv'].startswith('app-text/gspell-'):
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'gspell-app1 has no configured language dictionaries on the live system'})
+   continue
   recipes=[]
   for e in x['entrypoints']:
    p=e['path']; safe=p.startswith(('/usr/bin/','/usr/sbin/','/bin/','/sbin/')) and not os.path.islink(p)
