@@ -6175,3 +6175,11 @@ The exact current-generation wave reached install-QA, but its dependency
 replacement `libhyprutils.so.0.14.2` lost twelve installed versioned symbols;
 the transaction was not admitted and no receipt or profile was produced. The
 full preserved log is `/tmp/hyprcursor.log`.
+
+### 2026-09-19 — gui-libs/hyprwire-9999 wave deferred
+
+The exact current-generation `gui-libs/hyprwire-9999` wave made no progress
+while fetching its upstream Git repository for more than four minutes. The
+fetch was interrupted at the bounded stall threshold; no package receipt or
+merged profile was produced. The preserved diagnostic log is
+`/tmp/hyprwire.log`.
