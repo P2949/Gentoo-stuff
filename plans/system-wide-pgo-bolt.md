@@ -3838,3 +3838,7 @@ The exact `dev-build/make-9999` wave initially stopped on a live package-env pre
 ### Argon2 Clang IR PGO wave (2026-09-19)
 
 `app-crypt/argon2-20190702-r1` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records one nonempty profraw payload, successful install-QA ABI guarding, and completion of the input-bound Argon2 password-hash workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-crypt_argon2-20190702-r1.profdata`, with root-owned merge evidence in `profile-merge-argon2.json`. Existing unrelated LLVM optimization-record YAML files caused nonfatal `ldconfig` warnings during the package transaction; no project files were removed or altered for that warning. No profile-use deployment or BOLT output is claimed.
+
+### RHash Clang IR PGO wave (2026-09-19)
+
+`app-crypt/rhash-1.4.6-r1` completed the exact successor `pgo-clang-ir` wave, including both ABI variants built by the package. The sealed receipt records the nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `rhash --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-crypt_rhash-1.4.6-r1.profdata`, with root-owned merge evidence in `profile-merge-rhash.json`. The same pre-existing non-ELF LLVM optimization-record YAML warnings appeared during `ldconfig`; no project files were removed or altered. No profile-use deployment or BOLT output is claimed.
