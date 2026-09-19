@@ -5384,3 +5384,6 @@ The `app-arch/xz-utils-9999` candidate was attempted under the current generatio
 
 ### libxml2-compat profile-wave build failure (2026-09-19)
 The `dev-libs/libxml2-compat-2.13.9` candidate reached source compilation under the Clang IR lane but the emerge transaction exited nonzero before producing a receipt. No profile was admitted. The failed build remains a package-specific correctness/build result and is not converted into an optimization claim.
+
+### help2man Clang IR profile wave (2026-09-19)
+The exact `sys-apps/help2man-1.49.3` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/help2man --version` completed successfully; the merged profile is `merged-profiles/sys-apps-help2man-1.49.3.profdata` with digest `047d6adda7928888df8e99093a723b07b369e71f0bf1b47f8539a90e321b838d`. No profile-use deployment or BOLT output is claimed.
