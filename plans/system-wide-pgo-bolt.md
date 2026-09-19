@@ -5366,3 +5366,6 @@ The live coverage audit exposed a schema mismatch in `scripts/optimization/verif
 
 ### nvme-cli Clang IR profile wave (2026-09-19)
 The exact `sys-apps/nvme-cli-2.16` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/nvme version` completed successfully; the merged profile is `merged-profiles/sys-apps-nvme-cli-2.16.profdata` with digest `39801d9d0f2a46d454855659e6ae1d1f320c86a2d5a59449050049938efa3706`. No profile-use deployment or BOLT output is claimed.
+
+### less profile-wave fetch failure (2026-09-19)
+The `sys-apps/less-9999` candidate was attempted under the current generation, but its live Git source fetch remained unproductive for over a minute with no build progress. The fetch was interrupted; the runner retained a terminal failed attempt record under `profile-wave-attempts-less/`. No package receipt or profile was admitted, and no profile-use or BOLT claim is made. This is retained as a package-specific source-fetch failure while other candidates continue.
