@@ -5676,3 +5676,11 @@ authenticated payload was merged to the generation-bound v2 profile path with
 evidence profile-merge-json-glib-live-v2.json. Its merged profile digest is
 2ef649e0d92ddb75aa1c63bc6b8e6c4eb4510b495c4a15ab32ced56e8c00e1cf.
 No profile-use deployment or BOLT output is inferred.
+
+### libtasn1 Clang IR profile wave (2026-09-19)
+The exact dev-libs/libtasn1-4.21.0 wave completed under the active
+generation, and its receipt passed independent verification. The current
+authenticated payload was merged to the generation-bound v2 profile path with
+evidence profile-merge-libtasn1-live-v2.json. Its merged profile digest is
+43b97fefc9fa6c07973ba02bd151423ec70dbee16b95167f3aae86dfddcbbc89.
+No profile-use deployment or BOLT output is inferred.
