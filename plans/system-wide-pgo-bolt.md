@@ -4945,3 +4945,13 @@ the authenticated raw payload into
 `merged-profiles/app-crypt_pinentry-1.3.3.profdata`; merge evidence digest is
 `771ba004e5ecc237a8a33830df2d48381580d8d7ec73459a32b6792438b9c562`. No
 profile-use deployment or BOLT output is claimed.
+
+### evtest Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-misc/evtest-1.36` successor wave completed
+under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/evtest --version` workload completed, install-QA passed, and
+independent receipt verification passed. LLVM 22 merged the authenticated raw
+payload into `merged-profiles/app-misc_evtest-1.36.profdata`; merge evidence
+digest is `0098549e5a0dfa9ef2d2ef34c63de186b74cd6f6a7736ad4506506c226f14f64`.
+No profile-use deployment or BOLT output is claimed.
