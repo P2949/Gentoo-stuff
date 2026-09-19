@@ -5,6 +5,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 export LC_ALL=C
+export LLVM_PROFILE_FILE=/dev/null
 
 SOURCE_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 EXACT_CPV_CONTRACT=${SOURCE_ROOT}/optimization/exact-cpv-contract.json
