@@ -5091,3 +5091,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_gawk-5.4.1a.profdata`; merge evidence digest is
 `7aacc91da6d8ff3e789849c0837eff867b255c502677516adadf01b08b36051a`. No
 profile-use deployment or BOLT output is claimed.
+
+### bc Clang IR profile wave (2026-09-19)
+
+The exact `sys-devel/bc-1.08.2` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/usr/bin/bc --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-devel_bc-1.08.2.profdata`; merge evidence digest is
+`e6e402a96d7ef20eceae97c99ad0d407a9a3cef8b49809f7f98c45cf85ed2da7`. No
+profile-use deployment or BOLT output is claimed.
