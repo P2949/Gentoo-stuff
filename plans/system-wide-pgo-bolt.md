@@ -5405,3 +5405,6 @@ The exact `x11-apps/xauth-1.1.5` wave completed under the current Phase-3 framew
 
 ### mkfontscale Clang IR profile wave (2026-09-19)
 The exact `x11-apps/mkfontscale-1.2.4` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/mkfontscale --version` completed successfully; the merged profile is `merged-profiles/x11-apps-mkfontscale-1.2.4.profdata` with digest `fee97d6e1457c0e17df084496ea85e9b27e90337c11838093fe97ce3e016d091`. No profile-use deployment or BOLT output is claimed.
+
+### OpenSSH Clang IR profile wave (2026-09-19)
+The exact `net-misc/openssh-10.5_p1` wave completed under the current Phase-3 framework and receipt verification passed. The read-only workload `/usr/bin/ssh -V` completed successfully; the merged profile is `merged-profiles/net-misc-openssh-10.5_p1.profdata` with digest `584489a730b40515fbccf2fb575312f74f4404ae0b1aa5ee0b5ad316a5fa0a53`. No profile-use deployment or BOLT output is claimed.
