@@ -6033,3 +6033,15 @@ independent verification, and LLVM 22 merged the authenticated raw payload to
 The merged profile SHA-256 is
 `46b9dfa94025e478c4838fd23b39cccf583e9706794d1bbe775658498460b90d`; no
 profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — sys-apps/kmod Clang IR profile wave
+
+After republishing the framework with the packaging-phase profile suppression
+and validating its strict installer check, the exact current-generation
+`sys-apps/kmod-34.2` wave completed through install-QA and the reviewed
+`kmod --help` workload. Its sealed receipt passed independent verification, and
+LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/sys-apps_kmod-34.2-v1.profdata`.
+The merged profile SHA-256 is
+`cc6dcd5c3c642e0bc14e542ccc25c2542fae459e50a9a4cf9b4f5c9e7d75c163`; no
+profile-use rebuild or BOLT deployment is inferred.
