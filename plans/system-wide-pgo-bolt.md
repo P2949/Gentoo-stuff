@@ -4397,3 +4397,13 @@ payload set into `merged-profiles/app-arch_libarchive-3.8.9.profdata`; merge
 evidence digest is
 `4da86814f314626710ff70319a5267b624d5d66fe9f5cbb7ea34d1ab4370dee2`.
 No profile-use deployment or BOLT output is claimed.
+
+### ncompress Clang IR profile wave (2026-09-19)
+
+The exact `app-arch/ncompress-5.0-r2` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active Phase-3 generation
+authority. The reviewed `/usr/bin/compress -V` workload completed, the sealed
+receipt passed independent verification, and LLVM 22 merged the authenticated
+payload set into `merged-profiles/app-arch_ncompress-5.0-r2.profdata`; merge
+evidence digest is `349b01241f8b4e58dc967bf36d7cedbe5b860601be4f7045db15fed86c8b9bb3`.
+No profile-use deployment or BOLT output is claimed.
