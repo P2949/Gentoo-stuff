@@ -4266,3 +4266,15 @@ and `llvm-profdata` merged them into
 `e8480333ccd01720f3e7955b4a42b5bd249bc2b49e02d54375c5ede471f83272`.
 This records profile collection and merge only; profile-use deployment and
 BOLT output remain unclaimed.
+
+### SQLite Clang IR profile wave (2026-09-19)
+
+The exact `dev-db/sqlite-3.53.4` recipe-ready package completed its
+`pgo-clang-ir` training transaction under the active generation authority.
+The reviewed `/usr/bin/sqlite3 --help` workload ran after the 32-bit and
+64-bit instrumented build/install, and the runner emitted a completed
+transaction receipt. Independent receipt verification passed. LLVM 22 merged
+the authenticated raw payload set into
+`merged-profiles/dev-db_sqlite-3.53.4.profdata`; merge evidence digest is
+`7798f0cc2523ad561cae4e4fbe5ffb97d982f3454b086a72e89d3b96115e1734`.
+No profile-use deployment or BOLT output is claimed.
