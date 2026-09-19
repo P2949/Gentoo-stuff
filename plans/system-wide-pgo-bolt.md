@@ -5171,3 +5171,13 @@ independent receipt verification passed. LLVM 22 merged the authenticated raw
 payload into `merged-profiles/sys-fs_dosfstools-4.2.profdata`; merge evidence
 digest is `62609c0f48c12e33a762d4877af35fa289e4eb5aad6c620cb0694f07ab6f6e2f`.
 No profile-use deployment or BOLT output is claimed.
+
+### e2fsprogs Clang IR profile wave (2026-09-19)
+
+The exact `sys-fs/e2fsprogs-1.47.4` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The non-mutating `/sbin/mke2fs
+-V` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-fs_e2fsprogs-1.47.4.profdata`; merge evidence digest is
+`1b9178bf08e7161f21a341fce1a8a0d1797eeefbdca651da3ded85f4238b594c`. No
+profile-use deployment or BOLT output is claimed.
