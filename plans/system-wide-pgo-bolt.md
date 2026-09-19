@@ -4655,3 +4655,15 @@ providers into an implicit pass; that exception is now propagated so inspection
 failure remains fail-closed. `tests/optimization/test-abi-guard.sh` passed all 12
 cases and `tests/optimization/test-portage-qa-hook.sh` passed all 11 cases after
 the correction. No boot, kernel, initramfs, EFI, or firmware state was touched.
+
+### libpaper Clang IR profile wave (2026-09-19)
+
+The exact current-generation `app-text/libpaper-2.1.3` successor wave
+completed under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/paper --help` and `/usr/bin/paperconf -h` workloads completed, the
+package merged successfully through the repaired install-QA ABI guard, and the
+sealed receipt passed independent verification. LLVM 22 merged the
+authenticated raw payload into
+`merged-profiles/app-text_libpaper-2.1.3.profdata`; merge evidence digest is
+`1a20846d333e4a43662fa1b407075a143e88e0e36a4b339cc951ea8bfc2fba53`. No
+profile-use deployment or BOLT output is claimed.
