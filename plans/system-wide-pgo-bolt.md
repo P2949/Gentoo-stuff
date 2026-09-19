@@ -3800,3 +3800,7 @@ The first `app-text/enchant-2.8.16` attempt correctly refused the generic `encha
 ### Xmlto Clang IR PGO wave (2026-09-19)
 
 `app-text/xmlto-0.0.28-r11` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records one nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed xmlto workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/app-text_xmlto-0.0.28-r11.profdata`, with root-owned evidence in `profile-merge-xmlto.json`. No BOLT deployment is claimed.
+
+### Yodl Clang IR generation failure (2026-09-19)
+
+The exact `app-text/yodl-4.05.00` generation attempt was refused in the ebuild `src_prepare` phase before compilation. Gentoo's `INSTALL.im` rewrite uses a slash-delimited `sed` replacement with `tc-getCC`; the immutable active Clang identity is the absolute `/usr/lib/llvm/22/bin/clang-22`, so the replacement fails with `sed: unknown option to 's'`. The runner preserved the failed attempt journal and Portage build log; no package merge or profile receipt was admitted, and no ABI guard was bypassed. This CPV remains a package-specific build-path failure requiring an ebuild-side delimiter-safe repair before profile collection can proceed.
