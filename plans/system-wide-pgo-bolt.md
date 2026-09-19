@@ -3928,3 +3928,7 @@ The first exact `dev-util/xxd-2025.08.24-r1` generation attempt rebuilt and merg
 ### Sed Clang IR PGO wave (2026-09-19)
 
 `sys-apps/sed-4.10-r1` completed the exact successor `pgo-clang-ir` wave. The sealed receipt records a nonempty profraw payload, successful install-QA ABI guarding, and completion of the reviewed `gsed --help` workload; independent receipt verification passed. LLVM 22 merged the payload into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_sed-4.10-r1.profdata`, with root-owned merge evidence in `profile-merge-sed.json`. No profile-use deployment or BOLT output is claimed.
+
+### Gentoo-functions workload exclusion (2026-09-19)
+
+`sys-apps/gentoo-functions-9999` rebuilt and merged under the exact Clang IR lane, but its only owned executable, `consoletype`, requires an interactive terminal and rejects all deterministic standalone help/version probes. The authoritative workload generator now records this as `no-profile-producing-workload` with the explicit reason `consoletype requires an interactive terminal and has no deterministic standalone invocation`; the failed wave attempt and Portage evidence remain preserved, and no profile receipt was admitted.

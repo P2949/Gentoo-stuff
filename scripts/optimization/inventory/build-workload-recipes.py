@@ -20,6 +20,9 @@ def main():
   if x['cpv'].startswith('dev-libs/libtracefs-'):
    rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'sqlhist requires live tracefs control access and exits 255 without it'})
    continue
+  if x['cpv'].startswith('sys-apps/gentoo-functions-'):
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'consoletype requires an interactive terminal and has no deterministic standalone invocation'})
+   continue
   recipes=[]
   for e in x['entrypoints']:
    p=e['path']; safe=p.startswith(('/usr/bin/','/usr/sbin/','/bin/','/sbin/')) and not os.path.islink(p)
