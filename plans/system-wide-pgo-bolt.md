@@ -5151,3 +5151,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_ethtool-7.0.profdata`; merge evidence digest is
 `a63b0abe3d953e7abe42858ebebaa859931fbf676ecc521c7bcccb3bb72cf2f5`. No
 profile-use deployment or BOLT output is claimed.
+
+### kmod Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/kmod-34.2` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/bin/kmod --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_kmod-34.2.profdata`; merge evidence digest is
+`9f5c960bf5a2ad97d43506f0511f7580327c492a6e9e1430f86c01772ca942fa`. No
+profile-use deployment or BOLT output is claimed.
