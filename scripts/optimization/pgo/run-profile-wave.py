@@ -211,9 +211,11 @@ def main():
    writer_deadline=time.monotonic()+300
    while time.monotonic() < writer_deadline:
     writers=[]
-    for proc in os.listdir('/proc'):
-     if not proc.isdigit():
-      continue
+   for proc in os.listdir('/proc'):
+    if not proc.isdigit():
+     continue
+    if proc == str(os.getpid()):
+     continue
      try:
       env_data=open('/proc/'+proc+'/environ','rb').read()
       if profile_path.encode() in env_data:
