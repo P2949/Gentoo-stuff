@@ -5041,3 +5041,13 @@ passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/app-text_hunspell-1.7.2-r1.profdata`; merge evidence digest is
 `dc771f21c5cfab1f02334c4e487cb074da720ee3fec69c4bfd841969cb9a02fb`. No
 profile-use deployment or BOLT output is claimed.
+
+### debianutils Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/debianutils-5.23.2` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The `/bin/run-parts --version`
+workload completed, install-QA passed, and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_debianutils-5.23.2.profdata`; merge evidence digest
+is `030c946926b71d5524cb23a528faa73f7e3848bd8bdea8a1fbab99658065dd82`. No
+profile-use deployment or BOLT output is claimed.
