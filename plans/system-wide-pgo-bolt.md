@@ -5558,3 +5558,11 @@ receipt passed independent verification, and LLVM 22 merged the authenticated
 raw payload. Root-owned merge evidence is `profile-merge-libb2.json` with
 merged profile digest `3a4a954c1c612c47f3a35d48205675d4bcb6202d7df6a7a7c8c8e11a09c0a96b`.
 No profile-use deployment or BOLT output is inferred.
+
+### libmd Clang IR profile wave (2026-09-19)
+The exact `app-crypt/libmd-1.2.0` wave completed under the active generation.
+Its controlled transaction merged successfully, the receipt passed independent
+verification, and LLVM 22 merged the authenticated raw payload. Root-owned
+merge evidence is `profile-merge-libmd.json` with merged profile digest
+`6a4a18107fff7d9f44efd4d475654132459f035bc1f689272c16f2d3e293430b`.
+No profile-use deployment or BOLT output is inferred.
