@@ -235,7 +235,7 @@ def main():
       try: snapshot.append((path, os.stat(path).st_size, os.stat(path).st_mtime_ns))
       except FileNotFoundError: pass
     current=tuple(sorted(snapshot))
-    if current and current == previous:
+    if current == previous:
      stable_intervals += 1
      if stable_intervals >= 10:
       break
