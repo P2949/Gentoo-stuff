@@ -5010,3 +5010,14 @@ payload, install-QA passed, and independent receipt verification passed. LLVM
 22 merged the payload into `merged-profiles/app-crypt_libb2-0.98.1-r3.profdata`;
 merge evidence digest is `b68a526b78691823785b5eb0bfe897705e568519e4241ea5c307582042656cb1`.
 No profile-use deployment or BOLT output is claimed.
+
+### mandoc Clang IR profile wave (2026-09-19)
+
+The corrected exact `app-text/mandoc-1.14.6-r1` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. Database-independent workload
+recipes were validated (`apropos .`, direct mandoc parsers, `msoelim /dev/null`,
+and `makewhatis -p /tmp`); install-QA and independent receipt verification
+passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/app-text_mandoc-1.14.6-r1.profdata`; merge evidence digest is
+`4899da91b16cff33f4a2f2a9c52636d0ec154b6095df7d026ca660d828a1e850`. No
+profile-use deployment or BOLT output is claimed.
