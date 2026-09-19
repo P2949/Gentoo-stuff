@@ -6130,3 +6130,13 @@ authenticated raw payload to
 The merged profile SHA-256 is
 `daf9a688974ca95a0bbc6068535c2020356e0a3dd063a5e6997b18749fad25ae`;
 no profile-use rebuild or BOLT deployment is inferred.
+
+### 2026-09-19 — gui-apps/waybar-9999 Clang IR profile wave
+
+The exact current-generation `gui-apps/waybar-9999` wave completed through
+install-QA and the reviewed `waybar --help` workload. Its sealed receipt passed
+independent verification, and LLVM 22 merged the authenticated raw payload to
+`/var/lib/gentoo-optimization/merged-profiles/gui-apps_waybar-9999-v1.profdata`.
+The merged profile SHA-256 is
+`e484e8887ed31147db889e0443c7d97264948cdfddde10e32d1b96c4654a9d12`;
+no profile-use rebuild or BOLT deployment is inferred.
