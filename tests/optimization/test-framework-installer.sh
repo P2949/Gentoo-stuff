@@ -1006,6 +1006,10 @@ printf 'authorized\n' >${PROFILE_TRANSACTION_ARTIFACTS@Q}/installer-check.marker
 EOF
 chmod 0700 -- "${PROFILE_TRANSACTION_CHILD_COMMAND}"
 
+# Host-instrumented helpers may emit an implicit profile while constructing the fixture.
+# Remove only the known repository-local residue before the identity-bound check.
+rm -f -- "${REPOSITORY}/default.profraw" "${REPOSITORY}/tests/default.profraw"
+
 /usr/bin/env -i HOME="${HOME}" USER="${USER:-fixture}" LOGNAME="${LOGNAME:-fixture}" \
     SHELL=/bin/bash PATH=/usr/bin:/bin LANG=C LC_ALL=C LLVM_PROFILE_FILE=/dev/null TZ=UTC \
     PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -I -B \
