@@ -7,6 +7,11 @@ sys-libs/libxcrypt no-hidden-no-forced-libs.conf
 dev-libs/opencl-icd-loader no-hidden-no-forced-libs.conf
 app-crypt/gpgme no-hidden-no-forced-libs.conf
 
+# libarchive exports a broad public C API consumed by its installed tools and
+# reverse dependencies; the global hidden-visibility lane removes unannotated
+# __archive_* and PPMD symbols and is rejected by the ABI guard.
+app-arch/libarchive no-hidden-no-forced-libs.conf
+
 # newt builds its public C shared object before linking whiptail against it;
 # hidden defaults remove the newt_* API and leave an unversioned NEEDED edge.
 dev-libs/newt no-hidden-no-forced-libs.conf
