@@ -4643,3 +4643,15 @@ passed independent verification, and LLVM 22 merged the authenticated raw
 payload set into `merged-profiles/app-text_scdoc-9999.profdata`; merge evidence
 digest is `dc7f6b26f87f5d504e67998ae414729f4a44552453881fe4113695a785b2c9ff`.
 No profile-use deployment or BOLT output is claimed.
+
+### ABI guard fail-closed provider inspection correction (2026-09-19)
+
+The focused ABI guard traversal repair is retained: an intentionally empty
+`relative_dirs` set scans nothing, staged images with no `.so` candidates
+return immediately, and installed-provider discovery uses `iterdir()` only in
+the exact candidate parent directories. The provider path previously discarded
+`readelf` inspection errors and could therefore turn unreadable established ELF
+providers into an implicit pass; that exception is now propagated so inspection
+failure remains fail-closed. `tests/optimization/test-abi-guard.sh` passed all 12
+cases and `tests/optimization/test-portage-qa-hook.sh` passed all 11 cases after
+the correction. No boot, kernel, initramfs, EFI, or firmware state was touched.

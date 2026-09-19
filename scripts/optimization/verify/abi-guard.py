@@ -131,10 +131,7 @@ def collect_soname_providers(
             resolved = resolve_tree_link(path, tree) if path.is_symlink() else path
             if resolved is None or not resolved.is_file() or not is_elf(resolved):
                 continue
-            try:
-                elf_type, soname, symbols = inspect(resolved)
-            except RuntimeError:
-                continue
+            elf_type, soname, symbols = inspect(resolved)
             if elf_type == "DYN" and soname:
                 providers.setdefault(soname, (resolved, symbols))
     return providers
