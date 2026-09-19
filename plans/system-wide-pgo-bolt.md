@@ -4862,3 +4862,14 @@ receipt verification passing. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_attr-9999.profdata`; merge evidence digest is
 `3026a2f053b4386f405c522b6e04a530a08777b60f1bfb786abc09734c10d96e`. No
 profile-use deployment or BOLT output is claimed.
+
+### b2 Clang IR profile wave (2026-09-19)
+
+The exact current-generation `dev-build/b2-5.5.3` successor wave completed
+under `phase3-live-candidate-20260918-postsync-r1`. The reviewed
+`/usr/bin/b2 --help` workload completed after the package's restricted test
+phase was skipped by its ebuild, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/dev-build_b2-5.5.3.profdata`; merge evidence digest is
+`f64932cabd34e72a0036b49b90c8e713058422c34f7b996990f670d3f939ad55`. No
+profile-use deployment or BOLT output is claimed.
