@@ -6369,3 +6369,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — media-libs/dav1d-9999 profile wave configure failure
 
 The `pgo-clang-ir` wave reached the Meson configure phase but failed because the source configuration reported `Atomics not supported` (`meson.build:218`). No receipt or profile was produced; the package remains an evidence-backed terminal execution failure for this wave and was not bypassed.
+
+### 2026-09-20 — media-libs/giflib-6.1.3 workload rejection
+
+The package transaction completed, but the profile-wave workload gate rejected `media-libs/giflib-6.1.3` because `/usr/bin/gifbuild` exited with status 1. No receipt or merged profile was accepted. The workload failure is preserved as the terminal reason for this attempt.
