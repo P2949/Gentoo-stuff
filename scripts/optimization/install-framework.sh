@@ -366,6 +366,7 @@ source_git() {
         LANG=C
         LC_ALL=C
         PATH=/usr/bin:/bin
+        LLVM_PROFILE_FILE=/dev/null
         GIT_NO_REPLACE_OBJECTS=1
         GIT_CONFIG_NOSYSTEM=1
         GIT_CONFIG_GLOBAL=/dev/null
