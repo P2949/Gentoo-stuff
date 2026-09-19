@@ -5708,3 +5708,10 @@ authenticated payload was merged to the generation-bound v3 profile path with
 evidence profile-merge-libgcrypt-v3.json. Its merged profile digest is
 5506c027edc6363d4e6a5ee8dca9d86138170edbe05c21b1149bf6910567d3c2.
 No profile-use deployment or BOLT output is inferred.
+
+### libpaper Clang IR profile-wave workload failure (2026-09-19)
+The exact app-text/libpaper-2.1.3 transaction completed and merged under the
+active generation, but its reviewed paperconf workload exited nonzero. No
+receipt or merged profile was admitted; the package-specific workload failure
+and transaction evidence remain preserved for remediation or terminal
+classification.
