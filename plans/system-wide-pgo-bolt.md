@@ -5462,3 +5462,17 @@ therefore explicit workload terminal exclusions with reasons, not silently
 omitted packages. The remaining supported Clang IR, Rust, and GCC lanes have
 completed receipts or package-specific preserved terminal attempts; no
 profile-use or BOLT deployment is inferred from workload accounting.
+
+### libarchive Clang IR profile wave (2026-09-19)
+The exact `app-arch/libarchive-3.8.9` wave completed under the current
+generation after a narrow runner repair for instrumented `eltpatch` helpers.
+The first two attempts were preserved: both stopped in `src_prepare` when the
+helper tried to create `default.profraw` under `/usr/share/elt-patches` after
+Portage filtered the profile variable. The runner now grants and removes only
+that exact disposable path for the transaction. The successful retry compiled
+both configured ABIs, merged the package through install-QA, ran the reviewed
+BSD archive utility workloads, passed independent receipt verification, and
+LLVM 22 merged the authenticated raw payload. Root-owned merge evidence is
+`profile-merge-libarchive.json` with digest
+`f66218d626308046a3bc166517c0c61f23df34c85f4926123be30e73d9ea42e4`. No
+profile-use deployment or BOLT output is claimed.
