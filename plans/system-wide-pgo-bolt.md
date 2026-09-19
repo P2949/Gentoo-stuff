@@ -5344,3 +5344,13 @@ verification passed. LLVM 22 merged the authenticated raw payload into
 `merged-profiles/sys-apps_groff-1.23.0-r2.profdata`; merge evidence digest is
 `d643f54371e5494cae61224d320c6a029558f67b961f03ddf76ac78386be9297`. No
 profile-use deployment or BOLT output is claimed.
+
+### texinfo Clang IR profile wave (2026-09-19)
+
+The exact `sys-apps/texinfo-7.3` wave completed under
+`phase3-live-candidate-20260918-postsync-r1`. The read-only `/usr/bin/makeinfo
+--version` workload completed, install-QA passed, and independent receipt
+verification passed. LLVM 22 merged the authenticated raw payload into
+`merged-profiles/sys-apps_texinfo-7.3.profdata`; merge evidence digest is
+`4e62d21480454e88d8f446dc3a960bc70448491960fa0c87247e08ea79af9822`. No
+profile-use deployment or BOLT output is claimed.
