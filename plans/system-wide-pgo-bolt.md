@@ -4142,3 +4142,16 @@ completed, passed independent receipt verification, and LLVM 22 merged the
 payload into `/var/lib/gentoo-optimization/merged-profiles/app-shells_dash-9999.profdata`,
 with root-owned merge evidence in `profile-merge-dash-v2.json`. No
 profile-use deployment or BOLT output is claimed.
+
+### Bash native-PGO conflict remediation and fetch stop (2026-09-19)
+
+The Bash lane runner now passes `USE=-pgo` for the Clang IR wave so the
+Gentoo ebuild cannot append its GCC-only native PGO flags. It also passes
+`LLVM_PROFILE_FILE=/dev/null` explicitly through `doas env`; setting it only in
+the parent environment was insufficient because the privileged helper scrubs
+that variable, causing Portage success hooks to attempt `default.profraw` in
+the repository. The first retry reached the corrected no-`pgo` build path but
+its moving Bash source fetch then remained silent with zero CPU; the fetch and
+transaction were terminated, with no merge or profile receipt admitted. The
+attempt remains preserved for a later retry after source acquisition is
+available.

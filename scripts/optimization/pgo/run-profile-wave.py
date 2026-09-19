@@ -115,6 +115,15 @@ def main():
     command += ['GENTOO_OPT_RUST_NO_LTO=1','CFLAGS=-O2 -pipe','CXXFLAGS=-O2 -pipe','LDFLAGS=-Wl,--as-needed','RUSTFLAGS=-C lto=off -C linker-plugin-lto=no']
    if item['cpv'] in {'dev-util/maturin-1.15.0','app-crypt/rpm-sequoia-1.10.2'}:
     command.append('GENTOO_OPT_RUST_HOST_LAYOUT=1')
+   # Bash's ebuild owns a GCC-only native PGO implementation behind its
+   # pgo USE flag.  Disable that package-local path when collecting the
+   # framework's Clang IR profile so the ebuild cannot append conflicting
+   # -fprofile-generate flags to Clang's -fprofile-instr-generate flags.
+   if item['cpv'].startswith('app-shells/bash-') and item['lane']=='pgo-clang-ir':
+    command.append('USE=-pgo')
+   # Keep Portage's own Python/administrative helpers from inheriting a
+   # compiler profile destination; doas only receives the explicit env argv.
+   command.append('LLVM_PROFILE_FILE=/dev/null')
    command += ['emerge','--oneshot','--buildpkg','='+cpv]
    # Do not expose the package profile path to the privileged doas helper
    # itself.  The path is supplied explicitly in the doas environment for
