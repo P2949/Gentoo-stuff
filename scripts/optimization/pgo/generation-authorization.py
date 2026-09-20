@@ -170,8 +170,21 @@ def main() -> int:
     root = a.root; paths = locks(root); journal = a.journal or root / "phase3-generation-authorization.journal.json"
     if a.action == "recover":
         if not journal.exists(): return 0
+        try:
+            journal_stat = journal.lstat()
+        except OSError as error:
+            raise RuntimeError(f"cannot inspect recovery journal: {error}")
+        if journal.is_symlink() or not stat.S_ISREG(journal_stat.st_mode):
+            raise RuntimeError("recovery journal is not a regular non-symlink file")
+        if journal_stat.st_uid != 0 or stat.S_IMODE(journal_stat.st_mode) & 0o077:
+            raise RuntimeError("recovery journal ownership or mode is unsafe")
         data = json.loads(journal.read_text())
+        if data.get("schema_version") != 1 or data.get("state") != "prepared":
+            raise RuntimeError("recovery journal schema or state is invalid")
+        if not isinstance(data.get("transaction_id"), str) or not data["transaction_id"]:
+            raise RuntimeError("recovery journal transaction identity is missing")
         desired = data.get("new_payload", "").encode()
+        validate_generation(json.loads(desired), "journal new generation") if desired else None
         fds = acquire(paths)
         try:
             current = [read_lock(p) for p in paths]
