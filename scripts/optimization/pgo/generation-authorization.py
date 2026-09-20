@@ -63,14 +63,23 @@ def framework_identity(current: Path, generation: dict[str, str]) -> dict[str, A
     policy_id = policy.read_text(encoding="utf-8").strip()
     if not policy_id or policy_id == "empty-v1":
         raise RuntimeError("Phase-3 authority requires a non-empty generated policy")
+    manifest_policy = lines.get("generated_policy", "").strip()
+    if manifest_policy != policy_id:
+        raise RuntimeError("framework generated-policy identity does not match manifest")
     inv = lines.get("frozen_inventory_sha256") or lines.get("candidate_inventory_sha256")
     if not inv or inv == "none" or inv != generation["inventory_sha256"]:
         raise RuntimeError("framework inventory identity does not match requested generation")
+    source_aggregate = lines.get("source_aggregate_sha256", "").strip()
+    framework_aggregate = lines.get("framework_aggregate_sha256", "").strip()
+    for name, value in (("source aggregate", source_aggregate), ("framework aggregate", framework_aggregate)):
+        if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+            raise RuntimeError(f"framework {name} identity is missing or malformed")
     return {
         "target": str(target), "target_realpath": str(target),
         "manifest_sha256": digest(manifest),
-        "source_aggregate_sha256": lines.get("source_aggregate_sha256", ""),
-        "framework_aggregate_sha256": lines.get("aggregate_sha256", ""),
+        "source_aggregate_sha256": source_aggregate,
+        "framework_aggregate_sha256": framework_aggregate,
+        "generated_policy_manifest": manifest_policy,
         "generated_policy": policy_id,
         "frozen_inventory_sha256": inv,
         "git_commit": lines.get("git_commit", ""),
