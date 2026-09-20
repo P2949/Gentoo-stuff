@@ -7328,3 +7328,17 @@ running the independent validator as root now passes. The accepted successor
 artifacts are `profile-manifest-libjxl-gcc-v2.json` and its metadata sidecar in
 the root-owned generation directory. This validates one GCC profile only; the
 full profile set and profile-use publication remain outstanding.
+
+Clang profile validation batch (2026-09-20): the canonical profile producer was
+run against the current generation bindings, exact Clang 22/compiler and
+`llvm-profdata` identities, and authenticated merged payloads. It produced
+184 canonical manifests; the independent verifier revalidated all 184 with
+zero failures. Ninety additional Clang payload-present records currently have
+raw payloads but no authenticated merged `.profdata` artifact, so they remain
+outside the validated set rather than being inferred as valid. Root-owned
+summaries are `profile-validation-clang-results-20260920.json` (SHA-256
+`bb9e059c52eb32c3499c56e652bfe4f5f412af890626c312ecf73e26fe6e9b07`) and
+`profile-validation-clang-verify-20260920.json` (SHA-256
+`e7f9c25351f34f570dbb1a2395b7a80713d24ce9af32327584f0bcfd90176c58`).
+Profile-use activation remains pending until the remaining raw payloads are
+merged and validated, and Rust validation is separately required.
