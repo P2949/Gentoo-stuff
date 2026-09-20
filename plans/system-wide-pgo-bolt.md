@@ -6781,3 +6781,7 @@ The `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully
 ### 2026-09-20 — sys-power/thermald-2.5.12 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-power_thermald-2.5.12-v1.profdata`.
+
+### 2026-09-20 — sys-process/cronie-1.7.2-r1 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully, but `/usr/bin/cronnext` exited 1 in the current daemon/configuration context. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
