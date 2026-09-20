@@ -7689,3 +7689,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-20 — libtasn1 clang-IR generation and profile-use
 
 `dev-libs/libtasn1-4.21.0` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `46b5cb09cc9f0fccf0486c08953982b92c6aa8603c34879d121d3c383f9ea422`, and dispatcher publication succeeded with record SHA-256 `5eff638c6be6f0095b93e53a2b7bc3745c38dbceca521c05adb25d753303b394`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
+
+### 2026-09-20 — nettle clang-IR generation and profile-use
+
+`dev-libs/nettle-3.10.2` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `f001cab29d0bf946c28aed2c85a970ce14e24cd355b6b8177f6ee8eb7413332a`, and dispatcher publication succeeded with record SHA-256 `6b7c7e189989dce6d77810907f8cd70afe921e4080dd2cf4f6128f196c84e42f`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
