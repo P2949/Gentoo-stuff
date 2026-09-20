@@ -6985,3 +6985,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and d
 ### 2026-09-20 — sys-apps/util-linux-2.42.3 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_util-linux-2.42.3-v1.profdata` with merge evidence recorded.
+
+### 2026-09-20 — sys-apps/xdg-dbus-proxy-0.1.8 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_xdg-dbus-proxy-0.1.8-v1.profdata` with merge evidence recorded.
