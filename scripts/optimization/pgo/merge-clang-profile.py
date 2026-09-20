@@ -80,6 +80,9 @@ def main():
   raise
  evidence={'record_type':a.backend+'-profile-merge','schema_version':2,'backend':a.backend,'receipt':str(pathlib.Path(a.receipt).resolve()),'receipt_sha256':sha(pathlib.Path(a.receipt)),'package':a.package,'generation':expected,'raw_files':[{'path':str(p),'size':p.stat().st_size,'sha256':sha(p)} for p in listed],'llvm_profdata':tool_identity(a.llvm_profdata),'merged_profile':str(out.resolve()),'merged_sha256':sha(out),'inspection_sha256':hashlib.sha256(shown.stdout.encode()).hexdigest(),'state':'profile-merged-pending-dispatcher-authorization'}
  evidence['sha256']=hashlib.sha256(json.dumps(evidence,sort_keys=True,separators=(',',':')).encode()).hexdigest(); fd,tmp=tempfile.mkstemp(prefix='.merge-',dir=str(pathlib.Path(a.evidence).parent))
+ if os.path.lexists(a.evidence):
+  os.close(fd); os.unlink(tmp)
+  raise SystemExit(f'REFUSED: refusing to overwrite existing merge evidence: {a.evidence}')
  with os.fdopen(fd,'w') as f: json.dump(evidence,f,sort_keys=True,indent=2); f.write('\n'); f.flush(); os.fsync(f.fileno())
  os.replace(tmp,a.evidence); print(evidence['sha256'])
 if __name__=='__main__': main()
