@@ -6749,3 +6749,7 @@ The `pgo-clang-ir` rebuild and merge completed, but the workload recipe failed c
 ### 2026-09-20 — sys-apps/sysvinit-3.18 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild and merge completed, but the userspace workload recipe failed closed with exit status 1 from `/sbin/bootlogd`. No profile receipt or merged profile was accepted. No boot-chain mutation was performed; the installed package remains rebuilt under the generation and the workload failure is retained as the terminal state.
+
+### 2026-09-20 — sys-auth/passwdqc-2.1.0-r1 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-auth_passwdqc-2.1.0-r1-v1.profdata`.
