@@ -7105,3 +7105,7 @@ The `pgo-rust` rebuild, staging, install-QA, ABI guard, and declared workload co
 ### 2026-09-20 — gnome-base/librsvg-2.62.3 Rust profile-wave terminal failure
 
 The `pgo-rust` rebuild reached the multilib link stage but failed closed in the 32-bit ABI build with unresolved `__llvm_profile_instrument_target` and `__llvm_profile_instrument_memop` symbols from the Rust instrumentation runtime. No package merge, install-QA admission, workload receipt, or profile payload was accepted. The failed Portage attempt and build logs remain preserved as an exact package-specific Rust/multilib toolchain failure.
+
+### 2026-09-20 — gui-apps/xwayland-satellite-0.8.2 Rust workload terminal result
+
+The `pgo-rust` rebuild, staging, install-QA, ABI guard, and package merge completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/xwayland-satellite` exited 101 in the current runtime context. The workload gate refused the wave; no profile receipt or Rust profile payload was admitted. The installed userspace package and exact failed workload evidence remain preserved as a terminal workload exception.
