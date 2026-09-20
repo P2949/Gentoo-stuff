@@ -6671,3 +6671,7 @@ The `pgo-clang-ir` wave installed successfully, but its workload recipe failed c
 ### 2026-09-20 — dev-tcltk/blt-2.5.3-r4 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` wave installed successfully after a long compile, but its workload recipe `/usr/bin/bltsh` produced no output and failed closed. No receipt or merged profile was produced; the workload failure remains explicit.
+
+### 2026-09-20 — dev-libs/openssl-3.6.9999 Clang IR profile wave terminal ABI failure
+
+The instrumented rebuild completed, but install QA failed closed in the exported-ABI guard because the staged image removed the established `libssl.so.1.1` and `libcrypto.so.1.1` SONAME providers. No package merge, workload execution, receipt, or profile merge was accepted. The failed transaction and Portage log remain retained as ABI-remediation evidence.
