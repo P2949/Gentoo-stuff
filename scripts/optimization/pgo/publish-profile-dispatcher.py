@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Publish an immutable, exact-CPV Clang profile-use dispatcher fragment."""
 from __future__ import annotations
-import argparse, hashlib, json, os, re, tempfile, grp, stat
+import argparse, hashlib, json, os, re, tempfile, grp, stat, subprocess, sys
 from pathlib import Path
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from profile_locks import profile_lock_hierarchy
 
 HEX = re.compile(r'^[0-9a-f]{64}$')
 CPV = re.compile(r'^[A-Za-z0-9_.+-]+/[A-Za-z0-9_.+-]+-[0-9]')
@@ -35,9 +38,24 @@ def main():
     ap.add_argument('--cpv', required=True)
     ap.add_argument('--backend', choices=('clang-ir','rust'), default='clang-ir')
     ap.add_argument('--merge-evidence', type=Path)
+    ap.add_argument('--generation-id', required=True)
+    ap.add_argument('--inventory-id', required=True)
+    ap.add_argument('--inventory-sha256', required=True)
+    ap.add_argument('--framework-generation', type=Path, required=True)
+    ap.add_argument('--framework-current', type=Path, default=Path('/var/lib/gentoo-optimization/framework-current'))
+    ap.add_argument('--authorization-root', type=Path, default=Path('/run/gentoo-optimization'))
     ap.add_argument('--output-env', type=Path, required=True)
     ap.add_argument('--output-record', type=Path, required=True)
     a=ap.parse_args()
+    expected_generation = {'generation_id': a.generation_id, 'inventory_id': a.inventory_id, 'inventory_sha256': a.inventory_sha256}
+    active = Path(os.path.realpath(a.framework_current))
+    requested_framework = Path(os.path.realpath(a.framework_generation))
+    if active != requested_framework:
+        raise SystemExit('REFUSED: requested framework generation is not the active framework')
+    authority = HERE / 'generation-authorization.py'
+    check = subprocess.run([sys.executable, str(authority), 'verify', '--root', str(a.authorization_root), '--generation-id', a.generation_id, '--inventory-id', a.inventory_id, '--inventory-sha256', a.inventory_sha256], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if check.returncode != 0:
+        raise SystemExit('REFUSED: active Phase-3 generation authority is absent or mismatched: ' + check.stdout.strip())
     cache=Path('/var/cache/gentoo-optimization/pgo').resolve()
     generation=Path('/var/lib/gentoo-optimization/generations').resolve()
     for p,root,label in ((a.manifest,cache,'manifest'),(a.metadata,cache,'metadata'),(a.fingerprint_file,generation,'fingerprint')): safe(p.resolve(),root,label)
@@ -75,12 +93,14 @@ def main():
     if fp != f"fingerprint={lines['fingerprint']}": raise SystemExit('REFUSED: fingerprint mismatch')
     meta=json.loads(a.metadata.read_text())
     if not isinstance(meta,dict) or meta.get('schema_version') != 1: raise SystemExit('REFUSED: invalid validation metadata')
+    if meta.get('generation') != expected_generation: raise SystemExit('REFUSED: validation metadata generation differs from requested authority')
     env='\n'.join([
       f'GENTOO_OPT_MODE="{a.backend}-use"', 'GENTOO_OPT_ABI="amd64"', f'GENTOO_OPT_COMPILER_FAMILY="{"clang" if a.backend == "clang-ir" else "rust"}"',
       f'GENTOO_OPT_FINGERPRINT_FILE="{a.fingerprint_file}"', f'GENTOO_OPT_PROFILE_PATH="{profile}"',
       f'GENTOO_OPT_PROFILE_MANIFEST="{a.manifest.resolve()}"', f'GENTOO_OPT_PROFILE_METADATA="{a.metadata.resolve()}"', '' ])
     rec={'schema_version':1,'cpv':a.cpv,'backend':a.backend,'fingerprint':lines['fingerprint'],'profile':str(profile),'manifest':str(a.manifest.resolve()),'metadata':str(a.metadata.resolve()),'fingerprint_file':str(a.fingerprint_file.resolve()),'state':'candidate-profile-use','sha256':''}
     rec['sha256']=digest({k:v for k,v in rec.items() if k!='sha256'})
-    write_new(a.output_env,env.encode()); write_new(a.output_record,(json.dumps(rec,sort_keys=True,indent=2)+'\n').encode())
+    with profile_lock_hierarchy(exclusive=False, expected_generation=expected_generation, expected_generation_id=a.generation_id, timeout_seconds=30, test_mode=False, test_paths=None):
+      write_new(a.output_env,env.encode()); write_new(a.output_record,(json.dumps(rec,sort_keys=True,indent=2)+'\n').encode())
     print(json.dumps({'cpv':a.cpv,'record_sha256':rec['sha256'],'env':str(a.output_env)}))
 if __name__=='__main__': main()
