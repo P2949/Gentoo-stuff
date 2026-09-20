@@ -7591,3 +7591,6 @@ The exact `dev-build/icmake-9.03.01-r1` wave passed readiness, rebuilt and merge
 
 ### icmake profile-use deployment (2026-09-20)
 After correcting the retained merge-evidence permissions, the exact `dev-build/icmake-9.03.01-r1` profile-use rebuild authenticated `clang-ir-use`, emitted the expected unprofiled-file warnings for uncovered translation units, passed install-QA and the ABI guard, and merged successfully with `use_rc=0`.
+
+### make generation-wave terminal compile failure (2026-09-20)
+The exact `dev-build/make-9999` Clang-IR generation wave passed readiness and entered the authenticated replacement build, but GNU Make's bootstrap/compile phase failed before install-QA. The retained Portage log reports the profile-use instrumentation warning for `arscan.c` as an error under the package's strict compile flags; no merge, workload receipt, profile, or dispatcher publication was admitted. The failure log remains at `/var/tmp/gentoo-portage-build/portage/dev-build/make-9999/temp/build.log`.
