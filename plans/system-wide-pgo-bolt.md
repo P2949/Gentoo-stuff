@@ -7615,3 +7615,6 @@ The exact `dev-lang/luajit-2.1.9999999999` generation build completed, but insta
 
 ### NASM profile-wave workload terminal failure (2026-09-20)
 The exact `dev-lang/nasm-3.02` Clang-IR generation transaction rebuilt and merged through install-QA and the ABI guard, but its reviewed `/usr/bin/ndisasm` workload exited 1. The runner refused to seal the authoritative receipt or publish a profile; no profile-use rebuild was attempted.
+
+### ORC profile-use deployment (2026-09-20)
+The exact `dev-lang/orc-0.4.42` profile-use rebuild authenticated `clang-ir-use`, completed both ABI variants, passed install-QA and the ABI guard, and merged successfully with `use_rc=0`. Dispatcher record SHA-256 was `3e4e53fe8fd6df4cd2c55fe3842f9cd0fb5803a67f6a67a91950b59598dd35c4`; existing ldconfig warnings about non-ELF optimization records were non-fatal.
