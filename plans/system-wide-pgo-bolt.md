@@ -7677,3 +7677,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-20 — libgpg-error clang-IR generation and profile-use
 
 `dev-libs/libgpg-error-1.61` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `e7d98e3730e42b9d2406546a59161e473963e8e1a2352b37b125fd8cf889006e`, and dispatcher publication succeeded with record SHA-256 `d1ab7b32a62b27467965d55a1a0422b66f24a294b455eb49e6358bada3d7a5ef`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
+
+### 2026-09-20 — libpcre clang-IR generation and profile-use
+
+`dev-libs/libpcre-8.45-r4` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `38d8cf9a5d56cc2756e490a6581f50df9394fafd7fb09848e9b0333a3f4955a7`, and dispatcher publication succeeded with record SHA-256 `2ac82bbcd3bcb8a572989410b1b38539376c59c50a15397440c48e09108743d6`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
