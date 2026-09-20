@@ -6937,3 +6937,7 @@ The `pgo-clang-ir` rebuild completed staging, but the install-QA ABI guard rejec
 ### 2026-09-20 — media-libs/woff2-1.0.2-r7 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild failed during linking under the active Clang/libc++ lane. `ld.lld` reported unresolved `std::__1` iostream/string and C++ exception/RTTI symbols while linking `woff2_info`; no package merge, install-QA admission, receipt, or profile merge was created. The complete failed build evidence remains preserved for package-specific toolchain/link remediation.
+
+### 2026-09-20 — net-misc/openssh-10.5_p1 workload terminal result
+
+The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, and package merge completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/scp` exited 1. The workload gate refused the wave; no profile receipt or merged profile was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
