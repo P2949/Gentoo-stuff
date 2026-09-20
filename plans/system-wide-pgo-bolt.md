@@ -6667,3 +6667,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — x11-libs/libxcvt-0.1.3 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` wave installed successfully, but its workload recipe failed closed with exit status 1 from `/usr/bin/cvt`. No receipt or merged profile was produced; the workload failure remains explicit.
+
+### 2026-09-20 — dev-tcltk/blt-2.5.3-r4 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` wave installed successfully after a long compile, but its workload recipe `/usr/bin/bltsh` produced no output and failed closed. No receipt or merged profile was produced; the workload failure remains explicit.
