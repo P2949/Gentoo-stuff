@@ -7253,3 +7253,12 @@ multilib link stage, but failed closed on unresolved `std::__1`/libc++ symbols
 because the authenticated generated-policy copy still carried the prior mixed
 GCC/C++ environment. No merge, receipt, or profile payload was admitted. The
 generated policy must be regenerated from the corrected source before retrying.
+
+The corrected successor libjxl retry used the installed GCC 17 provider lane,
+the cached exact source commit `7741c8ce`, and the generation-bound GCC profile
+path. The multilib build, install-QA ABI guard, package merge, and declared
+wave completed successfully on 2026-09-20. The root-owned receipt
+`profile-wave-receipt-libjxl-gcc-v3.json` passed independent wave/readiness
+verification, and the sealed GCC payload contains 2.2 MiB of nonempty `.gcda`
+files. This is profile-generation evidence only; validation and profile-use
+authorization remain pending. The focused ABI/QA hook suite is green at 13/13.
