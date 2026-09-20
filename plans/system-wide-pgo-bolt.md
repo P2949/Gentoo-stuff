@@ -6853,3 +6853,7 @@ The `pgo-clang-ir` rebuild, merge, and workload completed successfully under gen
 ### 2026-09-20 — xfce-base/libxfce4ui-4.20.2 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/xfce-base_libxfce4ui-4.20.2-v1.profdata`.
+
+### 2026-09-20 — xfce-base/libxfce4util-4.20.1 workload terminal result
+
+The `pgo-clang-ir` rebuild completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/sbin/xfce4-kiosk-query --help` exited 1. The package is retained as a terminal workload exception; no profile receipt was published.
