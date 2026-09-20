@@ -830,7 +830,7 @@ gentoo_opt_detect_compiler_family() {
         # exact reviewed Clang revision while selecting its matching C++
         # driver so libtool CXX links retain libc++/libstdc++ ABI support.
         if [[ ${requested} == clang && ${GENTOO_OPT_RESOLVED_TOOL##*/} == clang-* ]]; then
-            cxx_candidate=${GENTOO_OPT_RESOLVED_TOOL/\/clang-/\/clang++-}
+            cxx_candidate=${GENTOO_OPT_RESOLVED_TOOL%/*}/clang++-${GENTOO_OPT_RESOLVED_TOOL##*clang-}
             if [[ -x ${cxx_candidate} ]] && ! gentoo_opt_is_compiler_wrapper "${cxx_candidate}"; then
                 GENTOO_OPT_RESOLVED_TOOL=$(realpath -e -- "${cxx_candidate}") || return 1
             fi
