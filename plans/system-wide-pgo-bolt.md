@@ -6833,3 +6833,7 @@ The `pgo-clang-ir` multilib rebuild, install, merge, and ABI guard completed suc
 ### 2026-09-20 — x11-libs/libXpm-3.5.19 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` multilib rebuild, install, merge, and ABI guard completed successfully, but `/usr/bin/cxpm --help` exited 1 in the current runtime context. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
+
+### 2026-09-20 — x11-libs/pango-1.58.2 Clang IR profile wave
+
+The `pgo-clang-ir` multilib rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/x11-libs_pango-1.58.2-v1.profdata`.
