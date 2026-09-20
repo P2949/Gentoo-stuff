@@ -84,16 +84,22 @@ def main():
   payloads=[]
   for item in w['packages']:
    cpv=item['cpv']; fingerprint_file=fingerprint_path(cpv)
-   _active_attempt={'record_type':'profile-wave-package-attempt','schema_version':1,'attempt_id':w['sha256']+'-'+cpv.replace('/','_')+'-'+hashlib.sha256(os.urandom(16)).hexdigest()[:16],'wave_sha256':w['sha256'],'cpv':cpv,'lane':item.get('lane'),'state':'started','started_at':time.time(),'generation':expected_generation,'framework_generation':active,'profile_path':item.get('profile_path'),'pre_transaction_identity':item.get('fingerprint')}
+   attempt_id=w['sha256']+'-'+cpv.replace('/','_')+'-'+hashlib.sha256(os.urandom(16)).hexdigest()[:16]
+   _active_attempt={'record_type':'profile-wave-package-attempt','schema_version':1,'attempt_id':attempt_id,'wave_sha256':w['sha256'],'cpv':cpv,'lane':item.get('lane'),'state':'started','started_at':time.time(),'generation':expected_generation,'framework_generation':active,'profile_path':item.get('profile_path'),'pre_transaction_identity':item.get('fingerprint')}
    _write_attempt(_active_attempt)
    if not os.path.isfile(fingerprint_file):
     raise SystemExit(f'REFUSED: missing reviewed fingerprint file for {cpv}: {fingerprint_file}')
-   profile_path=item['profile_path']; spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw'); canonical=os.path.realpath(profile_path)
-   if not isinstance(profile_path,str) or not profile_path.startswith(spool+'/') or not canonical.startswith(spool+'/'):
-    raise SystemExit(f'REFUSED: profile path escapes trusted spool: {profile_path}')
-   # A retry must never merge a failed transaction's partial gcda set with a
-   # fresh native training run.  The runner owns this generation spool.
-   subprocess.run(['doas','rm','-rf','--',profile_path],check=True)
+   base_profile_path=item['profile_path']; spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw'); canonical=os.path.realpath(base_profile_path)
+   if not isinstance(base_profile_path,str) or not base_profile_path.startswith(spool+'/') or not canonical.startswith(spool+'/'):
+    raise SystemExit(f'REFUSED: profile path escapes trusted spool: {base_profile_path}')
+   # Every retry receives an immutable leaf.  Failed attempts remain available
+   # for later audit and can never be mixed into a subsequent merge.
+   profile_path=os.path.join(base_profile_path, attempt_id)
+   if not os.path.realpath(profile_path).startswith(spool+'/'):
+    raise SystemExit(f'REFUSED: attempt profile path escapes trusted spool: {profile_path}')
+   if os.path.lexists(profile_path):
+    raise SystemExit(f'REFUSED: attempt profile path already exists: {profile_path}')
+   _active_attempt['profile_path']=profile_path
    # The framework requires root-owned generation spools with a sticky,
    # writable leaf so the unprivileged Portage sandbox can emit profiles.
    subprocess.run(['doas','install','-d','-o','root','-g','root','-m','01777',profile_path],check=True)
