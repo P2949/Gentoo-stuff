@@ -7761,3 +7761,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — gperf clang-IR generation and profile-use
 
 `dev-util/gperf-3.3` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `eea80dd24ccdf9ef11ca83d90c013ee3c33d88af848d52d60dadb84882c9975a`, and dispatcher publication succeeded with record SHA-256 `a795a7033c023c8620bb2dc2d9e7f28bb5c65ba11c1f2a2534203866d1ddcff3`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
+
+### 2026-09-21 — gtk-update-icon-cache clang-IR generation and profile-use
+
+`dev-util/gtk-update-icon-cache-3.24.42` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `89dde8bf842f151145036d366f9ac524fe54b597839bef686dce5759b21090fa`, and dispatcher publication succeeded with record SHA-256 `058ac362796afc99f860c5a34670312afa074b01afe8d6cfb4c61a7e7d9b9d33`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
