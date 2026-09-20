@@ -28,7 +28,7 @@ gui-apps/fuzzel png svg
 gui-apps/waybar tray niri
 gui-libs/gtk X introspection
 gui-libs/libadwaita vala introspection
-gui-libs/wlroots xcb-errors vulkan lcms liftoff x11-backend
+gui-libs/wlroots xcb-errors vulkan lcms liftoff -x11-backend
 gui-wm/niri screencast
 gui-wm/sway -tray -swaybar
 kde-frameworks/kconfig qml
