@@ -10,6 +10,6 @@ def main():
   reason = ('no-runnable-userspace-entrypoint'
             if x['state']=='no-runnable-entrypoint'
             else 'no-profile-producing-workload')
-  rows.append({'cpv':x['cpv'],'reason_code':reason,'elf_records':len(vals),'elf64_records':sum(y['class']=='ELF64' for y in vals),'interpreter_records':sum(bool(y['interpreter']) for y in vals),'state':'workload-exclusion'})
+  rows.append({'cpv':x['cpv'],'reason_code':reason,'elf_records':len(vals),'elf64_records':sum(y['class']=='ELF64' for y in vals),'interpreter_records':sum(bool(y['interpreter']) for y in vals),'state':'needs-consumer-workload' if vals else 'true-terminal-workload-exclusion'})
  out={'record_type':'workload-exclusions','schema_version':1,'source_workloads':w['sha256'],'records':rows};out['counts']=dict(collections.Counter(x['reason_code'] for x in rows));out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest();json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(len(rows),sum(x['elf_records'] for x in rows),sum(x['interpreter_records'] for x in rows))
 if __name__=='__main__':main()

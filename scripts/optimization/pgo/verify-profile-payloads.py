@@ -10,7 +10,8 @@ def main():
  for x in b['records']:
   if not x['compiler']:continue
   if x['cpv'] in exclusions:
-   rows.append({'cpv':x['cpv'],'lane':x['lane'],'profile_path':x['profile_path'],'payloads':[],'state':'workload-exclusion','reason_code':exclusions[x['cpv']].get('reason_code')});continue
+   exclusion=exclusions[x['cpv']]
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'profile_path':x['profile_path'],'payloads':[],'state':exclusion.get('state','workload-exclusion'),'reason_code':exclusion.get('reason_code')});continue
   if x['cpv'] in terminals:
    item=terminals[x['cpv']]
    rows.append({'cpv':x['cpv'],'lane':x['lane'],'profile_path':x['profile_path'],'payloads':[],'state':'terminal-exclusion','reason_code':item.get('reason_code'),'evidence':item.get('evidence',[])});continue
