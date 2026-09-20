@@ -6769,3 +6769,7 @@ The large multilib `pgo-clang-ir` rebuild, install, merge, and ABI guard complet
 ### 2026-09-20 — sys-libs/pam-1.7.2 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully, but the workload recipe failed closed with exit status 1 from `/sbin/faillock` in the current non-authenticated context. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
+
+### 2026-09-20 — sys-libs/timezone-data-2026d Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, merge, and `zdump --help`/`zic --help` workloads completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-libs_timezone-data-2026d-v1.profdata`.
