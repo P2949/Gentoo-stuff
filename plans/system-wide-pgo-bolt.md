@@ -7453,3 +7453,5 @@ parent run finished successfully with 87 passes, 0 failures, 12 explicit
 capability skips, 530 required subtest passes, 25 required subtest skips, and
 exit status 0. The authoritative run remained separate; no Phase-2 or
 profile-use authorization is inferred from this portable result.
+
+Profile-use deployment (2026-09-20): `app-arch/lz4-1.10.0-r1` completed the exact successor Clang IR generation wave, passed readiness and receipt verification, merged and independently validated its authenticated profile, and was published through the dispatcher. The exact profile-use rebuild completed successfully with `mode=clang-ir-use active_mode=clang-ir-use` and `>>> app-arch/lz4-1.10.0-r1 merged.` The shell pipeline's zsh status capture was malformed (`use_rc` printed empty), but the emerge process completed and the required log assertions passed; this is recorded as a command-wrapper reporting defect, not a package failure. The receipt and merge evidence remain bound to the current generation and inventory.
