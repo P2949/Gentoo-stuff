@@ -3,6 +3,7 @@
 ## Progress summary
 
 - **Storage remediation and wave preflight (2026-09-20):** post-remediation storage baseline is 965,908,361,216 bytes total, 802,823,319,552 used, 163,085,041,664 free (16.88% free) on `/`; project evidence and PGO raw data were untouched. A fail-closed `storage-preflight.py` now enforces the initial 100 GiB and 12% free-space floors before `run-profile-wave.py --execute`, with focused pass/fail tests. It performs no garbage collection, so authenticated receipts, manifests, raw profiles, merged profiles, and recovery artifacts remain preserved.
+- **Indexed-profile provenance hardening (2026-09-20):** the profile-wave runner now resolves the verifier from the committed `scripts/optimization/verify` path. New Clang/Rust indexed publications require merge evidence; validation metadata retains its evidence path and digest for independent verification. Merge validation reopens the completed receipt, checks generation/package/raw-payload identity, and verifies the complete `llvm-profdata` identity. The merger uses an explicit `clang-ir -> pgo-clang-ir` / `rust -> pgo-rust` lane map, and Rust dispatcher policy uses the canonical `rust` compiler-family spelling.
 
 - **Backend-aware dispatcher (2026-09-20):** `publish-profile-dispatcher.py` now accepts `--backend rust` in addition to the existing Clang path, binds the manifest backend, uses the trusted generation root for Rust profile payloads, and emits backend-specific dispatcher mode/compiler-family records. The default Clang behavior remains unchanged.
 
