@@ -7645,3 +7645,7 @@ The exact `dev-libs/appstream-glib-0.8.3` profile-use rebuild authenticated `cla
 
 ### D-Bus GLib profile-use deployment (2026-09-20)
 The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir-use`, completed both ABI variants, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `f9e1ebefb22ccfd2d9e017d20c1b1b7f35a66e57733162561d00c9d45537b286`.
+
+### 2026-09-20 — elfutils clang-IR generation and profile-use
+
+`dev-libs/elfutils-0.196` completed the active clang-IR generation wave under inventory `phase3-live-candidate-20260920-sway-mesa-abi-reviewed-v1`. The authenticated wave receipt passed `verify-wave-receipt.py`; llvm-profdata merge produced evidence digest `b1d0a69d4f968fb4c1b9f2d0a88561e89e2e430c1053d883fc36a09226677dc4`; the profile manifest and metadata were validated and published through the dispatcher. A real profile-use reinstall completed successfully with `use_rc=0`. The package remains userspace-only; no boot, kernel, firmware, or initramfs state was touched.
