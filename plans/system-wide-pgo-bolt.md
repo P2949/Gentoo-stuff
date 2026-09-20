@@ -7558,3 +7558,6 @@ The generated policy was rebuilt with a canonical CPV mapping for OpenSP, but th
 
 ### scdoc Clang-IR generation wave (2026-09-20)
 The exact `app-text/scdoc-9999` wave passed readiness, rebuilt and merged through install-QA and the ABI guard, and completed its deterministic fixture workload. The receipt passed independent verification and LLVM 22 merged the authenticated payload; merge evidence digest is `9478281bb9856904d278e98190fd826bb75479594f152c1551c9913d3700e53a`. Profile validation, dispatcher publication, and exact profile-use deployment remain pending.
+
+### scdoc profile-use deployment (2026-09-20)
+The validated `app-text/scdoc-9999` profile was published through the generation-bound dispatcher with record SHA-256 `61e6750809f2414ad18d305f8b2ef434d32702a5478a86cd299673a8df0948d7`. The exact rebuild completed with `use_rc=0`, reported `clang-ir-use` active and the authenticated profile path, passed install-QA and the ABI guard, and merged successfully. No BOLT deployment is claimed.
