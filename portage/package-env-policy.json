@@ -78,6 +78,16 @@
         "xwayland-libbsd-overlay-cdefs-fix.conf"
       ],
       "rationale": "The O3 ABI tier is followed by the append-only libbsd and glibc cdefs compatibility fix."
+    },
+    "media-libs/libjxl": {
+      "environments": [
+        "highway-noavx512.conf",
+        "no-hidden-visibility.conf",
+        "libjxl-profile-abi.conf",
+        "gcc.conf",
+        "libjxl-git-source.conf"
+      ],
+      "rationale": "The Highway AVX512 restriction, visibility/ABI preservation, GCC frontend tuple, and live-source selection are independent reviewed controls for libjxl."
     }
   },
   "allowed_unmatched_atoms": {},
@@ -110,15 +120,15 @@
       "rationale": "Preserves the established GCC frontend and GCC binutils lane while making its inherited clang preprocessor and lld linker explicit."
     },
     "highway-noavx512.conf": {
-      "lane": "gcc-frontends-llvm22-tools-noavx512",
+      "lane": "gcc-frontends-gcc-binutils-clang-cpp-lld",
       "tools": {
         "CC": "gcc",
         "CXX": "g++",
         "CPP": "clang-cpp",
         "LD": "ld.lld",
-        "AR": "llvm-ar",
-        "NM": "llvm-nm",
-        "RANLIB": "llvm-ranlib"
+        "AR": "gcc-ar",
+        "NM": "gcc-nm",
+        "RANLIB": "gcc-ranlib"
       },
       "rationale": "Preserves the tested GCC frontend and LLVM support-tool tuple used by Highway and libjxl while AVX512 is disabled."
     },
