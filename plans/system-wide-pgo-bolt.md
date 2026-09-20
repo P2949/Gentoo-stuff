@@ -7749,3 +7749,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — debugedit clang-IR generation and profile-use
 
 `dev-util/debugedit-5.3` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `78767dadc2621a310e15286215ee457d9c7041e4b4dee58e15ece34a5b133255`, and dispatcher publication succeeded with record SHA-256 `d820414491c2f19b29bf4bc2ab77f05db4f717c7dd2f26763a11ae9622b6dedf`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
+
+### 2026-09-21 — desktop-file-utils clang-IR generation and profile-use
+
+`dev-util/desktop-file-utils-0.28-r1` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `3f23508f0add88d0e00aa2e100024f32478c8567971f0f32b465a03ee50eeb91`, and dispatcher publication succeeded with record SHA-256 `a31d9ce1b4ca6ca61072f9199f81ad2c114f103a02f7b219b8442ecca2ecfd13`. The exact profile-use rebuild initially exposed a permissions defect on the merge evidence sidecar; after restoring the required authenticated evidence mode, it authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`. LLVM emitted non-fatal `default.profraw` permission diagnostics during the rebuild; the authoritative profile-use result remained successful.
