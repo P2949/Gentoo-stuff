@@ -18,6 +18,6 @@ python3 scripts/optimization/pgo/generation-authorization.py activate --root "$R
 test ! -s "$ROOT/run/framework-install.lock"
 cmp "$ROOT/run/project.lock" "$ROOT/run/generation.lock"
 python3 scripts/optimization/pgo/generation-authorization.py verify --root "$ROOT/run" --generation-id "$GEN" --inventory-id inventory-test --inventory-sha256 "$INV"
-python3 scripts/optimization/pgo/generation-authorization.py deactivate --root "$ROOT/run"
+python3 scripts/optimization/pgo/generation-authorization.py deactivate --root "$ROOT/run" --receipt "$ROOT/deactivate-receipt.json"
 test ! -s "$ROOT/run/project.lock" && test ! -s "$ROOT/run/generation.lock"
 echo 'PASS: Phase-3 generation authority activation, verification, and deactivation'

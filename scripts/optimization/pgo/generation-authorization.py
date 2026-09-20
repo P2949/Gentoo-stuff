@@ -122,11 +122,26 @@ def release(fds: list[int]) -> None:
         try: fcntl.flock(fd, fcntl.LOCK_UN)
         finally: os.close(fd)
 
-def write_payload(path: Path, payload: bytes) -> None:
-    fd = os.open(path, os.O_WRONLY | os.O_TRUNC | os.O_CLOEXEC)
+def write_payload_fd(fd: int, payload: bytes) -> None:
+    os.ftruncate(fd, 0)
+    os.lseek(fd, 0, os.SEEK_SET)
     try:
         os.write(fd, payload); os.fsync(fd)
-    finally: os.close(fd)
+    finally: pass
+
+def assert_locked_path(path: Path, fd: int) -> None:
+    expected = os.fstat(fd)
+    actual = path.stat()
+    if (expected.st_dev, expected.st_ino, stat.S_IMODE(expected.st_mode),
+            expected.st_uid, expected.st_gid, expected.st_nlink) != (
+            actual.st_dev, actual.st_ino, stat.S_IMODE(actual.st_mode),
+            actual.st_uid, actual.st_gid, actual.st_nlink):
+        raise RuntimeError(f"lock inode changed: {path}")
+
+def write_payload(fds: list[int], paths: tuple[Path, Path, Path], index: int, payload: bytes) -> None:
+    assert_locked_path(paths[index], fds[index])
+    write_payload_fd(fds[index], payload)
+    assert_locked_path(paths[index], fds[index])
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -148,9 +163,11 @@ def main() -> int:
         try:
             current = [read_lock(p) for p in paths]
             if current[0] != b"": raise RuntimeError("framework lock is not empty")
-            if all(x in (b"", desired) for x in current[1:]):
-                if current[1] != desired: write_payload(paths[1], desired)
-                if current[2] != desired: write_payload(paths[2], desired)
+            old_payload = data.get("old_project_payload", "").encode()
+            allowed = {b"", desired, old_payload}
+            if all(x in allowed for x in current[1:]):
+                if current[1] != desired: write_payload(fds, paths, 1, desired)
+                if current[2] != desired: write_payload(fds, paths, 2, desired)
                 journal.unlink(); fsync_dir(journal.parent); return 0
             raise RuntimeError("journal recovery found an unrecognized lock state")
         finally: release(fds)
@@ -176,14 +193,24 @@ def main() -> int:
             return 0
         if a.action == "deactivate":
             if old[1] != old[2]: raise RuntimeError("cannot deactivate split authority")
-            write_payload(paths[1], b""); write_payload(paths[2], b""); return 0
+            record = {"schema_version": 1, "transaction_id": hashlib.sha256(os.urandom(32)).hexdigest(),
+                      "state": "prepared", "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+                      "old_project_payload": old[1].decode(), "old_generation_payload": old[2].decode(),
+                      "new_payload": "", "locks": {k: inode(p) for k,p in zip(("framework","project","generation"), paths)},
+                      "framework": {}, "generation": None}
+            atomic_json(journal, record)
+            write_payload(fds, paths, 1, b""); write_payload(fds, paths, 2, b"")
+            if read_lock(paths[1]) or read_lock(paths[2]):
+                raise RuntimeError("deactivation verification failed")
+            record["state"] = "committed"; record["committed_at"] = time.time(); atomic_json(a.receipt, record)
+            journal.unlink(); fsync_dir(journal.parent); return 0
         if a.action == "activate" and (old[1] or old[2]): raise RuntimeError("activation requires empty runtime locks")
         if a.action == "transition":
             if old[1] != old[2] or not old[1]: raise RuntimeError("transition requires one existing exact authority")
             if not a.old_generation_id or json.loads(old[1])["generation_id"] != a.old_generation_id: raise RuntimeError("old generation identity mismatch")
         record = {"schema_version": 1, "transaction_id": hashlib.sha256(os.urandom(32)).hexdigest(), "state": "prepared", "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(), "old_project_payload": old[1].decode(), "old_generation_payload": old[2].decode(), "new_payload": new_payload.decode(), "locks": {k: inode(p) for k,p in zip(("framework","project","generation"),paths)}, "framework": framework, "generation": generation}
         atomic_json(journal, record)
-        write_payload(paths[1], new_payload); write_payload(paths[2], new_payload)
+        write_payload(fds, paths, 1, new_payload); write_payload(fds, paths, 2, new_payload)
         if read_lock(paths[1]) != new_payload or read_lock(paths[2]) != new_payload: raise RuntimeError("runtime authority verification failed")
         record["state"] = "committed"; record["committed_at"] = time.time(); atomic_json(a.receipt, record)
         journal.unlink(); fsync_dir(journal.parent)
