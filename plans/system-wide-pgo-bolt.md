@@ -7627,3 +7627,6 @@ The exact `dev-lang/swig-4.4.1` profile-use rebuild authenticated `clang-ir-use`
 
 ### Tcl profile-wave workload terminal failure (2026-09-20)
 The exact `dev-lang/tcl-8.6.17` Clang-IR generation transaction rebuilt and merged through install-QA and the ABI guard, but its reviewed `/usr/bin/tclsh8.6` workload produced no output. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted.
+
+### Tk profile-use deployment (2026-09-20)
+The exact `dev-lang/tk-8.6.17` profile-use rebuild authenticated `clang-ir-use`, completed both ABI variants and the extensive install step, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `762b95989dea6a24ceb9a3ab1a764a3c24b5baa7d0a6f6052caf0dd22c6302e4`.
