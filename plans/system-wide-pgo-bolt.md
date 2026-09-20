@@ -7085,3 +7085,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and d
 ### 2026-09-20 — x11-apps/xwininfo-1.1.7 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/x11-apps_xwininfo-1.1.7-v1.profdata` with merge evidence recorded.
+
+### 2026-09-20 — dev-util/bindgen-0.72.1 Rust profile wave
+
+The `pgo-rust` rebuild, staging, install-QA, ABI guard, and declared `/usr/bin/bindgen --help` workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1` with the Rust no-LTO compatibility path. Receipt verification passed and the sealed Rust profraw payload was retained in the authenticated generation spool; Rust profiles remain in their native profraw format rather than being admitted to the Clang `.profdata` store.
