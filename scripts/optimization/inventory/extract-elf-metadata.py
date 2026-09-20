@@ -3,9 +3,9 @@
 import argparse,json,subprocess,hashlib,os
 def run(args,path):
  try:
-  p=subprocess.run(['readelf',*args,path],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=4)
+  p=subprocess.run(['readelf',*args,path],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=4)
   if p.returncode != 0: raise RuntimeError(f'readelf failed ({p.returncode})')
-  return p.stdout
+  return p.stdout.decode('utf-8', errors='replace')
  except (OSError,subprocess.TimeoutExpired,RuntimeError,UnicodeError) as e:
   raise RuntimeError(f'readelf invocation failed for {path}: {e}') from e
 def field(text,label):

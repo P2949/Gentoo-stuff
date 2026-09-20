@@ -3,9 +3,9 @@
 import argparse,json,subprocess,hashlib,collections
 def read(args,p):
  try:
-  r=subprocess.run(['readelf',*args,p],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5)
+  r=subprocess.run(['readelf',*args,p],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5)
   if r.returncode != 0: raise RuntimeError(f'readelf failed ({r.returncode})')
-  return r.stdout
+  return r.stdout.decode('utf-8', errors='replace')
  except (OSError,subprocess.TimeoutExpired,RuntimeError,UnicodeError) as e:
   raise RuntimeError(f'readelf invocation failed for {p}: {e}') from e
 def main():
