@@ -120,7 +120,9 @@ def main():
     command += ['GENTOO_OPT_RUST_NO_LTO=1','CFLAGS=-O2 -pipe','CXXFLAGS=-O2 -pipe',
                 'LDFLAGS=' + rust_profile_ldflags,
                 'RUSTFLAGS=-C lto=off -C linker-plugin-lto=no']
-   if item['cpv'] in {'dev-util/maturin-1.15.0','app-crypt/rpm-sequoia-1.10.2'}:
+   if item['cpv'] in {'dev-util/maturin-1.15.0','app-crypt/rpm-sequoia-1.10.2',
+                      'sys-apps/ripgrep-15.2.0',
+                      'sys-block/thin-provisioning-tools-1.3.1'}:
     command.append('GENTOO_OPT_RUST_HOST_LAYOUT=1')
    # Bash's ebuild owns a GCC-only native PGO implementation behind its
    # pgo USE flag.  Disable that package-local path when collecting the
