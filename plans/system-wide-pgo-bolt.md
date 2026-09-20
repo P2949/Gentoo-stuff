@@ -6611,3 +6611,7 @@ The wave did not produce a receipt. Portage remained in the live git fetch for `
 ### 2026-09-20 — focused ABI/QA and profile-wave regression verification
 
 The focused ABI-guard, Portage QA-hook, profile-wave guard, and wave-receipt verifier suites passed. The ABI fixtures cover the zero-DSO no-root-traversal and immediate-provider-scope regressions. The aggregate portable suite's recovery tests passed; its Phase-2 evidence fixture was not green because the mutable post-authorization worktree cannot satisfy the frozen Phase-2 source boundary, so no Phase-2 evidence was changed.
+
+### 2026-09-20 — dev-util/ftjam-2.5.3_rc2-r3 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` wave installed successfully, but its workload recipe failed closed with exit status 1 from `/usr/bin/jam`. No receipt or merged profile was produced; the package remains an explicit workload terminal failure.
