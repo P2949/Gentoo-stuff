@@ -6953,3 +6953,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and d
 ### 2026-09-20 — sys-apps/gptfdisk-1.0.10-r1 workload terminal result
 
 The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, and package merge completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/sbin/fixparts` exited 1. The workload gate refused the wave; no profile receipt or merged profile was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
+
+### 2026-09-20 — sys-apps/groff-1.23.0-r2 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_groff-1.23.0-r2-v1.profdata` with merge evidence recorded.
