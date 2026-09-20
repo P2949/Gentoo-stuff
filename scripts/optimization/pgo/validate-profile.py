@@ -1315,7 +1315,6 @@ def manifest_bytes(
     fields = (
         ("schema", "gentoo-optimization-profile-v1"),
         ("backend", backend),
-        ("cpv", cpv),
         ("fingerprint", fingerprint),
         ("abi", abi),
         ("compiler_family", compiler_family),
