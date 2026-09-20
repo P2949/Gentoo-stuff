@@ -73,6 +73,7 @@ class JsonschemaPrerequisiteBootstrapTests(unittest.TestCase):
                 "LANG": "C",
                 "LC_ALL": "C",
                 "TZ": "UTC",
+                "LLVM_PROFILE_FILE": "/dev/null",
             },
         )
 
@@ -107,6 +108,7 @@ class JsonschemaPrerequisiteBootstrapTests(unittest.TestCase):
                 "LANG": "C",
                 "LC_ALL": "C",
                 "TZ": "UTC",
+                "LLVM_PROFILE_FILE": "/dev/null",
             },
         )
 
@@ -236,6 +238,7 @@ class JsonschemaPrerequisiteBootstrapTests(unittest.TestCase):
                 "LANG": "C",
                 "LC_ALL": "C",
                 "TZ": "UTC",
+                "LLVM_PROFILE_FILE": "/dev/null",
             },
         )
         self.assertEqual(result.returncode, 1)
@@ -306,7 +309,7 @@ class JsonschemaPrerequisiteBootstrapTests(unittest.TestCase):
             self.commit,
         )
         self.assertEqual(result.returncode, 1)
-        self.assertIn("differs byte-for-byte from HEAD blob", result.stderr)
+        self.assertIn("tracked, untracked, or ignored residue", result.stderr)
 
     def test_publish_is_no_replace_and_never_reuses_a_commit_destination(self) -> None:
         destination = self.publish()
