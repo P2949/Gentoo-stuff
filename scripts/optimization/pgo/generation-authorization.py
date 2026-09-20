@@ -104,6 +104,19 @@ def atomic_json(path: Path, value: dict[str, Any]) -> None:
         try: os.unlink(tmp)
         except FileNotFoundError: pass
 
+def publish_receipt(requested: Path, record: dict[str, Any]) -> Path:
+    """Publish committed authority evidence without replacing history."""
+    txid = str(record["transaction_id"])
+    if requested == RECEIPT:
+        target = requested.parent / "phase3-authority" / f"{txid}.json"
+    else:
+        target = requested
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() or target.is_symlink():
+        raise RuntimeError(f"refusing to overwrite committed receipt: {target}")
+    atomic_json(target, record)
+    return target
+
 def acquire(paths: tuple[Path, Path, Path], exclusive: bool = True) -> list[int]:
     fds: list[int] = []
     try:
@@ -176,6 +189,8 @@ def main() -> int:
             ap.error("activation requires generation identities and --framework-generation")
         generation = generation_from_fields(a.generation_id, a.inventory_id, a.inventory_sha256)
         current = a.framework_current or (Path(a.framework_generation).parent / "framework-current")
+        if os.path.realpath(current) != os.path.realpath(a.framework_generation):
+            raise RuntimeError("framework-current does not resolve to --framework-generation")
         framework = framework_identity(current, generation)
         new_payload = canonical_generation_payload(generation)
     else:
@@ -202,7 +217,7 @@ def main() -> int:
             write_payload(fds, paths, 1, b""); write_payload(fds, paths, 2, b"")
             if read_lock(paths[1]) or read_lock(paths[2]):
                 raise RuntimeError("deactivation verification failed")
-            record["state"] = "committed"; record["committed_at"] = time.time(); atomic_json(a.receipt, record)
+            record["state"] = "committed"; record["committed_at"] = time.time(); publish_receipt(a.receipt, record)
             journal.unlink(); fsync_dir(journal.parent); return 0
         if a.action == "activate" and (old[1] or old[2]): raise RuntimeError("activation requires empty runtime locks")
         if a.action == "transition":
@@ -212,7 +227,7 @@ def main() -> int:
         atomic_json(journal, record)
         write_payload(fds, paths, 1, new_payload); write_payload(fds, paths, 2, new_payload)
         if read_lock(paths[1]) != new_payload or read_lock(paths[2]) != new_payload: raise RuntimeError("runtime authority verification failed")
-        record["state"] = "committed"; record["committed_at"] = time.time(); atomic_json(a.receipt, record)
+        record["state"] = "committed"; record["committed_at"] = time.time(); publish_receipt(a.receipt, record)
         journal.unlink(); fsync_dir(journal.parent)
         return 0
     finally: release(fds)
