@@ -6627,3 +6627,7 @@ The live Git fetch for `https://github.com/hyprwm/Hyprwayland-scanner.git` remai
 ### 2026-09-20 — gnome-base/dconf-0.49.0 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` wave installed successfully after the earlier lock was cleared, but its workload recipe failed closed with exit status 2 from `/usr/bin/dconf`. No receipt or merged profile was produced; the workload failure remains explicit.
+
+### 2026-09-20 — gui-apps/slurp-1.5.0 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` wave installed successfully, but its workload recipe failed closed with exit status 1 from `/usr/bin/slurp` (no graphical selection context). No receipt or merged profile was produced; the workload failure remains explicit.
