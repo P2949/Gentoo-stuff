@@ -7633,3 +7633,6 @@ The exact `dev-lang/tk-8.6.17` profile-use rebuild authenticated `clang-ir-use`,
 
 ### Vala profile-use deployment (2026-09-20)
 The exact `dev-lang/vala-0.56.19` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `70c7bb3e0723e92ac71f4e6a85ec0f7eff1011dd8c45218b0a4b871d7b70ba48`.
+
+### Yasm profile-wave workload terminal failure (2026-09-20)
+The exact `dev-lang/yasm-1.3.0-r2` Clang-IR generation transaction rebuilt and merged through install-QA and the ABI guard, but its reviewed `/usr/bin/ytasm` workload exited 1. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted.
