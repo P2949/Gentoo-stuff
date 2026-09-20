@@ -7729,3 +7729,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — bpf-linker Rust identity gate refusal
 
 `dev-util/bpf-linker-0.11.1` readiness also failed closed with `not-authorized-framework-gate` and `ready_count=0`; its Rust identity inputs are not authorized for the active reviewed generation. No wave transaction, receipt, profile, or dispatcher state was created. This confirms the Rust-lane identity regeneration issue is shared by the current derived Rust candidates and is preserved for a single coordinated regeneration rather than bypassed per package.
+
+### 2026-09-21 — breakpad clang-IR generation and profile-use
+
+`dev-util/breakpad-2024.02.16` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `61d51aa183f16c613fd3919a7dc915206290ce1891e31274df9540849af3ea16`, and dispatcher publication succeeded with record SHA-256 `90b8c6dc3321e6419c475598c5c43b5ba8466b5f1c0ca3936639a8101fa826a0`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
