@@ -7733,3 +7733,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — breakpad clang-IR generation and profile-use
 
 `dev-util/breakpad-2024.02.16` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `61d51aa183f16c613fd3919a7dc915206290ce1891e31274df9540849af3ea16`, and dispatcher publication succeeded with record SHA-256 `90b8c6dc3321e6419c475598c5c43b5ba8466b5f1c0ca3936639a8101fa826a0`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
+
+### 2026-09-21 — ccache clang-IR generation and profile-use
+
+`dev-util/ccache-4.14` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `e527e8f9056f65a3434d7e801bdb626ffc95cc60185f160e0f7cf6d4d080ee8a`, and dispatcher publication succeeded with record SHA-256 `d84b2273e927ad484330396f8ec1c4fe14a9e34a429b04d7cf7ce694335c1448`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
