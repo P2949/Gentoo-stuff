@@ -7235,6 +7235,15 @@ replacement ABI/source-drift mismatch against the installed `9999` provider.
 The failed receipt and build log remain preserved, and the package has not
 been admitted as optimized.
 
+The installed VDB metadata confirms libjxl was built with GCC 17 and a GCC
+profile path, so the lane override now records `pgo-gcc` with reason
+`installed-provider-abi-requires-gcc-lane`. A custom GCC wave reached the
+correct dispatcher identity (`gcc`/`g++` 17), but its mutable `9999` Git source
+fetch made no progress for nearly three minutes (zero CPU and unchanged fetch
+output). The transaction was terminated before source admission; no merge,
+receipt, or payload was accepted. The fetch output and prior ABI failures are
+preserved for a future prepared-source retry.
+
 The first framework publication after this source edit was intentionally
 replaced with the exact inventory-bearing generation after the generic
 installer's empty-policy fallback was detected. The active framework now binds
