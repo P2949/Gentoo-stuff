@@ -7618,3 +7618,6 @@ The exact `dev-lang/nasm-3.02` Clang-IR generation transaction rebuilt and merge
 
 ### ORC profile-use deployment (2026-09-20)
 The exact `dev-lang/orc-0.4.42` profile-use rebuild authenticated `clang-ir-use`, completed both ABI variants, passed install-QA and the ABI guard, and merged successfully with `use_rc=0`. Dispatcher record SHA-256 was `3e4e53fe8fd6df4cd2c55fe3842f9cd0fb5803a67f6a67a91950b59598dd35c4`; existing ldconfig warnings about non-ELF optimization records were non-fatal.
+
+### sassc profile-use deployment (2026-09-20)
+The exact `dev-lang/sassc-3.6.2` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `bb0b472d0d76b69a5ed4f6f1f05dd5eba15bf5a9be0ed0dbb36e815ee0fe53b2`.
