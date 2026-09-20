@@ -7121,3 +7121,7 @@ The `pgo-rust` rebuild, staging, install-QA, ABI guard, and package merge comple
 ### 2026-09-20 — media-video/rav1e-0.8.1 Rust profile wave
 
 The `pgo-rust` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the sealed Rust profraw payload was retained in the authenticated generation spool.
+
+### 2026-09-20 — sys-apps/amdgpu_top-0.11.5 Rust profile wave
+
+The `pgo-rust` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the sealed Rust profraw payload was retained in the authenticated generation spool.
