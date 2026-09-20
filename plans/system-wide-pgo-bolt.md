@@ -7567,3 +7567,6 @@ The exact `app-text/xmlto-0.0.28-r11` wave passed readiness, rebuilt and merged 
 
 ### xmlto profile-use deployment (2026-09-20)
 The validated `app-text/xmlto-0.0.28-r11` profile was published through the generation-bound dispatcher with record SHA-256 `f0de3c2ce716ac1e42910d05190ae1c3ff60ce164b03ee811e3921fdb0497eff`. The exact rebuild completed with `use_rc=0`, reported `clang-ir-use` active and the authenticated profile path, passed install-QA and the ABI guard, and merged successfully. No BOLT deployment is claimed.
+
+### Yodl profile-wave compile failure (2026-09-20)
+The exact `app-text/yodl-4.05.00` Clang-IR wave passed readiness but failed in the package compile/link phase before install-QA. `ld.lld` reported unresolved libc++ `std::__1` stream symbols and the build terminated with `programs failed`; the complete root-owned log is retained at `/var/tmp/gentoo-portage-build/portage/app-text/yodl-4.05.00/temp/build.log`. No package merge, workload receipt, profile, or dispatcher publication was admitted.
