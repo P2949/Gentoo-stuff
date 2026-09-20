@@ -7275,3 +7275,12 @@ remaining missing records are maturin, rustup, librsvg, ripgrep, and
 thin-provisioning-tools. The successor policy is not yet profile-use
 authorized; the five package-specific failures remain subject to remediation
 or exact terminal exclusion evidence.
+
+The Rust mixed-link repair was exercised against `gnome-base/librsvg-2.62.3`
+on 2026-09-20. Adding the generation path to the Rust lane's native linker
+flags resolved the prior 32-bit `__llvm_profile_instrument_*` link failures,
+but the instrumented 64-bit introspection helper then crashed with SIGSEGV
+during Meson's `g-ir-scanner` step, and the wave produced no receipt. The
+failure remains package-specific correctness evidence; the linker repair is
+retained for mixed Rust/C packages, and librsvg remains one of the five
+missing-profile records pending a safe package-specific profiling path.
