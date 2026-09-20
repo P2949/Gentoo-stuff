@@ -35,6 +35,16 @@ def main():
   for x in authority.get('artifacts', authority.get('records', []))
   if isinstance(x.get('elf'), dict)
  }
+ # The extractor's ELF metadata file is itself an authoritative census when
+ # the owned-artifact scanner has not yet been enriched with embedded ELF
+ # objects.  Keep the owner/path identity comparison separate from the
+ # classification and safety records in either representation.
+ if not authoritative and authority.get('record_type') in {'elf-metadata', 'elf-metadata-census'}:
+  authoritative = {
+   (x.get('owner_cpv'), x['path'])
+   for x in authority.get('records', authority.get('artifacts', []))
+   if isinstance(x, dict) and isinstance(x.get('path'), str)
+  }
  if not authoritative:
   raise SystemExit('elf authority contains no classified ELF artifact records')
  out = {
