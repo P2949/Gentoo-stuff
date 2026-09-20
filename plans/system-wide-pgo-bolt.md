@@ -6503,3 +6503,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/libliftoff-0.5.0 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libliftoff-0.5.0-v1.profdata`; merge evidence SHA-256 is `c01a512116dba97627855568d8ac2d4cd260156237c41524e4ad0b4130b5f776`.
+
+### 2026-09-20 — dev-libs/libsodium-1.0.22 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libsodium-1.0.22-v1.profdata`; merge evidence SHA-256 is `2aec07ca561f282ded982fb401f2a9c0e24cc2be683a38b9423bceab0051473a`.
