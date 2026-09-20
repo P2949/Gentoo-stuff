@@ -6655,3 +6655,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — sys-apps/keyutils-1.6.3-r1 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` wave installed successfully, but its workload recipe failed closed with exit status 2 from `/bin/keyctl`. No receipt or merged profile was produced; the workload failure remains explicit.
+
+### 2026-09-20 — x11-apps/xhost-1.0.10 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` wave installed successfully, but its workload recipe failed closed with exit status 1 from `/usr/bin/xhost` because no active X display is available. No receipt or merged profile was produced; the workload failure remains explicit.
