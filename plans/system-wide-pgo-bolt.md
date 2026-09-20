@@ -7769,3 +7769,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — doas clang-IR generation and profile-use reconciliation
 
 `app-admin/doas-6.8.2` had an already-sealed authenticated generation receipt in the active generation. The receipt was independently reconciled against its preserved raw payloads; LLVM merge evidence digest was `5ae9cfd9eec2def3f0820a47a66a82b67c9a15b8c9371a69bdae7182ca19c9e8`, manifest validation passed, and dispatcher publication succeeded with record SHA-256 `8a94c07cfcc7466d8650c43efd17837f06c84ba3859329fc6bbebec45944baed`. Preserved profile-use logs show the exact `clang-ir-use` rebuild reached a completed merge through install-QA and ABI checks; no bypass was used.
+
+### 2026-09-21 — sysklogd clang-IR generation and profile-use
+
+`app-admin/sysklogd-2.7.2` required two preserved generation attempts: the first produced raw payloads but did not seal a receipt, while the distinct retry2 wave completed successfully. Retry2 receipt verification passed, LLVM merge evidence digest was `df4ffae5070e24e43f770128c860dd74192fed59d4c8034da8b99464384c216f`, and dispatcher publication succeeded with record SHA-256 `c2ae1ee468f4b17a0156557fc6e0c4b29dfd3d3a7ca8ed376c03f0b6262a675c`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
