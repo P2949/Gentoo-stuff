@@ -1,6 +1,17 @@
 {
   "overrides": [
     {
+      "cpv": "media-libs/libjxl-9999",
+      "evidence": {
+        "installed_cc": "/usr/x86_64-pc-linux-gnu/gcc-bin/17/x86_64-pc-linux-gnu-gcc",
+        "installed_cxx": "/usr/x86_64-pc-linux-gnu/gcc-bin/17/x86_64-pc-linux-gnu-g++",
+        "installed_profile_mode": "gcc-generate",
+        "reason": "installed provider ABI is GCC/libstdc++ and the Clang IR replacement loses JXL_0 and established C++ exports"
+      },
+      "lane": "pgo-gcc",
+      "reason_code": "installed-provider-abi-requires-gcc-lane"
+    },
+    {
       "cpv": "app-arch/cpio-2.15",
       "evidence": {
         "ebuild": "/var/db/pkg/app-arch/cpio-2.15/cpio-2.15.ebuild",
