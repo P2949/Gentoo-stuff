@@ -1,0 +1,5 @@
+# Keep ordinary resolver/ABI-closure maintenance transactions out of the
+# profile-generation lane. Profile-wave execution supplies its exact
+# fingerprint and mode explicitly through the production runner.
+=gui-libs/wlroots-0.20.2 optimization-off.conf
+=gui-wm/sway-1.12-r1 optimization-off.conf
