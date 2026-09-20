@@ -7133,3 +7133,7 @@ The `pgo-rust` rebuild, staging, install-QA, ABI guard, and package merge comple
 ### 2026-09-20 — sys-apps/ripgrep-15.2.0 Rust profile-wave terminal failure
 
 The `pgo-rust` compilation completed, but the package failed closed in `src_install`: the ebuild's completion-generation command expected `target/release/rg` while the Cargo install path had already placed the executable under the image tree. No package merge, install-QA admission, workload receipt, or profile payload was accepted. The failed Portage attempt and build logs remain preserved as an exact package-specific ebuild install-path failure.
+
+### 2026-09-20 — sys-block/thin-provisioning-tools-1.3.1 Rust profile-wave terminal failure
+
+The `pgo-rust` compilation completed, but the package failed closed in `src_install`: its Makefile attempted to install `target/release/pdata_tools`, which was absent after the package's Cargo build layout under the reviewed Rust lane. No package merge, install-QA admission, workload receipt, or profile payload was accepted. The failed Portage attempt and build logs remain preserved as an exact package-specific install-path failure.
