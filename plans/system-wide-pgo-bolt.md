@@ -7555,3 +7555,6 @@ The successor framework containing the OpenSP package environment was installed 
 
 ### OpenSP generated-policy remediation boundary (2026-09-20)
 The generated policy was rebuilt with a canonical CPV mapping for OpenSP, but the framework installer correctly rejected the attempted environment because project policy forbids assigning `CXX` and custom compiler/link flags outside the reviewed public-ABI lane. The package-specific workaround therefore cannot be activated through the current architecture without a broader policy redesign. The source-level and generated-policy attempts are preserved; OpenSP remains an evidence-backed correctness failure after remediation, with no package/profile admission from the failed retries.
+
+### scdoc Clang-IR generation wave (2026-09-20)
+The exact `app-text/scdoc-9999` wave passed readiness, rebuilt and merged through install-QA and the ABI guard, and completed its deterministic fixture workload. The receipt passed independent verification and LLVM 22 merged the authenticated payload; merge evidence digest is `9478281bb9856904d278e98190fd826bb75479594f152c1551c9913d3700e53a`. Profile validation, dispatcher publication, and exact profile-use deployment remain pending.
