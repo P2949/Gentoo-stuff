@@ -7713,3 +7713,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — snowball-stemmer clang-IR generation and profile-use
 
 `dev-libs/snowball-stemmer-3.1.1` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `86239b9390ab6ad944d3b583402ad2c65b105e4e0eeaad4a7caf830104535a12`, and dispatcher publication succeeded with record SHA-256 `df04ea0fdb71965ffe471a29911fbb7ec2ba8389a78d557d1923c35a92ae4147`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
+
+### 2026-09-21 — xxhash clang-IR generation and profile-use
+
+`dev-libs/xxhash-0.8.3-r2` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `9b8a53038594e814731db6bdb21976452b08c5cce7887e13c5535baadbd7a143`, and dispatcher publication succeeded with record SHA-256 `0f7876bcceae70c772e04f3085ecca3926e8e47f80b159655895d365d236256f`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
