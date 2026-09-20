@@ -6933,3 +6933,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, and ABI guard completed under g
 ### 2026-09-20 — media-libs/tiff-4.7.1 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild completed staging, but the install-QA ABI guard rejected the replacement DSOs. The guard reported established SONAME disappearance for `libtiffxx.so.5` and `libtiff.so.5`; no package merge, receipt, or profile merge was admitted. The failed build and ABI evidence remain preserved for package-specific ABI remediation.
+
+### 2026-09-20 — media-libs/woff2-1.0.2-r7 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` rebuild failed during linking under the active Clang/libc++ lane. `ld.lld` reported unresolved `std::__1` iostream/string and C++ exception/RTTI symbols while linking `woff2_info`; no package merge, install-QA admission, receipt, or profile merge was created. The complete failed build evidence remains preserved for package-specific toolchain/link remediation.
