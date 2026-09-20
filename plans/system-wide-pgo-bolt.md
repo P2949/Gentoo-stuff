@@ -7228,6 +7228,13 @@ exports relative to the installed providers. No merge or profile receipt was
 accepted. This remains an exact package-specific ABI/source-drift failure to
 resolve or classify with separate evidence; the guard was not bypassed.
 
+The subsequent libjxl retry used a final package-specific ABI policy and
+reached the same guard with concrete `JXL_0` and C++ export loss. The failure
+is therefore not a compiler-family or missing-runtime-link problem; it is a
+replacement ABI/source-drift mismatch against the installed `9999` provider.
+The failed receipt and build log remain preserved, and the package has not
+been admitted as optimized.
+
 The first framework publication after this source edit was intentionally
 replaced with the exact inventory-bearing generation after the generic
 installer's empty-policy fallback was detected. The active framework now binds
