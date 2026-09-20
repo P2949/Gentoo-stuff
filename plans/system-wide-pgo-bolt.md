@@ -7528,3 +7528,6 @@ The exact `gui-apps/grim-9999` Clang-IR generation transaction fetched, built, p
 
 ### Swayidle profile-wave workload failure (2026-09-20)
 The exact `gui-apps/swayidle-9999` Clang-IR generation transaction fetched, built, passed install-QA and the ABI guard, and merged successfully. Its reviewed `/usr/bin/swayidle --help` workload exited 255 in the live session, so the runner refused to seal an authoritative receipt or publish a profile. No profile-use rebuild was attempted; the workload failure is retained as terminal execution evidence pending a session-capable retry.
+
+### Wayland workload classification repair (2026-09-20)
+The live `grim --help` and `swayidle --help` waves both built and merged successfully but exited nonzero because no compositor/socket session exists in the automated userspace boundary. The workload derivation now classifies `gui-apps/grim-*`, `gui-apps/swayidle-*`, and `gui-apps/swaylock-*` as explicit `no-profile-producing-workload` records until a deterministic compositor-backed fixture is available, instead of emitting recipes that are known to fail. Regenerated workload state reports 288 recipe-ready, 238 no-runnable-entrypoint, and 12 explicit no-profile-producing-workload records; no failed workload is treated as a successful profile.

@@ -23,6 +23,15 @@ def main():
   if x['cpv'].startswith('sys-apps/gentoo-functions-'):
    rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'consoletype requires an interactive terminal and has no deterministic standalone invocation'})
    continue
+  # These Wayland utilities require a live compositor/socket even for their
+  # help paths.  Running them without that session exits nonzero after the
+  # package has already built successfully, so a generic smoke recipe cannot
+  # produce an authenticated profile.  Keep the accounting explicit until a
+  # compositor-backed workload fixture is available; never treat the failed
+  # invocation as a successful profile payload.
+  if x['cpv'].startswith(('gui-apps/grim-', 'gui-apps/swayidle-', 'gui-apps/swaylock-')):
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'Wayland session required; no deterministic compositor-backed workload is available in the live boundary'})
+   continue
   recipes=[]
   for e in x['entrypoints']:
    p=e['path']; safe=p.startswith(('/usr/bin/','/usr/sbin/','/bin/','/sbin/')) and not os.path.islink(p)
