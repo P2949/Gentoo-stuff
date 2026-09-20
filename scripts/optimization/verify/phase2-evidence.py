@@ -1592,6 +1592,7 @@ def git_command_result(
         "LANG": "C",
         "LC_ALL": "C",
         "PATH": "/usr/bin:/bin",
+        "LLVM_PROFILE_FILE": "/dev/null",
     }
     try:
         result = subprocess.run(
