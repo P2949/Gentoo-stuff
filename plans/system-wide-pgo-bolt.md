@@ -6713,3 +6713,7 @@ The long multi-ABI `pgo-clang-ir` rebuild completed successfully under generatio
 ### 2026-09-20 — media-video/mediainfo-24.11-r1 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild failed closed during the compile phase under the current clang/libc++ lane. `ld.lld` rejected unresolved `std::__1` and `ZenLib::Thread` vtable references from the installed `libzen.so` under `--no-allow-shlib-undefined`; no package merge, receipt, or merged profile was produced. The exact failure is retained in `/var/tmp/gentoo-portage-build/portage/media-video/mediainfo-24.11-r1/temp/build.log`.
+
+### 2026-09-20 — net-firewall/iptables-1.8.13 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` rebuild and merge completed, but the workload recipe failed closed with exit status 1 from `/sbin/xtables-legacy-multi`. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
