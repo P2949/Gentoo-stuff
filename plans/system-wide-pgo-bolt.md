@@ -6687,3 +6687,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — games-util/gamemode-9999 Clang IR profile wave terminal fetch stall
 
 The wave entered Portage but remained stuck in the live Git fetch for `https://github.com/FeralInteractive/gamemode.git` for more than two minutes. The stalled fetch and wave were terminated before package admission; no merge, workload, receipt, or profile was accepted. The upstream fetch stall is retained as terminal evidence.
+
+### 2026-09-20 — media-sound/alsa-utils-1.2.16 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` wave installed successfully, but its workload recipe failed closed with exit status 1 from `/usr/bin/aconnect` because no usable ALSA sequencer context was available. No receipt or merged profile was produced; the workload failure remains explicit.
