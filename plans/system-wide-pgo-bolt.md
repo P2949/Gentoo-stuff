@@ -6973,3 +6973,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and d
 ### 2026-09-20 — sys-apps/openrc-0.64 workload terminal result
 
 The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, and package merge completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/sbin/openrc-init` exited 1. The workload gate refused the wave; no profile receipt or merged profile was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
+
+### 2026-09-20 — sys-apps/pciutils-3.15.0 workload terminal result
+
+The `pgo-clang-ir` dual-ABI rebuild, staging, install-QA, ABI guard, and package merge completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/lspci` exited 1. The workload gate refused the wave; no profile receipt or merged profile was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
