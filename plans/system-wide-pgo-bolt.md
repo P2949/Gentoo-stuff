@@ -6793,3 +6793,7 @@ The `pgo-clang-ir` userspace rebuild, install, merge, and ABI guard completed su
 ### 2026-09-20 — www-client/w3m-0.5.6 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully, but `/usr/bin/w3m` exited 1 in the non-interactive workload context. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
+
+### 2026-09-20 — x11-apps/iceauth-1.0.11 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/x11-apps_iceauth-1.0.11-v1.profdata`.
