@@ -7582,3 +7582,6 @@ The exact `dev-build/bmake-20260508` wave passed readiness, rebuilt and merged t
 
 ### bmake profile-use deployment (2026-09-20)
 The validated `dev-build/bmake-20260508` profile was published through the generation-bound dispatcher with record SHA-256 `7ff82447d711ebfb69215890789e9b0dc31822a42e2183b413c1b610a0d418e1`. The exact rebuild completed with `use_rc=0`, reported `clang-ir-use` active and the authenticated profile path, passed install-QA and the ABI guard, and merged successfully. No BOLT deployment is claimed.
+
+### CMake profile-use terminal failure (2026-09-20)
+The exact `dev-build/cmake-4.3.5` Clang-IR generation wave passed readiness, completed the replacement build and workload, passed independent receipt verification, merged under LLVM 22, validated against the exact compiler/tool identities, and was published through the generation-bound dispatcher with record SHA-256 `d414d491928fb0a5dff8d13f6041a41217203348cde2b3cefb15dd29d4368722`. The exact profile-use rebuild authenticated the dispatcher and reached the configure phase, but CMake rejected the profile-use compiler as not supporting C++11 (`std::unique_ptr`) and exited before compilation. The complete log is retained at `/var/tmp/gentoo-portage-build/portage/dev-build/cmake-4.3.5/temp/build.log`; no profile-use merge is claimed.
