@@ -33,6 +33,7 @@ def main():
     ap.add_argument('--metadata', type=Path, required=True)
     ap.add_argument('--fingerprint-file', type=Path, required=True)
     ap.add_argument('--cpv', required=True)
+    ap.add_argument('--backend', choices=('clang-ir','rust'), default='clang-ir')
     ap.add_argument('--output-env', type=Path, required=True)
     ap.add_argument('--output-record', type=Path, required=True)
     a=ap.parse_args()
@@ -48,9 +49,9 @@ def main():
         if k in lines: raise SystemExit('REFUSED: duplicate manifest key')
         lines[k]=v
     required={'schema','backend','fingerprint','abi','compiler_family','profile_path','profile_sha256','validation_status'}
-    if set(lines)!=required or lines['schema']!='gentoo-optimization-profile-v1' or lines['backend']!='clang-ir' or lines['validation_status']!='passed': raise SystemExit('REFUSED: unsupported manifest')
+    if set(lines)!=required or lines['schema']!='gentoo-optimization-profile-v1' or lines['backend']!=a.backend or lines['validation_status']!='passed': raise SystemExit('REFUSED: unsupported manifest')
     if not HEX.fullmatch(lines['fingerprint']) or not HEX.fullmatch(lines['profile_sha256']): raise SystemExit('REFUSED: malformed manifest identity')
-    profile=Path(lines['profile_path']).resolve(); safe(profile,cache,'profile')
+    profile=Path(lines['profile_path']).resolve(); safe(profile,cache if a.backend == 'clang-ir' else generation,'profile')
     if hashlib.sha256(profile.read_bytes()).hexdigest()!=lines['profile_sha256']: raise SystemExit('REFUSED: profile digest mismatch')
     if os.geteuid() != 0: raise SystemExit('REFUSED: publication requires root-owned cache publication')
     try: portage_gid = grp.getgrnam('portage').gr_gid
@@ -65,10 +66,10 @@ def main():
     meta=json.loads(a.metadata.read_text())
     if not isinstance(meta,dict) or meta.get('schema_version') != 1: raise SystemExit('REFUSED: invalid validation metadata')
     env='\n'.join([
-      'GENTOO_OPT_MODE="clang-ir-use"', 'GENTOO_OPT_ABI="amd64"', 'GENTOO_OPT_COMPILER_FAMILY="clang"',
+      f'GENTOO_OPT_MODE="{a.backend}-use"', 'GENTOO_OPT_ABI="amd64"', f'GENTOO_OPT_COMPILER_FAMILY="{"clang" if a.backend == "clang-ir" else "rustc"}"',
       f'GENTOO_OPT_FINGERPRINT_FILE="{a.fingerprint_file}"', f'GENTOO_OPT_PROFILE_PATH="{profile}"',
       f'GENTOO_OPT_PROFILE_MANIFEST="{a.manifest.resolve()}"', f'GENTOO_OPT_PROFILE_METADATA="{a.metadata.resolve()}"', '' ])
-    rec={'schema_version':1,'cpv':a.cpv,'backend':'clang-ir','fingerprint':lines['fingerprint'],'profile':str(profile),'manifest':str(a.manifest.resolve()),'metadata':str(a.metadata.resolve()),'fingerprint_file':str(a.fingerprint_file.resolve()),'state':'candidate-profile-use','sha256':''}
+    rec={'schema_version':1,'cpv':a.cpv,'backend':a.backend,'fingerprint':lines['fingerprint'],'profile':str(profile),'manifest':str(a.manifest.resolve()),'metadata':str(a.metadata.resolve()),'fingerprint_file':str(a.fingerprint_file.resolve()),'state':'candidate-profile-use','sha256':''}
     rec['sha256']=digest({k:v for k,v in rec.items() if k!='sha256'})
     write_new(a.output_env,env.encode()); write_new(a.output_record,(json.dumps(rec,sort_keys=True,indent=2)+'\n').encode())
     print(json.dumps({'cpv':a.cpv,'record_sha256':rec['sha256'],'env':str(a.output_env)}))
