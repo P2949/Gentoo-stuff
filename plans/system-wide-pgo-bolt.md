@@ -7402,3 +7402,9 @@ binding, lock ownership, process-group teardown, tamper rejection, and
 idempotent offline finalization. This result is recorded as a recovery-suite
 result only; it does not by itself establish the terminal result of the parent
 portable-complete run.
+
+Portable-complete gate (2026-09-20): after the recovery suite completed, the
+parent run finished successfully with 87 passes, 0 failures, 12 explicit
+capability skips, 530 required subtest passes, 25 required subtest skips, and
+exit status 0. The authoritative run remained separate; no Phase-2 or
+profile-use authorization is inferred from this portable result.
