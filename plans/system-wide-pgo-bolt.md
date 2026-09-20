@@ -6757,3 +6757,7 @@ The `pgo-clang-ir` rebuild, merge, and workload completed successfully under gen
 ### 2026-09-20 — sys-fs/udisks-2.11.2 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild and merge completed, but `/usr/bin/udisksctl --help` exited 1 because no usable udisks service/context was available. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
+
+### 2026-09-20 — sys-libs/efivar-39-r1 Clang IR profile wave
+
+The userspace `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The ebuild had no EFI-variable or boot-asset mutation phase; no firmware/EFI state was touched. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-libs_efivar-39-r1-v1.profdata`.
