@@ -6543,3 +6543,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/npth-1.8 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_npth-1.8-v1.profdata`; merge evidence SHA-256 is `557d6745b8f1171aabc9f2684bfd756cfda3c52671206ee8e451f71b93cee6dc`.
+
+### 2026-09-20 — dev-libs/oniguruma-6.9.10 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_oniguruma-6.9.10-v1.profdata`; merge evidence SHA-256 is `5337d0ebb2b7a45b914bdd3a3ba7bbbff30d664011f8d7de2d7ddd5fe352ea70`.
