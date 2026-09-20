@@ -1622,12 +1622,6 @@ def perform_validation(
         "profile_tool": profile_tool,
         "backend_proof": backend_proof,
     }
-    if arguments.backend in {"clang-ir", "rust"} and getattr(arguments, "merge_evidence", None) is not None:
-        evidence_path = arguments.merge_evidence
-        metadata["merge_evidence"] = {
-            "path": os.fspath(evidence_path.resolve()),
-            "sha256": sha256_file(evidence_path),
-        }
     return payload, metadata
 
 

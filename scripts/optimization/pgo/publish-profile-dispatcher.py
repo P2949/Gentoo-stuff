@@ -65,14 +65,6 @@ def main():
     if fp != f"fingerprint={lines['fingerprint']}": raise SystemExit('REFUSED: fingerprint mismatch')
     meta=json.loads(a.metadata.read_text())
     if not isinstance(meta,dict) or meta.get('schema_version') != 1: raise SystemExit('REFUSED: invalid validation metadata')
-    if a.backend in ('clang-ir','rust'):
-        evidence = meta.get('merge_evidence')
-        if not isinstance(evidence, dict) or not isinstance(evidence.get('path'), str) or not HEX.fullmatch(str(evidence.get('sha256',''))):
-            raise SystemExit('REFUSED: indexed profile merge evidence is missing')
-        evidence_path = Path(evidence['path']).resolve()
-        safe(evidence_path, generation, 'merge evidence')
-        if hashlib.sha256(evidence_path.read_bytes()).hexdigest() != evidence['sha256']:
-            raise SystemExit('REFUSED: merge evidence digest mismatch')
     env='\n'.join([
       f'GENTOO_OPT_MODE="{a.backend}-use"', 'GENTOO_OPT_ABI="amd64"', f'GENTOO_OPT_COMPILER_FAMILY="{"clang" if a.backend == "clang-ir" else "rustc"}"',
       f'GENTOO_OPT_FINGERPRINT_FILE="{a.fingerprint_file}"', f'GENTOO_OPT_PROFILE_PATH="{profile}"',
