@@ -7384,3 +7384,12 @@ verification passed. The receipt is bound to inventory SHA
 SHA `90cb9552b3269cc87f68995c686d83367f383daa965627d491290b6e7b3b693c`.
 The native Rust raw payload remains sealed for the required Rust-specific
 validation path; no Clang merger or profile-use authorization is inferred.
+
+Rust validation environment checkpoint (2026-09-20): the bindgen wave's native
+payload is present and receipt-verified, but this host currently exposes only
+LLVM `llvm-profdata` 20/21/22 while the exact Rust compiler identity is
+bundled LLVM 23.1.1. Attempting to inspect the payload with LLVM 22 fails
+closed with raw profile format version 11 versus expected version 10. The
+payload is retained; no incompatible tool was used to merge or validate it,
+and this evidence does not authorize profile use. A matching LLVM 23 profile
+consumer must be made available before Rust payload validation can proceed.
