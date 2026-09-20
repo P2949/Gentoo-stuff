@@ -6845,3 +6845,7 @@ The `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully
 ### 2026-09-20 — x11-misc/xdotool-4.20260303.1 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/x11-misc_xdotool-4.20260303.1-v1.profdata`.
+
+### 2026-09-20 — xfce-base/exo-4.20.0-r1 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/xfce-base_exo-4.20.0-r1-v1.profdata`.
