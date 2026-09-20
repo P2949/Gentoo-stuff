@@ -7573,3 +7573,6 @@ The exact `app-text/yodl-4.05.00` Clang-IR wave passed readiness but failed in t
 
 ### b2 Clang-IR generation wave (2026-09-20)
 The exact `dev-build/b2-5.5.3` wave passed readiness, rebuilt and merged through install-QA and the ABI guard, and completed its `/usr/bin/b2 --help` workload. The receipt passed independent root verification and LLVM 22 merged the authenticated payload; merge evidence digest is `c99db5918dd6d04c089ff6887d92f79cc844073d9154fbb10790c955ade9340f`. Profile validation, dispatcher publication, and exact profile-use deployment remain pending.
+
+### b2 profile-use deployment (2026-09-20)
+The validated `dev-build/b2-5.5.3` profile was published through the generation-bound dispatcher with record SHA-256 `e60c964a3e9ef415f93ac75269f2dd78ee6086836396d54dc2f60c9e71a29c42`. The exact rebuild completed with `use_rc=0`, reported `clang-ir-use` active and the authenticated profile path, passed install-QA and the ABI guard, and merged successfully. No BOLT deployment is claimed.
