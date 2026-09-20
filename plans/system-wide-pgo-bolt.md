@@ -7045,3 +7045,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, and package merge co
 ### 2026-09-20 — sys-libs/slang-2.3.3-r2 workload terminal result
 
 The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, and package merge completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/slsh` exited 1 in the current runtime context. The workload gate refused the wave; no profile receipt or merged profile was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
+
+### 2026-09-20 — sys-process/btop-1.4.7 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-process_btop-1.4.7-v1.profdata` with merge evidence recorded.
