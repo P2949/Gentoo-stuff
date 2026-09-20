@@ -6607,3 +6607,7 @@ The `pgo-clang-ir` wave reached package installation, but the workload recipe fa
 ### 2026-09-20 — dev-util/clinfo-9999 Clang IR profile wave terminal stall
 
 The wave did not produce a receipt. Portage remained in the live git fetch for `https://github.com/Oblomov/clinfo.git` beyond the bounded observation window and the runner exited without a profile. This is recorded as an upstream fetch stall; no ABI or profile result was inferred.
+
+### 2026-09-20 — focused ABI/QA and profile-wave regression verification
+
+The focused ABI-guard, Portage QA-hook, profile-wave guard, and wave-receipt verifier suites passed. The ABI fixtures cover the zero-DSO no-root-traversal and immediate-provider-scope regressions. The aggregate portable suite's recovery tests passed; its Phase-2 evidence fixture was not green because the mutable post-authorization worktree cannot satisfy the frozen Phase-2 source boundary, so no Phase-2 evidence was changed.
