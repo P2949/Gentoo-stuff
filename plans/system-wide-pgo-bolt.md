@@ -7537,3 +7537,6 @@ The exact `app-text/mandoc-1.14.6-r1` wave passed readiness, rebuilt and merged 
 
 ### Mandoc profile-use deployment (2026-09-20)
 The validated `app-text/mandoc-1.14.6-r1` profile was published through the generation-bound dispatcher with record SHA-256 `31ba281f3ac7b79aad6a98374d550d03df0c25cc3cffd00a3d7f5f41a39df78a`. The exact rebuild completed with `use_rc=0`, reported `clang-ir-use` active and the authenticated profile path, passed install-QA and the ABI guard, and merged successfully. No BOLT deployment is claimed.
+
+### OpenSP profile-wave compile failure (2026-09-20)
+The exact `app-text/opensp-1.5.2-r10` Clang-IR generation wave passed readiness but failed during the compile/link phase before install-QA. `ld.lld` reported unresolved C++ runtime symbols including `__gxx_personality_v0`, `operator new/delete`, and C++ ABI vtables while linking `onsgmls`; the complete root-owned Portage log is retained at `/var/tmp/gentoo-portage-build/portage/app-text/opensp-1.5.2-r10/temp/build.log`. No package merge, workload receipt, profile, or dispatcher publication was admitted.
