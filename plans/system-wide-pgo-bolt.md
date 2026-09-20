@@ -6881,3 +6881,7 @@ The `pgo-clang-ir` rebuild and install completed under generation `phase3-live-c
 ### 2026-09-20 — dev-libs/protobuf-34.2 Clang IR profile wave terminal failure
 
 The dual-ABI `pgo-clang-ir` rebuild completed compilation and staging, but the install-QA ABI guard rejected the replacement DSOs. The guard reported an exported-symbol loss for the generated `EpsCopyInputStream::ReadPackedVarintArray...` symbol across the protobuf and protobuf-lite DSO families (including symlinked and versioned paths). No package merge, receipt, or profile merge was admitted; the failed build and ABI evidence remain preserved for a package-specific ABI remediation.
+
+### 2026-09-20 — dev-util/colm-0.14.7-r4 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` rebuild completed compilation and staging under generation `phase3-live-candidate-20260918-postsync-r1`, but the install-QA ABI guard rejected the replacement DSOs. The guard reported exported-symbol loss in the `libfsm-0.14.7.so` and `libfsm.so` SONAME families, including missing C++ template and runtime symbols. No package merge, receipt, or profile merge was admitted; the build log and ABI evidence remain preserved for package-specific ABI remediation.
