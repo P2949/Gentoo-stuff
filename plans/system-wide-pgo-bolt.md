@@ -7597,3 +7597,6 @@ The exact `dev-build/make-9999` Clang-IR generation wave passed readiness and en
 
 ### SQLite profile-use deployment (2026-09-20)
 The exact `dev-db/sqlite-3.53.4` Clang-IR wave passed readiness, rebuilt and merged through install-QA and the ABI guard, passed independent receipt verification, merged under LLVM 22, validated, and was published through the generation-bound dispatcher with record SHA-256 `40a93c704dbfb70991c2d207c6fa3ae25093b76e8a2cf48bf5388edce2e8c07b`. The exact profile-use rebuild authenticated `clang-ir-use`, completed the multilib build and install, and merged successfully with `use_rc=0`; expected `default.profraw` warnings were non-fatal.
+
+### strace profile-wave source-fetch terminal failure (2026-09-20)
+The exact `dev-debug/strace-9999` Clang-IR generation wave entered the authenticated replacement transaction but stalled during the live `git fetch https://github.com/strace/strace.git` for more than four minutes with zero CPU and no output. The owning fetch and wave were terminated with signal 15 before source unpack completed; no package merge, receipt, workload, profile, or dispatcher publication was admitted. The fetch failure is retained in the wave and Portage logs for a cached-source or fresh-fetch retry.
