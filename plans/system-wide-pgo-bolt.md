@@ -7630,3 +7630,6 @@ The exact `dev-lang/tcl-8.6.17` Clang-IR generation transaction rebuilt and merg
 
 ### Tk profile-use deployment (2026-09-20)
 The exact `dev-lang/tk-8.6.17` profile-use rebuild authenticated `clang-ir-use`, completed both ABI variants and the extensive install step, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `762b95989dea6a24ceb9a3ab1a764a3c24b5baa7d0a6f6052caf0dd22c6302e4`.
+
+### Vala profile-use deployment (2026-09-20)
+The exact `dev-lang/vala-0.56.19` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `70c7bb3e0723e92ac71f4e6a85ec0f7eff1011dd8c45218b0a4b871d7b70ba48`.
