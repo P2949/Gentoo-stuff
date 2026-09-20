@@ -233,6 +233,7 @@ def clean_environment() -> dict[str, str]:
         "LANG": "C",
         "LC_ALL": "C",
         "TZ": "UTC",
+        "LLVM_PROFILE_FILE": "/dev/null",
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_NO_REPLACE_OBJECTS": "1",

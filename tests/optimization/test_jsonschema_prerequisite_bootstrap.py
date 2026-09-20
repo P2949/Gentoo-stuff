@@ -309,7 +309,7 @@ class JsonschemaPrerequisiteBootstrapTests(unittest.TestCase):
             self.commit,
         )
         self.assertEqual(result.returncode, 1)
-        self.assertIn("tracked, untracked, or ignored residue", result.stderr)
+        self.assertIn("differs byte-for-byte from HEAD blob", result.stderr)
 
     def test_publish_is_no_replace_and_never_reuses_a_commit_destination(self) -> None:
         destination = self.publish()
