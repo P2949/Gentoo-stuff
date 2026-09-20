@@ -6551,3 +6551,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/pugixml-9999 profile-wave fetch stall
 
 The `pgo-clang-ir` wave did not reach compilation. The upstream Git fetch for `https://github.com/zeux/pugixml.git` made no progress for more than two minutes and was terminated without a receipt or profile. This package-specific source-fetch stall is retained as terminal evidence for this attempt; the wave machinery and ABI guard were not bypassed.
+
+### 2026-09-20 — dev-libs/re2-2025.08.12 exported-ABI rejection
+
+The `pgo-clang-ir` wave reached the completed install image, but the exported-ABI guard rejected the replacement `libre2.so.11` providers. Two installed `Regexp::Walker` `Copy` symbol identities were absent from the candidate (`old=498/new=496` for the primary SONAME). No receipt or merged profile was accepted; the ABI failure is retained as the terminal reason for this attempt.
