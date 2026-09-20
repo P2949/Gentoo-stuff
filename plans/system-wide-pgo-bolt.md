@@ -7552,3 +7552,6 @@ The successor-framework retry confirmed that OpenSP's legacy libtool link rules 
 
 ### OpenSP package-environment retry (2026-09-20)
 The successor framework containing the OpenSP package environment was installed and independently strict-checked. The fresh retry still rendered the libtool CXX link as `/usr/lib/llvm/22/bin/clang-22` with no `-lstdc++`, proving the generated-policy package-environment tree did not yet consume the new source mapping. The compile failed before install-QA again; no package or profile was admitted. The next implementation step is to regenerate the content-addressed generated policy itself, republish it, and then retry once under that policy.
+
+### OpenSP generated-policy remediation boundary (2026-09-20)
+The generated policy was rebuilt with a canonical CPV mapping for OpenSP, but the framework installer correctly rejected the attempted environment because project policy forbids assigning `CXX` and custom compiler/link flags outside the reviewed public-ABI lane. The package-specific workaround therefore cannot be activated through the current architecture without a broader policy redesign. The source-level and generated-policy attempts are preserved; OpenSP remains an evidence-backed correctness failure after remediation, with no package/profile admission from the failed retries.
