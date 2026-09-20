@@ -7294,3 +7294,14 @@ independent verification. Successor payload audit v8 now reports 288
 `profile-present`, 251 `workload-exclusion`, and 4 `missing-profile` records;
 its root-owned SHA-256 is
 `329f7b8f103c4ea837e935766d46b55c354761ad07c0c3e7fc505ee22a3fbefb`.
+
+The Rust host-layout and workload corrections completed the
+`sys-block/thin-provisioning-tools-1.3.1` wave on 2026-09-20. Cargo output was
+made compatible with the ebuild install layout, and the invalid aggregate
+`pdata_tools --help` recipe was replaced by the valid representative
+`/usr/sbin/thin_check --help` command. The rebuilt package merged through
+install-QA and the corrected receipt `profile-wave-receipt-thin-v5.json`
+passed independent verification. Successor payload audit v9 reports 289
+`profile-present`, 251 `workload-exclusion`, and 3 `missing-profile` records;
+its root-owned SHA-256 is
+`6c05ff872a44059fce5522e2db3447ee913fe026f01601946a2d3f25849472d0`.
