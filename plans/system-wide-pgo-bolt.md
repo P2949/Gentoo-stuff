@@ -7374,3 +7374,13 @@ zero missing-profile records. Artifact SHA-256:
 `7db45c4781b8dc43c66d9808a89dd030a6c241412b576d6599ddde036821a78d`.
 The four remaining raw-only records require fresh merge/receipt recovery or a
 separate exact terminal record.
+
+Rust profile-wave success (2026-09-20): `dev-util/bindgen-0.72.1` completed the
+exact successor Rust generation wave under the current post-sync inventory,
+passed install-QA and its representative workload, and produced
+`profile-wave-receipt-bindgen-v1.json`. Independent receipt/readiness
+verification passed. The receipt is bound to inventory SHA
+`2d1408c587668cdca9e0138a07ea45af8201c71390054da9eec00693f756e701` and wave
+SHA `90cb9552b3269cc87f68995c686d83367f383daa965627d491290b6e7b3b693c`.
+The native Rust raw payload remains sealed for the required Rust-specific
+validation path; no Clang merger or profile-use authorization is inferred.
