@@ -7193,3 +7193,17 @@ Profile-wave terminal failure (2026-09-20): bounded retry `sys-block/thin-provis
 Repository validation repair (2026-09-20): the JSON-schema bootstrap and real-Git materialization fixtures were creating implicit `default.profraw` files because their controlled Git/publisher environments did not set `LLVM_PROFILE_FILE`. The publisher and both test helpers now bind that variable to `/dev/null`; the stale staged-worktree expectation was aligned with the current fail-closed exact-clean-commit rejection. Focused bootstrap and materialization suites pass (11 bootstrap tests plus the affected real-Git cases). A fresh portable-complete run is still executing its long recovery subsection; no authorization state is inferred from the partial run.
 
 Portable validation repair (2026-09-20): the full recovery subsection passed, but the following Phase-2 evidence contract tests exposed the same implicit-profile contamination in the verifier's controlled Git inspection environment. `phase2-evidence.py` now binds `LLVM_PROFILE_FILE=/dev/null` for those subprocesses; the previously failing provenance fixture passes in isolation. The portable run's terminal Phase-2 evidence failures were caused by this environment defect and require a fresh full rerun after this correction.
+
+### 2026-09-20 — portable-complete validation repaired and green
+
+After binding `LLVM_PROFILE_FILE=/dev/null` consistently in the controlled
+prerequisite, evidence-verifier, and phase-2 fixture environments, the fresh
+`PATH=/usr/bin:/bin /usr/bin/bash tests/run-optimization-tests.sh --mode
+portable-complete` run completed with `PASS=87`, `FAIL=0`, `SKIP=12`,
+`TOTAL=99`, and `EXIT=0`. The recovery subsection independently reported
+79 tests with 3 required skips and no failures; the phase-2 evidence contract
+reported 47 tests with no failures. The strict framework installer, ABI guard,
+BOLT command, transaction, and pre-strip fixture gates also passed. This
+validates the repository's portable gate after the environment repair; it does
+not authorize profile use, BOLT deployment, or completion of the remaining
+Phase-3 profile payload collection.
