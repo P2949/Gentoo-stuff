@@ -7757,3 +7757,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — ftjam workload terminal failure
 
 `dev-util/ftjam-2.5.3_rc2-r3` completed its authenticated Clang-IR generation build and install-QA path, but the reviewed `/usr/bin/jam --help` workload exited `1`. The wave runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is retained in the runner evidence and requires a corrected deterministic fixture before retry.
+
+### 2026-09-21 — gperf clang-IR generation and profile-use
+
+`dev-util/gperf-3.3` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `eea80dd24ccdf9ef11ca83d90c013ee3c33d88af848d52d60dadb84882c9975a`, and dispatcher publication succeeded with record SHA-256 `a795a7033c023c8620bb2dc2d9e7f28bb5c65ba11c1f2a2534203866d1ddcff3`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
