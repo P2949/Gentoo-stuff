@@ -7149,3 +7149,7 @@ Reran the fail-closed BOLT safety review against the current generation's author
 ### 2026-09-20 — current profile payload audit
 
 The independent profile-payload verifier was rerun against the current generation-bound policy bindings. It found 330 packages with authenticated raw payloads and 213 exact lane records still missing payloads; the audit remains `pending-profile-collection`. The root-owned result is `profile-payload-audit-successor-20260920.json`. No profile-use or BOLT deployment is claimed while this audit is pending.
+
+### 2026-09-20 — payload audit exclusion-scope correction
+
+The profile-payload verifier was overcounting packages already classified by the authoritative workload-exclusion artifact. It now accepts `--exclusions`, emits explicit `workload-exclusion` records, binds the exclusion hash into schema version 2, and keeps missing-profile fail-closed behavior for actionable packages. Against the current generation, the corrected audit reports 278 payload-present records, 251 workload exclusions, and 14 genuinely missing payloads. The remaining 14 are actionable or previously failed packages: `dev-util/maturin-1.15.0`, `dev-util/rustup-1.29.0`, `gnome-base/librsvg-2.62.3`, `media-libs/libjxl-9999`, `media-sound/qpwgraph-9999`, `net-dialup/ppp-9999`, `net-misc/chrony-9999`, `net-misc/curl-9999`, `sys-apps/ripgrep-15.2.0`, `sys-block/thin-provisioning-tools-1.3.1`, `sys-process/nvtop-9999`, `x11-apps/mesa-progs-9999`, `x11-base/xwayland-9999`, and `x11-terms/alacritty-9999`.
