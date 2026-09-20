@@ -1406,6 +1406,9 @@ def clean_environment(extra: Mapping[str, str] | None = None) -> dict[str, str]:
         "SHELL": "/bin/bash",
         "TZ": "UTC",
         "USER": "root",
+        # Prevent instrumented helper processes from creating implicit
+        # profile artifacts inside fixture repositories and staged trees.
+        "LLVM_PROFILE_FILE": "/dev/null",
     }
     if extra:
         result.update(extra)

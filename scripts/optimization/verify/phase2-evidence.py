@@ -6670,6 +6670,7 @@ def prerequisite_plan_environment(private_roots: dict[str, Path]) -> dict[str, s
         "FETCHCOMMAND": "/usr/bin/false ${FILE}",
         "GENTOO_MIRRORS": "",
         "HOME": os.fspath(private_roots["home"]),
+        "LLVM_PROFILE_FILE": "/dev/null",
         "LANG": "C",
         "LC_ALL": "C",
         "LOGNAME": "root",

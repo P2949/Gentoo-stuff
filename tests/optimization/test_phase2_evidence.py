@@ -19,6 +19,10 @@ import unittest
 from typing import Any, Callable, cast
 from unittest import mock
 
+# The host toolchain may be LLVM-instrumented.  Evidence fixtures must not
+# create implicit profile files in their temporary Git trees.
+os.environ.setdefault("LLVM_PROFILE_FILE", "/dev/null")
+
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 EXACT_CPV_CONTRACT_PATH = REPOSITORY / "optimization/exact-cpv-contract.json"
