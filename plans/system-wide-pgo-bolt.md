@@ -7709,3 +7709,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — protobuf generation ABI failure
 
 `dev-libs/protobuf-34.2` completed its large authenticated Clang-IR build and staged install, but install-QA rejected the replacement DSOs for exported-ABI loss. `libprotobuf-lite.so.34.2.0` changed from 904 to 918 symbols while losing a packed-varint parser symbol, and `libprotobuf.so.34.2.0` changed from 3771 to 3791 while losing the same symbol family. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete Portage log is `/var/tmp/gentoo-portage-build/portage/dev-libs/protobuf-34.2/temp/build.log`; this remains a correctness failure requiring ABI-safe remediation.
+
+### 2026-09-21 — snowball-stemmer clang-IR generation and profile-use
+
+`dev-libs/snowball-stemmer-3.1.1` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `86239b9390ab6ad944d3b583402ad2c65b105e4e0eeaad4a7caf830104535a12`, and dispatcher publication succeeded with record SHA-256 `df04ea0fdb71965ffe471a29911fbb7ec2ba8389a78d557d1923c35a92ae4147`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
