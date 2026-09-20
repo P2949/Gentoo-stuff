@@ -7525,3 +7525,6 @@ The exact `gnome-extra/yad-9999` Clang-IR generation wave passed readiness and e
 
 ### Grim profile-wave workload failure (2026-09-20)
 The exact `gui-apps/grim-9999` Clang-IR generation transaction fetched, built, passed install-QA and the ABI guard, and merged successfully. Its reviewed `/usr/bin/grim --help` workload then exited 1 in the live environment, so the runner refused to seal an authoritative receipt or publish a profile. No profile-use rebuild was attempted; the workload failure is retained as terminal execution evidence pending a compositor-capable retry.
+
+### Swayidle profile-wave workload failure (2026-09-20)
+The exact `gui-apps/swayidle-9999` Clang-IR generation transaction fetched, built, passed install-QA and the ABI guard, and merged successfully. Its reviewed `/usr/bin/swayidle --help` workload exited 255 in the live session, so the runner refused to seal an authoritative receipt or publish a profile. No profile-use rebuild was attempted; the workload failure is retained as terminal execution evidence pending a session-capable retry.
