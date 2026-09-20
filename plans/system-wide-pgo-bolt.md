@@ -7305,3 +7305,17 @@ passed independent verification. Successor payload audit v9 reports 289
 `profile-present`, 251 `workload-exclusion`, and 3 `missing-profile` records;
 its root-owned SHA-256 is
 `6c05ff872a44059fce5522e2db3447ee913fe026f01601946a2d3f25849472d0`.
+
+Profile terminal-state machinery (2026-09-20): `verify-profile-payloads.py`
+now accepts a separately hashed terminal-exclusion artifact and emits explicit
+`terminal-exclusion` records with evidence references, rather than conflating
+package correctness failures with workload exclusions. The successor artifact
+`profile-terminal-exclusions-successor-20260920-v1.json` records the repeated
+maturin and rustup completion-generation SIGSEGV failures and the librsvg
+instrumented introspection-helper SIGSEGV after its mixed-link remediation.
+The resulting root-owned payload audit v10 reports 289 `profile-present`, 251
+`workload-exclusion`, and 3 evidence-backed `terminal-exclusion` records, with
+zero missing profiles and authorization state `ready-for-profile-validation`.
+Audit SHA-256: `d1b9692d514344cf6bf435e00870f5613c2a658d65d751ef3e8a8ad8e2f5096b`.
+This clears profile collection accounting only; profile validation and BOLT
+eligibility/deployment remain outstanding.
