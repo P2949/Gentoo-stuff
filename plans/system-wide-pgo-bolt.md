@@ -7721,3 +7721,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — BLT workload terminal failure
 
 `dev-tcltk/blt-2.5.3-r4` completed its authenticated Clang-IR generation transaction and merged through install-QA and the ABI guard, but the reviewed `/usr/bin/bltsh` workload produced no output. The wave runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload result is retained as a terminal exclusion pending a corrected deterministic fixture; no optimization-policy or ABI guard bypass was used.
+
+### 2026-09-21 — bindgen Rust identity mismatch
+
+`dev-util/bindgen-0.72.1` was prepared for the Rust PGO lane, but readiness refused the wave because its generation identity is stale: the identity record references compiler/profile inputs and an ldflags path from `phase3-live-candidate-20260920-postsync-r1`, not the active reviewed generation. The runner fail-closed with `not-authorized-framework-gate`; no Rust receipt or profile was admitted. Fresh identity/materialization regeneration is required before retrying this package.
