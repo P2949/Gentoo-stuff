@@ -7737,3 +7737,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — ccache clang-IR generation and profile-use
 
 `dev-util/ccache-4.14` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `e527e8f9056f65a3434d7e801bdb626ffc95cc60185f160e0f7cf6d4d080ee8a`, and dispatcher publication succeeded with record SHA-256 `d84b2273e927ad484330396f8ec1c4fe14a9e34a429b04d7cf7ce694335c1448`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
+
+### 2026-09-21 — clinfo clang-IR generation and profile-use
+
+`dev-util/clinfo-9999` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `381ed274c78d795715b7ba8c7716ea08240ed703ab5c33a97ed451d3aae2c651`, and dispatcher publication succeeded with record SHA-256 `2a172b905e4057cd6d414137dbc33028aa3bb0e1bf0cb4d82c61f3bb89c4f29c`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
