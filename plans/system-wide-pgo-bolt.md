@@ -7624,3 +7624,6 @@ The exact `dev-lang/sassc-3.6.2` profile-use rebuild authenticated `clang-ir-use
 
 ### SWIG profile-use deployment (2026-09-20)
 The exact `dev-lang/swig-4.4.1` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `5e3cea854473acd40f783116b0436f6e622b26d11effee435cbcf78bdbd63568`.
+
+### Tcl profile-wave workload terminal failure (2026-09-20)
+The exact `dev-lang/tcl-8.6.17` Clang-IR generation transaction rebuilt and merged through install-QA and the ABI guard, but its reviewed `/usr/bin/tclsh8.6` workload produced no output. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted.
