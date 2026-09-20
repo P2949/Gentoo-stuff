@@ -6865,3 +6865,7 @@ The `pgo-clang-ir` rebuild, merge, and workload completed successfully under gen
 ### 2026-09-20 — xfce-base/xfce4-panel-4.20.8 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/xfce-base_xfce4-panel-4.20.8-v1.profdata`.
+
+### 2026-09-20 — xfce-base/xfconf-4.20.0 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/xfce-base_xfconf-4.20.0-v1.profdata`.
