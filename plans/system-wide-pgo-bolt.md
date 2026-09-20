@@ -6965,3 +6965,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, and package merge co
 ### 2026-09-20 — sys-apps/kbd-2.10.0 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_kbd-2.10.0-v1.profdata` with merge evidence recorded.
+
+### 2026-09-20 — sys-apps/nvme-cli-2.16 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-apps_nvme-cli-2.16-v1.profdata` with merge evidence recorded.
