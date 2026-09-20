@@ -2,12 +2,12 @@
 # profile-generation lane. Profile-wave execution supplies its exact
 # fingerprint and mode explicitly through the production runner.
 =gui-libs/wlroots-0.20.2 optimization/optimization-off.conf
-gui-wm/sway-1.12-r1 optimization/optimization-off.conf
-dev-util/spirv-tools optimization/optimization-off.conf
-dev-util/glslang optimization/optimization-off.conf
-media-libs/shaderc optimization/optimization-off.conf
-dev-util/vulkan-tools optimization/optimization-off.conf
-media-libs/vulkan-layers optimization/optimization-off.conf
-media-libs/mesa optimization/optimization-off.conf
-gui-wm/hyprland optimization/optimization-off.conf
-gui-wm/gamescope optimization/optimization-off.conf
+=gui-wm/sway-1.12-r1 optimization/optimization-off.conf
+=dev-util/spirv-tools-1.4.357.0 optimization/optimization-off.conf
+=dev-util/glslang-1.4.357.0 optimization/optimization-off.conf
+=media-libs/shaderc-2026.2 optimization/optimization-off.conf
+=dev-util/vulkan-tools-1.4.357.0 optimization/optimization-off.conf
+=media-libs/vulkan-layers-1.4.357.0 optimization/optimization-off.conf
+=media-libs/mesa-9999 optimization/optimization-off.conf
+=gui-wm/hyprland-9999 optimization/optimization-off.conf
+=gui-wm/gamescope-3.16.28 optimization/optimization-off.conf
