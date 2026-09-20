@@ -317,7 +317,7 @@ class ProfileValidatorTests(unittest.TestCase):
             receipt_payload["sha256"] = hashlib.sha256(json.dumps({k: v for k, v in receipt_payload.items() if k != "sha256"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             receipt.write_text(json.dumps(receipt_payload) + "\n")
             version = subprocess.run([os.fspath(profile_tool), "--version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, env={**os.environ, "LC_ALL": "C", "LANG": "C"})
-            evidence.write_text(json.dumps({
+            evidence_payload = {
                 "record_type": f"{backend}-profile-merge",
                 "backend": backend,
                 "state": "profile-merged-pending-dispatcher-authorization",
@@ -329,7 +329,9 @@ class ProfileValidatorTests(unittest.TestCase):
                 "package": "cat/pkg-1",
                 "raw_files": [{"path": os.fspath(profile), "size": profile.stat().st_size, "sha256": sha256(profile)}],
                 "llvm_profdata": {"realpath": os.path.realpath(profile_tool), "sha256": sha256(profile_tool), "version_stdout": version.stdout, "version_stderr": version.stderr},
-            }) + "\n")
+            }
+            evidence_payload["sha256"] = hashlib.sha256(json.dumps(evidence_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            evidence.write_text(json.dumps(evidence_payload) + "\n")
             arguments.extend(["--merge-evidence", os.fspath(evidence)])
         if backend == "clang-sample":
             arguments.extend(

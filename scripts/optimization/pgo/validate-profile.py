@@ -622,6 +622,12 @@ def validate_indexed_profile(profile: Path, tool: Path, backend: str) -> dict[st
 def validate_merge_evidence(path: Path, profile: Path, backend: str, generation: dict[str, str]) -> dict[str, object]:
     """Require authenticated indexed-profile merge evidence before publication."""
     evidence = load_json(path, "profile merge evidence")
+    recorded_digest = evidence.get("sha256")
+    if not isinstance(recorded_digest, str):
+        fail("profile merge evidence self-digest is missing")
+    unsigned = dict(evidence); unsigned.pop("sha256", None)
+    if hashlib.sha256(json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()).hexdigest() != recorded_digest:
+        fail("profile merge evidence self-digest mismatch")
     if evidence.get("record_type") != f"{backend}-profile-merge":
         fail("profile merge evidence backend record type mismatch")
     if evidence.get("backend") != backend:
@@ -638,7 +644,11 @@ def validate_merge_evidence(path: Path, profile: Path, backend: str, generation:
         evidence.get("receipt"), evidence.get("receipt_sha256"), "profile-wave receipt"
     )
     receipt = load_json(receipt_path, "profile-wave receipt")
-    if receipt.get("record_type") != "profile-wave-transaction-receipt" or receipt.get("state") != "completed":
+    receipt_digest = receipt.get("sha256")
+    receipt_unsigned = dict(receipt); receipt_unsigned.pop("sha256", None)
+    if not isinstance(receipt_digest, str) or hashlib.sha256(json.dumps(receipt_unsigned, sort_keys=True, separators=(",", ":")).encode()).hexdigest() != receipt_digest:
+        fail("profile-wave receipt self-digest mismatch")
+    if receipt.get("schema_version") != 2 or receipt.get("record_type") != "profile-wave-transaction-receipt" or receipt.get("state") != "completed":
         fail("profile merge evidence does not reference a completed wave receipt")
     if receipt.get("generation") != generation or evidence.get("package") not in receipt.get("packages", []):
         fail("profile merge evidence receipt authority mismatch")
@@ -648,6 +658,10 @@ def validate_merge_evidence(path: Path, profile: Path, backend: str, generation:
     payload_keys = sorted((x.get("path"), x.get("sha256")) for x in payloads)
     if not isinstance(raw_files, list) or raw_keys != payload_keys:
         fail("profile merge evidence raw payload vector differs from receipt")
+    for item in raw_files:
+        raw_path = regular_input(Path(require_string(item.get("path"), "raw payload path")), "raw payload")
+        if "size" in item and item["size"] != raw_path.stat().st_size:
+            fail("profile merge evidence raw payload size mismatch")
     tool = evidence.get("llvm_profdata")
     if not isinstance(tool, dict) or set(tool) != {"realpath", "sha256", "version_stdout", "version_stderr"}:
         fail("profile merge evidence lacks complete llvm-profdata identity")
