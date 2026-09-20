@@ -7642,3 +7642,6 @@ The exact `dev-libs/appstream-1.0.6` profile-use rebuild authenticated `clang-ir
 
 ### AppStream GLib profile-use deployment (2026-09-20)
 The exact `dev-libs/appstream-glib-0.8.3` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `eb5e90748b5e1e791be2edfeb1725cd4302e4a4e4c963daf6f9b7d7705c86134`.
+
+### D-Bus GLib profile-use deployment (2026-09-20)
+The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir-use`, completed both ABI variants, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `f9e1ebefb22ccfd2d9e017d20c1b1b7f35a66e57733162561d00c9d45537b286`.
