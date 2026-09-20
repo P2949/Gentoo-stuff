@@ -7,8 +7,10 @@ PORTAGE=${ROOT}/portage
 DEFAULT_PROFRAW_BACKUP=$(mktemp)
 if [[ -f ${ROOT}/default.profraw && ! -L ${ROOT}/default.profraw ]]; then
     cp -- "${ROOT}/default.profraw" "${DEFAULT_PROFRAW_BACKUP}"
+    # shellcheck disable=SC2034  # consumed by the single-quoted EXIT trap
     RESTORE_DEFAULT_PROFRAW=1
 else
+    # shellcheck disable=SC2034  # consumed by the single-quoted EXIT trap
     RESTORE_DEFAULT_PROFRAW=0
 fi
 trap 'if (( RESTORE_DEFAULT_PROFRAW )); then cp -- "${DEFAULT_PROFRAW_BACKUP}" "${ROOT}/default.profraw"; else rm -f -- "${ROOT}/default.profraw"; fi; rm -f -- "${DEFAULT_PROFRAW_BACKUP}"' EXIT
