@@ -7522,3 +7522,6 @@ Profile-use terminal failure (2026-09-20): `app-text/lowdown-3.1.1` completed th
 
 ### Yad profile-use generation fetch stall (2026-09-20)
 The exact `gnome-extra/yad-9999` Clang-IR generation wave passed readiness and entered the authenticated replacement transaction, but the live ebuild stalled during the upstream `v1cont/yad.git` fetch for more than three minutes. The fetch and owning wave were terminated with signal 15 before unpack completed; no package merge, profile receipt, or ABI decision was admitted. This is retained as a source-fetch execution failure requiring a cached-source or fresh-fetch retry, not an optimization-policy bypass.
+
+### Grim profile-wave workload failure (2026-09-20)
+The exact `gui-apps/grim-9999` Clang-IR generation transaction fetched, built, passed install-QA and the ABI guard, and merged successfully. Its reviewed `/usr/bin/grim --help` workload then exited 1 in the live environment, so the runner refused to seal an authoritative receipt or publish a profile. No profile-use rebuild was attempted; the workload failure is retained as terminal execution evidence pending a compositor-capable retry.
