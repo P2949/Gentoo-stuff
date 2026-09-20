@@ -1652,7 +1652,7 @@ class RepositoryMaterializationTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             TOOL.TransactionError,
-            "frozen effective Git worktree differs from source",
+            "materialized Git repository overlay is not the exact clean commit",
         ):
             self.materialize_real_git(self.root / "materialized-staged")
 
