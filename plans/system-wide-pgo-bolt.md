@@ -6745,3 +6745,7 @@ The `pgo-clang-ir` rebuild, merge, and workload completed successfully under gen
 ### 2026-09-20 — sys-apps/shadow-4.20.2 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild and merge completed, but the workload recipe failed closed with exit status 1 from `/bin/getsubids`. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
+
+### 2026-09-20 — sys-apps/sysvinit-3.18 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` rebuild and merge completed, but the userspace workload recipe failed closed with exit status 1 from `/sbin/bootlogd`. No profile receipt or merged profile was accepted. No boot-chain mutation was performed; the installed package remains rebuilt under the generation and the workload failure is retained as the terminal state.
