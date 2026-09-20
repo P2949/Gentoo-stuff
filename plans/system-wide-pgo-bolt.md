@@ -6909,3 +6909,7 @@ The `pgo-clang-ir` rebuild failed during the link stage of the Vulkan WSI layer.
 ### 2026-09-20 — media-libs/libcanberra-0.30-r8 workload terminal result
 
 The `pgo-clang-ir` rebuild, staging, install-QA, and ABI guard completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/canberra-boot` exited 1. The workload gate refused the wave; no profile receipt or merged profile was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
+
+### 2026-09-20 — media-libs/libpng-1.6.58 workload terminal result
+
+The `pgo-clang-ir` rebuild, staging, install-QA, and ABI guard completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/png-fix-itxt` produced no output. The workload gate refused the wave; no profile receipt or merged profile was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
