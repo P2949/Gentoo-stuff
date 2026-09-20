@@ -6913,3 +6913,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, and ABI guard completed under g
 ### 2026-09-20 — media-libs/libpng-1.6.58 workload terminal result
 
 The `pgo-clang-ir` rebuild, staging, install-QA, and ABI guard completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/png-fix-itxt` produced no output. The workload gate refused the wave; no profile receipt or merged profile was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
+
+### 2026-09-20 — media-libs/libpulse-17.0 workload terminal result
+
+The `pgo-clang-ir` rebuild, staging, install-QA, and ABI guard completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/pax11publish` exited 1 in the current runtime context. The workload gate refused the wave; no profile receipt or merged profile was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
