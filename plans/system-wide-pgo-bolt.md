@@ -7649,3 +7649,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-20 — elfutils clang-IR generation and profile-use
 
 `dev-libs/elfutils-0.196` completed the active clang-IR generation wave under inventory `phase3-live-candidate-20260920-sway-mesa-abi-reviewed-v1`. The authenticated wave receipt passed `verify-wave-receipt.py`; llvm-profdata merge produced evidence digest `b1d0a69d4f968fb4c1b9f2d0a88561e89e2e430c1053d883fc36a09226677dc4`; the profile manifest and metadata were validated and published through the dispatcher. A real profile-use reinstall completed successfully with `use_rc=0`. The package remains userspace-only; no boot, kernel, firmware, or initramfs state was touched.
+
+### 2026-09-20 — doas generation receipt reconciliation
+
+`app-admin/doas-6.8.2` already had an immutable completed generation receipt and published candidate profile-use dispatcher artifacts for the active generation (`app-admin_doas-6.8.2-final2.json`, inventory `dac34ff8f1a63460ded44fda9d0879c8e04d33ca3fe5aaac891ba7a8fa4a9a6a`). A repeated execution correctly refused to overwrite the completed receipt; the package transaction itself completed successfully. Existing dispatcher artifacts remain authoritative and were not overwritten.
