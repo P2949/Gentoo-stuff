@@ -9,6 +9,7 @@ media-gfx/gimp gimp.conf
 dev-tcltk/tix tix-gnu89.conf
 sys-fs/xfsprogs mount-defines.conf
 dev-util/source-highlight no-hidden-visibility.conf
+app-text/opensp opensp-clang-cxx.conf
 # ujson's extension build emits *.so-opt.ld.yaml beside the module when
 # optimization remarks are enabled; Portage rejects those files as stray
 # top-level site-packages payload. Keep the optimization policy narrow while
