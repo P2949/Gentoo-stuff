@@ -6603,3 +6603,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/nss-3.129 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` wave reached package installation, but the workload recipe failed closed with exit status 255 from `/usr/bin/addbuiltin`. No profile receipt or merge was produced; the package remains an explicit terminal workload failure for later remediation.
+
+### 2026-09-20 — dev-util/clinfo-9999 Clang IR profile wave terminal stall
+
+The wave did not produce a receipt. Portage remained in the live git fetch for `https://github.com/Oblomov/clinfo.git` beyond the bounded observation window and the runner exited without a profile. This is recorded as an upstream fetch stall; no ABI or profile result was inferred.
