@@ -34,6 +34,7 @@ def main():
     ap.add_argument('--fingerprint-file', type=Path, required=True)
     ap.add_argument('--cpv', required=True)
     ap.add_argument('--backend', choices=('clang-ir','rust'), default='clang-ir')
+    ap.add_argument('--merge-evidence', type=Path)
     ap.add_argument('--output-env', type=Path, required=True)
     ap.add_argument('--output-record', type=Path, required=True)
     a=ap.parse_args()
@@ -52,6 +53,15 @@ def main():
     if set(lines)!=required or lines['schema']!='gentoo-optimization-profile-v1' or lines['backend']!=a.backend or lines['validation_status']!='passed': raise SystemExit('REFUSED: unsupported manifest')
     if not HEX.fullmatch(lines['fingerprint']) or not HEX.fullmatch(lines['profile_sha256']): raise SystemExit('REFUSED: malformed manifest identity')
     profile=Path(lines['profile_path']).resolve(); safe(profile,cache if a.backend == 'clang-ir' else generation,'profile')
+    if a.backend == 'rust':
+        if a.merge_evidence is None:
+            raise SystemExit('REFUSED: Rust publication requires merge evidence')
+        safe(a.merge_evidence.resolve(), generation, 'merge evidence')
+        evidence = json.loads(a.merge_evidence.read_text())
+        if evidence.get('record_type') != 'rust-profile-merge' or evidence.get('backend') != 'rust':
+            raise SystemExit('REFUSED: invalid Rust merge evidence')
+        if evidence.get('merged_profile') != str(profile) or evidence.get('merged_sha256') != lines['profile_sha256']:
+            raise SystemExit('REFUSED: Rust merge evidence does not bind the profile')
     if hashlib.sha256(profile.read_bytes()).hexdigest()!=lines['profile_sha256']: raise SystemExit('REFUSED: profile digest mismatch')
     if os.geteuid() != 0: raise SystemExit('REFUSED: publication requires root-owned cache publication')
     try: portage_gid = grp.getgrnam('portage').gr_gid
