@@ -7745,3 +7745,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — colm generation ABI failure
 
 `dev-util/colm-0.14.7-r4` completed its authenticated Clang-IR build and staged install, but install-QA rejected the replacement `libfsm-0.14.7.so` and `libfsm.so` providers for exported-ABI loss. The staged symbol count rose from 1513 to 1576, but eleven existing C++ exports disappeared. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete Portage log is `/var/tmp/gentoo-portage-build/portage/dev-util/colm-0.14.7-r4/temp/build.log`.
+
+### 2026-09-21 — debugedit clang-IR generation and profile-use
+
+`dev-util/debugedit-5.3` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `78767dadc2621a310e15286215ee457d9c7041e4b4dee58e15ece34a5b133255`, and dispatcher publication succeeded with record SHA-256 `d820414491c2f19b29bf4bc2ab77f05db4f717c7dd2f26763a11ae9622b6dedf`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
