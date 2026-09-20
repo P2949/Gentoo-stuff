@@ -6675,3 +6675,7 @@ The `pgo-clang-ir` wave installed successfully after a long compile, but its wor
 ### 2026-09-20 — dev-libs/openssl-3.6.9999 Clang IR profile wave terminal ABI failure
 
 The instrumented rebuild completed, but install QA failed closed in the exported-ABI guard because the staged image removed the established `libssl.so.1.1` and `libcrypto.so.1.1` SONAME providers. No package merge, workload execution, receipt, or profile merge was accepted. The failed transaction and Portage log remain retained as ABI-remediation evidence.
+
+### 2026-09-20 — media-libs/woff2-1.0.2-r7 Clang IR profile wave terminal compile failure
+
+The Clang-IR rebuild failed during linking because the C++ standard-library symbols were unresolved under the package's active libc++/linker configuration (`std::__1` and exception ABI symbols). The package was not merged, and no workload, receipt, or profile merge was accepted. The compiler/linkage failure is retained for package-specific remediation.
