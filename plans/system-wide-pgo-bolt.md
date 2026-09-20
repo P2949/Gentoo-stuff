@@ -7218,3 +7218,13 @@ retaining the established GCC defaults for ordinary builds. The change passes
 shell syntax validation and must be included in the next authenticated
 framework publication before retrying the exact libjxl wave; no profile or
 package mutation was claimed by the failed attempt.
+
+The first framework publication after this source edit was intentionally
+replaced with the exact inventory-bearing generation after the generic
+installer's empty-policy fallback was detected. The active framework now binds
+the current generation, inventory SHA, and clean commit. A libjxl retry then
+proved the dispatcher selected `/usr/lib/llvm/22/bin/clang-22` and reached the
+multilib link stage, but failed closed on unresolved `std::__1`/libc++ symbols
+because the authenticated generated-policy copy still carried the prior mixed
+GCC/C++ environment. No merge, receipt, or profile payload was admitted. The
+generated policy must be regenerated from the corrected source before retrying.
