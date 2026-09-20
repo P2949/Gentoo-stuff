@@ -7773,3 +7773,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — sysklogd clang-IR generation and profile-use
 
 `app-admin/sysklogd-2.7.2` required two preserved generation attempts: the first produced raw payloads but did not seal a receipt, while the distinct retry2 wave completed successfully. Retry2 receipt verification passed, LLVM merge evidence digest was `df4ffae5070e24e43f770128c860dd74192fed59d4c8034da8b99464384c216f`, and dispatcher publication succeeded with record SHA-256 `c2ae1ee468f4b17a0156557fc6e0c4b29dfd3d3a7ca8ed376c03f0b6262a675c`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — patchelf clang-IR generation and profile-use
+
+`dev-util/patchelf-0.19.1` required a preserved retry after its first generation attempt produced raw payloads without sealing a receipt. The distinct retry completed authenticated Clang-IR generation and install-QA; receipt verification passed, LLVM merge evidence digest was `f19f3cc743764921da8d6f558729014c1a8d1bad0d32af6d6aa81e8473612ba1`, and dispatcher publication succeeded with record SHA-256 `5da7a4941a7a2aa3f0d11270ccd891f8d27a3b8fef80b64ab24a2aed4bf28f5b`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
