@@ -3,3 +3,11 @@
 # fingerprint and mode explicitly through the production runner.
 =gui-libs/wlroots-0.20.2 optimization/optimization-off.conf
 =gui-wm/sway-1.12-r1 optimization/optimization-off.conf
+=dev-util/spirv-tools optimization/optimization-off.conf
+=dev-util/glslang optimization/optimization-off.conf
+=media-libs/shaderc optimization/optimization-off.conf
+=dev-util/vulkan-tools optimization/optimization-off.conf
+=media-libs/vulkan-layers optimization/optimization-off.conf
+=media-libs/mesa optimization/optimization-off.conf
+=gui-wm/hyprland optimization/optimization-off.conf
+=gui-wm/gamescope optimization/optimization-off.conf
