@@ -7669,3 +7669,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-20 — json-glib clang-IR generation and profile-use
 
 `dev-libs/json-glib-1.10.8` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `578137dfd39606f315d72a3ad6149c3be2638faed853bd9fd60fe18993b8ae07`, and dispatcher publication succeeded with record SHA-256 `fa75f6e26e735e863d7ca5641c492517d829e6ddc9534367b9cb98e5ddbdd583`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
+
+### 2026-09-20 — libgcrypt profile-use 32-bit compile failure
+
+`dev-libs/libgcrypt-1.12.4` completed authenticated Clang-IR generation, receipt verification, profile merge (digest `9a281d7d3c14f5e30fe0579b24bc74bdb0073875d4ea5bc44c8004bfac2d2407`), manifest validation, and dispatcher publication (record SHA-256 `458bb3398f477fefab0b8e1a16685d3d504e76c3afa728b4152b65002fbfcb12`). Its exact profile-use rebuild authenticated `clang-ir-use` but failed during the package's 32-bit ABI compile: `fips.c` reported that libgcrypt requires thread-local storage for FIPS mode, followed by undeclared `the_tc` errors. No profile-use merge was admitted; the complete log is `/tmp/dev-libs_libgcrypt-1.12.4-profile-use.log`. This is a package/toolchain correctness failure requiring remediation, with the generated profile retained.
