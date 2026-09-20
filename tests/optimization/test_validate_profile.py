@@ -303,6 +303,18 @@ class ProfileValidatorTests(unittest.TestCase):
         ]
         if backend in {"clang-ir", "rust"}:
             evidence = self.root / f"{backend}.merge-evidence.json"
+            receipt = self.root / f"{backend}.receipt.json"
+            receipt_payload = {
+                "record_type": "profile-wave-transaction-receipt",
+                "schema_version": 2,
+                "state": "completed",
+                "generation": self.generation,
+                "packages": ["cat/pkg-1"],
+                "profile_payloads": [{"cpv": "cat/pkg-1", "path": os.fspath(profile), "sha256": sha256(profile)}],
+            }
+            receipt_payload["sha256"] = hashlib.sha256(json.dumps({k: v for k, v in receipt_payload.items() if k != "sha256"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            receipt.write_text(json.dumps(receipt_payload) + "\n")
+            version = subprocess.run([os.fspath(profile_tool), "--version"], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, env={**os.environ, "LC_ALL": "C", "LANG": "C"})
             evidence.write_text(json.dumps({
                 "record_type": f"{backend}-profile-merge",
                 "backend": backend,
@@ -310,7 +322,11 @@ class ProfileValidatorTests(unittest.TestCase):
                 "generation": self.generation,
                 "merged_profile": os.fspath(profile),
                 "merged_sha256": sha256(profile),
-                "receipt_sha256": "0" * 64,
+                "receipt": os.fspath(receipt),
+                "receipt_sha256": sha256(receipt),
+                "package": "cat/pkg-1",
+                "raw_files": [{"path": os.fspath(profile), "size": profile.stat().st_size, "sha256": sha256(profile)}],
+                "llvm_profdata": {"realpath": os.path.realpath(profile_tool), "sha256": sha256(profile_tool), "version_stdout": version.stdout, "version_stderr": version.stderr},
             }) + "\n")
             arguments.extend(["--merge-evidence", os.fspath(evidence)])
         if backend == "clang-sample":

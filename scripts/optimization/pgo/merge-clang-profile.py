@@ -8,6 +8,13 @@ def sha(path):
   for b in iter(lambda:f.read(1024*1024),b''): h.update(b)
  return h.hexdigest()
 
+def tool_identity(path):
+ real = str(pathlib.Path(path).resolve())
+ version = subprocess.run([real, '--version'], check=True, text=True,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+ return {'realpath': real, 'sha256': sha(path),
+         'version_stdout': version.stdout, 'version_stderr': version.stderr}
+
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--backend',choices=('clang-ir','rust'),default='clang-ir'); ap.add_argument('--receipt',required=True); ap.add_argument('--package',required=True); ap.add_argument('--raw-root',required=True); ap.add_argument('--llvm-profdata',required=True); ap.add_argument('--output',required=True); ap.add_argument('--evidence',required=True); ap.add_argument('--generation-id',required=True); ap.add_argument('--inventory-id',required=True); ap.add_argument('--inventory-sha256',required=True); a=ap.parse_args()
  receipt=json.load(open(a.receipt)); expected={'generation_id':a.generation_id,'inventory_id':a.inventory_id,'inventory_sha256':a.inventory_sha256}
@@ -71,7 +78,7 @@ def main():
   try: os.unlink(tmpout)
   except FileNotFoundError: pass
   raise
- evidence={'record_type':a.backend+'-profile-merge','schema_version':2,'backend':a.backend,'receipt':str(pathlib.Path(a.receipt).resolve()),'receipt_sha256':sha(pathlib.Path(a.receipt)),'package':a.package,'generation':expected,'raw_files':[{'path':str(p),'size':p.stat().st_size,'sha256':sha(p)} for p in listed],'llvm_profdata':str(pathlib.Path(a.llvm_profdata).resolve()),'merged_profile':str(out.resolve()),'merged_sha256':sha(out),'inspection_sha256':hashlib.sha256(shown.stdout.encode()).hexdigest(),'state':'profile-merged-pending-dispatcher-authorization'}
+ evidence={'record_type':a.backend+'-profile-merge','schema_version':2,'backend':a.backend,'receipt':str(pathlib.Path(a.receipt).resolve()),'receipt_sha256':sha(pathlib.Path(a.receipt)),'package':a.package,'generation':expected,'raw_files':[{'path':str(p),'size':p.stat().st_size,'sha256':sha(p)} for p in listed],'llvm_profdata':tool_identity(a.llvm_profdata),'merged_profile':str(out.resolve()),'merged_sha256':sha(out),'inspection_sha256':hashlib.sha256(shown.stdout.encode()).hexdigest(),'state':'profile-merged-pending-dispatcher-authorization'}
  evidence['sha256']=hashlib.sha256(json.dumps(evidence,sort_keys=True,separators=(',',':')).encode()).hexdigest(); fd,tmp=tempfile.mkstemp(prefix='.merge-',dir=str(pathlib.Path(a.evidence).parent))
  with os.fdopen(fd,'w') as f: json.dump(evidence,f,sort_keys=True,indent=2); f.write('\n'); f.flush(); os.fsync(f.fileno())
  os.replace(tmp,a.evidence); print(evidence['sha256'])

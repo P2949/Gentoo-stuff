@@ -633,8 +633,24 @@ def validate_merge_evidence(path: Path, profile: Path, backend: str, generation:
         fail("profile merge evidence does not name the exact profile")
     if evidence.get("merged_sha256") != sha256_file(profile):
         fail("profile merge evidence profile hash mismatch")
-    if not HEX64_RE.fullmatch(str(evidence.get("receipt_sha256", ""))):
-        fail("profile merge evidence receipt hash is invalid")
+    receipt_path, receipt_hash = validate_recorded_file(
+        evidence.get("receipt"), evidence.get("receipt_sha256"), "profile-wave receipt"
+    )
+    receipt = load_json(receipt_path, "profile-wave receipt")
+    if receipt.get("record_type") != "profile-wave-transaction-receipt" or receipt.get("state") != "completed":
+        fail("profile merge evidence does not reference a completed wave receipt")
+    if receipt.get("generation") != generation or evidence.get("package") not in receipt.get("packages", []):
+        fail("profile merge evidence receipt authority mismatch")
+    payloads = [item for item in receipt.get("profile_payloads", []) if item.get("cpv") == evidence.get("package")]
+    raw_files = evidence.get("raw_files")
+    raw_keys = sorted((x.get("path"), x.get("sha256")) for x in raw_files) if isinstance(raw_files, list) else []
+    payload_keys = sorted((x.get("path"), x.get("sha256")) for x in payloads)
+    if not isinstance(raw_files, list) or raw_keys != payload_keys:
+        fail("profile merge evidence raw payload vector differs from receipt")
+    tool = evidence.get("llvm_profdata")
+    if not isinstance(tool, dict) or set(tool) != {"realpath", "sha256", "version_stdout", "version_stderr"}:
+        fail("profile merge evidence lacks complete llvm-profdata identity")
+    validate_recorded_tool_identity(tool, "llvm-profdata")
     return evidence
 
 
