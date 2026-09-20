@@ -7540,3 +7540,6 @@ The validated `app-text/mandoc-1.14.6-r1` profile was published through the gene
 
 ### OpenSP profile-wave compile failure (2026-09-20)
 The exact `app-text/opensp-1.5.2-r10` Clang-IR generation wave passed readiness but failed during the compile/link phase before install-QA. `ld.lld` reported unresolved C++ runtime symbols including `__gxx_personality_v0`, `operator new/delete`, and C++ ABI vtables while linking `onsgmls`; the complete root-owned Portage log is retained at `/var/tmp/gentoo-portage-build/portage/app-text/opensp-1.5.2-r10/temp/build.log`. No package merge, workload receipt, profile, or dispatcher publication was admitted.
+
+### OpenSP C++ driver remediation boundary (2026-09-20)
+The first OpenSP retry showed the generated C++ link still used the C driver because the live `/etc/portage/bashrc` was an older framework copy. A source repair now derives the matching versioned `clang++` driver, but activating that repair requires a complete successor framework publication and strict check; the active framework was restored immediately after the unbound-policy refusal, and no package mutation was admitted in that attempt. The original OpenSP compile failure and both retry logs remain preserved.
