@@ -7576,3 +7576,6 @@ The exact `dev-build/b2-5.5.3` wave passed readiness, rebuilt and merged through
 
 ### b2 profile-use deployment (2026-09-20)
 The validated `dev-build/b2-5.5.3` profile was published through the generation-bound dispatcher with record SHA-256 `e60c964a3e9ef415f93ac75269f2dd78ee6086836396d54dc2f60c9e71a29c42`. The exact rebuild completed with `use_rc=0`, reported `clang-ir-use` active and the authenticated profile path, passed install-QA and the ABI guard, and merged successfully. No BOLT deployment is claimed.
+
+### bmake Clang-IR generation wave (2026-09-20)
+The exact `dev-build/bmake-20260508` wave passed readiness, rebuilt and merged through install-QA and the ABI guard, and completed its reviewed `bmake -V MAKE_VERSION` workload. The receipt passed independent root verification and LLVM 22 merged the authenticated payload; merge evidence digest is `5d44bc12f2784c80072ebbcc126c83f93677d0802e1d5351fd1fea16616f3e24`. Profile validation, dispatcher publication, and exact profile-use deployment remain pending.
