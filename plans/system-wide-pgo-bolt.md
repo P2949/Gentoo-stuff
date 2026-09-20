@@ -6829,3 +6829,7 @@ The `pgo-clang-ir` multilib rebuild, install, merge, and ABI guard completed suc
 ### 2026-09-20 — x11-libs/gtk+-3.24.52 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` multilib rebuild, install, merge, and ABI guard completed successfully, but `/usr/bin/gtk-builder-tool --help` exited 1 in the current runtime context. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
+
+### 2026-09-20 — x11-libs/libXpm-3.5.19 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` multilib rebuild, install, merge, and ABI guard completed successfully, but `/usr/bin/cxpm --help` exited 1 in the current runtime context. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
