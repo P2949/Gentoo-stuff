@@ -6487,3 +6487,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/libevent-2.2.2 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libevent-2.2.2-v1.profdata`; merge evidence SHA-256 is `01a13fb36ba0b8cb0d7b18c12d9c850f2b8497436320e012d35f86690e803b70`.
+
+### 2026-09-20 — dev-libs/libffi-9999 profile-wave fetch stall
+
+The `pgo-clang-ir` wave did not reach compilation. The upstream Git fetch for `https://github.com/libffi/libffi` made no progress for more than three minutes and was terminated without a receipt or profile. This package-specific source-fetch stall is retained as terminal evidence for this attempt; the wave machinery and ABI guard were not bypassed.
