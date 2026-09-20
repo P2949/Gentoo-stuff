@@ -7725,3 +7725,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — bindgen Rust identity mismatch
 
 `dev-util/bindgen-0.72.1` was prepared for the Rust PGO lane, but readiness refused the wave because its generation identity is stale: the identity record references compiler/profile inputs and an ldflags path from `phase3-live-candidate-20260920-postsync-r1`, not the active reviewed generation. The runner fail-closed with `not-authorized-framework-gate`; no Rust receipt or profile was admitted. Fresh identity/materialization regeneration is required before retrying this package.
+
+### 2026-09-21 — bpf-linker Rust identity gate refusal
+
+`dev-util/bpf-linker-0.11.1` readiness also failed closed with `not-authorized-framework-gate` and `ready_count=0`; its Rust identity inputs are not authorized for the active reviewed generation. No wave transaction, receipt, profile, or dispatcher state was created. This confirms the Rust-lane identity regeneration issue is shared by the current derived Rust candidates and is preserved for a single coordinated regeneration rather than bypassed per package.
