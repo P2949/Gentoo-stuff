@@ -6797,3 +6797,7 @@ The `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully
 ### 2026-09-20 — x11-apps/iceauth-1.0.11 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/x11-apps_iceauth-1.0.11-v1.profdata`.
+
+### 2026-09-20 — x11-apps/xgamma-1.0.8 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/x11-apps_xgamma-1.0.8-v1.profdata`.
