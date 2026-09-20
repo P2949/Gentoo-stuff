@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Receipt-driven, exact Clang IR profile merge and immutable publication."""
+"""Receipt-driven indexed LLVM profile merge and immutable publication."""
 import argparse, hashlib, json, os, pathlib, subprocess, tempfile
 
 def sha(path):
@@ -9,9 +9,14 @@ def sha(path):
  return h.hexdigest()
 
 def main():
- ap=argparse.ArgumentParser(); ap.add_argument('--receipt',required=True); ap.add_argument('--package',required=True); ap.add_argument('--raw-root',required=True); ap.add_argument('--llvm-profdata',required=True); ap.add_argument('--output',required=True); ap.add_argument('--evidence',required=True); ap.add_argument('--generation-id',required=True); ap.add_argument('--inventory-id',required=True); ap.add_argument('--inventory-sha256',required=True); a=ap.parse_args()
+ ap=argparse.ArgumentParser(); ap.add_argument('--backend',choices=('clang-ir','rust'),default='clang-ir'); ap.add_argument('--receipt',required=True); ap.add_argument('--package',required=True); ap.add_argument('--raw-root',required=True); ap.add_argument('--llvm-profdata',required=True); ap.add_argument('--output',required=True); ap.add_argument('--evidence',required=True); ap.add_argument('--generation-id',required=True); ap.add_argument('--inventory-id',required=True); ap.add_argument('--inventory-sha256',required=True); a=ap.parse_args()
  receipt=json.load(open(a.receipt)); expected={'generation_id':a.generation_id,'inventory_id':a.inventory_id,'inventory_sha256':a.inventory_sha256}
  if receipt.get('state')!='completed' or receipt.get('record_type')!='profile-wave-transaction-receipt': raise SystemExit('REFUSED: receipt is not a completed profile wave')
+ lane = receipt.get('lane') or receipt.get('backend')
+ # Older wave receipts bind the lane in the authenticated readiness record,
+ # while newer receipts may repeat it at the top level.  If present, enforce
+ # the repeated value; never invent a backend from an absent legacy field.
+ if lane is not None and lane not in (a.backend, 'pgo-' + a.backend.replace('-ir','')): raise SystemExit('REFUSED: receipt backend lane does not match requested backend')
  if a.package not in receipt.get('packages',[]) or receipt.get('generation')!=expected: raise SystemExit('REFUSED: receipt package or generation authority does not match request')
  root=pathlib.Path(a.raw_root).resolve(); listed=[]
  for item in receipt.get('profile_payloads',[]):
@@ -65,7 +70,7 @@ def main():
   try: os.unlink(tmpout)
   except FileNotFoundError: pass
   raise
- evidence={'record_type':'clang-ir-profile-merge','schema_version':2,'receipt':str(pathlib.Path(a.receipt).resolve()),'receipt_sha256':sha(pathlib.Path(a.receipt)),'package':a.package,'generation':expected,'raw_files':[{'path':str(p),'size':p.stat().st_size,'sha256':sha(p)} for p in listed],'llvm_profdata':str(pathlib.Path(a.llvm_profdata).resolve()),'merged_profile':str(out.resolve()),'merged_sha256':sha(out),'inspection_sha256':hashlib.sha256(shown.stdout.encode()).hexdigest(),'state':'profile-merged-pending-dispatcher-authorization'}
+ evidence={'record_type':a.backend+'-profile-merge','schema_version':2,'backend':a.backend,'receipt':str(pathlib.Path(a.receipt).resolve()),'receipt_sha256':sha(pathlib.Path(a.receipt)),'package':a.package,'generation':expected,'raw_files':[{'path':str(p),'size':p.stat().st_size,'sha256':sha(p)} for p in listed],'llvm_profdata':str(pathlib.Path(a.llvm_profdata).resolve()),'merged_profile':str(out.resolve()),'merged_sha256':sha(out),'inspection_sha256':hashlib.sha256(shown.stdout.encode()).hexdigest(),'state':'profile-merged-pending-dispatcher-authorization'}
  evidence['sha256']=hashlib.sha256(json.dumps(evidence,sort_keys=True,separators=(',',':')).encode()).hexdigest(); fd,tmp=tempfile.mkstemp(prefix='.merge-',dir=str(pathlib.Path(a.evidence).parent))
  with os.fdopen(fd,'w') as f: json.dump(evidence,f,sort_keys=True,indent=2); f.write('\n'); f.flush(); os.fsync(f.fileno())
  os.replace(tmp,a.evidence); print(evidence['sha256'])
