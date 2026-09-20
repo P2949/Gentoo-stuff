@@ -7564,3 +7564,6 @@ The validated `app-text/scdoc-9999` profile was published through the generation
 
 ### xmlto Clang-IR generation wave (2026-09-20)
 The exact `app-text/xmlto-0.0.28-r11` wave passed readiness, rebuilt and merged through install-QA and the ABI guard, and completed its reviewed `/usr/bin/xmlif --help` workload. The receipt passed independent root verification and LLVM 22 merged the authenticated payload; merge evidence digest is `57e5db6bf101a1a15559b0db675425ea4732976a96b04121aa39e8f0cc15e715`. Profile validation, dispatcher publication, and exact profile-use deployment remain pending.
+
+### xmlto profile-use deployment (2026-09-20)
+The validated `app-text/xmlto-0.0.28-r11` profile was published through the generation-bound dispatcher with record SHA-256 `f0de3c2ce716ac1e42910d05190ae1c3ff60ce164b03ee811e3921fdb0497eff`. The exact rebuild completed with `use_rc=0`, reported `clang-ir-use` active and the authenticated profile path, passed install-QA and the ABI guard, and merged successfully. No BOLT deployment is claimed.
