@@ -7284,3 +7284,13 @@ during Meson's `g-ir-scanner` step, and the wave produced no receipt. The
 failure remains package-specific correctness evidence; the linker repair is
 retained for mixed Rust/C packages, and librsvg remains one of the five
 missing-profile records pending a safe package-specific profiling path.
+
+The Rust host-layout repair was exercised successfully on
+`sys-apps/ripgrep-15.2.0` (2026-09-20). Its Cargo target-qualified output was
+made compatible with the ebuild's expected `target/release` layout; the
+instrumented build, completion generation, install-QA, merge, and declared
+workload completed. Receipt `profile-wave-receipt-ripgrep-v3.json` passed
+independent verification. Successor payload audit v8 now reports 288
+`profile-present`, 251 `workload-exclusion`, and 4 `missing-profile` records;
+its root-owned SHA-256 is
+`329f7b8f103c4ea837e935766d46b55c354761ad07c0c3e7fc505ee22a3fbefb`.
