@@ -25,8 +25,8 @@ def main():
     readiness = json.loads(args.readiness.read_text())
     if receipt.get("record_type") != "profile-wave-transaction-receipt":
         raise SystemExit("REFUSED: receipt has an invalid record type")
-    if receipt.get("schema_version") != 2:
-        raise SystemExit("REFUSED: completed wave receipt is not authority-bound schema v2")
+    if receipt.get("schema_version") not in (2, 3):
+        raise SystemExit("REFUSED: completed wave receipt has an unsupported schema")
     generation = receipt.get("generation")
     if not isinstance(generation, dict) or set(generation) != {"generation_id", "inventory_id", "inventory_sha256"}:
         raise SystemExit("REFUSED: receipt lacks an exact generation triple")
@@ -45,6 +45,13 @@ def main():
     packages = [item.get("cpv") for item in wave.get("packages", [])]
     if receipt.get("packages") != packages or receipt.get("package_count") != len(packages):
         raise SystemExit("REFUSED: receipt package set does not match the wave")
+    if receipt.get("schema_version") == 3:
+        records = receipt.get("package_records")
+        if not isinstance(records, list) or sorted(x.get("cpv") for x in records if isinstance(x, dict)) != sorted(packages):
+            raise SystemExit("REFUSED: v3 receipt package records do not match the wave")
+        for record in records:
+            if not isinstance(record, dict) or not all(isinstance(record.get(k), str) and record[k] for k in ("cpv", "lane", "attempt_id", "profile_spool")):
+                raise SystemExit("REFUSED: v3 package record is incomplete")
     payloads = receipt.get("profile_payloads")
     if receipt.get("state") == "completed":
         if receipt.get("authorization") != "profile-payloads-collected":

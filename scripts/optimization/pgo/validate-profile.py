@@ -648,7 +648,7 @@ def validate_merge_evidence(path: Path, profile: Path, backend: str, generation:
     receipt_unsigned = dict(receipt); receipt_unsigned.pop("sha256", None)
     if not isinstance(receipt_digest, str) or hashlib.sha256(json.dumps(receipt_unsigned, sort_keys=True, separators=(",", ":")).encode()).hexdigest() != receipt_digest:
         fail("profile-wave receipt self-digest mismatch")
-    if receipt.get("schema_version") != 2 or receipt.get("record_type") != "profile-wave-transaction-receipt" or receipt.get("state") != "completed":
+    if receipt.get("schema_version") not in (2, 3) or receipt.get("record_type") != "profile-wave-transaction-receipt" or receipt.get("state") != "completed":
         fail("profile merge evidence does not reference a completed wave receipt")
     if receipt.get("generation") != generation or evidence.get("package") not in receipt.get("packages", []):
         fail("profile merge evidence receipt authority mismatch")

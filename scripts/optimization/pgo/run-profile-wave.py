@@ -82,6 +82,7 @@ def main():
   # revision-qualified CPV is supplied; bare CPVs are category/package names,
   # not valid transaction atoms.
   payloads=[]
+  package_records=[]
   for item in w['packages']:
    cpv=item['cpv']; fingerprint_file=fingerprint_path(cpv)
    attempt_id=w['sha256']+'-'+cpv.replace('/','_')+'-'+hashlib.sha256(os.urandom(16)).hexdigest()[:16]
@@ -308,15 +309,16 @@ def main():
    if sealed is None:
     raise SystemExit(f'REFUSED: profile payload directory did not quiesce for {cpv}')
    payloads=[x for x in payloads if x['cpv'] != cpv]
-   package_payloads=[{'cpv':x['cpv'],'path':x['path'],'sha256':x['sha256']} for x in sealed]
+   package_payloads=[{'cpv':x['cpv'],'path':x['path'],'sha256':x['sha256'],'size':x['size']} for x in sealed]
    payloads.extend(package_payloads)
+   package_records.append({'cpv':cpv,'lane':item.get('lane'),'attempt_id':attempt_id,'pre_transaction_fingerprint':item.get('fingerprint'),'profile_spool':profile_path,'profile_payloads':package_payloads})
    _active_attempt['state']='completed'; _active_attempt['completed_at']=time.time(); _active_attempt['profile_payloads']=package_payloads; _write_attempt(_active_attempt); _active_attempt=None
  if not payloads:
   raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
  if a.receipt:
   if os.path.lexists(a.receipt):
    raise SystemExit(f'REFUSED: refusing to overwrite existing completed wave receipt: {a.receipt}')
-  receipt={'record_type':'profile-wave-transaction-receipt','schema_version':2,'wave_sha256':w['sha256'],'readiness_sha256':r['sha256'],'package_count':len(w['packages']),'packages':[x['cpv'] for x in w['packages']],'state':'completed','authorization':'profile-payloads-collected','generation':{'generation_id':a.generation_id,'inventory_id':a.inventory_id,'inventory_sha256':a.inventory_sha256},'framework_generation':active,'profile_payloads':sorted(payloads,key=lambda x:(x['cpv'],x['path']))}
+  receipt={'record_type':'profile-wave-transaction-receipt','schema_version':3,'wave_sha256':w['sha256'],'readiness_sha256':r['sha256'],'package_count':len(w['packages']),'packages':[x['cpv'] for x in w['packages']],'state':'completed','authorization':'profile-payloads-collected','generation':{'generation_id':a.generation_id,'inventory_id':a.inventory_id,'inventory_sha256':a.inventory_sha256},'framework_generation':active,'package_records':sorted(package_records,key=lambda x:x['cpv']),'profile_payloads':sorted(payloads,key=lambda x:(x['cpv'],x['path']))}
   receipt['sha256']=hashlib.sha256(json.dumps(receipt,sort_keys=True,separators=(',',':')).encode()).hexdigest()
   # Generation directories are deliberately root-owned.  Write the receipt
   # in the caller's temporary area, then install it atomically through the
