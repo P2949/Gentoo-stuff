@@ -1186,7 +1186,7 @@ class RepositoryMaterializationTests(unittest.TestCase):
     def git_test_environment(self) -> dict[str, str]:
         home = self.root / "git-home"
         home.mkdir(mode=0o700, exist_ok=True)
-        return {**TOOL.git_environment(), "HOME": os.fspath(home)}
+        return {**TOOL.git_environment(), "HOME": os.fspath(home), "LLVM_PROFILE_FILE": "/dev/null"}
 
     def run_real_git(self, *arguments: str) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
