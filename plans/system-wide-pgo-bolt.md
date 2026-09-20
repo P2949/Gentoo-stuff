@@ -7342,3 +7342,15 @@ summaries are `profile-validation-clang-results-20260920.json` (SHA-256
 `e7f9c25351f34f570dbb1a2395b7a80713d24ce9af32327584f0bcfd90176c58`).
 Profile-use activation remains pending until the remaining raw payloads are
 merged and validated, and Rust validation is separately required.
+
+Clang raw-payload reconciliation (2026-09-20): the 90 current binding records
+without merged `.profdata` were matched against the authoritative plan's
+retained wave outcomes. Forty-nine have explicit terminal failure, bounded
+fetch-stall, ABI-rejection, configure-failure, or workload-terminal entries;
+together with the three previously hashed package correctness exclusions,
+they are now represented in successor terminal-exclusion artifact v3. The
+payload verifier reports 240 `profile-present`, 251 `workload-exclusion`, and
+52 `terminal-exclusion`, with zero missing-profile records. Artifact SHA-256:
+`4cdd19e6d954cc47cfd8810eab9e636aa8a99068785e9b7cbec9c862ace4c197`.
+Thirty-eight raw-only records have no matching terminal evidence and remain
+unclassified for validation; no profile-use authorization is inferred.
