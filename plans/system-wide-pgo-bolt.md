@@ -7097,3 +7097,7 @@ The `pgo-rust` rebuild, staging, install-QA, ABI guard, and declared workload co
 ### 2026-09-20 — dev-util/cargo-c-0.10.25 Rust profile wave
 
 The `pgo-rust` rebuild, staging, install-QA, ABI guard, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1` with the Rust no-LTO compatibility path. Receipt verification passed and the sealed Rust profraw payload was retained in the authenticated generation spool.
+
+### 2026-09-20 — dev-util/cbindgen-0.29.4 Rust profile wave
+
+The `pgo-rust` rebuild, staging, install-QA, ABI guard, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1` with the Rust no-LTO compatibility path. Receipt verification passed and the sealed Rust profraw payload was retained in the authenticated generation spool.
