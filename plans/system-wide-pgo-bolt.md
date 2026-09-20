@@ -6929,3 +6929,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, and ABI guard completed under g
 ### 2026-09-20 — media-libs/openjpeg-2.5.4-r1 workload terminal result
 
 The `pgo-clang-ir` rebuild, staging, install-QA, and ABI guard completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/opj_compress` exited 1. The workload gate refused the wave; no profile receipt or merged profile was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
+
+### 2026-09-20 — media-libs/tiff-4.7.1 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` rebuild completed staging, but the install-QA ABI guard rejected the replacement DSOs. The guard reported established SONAME disappearance for `libtiffxx.so.5` and `libtiff.so.5`; no package merge, receipt, or profile merge was admitted. The failed build and ABI evidence remain preserved for package-specific ABI remediation.
