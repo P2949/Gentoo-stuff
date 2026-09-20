@@ -7069,3 +7069,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, and package merge co
 ### 2026-09-20 — sys-process/time-1.10 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-process_time-1.10-v1.profdata` with merge evidence recorded.
+
+### 2026-09-20 — x11-apps/mkfontscale-1.2.4 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/x11-apps_mkfontscale-1.2.4-v1.profdata` with merge evidence recorded.
