@@ -7207,3 +7207,14 @@ BOLT command, transaction, and pre-strip fixture gates also passed. This
 validates the repository's portable gate after the environment repair; it does
 not authorize profile use, BOLT deployment, or completion of the remaining
 Phase-3 profile payload collection.
+
+### 2026-09-20 — libjxl Clang-lane compiler override repair
+
+The `media-libs/libjxl-9999` profile wave was correctly rejected because the
+package-specific `highway-noavx512.conf` forced `CC=gcc` even when the lane
+requested Clang IR instrumentation. The env file now selects the reviewed
+`clang-22`/`clang++-22` pair for `clang-ir-generate` and `clang-ir-use`, while
+retaining the established GCC defaults for ordinary builds. The change passes
+shell syntax validation and must be included in the next authenticated
+framework publication before retrying the exact libjxl wave; no profile or
+package mutation was claimed by the failed attempt.
