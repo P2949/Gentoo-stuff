@@ -617,6 +617,26 @@ def validate_indexed_profile(profile: Path, tool: Path, backend: str) -> dict[st
     }
 
 
+def validate_merge_evidence(path: Path, profile: Path, backend: str, generation: dict[str, str]) -> dict[str, object]:
+    """Require authenticated indexed-profile merge evidence before publication."""
+    evidence = load_json(path, "profile merge evidence")
+    if evidence.get("record_type") != f"{backend}-profile-merge":
+        fail("profile merge evidence backend record type mismatch")
+    if evidence.get("backend") != backend:
+        fail("profile merge evidence backend mismatch")
+    if evidence.get("state") != "profile-merged-pending-dispatcher-authorization":
+        fail("profile merge evidence is not in the merge-pending state")
+    if evidence.get("generation") != generation:
+        fail("profile merge evidence generation mismatch")
+    if Path(evidence.get("merged_profile", "")) != profile:
+        fail("profile merge evidence does not name the exact profile")
+    if evidence.get("merged_sha256") != sha256_file(profile):
+        fail("profile merge evidence profile hash mismatch")
+    if not HEX64_RE.fullmatch(str(evidence.get("receipt_sha256", ""))):
+        fail("profile merge evidence receipt hash is invalid")
+    return evidence
+
+
 def validate_recorded_file(
     path_value: object, sha_value: object, label: str
 ) -> tuple[Path, str]:
@@ -1496,6 +1516,19 @@ def perform_validation(
     else:
         profile_sha256 = sha256_file(profile)
         if arguments.backend in {"clang-ir", "rust"}:
+            requested_generation = generation_from_fields(
+                arguments.generation_id,
+                arguments.inventory_id,
+                arguments.inventory_sha256,
+            )
+            if arguments.merge_evidence is None:
+                fail(f"{arguments.backend} validation requires merge evidence")
+            validate_merge_evidence(
+                arguments.merge_evidence,
+                profile,
+                arguments.backend,
+                requested_generation,
+            )
             backend_proof = validate_indexed_profile(
                 profile, Path(str(profile_tool["path"])), arguments.backend
             )
@@ -1881,6 +1914,7 @@ def add_produce_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--inventory-id", required=True)
     parser.add_argument("--inventory-sha256", required=True)
     parser.add_argument("--rust-llvm-major", type=int)
+    parser.add_argument("--merge-evidence", type=Path)
     parser.add_argument("--sample-metadata", type=Path)
     parser.add_argument("--sample-input-fingerprint")
     parser.add_argument("--go-binary", type=Path)
