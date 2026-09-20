@@ -113,7 +113,13 @@ def main():
    command=['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_MODE='+env['GENTOO_OPT_MODE'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path]
    if 'GENTOO_OPT_RUST_TARGET' in env: command.append('GENTOO_OPT_RUST_TARGET='+env['GENTOO_OPT_RUST_TARGET'])
    if item['lane']=='pgo-rust' and env.get('GENTOO_OPT_RUST_NO_LTO')=='1':
-    command += ['GENTOO_OPT_RUST_NO_LTO=1','CFLAGS=-O2 -pipe','CXXFLAGS=-O2 -pipe','LDFLAGS=-Wl,--as-needed','RUSTFLAGS=-C lto=off -C linker-plugin-lto=no']
+    # Mixed Rust/C packages (for example librsvg) link Rust-instrumented
+    # objects with a native C linker.  Keep the Rust profile format, but make
+    # the compiler-rt profile runtime available to that final linker too.
+    rust_profile_ldflags = '-Wl,--as-needed -fprofile-generate=' + profile_path
+    command += ['GENTOO_OPT_RUST_NO_LTO=1','CFLAGS=-O2 -pipe','CXXFLAGS=-O2 -pipe',
+                'LDFLAGS=' + rust_profile_ldflags,
+                'RUSTFLAGS=-C lto=off -C linker-plugin-lto=no']
    if item['cpv'] in {'dev-util/maturin-1.15.0','app-crypt/rpm-sequoia-1.10.2'}:
     command.append('GENTOO_OPT_RUST_HOST_LAYOUT=1')
    # Bash's ebuild owns a GCC-only native PGO implementation behind its
