@@ -107,6 +107,12 @@ def main():
     # ownership/mode changes and both atomic output creations must be one
     # stable publication critical section.
     with profile_lock_hierarchy(exclusive=False, expected_generation=expected_generation, expected_generation_id=a.generation_id, timeout_seconds=30, test_mode=False, test_paths=None):
+      locked_active = Path(os.path.realpath(a.framework_current))
+      if locked_active != requested_framework:
+       raise SystemExit('REFUSED: active framework changed before publication')
+      locked_authority = subprocess.run([sys.executable, str(authority), 'verify', '--root', str(a.authorization_root), '--generation-id', a.generation_id, '--inventory-id', a.inventory_id, '--inventory-sha256', a.inventory_sha256], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+      if locked_authority.returncode != 0:
+       raise SystemExit('REFUSED: generation authority changed before publication: ' + locked_authority.stdout.strip())
       verifier = HERE / 'validate-profile.py'
       verified = subprocess.run([sys.executable, str(verifier), 'verify', '--manifest', str(a.manifest), '--metadata', str(a.metadata)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env={**os.environ, 'LLVM_PROFILE_FILE': '/dev/null', 'PATH': '/usr/bin:/bin'})
       if verified.returncode != 0:
