@@ -824,6 +824,17 @@ gentoo_opt_detect_compiler_family() {
     if [[ ${requested} == clang || ${requested} == gcc ]]; then
         cc_path=${GENTOO_OPT_ACTIVE_COMPILER}
         gentoo_opt_resolve_compiler_tool CXX c++ || return 1
+        # A few legacy package environments set CXX to the C driver (for
+        # example, clang-22) even though the build is tagged as CXX.  The C
+        # driver deliberately does not link the C++ runtime; preserve the
+        # exact reviewed Clang revision while selecting its matching C++
+        # driver so libtool CXX links retain libc++/libstdc++ ABI support.
+        if [[ ${requested} == clang && ${GENTOO_OPT_RESOLVED_TOOL##*/} == clang-* ]]; then
+            cxx_candidate=${GENTOO_OPT_RESOLVED_TOOL/\/clang-/\/clang++-}
+            if [[ -x ${cxx_candidate} ]] && ! gentoo_opt_is_compiler_wrapper "${cxx_candidate}"; then
+                GENTOO_OPT_RESOLVED_TOOL=$(realpath -e -- "${cxx_candidate}") || return 1
+            fi
+        fi
         version=$("${GENTOO_OPT_RESOLVED_TOOL}" --version 2>&1) || {
             gentoo_opt_error "cannot query C++ compiler identity: ${GENTOO_OPT_RESOLVED_TOOL}"
             return 1
