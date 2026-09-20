@@ -6765,3 +6765,7 @@ The userspace `pgo-clang-ir` rebuild, merge, and workload completed successfully
 ### 2026-09-20 — sys-libs/ncurses-6.5_p20251220 Clang IR profile wave terminal failure
 
 The large multilib `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully, but the workload recipe failed closed with exit status 1 from `/usr/bin/clear` in the non-interactive terminal context. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
+
+### 2026-09-20 — sys-libs/pam-1.7.2 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully, but the workload recipe failed closed with exit status 1 from `/sbin/faillock` in the current non-authenticated context. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
