@@ -35,8 +35,18 @@ def parse_contents_line(line):
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--vdb',default='/var/db/pkg'); ap.add_argument('--previous',required=True)
+    ap.add_argument('--directory-review', help='review JSON for newly observed directories')
     ap.add_argument('--output',required=True); ap.add_argument('--generation-id',required=True)
     a=ap.parse_args(); prev=json.load(open(a.previous))
+    review = json.load(open(a.directory_review)) if a.directory_review else None
+    reviewed = {}
+    if review is not None:
+        if review.get('record_type') != 'frozen-directory-review' or not isinstance(review.get('paths'), list):
+            raise SystemExit('invalid directory review')
+        for item in review['paths']:
+            if not isinstance(item, dict) or not isinstance(item.get('path'), str):
+                raise SystemExit('invalid directory review path')
+            reviewed[item['path']] = item
     old_dirs={x['path']:x for x in prev['owned_directories']}
     packages=[]; paths=[]; owners={}; dirs={}
     for cat in sorted(os.listdir(a.vdb)):
@@ -72,6 +82,17 @@ def main():
         for owner in sorted(dirs[p]):
           rec=dict(old); rec['owner_cpv']=owner; outdirs.append(rec)
       else:
+        item = reviewed.get(p)
+        if item is not None and item.get('uid') == uid and item.get('gid') == gid and item.get('mode') == mode:
+          resolution = {
+              'evidence': [{'kind': 'report', 'path': str(pathlib.Path(a.directory_review).resolve()), 'sha256': hashlib.sha256(pathlib.Path(a.directory_review).read_bytes()).hexdigest()}],
+              'reason_code': 'not-machine-code', 'registry_version': '1',
+              'reviewed_at': review.get('reviewed_at', ''),
+              'reviewed_by': review.get('reviewed_by', ''),
+          }
+          for owner in sorted(dirs[p]):
+            outdirs.append({'owner_cpv':owner,'path':p,'uid':uid,'gid':gid,'mode':mode,'classification':'not-applicable','resolution':resolution})
+          continue
         unresolved.append(p)
         for owner in sorted(dirs[p]):
           outdirs.append({'owner_cpv':owner,'path':p,'uid':uid,'gid':gid,'mode':mode,'classification':'unresolved','resolution':{'reason_code':'requires-directory-review','registry_version':'1'}})
