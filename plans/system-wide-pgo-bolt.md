@@ -7219,6 +7219,15 @@ shell syntax validation and must be included in the next authenticated
 framework publication before retrying the exact libjxl wave; no profile or
 package mutation was claimed by the failed attempt.
 
+Further libjxl retries preserved the next failure frontier. Removing the
+package-env `LDFLAGS` replacement restored the global libc++ runtime link set,
+and adding the existing no-hidden-visibility policy let the Clang IR build
+complete both ABIs. The fail-closed ABI guard still rejected the staged DSOs:
+the mutable `9999` source currently removes established `JXL_0` and C++/gcov
+exports relative to the installed providers. No merge or profile receipt was
+accepted. This remains an exact package-specific ABI/source-drift failure to
+resolve or classify with separate evidence; the guard was not bypassed.
+
 The first framework publication after this source edit was intentionally
 replaced with the exact inventory-bearing generation after the generic
 installer's empty-policy fallback was detected. The active framework now binds
