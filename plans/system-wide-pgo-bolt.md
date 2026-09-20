@@ -6785,3 +6785,7 @@ The `pgo-clang-ir` rebuild, merge, and workload completed successfully under gen
 ### 2026-09-20 — sys-process/cronie-1.7.2-r1 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully, but `/usr/bin/cronnext` exited 1 in the current daemon/configuration context. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
+
+### 2026-09-20 — sys-process/uksmd-6.12.2 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` userspace rebuild, install, merge, and ABI guard completed successfully, but `/usr/bin/uksmd` exited 61 in the current runtime context. No profile receipt or merged profile was accepted. No kernel artifact or lifecycle mutation was performed; the installed userspace package remains rebuilt under the generation and the workload failure is retained as the terminal state.
