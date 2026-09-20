@@ -62,6 +62,10 @@ def safe_output(path: Path, root: Path, label: str):
             break
         if current.is_symlink():
             raise SystemExit(f'REFUSED: {label} output contains a symlink component: {current}')
+        if current.exists() and current.is_dir():
+            metadata = current.stat()
+            if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) & 0o022:
+                raise SystemExit(f'REFUSED: {label} output parent ownership or mode is unsafe: {current}')
     if path.exists() or path.is_symlink():
         raise SystemExit(f'REFUSED: {label} output already exists: {path}')
 
