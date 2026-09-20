@@ -7109,3 +7109,7 @@ The `pgo-rust` rebuild reached the multilib link stage but failed closed in the 
 ### 2026-09-20 — gui-apps/xwayland-satellite-0.8.2 Rust workload terminal result
 
 The `pgo-rust` rebuild, staging, install-QA, ABI guard, and package merge completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/xwayland-satellite` exited 101 in the current runtime context. The workload gate refused the wave; no profile receipt or Rust profile payload was admitted. The installed userspace package and exact failed workload evidence remain preserved as a terminal workload exception.
+
+### 2026-09-20 — media-libs/gstreamer-1.26.11 Rust profile wave
+
+The `pgo-rust` multilib rebuild, staging, install-QA, ABI guard, package merge, and declared GStreamer help workloads completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the sealed Rust profraw payload was retained in the authenticated generation spool.
