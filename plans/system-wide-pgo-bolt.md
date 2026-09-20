@@ -7588,3 +7588,6 @@ The exact `dev-build/cmake-4.3.5` Clang-IR generation wave passed readiness, com
 
 ### icmake Clang-IR generation and publication (2026-09-20)
 The exact `dev-build/icmake-9.03.01-r1` wave passed readiness, rebuilt and merged through install-QA and the ABI guard, and completed both reviewed help workloads. Receipt verification and LLVM 22 profile merge passed; validation accepted the exact identity and the generation-bound dispatcher published record SHA-256 `3a14a1a32efb761efcca4adeb59ad15ac93924a63ec4c7311c5cd3ffd7b2ac94`. Exact profile-use deployment remains pending.
+
+### icmake profile-use deployment (2026-09-20)
+After correcting the retained merge-evidence permissions, the exact `dev-build/icmake-9.03.01-r1` profile-use rebuild authenticated `clang-ir-use`, emitted the expected unprofiled-file warnings for uncovered translation units, passed install-QA and the ABI guard, and merged successfully with `use_rc=0`.
