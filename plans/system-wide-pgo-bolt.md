@@ -7145,3 +7145,7 @@ Regenerated the no-profile-producing workload exclusions from the current succes
 ### 2026-09-20 — current-generation BOLT safety review refresh
 
 Reran the fail-closed BOLT safety review against the current generation's authoritative ELF metadata and eligibility classification. The refreshed review produced 1,947 `bolt-ready-pending-profile` records and 574 terminal `not-applicable` records, with no tool-invocation aborts or fail-open classifications. The root-owned artifact is `bolt-safety-review-successor-20260920.json`. Profile binding, exact-input capture, BOLT training, and deployment remain outstanding for the ready subset; no BOLT completion is claimed.
+
+### 2026-09-20 — current profile payload audit
+
+The independent profile-payload verifier was rerun against the current generation-bound policy bindings. It found 330 packages with authenticated raw payloads and 213 exact lane records still missing payloads; the audit remains `pending-profile-collection`. The root-owned result is `profile-payload-audit-successor-20260920.json`. No profile-use or BOLT deployment is claimed while this audit is pending.
