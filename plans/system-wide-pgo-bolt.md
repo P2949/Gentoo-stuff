@@ -7141,3 +7141,7 @@ The `pgo-rust` compilation completed, but the package failed closed in `src_inst
 ### 2026-09-20 — successor workload coverage audit repaired
 
 Regenerated the no-profile-producing workload exclusions from the current successor workload manifest and authoritative ELF census. The prior audit omitted three exact CPVs (`app-text/gspell-1.14.4`, `dev-libs/libtracefs-1.8.3`, and `sys-apps/gentoo-functions-9999`) because the successor manifest had advanced their state without regenerating the exclusion artifact. The corrected root-owned `workload-exclusions-successor-20260920.json` contains 251 exact exclusions, and the independent workload coverage verifier now passes: 543 PGO-lane packages, 292 recipe-ready packages, 251 workload exclusions, zero overlap, and zero missing records.
+
+### 2026-09-20 — current-generation BOLT safety review refresh
+
+Reran the fail-closed BOLT safety review against the current generation's authoritative ELF metadata and eligibility classification. The refreshed review produced 1,947 `bolt-ready-pending-profile` records and 574 terminal `not-applicable` records, with no tool-invocation aborts or fail-open classifications. The root-owned artifact is `bolt-safety-review-successor-20260920.json`. Profile binding, exact-input capture, BOLT training, and deployment remain outstanding for the ready subset; no BOLT completion is claimed.
