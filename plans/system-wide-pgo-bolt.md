@@ -6527,3 +6527,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/mimalloc-3.4.5 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_mimalloc-3.4.5-v1.profdata`; merge evidence SHA-256 is `4649b0c7a9c00868e7b140fbc5259c083dc92e7fe2c44741716f5d8017996889`.
+
+### 2026-09-20 — dev-libs/miniz-3.1.2 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_miniz-3.1.2-v1.profdata`; merge evidence SHA-256 is `fcdbb1581648aba5a91f0120a1b70ee6d5c495c8ac588b482eda1615fa94dde7`.
