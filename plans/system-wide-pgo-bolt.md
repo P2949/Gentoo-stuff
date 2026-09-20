@@ -7653,3 +7653,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-20 — doas generation receipt reconciliation
 
 `app-admin/doas-6.8.2` already had an immutable completed generation receipt and published candidate profile-use dispatcher artifacts for the active generation (`app-admin_doas-6.8.2-final2.json`, inventory `dac34ff8f1a63460ded44fda9d0879c8e04d33ca3fe5aaac891ba7a8fa4a9a6a`). A repeated execution correctly refused to overwrite the completed receipt; the package transaction itself completed successfully. Existing dispatcher artifacts remain authoritative and were not overwritten.
+
+### 2026-09-20 — expat clang-IR generation and profile-use
+
+`dev-libs/expat-2.8.4` completed the authenticated clang-IR generation wave for inventory `phase3-live-candidate-20260920-sway-mesa-abi-reviewed-v1`; receipt verification passed, llvm-profdata merge produced evidence digest `67f844e1c061f7ee6659e9cc83c187ca888497802ea05428a1e8772ebeb01bd6`, and the validated dispatcher record was published with SHA-256 `3aff2869c29b1124cd32d694c83c5bbd4450baf8d7a2a16aec657e8a44d8bf86`. The authenticated profile-use reinstall completed successfully (`use_rc=0`).
