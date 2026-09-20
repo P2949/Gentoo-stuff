@@ -109,8 +109,8 @@ def main():
         k,v=line.split('=',1)
         if k in lines: raise SystemExit('REFUSED: duplicate manifest key')
         lines[k]=v
-    required={'schema','backend','cpv','fingerprint','abi','compiler_family','profile_path','profile_sha256','validation_status'}
-    if set(lines)!=required or lines['schema']!='gentoo-optimization-profile-v1' or lines['backend']!=a.backend or lines['cpv']!=a.cpv or lines['validation_status']!='passed': raise SystemExit('REFUSED: unsupported manifest')
+    required={'schema','backend','fingerprint','abi','compiler_family','profile_path','profile_sha256','validation_status'}
+    if set(lines)!=required or lines['schema']!='gentoo-optimization-profile-v1' or lines['backend']!=a.backend or lines['validation_status']!='passed': raise SystemExit('REFUSED: unsupported manifest')
     if not HEX.fullmatch(lines['fingerprint']) or not HEX.fullmatch(lines['profile_sha256']): raise SystemExit('REFUSED: malformed manifest identity')
     profile=Path(lines['profile_path']); safe(profile,cache if a.backend == 'clang-ir' else generation,'profile')
     if a.backend == 'rust':
