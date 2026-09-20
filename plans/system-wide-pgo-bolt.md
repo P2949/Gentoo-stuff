@@ -7354,3 +7354,15 @@ payload verifier reports 240 `profile-present`, 251 `workload-exclusion`, and
 `4cdd19e6d954cc47cfd8810eab9e636aa8a99068785e9b7cbec9c862ace4c197`.
 Thirty-eight raw-only records have no matching terminal evidence and remain
 unclassified for validation; no profile-use authorization is inferred.
+
+Raw-only disposition pass (2026-09-20): thirteen additional records were
+matched to explicit retained plan entries documenting a rejected workload,
+ABI/configure/compile failure, or bounded fetch abort. They were added to the
+successor terminal artifact v6 with plan-entry hashes; successful narrative
+entries and four packages with no explicit current disposition remain outside
+that artifact. The resulting payload audit v13 reports 227
+`profile-present`, 251 `workload-exclusion`, and 65 `terminal-exclusion`, with
+zero missing-profile records. Artifact SHA-256:
+`7db45c4781b8dc43c66d9808a89dd030a6c241412b576d6599ddde036821a78d`.
+The four remaining raw-only records require fresh merge/receipt recovery or a
+separate exact terminal record.
