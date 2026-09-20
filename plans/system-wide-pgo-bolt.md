@@ -7117,3 +7117,7 @@ The `pgo-rust` multilib rebuild, staging, install-QA, ABI guard, package merge, 
 ### 2026-09-20 — media-sound/ncspot-1.3.4 Rust workload terminal result
 
 The `pgo-rust` rebuild, staging, install-QA, ABI guard, and package merge completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/ncspot` exited `-11` (SIGSEGV) in the current non-interactive runtime context. The workload gate refused the wave; no profile receipt or Rust profile payload was admitted. The installed userspace package and exact failed workload evidence remain preserved as a terminal workload exception.
+
+### 2026-09-20 — media-video/rav1e-0.8.1 Rust profile wave
+
+The `pgo-rust` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the sealed Rust profraw payload was retained in the authenticated generation spool.
