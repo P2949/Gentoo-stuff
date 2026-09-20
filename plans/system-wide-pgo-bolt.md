@@ -6725,3 +6725,7 @@ The `pgo-clang-ir` rebuild and merge completed, but the workload recipe failed c
 ### 2026-09-20 — net-print/cups-2.4.19 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild and merge completed, but the workload recipe failed closed with exit status 1 from `/usr/bin/cancel` because no usable print service/context was available. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
+
+### 2026-09-20 — net-wireless/wpa_supplicant-2.12 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` rebuild and merge completed, but the workload recipe failed closed with exit status 255 from `/usr/bin/wpa_cli` because no active wpa control interface was available. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the unavailable wireless-control workload is retained as the terminal state.
