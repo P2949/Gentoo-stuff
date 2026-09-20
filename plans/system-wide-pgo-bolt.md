@@ -7534,3 +7534,6 @@ The live `grim --help` and `swayidle --help` waves both built and merged success
 
 ### Mandoc Clang-IR generation wave (2026-09-20)
 The exact `app-text/mandoc-1.14.6-r1` wave passed readiness, rebuilt and merged through install-QA and the ABI guard, and its `/usr/bin/mandoc -h` workload completed. The receipt passed independent verification and LLVM 22 merged the authenticated payload; merge evidence digest is `1f48b3150cc6a77045081115527f5ee5c2853d881fbeac6a507ef88fcec769d1`. Profile validation, dispatcher publication, and exact profile-use deployment remain pending.
+
+### Mandoc profile-use deployment (2026-09-20)
+The validated `app-text/mandoc-1.14.6-r1` profile was published through the generation-bound dispatcher with record SHA-256 `31ba281f3ac7b79aad6a98374d550d03df0c25cc3cffd00a3d7f5f41a39df78a`. The exact rebuild completed with `use_rc=0`, reported `clang-ir-use` active and the authenticated profile path, passed install-QA and the ABI guard, and merged successfully. No BOLT deployment is claimed.
