@@ -53,7 +53,10 @@ def main():
  missing=[x['cpv'] for x in w['packages'] if fingerprint_path(x['cpv']) is None]
  if not isinstance(w.get('sha256'),str) or not isinstance(r.get('sha256'),str) or r.get('source_wave')!=w.get('sha256') or r.get('ready_count')!=len(w['packages']) or r.get('invalid_inputs') or missing:raise SystemExit('REFUSED: wave readiness is incomplete, belongs to another wave, or lacks fingerprint inputs')
  if not a.execute:print('READY: all technical gates pass; rerun with --execute to invoke the controlled transaction');return
- subprocess.run([sys.executable, str(Path(__file__).with_name('storage-preflight.py')), '--path', a.storage_path], check=True)
+ storage_preflight = Path(__file__).resolve().parents[1] / 'verify' / 'storage-preflight.py'
+ if not storage_preflight.is_file():
+  raise SystemExit(f'REFUSED: storage preflight helper is missing: {storage_preflight}')
+ subprocess.run([sys.executable, str(storage_preflight), '--path', a.storage_path], check=True)
  if not all((a.generation_id,a.inventory_id,a.inventory_sha256)):
   raise SystemExit('REFUSED: live profile generation requires an explicit authorized generation triple')
  authorization=os.path.join(os.path.dirname(__file__),'generation-authorization.py')

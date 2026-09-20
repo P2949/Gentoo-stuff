@@ -74,6 +74,7 @@ VALIDATION_METADATA_FIELDS = {
     "compiler",
     "profile_tool",
     "backend_proof",
+    "merge_evidence",
 }
 MANIFEST_IDENTITY_FIELDS = {"path", "sha256"}
 PROFILE_IDENTITY_FIELDS = {
@@ -1522,8 +1523,14 @@ def perform_validation(
                 arguments.inventory_sha256,
             )
             merge_evidence = getattr(arguments, "merge_evidence", None)
-            if merge_evidence is not None:
-                validate_merge_evidence(merge_evidence, profile, arguments.backend, requested_generation)
+            if merge_evidence is None:
+                fail(
+                    f"{arguments.backend} production validation requires indexed "
+                    "merge evidence"
+                )
+            validate_merge_evidence(
+                merge_evidence, profile, arguments.backend, requested_generation
+            )
             backend_proof = validate_indexed_profile(
                 profile, Path(str(profile_tool["path"])), arguments.backend
             )
@@ -1621,7 +1628,14 @@ def perform_validation(
         "compiler": compiler,
         "profile_tool": profile_tool,
         "backend_proof": backend_proof,
+        "merge_evidence": None,
     }
+    if arguments.backend in {"clang-ir", "rust"}:
+        evidence_path = Path(arguments.merge_evidence)
+        metadata["merge_evidence"] = {
+            "path": os.fspath(evidence_path),
+            "sha256": sha256_file(evidence_path),
+        }
     return payload, metadata
 
 
@@ -1783,7 +1797,19 @@ def arguments_from_metadata(
         generation_id=generation["generation_id"],
         inventory_id=generation["inventory_id"],
         inventory_sha256=generation["inventory_sha256"],
+        merge_evidence=None,
     )
+    evidence_identity = metadata["merge_evidence"]
+    if backend in {"clang-ir", "rust"}:
+        evidence = require_object(evidence_identity, "merge evidence identity")
+        require_exact_fields(evidence, {"path", "sha256"}, "merge evidence identity")
+        evidence_path = Path(require_string(evidence["path"], "merge evidence path"))
+        evidence_sha256 = require_hex64(evidence["sha256"], "merge evidence SHA-256")
+        if sha256_file(evidence_path) != evidence_sha256:
+            fail("merge evidence changed after publication")
+        namespace.merge_evidence = evidence_path
+    elif evidence_identity is not None:
+        fail("merge evidence is only valid for indexed LLVM backends")
     if backend == "clang-sample":
         namespace.sample_metadata = Path(
             require_string(proof["sample_metadata_path"], "sample metadata path")

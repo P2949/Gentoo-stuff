@@ -13,10 +13,11 @@ def main():
  receipt=json.load(open(a.receipt)); expected={'generation_id':a.generation_id,'inventory_id':a.inventory_id,'inventory_sha256':a.inventory_sha256}
  if receipt.get('state')!='completed' or receipt.get('record_type')!='profile-wave-transaction-receipt': raise SystemExit('REFUSED: receipt is not a completed profile wave')
  lane = receipt.get('lane') or receipt.get('backend')
+ expected_lane = {'clang-ir': 'pgo-clang-ir', 'rust': 'pgo-rust'}[a.backend]
  # Older wave receipts bind the lane in the authenticated readiness record,
  # while newer receipts may repeat it at the top level.  If present, enforce
  # the repeated value; never invent a backend from an absent legacy field.
- if lane is not None and lane not in (a.backend, 'pgo-' + a.backend.replace('-ir','')): raise SystemExit('REFUSED: receipt backend lane does not match requested backend')
+ if lane is not None and lane != expected_lane: raise SystemExit('REFUSED: receipt backend lane does not match requested backend')
  if a.package not in receipt.get('packages',[]) or receipt.get('generation')!=expected: raise SystemExit('REFUSED: receipt package or generation authority does not match request')
  root=pathlib.Path(a.raw_root).resolve(); listed=[]
  for item in receipt.get('profile_payloads',[]):
