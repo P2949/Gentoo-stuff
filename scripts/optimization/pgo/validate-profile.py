@@ -36,7 +36,10 @@ from profile_locks import (  # noqa: E402
 
 
 BUFFER_SIZE = 1024 * 1024
-MAX_JSON_SIZE = 4 * 1024 * 1024
+# A workload can legitimately emit one profile payload per instrumented
+# process.  Keep a bounded parser limit, but leave room for large authenticated
+# receipts instead of rejecting otherwise valid waves at the old 4 MiB limit.
+MAX_JSON_SIZE = 64 * 1024 * 1024
 MAX_TOOL_OUTPUT = 4 * 1024 * 1024
 TOOL_TIMEOUT_SECONDS = 30
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
