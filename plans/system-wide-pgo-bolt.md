@@ -6691,3 +6691,7 @@ The wave entered Portage but remained stuck in the live Git fetch for `https://g
 ### 2026-09-20 — media-sound/alsa-utils-1.2.16 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` wave installed successfully, but its workload recipe failed closed with exit status 1 from `/usr/bin/aconnect` because no usable ALSA sequencer context was available. No receipt or merged profile was produced; the workload failure remains explicit.
+
+### 2026-09-20 — media-sound/sndio-1.10.0 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` wave installed successfully, but its workload recipe failed closed with exit status 1 from `/usr/bin/aucat` because no usable audio service/context was available. No receipt or merged profile was produced; the workload failure remains explicit.
