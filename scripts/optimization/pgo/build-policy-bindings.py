@@ -28,13 +28,19 @@ def main():
             raise SystemExit(f'REFUSED: duplicate CPV in lane manifest: {cpv}')
         seen.add(cpv)
         key = cpv.replace('/', '_')
-        fp = os.path.join(a.identity_root, key + '.fingerprint.env')
+        # Materialized fingerprints use one immutable directory per CPV key;
+        # accept the historical flat form only as a compatibility fallback.
+        fp_candidates = (
+            os.path.join(a.identity_root, key, 'fingerprint.env'),
+            os.path.join(a.identity_root, key + '.fingerprint.env'),
+        )
+        fp = next((candidate for candidate in fp_candidates if os.path.isfile(candidate)), None)
         if lane.startswith('pgo-'):
             family = COMPILER.get(lane)
             if family is None or family not in comp or not isinstance(comp[family].get('sha256'), str):
                 raise SystemExit(f'REFUSED: no compiler identity for {cpv} ({lane})')
-            if not os.path.isfile(fp):
-                raise SystemExit(f'REFUSED: missing fingerprint for {cpv}: {fp}')
+            if fp is None:
+                raise SystemExit(f'REFUSED: missing fingerprint for {cpv}: {fp_candidates[0]}')
             values = dict(line.rstrip('\n').split('=', 1) for line in open(fp) if '=' in line)
             fingerprint = values.get('fingerprint', '')
             if len(fingerprint) != 64 or any(c not in '0123456789abcdef' for c in fingerprint):
