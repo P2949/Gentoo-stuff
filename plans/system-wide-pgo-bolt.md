@@ -7603,3 +7603,6 @@ The exact `dev-debug/strace-9999` Clang-IR generation wave entered the authentic
 
 ### libdisasm profile-use deployment (2026-09-20)
 The exact `dev-embedded/libdisasm-0.23-r1` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. The dispatcher record was `5e9625bd5936693db7bbd83b4049553d1c022f6de97f00d39b121745440225ad`; ldconfig's existing non-ELF optimization-record warnings were non-fatal.
+
+### Deno profile-use deployment (2026-09-20)
+The exact `dev-lang/deno-bin-2.9.6` profile-use rebuild authenticated `clang-ir-use`, completed the binary package replacement, passed install-QA and ABI checks, and merged successfully with `use_rc=0`. Dispatcher record SHA-256 was `ff0a711c4f8381bcfd54ff1ae9b7219b6eeea51130582b3fd4ad1b1d0b3d849e`.
