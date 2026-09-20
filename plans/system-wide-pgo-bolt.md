@@ -7636,3 +7636,6 @@ The exact `dev-lang/vala-0.56.19` profile-use rebuild authenticated `clang-ir-us
 
 ### Yasm profile-wave workload terminal failure (2026-09-20)
 The exact `dev-lang/yasm-1.3.0-r2` Clang-IR generation transaction rebuilt and merged through install-QA and the ABI guard, but its reviewed `/usr/bin/ytasm` workload exited 1. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted.
+
+### AppStream profile-use deployment (2026-09-20)
+The exact `dev-libs/appstream-1.0.6` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `352498878481b3e47e47f3b6721dc6474e940a824746f3122c5ec72b36e6a28c`.
