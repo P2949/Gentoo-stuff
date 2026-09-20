@@ -7319,3 +7319,12 @@ zero missing profiles and authorization state `ready-for-profile-validation`.
 Audit SHA-256: `d1b9692d514344cf6bf435e00870f5613c2a658d65d751ef3e8a8ad8e2f5096b`.
 This clears profile collection accounting only; profile validation and BOLT
 eligibility/deployment remain outstanding.
+
+Profile validation checkpoint (2026-09-20): the prior libjxl GCC manifest was
+correctly rejected as stale/noncanonical because its payload digest and
+fingerprint predated the final GCC retry. Regenerating the canonical
+`gentoo-optimization-profile-v1` manifest from the verified GCC payload and
+running the independent validator as root now passes. The accepted successor
+artifacts are `profile-manifest-libjxl-gcc-v2.json` and its metadata sidecar in
+the root-owned generation directory. This validates one GCC profile only; the
+full profile set and profile-use publication remain outstanding.
