@@ -7600,3 +7600,6 @@ The exact `dev-db/sqlite-3.53.4` Clang-IR wave passed readiness, rebuilt and mer
 
 ### strace profile-wave source-fetch terminal failure (2026-09-20)
 The exact `dev-debug/strace-9999` Clang-IR generation wave entered the authenticated replacement transaction but stalled during the live `git fetch https://github.com/strace/strace.git` for more than four minutes with zero CPU and no output. The owning fetch and wave were terminated with signal 15 before source unpack completed; no package merge, receipt, workload, profile, or dispatcher publication was admitted. The fetch failure is retained in the wave and Portage logs for a cached-source or fresh-fetch retry.
+
+### libdisasm profile-use deployment (2026-09-20)
+The exact `dev-embedded/libdisasm-0.23-r1` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. The dispatcher record was `5e9625bd5936693db7bbd83b4049553d1c022f6de97f00d39b121745440225ad`; ldconfig's existing non-ELF optimization-record warnings were non-fatal.
