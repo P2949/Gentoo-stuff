@@ -27,7 +27,7 @@ def _finish_failed_attempt():
   except Exception: pass
 atexit.register(_finish_failed_attempt)
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--attempt-root',default='/var/lib/gentoo-optimization/profile-attempts');ap.add_argument('--generation-id');ap.add_argument('--inventory-id');ap.add_argument('--inventory-sha256');ap.add_argument('--authorization-root',default='/run/gentoo-optimization');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
+ ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--attempt-root',default='/var/lib/gentoo-optimization/profile-attempts');ap.add_argument('--generation-id');ap.add_argument('--inventory-id');ap.add_argument('--inventory-sha256');ap.add_argument('--authorization-root',default='/run/gentoo-optimization');ap.add_argument('--storage-path',default='/');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
  global _attempt_root,_active_attempt
  _attempt_root=a.attempt_root
  if active!=a.framework_generation:raise SystemExit(f'REFUSED: active framework {active} != authorized generation {a.framework_generation}')
@@ -53,6 +53,7 @@ def main():
  missing=[x['cpv'] for x in w['packages'] if fingerprint_path(x['cpv']) is None]
  if not isinstance(w.get('sha256'),str) or not isinstance(r.get('sha256'),str) or r.get('source_wave')!=w.get('sha256') or r.get('ready_count')!=len(w['packages']) or r.get('invalid_inputs') or missing:raise SystemExit('REFUSED: wave readiness is incomplete, belongs to another wave, or lacks fingerprint inputs')
  if not a.execute:print('READY: all technical gates pass; rerun with --execute to invoke the controlled transaction');return
+ subprocess.run([sys.executable, str(Path(__file__).with_name('storage-preflight.py')), '--path', a.storage_path], check=True)
  if not all((a.generation_id,a.inventory_id,a.inventory_sha256)):
   raise SystemExit('REFUSED: live profile generation requires an explicit authorized generation triple')
  authorization=os.path.join(os.path.dirname(__file__),'generation-authorization.py')
