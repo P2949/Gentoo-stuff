@@ -30,7 +30,7 @@ gui-libs/gtk X introspection
 gui-libs/libadwaita vala introspection
 gui-libs/wlroots xcb-errors vulkan lcms liftoff x11-backend
 gui-wm/niri screencast
-gui-wm/sway -tray -swaybar
+gui-wm/sway x11-backend -tray -swaybar
 kde-frameworks/kconfig qml
 kde-frameworks/prison qml
 kde-frameworks/sonnet qml
