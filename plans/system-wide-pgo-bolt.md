@@ -7594,3 +7594,6 @@ After correcting the retained merge-evidence permissions, the exact `dev-build/i
 
 ### make generation-wave terminal compile failure (2026-09-20)
 The exact `dev-build/make-9999` Clang-IR generation wave passed readiness and entered the authenticated replacement build, but GNU Make's bootstrap/compile phase failed before install-QA. The retained Portage log reports the profile-use instrumentation warning for `arscan.c` as an error under the package's strict compile flags; no merge, workload receipt, profile, or dispatcher publication was admitted. The failure log remains at `/var/tmp/gentoo-portage-build/portage/dev-build/make-9999/temp/build.log`.
+
+### SQLite profile-use deployment (2026-09-20)
+The exact `dev-db/sqlite-3.53.4` Clang-IR wave passed readiness, rebuilt and merged through install-QA and the ABI guard, passed independent receipt verification, merged under LLVM 22, validated, and was published through the generation-bound dispatcher with record SHA-256 `40a93c704dbfb70991c2d207c6fa3ae25093b76e8a2cf48bf5388edce2e8c07b`. The exact profile-use rebuild authenticated `clang-ir-use`, completed the multilib build and install, and merged successfully with `use_rc=0`; expected `default.profraw` warnings were non-fatal.
