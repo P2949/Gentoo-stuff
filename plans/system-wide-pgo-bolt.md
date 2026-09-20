@@ -6511,3 +6511,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/libtommath-1.3.0 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libtommath-1.3.0-v1.profdata`; merge evidence SHA-256 is `f3405736e3ba74d98856b5658692c5b7877e80958e1f9ac10f3f4aa4f1f00377`.
+
+### 2026-09-20 — dev-libs/libuv-9999 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libuv-9999-v1.profdata`; merge evidence SHA-256 is `450cb2df2d72d270e4b1df0bf4d100aa2d7a2dbd84b53e1a36208a94af4c309e`.
