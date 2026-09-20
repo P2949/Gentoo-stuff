@@ -7393,3 +7393,12 @@ closed with raw profile format version 11 versus expected version 10. The
 payload is retained; no incompatible tool was used to merge or validate it,
 and this evidence does not authorize profile use. A matching LLVM 23 profile
 consumer must be made available before Rust payload validation can proceed.
+
+Portable recovery-suite validation (2026-09-20): the real-host recovery unit
+subsuite completed independently under the repaired test driver with 79 tests,
+0 failures, and 3 explicitly expected portable skips in 1,043.933 seconds.
+The suite covered checkpoint crash/reconciliation, selector and witness
+binding, lock ownership, process-group teardown, tamper rejection, and
+idempotent offline finalization. This result is recorded as a recovery-suite
+result only; it does not by itself establish the terminal result of the parent
+portable-complete run.
