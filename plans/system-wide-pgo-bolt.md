@@ -7546,3 +7546,6 @@ The first OpenSP retry showed the generated C++ link still used the C driver bec
 
 ### OpenSP successor-framework retry result (2026-09-20)
 The source C++ driver repair was published through the normal root-owned framework installer and the independent strict `--check` passed. A fresh OpenSP retry then reached the same C++ link failure (`__gxx_personality_v0` and C++ ABI references unresolved) before install-QA, so the driver repair does not yet resolve this legacy libtool link contract. No package merge or profile receipt was admitted; the repeated compile evidence remains retained for a package-specific link remediation rather than another blind retry.
+
+### OpenSP package-specific link remediation (2026-09-20)
+The successor-framework retry confirmed that OpenSP's legacy libtool link rules omit the C++ runtime even when the CXX tag is selected. A narrow package environment was added: `app-text/opensp` now uses `clang++-22` explicitly and appends `-lstdc++` to its link flags. This source change is committed as `6002ee7`; it requires successor framework publication and strict checking before another live retry.
