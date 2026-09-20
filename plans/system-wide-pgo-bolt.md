@@ -7137,3 +7137,7 @@ The `pgo-rust` compilation completed, but the package failed closed in `src_inst
 ### 2026-09-20 — sys-block/thin-provisioning-tools-1.3.1 Rust profile-wave terminal failure
 
 The `pgo-rust` compilation completed, but the package failed closed in `src_install`: its Makefile attempted to install `target/release/pdata_tools`, which was absent after the package's Cargo build layout under the reviewed Rust lane. No package merge, install-QA admission, workload receipt, or profile payload was accepted. The failed Portage attempt and build logs remain preserved as an exact package-specific install-path failure.
+
+### 2026-09-20 — successor workload coverage audit repaired
+
+Regenerated the no-profile-producing workload exclusions from the current successor workload manifest and authoritative ELF census. The prior audit omitted three exact CPVs (`app-text/gspell-1.14.4`, `dev-libs/libtracefs-1.8.3`, and `sys-apps/gentoo-functions-9999`) because the successor manifest had advanced their state without regenerating the exclusion artifact. The corrected root-owned `workload-exclusions-successor-20260920.json` contains 251 exact exclusions, and the independent workload coverage verifier now passes: 543 PGO-lane packages, 292 recipe-ready packages, 251 workload exclusions, zero overlap, and zero missing records.
