@@ -7549,3 +7549,6 @@ The source C++ driver repair was published through the normal root-owned framewo
 
 ### OpenSP package-specific link remediation (2026-09-20)
 The successor-framework retry confirmed that OpenSP's legacy libtool link rules omit the C++ runtime even when the CXX tag is selected. A narrow package environment was added: `app-text/opensp` now uses `clang++-22` explicitly and appends `-lstdc++` to its link flags. This source change is committed as `6002ee7`; it requires successor framework publication and strict checking before another live retry.
+
+### OpenSP package-environment retry (2026-09-20)
+The successor framework containing the OpenSP package environment was installed and independently strict-checked. The fresh retry still rendered the libtool CXX link as `/usr/lib/llvm/22/bin/clang-22` with no `-lstdc++`, proving the generated-policy package-environment tree did not yet consume the new source mapping. The compile failed before install-QA again; no package or profile was admitted. The next implementation step is to regenerate the content-addressed generated policy itself, republish it, and then retry once under that policy.
