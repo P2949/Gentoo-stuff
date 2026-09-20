@@ -6615,3 +6615,7 @@ The focused ABI-guard, Portage QA-hook, profile-wave guard, and wave-receipt ver
 ### 2026-09-20 — dev-util/ftjam-2.5.3_rc2-r3 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` wave installed successfully, but its workload recipe failed closed with exit status 1 from `/usr/bin/jam`. No receipt or merged profile was produced; the package remains an explicit workload terminal failure.
+
+### 2026-09-20 — dev-util/hyprwayland-scanner-9999 Clang IR profile wave terminal stall
+
+The wave entered Portage but stalled during the live git fetch for `https://github.com/hyprwm/Hyprwayland-scanner.git` and exited without a receipt. No profile was merged; this is retained as an upstream fetch stall.
