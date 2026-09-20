@@ -7262,3 +7262,16 @@ wave completed successfully on 2026-09-20. The root-owned receipt
 verification, and the sealed GCC payload contains 2.2 MiB of nonempty `.gcda`
 files. This is profile-generation evidence only; validation and profile-use
 authorization remain pending. The focused ABI/QA hook suite is green at 13/13.
+
+Successor profile audit (2026-09-20): the verified GCC libjxl receipt was
+bound into a generation-successor copy of the complete policy bindings, with
+the prior Clang record left immutable. The independent payload verifier, run
+against that successor and the authenticated workload exclusions, reports
+287 `profile-present`, 251 `workload-exclusion`, and 5 `missing-profile`
+records. The root-owned audit is
+`profile-payload-audit-successor-20260920-v7.json` (SHA-256
+`cda9b4bb0115048f7dd10a918361affd8fdf43b460c737db94990df9ad0d3bde`);
+remaining missing records are maturin, rustup, librsvg, ripgrep, and
+thin-provisioning-tools. The successor policy is not yet profile-use
+authorized; the five package-specific failures remain subject to remediation
+or exact terminal exclusion evidence.
