@@ -7701,3 +7701,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — OpenCL ICD loader workload terminal failure
 
 `dev-libs/opencl-icd-loader-2026.05.29` completed its authenticated Clang-IR generation build and install-QA path, but the reviewed workload `/usr/bin/cllayerinfo` produced no output. The wave runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. This workload-specific terminal result is preserved as evidence; no guard or profile-policy bypass was used.
+
+### 2026-09-21 — OpenSSL generation compile failure
+
+`dev-libs/openssl-3.6.9999` entered the authenticated Clang-IR generation transaction but failed during its documentation build when `make` reported `Killed` while generating `doc/html/man3/EVP_PKEY_CTX_set_scrypt_N.html`. No install-QA admission, workload receipt, profile merge, dispatcher publication, or profile-use deployment was made. The complete retained Portage log is `/var/tmp/gentoo-portage-build/portage/dev-libs/openssl-3.6.9999/temp/build.log`; this is a generation compile failure requiring package-specific resource/remediation analysis.
