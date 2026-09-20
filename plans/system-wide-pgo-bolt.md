@@ -6873,3 +6873,7 @@ The `pgo-clang-ir` rebuild, merge, and workload completed successfully under gen
 ### 2026-09-20 — app-text/opensp-1.5.2-r10 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` attempt reached compilation but failed linking `onsgmls` under the active Clang/libc++ lane. `ld.lld` rejected unresolved C++ runtime symbols from `libosp.so` (`operator new[]`, `__cxa_begin_catch`, RTTI vtables, and related symbols) under `--no-allow-shlib-undefined`. No package merge, receipt, or profile merge was admitted; the failed build evidence is retained for package-specific link remediation.
+
+### 2026-09-20 — dev-libs/opencl-icd-loader-2026.05.29 workload terminal result
+
+The `pgo-clang-ir` rebuild and install completed under generation `phase3-live-candidate-20260918-postsync-r1`, but `/usr/bin/cllayerinfo` produced no output and the workload receipt gate refused the wave. No profile receipt or merge was admitted; the package remains a terminal workload exception with its build evidence preserved.
