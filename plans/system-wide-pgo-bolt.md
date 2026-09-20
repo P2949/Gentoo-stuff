@@ -7661,3 +7661,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-20 — flatbuffers profile-use correctness failure
 
 `dev-libs/flatbuffers-25.12.19` completed authenticated Clang-IR generation, receipt verification, profile merge, manifest validation, and dispatcher publication (record SHA-256 `650ba517ad117fa9b2e4457d29c569155250f2761d2277dd504544d85cc17051`). Its exact `clang-ir-use` rebuild reached install-QA but the fail-closed ABI guard rejected the staged `libflatbuffers.so.25.12.19` replacement: five exported symbols disappeared (`old=212`, `new=207`). The package was not admitted and no profile-use success is claimed; the complete failure log is `/tmp/dev-libs_flatbuffers-25.12.19-profile-use.log`. This is a correctness-failure-after-remediation candidate requiring package-specific ABI remediation before deployment.
+
+### 2026-09-20 — fribidi clang-IR generation and profile-use
+
+`dev-libs/fribidi-1.0.16` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM 22 merge evidence digest was `57b779a3483556f30d6e73926c7ecc4ad3299934ce1477754825f3112788a743`, and dispatcher publication succeeded with record SHA-256 `a6aeb6da25159bec7a126d983e219f06ca3f317d8e6d35daaf22173b02f9173d`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and the ABI guard, and merged with `use_rc=0`.
