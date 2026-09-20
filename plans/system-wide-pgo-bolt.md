@@ -7693,3 +7693,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-20 — nettle clang-IR generation and profile-use
 
 `dev-libs/nettle-3.10.2` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `f001cab29d0bf946c28aed2c85a970ce14e24cd355b6b8177f6ee8eb7413332a`, and dispatcher publication succeeded with record SHA-256 `6b7c7e189989dce6d77810907f8cd70afe921e4080dd2cf4f6128f196c84e42f`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
+
+### 2026-09-21 — NSS workload terminal failure
+
+`dev-libs/nss-3.129` completed its authenticated Clang-IR generation build and install-QA path, but the reviewed workload recipe `/usr/bin/addbuiltin` exited `255`. The wave runner therefore refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The failure is preserved in the generation runner output and remains a workload-specific terminal exclusion pending a corrected deterministic workload fixture. No optimization or ABI gate was bypassed.
