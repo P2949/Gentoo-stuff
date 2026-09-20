@@ -6877,3 +6877,7 @@ The `pgo-clang-ir` attempt reached compilation but failed linking `onsgmls` unde
 ### 2026-09-20 — dev-libs/opencl-icd-loader-2026.05.29 workload terminal result
 
 The `pgo-clang-ir` rebuild and install completed under generation `phase3-live-candidate-20260918-postsync-r1`, but `/usr/bin/cllayerinfo` produced no output and the workload receipt gate refused the wave. No profile receipt or merge was admitted; the package remains a terminal workload exception with its build evidence preserved.
+
+### 2026-09-20 — dev-libs/protobuf-34.2 Clang IR profile wave terminal failure
+
+The dual-ABI `pgo-clang-ir` rebuild completed compilation and staging, but the install-QA ABI guard rejected the replacement DSOs. The guard reported an exported-symbol loss for the generated `EpsCopyInputStream::ReadPackedVarintArray...` symbol across the protobuf and protobuf-lite DSO families (including symlinked and versioned paths). No package merge, receipt, or profile merge was admitted; the failed build and ABI evidence remain preserved for a package-specific ABI remediation.
