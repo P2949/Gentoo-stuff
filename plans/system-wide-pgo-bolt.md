@@ -6623,3 +6623,7 @@ The wave entered Portage but stalled during the live git fetch for `https://gith
 ### 2026-09-20 — dev-util/hyprwayland-scanner-9999 Clang IR wave aborted after fetch stall
 
 The live Git fetch for `https://github.com/hyprwm/Hyprwayland-scanner.git` remained stuck for more than four minutes while holding the framework transaction lock. The userspace wave and its child fetch were terminated; no package merge, receipt, or profile was admitted. The queued `gnome-base/dconf-0.49.0` attempts were cancelled before package execution because they were blocked behind that same lock and produced no receipt.
+
+### 2026-09-20 — gnome-base/dconf-0.49.0 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` wave installed successfully after the earlier lock was cleared, but its workload recipe failed closed with exit status 2 from `/usr/bin/dconf`. No receipt or merged profile was produced; the workload failure remains explicit.
