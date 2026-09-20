@@ -7609,3 +7609,6 @@ The exact `dev-lang/deno-bin-2.9.6` profile-use rebuild authenticated `clang-ir-
 
 ### Lua profile-wave workload terminal failure (2026-09-20)
 The exact `dev-lang/lua-5.4.8` Clang-IR generation transaction rebuilt and merged through install-QA and the ABI guard, but its reviewed `/usr/bin/lua5.4` workload exited 1. The runner therefore refused to seal a profile receipt or publish a profile; no profile-use rebuild was attempted. The package remains terminally excluded pending a corrected deterministic workload fixture.
+
+### LuaJIT generation terminal ABI failure (2026-09-20)
+The exact `dev-lang/luajit-2.1.9999999999` generation build completed, but install-QA's fail-closed ABI guard rejected the replacement DSO and SONAME symlinks for exported ABI loss: old/new symbol counts were both 148, but `luaJIT_version_2_1_1782726002` was missing from the staged provider. No merge, workload receipt, profile, or dispatcher publication was admitted.
