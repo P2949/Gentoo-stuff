@@ -202,6 +202,8 @@ def main() -> int:
         if a.action == "verify":
             if old[1] != old[2] or not old[1]: raise RuntimeError("no exact active Phase-3 generation")
             active = validate_generation(json.loads(old[1]), "active generation")
+            if a.framework_current is not None:
+                framework_identity(a.framework_current, active)
             if any((a.generation_id, a.inventory_id, a.inventory_sha256)):
                 requested = generation_from_fields(a.generation_id, a.inventory_id, a.inventory_sha256)
                 if active != requested: raise RuntimeError("active authority does not match requested generation")

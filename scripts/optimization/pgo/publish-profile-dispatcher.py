@@ -71,7 +71,7 @@ def main():
     if active != requested_framework:
         raise SystemExit('REFUSED: requested framework generation is not the active framework')
     authority = HERE / 'generation-authorization.py'
-    check = subprocess.run([sys.executable, str(authority), 'verify', '--root', str(a.authorization_root), '--generation-id', a.generation_id, '--inventory-id', a.inventory_id, '--inventory-sha256', a.inventory_sha256], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    check = subprocess.run([sys.executable, str(authority), 'verify', '--root', str(a.authorization_root), '--framework-current', str(a.framework_current), '--generation-id', a.generation_id, '--inventory-id', a.inventory_id, '--inventory-sha256', a.inventory_sha256], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if check.returncode != 0:
         raise SystemExit('REFUSED: active Phase-3 generation authority is absent or mismatched: ' + check.stdout.strip())
     cache=Path('/var/cache/gentoo-optimization/pgo').resolve()
@@ -110,7 +110,7 @@ def main():
       locked_active = Path(os.path.realpath(a.framework_current))
       if locked_active != requested_framework:
        raise SystemExit('REFUSED: active framework changed before publication')
-      locked_authority = subprocess.run([sys.executable, str(authority), 'verify', '--root', str(a.authorization_root), '--generation-id', a.generation_id, '--inventory-id', a.inventory_id, '--inventory-sha256', a.inventory_sha256], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+      locked_authority = subprocess.run([sys.executable, str(authority), 'verify', '--root', str(a.authorization_root), '--framework-current', str(a.framework_current), '--generation-id', a.generation_id, '--inventory-id', a.inventory_id, '--inventory-sha256', a.inventory_sha256], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
       if locked_authority.returncode != 0:
        raise SystemExit('REFUSED: generation authority changed before publication: ' + locked_authority.stdout.strip())
       verifier = HERE / 'validate-profile.py'

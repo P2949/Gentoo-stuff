@@ -60,7 +60,7 @@ def main():
  if not all((a.generation_id,a.inventory_id,a.inventory_sha256)):
   raise SystemExit('REFUSED: live profile generation requires an explicit authorized generation triple')
  authorization=os.path.join(os.path.dirname(__file__),'generation-authorization.py')
- authority=subprocess.run([sys.executable,authorization,'verify','--root',a.authorization_root,'--generation-id',a.generation_id,'--inventory-id',a.inventory_id,'--inventory-sha256',a.inventory_sha256],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+ authority=subprocess.run([sys.executable,authorization,'verify','--root',a.authorization_root,'--framework-current',a.framework_current,'--generation-id',a.generation_id,'--inventory-id',a.inventory_id,'--inventory-sha256',a.inventory_sha256],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
  if authority.returncode != 0:
   raise SystemExit('REFUSED: Phase-3 generation authority is absent or mismatched: '+authority.stdout.strip())
  lane_modes={'pgo-clang-ir':'clang-ir-generate','pgo-gcc':'gcc-generate','pgo-rust':'rust-generate'}
