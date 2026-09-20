@@ -7639,3 +7639,6 @@ The exact `dev-lang/yasm-1.3.0-r2` Clang-IR generation transaction rebuilt and m
 
 ### AppStream profile-use deployment (2026-09-20)
 The exact `dev-libs/appstream-1.0.6` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `352498878481b3e47e47f3b6721dc6474e940a824746f3122c5ec72b36e6a28c`.
+
+### AppStream GLib profile-use deployment (2026-09-20)
+The exact `dev-libs/appstream-glib-0.8.3` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `eb5e90748b5e1e791be2edfeb1725cd4302e4a4e4c963daf6f9b7d7705c86134`.
