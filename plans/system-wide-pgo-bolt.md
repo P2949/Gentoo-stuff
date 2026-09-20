@@ -6997,3 +6997,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and d
 ### 2026-09-20 — sys-devel/bc-1.08.2 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-devel_bc-1.08.2-v1.profdata` with merge evidence recorded.
+
+### 2026-09-20 — sys-devel/bison-3.8.2-r3 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/sys-devel_bison-3.8.2-r3-v1.profdata` with merge evidence recorded.
