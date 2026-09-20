@@ -6721,3 +6721,7 @@ The `pgo-clang-ir` rebuild and merge completed, but the workload recipe failed c
 ### 2026-09-20 — net-misc/lldpd-1.0.22 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild and merge completed, but the workload recipe failed closed with exit status 1 from `/usr/sbin/lldpcli`. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the unavailable/unsuccessful LLDP control workload is retained as the terminal state.
+
+### 2026-09-20 — net-print/cups-2.4.19 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` rebuild and merge completed, but the workload recipe failed closed with exit status 1 from `/usr/bin/cancel` because no usable print service/context was available. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
