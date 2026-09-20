@@ -48,6 +48,23 @@ def write_new(path: Path, data: bytes):
     finally:
         if os.path.exists(tmp): os.unlink(tmp)
 
+def safe_output(path: Path, root: Path, label: str):
+    if not path.is_absolute():
+        raise SystemExit(f'REFUSED: unsafe {label} output')
+    try:
+        path.relative_to(root)
+    except ValueError:
+        raise SystemExit(f'REFUSED: {label} output escapes trusted dispatcher root')
+    current = Path(path.anchor)
+    for component in path.parts[1:]:
+        current /= component
+        if current == path:
+            break
+        if current.is_symlink():
+            raise SystemExit(f'REFUSED: {label} output contains a symlink component: {current}')
+    if path.exists() or path.is_symlink():
+        raise SystemExit(f'REFUSED: {label} output already exists: {path}')
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--manifest', type=Path, required=True)
@@ -76,6 +93,9 @@ def main():
         raise SystemExit('REFUSED: active Phase-3 generation authority is absent or mismatched: ' + check.stdout.strip())
     cache=Path('/var/cache/gentoo-optimization/pgo').resolve()
     generation=Path('/var/lib/gentoo-optimization/generations').resolve()
+    dispatcher_root = requested_framework.parent / 'dispatchers'
+    safe_output(a.output_env, dispatcher_root, 'environment')
+    safe_output(a.output_record, dispatcher_root, 'record')
     for p,root,label in ((a.manifest,cache,'manifest'),(a.metadata,cache,'metadata'),(a.fingerprint_file,generation,'fingerprint')): safe(p,root,label)
     if a.metadata != Path(str(a.manifest)+'.metadata.json'): raise SystemExit('REFUSED: metadata is not the manifest sidecar')
     if not CPV.match(a.cpv) or '/' not in a.cpv: raise SystemExit('REFUSED: malformed CPV')
