@@ -7089,3 +7089,7 @@ The `pgo-clang-ir` rebuild, staging, install-QA, ABI guard, package merge, and d
 ### 2026-09-20 — dev-util/bindgen-0.72.1 Rust profile wave
 
 The `pgo-rust` rebuild, staging, install-QA, ABI guard, and declared `/usr/bin/bindgen --help` workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1` with the Rust no-LTO compatibility path. Receipt verification passed and the sealed Rust profraw payload was retained in the authenticated generation spool; Rust profiles remain in their native profraw format rather than being admitted to the Clang `.profdata` store.
+
+### 2026-09-20 — dev-util/bpf-linker-0.11.1 Rust profile wave
+
+The `pgo-rust` rebuild, staging, install-QA, ABI guard, and declared workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1` with the Rust no-LTO compatibility path. Receipt verification passed and the sealed Rust profraw payload was retained in the authenticated generation spool.
