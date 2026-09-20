@@ -7129,3 +7129,7 @@ The `pgo-rust` rebuild, staging, install-QA, ABI guard, package merge, and decla
 ### 2026-09-20 — sys-apps/lact-0.9.1 Rust workload terminal result
 
 The `pgo-rust` rebuild, staging, install-QA, ABI guard, and package merge completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/lact` exited `-11` (SIGSEGV) in the current non-interactive runtime context. The workload gate refused the wave; no profile receipt or Rust profile payload was admitted. The installed userspace package and exact failed workload evidence remain preserved as a terminal workload exception.
+
+### 2026-09-20 — sys-apps/ripgrep-15.2.0 Rust profile-wave terminal failure
+
+The `pgo-rust` compilation completed, but the package failed closed in `src_install`: the ebuild's completion-generation command expected `target/release/rg` while the Cargo install path had already placed the executable under the image tree. No package merge, install-QA admission, workload receipt, or profile payload was accepted. The failed Portage attempt and build logs remain preserved as an exact package-specific ebuild install-path failure.
