@@ -7621,3 +7621,6 @@ The exact `dev-lang/orc-0.4.42` profile-use rebuild authenticated `clang-ir-use`
 
 ### sassc profile-use deployment (2026-09-20)
 The exact `dev-lang/sassc-3.6.2` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `bb0b472d0d76b69a5ed4f6f1f05dd5eba15bf5a9be0ed0dbb36e815ee0fe53b2`.
+
+### SWIG profile-use deployment (2026-09-20)
+The exact `dev-lang/swig-4.4.1` profile-use rebuild authenticated `clang-ir-use`, completed successfully, passed install-QA and the ABI guard, and merged with `use_rc=0`. Dispatcher record SHA-256 was `5e3cea854473acd40f783116b0436f6e622b26d11effee435cbcf78bdbd63568`.
