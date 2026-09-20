@@ -14,10 +14,28 @@ def digest(obj):
     return hashlib.sha256(json.dumps(obj, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 def safe(path: Path, root: Path, label: str):
-    if not path.is_absolute() or path.is_symlink(): raise SystemExit(f'REFUSED: unsafe {label}')
+    """Validate the supplied spelling, including every ancestor component.
+
+    Do not call ``resolve()`` before this check: resolution erases the very
+    symlink evidence this boundary is meant to reject.
+    """
+    if not path.is_absolute(): raise SystemExit(f'REFUSED: unsafe {label}')
+    current = Path(path.anchor)
+    for component in path.parts[1:]:
+        current /= component
+        try:
+            if current.is_symlink():
+                raise SystemExit(f'REFUSED: {label} contains a symlink component: {current}')
+        except OSError as error:
+            raise SystemExit(f'REFUSED: cannot inspect {label}: {error}')
     try: path.relative_to(root)
     except ValueError: raise SystemExit(f'REFUSED: {label} escapes trusted root')
-    if not path.is_file(): raise SystemExit(f'REFUSED: missing {label}: {path}')
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise SystemExit(f'REFUSED: missing {label}: {path}: {error}')
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise SystemExit(f'REFUSED: {label} is not a single-link regular file: {path}')
 
 def write_new(path: Path, data: bytes):
     if path.exists(): raise SystemExit(f'REFUSED: output already exists: {path}')
@@ -58,7 +76,7 @@ def main():
         raise SystemExit('REFUSED: active Phase-3 generation authority is absent or mismatched: ' + check.stdout.strip())
     cache=Path('/var/cache/gentoo-optimization/pgo').resolve()
     generation=Path('/var/lib/gentoo-optimization/generations').resolve()
-    for p,root,label in ((a.manifest,cache,'manifest'),(a.metadata,cache,'metadata'),(a.fingerprint_file,generation,'fingerprint')): safe(p.resolve(),root,label)
+    for p,root,label in ((a.manifest,cache,'manifest'),(a.metadata,cache,'metadata'),(a.fingerprint_file,generation,'fingerprint')): safe(p,root,label)
     if a.metadata != Path(str(a.manifest)+'.metadata.json'): raise SystemExit('REFUSED: metadata is not the manifest sidecar')
     if not CPV.match(a.cpv) or '/' not in a.cpv: raise SystemExit('REFUSED: malformed CPV')
     lines={}
@@ -70,11 +88,11 @@ def main():
     required={'schema','backend','fingerprint','abi','compiler_family','profile_path','profile_sha256','validation_status'}
     if set(lines)!=required or lines['schema']!='gentoo-optimization-profile-v1' or lines['backend']!=a.backend or lines['validation_status']!='passed': raise SystemExit('REFUSED: unsupported manifest')
     if not HEX.fullmatch(lines['fingerprint']) or not HEX.fullmatch(lines['profile_sha256']): raise SystemExit('REFUSED: malformed manifest identity')
-    profile=Path(lines['profile_path']).resolve(); safe(profile,cache if a.backend == 'clang-ir' else generation,'profile')
+    profile=Path(lines['profile_path']); safe(profile,cache if a.backend == 'clang-ir' else generation,'profile')
     if a.backend == 'rust':
         if a.merge_evidence is None:
             raise SystemExit('REFUSED: Rust publication requires merge evidence')
-        safe(a.merge_evidence.resolve(), generation, 'merge evidence')
+        safe(a.merge_evidence, generation, 'merge evidence')
         evidence = json.loads(a.merge_evidence.read_text())
         if evidence.get('record_type') != 'rust-profile-merge' or evidence.get('backend') != 'rust':
             raise SystemExit('REFUSED: invalid Rust merge evidence')
