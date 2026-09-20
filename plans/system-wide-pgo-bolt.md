@@ -7697,3 +7697,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — NSS workload terminal failure
 
 `dev-libs/nss-3.129` completed its authenticated Clang-IR generation build and install-QA path, but the reviewed workload recipe `/usr/bin/addbuiltin` exited `255`. The wave runner therefore refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The failure is preserved in the generation runner output and remains a workload-specific terminal exclusion pending a corrected deterministic workload fixture. No optimization or ABI gate was bypassed.
+
+### 2026-09-21 — OpenCL ICD loader workload terminal failure
+
+`dev-libs/opencl-icd-loader-2026.05.29` completed its authenticated Clang-IR generation build and install-QA path, but the reviewed workload `/usr/bin/cllayerinfo` produced no output. The wave runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. This workload-specific terminal result is preserved as evidence; no guard or profile-policy bypass was used.
