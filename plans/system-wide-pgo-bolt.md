@@ -7705,3 +7705,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — OpenSSL generation compile failure
 
 `dev-libs/openssl-3.6.9999` entered the authenticated Clang-IR generation transaction but failed during its documentation build when `make` reported `Killed` while generating `doc/html/man3/EVP_PKEY_CTX_set_scrypt_N.html`. No install-QA admission, workload receipt, profile merge, dispatcher publication, or profile-use deployment was made. The complete retained Portage log is `/var/tmp/gentoo-portage-build/portage/dev-libs/openssl-3.6.9999/temp/build.log`; this is a generation compile failure requiring package-specific resource/remediation analysis.
+
+### 2026-09-21 — protobuf generation ABI failure
+
+`dev-libs/protobuf-34.2` completed its large authenticated Clang-IR build and staged install, but install-QA rejected the replacement DSOs for exported-ABI loss. `libprotobuf-lite.so.34.2.0` changed from 904 to 918 symbols while losing a packed-varint parser symbol, and `libprotobuf.so.34.2.0` changed from 3771 to 3791 while losing the same symbol family. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete Portage log is `/var/tmp/gentoo-portage-build/portage/dev-libs/protobuf-34.2/temp/build.log`; this remains a correctness failure requiring ABI-safe remediation.
