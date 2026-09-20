@@ -6,7 +6,11 @@ def main():
  for x in w['packages']:
   p=x['profile_path']; canonical=os.path.realpath(p) if isinstance(p,str) else ''
   safe=isinstance(p,str) and p.startswith(spool+'/') and canonical.startswith(spool+'/') and not any(os.path.islink(cur) for cur in [spool]+[os.path.join(spool,*p[len(spool):].strip('/').split('/')[:n]) for n in range(1,len(p[len(spool):].strip('/').split('/'))+1)])
-  fingerprint=os.path.isfile(os.path.join(identity_root,x['cpv'].replace('/','_')+'.fingerprint.env')) if identity_root else True
+  if identity_root:
+   key=x['cpv'].replace('/','_')
+   fingerprint=any(os.path.isfile(os.path.join(identity_root, candidate)) for candidate in (os.path.join(key,'fingerprint.env'), key+'.fingerprint.env'))
+  else:
+   fingerprint=True
   ok=x['cpv'] in m and x['compiler_sha256']==i[{'pgo-clang-ir':'clang','pgo-gcc':'gcc','pgo-rust':'rustc','pgo-go':'go'}[x['lane']]]['sha256'] and safe and fingerprint
   if not ok:bad.append(x['cpv'])
   rows.append({'cpv':x['cpv'],'input_valid':ok,'execution_state':'not-authorized-framework-gate'})

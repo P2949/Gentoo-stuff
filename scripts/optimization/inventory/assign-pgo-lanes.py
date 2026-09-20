@@ -9,9 +9,9 @@ def main():
   cpv=x['cpv']; info=b.get(cpv,{}); artifact_languages=info.get('artifact_language_evidence',{}); ev=sorted(set(info.get('backend_evidence',[])+info.get('inherits',[])+list(artifact_languages))); phases=info.get('phase_functions',[])
   if cpv in overrides: lane,reason=overrides[cpv]
   elif x['state']!='pending-pgo-classification': lane=x['state']; reason=x['reason_code']
+  elif any('python' in z or 'java' in z or 'ruby' in z or 'perl' in z or z in ('distutils-r1','pypi','ruby-fakegem','perl-module') for z in ev) or any(token in cpv.lower().split('/',1)[-1] for token in ('python','ruby','perl','openjdk','jdk')): lane='unsupported-by-upstream-toolchain';reason='managed-language-or-runtime-eclass'
   elif any('cargo' in z or z in ('rust','rust-toolchain') for z in ev): lane='pgo-rust';reason='cargo-or-rust-eclass'
   elif any('go' in z for z in ev): lane='pgo-go';reason='go-eclass'
-  elif any('python' in z or 'java' in z or z in ('distutils-r1','pypi','ruby-fakegem','perl-module') for z in ev): lane='unsupported-by-upstream-toolchain';reason='managed-language-or-runtime-eclass'
   elif any(any(k in z for k in ('cmake','meson','autotools','llvm','toolchain-funcs','libtool','ecm','frameworks.kde.org','xorg-3','multilib','qt6-build','gstreamer')) for z in ev): lane='pgo-clang-ir';reason='native-compiled-eclass'
   else: lane='pending-pgo-classification';reason='no-supported-backend-evidence'
   rows.append({'cpv':cpv,'lane':lane,'reason_code':reason,'backend_evidence':ev})

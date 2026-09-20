@@ -45,7 +45,12 @@ def main():
  if marker_size == 0 or policy_identity in ('', 'empty-v1') or manifest_lines.get('candidate_inventory_sha256') in (None, '', 'none') or manifest_lines.get('frozen_inventory_sha256') in (None, '', 'none'):
   raise SystemExit('REFUSED: framework generation is an empty or non-authoritative policy')
  identity_root=a.identity_root or os.path.join(os.path.dirname(a.wave),'identity')
- missing=[x['cpv'] for x in w['packages'] if not os.path.isfile(os.path.join(identity_root,x['cpv'].replace('/','_')+'.fingerprint.env'))]
+ def fingerprint_path(cpv):
+  key=cpv.replace('/','_')
+  for candidate in (os.path.join(identity_root,key,'fingerprint.env'), os.path.join(identity_root,key+'.fingerprint.env')):
+   if os.path.isfile(candidate): return candidate
+  return None
+ missing=[x['cpv'] for x in w['packages'] if fingerprint_path(x['cpv']) is None]
  if not isinstance(w.get('sha256'),str) or not isinstance(r.get('sha256'),str) or r.get('source_wave')!=w.get('sha256') or r.get('ready_count')!=len(w['packages']) or r.get('invalid_inputs') or missing:raise SystemExit('REFUSED: wave readiness is incomplete, belongs to another wave, or lacks fingerprint inputs')
  if not a.execute:print('READY: all technical gates pass; rerun with --execute to invoke the controlled transaction');return
  if not all((a.generation_id,a.inventory_id,a.inventory_sha256)):
@@ -74,7 +79,7 @@ def main():
   # not valid transaction atoms.
   payloads=[]
   for item in w['packages']:
-   cpv=item['cpv']; key=cpv.replace('/','_')+'.fingerprint.env'; fingerprint_file=os.path.join(identity_root,key)
+   cpv=item['cpv']; fingerprint_file=fingerprint_path(cpv)
    _active_attempt={'record_type':'profile-wave-package-attempt','schema_version':1,'attempt_id':w['sha256']+'-'+cpv.replace('/','_')+'-'+hashlib.sha256(os.urandom(16)).hexdigest()[:16],'wave_sha256':w['sha256'],'cpv':cpv,'lane':item.get('lane'),'state':'started','started_at':time.time(),'generation':expected_generation,'framework_generation':active,'profile_path':item.get('profile_path'),'pre_transaction_identity':item.get('fingerprint')}
    _write_attempt(_active_attempt)
    if not os.path.isfile(fingerprint_file):
