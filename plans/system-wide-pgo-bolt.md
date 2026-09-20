@@ -7531,3 +7531,6 @@ The exact `gui-apps/swayidle-9999` Clang-IR generation transaction fetched, buil
 
 ### Wayland workload classification repair (2026-09-20)
 The live `grim --help` and `swayidle --help` waves both built and merged successfully but exited nonzero because no compositor/socket session exists in the automated userspace boundary. The workload derivation now classifies `gui-apps/grim-*`, `gui-apps/swayidle-*`, and `gui-apps/swaylock-*` as explicit `no-profile-producing-workload` records until a deterministic compositor-backed fixture is available, instead of emitting recipes that are known to fail. Regenerated workload state reports 288 recipe-ready, 238 no-runnable-entrypoint, and 12 explicit no-profile-producing-workload records; no failed workload is treated as a successful profile.
+
+### Mandoc Clang-IR generation wave (2026-09-20)
+The exact `app-text/mandoc-1.14.6-r1` wave passed readiness, rebuilt and merged through install-QA and the ABI guard, and its `/usr/bin/mandoc -h` workload completed. The receipt passed independent verification and LLVM 22 merged the authenticated payload; merge evidence digest is `1f48b3150cc6a77045081115527f5ee5c2853d881fbeac6a507ef88fcec769d1`. Profile validation, dispatcher publication, and exact profile-use deployment remain pending.
