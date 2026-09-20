@@ -6467,3 +6467,7 @@ The `pgo-clang-ir` wave completed successfully under generation `phase3-live-can
 ### 2026-09-20 — dev-libs/jansson-2.15.1 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_jansson-2.15.1-v1.profdata`; merge evidence SHA-256 is `f54cc30e4dd96d6ffff75f4549893237c8c49e845c4a7d953f2444be68679b38`.
+
+### 2026-09-20 — dev-libs/json-c-0.18 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_json-c-0.18-v1.profdata`; merge evidence SHA-256 is `d4b5965e0e09f520cf6bd88449978ce1125201c8c4974fc65876ea1912c6d9a9`.
