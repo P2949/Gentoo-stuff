@@ -107,6 +107,10 @@ def main():
     # ownership/mode changes and both atomic output creations must be one
     # stable publication critical section.
     with profile_lock_hierarchy(exclusive=False, expected_generation=expected_generation, expected_generation_id=a.generation_id, timeout_seconds=30, test_mode=False, test_paths=None):
+      verifier = HERE / 'validate-profile.py'
+      verified = subprocess.run([sys.executable, str(verifier), 'verify', '--manifest', str(a.manifest), '--metadata', str(a.metadata)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env={**os.environ, 'LLVM_PROFILE_FILE': '/dev/null', 'PATH': '/usr/bin:/bin'})
+      if verified.returncode != 0:
+       raise SystemExit('REFUSED: canonical profile verifier rejected publication: ' + verified.stdout.strip())
       for item in (profile, a.manifest, a.metadata):
         st=item.stat()
         if st.st_uid != 0: raise SystemExit(f'REFUSED: cache input is not root-owned: {item}')
