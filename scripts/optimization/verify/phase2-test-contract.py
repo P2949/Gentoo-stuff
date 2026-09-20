@@ -347,6 +347,28 @@ def phase2_contract_view(current: dict[str, Any], generated: dict[str, Any]) -> 
             raise ContractError("discovered shell topology contains duplicate names")
         discovered["expected_names"] = list(frozen_names)
         discovered["expected_count"] = len(frozen_names)
+
+    # Python unittest suites are also allowed to grow after the Phase-2
+    # freeze.  The frozen contract records the Phase-2 cardinality and
+    # identity digest, while the live runner must still execute every
+    # currently discovered test.  Preserve the immutable values for the
+    # contract comparison and reject removals; additive identities remain
+    # ordinary tests outside the frozen proof.
+    frozen_suites = current.get("unittest_suites", [])
+    discovered_suites = view.get("unittest_suites", [])
+    if len(frozen_suites) != len(discovered_suites):
+        raise ContractError("authoritative unittest-suite topology changed")
+    for frozen, discovered in zip(frozen_suites, discovered_suites, strict=True):
+        frozen_count = frozen.get("expected_count")
+        discovered_count = discovered.get("expected_count")
+        if not isinstance(frozen_count, int) or not isinstance(discovered_count, int):
+            raise ContractError("unittest suite contract has invalid expected_count")
+        if discovered_count < frozen_count:
+            raise ContractError(
+                "an immutable Phase-2 unittest identity was removed or renamed"
+            )
+        discovered["expected_count"] = frozen_count
+        discovered["subtest_names_sha256"] = frozen.get("subtest_names_sha256")
     return view
 
 
