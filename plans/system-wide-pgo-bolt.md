@@ -6841,3 +6841,7 @@ The `pgo-clang-ir` multilib rebuild, merge, and workload completed successfully 
 ### 2026-09-20 — x11-misc/sddm-0.21.0_p20251101 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully, but `/usr/bin/sddm --help` exited 1 in the current display-manager/runtime context. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the workload failure is retained as the terminal state.
+
+### 2026-09-20 — x11-misc/xdotool-4.20260303.1 Clang IR profile wave
+
+The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/x11-misc_xdotool-4.20260303.1-v1.profdata`.
