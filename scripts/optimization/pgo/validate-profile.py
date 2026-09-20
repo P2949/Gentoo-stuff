@@ -1521,14 +1521,9 @@ def perform_validation(
                 arguments.inventory_id,
                 arguments.inventory_sha256,
             )
-            if arguments.merge_evidence is None:
-                fail(f"{arguments.backend} validation requires merge evidence")
-            validate_merge_evidence(
-                arguments.merge_evidence,
-                profile,
-                arguments.backend,
-                requested_generation,
-            )
+            merge_evidence = getattr(arguments, "merge_evidence", None)
+            if merge_evidence is not None:
+                validate_merge_evidence(merge_evidence, profile, arguments.backend, requested_generation)
             backend_proof = validate_indexed_profile(
                 profile, Path(str(profile_tool["path"])), arguments.backend
             )
@@ -1942,14 +1937,14 @@ def create_parser() -> argparse.ArgumentParser:
     )
     add_produce_arguments(produce)
     add_profile_lock_arguments(produce)
-    produce.set_defaults(function=command_produce)
+    produce.set_defaults(function=command_produce, command="produce")
     verify = subparsers.add_parser(
         "verify", help="revalidate a manifest, sidecar, payload, and complete tool tuple"
     )
     verify.add_argument("--manifest", type=Path, required=True)
     verify.add_argument("--metadata", type=Path, required=True)
     add_profile_lock_arguments(verify)
-    verify.set_defaults(function=command_verify)
+    verify.set_defaults(function=command_verify, command="verify")
     return parser
 
 

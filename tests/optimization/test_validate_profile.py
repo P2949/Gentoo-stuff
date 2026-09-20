@@ -301,6 +301,18 @@ class ProfileValidatorTests(unittest.TestCase):
             "--inventory-sha256",
             self.generation["inventory_sha256"],
         ]
+        if backend in {"clang-ir", "rust"}:
+            evidence = self.root / f"{backend}.merge-evidence.json"
+            evidence.write_text(json.dumps({
+                "record_type": f"{backend}-profile-merge",
+                "backend": backend,
+                "state": "profile-merged-pending-dispatcher-authorization",
+                "generation": self.generation,
+                "merged_profile": os.fspath(profile),
+                "merged_sha256": sha256(profile),
+                "receipt_sha256": "0" * 64,
+            }) + "\n")
+            arguments.extend(["--merge-evidence", os.fspath(evidence)])
         if backend == "clang-sample":
             arguments.extend(
                 ["--sample-input-fingerprint", SAMPLE_INPUT_FINGERPRINT]
