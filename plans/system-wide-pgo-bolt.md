@@ -7657,3 +7657,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-20 — expat clang-IR generation and profile-use
 
 `dev-libs/expat-2.8.4` completed the authenticated clang-IR generation wave for inventory `phase3-live-candidate-20260920-sway-mesa-abi-reviewed-v1`; receipt verification passed, llvm-profdata merge produced evidence digest `67f844e1c061f7ee6659e9cc83c187ca888497802ea05428a1e8772ebeb01bd6`, and the validated dispatcher record was published with SHA-256 `3aff2869c29b1124cd32d694c83c5bbd4450baf8d7a2a16aec657e8a44d8bf86`. The authenticated profile-use reinstall completed successfully (`use_rc=0`).
+
+### 2026-09-20 — flatbuffers profile-use correctness failure
+
+`dev-libs/flatbuffers-25.12.19` completed authenticated Clang-IR generation, receipt verification, profile merge, manifest validation, and dispatcher publication (record SHA-256 `650ba517ad117fa9b2e4457d29c569155250f2761d2277dd504544d85cc17051`). Its exact `clang-ir-use` rebuild reached install-QA but the fail-closed ABI guard rejected the staged `libflatbuffers.so.25.12.19` replacement: five exported symbols disappeared (`old=212`, `new=207`). The package was not admitted and no profile-use success is claimed; the complete failure log is `/tmp/dev-libs_flatbuffers-25.12.19-profile-use.log`. This is a correctness-failure-after-remediation candidate requiring package-specific ABI remediation before deployment.
