@@ -7665,3 +7665,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-20 — fribidi clang-IR generation and profile-use
 
 `dev-libs/fribidi-1.0.16` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM 22 merge evidence digest was `57b779a3483556f30d6e73926c7ecc4ad3299934ce1477754825f3112788a743`, and dispatcher publication succeeded with record SHA-256 `a6aeb6da25159bec7a126d983e219f06ca3f317d8e6d35daaf22173b02f9173d`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and the ABI guard, and merged with `use_rc=0`.
+
+### 2026-09-20 — json-glib clang-IR generation and profile-use
+
+`dev-libs/json-glib-1.10.8` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence digest was `578137dfd39606f315d72a3ad6149c3be2638faed853bd9fd60fe18993b8ae07`, and dispatcher publication succeeded with record SHA-256 `fa75f6e26e735e863d7ca5641c492517d829e6ddc9534367b9cb98e5ddbdd583`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and merged with `use_rc=0`.
