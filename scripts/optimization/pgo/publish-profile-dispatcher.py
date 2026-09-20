@@ -85,8 +85,8 @@ def main():
         k,v=line.split('=',1)
         if k in lines: raise SystemExit('REFUSED: duplicate manifest key')
         lines[k]=v
-    required={'schema','backend','fingerprint','abi','compiler_family','profile_path','profile_sha256','validation_status'}
-    if set(lines)!=required or lines['schema']!='gentoo-optimization-profile-v1' or lines['backend']!=a.backend or lines['validation_status']!='passed': raise SystemExit('REFUSED: unsupported manifest')
+    required={'schema','backend','cpv','fingerprint','abi','compiler_family','profile_path','profile_sha256','validation_status'}
+    if set(lines)!=required or lines['schema']!='gentoo-optimization-profile-v1' or lines['backend']!=a.backend or lines['cpv']!=a.cpv or lines['validation_status']!='passed': raise SystemExit('REFUSED: unsupported manifest')
     if not HEX.fullmatch(lines['fingerprint']) or not HEX.fullmatch(lines['profile_sha256']): raise SystemExit('REFUSED: malformed manifest identity')
     profile=Path(lines['profile_path']); safe(profile,cache if a.backend == 'clang-ir' else generation,'profile')
     if a.backend == 'rust':
@@ -117,6 +117,8 @@ def main():
       meta=json.loads(a.metadata.read_text())
       if not isinstance(meta,dict) or meta.get('schema_version') != 1: raise SystemExit('REFUSED: invalid validation metadata')
       if meta.get('generation') != expected_generation: raise SystemExit('REFUSED: validation metadata generation differs from requested authority')
+      profile_meta=meta.get('profile')
+      if not isinstance(profile_meta,dict) or profile_meta.get('cpv') != a.cpv: raise SystemExit('REFUSED: validation metadata CPV differs from requested publication')
       env='\n'.join([
         f'GENTOO_OPT_MODE="{a.backend}-use"', 'GENTOO_OPT_ABI="amd64"', f'GENTOO_OPT_COMPILER_FAMILY="{"clang" if a.backend == "clang-ir" else "rust"}"',
         f'GENTOO_OPT_FINGERPRINT_FILE="{a.fingerprint_file}"', f'GENTOO_OPT_PROFILE_PATH="{profile}"',

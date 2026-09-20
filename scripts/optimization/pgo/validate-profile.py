@@ -78,6 +78,7 @@ VALIDATION_METADATA_FIELDS = {
 }
 MANIFEST_IDENTITY_FIELDS = {"path", "sha256"}
 PROFILE_IDENTITY_FIELDS = {
+    "cpv",
     "backend",
     "path",
     "sha256",
@@ -1290,6 +1291,7 @@ def validate_go_profile(
 
 def manifest_bytes(
     backend: str,
+    cpv: str,
     fingerprint: str,
     abi: str,
     compiler_family: str,
@@ -1299,6 +1301,7 @@ def manifest_bytes(
     fields = (
         ("schema", "gentoo-optimization-profile-v1"),
         ("backend", backend),
+        ("cpv", cpv),
         ("fingerprint", fingerprint),
         ("abi", abi),
         ("compiler_family", compiler_family),
@@ -1434,6 +1437,8 @@ def validate_arguments(arguments: argparse.Namespace) -> None:
     if arguments.abi not in {"amd64", "x86"}:
         fail("ABI must be exactly amd64 or x86")
     require_hex64(arguments.fingerprint, "fingerprint")
+    if CPV_RE.fullmatch(arguments.cpv) is None:
+        fail("CPV is malformed")
     require_hex64(arguments.compiler_sha256, "compiler SHA-256")
     require_hex64(arguments.profile_tool_sha256, "profile-tool SHA-256")
     require_positive_integer(arguments.compiler_major, "compiler major")
@@ -1616,6 +1621,7 @@ def perform_validation(
 
     payload = manifest_bytes(
         arguments.backend,
+        arguments.cpv,
         arguments.fingerprint,
         arguments.abi,
         arguments.compiler_family,
@@ -1634,6 +1640,7 @@ def perform_validation(
             "sha256": hashlib.sha256(payload).hexdigest(),
         },
         "profile": {
+            "cpv": arguments.cpv,
             "backend": arguments.backend,
             "path": os.fspath(profile),
             "sha256": profile_sha256,
@@ -1734,6 +1741,9 @@ def arguments_from_metadata(
     if backend not in BACKEND_FAMILY:
         fail(f"validation metadata has an unknown backend: {backend}")
     fingerprint = require_hex64(profile["fingerprint"], "profile fingerprint")
+    cpv = require_string(profile["cpv"], "profile CPV")
+    if CPV_RE.fullmatch(cpv) is None:
+        fail("profile CPV is malformed")
     profile_sha256 = require_hex64(profile["sha256"], "profile SHA-256")
     abi = require_string(profile["abi"], "profile ABI")
     compiler_family = require_string(profile["compiler_family"], "compiler family")
@@ -1790,6 +1800,7 @@ def arguments_from_metadata(
     require_exact_fields(proof, BACKEND_PROOF_FIELDS[backend], "backend proof")
     namespace = argparse.Namespace(
         backend=backend,
+        cpv=cpv,
         profile=profile_path,
         fingerprint=fingerprint,
         abi=abi,
@@ -1935,6 +1946,7 @@ def command_verify(arguments: argparse.Namespace) -> int:
 
 def add_produce_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--backend", choices=tuple(BACKEND_FAMILY), required=True)
+    parser.add_argument("--cpv", required=True)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--fingerprint", required=True)
     parser.add_argument("--abi", required=True)
