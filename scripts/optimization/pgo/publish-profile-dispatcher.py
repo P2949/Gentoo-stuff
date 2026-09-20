@@ -84,23 +84,27 @@ def main():
     if os.geteuid() != 0: raise SystemExit('REFUSED: publication requires root-owned cache publication')
     try: portage_gid = grp.getgrnam('portage').gr_gid
     except KeyError: raise SystemExit('REFUSED: portage group is unavailable')
-    for item in (profile, a.manifest, a.metadata):
+    # Hold the shared generation lock across every publication mutation.  The
+    # authority and input checks above are intentionally outside the lock, but
+    # ownership/mode changes and both atomic output creations must be one
+    # stable publication critical section.
+    with profile_lock_hierarchy(exclusive=False, expected_generation=expected_generation, expected_generation_id=a.generation_id, timeout_seconds=30, test_mode=False, test_paths=None):
+      for item in (profile, a.manifest, a.metadata):
         st=item.stat()
         if st.st_uid != 0: raise SystemExit(f'REFUSED: cache input is not root-owned: {item}')
         os.chown(item, 0, portage_gid); os.chmod(item, stat.S_IMODE(st.st_mode) | stat.S_IRGRP)
-    os.chown(profile.parent, 0, portage_gid); os.chmod(profile.parent, stat.S_IMODE(profile.parent.stat().st_mode) | stat.S_IXGRP)
-    fp=a.fingerprint_file.read_text().strip()
-    if fp != f"fingerprint={lines['fingerprint']}": raise SystemExit('REFUSED: fingerprint mismatch')
-    meta=json.loads(a.metadata.read_text())
-    if not isinstance(meta,dict) or meta.get('schema_version') != 1: raise SystemExit('REFUSED: invalid validation metadata')
-    if meta.get('generation') != expected_generation: raise SystemExit('REFUSED: validation metadata generation differs from requested authority')
-    env='\n'.join([
-      f'GENTOO_OPT_MODE="{a.backend}-use"', 'GENTOO_OPT_ABI="amd64"', f'GENTOO_OPT_COMPILER_FAMILY="{"clang" if a.backend == "clang-ir" else "rust"}"',
-      f'GENTOO_OPT_FINGERPRINT_FILE="{a.fingerprint_file}"', f'GENTOO_OPT_PROFILE_PATH="{profile}"',
-      f'GENTOO_OPT_PROFILE_MANIFEST="{a.manifest.resolve()}"', f'GENTOO_OPT_PROFILE_METADATA="{a.metadata.resolve()}"', '' ])
-    rec={'schema_version':1,'cpv':a.cpv,'backend':a.backend,'fingerprint':lines['fingerprint'],'profile':str(profile),'manifest':str(a.manifest.resolve()),'metadata':str(a.metadata.resolve()),'fingerprint_file':str(a.fingerprint_file.resolve()),'state':'candidate-profile-use','sha256':''}
-    rec['sha256']=digest({k:v for k,v in rec.items() if k!='sha256'})
-    with profile_lock_hierarchy(exclusive=False, expected_generation=expected_generation, expected_generation_id=a.generation_id, timeout_seconds=30, test_mode=False, test_paths=None):
+      os.chown(profile.parent, 0, portage_gid); os.chmod(profile.parent, stat.S_IMODE(profile.parent.stat().st_mode) | stat.S_IXGRP)
+      fp=a.fingerprint_file.read_text().strip()
+      if fp != f"fingerprint={lines['fingerprint']}": raise SystemExit('REFUSED: fingerprint mismatch')
+      meta=json.loads(a.metadata.read_text())
+      if not isinstance(meta,dict) or meta.get('schema_version') != 1: raise SystemExit('REFUSED: invalid validation metadata')
+      if meta.get('generation') != expected_generation: raise SystemExit('REFUSED: validation metadata generation differs from requested authority')
+      env='\n'.join([
+        f'GENTOO_OPT_MODE="{a.backend}-use"', 'GENTOO_OPT_ABI="amd64"', f'GENTOO_OPT_COMPILER_FAMILY="{"clang" if a.backend == "clang-ir" else "rust"}"',
+        f'GENTOO_OPT_FINGERPRINT_FILE="{a.fingerprint_file}"', f'GENTOO_OPT_PROFILE_PATH="{profile}"',
+        f'GENTOO_OPT_PROFILE_MANIFEST="{a.manifest.resolve()}"', f'GENTOO_OPT_PROFILE_METADATA="{a.metadata.resolve()}"', '' ])
+      rec={'schema_version':1,'cpv':a.cpv,'backend':a.backend,'fingerprint':lines['fingerprint'],'profile':str(profile),'manifest':str(a.manifest.resolve()),'metadata':str(a.metadata.resolve()),'fingerprint_file':str(a.fingerprint_file.resolve()),'state':'candidate-profile-use','sha256':''}
+      rec['sha256']=digest({k:v for k,v in rec.items() if k!='sha256'})
       write_new(a.output_env,env.encode()); write_new(a.output_record,(json.dumps(rec,sort_keys=True,indent=2)+'\n').encode())
     print(json.dumps({'cpv':a.cpv,'record_sha256':rec['sha256'],'env':str(a.output_env)}))
 if __name__=='__main__': main()
