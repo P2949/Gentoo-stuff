@@ -7543,3 +7543,6 @@ The exact `app-text/opensp-1.5.2-r10` Clang-IR generation wave passed readiness 
 
 ### OpenSP C++ driver remediation boundary (2026-09-20)
 The first OpenSP retry showed the generated C++ link still used the C driver because the live `/etc/portage/bashrc` was an older framework copy. A source repair now derives the matching versioned `clang++` driver, but activating that repair requires a complete successor framework publication and strict check; the active framework was restored immediately after the unbound-policy refusal, and no package mutation was admitted in that attempt. The original OpenSP compile failure and both retry logs remain preserved.
+
+### OpenSP successor-framework retry result (2026-09-20)
+The source C++ driver repair was published through the normal root-owned framework installer and the independent strict `--check` passed. A fresh OpenSP retry then reached the same C++ link failure (`__gxx_personality_v0` and C++ ABI references unresolved) before install-QA, so the driver repair does not yet resolve this legacy libtool link contract. No package merge or profile receipt was admitted; the repeated compile evidence remains retained for a package-specific link remediation rather than another blind retry.
