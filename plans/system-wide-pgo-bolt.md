@@ -6495,3 +6495,7 @@ The `pgo-clang-ir` wave did not reach compilation. The upstream Git fetch for `h
 ### 2026-09-20 — dev-libs/libfmt-9999 Clang IR profile wave
 
 The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libfmt-9999-v1.profdata`; merge evidence SHA-256 is `534fc3d9b9fb0aecee27aea029b4ebcb582e1e162651a1700429ae30df95e689`.
+
+### 2026-09-20 — dev-libs/libgudev-238-r2 Clang IR profile wave
+
+The `pgo-clang-ir` wave completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. Receipt verification passed and the raw profile was merged into `/var/lib/gentoo-optimization/merged-profiles/dev-libs_libgudev-238-r2-v1.profdata`; merge evidence SHA-256 is `9e12dce58012783500dda873929ccaa191bb6a030517d1790ea834d8837d970b`.
