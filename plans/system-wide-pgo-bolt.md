@@ -7606,3 +7606,6 @@ The exact `dev-embedded/libdisasm-0.23-r1` profile-use rebuild authenticated `cl
 
 ### Deno profile-use deployment (2026-09-20)
 The exact `dev-lang/deno-bin-2.9.6` profile-use rebuild authenticated `clang-ir-use`, completed the binary package replacement, passed install-QA and ABI checks, and merged successfully with `use_rc=0`. Dispatcher record SHA-256 was `ff0a711c4f8381bcfd54ff1ae9b7219b6eeea51130582b3fd4ad1b1d0b3d849e`.
+
+### Lua profile-wave workload terminal failure (2026-09-20)
+The exact `dev-lang/lua-5.4.8` Clang-IR generation transaction rebuilt and merged through install-QA and the ABI guard, but its reviewed `/usr/bin/lua5.4` workload exited 1. The runner therefore refused to seal a profile receipt or publish a profile; no profile-use rebuild was attempted. The package remains terminally excluded pending a corrected deterministic workload fixture.
