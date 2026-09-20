@@ -6801,3 +6801,7 @@ The `pgo-clang-ir` rebuild, merge, and workload completed successfully under gen
 ### 2026-09-20 — x11-apps/xgamma-1.0.8 Clang IR profile wave
 
 The `pgo-clang-ir` rebuild, merge, and workload completed successfully under generation `phase3-live-candidate-20260918-postsync-r1`. The receipt verifier passed and the raw profile set was independently merged into `/var/lib/gentoo-optimization/merged-profiles/x11-apps_xgamma-1.0.8-v1.profdata`.
+
+### 2026-09-20 — x11-apps/xprop-1.2.8 Clang IR profile wave terminal failure
+
+The `pgo-clang-ir` rebuild, install, merge, and ABI guard completed successfully, but `/usr/bin/xprop` exited 1 because no usable X display was available. No profile receipt or merged profile was accepted. The installed package remains rebuilt under the generation; the display-dependent workload failure is retained as the terminal state.
