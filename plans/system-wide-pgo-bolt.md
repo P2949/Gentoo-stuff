@@ -6886,6 +6886,10 @@ The dual-ABI `pgo-clang-ir` rebuild completed compilation and staging, but the i
 
 The `pgo-clang-ir` rebuild completed compilation and staging under generation `phase3-live-candidate-20260918-postsync-r1`, but the install-QA ABI guard rejected the replacement DSOs. The guard reported exported-symbol loss in the `libfsm-0.14.7.so` and `libfsm.so` SONAME families, including missing C++ template and runtime symbols. No package merge, receipt, or profile merge was admitted; the build log and ABI evidence remain preserved for package-specific ABI remediation.
 
+### 2026-09-20 — kde-apps/kdenlive-26.08.1 workload terminal result
+
+The `pgo-clang-ir` rebuild, staging, and install-QA completed under generation `phase3-live-candidate-20260918-postsync-r1`, but the declared workload `/usr/bin/kdenlive_render` exited 1. The workload gate refused the wave; no profile receipt or merge was admitted. The package remains a terminal workload exception with its build and runtime evidence preserved.
+
 ### 2026-09-20 — gui-wm/gamescope-3.16.28 Clang IR profile wave terminal failure
 
 The `pgo-clang-ir` rebuild failed during the link stage of the Vulkan WSI layer. `ld.lld` reported unresolved C++ runtime and RTTI symbols, including `std::__throw_bad_function_call()` and `__cxxabiv1` type-info vtables, under the active Clang/libstdc++ profile lane. No package merge, receipt, or profile merge was admitted; the complete build log remains preserved for package-specific toolchain/link remediation.
