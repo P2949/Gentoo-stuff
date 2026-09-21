@@ -2,9 +2,14 @@
 import argparse,json,hashlib,collections
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--states',required=True);ap.add_argument('--backends',required=True);ap.add_argument('--overrides');ap.add_argument('--output',required=True);a=ap.parse_args();s=json.load(open(a.states));b={x['cpv']:x for x in json.load(open(a.backends))['packages']}; rows=[]
- overrides={'sys-devel/gcc-17.0.9999':('pgo-gcc','gcc-native-toolchain'),'sys-devel/gcc-17.0.9999-r1':('pgo-gcc','gcc-native-toolchain'),'dev-cpp/highway-9999':('pgo-gcc','package-env-forced-gcc'),'media-libs/libjxl-9999':('pgo-gcc','package-env-forced-gcc'),'net-libs/libmnl-1.0.5':('pgo-clang-ir','native-library-ebuild'),'sys-apps/iucode_tool-2.3.1-r2':('pgo-clang-ir','native-utility-ebuild'),'sys-process/time-1.10':('pgo-clang-ir','native-utility-ebuild'),'app-portage/cpuid2cpuflags-18':('pgo-clang-ir','native-utility-ebuild'),'dev-libs/tree-sitter-bash-0.25.1':('pgo-clang-ir','generated-native-parser'),'dev-util/clinfo-9999':('pgo-clang-ir','native-utility-ebuild'),'dev-build/xfce4-dev-tools-4.20.0':('unsupported-by-upstream-toolchain','tooling-only-no-profiled-workload'),'app-autodesk/adp-desktop-sdk-6.3.34-r1':('unsupported-by-upstream-toolchain','prebuilt-vendor-sdk'),'app-autodesk/adsk-identity-manager-1.18.1.2-r2':('unsupported-by-upstream-toolchain','prebuilt-vendor-binary'),'app-autodesk/adsk-licensing-16.0.3.14414':('unsupported-by-upstream-toolchain','prebuilt-vendor-binary'),'app-editors/sublime-text-4_p4200':('unsupported-by-upstream-toolchain','prebuilt-binary'),'app-office/onlyoffice-bin-9.4.0':('unsupported-by-upstream-toolchain','prebuilt-binary'),'dev-util/shellcheck-bin-0.11.0':('unsupported-by-upstream-toolchain','prebuilt-binary'),'media-gfx/bifrost-3.1.0.8':('unsupported-by-upstream-toolchain','prebuilt-vendor-binary'),'media-gfx/lookdevx-2.2.0':('unsupported-by-upstream-toolchain','prebuilt-vendor-binary'),'media-gfx/maya-2027.2-r2':('unsupported-by-upstream-toolchain','prebuilt-vendor-binary'),'media-gfx/maya-usd-0.37.0':('unsupported-by-upstream-toolchain','prebuilt-vendor-binary'),'media-gfx/substance-maya-3.0.6':('unsupported-by-upstream-toolchain','prebuilt-vendor-binary'),'media-sound/spotify-1.2.96':('unsupported-by-upstream-toolchain','prebuilt-binary'),'www-client/firefox-bin-152.0.5':('unsupported-by-upstream-toolchain','prebuilt-binary')}
+ overrides={}
  if a.overrides:
-  extra=json.load(open(a.overrides)); overrides.update({x['cpv']:(x['lane'],x['reason_code']) for x in extra['overrides']})
+  extra=json.load(open(a.overrides))
+  if not isinstance(extra.get('overrides'),list): raise SystemExit('REFUSED: lane override artifact has no override list')
+  for item in extra['overrides']:
+   if not all(item.get(k) for k in ('cpv','lane','reason_code')): raise SystemExit('REFUSED: incomplete lane override')
+   if item['cpv'] in overrides: raise SystemExit(f"REFUSED: duplicate lane override: {item['cpv']}")
+   overrides[item['cpv']]=(item['lane'],item['reason_code'])
  for x in s['records']:
   cpv=x['cpv']; info=b.get(cpv,{}); artifact_languages=info.get('artifact_language_evidence',{}); ev=sorted(set(info.get('backend_evidence',[])+info.get('inherits',[])+list(artifact_languages))); phases=info.get('phase_functions',[])
   if cpv in overrides: lane,reason=overrides[cpv]
@@ -14,6 +19,9 @@ def main():
   elif any('go' in z for z in ev): lane='pgo-go';reason='go-eclass'
   elif any(any(k in z for k in ('cmake','meson','autotools','llvm','toolchain-funcs','libtool','ecm','frameworks.kde.org','xorg-3','multilib','qt6-build','gstreamer')) for z in ev): lane='pgo-clang-ir';reason='native-compiled-eclass'
   else: lane='pending-pgo-classification';reason='no-supported-backend-evidence'
-  rows.append({'cpv':cpv,'lane':lane,'reason_code':reason,'backend_evidence':ev})
+  row={'cpv':cpv,'lane':lane,'reason_code':reason,'backend_evidence':ev}
+  if cpv in overrides: row['decision_source']='reviewed-generation-override'
+  else: row['decision_source']='generic-evidence'
+  rows.append(row)
  out={'record_type':'pgo-lane-candidates','schema_version':1,'source_state':s['sha256'],'packages':rows};out['counts']=dict(collections.Counter(x['lane'] for x in rows));out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest();json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(out['counts'])
 if __name__=='__main__':main()
