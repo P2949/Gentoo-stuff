@@ -43,7 +43,10 @@ def main():
         ], capture_output=True, text=True)
         assert bad.returncode != 0
         assert "metadata repository" in bad.stderr + bad.stdout
-    print("PASS: profile-use runner refuses CPV and repository identity drift")
+    source = SCRIPT.read_text()
+    assert "GENTOO_OPT_RUNNER_DISPATCHER_ENV" in source
+    assert "with_suffix('.env')" in source
+    print("PASS: profile-use runner refuses identity drift and supplies exact dispatcher handoff")
 
 if __name__ == "__main__":
     main()

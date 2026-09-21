@@ -180,6 +180,27 @@ unset -f gentoo_opt_bind_framework_target
 unset gentoo_opt_embedded_framework_target gentoo_opt_embedded_framework_base \
     gentoo_opt_embedded_framework_trust_anchor gentoo_opt_embedded_framework_expected_uid
 
+# The exact profile-use transaction runner may hand off one authenticated,
+# immutable dispatcher environment for this package.  Apply it after Portage's
+# package.env stack so a generation dispatcher cannot shadow the exact-use
+# transaction.  The runner is the only producer of this variable; production
+# still validates the metadata CPV, repository, compiler, and ebuild identity
+# below before compilation.
+if [[ -n ${GENTOO_OPT_RUNNER_DISPATCHER_ENV-} ]]; then
+    gentoo_opt_runner_env=${GENTOO_OPT_RUNNER_DISPATCHER_ENV}
+    [[ ${gentoo_opt_runner_env} == /var/lib/gentoo-optimization/dispatchers/*.env &&
+        ${gentoo_opt_runner_env} != *..* && -f ${gentoo_opt_runner_env} &&
+        ! -L ${gentoo_opt_runner_env} ]] || {
+        printf 'gentoo-optimization: ERROR: unsafe runner dispatcher environment\n' >&2
+        return 1
+    }
+    runner_uid=$(/usr/bin/stat -c %u -- "${gentoo_opt_runner_env}") || return 1
+    [[ ${runner_uid} == 0 ]] || { printf 'gentoo-optimization: ERROR: runner dispatcher is not root-owned\n' >&2; return 1; }
+    # shellcheck disable=SC1090
+    . "${gentoo_opt_runner_env}"
+    unset GENTOO_OPT_RUNNER_DISPATCHER_ENV gentoo_opt_runner_env runner_uid
+fi
+
 # The root-owned framework installer fsyncs this durable marker before its
 # first publication mutation and removes it only after every current-generation
 # entry point has passed verification.  Any filesystem object at the exact
