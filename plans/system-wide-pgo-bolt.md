@@ -7958,6 +7958,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `dev-libs/leancrypto-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/smuellerDD/leancrypto` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/leancrypto-9999/temp/build.log`.
 
+### 2026-09-21 — rocdbgapi profile merge terminal failure
+
+`dev-libs/rocdbgapi-7.2.0` completed the authenticated generation transaction and its receipt passed independent verification, but LLVM 22 profile merging failed because the collected raw profile set contained an invalid/unreadable profraw payload. No validated profile, dispatcher publication, or profile-use deployment was admitted. The raw payloads and receipt are retained for forensic diagnosis.
+
 ### 2026-09-21 — popt storage recovery and profile deployment
 
 The initial `dev-libs/popt-1.19-r1` attempt was refused at the 12% storage floor. A stale superseded raw-profile generation (`phase3-live-candidate-20260918-postsync-r1`, approximately 82 GiB) and smaller superseded generation trees were removed; the active 20260920 generation, validated profiles, receipts, manifests, rollback artifacts, and current raw payloads were preserved. Free space recovered to approximately 21.17%, after which the exact popt wave completed. Receipt verification passed, LLVM 22 merged the raw payload with evidence digest `7822db0b52db52a86801f5282a2354203def490e966ccb6c0fb2f03815b23480`, and dispatcher publication succeeded with record SHA-256 `862555a9697c967f41ad6d27f7036b69ae38a74ff47907f038cd8301ba5bc0a8`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
