@@ -5,4 +5,4 @@
 =media-libs/libde265-1.1.3 optimization/optimization-off.conf
 =media-libs/libmediainfo-26.05 optimization/optimization-off.conf
 =media-video/mediainfo-26.05 optimization/optimization-off.conf
-=dev-build/cmake-4.3.5 cmake-profile-use.conf
+=dev-build/cmake-4.3.5 cmake-profile-use-dispatcher.conf
