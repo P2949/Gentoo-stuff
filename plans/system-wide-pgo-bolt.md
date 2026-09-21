@@ -7909,3 +7909,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — nasm workload terminal failure
 
 `dev-lang/nasm-3.02` completed authenticated Clang-IR generation, staged install, and install-QA, but the reviewed `/usr/bin/ndisasm` workload exited `1`. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is preserved by the runner output and requires a corrected deterministic fixture before retry.
+
+### 2026-09-21 — tcl workload terminal failure
+
+`dev-lang/tcl-8.6.17` completed authenticated Clang-IR generation, staged installation, and install-QA, but the reviewed `/usr/bin/tclsh8.6` workload produced no output. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is preserved by the runner output and requires a corrected deterministic fixture before retry.
