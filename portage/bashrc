@@ -485,7 +485,7 @@ gentoo_opt_trusted_root_executable() {
 gentoo_opt_trusted_compiler_alias() {
     local alias=$1 target=$2 owner mode
     [[ -L ${alias} && -x ${alias} ]] || return 1
-    [[ $(realpath -e -- "${alias}") == ${target} ]] || return 1
+    [[ $(realpath -e -- "${alias}") == "${target}" ]] || return 1
     # Symlink mode bits are conventionally reported as 0777 and are not
     # permission controls; enforce ownership on the alias and immutability
     # through the canonical target's ancestor chain instead.
@@ -869,7 +869,7 @@ gentoo_opt_detect_compiler_family() {
             # argv[0] spelling so C++ runtime linking is enabled.
             if [[ -x ${cxx_candidate} ]] && {
                 ! gentoo_opt_is_compiler_wrapper "${cxx_candidate}" ||
-                [[ $(realpath -e -- "${cxx_candidate}") == ${cc_path} ]]
+                [[ $(realpath -e -- "${cxx_candidate}") == "${cc_path}" ]]
             }; then
                 GENTOO_OPT_RESOLVED_TOOL=${cxx_candidate}
             fi
