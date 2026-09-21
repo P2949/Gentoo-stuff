@@ -5,7 +5,9 @@
 =media-libs/libde265-1.1.3 optimization/optimization-off.conf
 =media-libs/libmediainfo-26.05 optimization/optimization-off.conf
 =media-video/mediainfo-26.05 optimization/optimization-off.conf
-=dev-build/cmake-4.3.5 cmake-profile-use-dispatcher.conf
-=app-admin/doas-6.8.2 doas-profile-use-dispatcher.conf
-=app-arch/bzip2-1.0.8-r5 bzip2-profile-use-dispatcher.conf
-=app-arch/lz4-1.10.0-r1 lz4-profile-use-dispatcher.conf
+# Ordinary baseline maintenance is deliberately outside profile-use. Exact
+# profile-use transactions inject a one-shot authenticated dispatcher instead.
+=dev-build/cmake-4.3.5 optimization/optimization-off.conf
+=app-admin/doas-6.8.2 optimization/optimization-off.conf
+=app-arch/bzip2-1.0.8-r5 optimization/optimization-off.conf
+=app-arch/lz4-1.10.0-r1 optimization/optimization-off.conf

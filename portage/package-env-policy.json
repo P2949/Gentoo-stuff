@@ -166,14 +166,6 @@
     "(^|/)generated.*(pgo|bolt|autofdo|propeller)"
   ],
   "reviewed_multi_environment_stacks": {
-    "=dev-libs/libgcrypt-1.12.4": {
-      "environments": [
-        "no-polly.conf",
-        "libgcrypt-profile-use.conf",
-        "libgcrypt-profile-use-dispatcher.conf"
-      ],
-      "rationale": "Exact CPV profile-use dispatcher is layered over the reviewed no-Polly and package-local TLS-probe policy."
-    },
     "dev-java/openjdk": {
       "environments": [
         "unsafe-no-ccache-no-sandbox.conf",

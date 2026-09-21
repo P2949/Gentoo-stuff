@@ -1,3 +1,0 @@
-# Temporary exact profile-use deployment, bound to the final-generation
-# libgcrypt dispatcher and removed only by a subsequent authenticated policy.
-=dev-libs/libgcrypt-1.12.4 no-polly.conf libgcrypt-profile-use.conf libgcrypt-profile-use-dispatcher.conf
