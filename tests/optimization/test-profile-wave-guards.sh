@@ -29,3 +29,10 @@ if python3 scripts/optimization/pgo/run-profile-wave.py \
 fi
 grep -q 'empty or non-authoritative policy' "$root/output"
 echo 'PASS: empty framework generation fails closed'
+
+if ! grep -Fq 'os.environ["LLVM_PROFILE_FILE"] = "/dev/null"' \
+  scripts/optimization/pgo/run-profile-wave.py; then
+  echo 'FAIL: profile-wave helpers may inherit LLVM default.profraw output' >&2
+  exit 1
+fi
+echo 'PASS: profile-wave administrative helpers discard LLVM profile output'

@@ -1244,6 +1244,12 @@ gentoo_opt_require_go_single_main() {
 
 gentoo_opt_apply_primary_mode() {
     local mode=$1 flag
+    # Clear any profile destination left by a previous generation or by a
+    # long-lived Cargo environment before selecting this transaction's mode.
+    # This applies to ordinary/off lanes too: a package-specific Rust build
+    # must never inherit an old root-owned spool merely because it is not in
+    # the current Rust PGO lane.
+    gentoo_opt_strip_inherited_rust_profile_flags
     GENTOO_OPT_ACTIVE_BACKEND=$(gentoo_opt_profile_backend_for_mode "${mode}") || return 1
     gentoo_opt_disable_ccache
     gentoo_opt_detect_compiler_family "$(gentoo_opt_profile_family_for_mode "${mode}")" || return 1
@@ -1323,7 +1329,6 @@ gentoo_opt_apply_primary_mode() {
             ;;
         rust-generate)
             gentoo_opt_require_rust_target_isolation || return 1
-            gentoo_opt_strip_inherited_rust_profile_flags
             # Rust eclasses may execute the freshly instrumented helper during
             # compile/package phases (for example, to generate completions).
             # Those administrative invocations are not the reviewed workload;
@@ -1337,7 +1342,6 @@ gentoo_opt_apply_primary_mode() {
             ;;
         rust-use)
             gentoo_opt_require_rust_target_isolation || return 1
-            gentoo_opt_strip_inherited_rust_profile_flags
             gentoo_opt_append_flag_once RUSTFLAGS "-Cprofile-use=${GENTOO_OPT_PROFILE_PATH}"
             ;;
         go-use)
@@ -1472,6 +1476,9 @@ rust-generate|rust-use|go-use) ;;
             ;;
         *) gentoo_opt_error "unknown GENTOO_OPT_MODE: ${mode}"; return 1 ;;
     esac
+    # Scrub stale Rust profile destinations even when this invocation resolves
+    # to the ordinary/off lane and returns before primary-mode setup.
+    gentoo_opt_strip_inherited_rust_profile_flags
     case ${bolt_stage} in off|capture|deploy) ;; *) gentoo_opt_error "unknown GENTOO_OPT_BOLT_STAGE: ${bolt_stage}"; return 1 ;; esac
     case ${GENTOO_OPT_PROFILE_MAP_READY:-0} in
         0|1) ;;

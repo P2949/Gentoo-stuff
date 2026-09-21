@@ -342,6 +342,18 @@ case_repository_ordinary_flags_are_stage_clean() (
         -z ${SECTION_FLAGS+x} && -z ${BOLT_READY_LD_FLAGS+x} ]]
 )
 
+case_off_scrubs_inherited_rust_profile_destination() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang CXX=clang++ ABI=amd64
+    export GENTOO_OPT_MODE=off GENTOO_OPT_COMPILER_FAMILY=clang
+    RUSTFLAGS='-Copt-level=3 -Cprofile-generate=/var/tmp/stale-generation'
+    CARGO_BUILD_RUSTFLAGS='-Cprofile-use=/var/tmp/stale-use'
+    CARGO_ENCODED_RUSTFLAGS=$'-Copt-level=3\x1f-Cprofile-generate=/var/tmp/stale-encoded'
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
+    [[ ${RUSTFLAGS} != *'/var/tmp/stale-generation'* ]]
+    [[ ${CARGO_BUILD_RUSTFLAGS} != *'/var/tmp/stale-use'* ]]
+    [[ ${CARGO_ENCODED_RUSTFLAGS} != *'/var/tmp/stale-encoded'* ]]
+)
+
 case_profile_map_stage_is_exact() (
     export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang CXX=clang++ ABI=amd64
     export GENTOO_OPT_MODE=off GENTOO_OPT_COMPILER_FAMILY=clang
@@ -1039,6 +1051,7 @@ run_case 'off/unset leaves all flags unchanged' case_off_is_noop
 run_case 'durable framework activation journal blocks Portage' case_framework_activation_journal_fails_closed
 run_case 'durable profile transaction journal requires exact coordinator authorization' case_profile_transaction_journal_authorization_is_fail_closed
 run_case 'ordinary repository policy contains no stage readiness' case_repository_ordinary_flags_are_stage_clean
+run_case 'ordinary lanes scrub inherited Rust profile destinations' case_off_scrubs_inherited_rust_profile_destination
 run_case 'profile-map readiness owns its complete exact stage set' case_profile_map_stage_is_exact
 run_case 'stage build-ID policy rejects conflicts and duplicates' case_stage_build_id_policy_fails_closed
 run_case 'legacy marker paths fail closed' case_legacy_rejected
