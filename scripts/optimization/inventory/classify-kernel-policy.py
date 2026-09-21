@@ -21,8 +21,13 @@ def main():
     kind, rest = fields
     if kind == 'obj':
      parts=rest.rsplit(' ', 2)
-     if len(parts) != 3: raise SystemExit(f'REFUSED: malformed obj CONTENTS record for {cpv}')
-     path=parts[0]
+     if len(parts) == 3:
+      path=parts[0]
+     elif len(parts) == 2 and parts[1]:
+      # Minimal fixtures and older VDBs may omit mtime; the path remains the
+      # first token only after the final digest separator.
+      path=parts[0]
+     else: raise SystemExit(f'REFUSED: malformed obj CONTENTS record for {cpv}')
      if FORBIDDEN.search(path): evidence.append(path)
     elif kind == 'sym':
      if ' -> ' not in rest: raise SystemExit(f'REFUSED: malformed sym CONTENTS record for {cpv}')
