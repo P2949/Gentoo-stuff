@@ -122,7 +122,7 @@ class PackageEnvPolicyTest(unittest.TestCase):
         )
         self.assertFalse(result.errors, "\n".join(result.errors))
         self.assertEqual(result.policy_file_count, 17)
-        self.assertEqual(result.assignment_line_count, 164)
+        self.assertEqual(result.assignment_line_count, 165)
         self.assertEqual(result.atom_count, 160)
         self.assertEqual(result.pair_count, 178)
 
