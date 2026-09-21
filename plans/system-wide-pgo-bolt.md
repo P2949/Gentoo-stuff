@@ -12,6 +12,8 @@
 
 - 2026-09-21: Added a shared strict Portage CONTENTS parser and switched the owned-artifact and backend classifiers to it; malformed records now refuse instead of being silently dropped, and paths containing spaces are preserved. Python compilation passes; commit `38caf31` pushed. Regeneration of the authoritative 1,307-package inventory is still pending until the full mutation-policy/state migration is complete.
 
+- 2026-09-21: Added generation-bound canonical mutation-policy production and independent verification. Every frozen CPV must now resolve to exactly one `userspace` or `kernel-policy-exclusion` decision with source classification hashes, repository/ebuild provenance, triggers, and evidence; unresolved lifecycle reviews refuse publication. Synthetic generator/verifier integration passes; commit `f9367a1` pushed. The live 1,307-package policy has not yet been published because its source classification must be regenerated against the final candidate inventory.
+
 - 2026-09-21: Completed a fresh read-only live VDB inventory candidate after the userspace baseline check. Generation `phase3-live-baseline-check-20260921c` contains 1,307 exact package records, 684,772 owned paths, and 80,075 owned-directory records; inventory SHA-256 is `99029432a8a290033d6dc99b2469e894abbc7144777861ba534bfd70bf0ee728`. The write-once generator completed without unresolved-directory output. This remains candidate evidence until the strict framework installer accepts the exact generation/source boundary; no activation or package mutation occurred.
 
 - 2026-09-21: Made live inventory generation refuse an existing output path, preserving candidate/frozen inventory evidence across regeneration attempts. Python compilation passes; commit `7d35bb1` pushed.
