@@ -9,6 +9,8 @@ def main():
     ap.add_argument('--reverse-dependencies', required=True)
     ap.add_argument('--output', required=True)
     a = ap.parse_args()
+    if __import__('os').path.exists(a.output):
+        raise SystemExit('REFUSED: consumer-workload output already exists')
     workloads = json.load(open(a.workloads, encoding='utf-8'))
     elf = json.load(open(a.elf, encoding='utf-8'))
     reverse = json.load(open(a.reverse_dependencies, encoding='utf-8'))

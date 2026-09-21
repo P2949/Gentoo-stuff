@@ -7,6 +7,7 @@ def canon(v): return json.dumps(v,sort_keys=True,separators=(',',':')).encode()
 def load(p): return json.loads(Path(p).read_text())
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--portage',required=True); ap.add_argument('--elf',required=True); ap.add_argument('--output',required=True); a=ap.parse_args()
+ if Path(a.output).exists(): raise SystemExit('REFUSED: reverse-dependency output already exists')
  p,e=load(a.portage),load(a.elf); rows=[]
  for source,rel in ((p,'portage-runtime'),(e,'elf-needed')):
   for x in source.get('records',source.get('edges',[])):
