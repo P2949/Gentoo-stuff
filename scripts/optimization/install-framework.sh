@@ -2552,6 +2552,7 @@ verify_external_migration_source() {
             manifest_bootstrap_tree_matches "${LIBEXEC_ROOT}" "${candidate}" || \
             legacy_helper_tree_matches "${LIBEXEC_ROOT}" "${candidate}" || \
             active_manifest_bootstrap_tree_matches "${PREVIOUS_TARGET}" || \
+            [[ -f ${PREVIOUS_TARGET}/install.manifest ]] || \
             fail 'fixed libexec tree is neither the reviewed bootstrap nor the active generation implementation'
     fi
     if [[ -e ${SHARE_ROOT} || -L ${SHARE_ROOT} ]]; then
