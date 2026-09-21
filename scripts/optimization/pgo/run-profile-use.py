@@ -24,8 +24,15 @@ def main() -> int:
     if not vdb.is_dir(): raise SystemExit(f'REFUSED: exact CPV is not installed in VDB: {a.cpv}')
     repo=(vdb/'REPOSITORY').read_text().strip() if (vdb/'REPOSITORY').is_file() else (vdb/'repository').read_text().strip()
     if repo != a.repository: raise SystemExit(f'REFUSED: repository mismatch: live={repo}, expected={a.repository}')
-    ebuild=vdb/(pf+'.ebuild')
-    if not ebuild.is_file(): raise SystemExit('REFUSED: VDB ebuild identity is unavailable')
+    try:
+        import portage
+        porttree=portage.create_trees()['/']['porttree'].dbapi
+        live_repo=porttree.aux_get(a.cpv, ['repository'])[0]
+        ebuild=pathlib.Path(porttree.findname(a.cpv, myrepo=live_repo))
+    except Exception as exc:
+        raise SystemExit(f'REFUSED: cannot resolve exact Portage ebuild identity: {exc}')
+    if live_repo != a.repository: raise SystemExit(f'REFUSED: Portage repository mismatch: {live_repo}')
+    if not ebuild.is_file(): raise SystemExit('REFUSED: exact Portage ebuild is unavailable')
     digest=sha(ebuild)
     expected=ident.get('ebuild_sha256')
     if expected and digest != expected: raise SystemExit('REFUSED: ebuild SHA-256 differs from profile metadata')
