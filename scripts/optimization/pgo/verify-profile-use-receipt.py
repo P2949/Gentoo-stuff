@@ -21,7 +21,7 @@ def main() -> int:
             p=pathlib.Path(item['path'])
             if not p.is_absolute() or not p.is_file() or digest(p) != item['sha256']:
                 raise SystemExit(f'REFUSED: {key} artifact hash mismatch')
-        log_text=Path(r['log']['path']).read_text(errors='replace')
+        log_text=pathlib.Path(r['log']['path']).read_text(errors='replace')
         backend=r['backend']
         markers={
             'clang-ir': ('-fprofile-use', 'clang-ir-use'),
