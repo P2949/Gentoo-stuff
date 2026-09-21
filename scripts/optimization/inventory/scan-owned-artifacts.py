@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Create an exhaustive owned-artifact census from Portage CONTENTS."""
 import argparse,hashlib,json,os,stat
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
+from contents import parse_contents_line
 from concurrent.futures import ThreadPoolExecutor
 
 def inspect_path(item):
@@ -27,9 +30,10 @@ def main():
    if not os.path.isfile(c): continue
    owner=cat+'/'+pf
    for line in open(c,errors='replace'):
-    q=line.split()
-    if len(q)<2 or q[0] not in ('obj','sym'): continue
-    path=q[1]; key=(path,owner)
+    try: parsed=parse_contents_line(line)
+    except ValueError as exc: raise SystemExit(f'REFUSED: {c}: {exc}')
+    if parsed is None or parsed[0] not in ('obj','sym'): continue
+    path=parsed[1]; key=(path,owner)
     if key in seen: continue
     seen.add(key); items.append(key)
  workers=max(1,min(32,(os.cpu_count() or 1)*2))
