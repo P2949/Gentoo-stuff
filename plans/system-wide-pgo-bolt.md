@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Extended profile-use receipt v2 to bind and independently hash the exact validated profile manifest in addition to dispatcher, environment, metadata, profile, ebuild, log, and generation identities. The runner refuses dispatchers without a manifest; focused identity regression passes (commit `3a552c6`).
+
 - 2026-09-21: Current live baseline recheck: userspace-only `emerge --update --deep --newuse --with-bdeps=y @world` resolved with no pending merge operations; the read-only depclean assessment reports 1,307 installed packages, 1,285 required, and 22 removable candidates. Evidence is retained at `/var/lib/gentoo-optimization/reports/userspace-baseline-depclean-current-20260921.txt` (SHA-256 `252ad03d7da51f058f73f5a21e1b5458dbf2113b296a72916405e42af2667960`). No depclean mutation was executed, and no kernel/boot/EFI/initramfs/firmware package was touched.
 
 - 2026-09-21: Strengthened production profile-use consumption authority: `portage/bashrc` now requires metadata CPV, repository identity, active ebuild path, and active ebuild SHA-256 to match the package currently being compiled; profile-use receipts are write-once schema v2 artifacts with independently reopened hashes; carry-forward records require ordered package.env identity and have a separate verifier. Ordinary baseline maintenance no longer installs static profile-use dispatchers: CMake, doas, bzip2, lz4, and libgcrypt are explicitly optimization-off. Focused tests pass; commits `b6a6e4a`, `02631ec`, `5a61afb`, and `6608bdb` are pushed.
