@@ -8568,3 +8568,7 @@ The framework was republished through the root-owned installer with a narrowly C
 ### 2026-09-21 — source-highlight phase-hook retention retry
 
 The framework was republished with the CPV-bound ABI-retention policy carried through Portage's `pre_src_configure`, `pre_src_compile`, and `pre_src_install` hooks, preventing the generic de-instrumentation scrub from erasing the reconstructed package flags. The exact rebuild still failed closed at the exported-ABI guard. The subsequent census remains nonzero, so the de-instrumentation marker was retained and no profile wave was resumed.
+
+### 2026-09-21 — exact source-highlight cleanup policy overlap corrected
+
+The package-env policy validator found that the new exact CPV ABI-retention mapping overlapped the superseded broad `dev-util/source-highlight` rule. The broad rule was removed so the exact CPV policy is the sole effective mapping. The focused package-env policy suite then passed all 30 tests. A fresh `portable-complete` validation was started at the resulting source boundary; its main optimization unittest suite passed and its isolated recovery suite remains under verification.
