@@ -9,7 +9,7 @@ import argparse, hashlib, json
 from pathlib import Path
 
 REQUIRED = ('source_cpv','target_cpv','repository','ebuild_sha256',
-            'package_env','compiler','abi','target_triple','optimization_flags',
+            'package_env','package_env_content','build_controls','compiler','abi','target_triple','optimization_flags',
             'workload_revision','training_receipt','merge_evidence',
             'profile_sha256')
 

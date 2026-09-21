@@ -169,7 +169,16 @@ def main():
         f'GENTOO_OPT_MODE="{a.backend}-use"', 'GENTOO_OPT_ABI="amd64"', f'GENTOO_OPT_COMPILER_FAMILY="{"clang" if a.backend == "clang-ir" else "rust"}"',
         f'GENTOO_OPT_FINGERPRINT_FILE="{a.fingerprint_file}"', f'GENTOO_OPT_PROFILE_PATH="{profile}"',
         f'GENTOO_OPT_PROFILE_MANIFEST="{a.manifest.resolve()}"', f'GENTOO_OPT_PROFILE_METADATA="{a.metadata.resolve()}"', '' ])
-      rec={'schema_version':1,'cpv':a.cpv,'backend':a.backend,'generation':expected_generation,'fingerprint':lines['fingerprint'],'profile':str(profile),'manifest':str(a.manifest.resolve()),'metadata':str(a.metadata.resolve()),'fingerprint_file':str(a.fingerprint_file.resolve()),'state':'candidate-profile-use','sha256':''}
+      # Keep the published dispatcher self-contained: downstream transaction
+      # receipts must not have to guess the framework or compiler identity.
+      compiler_identity = meta.get('compiler') or {
+          'family': lines['compiler_family'],
+          'path': meta.get('compiler_path'),
+          'sha256': meta.get('compiler_sha256'),
+      }
+      if not compiler_identity:
+          raise SystemExit('REFUSED: canonical metadata lacks compiler identity')
+      rec={'schema_version':2,'cpv':a.cpv,'repository':a.repository,'ebuild_sha256':a.ebuild_sha256,'backend':a.backend,'generation':expected_generation,'framework':str(requested_framework),'framework_sha256':hashlib.sha256((requested_framework/'install.manifest').read_bytes()).hexdigest() if (requested_framework/'install.manifest').is_file() else None,'compiler':compiler_identity,'fingerprint':lines['fingerprint'],'profile':str(profile),'manifest':str(a.manifest.resolve()),'metadata':str(a.metadata.resolve()),'fingerprint_file':str(a.fingerprint_file.resolve()),'state':'candidate-profile-use','sha256':''}
       rec['sha256']=digest({k:v for k,v in rec.items() if k!='sha256'})
       write_new(a.output_env,env.encode()); write_new(a.output_record,(json.dumps(rec,sort_keys=True,indent=2)+'\n').encode())
     print(json.dumps({'cpv':a.cpv,'record_sha256':rec['sha256'],'env':str(a.output_env)}))
