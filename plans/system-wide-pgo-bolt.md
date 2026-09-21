@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Made `profile-identity-remediation-v1` publication write-once; an existing remediation artifact is now refused rather than overwritten. Python compilation passes; commit `e5a4ba0` pushed.
+
 - 2026-09-21: Added direct collector regression coverage: missing VDB `environment.bz2` is refused, while explicitly empty observed build controls remain valid. Focused test passes; commit `1b25781` pushed.
 
 - 2026-09-21: Corrected VDB fingerprint collection to fail closed when retained `environment.bz2` evidence is absent instead of silently manufacturing empty `EXTRA_ECONF`/`EXTRA_EMESON`/`EXTRA_ECMAKE` values; collector output is now write-once. Python compilation passes; commit `add9bd2` pushed.
