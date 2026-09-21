@@ -7921,3 +7921,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — boehm-gc clang-IR generation and profile-use
 
 `dev-libs/boehm-gc-8.2.12` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `77b8c0b70be16dce80d6f4bdc21b88bbe95e79e9e1d85d12e5871464f5c5b30e`, and dispatcher publication succeeded with record SHA-256 `009245966abd4f07e88e942cdc1dc8012f9bc2cb592af3c68741ea69e16a538d`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — date clang-IR generation and profile-use
+
+`dev-libs/date-3.0.3` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `ea6f8f6964862652bebc7130de02e03940916d9ac15da5bdf4a7277c6a163e15`, and dispatcher publication succeeded with record SHA-256 `94f0ec7b1259285ade9ac737483a03cb5a161426b009fa8c001f33cc4aa726b8`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
