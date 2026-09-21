@@ -7833,3 +7833,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — slurp workload terminal failure
 
 `gui-apps/slurp-1.5.0` completed authenticated Clang-IR generation, staged install, and install-QA, but the reviewed `/usr/bin/slurp` workload exited `1` in the noninteractive wave environment. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is preserved by the runner and requires a corrected deterministic fixture before retry.
+
+### 2026-09-21 — waybar clang-IR generation and profile-use
+
+`gui-apps/waybar-9999` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `2e2ddf57fc8ce26cd09ebb9af858fe7e11f95bb831a188cbe4ed3dea36b62e6e`, and dispatcher publication succeeded with record SHA-256 `805a5ffb586dadc4249c3dc2bc70b6e38441acda5b664556a09b7fe40a24d509`. The exact profile-use rebuild consumed the published profile, passed install-QA and ABI checks, and completed with `use_rc=0`. LLVM emitted non-fatal unprofiled-file warnings during compilation.
