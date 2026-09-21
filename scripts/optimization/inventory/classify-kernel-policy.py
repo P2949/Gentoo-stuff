@@ -22,7 +22,20 @@ def main():
     elif fields[0]=='sym' and len(fields)>=2 and FORBIDDEN.search(fields[1]): evidence.append(fields[1])
   # Locate the exact ebuild by CPV filename; source repositories are evidence,
   # not category policy.  Failure to locate it is explicit pending review.
-  matches=list(Path(a.ebuild_root).glob(f'*/{cat}/{item.get("pn",pf.split("-")[0])}/{item.get("ebuild","")}')) if item.get('ebuild') else []
+  if Path(a.output).exists(): raise SystemExit('REFUSED: kernel-policy output already exists')
+  pn=item.get('pn') or pf.rsplit('-',1)[0]
+  ebuild_name=item.get('ebuild') or (pf+'.ebuild')
+  repo_name=''
+  for marker in ('REPOSITORY','repository'):
+   marker_path=root/marker
+   if marker_path.is_file(): repo_name=marker_path.read_text(errors='replace').strip(); break
+  matches=[]
+  if repo_name:
+   candidate=Path(a.ebuild_root)/repo_name/cat/pn/ebuild_name
+   if candidate.is_file(): matches=[candidate]
+  if not matches:
+   matches=[x for x in Path(a.ebuild_root).glob(f'*/{cat}/{pn}/{ebuild_name}') if x.is_file()]
+  if len(matches)>1: raise SystemExit(f'REFUSED: exact repository/ebuild identity is ambiguous for {cpv}')
   text=''
   for candidate in matches:
    if candidate.is_file(): text=candidate.read_text(errors='replace'); break

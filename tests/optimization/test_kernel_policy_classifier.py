@@ -8,7 +8,7 @@ def main():
   subprocess.run(['python3',str(S),'--manifest',str(m),'--vdb',str(p/'vdb'),'--ebuild-root',str(p/'repos'),'--output',str(o)],check=True)
   assert json.loads(o.read_text())['records'][0]['state']=='userspace-transaction'
   (v/'CONTENTS').write_text('obj /boot/vmlinuz-test 1\n')
-  subprocess.run(['python3',str(S),'--manifest',str(m),'--vdb',str(p/'vdb'),'--ebuild-root',str(p/'repos'),'--output',str(o)],check=True)
-  assert json.loads(o.read_text())['records'][0]['state']=='kernel-policy-exclusion'
+  o2=p/'o2'; subprocess.run(['python3',str(S),'--manifest',str(m),'--vdb',str(p/'vdb'),'--ebuild-root',str(p/'repos'),'--output',str(o2)],check=True)
+  assert json.loads(o2.read_text())['records'][0]['state']=='kernel-policy-exclusion'
  print('PASS: kernel policy uses transaction evidence rather than category')
 if __name__=='__main__':main()
