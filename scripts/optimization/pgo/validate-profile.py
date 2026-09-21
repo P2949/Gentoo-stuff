@@ -1972,8 +1972,10 @@ def command_verify(arguments: argparse.Namespace) -> int:
 def add_produce_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--backend", choices=tuple(BACKEND_FAMILY), required=True)
     parser.add_argument("--cpv", required=True)
-    parser.add_argument("--repository", required=True)
-    parser.add_argument("--ebuild-sha256", required=True)
+    # Legacy fixture producers may omit source provenance; production
+    # publication rejects the explicit sentinel values before dispatch.
+    parser.add_argument("--repository", default="unknown")
+    parser.add_argument("--ebuild-sha256", default="0" * 64)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--fingerprint", required=True)
     parser.add_argument("--abi", required=True)
