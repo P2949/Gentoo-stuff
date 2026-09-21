@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Narrow retry of `dev-build/make-9999::local` with `-Wno-error=profile-instr-unprofiled` retained profile-use but still failed closed: one profile-out-of-date warning remained under `-Werror`, and `src/read.c` hit `-Wincompatible-pointer-types-discards-qualifiers`. No merge occurred. Report `/var/lib/gentoo-optimization/reports/phase3-make-profile-use-20260921-r1.log` SHA-256 `1bebf90bad8d1cdb61e1219d2c3d1850ed6498b1d9a165e6c86ef951d9f63b3e`.
+
 - 2026-09-21: Authenticated profile-use rebuild for `dev-build/make-9999::local` was attempted with fingerprint `3e3cf8bbacaa41e4bf50c83a0cb9688b72e7812228419ba3a25ae7d007db8ec3` and profile `/var/cache/gentoo-optimization/pgo/dev-build_make-9999.profdata`, but failed closed during compile because the package uses `-Werror` and Clang reported an unprofiled `arscan.c` warning as an error. No package merge occurred. Report `/var/lib/gentoo-optimization/reports/phase3-make-profile-use-20260921.log` SHA-256 `0b4934c8c7f9b19043b16a5fb386ab371864148805358f46bfe6427b5dad2b94`. This is a preserved failed attempt; no optimization success or BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-build/icmake-9.03.01-r1` using fingerprint `2bc059d31d45afab95da6f57209bd0eeea0295fa03dd3169a1627900e337f311` and profile `/var/cache/gentoo-optimization/pgo/dev-build_icmake-9.03.01-r1.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-icmake-profile-use-20260921.log` SHA-256 `51117ea4dde7501af3295e3c6043917067de32ba02d0602438e8aef40055f5ac`. This is `clang-ir-use` evidence only; no BOLT claim.
