@@ -1278,6 +1278,16 @@ gentoo_opt_strip_deinstrumentation_policy() {
     done
 }
 
+# package.env files are sourced after this bashrc.  Reapply the cleanup at
+# phase-hook boundaries so the exact off transaction cannot compile with a
+# generation's stale COMMON_FLAGS after Portage has reconstructed them.
+if [[ ${GENTOO_OPT_DEINSTRUMENT-} == 1 ||
+    -f /var/lib/gentoo-optimization/state/deinstrument.pending ]]; then
+    pre_src_configure() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_deinstrumentation_policy; }
+    pre_src_compile() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_deinstrumentation_policy; }
+    pre_src_install() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_deinstrumentation_policy; }
+fi
+
 gentoo_opt_require_go_single_main() {
     [[ ${GENTOO_OPT_GO_MAIN_COUNT-} == 1 ]] || {
         gentoo_opt_error 'generic Go PGO requires a proven single-main package'
