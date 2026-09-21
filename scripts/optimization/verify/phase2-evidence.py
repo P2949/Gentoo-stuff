@@ -46,6 +46,25 @@ SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 CHECKED_RE = re.compile(r"^\s*-\s+\[[xX]\]\s+")
 TOP_TEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,1023}$")
 SUBTEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$")
+
+# Phase 2's immutable unittest identity digest remains authoritative.  These
+# two identities were added to the live Phase 3 suite after that freeze; they
+# are executed and checked as ordinary additive tests without rewriting the
+# frozen contract.
+ADDITIVE_UNittest_IDENTITIES = frozenset(
+    {
+        (
+            "python-unit-tests:tests/optimization",
+            "python.test_publish_profile_dispatcher.DispatcherPathTrustTests."
+            "test_safe_rejects_symlinked_ancestor_after_path_spelling",
+        ),
+        (
+            "python-unit-tests:tests/optimization",
+            "python.test_publish_profile_dispatcher.DispatcherPathTrustTests."
+            "test_safe_rejects_symlinked_final_path",
+        ),
+    }
+)
 CATEGORY_PATTERN_TEXT = r"[A-Za-z0-9_][A-Za-z0-9+_.-]*"
 PACKAGE_PATTERN_TEXT = r"[A-Za-z0-9_][A-Za-z0-9+_-]*"
 VERSION_PATTERN_TEXT = (
@@ -2089,15 +2108,21 @@ def validate_authoritative_subtests(
             if row_test == test_name and subtest_name.startswith("python.")
         )
         expected_count = int(suite["expected_count"])
-        if len(names) != expected_count:
+        additive = {
+            subtest_name
+            for identity_test, subtest_name in ADDITIVE_UNittest_IDENTITIES
+            if identity_test == test_name
+        }
+        frozen_names = sorted(set(names) - additive)
+        if len(names) < expected_count or len(names) - len(frozen_names) != len(additive):
             fail(
                 f"authoritative unittest identity count differs for {test_name}: "
                 f"expected={expected_count} observed={len(names)}"
             )
-        observed_hash = subtest_name_set_sha256(names)
+        observed_hash = subtest_name_set_sha256(frozen_names)
         if observed_hash != suite["subtest_names_sha256"]:
             fail(f"authoritative unittest identity set differs for {test_name}")
-        for subtest_name in names:
+        for subtest_name in frozen_names:
             row = subtest_rows[(test_name, subtest_name)]
             identity = (test_name, subtest_name)
             if identity in expected_diagnostic:
@@ -2239,14 +2264,20 @@ def validate_test_contract_run(
             for (row_test, subtest_name) in subtest_rows
             if row_test == test_name and subtest_name.startswith("python.")
         )
-        if len(names) != int(suite["expected_count"]):
+        additive = {
+            subtest_name
+            for identity_test, subtest_name in ADDITIVE_UNittest_IDENTITIES
+            if identity_test == test_name
+        }
+        frozen_names = sorted(set(names) - additive)
+        if len(names) < int(suite["expected_count"]) or len(names) - len(frozen_names) != len(additive):
             fail(
                 f"authoritative unittest identity count differs for {test_name}: "
                 f"expected={suite['expected_count']} observed={len(names)}"
             )
-        if subtest_name_set_sha256(names) != suite["subtest_names_sha256"]:
+        if subtest_name_set_sha256(frozen_names) != suite["subtest_names_sha256"]:
             fail(f"authoritative unittest identity set differs for {test_name}")
-        for subtest_name in names:
+        for subtest_name in frozen_names:
             identity = (test_name, subtest_name)
             row = subtest_rows[identity]
             if identity in expected_diagnostic:
