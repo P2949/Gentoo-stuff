@@ -8564,3 +8564,7 @@ The installed `source-highlight` VDB environment was decoded and its recorded CF
 ### 2026-09-21 — CPV-bound ABI-retention de-instrumentation retry
 
 The framework was republished through the root-owned installer with a narrowly CPV-bound `source-highlight` ABI-retention path. It permits the package's reconstructed installed flags while still removing recorded LLVM profile-generation options and rejects the retention path for every other CPV. The exact rebuild again reached install-QA but the exported-ABI guard rejected the replacement. Shell syntax, Python compilation, and the focused profile-wave guard regression passed. The residual marker remains asserted; no guard bypass or profile wave is authorized.
+
+### 2026-09-21 — source-highlight phase-hook retention retry
+
+The framework was republished with the CPV-bound ABI-retention policy carried through Portage's `pre_src_configure`, `pre_src_compile`, and `pre_src_install` hooks, preventing the generic de-instrumentation scrub from erasing the reconstructed package flags. The exact rebuild still failed closed at the exported-ABI guard. The subsequent census remains nonzero, so the de-instrumentation marker was retained and no profile wave was resumed.
