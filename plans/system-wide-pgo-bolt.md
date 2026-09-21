@@ -8341,3 +8341,7 @@ With the fresh baseline generation active, an independent userspace update path 
 ### 2026-09-21 — eighth independent baseline userspace update
 
 `dev-python/filelock-4.0.1` was rebuilt and merged successfully under the active baseline generation. Install-QA completed; no PGO/BOLT claim was made.
+
+### 2026-09-21 — compiled baseline userspace update
+
+`app-accessibility/at-spi2-core-2.60.7` was rebuilt for both 32-bit and 64-bit ABIs under the active baseline generation and merged successfully through install-QA. Existing non-ELF optimization-record `ldconfig` warnings recurred but did not affect admission. This is baseline update evidence only; no PGO/BOLT claim is made.
