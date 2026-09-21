@@ -1561,6 +1561,7 @@ rust-generate|rust-use|go-use) ;;
         ${GENTOO_OPT_PROFILE_MAP_READY:-0} != 1 &&
         ${GENTOO_OPT_BOLT_GCC_READY:-0} != 1 ]]; then
         gentoo_opt_strip_inherited_clang_profile_flags
+        gentoo_opt_strip_deinstrumentation_policy
         return 0
     fi
     if [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 &&
