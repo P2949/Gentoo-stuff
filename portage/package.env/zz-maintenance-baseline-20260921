@@ -1,0 +1,7 @@
+# Baseline-update maintenance identities. These exact packages are rebuilt
+# without PGO/BOLT policy while preserving ordinary Portage install-QA and
+# exported-ABI enforcement. They must be reclassified for the final generation.
+=app-shells/bash-9999 optimization/optimization-off.conf
+=media-libs/libde265-1.1.3 optimization/optimization-off.conf
+=media-libs/libmediainfo-26.05 optimization/optimization-off.conf
+=media-video/mediainfo-26.05 optimization/optimization-off.conf
