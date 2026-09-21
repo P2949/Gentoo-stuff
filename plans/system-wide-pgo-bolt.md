@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/xxhash-0.8.3-r2` using fingerprint `c43b349b0320b559b81947abd685637bcbfe028573e25029597aebd8f2353b6e` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_xxhash-0.8.3-r2.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-xxhash-profile-use-20260921.log` SHA-256 `de7f8c0f8fac87bbbac37102938c017265de036256a6ca3abbc6c0f1067efd4b`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/snowball-stemmer-3.1.1` using fingerprint `d776d2142283ed85e1ca987c6214429892d9c8e03d0877461abb3de571d328de` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_snowball-stemmer-3.1.1.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-snowball-stemmer-profile-use-20260921.log` SHA-256 `69b7a49fa0c10ef7265edc647a93189ce0c5039642f609f54d23fd8979f69caf`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/popt-1.19-r1` using fingerprint `8e2b956b1bbbd9d56c88e15d3a05f7d25828550c6e23f40baa3a83402a09d6f3` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_popt-1.19-r1.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-popt-profile-use-20260921.log` SHA-256 `bb443a8b0f37d567aaaf0c65037c9d65316cbe19706b9c6bccc7fe231a5129a5`. This is `clang-ir-use` evidence only; no BOLT claim.
