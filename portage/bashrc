@@ -23,6 +23,16 @@ if [[ ${GENTOO_OPT_MODE-} == off ]]; then
     unset GENTOO_OPT_FRAMEWORK_TARGET
 fi
 
+# Root-owned baseline recovery may need to replace an installed package whose
+# saved VDB environment still requests an older generation.  This explicit
+# administrative marker is separate from package.env so it cannot be shadowed
+# by that saved environment; it forces a non-instrumented transaction and
+# discards the stale generation/profile selectors before framework binding.
+if [[ ${GENTOO_OPT_DEINSTRUMENT-} == 1 ]]; then
+    export GENTOO_OPT_MODE=off
+    unset GENTOO_OPT_FRAMEWORK_TARGET GENTOO_OPT_PROFILE_PATH
+fi
+
 # Instrumented package programs may run during install/QA and inherit the
 # compiler runtime destination.  Administrative Portage helpers must never
 # create raw profiles in the caller's tree; workload execution assigns its
