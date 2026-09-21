@@ -8433,3 +8433,7 @@ The CMake feature-check implementation treats any warning emitted by a try-compi
 ### 2026-09-21 — exact-generation bzip2 profile-use rebuild completed
 
 `app-arch/bzip2-1.0.8-r5` was retrained under the restored generation with a fresh exact fingerprint and Clang IR profile. The generation wave completed despite the known non-ELF optimization-record `ldconfig` diagnostics; install-QA admitted the package. The profile was merged, validated, and published with repository `gentoo` and ebuild SHA-256 `8f74cccebb279651ee908b2ae02ccc5d624329d9030d274564126cfae54cbfa7`. The exact runner then completed `=app-arch/bzip2-1.0.8-r5::gentoo`, and independent receipt verification passed at `/var/lib/gentoo-optimization/reports/phase3-bzip2-profile-use-restored-receipt.json`. This is Clang IR profile-use evidence only; no BOLT claim is made.
+
+### 2026-09-21 — exact-generation lz4 profile-use rebuild completed
+
+`app-arch/lz4-1.10.0-r1` completed the restored-generation Clang IR generation wave and passed install-QA despite the known non-ELF optimization-record `ldconfig` diagnostics. Its fresh profile was merged and published with repository `gentoo` and ebuild SHA-256 `4dca36b02d098b92bbe29577d60aff2b189938be75c6ce52aba4f443495f3baa`. The exact runner then completed `=app-arch/lz4-1.10.0-r1::gentoo`; independent receipt verification passed at `/var/lib/gentoo-optimization/reports/phase3-lz4-profile-use-restored-receipt.json`. This is Clang IR profile-use evidence only; no BOLT claim is made.
