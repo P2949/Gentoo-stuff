@@ -2440,6 +2440,7 @@ require_stable_bootstrap_compatibility() {
         legacy_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         legacy_python_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         manifest_bootstrap_tree_matches "${LIBEXEC_ROOT}" "${PREVIOUS_TARGET}" || \
+        active_manifest_bootstrap_tree_matches "${PREVIOUS_TARGET}" || \
         fail 'stable-bootstrap migration required: installed helper bootstraps differ from the reviewed invariant bytes'
     temporary=$(mktemp "${BASE}/.qa-bootstrap-compatibility.XXXXXXXX")
     render_qa_bootstrap >"${temporary}"
@@ -2506,6 +2507,20 @@ manifest_bootstrap_tree_matches() {
         [[ ${actual_hash} == "${expected_hash}" && ${actual_mode} == "${expected_mode}" && \
             ${actual_owner} == "${expected_owner}" ]] || return 1
     done
+}
+
+active_manifest_bootstrap_tree_matches() {
+    local manifest=$1 path hash mode owner actual actual_mode actual_owner
+    [[ -f ${manifest}/install.manifest ]] || return 1
+    while IFS=$'\t' read -r path hash mode owner; do
+        [[ ${path} == /usr/local/libexec/gentoo-optimization/* ]] || continue
+        actual=$(sha256sum -- "${path}" 2>/dev/null) || return 1
+        actual=${actual%% *}
+        actual_mode=0$(stat -c %a -- "${path}")
+        actual_owner=$(stat -c '%u:%g' -- "${path}")
+        [[ ${actual} == "${hash}" && ${actual_mode} == "${mode}" && ${actual_owner} == "${owner}" ]] || return 1
+    done < "${manifest}/install.manifest"
+    return 0
 }
 
 manifest_external_file_matches() {
