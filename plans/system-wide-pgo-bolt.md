@@ -7962,6 +7962,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `dev-libs/rocm-comgr-7.2.0` completed the authenticated generation transaction and its receipt passed independent verification, but LLVM 22 profile merging failed because the collected raw profile set contained an invalid or unreadable `.profraw` payload. No validated profile, dispatcher publication, or profile-use deployment was admitted. The raw payloads and receipt are retained for forensic diagnosis.
 
+### 2026-09-21 — Phase 3 coverage audit checkpoint
+
+The regenerated Phase 3 coverage audit completed with `coverage_pass=true` for 538 authoritative packages and 16,727 authoritative ELF records. Package lane coverage and ELF classification coverage are complete (`packages_missing_lane=0`, `elf_missing_classification=0`); the audit records 2,510 candidate safety records and preserves the remaining safety-state counts for the next profile/BOLT frontier. The report is retained at `/tmp/derived-20260920/coverage-final.json` with SHA-256 `026ac88f23029adf8f3039bb95bea2410ded909ff9352fdc4d5f5e6e8c22018e`.
+
 ### 2026-09-21 — rocdbgapi profile merge terminal failure
 
 `dev-libs/rocdbgapi-7.2.0` completed the authenticated generation transaction and its receipt passed independent verification, but LLVM 22 profile merging failed because the collected raw profile set contained an invalid/unreadable profraw payload. No validated profile, dispatcher publication, or profile-use deployment was admitted. The raw payloads and receipt are retained for forensic diagnosis.
