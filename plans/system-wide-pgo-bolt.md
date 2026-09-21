@@ -32,6 +32,8 @@
 
 - 2026-09-21: Extended the semantic state validator with an explicit package schema-v6 path carrying `mutation_policy {decision,triggers,evidence}`. Schema-v5 records remain accepted as legacy input, while v6 derives `source_rebuild.required` and kernel exclusion from the independent mutation decision and permits transaction-based exclusions without fabricating kernel components. Existing state regression coverage remains green (30 tests); commit `ab760dd` pushed.
 
+- 2026-09-21: Added a resumable generation scheduler that consumes package state and immutable attempt records, skips completed packages, preserves failed/unknown attempts, respects terminal exclusions, emits deterministic backend-aware bounded waves, and refuses to overwrite an existing wave. Scheduler integration coverage passes; commit `ab25cf0` pushed. It is implementation machinery only and is not authorized to run until a final generation authority exists.
+
 - 2026-09-21: Completed a fresh read-only live VDB inventory candidate after the userspace baseline check. Generation `phase3-live-baseline-check-20260921c` contains 1,307 exact package records, 684,772 owned paths, and 80,075 owned-directory records; inventory SHA-256 is `99029432a8a290033d6dc99b2469e894abbc7144777861ba534bfd70bf0ee728`. The write-once generator completed without unresolved-directory output. This remains candidate evidence until the strict framework installer accepts the exact generation/source boundary; no activation or package mutation occurred.
 
 - 2026-09-21: Made live inventory generation refuse an existing output path, preserving candidate/frozen inventory evidence across regeneration attempts. Python compilation passes; commit `7d35bb1` pushed.
