@@ -7954,6 +7954,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `x11-libs/gtk+-2.24.33-r3` completed authenticated Clang-IR generation, staged installation, and install-QA, but the reviewed workload `/usr/bin/i686-pc-linux-gnu-gtk-query-immodules-2.0` exited `1`. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is preserved by the runner output and requires a corrected deterministic fixture before retry.
 
+### 2026-09-21 — leancrypto generation fetch-stall terminal failure
+
+`dev-libs/leancrypto-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/smuellerDD/leancrypto` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/leancrypto-9999/temp/build.log`.
+
 ### 2026-09-21 — hyprlang generation fetch-stall terminal failure
 
 `dev-libs/hyprlang-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/hyprwm/Hyprlang.git` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/hyprlang-9999/temp/build.log`.
