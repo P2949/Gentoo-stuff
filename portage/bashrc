@@ -1205,6 +1205,32 @@ gentoo_opt_require_rust_target_isolation() {
     fi
 }
 
+# A profile destination is a transaction identity, not a reusable compiler
+# flag.  Long-lived shells and Cargo build environments can retain an older
+# -Cprofile-generate/-Cprofile-use flag even after the Portage dispatcher has
+# selected a new generation.  Rust then reports permission failures against
+# the old root-owned spool (often as default_<id>.profraw).  Remove inherited
+# profile flags before installing the authenticated mode's single flag.
+gentoo_opt_strip_inherited_rust_profile_flags() {
+    local variable value cleaned
+    for variable in RUSTFLAGS CARGO_BUILD_RUSTFLAGS; do
+        value=${!variable-}
+        [[ -n ${value} ]] || continue
+        cleaned=$(printf '%s\n' "${value}" | sed -E \
+            's#(^|[[:space:]])-C(profile-(generate|use))=[^[:space:]]+#\1#g')
+        printf -v "${variable}" '%s' "${cleaned}"
+        export "${variable?}"
+    done
+    # Cargo's encoded form uses ASCII unit separators between arguments.
+    value=${CARGO_ENCODED_RUSTFLAGS-}
+    if [[ -n ${value} ]]; then
+        cleaned=$(printf '%s' "${value}" | sed -E \
+            's#(^|\x1f)-C(profile-(generate|use))=[^\x1f]*#\1#g')
+        CARGO_ENCODED_RUSTFLAGS=${cleaned}
+        export CARGO_ENCODED_RUSTFLAGS
+    fi
+}
+
 gentoo_opt_require_go_single_main() {
     [[ ${GENTOO_OPT_GO_MAIN_COUNT-} == 1 ]] || {
         gentoo_opt_error 'generic Go PGO requires a proven single-main package'
@@ -1297,6 +1323,7 @@ gentoo_opt_apply_primary_mode() {
             ;;
         rust-generate)
             gentoo_opt_require_rust_target_isolation || return 1
+            gentoo_opt_strip_inherited_rust_profile_flags
             # Rust eclasses may execute the freshly instrumented helper during
             # compile/package phases (for example, to generate completions).
             # Those administrative invocations are not the reviewed workload;
@@ -1310,6 +1337,7 @@ gentoo_opt_apply_primary_mode() {
             ;;
         rust-use)
             gentoo_opt_require_rust_target_isolation || return 1
+            gentoo_opt_strip_inherited_rust_profile_flags
             gentoo_opt_append_flag_once RUSTFLAGS "-Cprofile-use=${GENTOO_OPT_PROFILE_PATH}"
             ;;
         go-use)

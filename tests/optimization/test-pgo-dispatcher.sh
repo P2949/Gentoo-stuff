@@ -570,9 +570,17 @@ case_rust_target_isolation() (
     export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-rust"
     export GENTOO_OPT_RUST_TARGET=x86_64-unknown-linux-gnu
-    RUSTFLAGS='-Copt-level=3'; FCFLAGS='fc'; FFLAGS='ff'
+    # A long-lived caller may retain an older generation's profile flag.  The
+    # dispatcher must replace it rather than silently reusing that destination.
+    RUSTFLAGS='-Copt-level=3 -Cprofile-generate=/var/tmp/stale-generation'
+    CARGO_BUILD_RUSTFLAGS='-Cprofile-use=/var/tmp/stale-use'
+    CARGO_ENCODED_RUSTFLAGS=$'-Copt-level=3\x1f-Cprofile-generate=/var/tmp/stale-encoded'
+    FCFLAGS='fc'; FFLAGS='ff'
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${RUSTFLAGS} == *"-Cprofile-generate=${GENTOO_OPT_PROFILE_PATH}"* ]]
+    [[ ${RUSTFLAGS} != *'/var/tmp/stale-generation'* ]]
+    [[ ${CARGO_BUILD_RUSTFLAGS} != *'/var/tmp/stale-use'* ]]
+    [[ ${CARGO_ENCODED_RUSTFLAGS} != *'/var/tmp/stale-encoded'* ]]
     [[ ${CARGO_BUILD_TARGET} == x86_64-unknown-linux-gnu ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
     assert_stage_readiness_absent
