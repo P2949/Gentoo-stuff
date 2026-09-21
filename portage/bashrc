@@ -482,6 +482,17 @@ gentoo_opt_trusted_root_executable() {
     gentoo_opt_trusted_root_path "$1" executable
 }
 
+gentoo_opt_trusted_compiler_alias() {
+    local alias=$1 target=$2 owner mode
+    [[ -L ${alias} && -x ${alias} ]] || return 1
+    [[ $(realpath -e -- "${alias}") == ${target} ]] || return 1
+    owner=$(stat -c %u -- "${alias}") || return 1
+    mode=$(stat -c %a -- "${alias}") || return 1
+    [[ ${owner} == 0 && ${mode} =~ ^[0-7]{3,4}$ ]] || return 1
+    (( (8#${mode} & 8#022) == 0 )) || return 1
+    gentoo_opt_trusted_root_executable "${target}"
+}
+
 gentoo_opt_path_is_below() {
     local path=$1 root=$2
     [[ ${path} == "${root}/"* ]]
@@ -875,7 +886,8 @@ gentoo_opt_detect_compiler_family() {
         }
         GENTOO_OPT_ACTIVE_CXX=${GENTOO_OPT_RESOLVED_TOOL}
         if ! gentoo_opt_fixture_override_allowed && \
-            ! gentoo_opt_trusted_root_executable "${GENTOO_OPT_ACTIVE_CXX}"; then
+            ! gentoo_opt_trusted_root_executable "${GENTOO_OPT_ACTIVE_CXX}" && \
+            ! gentoo_opt_trusted_compiler_alias "${GENTOO_OPT_ACTIVE_CXX}" "${cc_path}"; then
             gentoo_opt_error "active C++ compiler is not immutable through every root-owned ancestor: ${GENTOO_OPT_ACTIVE_CXX}"
             return 1
         fi
