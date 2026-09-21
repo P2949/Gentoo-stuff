@@ -7945,3 +7945,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — hyphen clang-IR generation and profile-use
 
 `dev-libs/hyphen-2.8.8-r2` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `4a2b94b35f04e9d7111761ef6d006f46d2fc97a0cf76c507e090725a7dbf6517`, and dispatcher publication succeeded with record SHA-256 `b7f437d63104161def2582142de8fbd645e28ca4a994730b4309edc26fe65fb6`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — hyprgraphics generation compile failure
+
+`dev-libs/hyprgraphics-0.5.1-r1` passed readiness, storage, dependency, source, patch, and CMake configuration gates, but authenticated Clang-IR generation failed during the test/example linker stage. `ld.lld` reported unresolved libc++ filesystem, exception, and shared ownership symbols including `std::__1::__fs::filesystem::directory_iterator`, `std::runtime_error`, and `std::__1::__shared_weak_count`, matching the active libc++/linker tuple incompatibility. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/hyprgraphics-0.5.1-r1/temp/build.log`.
