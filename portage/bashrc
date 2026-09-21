@@ -486,10 +486,11 @@ gentoo_opt_trusted_compiler_alias() {
     local alias=$1 target=$2 owner mode
     [[ -L ${alias} && -x ${alias} ]] || return 1
     [[ $(realpath -e -- "${alias}") == ${target} ]] || return 1
+    # Symlink mode bits are conventionally reported as 0777 and are not
+    # permission controls; enforce ownership on the alias and immutability
+    # through the canonical target's ancestor chain instead.
     owner=$(stat -c %u -- "${alias}") || return 1
-    mode=$(stat -c %a -- "${alias}") || return 1
-    [[ ${owner} == 0 && ${mode} =~ ^[0-7]{3,4}$ ]] || return 1
-    (( (8#${mode} & 8#022) == 0 )) || return 1
+    [[ ${owner} == 0 ]] || return 1
     gentoo_opt_trusted_root_executable "${target}"
 }
 
