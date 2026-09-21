@@ -152,6 +152,11 @@ printf '%s\n' '{"fixture":"inventory-proof"}' > "${TMP}/bolt-inventory-proof.jso
 export GENTOO_OPT_BOLT_INVENTORY_PROOF="${TMP}/bolt-inventory-proof.json"
 unset CFLAGS CXXFLAGS FCFLAGS FFLAGS LDFLAGS RUSTFLAGS GOFLAGS FEATURES \
     GENTOO_OPT_FRAMEWORK_TARGET
+# Generation fixtures model one exact Portage package.  The production
+# dispatcher requires this consume-time target binding; keep the fixture
+# explicit instead of relying on an unset CATEGORY/PF pair.
+export CATEGORY=app-test PF=phase2-pgo-use-fixture \
+    GENTOO_OPT_TARGET_CPV=app-test/phase2-pgo-use-fixture
 
 write_manifest_file() {
     local output=$1 backend=$2 family=$3 profile=$4 abi=${5:-amd64}
