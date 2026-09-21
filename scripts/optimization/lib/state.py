@@ -25,6 +25,8 @@ from typing import Any, Iterable, Mapping, NoReturn, Sequence
 
 
 SCHEMA_VERSION = 5
+LEGACY_PACKAGE_SCHEMA_VERSION = 5
+MUTATION_POLICY_PACKAGE_SCHEMA_VERSION = 6
 FINAL_SYSTEM_SCHEMA_VERSION = 2
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 FINGERPRINT_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -132,6 +134,7 @@ PACKAGE_KEYS = {
     "use_flags", "components", "source_rebuild", "graphs", "aggregate",
     "final_status", "resolution", "notes",
 }
+PACKAGE_KEYS_V6 = PACKAGE_KEYS | {"mutation_policy"}
 ARTIFACT_KEYS = {
     "schema_version", "record_type", "generation", "artifact_id", "owner",
     "kind", "format", "role", "installed_path", "canonical_path",
@@ -748,9 +751,12 @@ def _assert_lane(item: Mapping[str, Any], expected: Mapping[str, int], path: str
 
 
 def validate_package(record: Any) -> dict[str, Any]:
-    package = _object(record, "$", PACKAGE_KEYS)
-    if package["schema_version"] != SCHEMA_VERSION or package["record_type"] != "package":
-        _error("$", f"requires schema_version={SCHEMA_VERSION} and record_type=package")
+    if not isinstance(record, dict):
+        _error("$", "must be an object")
+    version = record.get("schema_version")
+    package = _object(record, "$", PACKAGE_KEYS_V6 if version == MUTATION_POLICY_PACKAGE_SCHEMA_VERSION else PACKAGE_KEYS)
+    if version not in {LEGACY_PACKAGE_SCHEMA_VERSION, MUTATION_POLICY_PACKAGE_SCHEMA_VERSION} or package["record_type"] != "package":
+        _error("$", f"requires schema_version={LEGACY_PACKAGE_SCHEMA_VERSION} or {MUTATION_POLICY_PACKAGE_SCHEMA_VERSION} and record_type=package")
     generation = _generation(package["generation"], "$.generation")
     identity = _object(package["identity"], "$.identity", {"cpv", "cp", "repository", "slot", "subslot"})
     _cp_cpv(identity["cp"], identity["cpv"], "$.identity")
@@ -816,7 +822,17 @@ def validate_package(record: Any) -> dict[str, Any]:
     actual_languages = sorted({language for component in components for language in component["languages"]})
     if languages != actual_languages:
         _error("$.languages", f"must exactly equal component language coverage {actual_languages}")
-    kernel_affected = any(component["component_kind"] == "kernel" for component in components)
+    if version == MUTATION_POLICY_PACKAGE_SCHEMA_VERSION:
+        mutation = _object(package["mutation_policy"], "$.mutation_policy", {"decision", "triggers", "evidence"})
+        decision = _enum(mutation["decision"], "$.mutation_policy.decision", {"userspace", "kernel-policy-exclusion"})
+        _sorted_strings(mutation["triggers"], "$.mutation_policy.triggers")
+        _evidence_list(mutation["evidence"], "$.mutation_policy.evidence")
+        kernel_affected = decision == "kernel-policy-exclusion"
+        if any(component["component_kind"] == "kernel" for component in components) and not kernel_affected:
+            _error("$.mutation_policy.decision", "kernel components require kernel-policy-exclusion")
+    else:
+        mutation = None
+        kernel_affected = any(component["component_kind"] == "kernel" for component in components)
     source_rebuild = _source_rebuild(
         package["source_rebuild"], "$.source_rebuild", generation["generation_id"],
         required=not kernel_affected,
@@ -2112,7 +2128,7 @@ def _verify_terminal_reason(record: Mapping[str, Any], *, observed_elf: bool | N
             package = record
             if code == "not-machine-code" and any(component["abi"] != "none" for component in package["components"]):
                 _error(f"collection.terminal[{package['identity']['cpv']}]", "not-machine-code contradicts component ABIs")
-            if code == "kernel-policy-exclusion" and not any(component["component_kind"] == "kernel" for component in package["components"]):
+            if code == "kernel-policy-exclusion" and record.get("schema_version") != MUTATION_POLICY_PACKAGE_SCHEMA_VERSION and not any(component["component_kind"] == "kernel" for component in package["components"]):
                 _error(f"collection.terminal[{package['identity']['cpv']}]", "kernel exclusion lacks a kernel component")
 
 
