@@ -14,7 +14,10 @@ def main():
   elif x['class']!='ELF64' or x.get('machine') != 'Advanced Micro Devices X86-64': reason='unsupported-architecture'; state='not-applicable'
   elif x['type']=='REL (Relocatable file)': reason='relocatable-object'; state='not-applicable'
   elif x['type'] not in ('DYN (Shared object file)','DYN (Position-Independent Executable file)','EXEC (Executable file)'): reason='unsupported-elf-type'; state='not-applicable'
-  elif not x['build_id']: reason='missing-build-id'; state='pending-eligibility-review'
+  # BOLT readiness and deployment bind the input identity to a GNU build ID.
+  # An artifact without one cannot become a valid BOLT input through further
+  # review, so record the fail-closed terminal exclusion explicitly.
+  elif not x['build_id']: reason='missing-build-id'; state='not-applicable'
   else: reason='requires-section-and-safety-review'; state='candidate-bolt-eligible'
   rows.append({'owner_cpv':x['owner_cpv'],'path':x['path'],'state':state,'reason_code':reason})
  out={'record_type':'elf-eligibility-classification','schema_version':1,'source_sha256':d['sha256'],'records':sorted(rows,key=lambda x:x['path'])}; out['counts']=dict(collections.Counter(x['state'] for x in rows)); out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest(); json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(json.dumps(out['counts'],sort_keys=True))
