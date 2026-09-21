@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,json,os,signal,subprocess,sys,time,hashlib,tempfile,atexit,shutil
+import argparse,json,os,signal,subprocess,sys,time,hashlib,tempfile,atexit,shutil,re
 from pathlib import Path
 from profile_locks import profile_lock_hierarchy
 # The orchestration process itself must never emit package profile payloads.
@@ -12,6 +12,12 @@ os.environ["LLVM_PROFILE_FILE"] = "/dev/null"
 os.environ.pop("GENTOO_OPT_PROFILE_PATH", None)
 _active_attempt=None
 _attempt_root=None
+def _pretend_cpvs(output):
+ found=[]
+ for line in output.splitlines():
+  m=re.search(r'^\s*\[(?:ebuild|binary)\s+[^]]*\]\s+([^\s:]+/[^\s:]+)(?::[^\s]*)?::[^\s]+',line)
+  if m: found.append(m.group(1))
+ return sorted(set(found))
 def _write_attempt(record):
  path=os.path.join(_attempt_root,record['attempt_id']+'.json')
  subprocess.run(['doas','install','-d','-o','root','-g','root','-m','0750','--',_attempt_root],check=True)
@@ -80,9 +86,12 @@ def main():
    raise SystemExit('REFUSED: wave contains unsupported generation lanes: '+', '.join(sorted(set(unknown))))
   for item in w['packages']:
    probe_env=os.environ.copy(); probe_env['LLVM_PROFILE_FILE']='/dev/null'
-   probe=subprocess.run(['emerge','--pretend','--quiet','--nodeps','='+item['cpv']],env=probe_env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
+   probe=subprocess.run(['emerge','--pretend','--verbose','='+item['cpv']],env=probe_env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
    if probe.returncode != 0:
     raise SystemExit(f"REFUSED: exact CPV is not currently buildable: {item['cpv']}: {probe.stdout.strip()[-400:]}")
+   proposed=_pretend_cpvs(probe.stdout)
+   if proposed != [item['cpv']]:
+    raise SystemExit(f"REFUSED: resolver proposed {proposed!r} for {item['cpv']}; dependency/co-build reconciliation is required")
   # Pin the transaction to the exact installed identities recorded by the
   # readiness manifest.  Portage requires the explicit =CPV atom form when a
   # revision-qualified CPV is supplied; bare CPVs are category/package names,

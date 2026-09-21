@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """Fail-closed exact-CPV profile-use transaction runner."""
 from __future__ import annotations
-import argparse, hashlib, json, os, pathlib, subprocess, sys, time
+import argparse, hashlib, json, os, pathlib, subprocess, sys, time, re
+
+def pretend_cpvs(output):
+    found=[]
+    for line in output.splitlines():
+        m=re.search(r'^\s*\[(?:ebuild|binary)\s+[^]]*\]\s+([^\s:]+/[^\s:]+)(?::[^\s]*)?::[^\s]+', line)
+        if m: found.append(m.group(1))
+    return sorted(set(found))
 
 def sha(path: pathlib.Path) -> str:
     h=hashlib.sha256();
@@ -54,11 +61,15 @@ def main() -> int:
     if not dispatcher_env.is_file() or dispatcher_env.is_symlink():
         raise SystemExit(f'REFUSED: exact dispatcher environment is unavailable: {dispatcher_env}')
     run_env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null','GENTOO_OPT_TARGET_CPV':a.cpv,'GENTOO_OPT_RUNNER_DISPATCHER_ENV':str(dispatcher_env.resolve())}
-    with a.log.open('w') as out:
-        pretend=subprocess.run(['emerge','--oneshot','--pretend','--verbose','--nodeps',atom],stdout=out,stderr=subprocess.STDOUT,env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null','GENTOO_OPT_TARGET_CPV':a.cpv})
+    with a.log.open('w+') as out:
+        pretend=subprocess.run(['emerge','--oneshot','--pretend','--verbose',atom],stdout=out,stderr=subprocess.STDOUT,env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null','GENTOO_OPT_TARGET_CPV':a.cpv})
         if pretend.returncode != 0:
             raise SystemExit('REFUSED: exact Portage pretend did not resolve the requested atom')
         out.flush()
+        out.seek(0)
+        proposed=pretend_cpvs(out.read())
+        if proposed != [a.cpv]:
+            raise SystemExit(f'REFUSED: resolver proposed {proposed!r} for {a.cpv}; dependency/co-build reconciliation is required')
         proc=subprocess.run(['emerge','--oneshot','--nodeps','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env=run_env)
     def vdb_text(name):
         p=vdb/name
