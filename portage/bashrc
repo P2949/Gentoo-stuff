@@ -852,8 +852,14 @@ gentoo_opt_detect_compiler_family() {
         # driver so libtool CXX links retain libc++/libstdc++ ABI support.
         if [[ ${requested} == clang && ${GENTOO_OPT_RESOLVED_TOOL##*/} == clang-* ]]; then
             cxx_candidate=${GENTOO_OPT_RESOLVED_TOOL%/*}/clang++-${GENTOO_OPT_RESOLVED_TOOL##*clang-}
-            if [[ -x ${cxx_candidate} ]] && ! gentoo_opt_is_compiler_wrapper "${cxx_candidate}"; then
-                GENTOO_OPT_RESOLVED_TOOL=$(realpath -e -- "${cxx_candidate}") || return 1
+            # LLVM installs clang++-N as a symlink to clang-N.  It is a
+            # compiler-driver alias, not an untrusted wrapper; preserve the
+            # argv[0] spelling so C++ runtime linking is enabled.
+            if [[ -x ${cxx_candidate} ]] && {
+                ! gentoo_opt_is_compiler_wrapper "${cxx_candidate}" ||
+                [[ $(realpath -e -- "${cxx_candidate}") == ${cc_path} ]]
+            }; then
+                GENTOO_OPT_RESOLVED_TOOL=${cxx_candidate}
             fi
         fi
         version=$("${GENTOO_OPT_RESOLVED_TOOL}" --version 2>&1) || {
