@@ -88,6 +88,8 @@ PROFILE_IDENTITY_FIELDS = {
     "fingerprint",
     "abi",
     "compiler_family",
+    "repository",
+    "ebuild_sha256",
 }
 COMPILER_IDENTITY_FIELDS = {
     "path",
@@ -1457,6 +1459,9 @@ def validate_arguments(arguments: argparse.Namespace) -> None:
         fail("CPV is malformed")
     require_hex64(arguments.compiler_sha256, "compiler SHA-256")
     require_hex64(arguments.profile_tool_sha256, "profile-tool SHA-256")
+    if not re.fullmatch(r"[A-Za-z0-9_.+-]+", arguments.repository):
+        fail("repository is malformed")
+    require_hex64(arguments.ebuild_sha256, "ebuild SHA-256")
     require_positive_integer(arguments.compiler_major, "compiler major")
     require_positive_integer(arguments.profile_tool_major, "profile-tool major")
 
@@ -1663,6 +1668,8 @@ def perform_validation(
             "fingerprint": arguments.fingerprint,
             "abi": arguments.abi,
             "compiler_family": arguments.compiler_family,
+            "repository": arguments.repository,
+            "ebuild_sha256": arguments.ebuild_sha256,
         },
         "compiler": compiler,
         "profile_tool": profile_tool,
@@ -1821,6 +1828,8 @@ def arguments_from_metadata(
         fingerprint=fingerprint,
         abi=abi,
         compiler_family=compiler_family,
+        repository=metadata["profile"].get("repository"),
+        ebuild_sha256=metadata["profile"].get("ebuild_sha256"),
         compiler=compiler_path,
         compiler_sha256=compiler_sha256,
         compiler_major=compiler_major,
@@ -1963,6 +1972,8 @@ def command_verify(arguments: argparse.Namespace) -> int:
 def add_produce_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--backend", choices=tuple(BACKEND_FAMILY), required=True)
     parser.add_argument("--cpv", required=True)
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--ebuild-sha256", required=True)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--fingerprint", required=True)
     parser.add_argument("--abi", required=True)
