@@ -8397,3 +8397,7 @@ A fresh live VDB inventory reproduced 1,307 packages, 684,772 owned paths, and 8
 ### 2026-09-21 — framework re-publication after validation checkpoint
 
 The root-owned installer was rerun after the package-env policy and validation checkpoint. Publication completed with the expected instrumented-helper `default.profraw` permission diagnostics and the root-owned install manifest passed. An independent strict `--check` against the current 1,307-CPV frozen inventory then passed. The earlier source-snapshot mismatch refusal was preserved as evidence and resolved by publishing the committed source boundary; no out-of-band framework mutation was used.
+
+### 2026-09-21 — reviewed absent-directory candidate rejected by strict inventory gate
+
+The zero-unresolved candidate using `/var/lib/gentoo-optimization/reports/frozen-directory-review-20260921-missing.json` was reopened through `reconcile-state.py`. It correctly refused the four absent directories because null uid/gid/mode values are not authoritative inventory records (`owned_directories[49778].mode: must be an integer >= 0`). The candidate SHA and review remain preserved as non-authorizing evidence; no directory was recreated and no generation authority changed. The live authoritative generation therefore still has four unresolved directory identities requiring a valid state repair or a reviewed existing-directory observation.
