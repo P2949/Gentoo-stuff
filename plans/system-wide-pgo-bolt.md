@@ -7781,3 +7781,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — hyprwayland-scanner workload terminal failure
 
 `dev-util/hyprwayland-scanner-9999` completed authenticated Clang-IR generation and install-QA, but its reviewed `/usr/bin/hyprwayland-scanner` workload exited `1`. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is preserved by the runner and requires a corrected deterministic fixture before retry.
+
+### 2026-09-21 — hipcc clang-IR generation and profile-use
+
+`dev-util/hipcc-7.2.0` completed the authenticated Clang-IR generation wave for both `hipcc` and `hipconfig`; receipt verification passed, LLVM merge evidence digest was `644d69a247e222dc91db1e54fb7c5f38c2cbbfd2afc100e106a2af59c0bc6093`, and dispatcher publication succeeded with record SHA-256 `71c248d778df0a89338bae809b9d908eaa98fe5de198803574a377cd98fdd00a`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
