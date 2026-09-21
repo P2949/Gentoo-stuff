@@ -20,11 +20,13 @@ def main() -> int:
     record=json.loads(a.dispatcher.read_text())
     if record.get('cpv') != a.cpv: raise SystemExit('REFUSED: dispatcher CPV differs from requested exact atom')
     metadata=pathlib.Path(record['metadata'])
+    manifest=pathlib.Path(record.get('manifest',''))
     payload=json.loads(metadata.read_text()); ident=payload.get('profile',{})
     profile=pathlib.Path(str(ident.get('path') or record['profile']))
     if ident.get('cpv') != a.cpv: raise SystemExit('REFUSED: metadata CPV differs from requested exact atom')
     if ident.get('repository') != a.repository:
         raise SystemExit('REFUSED: metadata repository differs from requested exact atom')
+    if not manifest.is_file(): raise SystemExit('REFUSED: dispatcher lacks exact profile manifest')
     if not isinstance(ident.get('ebuild_sha256'), str) or len(ident['ebuild_sha256']) != 64:
         raise SystemExit('REFUSED: profile metadata lacks exact ebuild identity')
     cat,pf=a.cpv.split('/',1); vdb=pathlib.Path('/var/db/pkg')/cat/pf
@@ -58,7 +60,7 @@ def main() -> int:
         proc=subprocess.run(['emerge','--oneshot','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env=run_env)
     post=(vdb/'BUILD_TIME').read_text().strip() if (vdb/'BUILD_TIME').is_file() else ''
     finished=time.time()
-    receipt={'schema_version':2,'cpv':a.cpv,'repository':repo,'ebuild':{'path':str(ebuild.resolve()),'sha256':digest},'dispatcher':{'path':str(a.dispatcher.resolve()),'sha256':sha(a.dispatcher)},'dispatcher_env':{'path':str(dispatcher_env.resolve()),'sha256':sha(dispatcher_env)},'metadata':{'path':str(metadata.resolve()),'sha256':sha(metadata)},'profile':{'path':str(profile.resolve()),'sha256':sha(profile)},'generation':record.get('generation'),'framework':record.get('framework'),'fingerprint':ident.get('fingerprint'),'compiler':record.get('compiler'),'backend':record.get('backend'),'mode':'profile-use','exit_status':proc.returncode,'log':{'path':str(a.log.resolve()),'sha256':sha(a.log)},'started_epoch':started,'finished_epoch':finished,'post_vdb':{'path':str(vdb.resolve()),'build_time':post}}
+    receipt={'schema_version':2,'cpv':a.cpv,'repository':repo,'ebuild':{'path':str(ebuild.resolve()),'sha256':digest},'dispatcher':{'path':str(a.dispatcher.resolve()),'sha256':sha(a.dispatcher)},'dispatcher_env':{'path':str(dispatcher_env.resolve()),'sha256':sha(dispatcher_env)},'manifest':{'path':str(manifest.resolve()),'sha256':sha(manifest)},'metadata':{'path':str(metadata.resolve()),'sha256':sha(metadata)},'profile':{'path':str(profile.resolve()),'sha256':sha(profile)},'generation':record.get('generation'),'framework':record.get('framework'),'fingerprint':ident.get('fingerprint') or record.get('fingerprint'),'compiler':record.get('compiler'),'backend':record.get('backend'),'mode':'profile-use','exit_status':proc.returncode,'log':{'path':str(a.log.resolve()),'sha256':sha(a.log)},'started_epoch':started,'finished_epoch':finished,'post_vdb':{'path':str(vdb.resolve()),'build_time':post}}
     a.receipt.parent.mkdir(parents=True,exist_ok=True)
     payload=json.dumps(receipt,sort_keys=True,indent=2)+'\n'
     fd=os.open(a.receipt,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)

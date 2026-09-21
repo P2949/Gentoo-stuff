@@ -13,10 +13,10 @@ def main() -> int:
     ap=argparse.ArgumentParser(); ap.add_argument('--receipt',type=pathlib.Path,required=True); a=ap.parse_args()
     r=json.loads(a.receipt.read_text())
     if r.get('schema_version') == 2:
-        required={'schema_version','cpv','repository','ebuild','dispatcher','dispatcher_env','metadata','profile','generation','framework','fingerprint','compiler','backend','mode','exit_status','log','started_epoch','finished_epoch','post_vdb'}
+        required={'schema_version','cpv','repository','ebuild','dispatcher','dispatcher_env','manifest','metadata','profile','generation','framework','fingerprint','compiler','backend','mode','exit_status','log','started_epoch','finished_epoch','post_vdb'}
         if set(r) != required: raise SystemExit('REFUSED: invalid receipt schema')
         if r['mode'] != 'profile-use' or r['exit_status'] != 0: raise SystemExit('REFUSED: transaction did not succeed')
-        for key in ('ebuild','dispatcher','dispatcher_env','metadata','profile','log'):
+        for key in ('ebuild','dispatcher','dispatcher_env','manifest','metadata','profile','log'):
             item=r[key]
             p=pathlib.Path(item['path'])
             if not p.is_absolute() or not p.is_file() or digest(p) != item['sha256']:
