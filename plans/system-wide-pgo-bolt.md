@@ -8357,3 +8357,7 @@ The dedicated profile-use runner now requires canonical metadata to carry the re
 ### 2026-09-21 — exact runner publication checkpoint
 
 The strengthened `run-profile-use.py` was published through the root-owned framework installer after focused CPV/repository-drift regression and Python compilation checks passed. The resulting framework `framework-5e917382dc03da08769afc8389004550f190539fbe4cd9554f8495fde7e27557` passed an independent strict installer check against the current 1,307-CPV inventory. The production runner now refuses missing or mismatched metadata repository/ebuild identity and performs an exact Portage pretend before any source transaction.
+
+### 2026-09-21 — old dispatcher remediation boundary verified
+
+The newly published exact profile-use runner was exercised against the retained `app-admin/doas-6.8.2` dispatcher. Its historical metadata predates the corrected repository/ebuild identity fields, so the runner refused before Portage pretend with `metadata repository differs from requested exact atom`; no package transaction started. This confirms old-generation profiles are not silently accepted under the stronger consume-time contract and must pass explicit identity remediation or retraining before reuse.
