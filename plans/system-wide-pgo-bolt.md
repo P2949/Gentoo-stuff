@@ -7889,3 +7889,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — muParser generation compile failure
 
 `dev-cpp/muParser-2.3.5` passed readiness, storage, dependency, source, patch, and CMake configuration gates, but authenticated Clang-IR generation failed during the example linker stage. `ld.lld` reported unresolved libc++ `std::__1` locale and stream symbols, matching the active libc++/linker tuple incompatibility seen in other C++ packages. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-cpp/muParser-2.3.5/temp/build.log`.
+
+### 2026-09-21 — sdbus-c++ clang-IR generation and profile-use
+
+`dev-cpp/sdbus-c++-2.3.1` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `a2c146304dab4c42f82dc11848c3f2642216a388288eaebbc41a8447f4cc6519`, and dispatcher publication succeeded with record SHA-256 `cdd6af58da58ae489af1285724d4cf84760152c5808ff58073652d7455117d7d`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
