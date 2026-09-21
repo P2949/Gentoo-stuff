@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/hidapi-0.15.0` using fingerprint `815f062d8386529b5f1ac23182d4a13f948b356c5199d9e06976b391082d5422` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_hidapi-0.15.0.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-hidapi-profile-use-20260921.log` has SHA-256 `4bd516a446986ca15b29888923028c03203a8e824a062263bc175673b5681302`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/fribidi-1.0.16` using fingerprint `72740f1dab0111b3f75a5aeba366535c5a5a7ddce631e4dfe520099ec7e31dd` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_fribidi-1.0.16.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-fribidi-profile-use-20260921.log` has SHA-256 `712360fd0cc8ae6467d2845a40bfd8f92d01c859b7f96a8edf10b6218f4f5c45`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild of `dev-libs/flatbuffers-25.12.19` reached install-QA but was correctly rejected by the fail-closed exported-ABI guard: `libflatbuffers.so.25.12.19` changed exported ABI from 212 to 207 and lost five symbols (`data`, `empty_blob`, `empty_fixed_vector`, `empty_string`, `empty_vector`). No package merge occurred. Report `/var/lib/gentoo-optimization/reports/phase3-flatbuffers-profile-use-20260921.log` has SHA-256 `faa5735d5b31691b9cb7dfb4abeadb5db27abec1ffa00503697af1971634481a`. This is preserved as a terminal failed attempt; no BOLT claim.
