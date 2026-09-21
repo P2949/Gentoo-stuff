@@ -9,11 +9,15 @@ def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--portage',required=True); ap.add_argument('--elf',required=True); ap.add_argument('--output',required=True); a=ap.parse_args()
  if Path(a.output).exists(): raise SystemExit('REFUSED: reverse-dependency output already exists')
  p,e=load(a.portage),load(a.elf); rows=[]
- for source,rel in ((p,'portage-runtime'),(e,'elf-needed')):
-  for x in source.get('records',source.get('edges',[])):
+ sources=((p,'records','portage-runtime'),(p,'build_records','portage-build'),(e,'records','elf-needed'),(e,'edges','elf-needed'))
+ for source,key,rel in sources:
+  if key not in source: continue
+  for x in source.get(key,[]):
    provider=x.get('provider_cpv') or x.get('provider'); consumer=x.get('consumer_cpv') or x.get('consumer')
    if provider and consumer and provider != consumer:
     row={'provider_cpv':provider,'consumer_cpv':consumer,'relationship':x.get('relationship',rel),'evidence':x.get('evidence',{})}
+    if row['relationship'] not in {'portage-runtime','portage-build','elf-needed'}:
+     raise SystemExit(f"REFUSED: unsupported reverse-dependency relationship: {row['relationship']}")
     # Preserve an authenticated workload binding when the upstream source has one;
     # dropping it here makes the planner appear to have no representative consumer.
     if isinstance(x.get('workload'),dict): row['workload']=x['workload']

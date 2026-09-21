@@ -16,9 +16,11 @@ def main():
   assert json.loads(out2.read_text())['records'][0]['state']=='consumer-workload-ready'
   # Integration regression: the canonical graph generator must preserve the
   # authenticated binding before the planner consumes the graph.
-  (p/'portage').write_text(json.dumps({'records':[edge]})); (p/'elfsrc').write_text(json.dumps({'records':[]})); graph=p/'graph'
+  build_edge={'provider_cpv':'dev-libs/a-1','consumer_cpv':'dev-util/build-1','relationship':'portage-build'}
+  (p/'portage').write_text(json.dumps({'records':[edge],'build_records':[build_edge]})); (p/'elfsrc').write_text(json.dumps({'records':[]})); graph=p/'graph'
   subprocess.run(['python3',str(GRAPH),'--portage',str(p/'portage'),'--elf',str(p/'elfsrc'),'--output',str(graph)],check=True)
   generated=json.loads(graph.read_text()); assert generated['records'][0]['workload']['counter_proof']=='receipt.json'
+  assert any(r['relationship']=='portage-build' for r in generated['records'])
   out3=p/'o3'; subprocess.run(['python3',str(SCRIPT),'--workloads',str(p/'w'),'--elf',str(p/'e'),'--reverse-dependencies',str(graph),'--output',str(out3)],check=True)
   assert json.loads(out3.read_text())['records'][0]['state']=='consumer-workload-ready'
  print('PASS: consumer readiness requires representative workload binding')
