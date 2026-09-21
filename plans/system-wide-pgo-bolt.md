@@ -7821,3 +7821,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — zenity clang-IR generation and profile-use
 
 `gnome-extra/zenity-4.2.2` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `256fdbd76c7aee289fb75564ad02c6effb469965b3af2dec6882f8963e98ef26`, and dispatcher publication succeeded with record SHA-256 `0abd655d22bfa72cb9f154a947baf5e15366985a08d5254710e07a5013386c61`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — fuzzel clang-IR generation and profile-use
+
+`gui-apps/fuzzel-1.14.1` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `4f045d15d1c54d5197d343699344abb96b72690419fd1fb37f47b39093c5da53`, and dispatcher publication succeeded with record SHA-256 `7ecb99a7abb83ba7d0904c5da0d90ca8ac612dc156c514592a56dfcfa70c59f3`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
