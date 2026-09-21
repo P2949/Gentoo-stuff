@@ -1013,7 +1013,7 @@ gentoo_opt_read_profile_manifest() {
 gentoo_opt_validate_profile_format() {
     local expected_validator validator metadata compiler_identity
     local metadata_compiler metadata_compiler_sha256 active_compiler_sha256
-    local metadata_cpv observed_cpv
+    local metadata_cpv observed_cpv metadata_repository metadata_ebuild_sha256 observed_repository observed_ebuild_sha256
     expected_validator=/usr/local/libexec/gentoo-optimization/pgo/validate-profile.py
     validator=${GENTOO_OPT_PROFILE_VALIDATOR:-${expected_validator}}
     if [[ ${validator} != "${expected_validator}" ]]; then
@@ -1062,6 +1062,33 @@ gentoo_opt_validate_profile_format() {
         }
         [[ ${metadata_cpv} == "${observed_cpv}" ]] || {
             gentoo_opt_error "profile CPV mismatch: metadata=${metadata_cpv}, observed=${observed_cpv}"; return 1;
+        }
+        metadata_repository=$(/usr/bin/jq -er '.profile.repository // empty' -- "${metadata}") || {
+            gentoo_opt_error 'cannot extract exact profile repository from validation metadata'; return 1;
+        }
+        [[ ${metadata_repository} =~ ^[A-Za-z0-9_.+-]+$ ]] || {
+            gentoo_opt_error 'profile repository identity is malformed'; return 1;
+        }
+        observed_repository=${GENTOO_OPT_PORTAGE_REPOSITORY:-${PORTAGE_REPO_NAME:-${PORTAGE_REPOSITORY:-${REPOSITORY-}}}}
+        [[ -n ${observed_repository} ]] || {
+            gentoo_opt_error 'profile-use requires Portage repository identity'; return 1;
+        }
+        [[ ${metadata_repository} == "${observed_repository}" ]] || {
+            gentoo_opt_error "profile repository mismatch: metadata=${metadata_repository}, observed=${observed_repository}"; return 1;
+        }
+        metadata_ebuild_sha256=$(/usr/bin/jq -er '.profile.ebuild_sha256 // empty' -- "${metadata}") || {
+            gentoo_opt_error 'cannot extract exact profile ebuild identity'; return 1;
+        }
+        [[ ${metadata_ebuild_sha256} =~ ^[0-9a-f]{64}$ ]] || {
+            gentoo_opt_error 'profile ebuild SHA-256 is malformed'; return 1;
+        }
+        [[ -n ${EBUILD-} && -f ${EBUILD} && ! -L ${EBUILD} ]] || {
+            gentoo_opt_error 'profile-use requires the exact active ebuild path'; return 1;
+        }
+        observed_ebuild_sha256=$(sha256sum -- "${EBUILD}") || return 1
+        observed_ebuild_sha256=${observed_ebuild_sha256%% *}
+        [[ ${metadata_ebuild_sha256} == "${observed_ebuild_sha256}" ]] || {
+            gentoo_opt_error 'profile ebuild hash differs from the ebuild being compiled'; return 1;
         }
     fi
 
