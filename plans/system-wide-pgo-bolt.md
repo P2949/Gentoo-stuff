@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libsigc++-2.12.1:2` using fingerprint `153faf0ee34411034ec1fff0c76dfbd5da543d64fd48ef6df060e79bea01c2fd` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libsigc++-2.12.1.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libsigc++-2.12.1-profile-use-20260921.log` SHA-256 `a9b3d67ace4a8ff13e2adbc139d2b236f4f8ec1ba2c67570a26e10f37021e8ae`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libpfm-9999` using fingerprint `427a74ca354ca911ea9bbb13f667438c4bad7c811f3b95eb2595fc09181f7695` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libpfm-9999.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libpfm-profile-use-20260921.log` SHA-256 `60718c594e5848adf04aadef9a26d55ff317269ee6acda22231c578eca30fdf8`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libpcre2-10.48` using fingerprint `8e513cd60f65055b035466760d4551540e2be6baeee98b464d11089e6ef79007` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libpcre2-10.48.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libpcre2-profile-use-20260921.log` SHA-256 `3e98ac02ea40b894c07de12351190fd8bc02faf8922d3cafbca0a8b04bc2cb75`. This is `clang-ir-use` evidence only; no BOLT claim.
