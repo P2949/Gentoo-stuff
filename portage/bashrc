@@ -1608,8 +1608,16 @@ rust-generate|rust-use|go-use) ;;
         gentoo_opt_disable_ccache
         gentoo_opt_detect_compiler_family "${GENTOO_OPT_COMPILER_FAMILY}" || return 1
         GENTOO_OPT_ACTIVE_BACKEND=none
-        gentoo_opt_strip_inherited_clang_profile_flags
-        gentoo_opt_strip_deinstrumentation_policy
+        if [[ ${GENTOO_OPT_DEINSTRUMENT_RETAIN_ABI:-0} == 1 ]]; then
+            [[ ${CATEGORY-}/${PF-} == dev-util/source-highlight-3.1.9-r2 &&
+                ${GENTOO_OPT_DEINSTRUMENT:-0} == 1 ]] || {
+                gentoo_opt_error 'ABI-retention de-instrumentation policy is not authorized for this CPV'; return 1;
+            }
+            gentoo_opt_strip_inherited_clang_profile_flags
+        else
+            gentoo_opt_strip_inherited_clang_profile_flags
+            gentoo_opt_strip_deinstrumentation_policy
+        fi
     fi
     gentoo_opt_apply_readiness_flags || return 1
     gentoo_opt_log_selection || return 1
