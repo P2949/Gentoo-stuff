@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Re-synchronized the Gentoo repository successfully (OpenPGP verification passed); the optional `steam-overlay` fetch then stalled and was terminated at the established bounded fetch window without affecting the completed Gentoo sync. A fresh read-only `@world` assessment reports 86 candidate operations, including kernel lifecycle packages and the unresolved SPIR-V/graphics/Hyprland closure; no mixed transaction was executed. Read-only depclean reports 21 removable packages, with the optimization userspace set protecting the in-scope installed state. Root-owned evidence: `/var/lib/gentoo-optimization/reports/userspace-baseline-update-20260921.txt` (SHA-256 `4b30d0c33d1f14237a9d0569706ce5ee48385fb88c14708c7c003e888d556115`) and `userspace-baseline-depclean-20260921.txt` (SHA-256 `c1b105d21c32284c4dc9825d69a04826e376e386a7f81074952decabd74464b8`).
+
 - 2026-09-21: Tightened consumer-workload planning so a reverse dependency alone is not `consumer-workload-ready`. Readiness now requires a bound consumer executable/service/test, deterministic recipe, expected provider artifacts, and a counter-emission proof reference; unbound edges remain pending. Regression coverage passes in `tests/optimization/test_consumer_workload_planner.py` (commit `8a40a2c`).
 
 - 2026-09-21: Broadened package-level PGO applicability beyond the installed ELF-owner set: archives, native objects, bitcode, GPU/device artifacts, and explicit native markers remain in PGO classification even when no conventional ELF is owned. This preserves separate package PGO and artifact BOLT obligations; focused profile identity, coverage, carry-forward, dispatcher, and Python compilation validation passed.
