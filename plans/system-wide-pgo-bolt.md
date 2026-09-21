@@ -8560,3 +8560,7 @@ The authenticated de-instrumentation batch processed `dev-util/source-highlight-
 ### 2026-09-21 — source-highlight ABI-preserving flag reconstruction retry
 
 The installed `source-highlight` VDB environment was decoded and its recorded CFLAGS/CXXFLAGS/LDFLAGS were reconstructed into a package-local de-instrumentation policy with only LLVM profile-generation options removed. The exact CPV was retried with the ABI guard active; it reproduced the same exported-symbol loss. The remediation is therefore insufficient and remains an unresolved package ABI case. The two census `instrumentation-unknown-origin` records are firmware `.mbn` files where `readelf` exits 1; they are not instrumented ELF records and remain separate metadata failures.
+
+### 2026-09-21 — CPV-bound ABI-retention de-instrumentation retry
+
+The framework was republished through the root-owned installer with a narrowly CPV-bound `source-highlight` ABI-retention path. It permits the package's reconstructed installed flags while still removing recorded LLVM profile-generation options and rejects the retention path for every other CPV. The exact rebuild again reached install-QA but the exported-ABI guard rejected the replacement. Shell syntax, Python compilation, and the focused profile-wave guard regression passed. The residual marker remains asserted; no guard bypass or profile wave is authorized.
