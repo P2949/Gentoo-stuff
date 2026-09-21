@@ -7853,3 +7853,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — hyprwire generation compile failure
 
 `gui-libs/hyprwire-9999` passed readiness, storage, dependency, and configuration gates, but its authenticated Clang-IR generation compile failed while linking `hyprwire-scanner`. `ld.lld` reported unresolved libc++ `std::__1` symbols, indicating the package's scanner link configuration is incompatible with the active libc++/linker tuple under this generation. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/gui-libs/hyprwire-9999/temp/build.log`.
+
+### 2026-09-21 — xdg-desktop-portal-hyprland generation compile failure
+
+`gui-libs/xdg-desktop-portal-hyprland-9999` passed readiness, storage, dependency, and CMake configuration gates, but its authenticated Clang-IR generation compile failed at the final linker stage. `ld.lld` reported unresolved C++ runtime and exception symbols including `__cxa_guard_release`, `__cxa_allocate_exception`, and `std::length_error`, matching the active libc++/linker tuple incompatibility seen in the Hyprwire scanner. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/gui-libs/xdg-desktop-portal-hyprland-9999/temp/build.log`.
