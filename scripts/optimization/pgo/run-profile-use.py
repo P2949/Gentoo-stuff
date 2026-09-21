@@ -51,13 +51,13 @@ def main() -> int:
     dispatcher_env = a.dispatcher.with_suffix('.env')
     if not dispatcher_env.is_file() or dispatcher_env.is_symlink():
         raise SystemExit(f'REFUSED: exact dispatcher environment is unavailable: {dispatcher_env}')
-    run_env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null','GENTOO_OPT_RUNNER_DISPATCHER_ENV':str(dispatcher_env.resolve())}
+    run_env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null','GENTOO_OPT_TARGET_CPV':a.cpv,'GENTOO_OPT_RUNNER_DISPATCHER_ENV':str(dispatcher_env.resolve())}
     with a.log.open('w') as out:
-        pretend=subprocess.run(['emerge','--oneshot','--pretend','--verbose',atom],stdout=out,stderr=subprocess.STDOUT,env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null'})
+        pretend=subprocess.run(['emerge','--oneshot','--pretend','--verbose','--nodeps',atom],stdout=out,stderr=subprocess.STDOUT,env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null','GENTOO_OPT_TARGET_CPV':a.cpv})
         if pretend.returncode != 0:
             raise SystemExit('REFUSED: exact Portage pretend did not resolve the requested atom')
         out.flush()
-        proc=subprocess.run(['emerge','--oneshot','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env=run_env)
+        proc=subprocess.run(['emerge','--oneshot','--nodeps','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env=run_env)
     def vdb_text(name):
         p=vdb/name
         return p.read_text(errors='replace').strip() if p.is_file() else None

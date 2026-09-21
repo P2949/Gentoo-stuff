@@ -78,7 +78,7 @@ def main():
    raise SystemExit('REFUSED: wave contains unsupported generation lanes: '+', '.join(sorted(set(unknown))))
   for item in w['packages']:
    probe_env=os.environ.copy(); probe_env['LLVM_PROFILE_FILE']='/dev/null'
-   probe=subprocess.run(['emerge','--pretend','--quiet','='+item['cpv']],env=probe_env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
+   probe=subprocess.run(['emerge','--pretend','--quiet','--nodeps','='+item['cpv']],env=probe_env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
    if probe.returncode != 0:
     raise SystemExit(f"REFUSED: exact CPV is not currently buildable: {item['cpv']}: {probe.stdout.strip()[-400:]}")
   # Pin the transaction to the exact installed identities recorded by the
@@ -108,7 +108,7 @@ def main():
    # The framework requires root-owned generation spools with a sticky,
    # writable leaf so the unprivileged Portage sandbox can emit profiles.
    subprocess.run(['doas','install','-d','-o','root','-g','root','-m','01777',profile_path],check=True)
-   env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256'];env['GENTOO_OPT_REPLACEMENT_TRANSACTION']='1';env['GENTOO_OPT_ABI']='amd64';env['GENTOO_OPT_MODE']=lane_modes[item['lane']];env['GENTOO_OPT_PROFILE_PATH']=profile_path
+   env=os.environ.copy();env['GENTOO_OPT_WAVE_ID']=w['sha256'];env['GENTOO_OPT_REPLACEMENT_TRANSACTION']='1';env['GENTOO_OPT_TARGET_CPV']=cpv;env['GENTOO_OPT_ABI']='amd64';env['GENTOO_OPT_MODE']=lane_modes[item['lane']];env['GENTOO_OPT_PROFILE_PATH']=profile_path
    if item['lane']=='pgo-rust':
     rustv=subprocess.run(['rustc','-vV'],text=True,stdout=subprocess.PIPE,check=True).stdout
     target=next((line.split(':',1)[1].strip() for line in rustv.splitlines() if line.startswith('host:')),None)
@@ -130,7 +130,7 @@ def main():
      env['GENTOO_OPT_RUST_NO_LTO']='1'
      env['CFLAGS']='-O2 -pipe'; env['CXXFLAGS']='-O2 -pipe'; env['LDFLAGS']='-Wl,--as-needed'
     env['GENTOO_OPT_RUST_TARGET']=target
-   command=['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_MODE='+env['GENTOO_OPT_MODE'],'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path]
+   command=['doas','env','GENTOO_OPT_ABI='+env['GENTOO_OPT_ABI'],'GENTOO_OPT_MODE='+env['GENTOO_OPT_MODE'],'GENTOO_OPT_TARGET_CPV='+cpv,'GENTOO_OPT_WAVE_ID='+env['GENTOO_OPT_WAVE_ID'],'GENTOO_OPT_REPLACEMENT_TRANSACTION=1','GENTOO_OPT_FINGERPRINT_FILE='+fingerprint_file,'GENTOO_OPT_PROFILE_PATH='+profile_path]
    if 'GENTOO_OPT_RUST_TARGET' in env: command.append('GENTOO_OPT_RUST_TARGET='+env['GENTOO_OPT_RUST_TARGET'])
    if item['lane']=='pgo-rust' and env.get('GENTOO_OPT_RUST_NO_LTO')=='1':
     # Mixed Rust/C packages (for example librsvg) link Rust-instrumented
@@ -157,7 +157,7 @@ def main():
    # the runtime variable.  Grant only that destination, never a source:path
    # mapping from the repository (which can inject /default.profraw into ED).
    command.append('SANDBOX_WRITE=/usr/share/elt-patches/default.profraw')
-   command += ['emerge','--oneshot','--buildpkg','='+cpv]
+   command += ['emerge','--oneshot','--nodeps','--buildpkg','='+cpv]
    # Do not expose the package profile path to the privileged doas helper
    # itself.  The path is supplied explicitly in the doas environment for
    # emerge; inheriting it in doas makes the instrumented helper write its own

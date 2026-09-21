@@ -1163,7 +1163,8 @@ gentoo_opt_prepare_profile_path() {
     gentoo_opt_safe_absolute_path "${GENTOO_OPT_PROFILE_PATH-}" || {
         gentoo_opt_error 'active PGO mode requires a safe absolute GENTOO_OPT_PROFILE_PATH'; return 1;
     }
-    if gentoo_opt_profile_is_generate_mode "${mode}"; then
+    if gentoo_opt_profile_is_generate_mode "${mode}" &&
+        [[ -n ${CATEGORY-} || -n ${PF-} || -n ${GENTOO_OPT_TARGET_CPV-} ]]; then
         gentoo_opt_require_generation_spool "${GENTOO_OPT_PROFILE_PATH}" || return 1
         gentoo_opt_allow_sandbox_write "${GENTOO_OPT_PROFILE_PATH}" || return 1
         return 0
@@ -1237,7 +1238,7 @@ gentoo_opt_strip_inherited_rust_profile_flags() {
         value=${!variable-}
         [[ -n ${value} ]] || continue
         cleaned=$(printf '%s\n' "${value}" | sed -E \
-            's#(^|[[:space:]])-C(profile-(generate|use))=[^[:space:]]+#\1#g')
+            's#(^|[[:space:]])-C[[:space:]]*(profile-(generate|use))([=][^[:space:]]+)?#\1#g')
         printf -v "${variable}" '%s' "${cleaned}"
         export "${variable?}"
     done
@@ -1245,7 +1246,7 @@ gentoo_opt_strip_inherited_rust_profile_flags() {
     value=${CARGO_ENCODED_RUSTFLAGS-}
     if [[ -n ${value} ]]; then
         cleaned=$(printf '%s' "${value}" | sed -E \
-            's#(^|\x1f)-C(profile-(generate|use))=[^\x1f]*#\1#g')
+            's#(^|\x1f)-C[[:space:]]*(profile-(generate|use))([=][^\x1f]*)?#\1#g')
         CARGO_ENCODED_RUSTFLAGS=${cleaned}
         export CARGO_ENCODED_RUSTFLAGS
     fi
@@ -1257,7 +1258,7 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
         value=${!variable-}
         [[ -n ${value} ]] || continue
         cleaned=$(printf '%s\n' "${value}" | sed -E \
-            's#(^|[[:space:]])(-fprofile-(instr-)?(generate|use|sample-use))(=[^[:space:]]+)?#\1#g; s#(^|[[:space:]])-Xclang=-fprofile-instrument-path=[^[:space:]]+#\1#g')
+            's#(^|[[:space:]])(-fprofile-(instr-)?(generate|use|sample-use)|-fprofile-arcs|-ftest-coverage|--coverage)(=[^[:space:]]+)?#\1#g; s#(^|[[:space:]])-Xclang=-fprofile-instrument-path=[^[:space:]]+#\1#g')
         printf -v "${variable}" '%s' "${cleaned}"
         export "${variable?}"
     done
@@ -1517,6 +1518,14 @@ rust-generate|rust-use|go-use) ;;
             ;;
         *) gentoo_opt_error "unknown GENTOO_OPT_MODE: ${mode}"; return 1 ;;
     esac
+    if gentoo_opt_profile_is_generate_mode "${mode}"; then
+        local observed_target_cpv="${CATEGORY-}/${PF-}"
+        [[ -n ${GENTOO_OPT_TARGET_CPV-} &&
+            ${GENTOO_OPT_TARGET_CPV} == "${observed_target_cpv}" ]] || {
+            gentoo_opt_error "profile generation target CPV mismatch: target=${GENTOO_OPT_TARGET_CPV-<unset>} observed=${observed_target_cpv}"
+            return 1
+        }
+    fi
     # Scrub stale Rust profile destinations even when this invocation resolves
     # to the ordinary/off lane and returns before primary-mode setup.
     gentoo_opt_strip_inherited_rust_profile_flags
@@ -1537,6 +1546,7 @@ rust-generate|rust-use|go-use) ;;
     if [[ ${mode} == off && ${bolt_stage} == off &&
         ${GENTOO_OPT_PROFILE_MAP_READY:-0} != 1 &&
         ${GENTOO_OPT_BOLT_GCC_READY:-0} != 1 ]]; then
+        gentoo_opt_strip_inherited_clang_profile_flags
         return 0
     fi
     if [[ ${GENTOO_OPT_BOLT_GCC_READY:-0} == 1 &&
