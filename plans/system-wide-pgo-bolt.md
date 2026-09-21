@@ -7789,3 +7789,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — pkgconf generation fetch stall
 
 `dev-util/pkgconf-9999` passed storage preflight and readiness, but its authenticated generation transaction stalled during the live Git fetch for `https://github.com/pkgconf/pkgconf` with the HTTPS helper idle for several minutes and no build progress. The fetch child was terminated to end the abnormal stall cleanly; no generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. This is preserved as a fetch-stall terminal attempt pending a deterministic source snapshot or corrected fetch path.
+
+### 2026-09-21 — ragel profile-use ABI failure
+
+`dev-util/ragel-7.0.4-r3` completed authenticated Clang-IR generation, receipt verification, profile merge, manifest validation, and dispatcher publication, but its exact `clang-ir-use` rebuild was rejected by install-QA ABI guard. `libragel.so.0` changed from 258 to 249 exported symbols and lost ten existing C++ exports. No profile-use deployment was admitted; the full retained log is `/tmp/dev-util_ragel-7.0.4-r3-profile-use.log` and the Portage build log records the ABI diff. The generated profile remains preserved for package-specific ABI remediation.
