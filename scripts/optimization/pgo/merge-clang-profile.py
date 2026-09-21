@@ -15,6 +15,17 @@ def tool_identity(path):
  return {'realpath': real, 'sha256': sha(path),
          'version_stdout': version.stdout, 'version_stderr': version.stderr}
 
+def merge_profiles(tool, inputs, output):
+    """Merge one bounded input vector and turn tool rejection into a terminal refusal."""
+    try:
+        return subprocess.run(
+            [tool, 'merge', '-sparse', *[str(p) for p in inputs], '-o', str(output)],
+            check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or 'llvm-profdata rejected the raw payloads').strip()
+        raise SystemExit(f'REFUSED: llvm-profdata rejected raw profile payloads: {detail}') from None
+
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--backend',choices=('clang-ir','rust'),default='clang-ir'); ap.add_argument('--receipt',required=True); ap.add_argument('--package',required=True); ap.add_argument('--raw-root',required=True); ap.add_argument('--llvm-profdata',required=True); ap.add_argument('--output',required=True); ap.add_argument('--evidence',required=True); ap.add_argument('--generation-id',required=True); ap.add_argument('--inventory-id',required=True); ap.add_argument('--inventory-sha256',required=True); a=ap.parse_args()
  receipt=json.load(open(a.receipt)); expected={'generation_id':a.generation_id,'inventory_id':a.inventory_id,'inventory_sha256':a.inventory_sha256}
@@ -57,15 +68,8 @@ def main():
    os.close(chunk_fd)
    os.unlink(chunk_path)
    chunk_outputs.append(chunk_path)
-   subprocess.run(
-    [a.llvm_profdata, 'merge', '-sparse',
-     *(str(p) for p in listed[index:index + chunk_size]), '-o', chunk_path],
-    check=True,
-   )
-  subprocess.run(
-   [a.llvm_profdata, 'merge', '-sparse', *chunk_outputs, '-o', tmpout],
-   check=True,
-  )
+   merge_profiles(a.llvm_profdata, listed[index:index + chunk_size], chunk_path)
+  merge_profiles(a.llvm_profdata, chunk_outputs, tmpout)
   for chunk_path in chunk_outputs:
    try:
     os.unlink(chunk_path)

@@ -7972,6 +7972,8 @@ The workload-coverage verifier was then run against the regenerated ebuild-corre
 
 After the evidence commits advanced the repository source identity, the root-owned framework was republished from the reviewed Sway/Mesa generation and activated as `/var/lib/gentoo-optimization/framework-c878d5eb723e7fa1523452d259085d92aeca62ed8e2561521e5bbf25072e0234`. The independent production `--check` then passed, including the root-owned framework-install manifest verification. No package transaction was authorized by this check.
 
+The profile merger now converts `llvm-profdata` rejection into a structured terminal `REFUSED` result while preserving the original tool diagnostic. This keeps incompatible raw-profile versions fail-closed without leaking a traceback; the focused refusal fixture, Python compilation, and ABI-hook regression suite passed.
+
 ### 2026-09-21 — rocdbgapi profile merge terminal failure
 
 `dev-libs/rocdbgapi-7.2.0` completed the authenticated generation transaction and its receipt passed independent verification, but LLVM 22 profile merging failed because the collected raw profile set contained an invalid/unreadable profraw payload. No validated profile, dispatcher publication, or profile-use deployment was admitted. The raw payloads and receipt are retained for forensic diagnosis.
