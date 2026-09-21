@@ -6,6 +6,7 @@ never walks arbitrary filesystem paths.  ELF sections are the primary signal
 so stripped symbols cannot hide an instrumented binary.
 """
 import argparse
+import bz2
 import hashlib
 import json
 import os
@@ -82,6 +83,47 @@ def vdb_identity(cpv: str, vdb: Path) -> dict:
     return values
 
 
+def decode_environment(vdb: Path, cpv: str) -> dict:
+    """Decode only scalar VDB environment assignments; never source shell."""
+    category, pf = cpv.split("/", 1)
+    path = vdb / category / pf / "environment.bz2"
+    if not path.is_file():
+        return {}
+    try:
+        text = bz2.decompress(path.read_bytes()).decode("utf-8", errors="replace")
+    except (OSError, EOFError, ValueError) as exc:
+        return {"_decode_error": str(exc)}
+    wanted = {
+        "CFLAGS", "CXXFLAGS", "LDFLAGS", "RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS",
+        "CARGO_ENCODED_RUSTFLAGS", "GENTOO_OPT_MODE", "GENTOO_OPT_PROFILE_PATH",
+        "GENTOO_OPT_WAVE_ID", "GENTOO_OPT_TARGET_CPV", "GENTOO_OPT_GENERATION",
+    }
+    values = {}
+    for line in text.splitlines():
+        match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+        if match and match.group(1) in wanted:
+            value = match.group(2).strip()
+            if len(value) >= 2 and value[0] == value[-1] == '"':
+                value = value[1:-1]
+            values[match.group(1)] = value
+    return values
+
+
+def classify_origin(environment: dict) -> str:
+    mode = environment.get("GENTOO_OPT_MODE", "")
+    profile = environment.get("GENTOO_OPT_PROFILE_PATH", "")
+    target = environment.get("GENTOO_OPT_TARGET_CPV", "")
+    if mode.endswith("-generate"):
+        if target and profile and target not in profile:
+            return "leaked-generation-cobuild"
+        return "authorized-wave-target-residue"
+    if mode in {"off", "", "unset"} and any("profile" in environment.get(k, "").lower() for k in ("CFLAGS", "CXXFLAGS", "RUSTFLAGS")):
+        return "stale-profile-environment"
+    if profile:
+        return "unknown-origin"
+    return "pre-framework-or-unknown"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--census", required=True)
@@ -100,6 +142,8 @@ def main() -> None:
     for record in records:
         if record["instrumentation_markers"]:
             record["vdb_identity"] = vdb_identity(record["owner_cpv"], vdb)
+            record["environment"] = decode_environment(vdb, record["owner_cpv"])
+            record["origin"] = classify_origin(record["environment"])
     records.sort(key=lambda row: (row["path"], row["owner_cpv"]))
     out = {
         "record_type": "live-instrumentation-census",
