@@ -7968,7 +7968,7 @@ The regenerated Phase 3 coverage audit completed with `coverage_pass=true` for 5
 
 Follow-up inspection of the retained `rocm-comgr` raw payload isolated the merge failure to one file, whose LLVM 22 diagnostic is `raw profile version mismatch: ... version = 11; expected version = 10`. The payload remains retained; it is not silently discarded or treated as a valid LLVM 22 profile.
 
-The workload-coverage verifier was then run against the regenerated ebuild-correlated lanes and recipe manifest. It passed with 538 PGO-lane packages, 288 recipe-ready records, and 250 explicit workload exclusions; overlap, missing, and extra sets were all zero. The derived exclusion input and audit are retained under `/tmp/derived-20260920/`, with audit SHA-256 `fefb9eb4d673ec63eedf362d9f2bdf4fce7e9c2cb96d14c17ca1feaa9be2f548`.
+The workload-coverage verifier was then run against the regenerated ebuild-correlated lanes and recipe manifest. It passed with 538 PGO-lane packages, 288 recipe-ready records, and 250 explicit workload exclusions; overlap, missing, and extra sets were all zero. The derived exclusion input and audit are retained under `/tmp/derived-20260920/`; the audit file SHA-256 is `6d42d0eb4c9ef2ba27c625d0250cbabf52624193e7c8e5eb0f5aaf101f27aa56`.
 
 ### 2026-09-21 — rocdbgapi profile merge terminal failure
 
