@@ -8325,3 +8325,7 @@ With the fresh baseline generation active, an independent userspace update path 
 ### 2026-09-21 — fourth independent baseline userspace update
 
 `dev-python/pyproject-hooks-1.3.3` was rebuilt and merged successfully under the active baseline generation. Install-QA completed without optimization claims.
+
+### 2026-09-21 — fifth independent baseline userspace update
+
+`dev-python/poetry-core-2.5.0` was rebuilt and merged successfully under the active baseline generation with install-QA completion and no PGO/BOLT claim.
