@@ -14,6 +14,15 @@
 export LLVM_PROFILE_FILE=/dev/null
 unset __LLVM_PROFILE_RT_INIT_ONCE
 
+# A package environment can retain the framework binding from the generation
+# that produced its installed VDB entry.  Explicit administrative/off-mode
+# recovery transactions intentionally replace that package with a baseline
+# binary; discard that stale inherited binding before binding the live
+# framework.  Active optimization transactions remain fail-closed below.
+if [[ ${GENTOO_OPT_MODE-} == off ]]; then
+    unset GENTOO_OPT_FRAMEWORK_TARGET
+fi
+
 # Instrumented package programs may run during install/QA and inherit the
 # compiler runtime destination.  Administrative Portage helpers must never
 # create raw profiles in the caller's tree; workload execution assigns its
