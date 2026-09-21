@@ -8,3 +8,4 @@
 =dev-build/cmake-4.3.5 cmake-profile-use-dispatcher.conf
 =app-admin/doas-6.8.2 doas-profile-use-dispatcher.conf
 =app-arch/bzip2-1.0.8-r5 bzip2-profile-use-dispatcher.conf
+=app-arch/lz4-1.10.0-r1 lz4-profile-use-dispatcher.conf
