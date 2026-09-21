@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Corrected fingerprint materialization was run against retained `phase3-live-candidate-20260918-postsync-r1` lanes and failed closed on the first stale CPV (`dev-libs/libayatana-appindicator-0.5.94` absent from live VDB). This confirms the collector refuses stale candidate identities instead of silently producing package.env-empty or successor-bound fingerprints; the corrected inventory and lanes must be regenerated from the current live VDB before further profile publication.
+
 - 2026-09-21: Classified the two Ayatana stale-dispatcher transactions and the libbsd repository mismatch as permanent non-authoritative identity incidents in `plans/phase3-profile-use-identity-incidents.json`; no historical profile-use result was retroactively blessed. Live Portage resolves `dev-libs/libbsd-0.12.1` from `codex-local` with ebuild SHA-256 `d7a76f596a8ec08836a64965a9b6de76310120f6ff5fdf0e4db290874adcc00d`, so the earlier `gentoo`-sourced dispatcher remains unresolved and requires corrected-generation remediation or retraining.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-cpp/sdbus-c++-2.3.1` using fingerprint `ea19f059dbb129b6588077d39b12e6c17b10c3240770978bd85e2e327978540d` and profile `/var/cache/gentoo-optimization/pgo/dev-cpp_sdbus-c++-2.3.1.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-sdbus-c++-profile-use-20260921.log` SHA-256 `98da9af69b6b04eca303864b8dcedd0228c78d92d037114f4dce9d69df312d4c`. This is `clang-ir-use` evidence only; no BOLT claim.
