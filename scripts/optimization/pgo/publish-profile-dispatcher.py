@@ -75,6 +75,8 @@ def main():
     ap.add_argument('--metadata', type=Path, required=True)
     ap.add_argument('--fingerprint-file', type=Path, required=True)
     ap.add_argument('--cpv', required=True)
+    ap.add_argument('--repository', required=True)
+    ap.add_argument('--ebuild-sha256', required=True)
     ap.add_argument('--backend', choices=('clang-ir','rust'), default='clang-ir')
     ap.add_argument('--merge-evidence', type=Path)
     ap.add_argument('--generation-id', required=True)
@@ -101,6 +103,14 @@ def main():
     safe_output(a.output_env, dispatcher_root, 'environment')
     safe_output(a.output_record, dispatcher_root, 'record')
     for p,root,label in ((a.manifest,cache,'manifest'),(a.metadata,cache,'metadata'),(a.fingerprint_file,generation,'fingerprint')): safe(p,root,label)
+    if not re.fullmatch(r'[A-Za-z0-9_.+-]+', a.repository) or not HEX.fullmatch(a.ebuild_sha256):
+        raise SystemExit('REFUSED: malformed source identity')
+    identity_path = a.fingerprint_file.parent / 'identity.json'
+    safe(identity_path, generation, 'fingerprint identity')
+    identity = json.loads(identity_path.read_text())
+    canonical = identity.get('canonical_identity', {})
+    if canonical.get('repository') != a.repository or canonical.get('ebuild_sha256') != a.ebuild_sha256:
+        raise SystemExit('REFUSED: requested repository/ebuild identity differs from canonical fingerprint identity')
     if a.metadata != Path(str(a.manifest)+'.metadata.json'): raise SystemExit('REFUSED: metadata is not the manifest sidecar')
     if not CPV.match(a.cpv) or '/' not in a.cpv: raise SystemExit('REFUSED: malformed CPV')
     lines={}
