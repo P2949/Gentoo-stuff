@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Completed a fresh read-only live VDB inventory candidate after the userspace baseline check. Generation `phase3-live-baseline-check-20260921c` contains 1,307 exact package records, 684,772 owned paths, and 80,075 owned-directory records; inventory SHA-256 is `99029432a8a290033d6dc99b2469e894abbc7144777861ba534bfd70bf0ee728`. The write-once generator completed without unresolved-directory output. This remains candidate evidence until the strict framework installer accepts the exact generation/source boundary; no activation or package mutation occurred.
+
 - 2026-09-21: Made live inventory generation refuse an existing output path, preserving candidate/frozen inventory evidence across regeneration attempts. Python compilation passes; commit `7d35bb1` pushed.
 
 - 2026-09-21: Converted the read-only depclean result into an explicit immutable baseline decision: retain the 22 selected candidates until final-generation freeze while dependency closure and inventory authority are reconciled. Decision record `/var/lib/gentoo-optimization/reports/userspace-baseline-depclean-decision-20260921.json` SHA-256 `ce9f4a0e790f46177a72efe207b6163e7ef161c461f9b00c0516338bc50a0b40`; no package mutation occurred.
