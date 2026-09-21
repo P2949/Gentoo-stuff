@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild of `dev-libs/libgcrypt-1.12.4` failed during the 32-bit compile before install-QA because libgcrypt FIPS mode requires thread-local storage (`fips.c:82`) and the profile-use multilib compile lacked the required TLS support; no merge occurred. Report `/var/lib/gentoo-optimization/reports/phase3-libgcrypt-profile-use-20260921.log` SHA-256 `f9fa78820b248e21716ca802edca521f89a516f232633050d024e59b973452c2`. This failed attempt is preserved; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libev-4.33` using fingerprint `d82b43f3e2483f1221bda9ed9566ecc637ade425462a62fe8caadda1fc3f5849` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libev-4.33.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libev-profile-use-20260921.log` SHA-256 `563f6b7fcc30693fc2f8c01fbc5bf341eefcee3a37823e97fad1592ecede315b`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libedit-20240808.3.1` using fingerprint `9753cf3ba7b5dec1bd82bd60c0f0cc60efb14da2899a641b3729ddc7dc691afb` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libedit-20240808.3.1.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libedit-profile-use-20260921.log` SHA-256 `3e670f5abfc8abfc21f57eeef5c89d867396bf49e48eb5409926c623952fa443`. This is `clang-ir-use` evidence only; no BOLT claim.
