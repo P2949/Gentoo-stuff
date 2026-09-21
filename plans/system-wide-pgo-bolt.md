@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/expat-2.8.4` using fingerprint `8b28f8d26414e5707a3f42bc4c3f4835ea5b6dfa5b2235e866f45bba2754fb45` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_expat-2.8.4.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-expat-profile-use-20260921.log` has SHA-256 `2a3b564e7588c4b74b1245bd63d8409bcfcdec1f95fd133c0c8662813fa117e3`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/ell-9999` using fingerprint `1b6ba30bd169c8a0177c25de138c9e20e0a1d41e1c4f1b86ed994943ddb65804` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_ell-9999.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-ell-profile-use-20260921.log` has SHA-256 `ceeb9ae75eadd72bfa0208d9947a0346cad91c33f24059214e4e71cc950b5159`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/elfutils-0.196` using fingerprint `b7bee581aa08c4573afbb473eb86f10226dae4c5eb71e0b58eec94fdaab9a5a9` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_elfutils-0.196.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-elfutils-profile-use-20260921.log` has SHA-256 `e7b6f480af07cb870324b4eba6b32f344a601ecdf61d8fa1d9fa74eaa755db6a`. This is `clang-ir-use` evidence only; no BOLT claim.
