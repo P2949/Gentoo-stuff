@@ -28,7 +28,8 @@ fi
 # administrative marker is separate from package.env so it cannot be shadowed
 # by that saved environment; it forces a non-instrumented transaction and
 # discards the stale generation/profile selectors before framework binding.
-if [[ ${GENTOO_OPT_DEINSTRUMENT-} == 1 ]]; then
+if [[ ${GENTOO_OPT_DEINSTRUMENT-} == 1 ||
+    -f /var/lib/gentoo-optimization/state/deinstrument.pending ]]; then
     export GENTOO_OPT_MODE=off
     unset GENTOO_OPT_FRAMEWORK_TARGET GENTOO_OPT_PROFILE_PATH
 fi
