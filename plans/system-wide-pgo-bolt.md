@@ -8305,3 +8305,7 @@ After the fresh framework activation, `app-shells/bash-9999` was retried under i
 ### 2026-09-21 — libmediainfo successor closure retry
 
 The exact successor closure `=media-libs/libmediainfo-26.05::gentoo =media-video/mediainfo-26.05::gentoo` was attempted together to resolve the prior slot conflict. `libmediainfo-26.05` built under the active maintenance policy but the exported-ABI guard again rejected the replacement DSO; the dependent `media-video/mediainfo-26.05` was consequently dropped by keep-going. The full root-owned Portage log remains `/var/tmp/gentoo-portage-build/portage/media-libs/libmediainfo-26.05/temp/build.log`. No ABI guard bypass or partial admission occurred.
+
+### 2026-09-21 — baseline generation authority transition
+
+After framework publication, the fresh baseline generation was activated through `generation-authorization.py` using the root-owned lock hierarchy and inventory SHA-256 `9c0d0d941374a18d39f74ed4b1b2a781d5115fecddced05bbeaff59bcad28f01`. Independent `verify` completed successfully for generation `phase3-live-candidate-20260921-baseline-fresh` against framework `framework-6c13089d4950aac6e5325b11c9b9149eca021c390e1adee8788640502b0fb789`. The authority receipt and journal remain root-owned in the generation directory.
