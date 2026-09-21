@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libpfm-9999` using fingerprint `427a74ca354ca911ea9bbb13f667438c4bad7c811f3b95eb2595fc09181f7695` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libpfm-9999.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libpfm-profile-use-20260921.log` SHA-256 `60718c594e5848adf04aadef9a26d55ff317269ee6acda22231c578eca30fdf8`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libpcre2-10.48` using fingerprint `8e513cd60f65055b035466760d4551540e2be6baeee98b464d11089e6ef79007` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libpcre2-10.48.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libpcre2-profile-use-20260921.log` SHA-256 `3e98ac02ea40b894c07de12351190fd8bc02faf8922d3cafbca0a8b04bc2cb75`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libpcre-8.45-r4` using fingerprint `9cfab29ffc82528b24a08feb4adbe602d6d763f65944f558381417fcb34ba0d3` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libpcre-8.45-r4.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libpcre-profile-use-20260921.log` SHA-256 `fb7fdd830598dc8f8a7f803c3afeeed07425e79396e4a120d76a6f7e6adeaeee`. This is `clang-ir-use` evidence only; no BOLT claim.
