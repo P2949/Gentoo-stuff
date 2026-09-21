@@ -7861,3 +7861,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — gamescope generation compile failure
 
 `gui-wm/gamescope-3.16.28` passed readiness, storage, dependency, manifest, source, patch, and configuration gates, but its authenticated Clang-IR generation compile failed during linker stages. `ld.lld` reported unresolved libstdc++ and C++ ABI symbols including `std::__throw_logic_error`, `_Hash_bytes`, `__cxa_guard_acquire`, `operator new/delete`, and `__class_type_info`. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/gui-wm/gamescope-3.16.28/temp/build.log`.
+
+### 2026-09-21 — hyprland generation compile failure
+
+`gui-wm/hyprland-9999` passed readiness, storage, dependency, source, patch, and CMake configuration gates, but its authenticated Clang-IR generation compile failed during the `hyprctl` linker stage. `ld.lld` reported unresolved libc++ `std::__1` stream/filesystem symbols and C++ runtime symbols including `__cxa_guard_acquire`, matching the libc++/linker tuple incompatibility already observed in the Hyprwire, xdg-desktop-portal-hyprland, and gamescope attempts. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/gui-wm/hyprland-9999/temp/build.log`.
