@@ -8337,3 +8337,7 @@ With the fresh baseline generation active, an independent userspace update path 
 ### 2026-09-21 — seventh independent baseline userspace update
 
 `dev-python/wcwidth-0.8.4` was rebuilt and merged successfully under the active baseline generation with install-QA completion and no optimization claim.
+
+### 2026-09-21 — eighth independent baseline userspace update
+
+`dev-python/filelock-4.0.1` was rebuilt and merged successfully under the active baseline generation. Install-QA completed; no PGO/BOLT claim was made.
