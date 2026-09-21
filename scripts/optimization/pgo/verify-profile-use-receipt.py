@@ -21,6 +21,19 @@ def main() -> int:
             p=pathlib.Path(item['path'])
             if not p.is_absolute() or not p.is_file() or digest(p) != item['sha256']:
                 raise SystemExit(f'REFUSED: {key} artifact hash mismatch')
+        log_text=Path(r['log']['path']).read_text(errors='replace')
+        backend=r['backend']
+        markers={
+            'clang-ir': ('-fprofile-use', 'clang-ir-use'),
+            'clang-sample': ('-fprofile-sample-use', 'clang-sample-use'),
+            'rust': ('-Cprofile-use', 'rust-use'),
+            'gcc': ('-fprofile-use', 'gcc-use'),
+            'go': ('-pgo', 'go-use'),
+        }.get(backend)
+        if not markers or not any(marker in log_text for marker in markers):
+            raise SystemExit('REFUSED: build log does not prove backend-specific profile use')
+        if any(flag in log_text for flag in ('-fprofile-generate', '-fprofile-instr-generate', '-Cprofile-generate')):
+            raise SystemExit('REFUSED: generation-mode profile flag appeared in use transaction')
         if not r['generation'] or not r['framework'] or not r['fingerprint']:
             raise SystemExit('REFUSED: incomplete generation/framework/fingerprint identity')
         if r['finished_epoch'] < r['started_epoch']: raise SystemExit('REFUSED: invalid receipt timing')
