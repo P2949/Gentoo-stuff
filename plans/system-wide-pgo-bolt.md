@@ -7865,3 +7865,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — hyprland generation compile failure
 
 `gui-wm/hyprland-9999` passed readiness, storage, dependency, source, patch, and CMake configuration gates, but its authenticated Clang-IR generation compile failed during the `hyprctl` linker stage. `ld.lld` reported unresolved libc++ `std::__1` stream/filesystem symbols and C++ runtime symbols including `__cxa_guard_acquire`, matching the libc++/linker tuple incompatibility already observed in the Hyprwire, xdg-desktop-portal-hyprland, and gamescope attempts. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/gui-wm/hyprland-9999/temp/build.log`.
+
+### 2026-09-21 — libb2 clang-IR generation and profile-use
+
+`app-crypt/libb2-0.98.1-r3` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `6da4de8c2a686bb85545240e29d622c7bcba345c84a9dc092363c4841c8a1721`, and dispatcher publication succeeded with record SHA-256 `0150706b82923a70797009a80aadb70f6c6811f0fb28b91a9f80da726538ad3d`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
