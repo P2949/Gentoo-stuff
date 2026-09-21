@@ -17,8 +17,9 @@ def main() -> int:
     if '/' not in a.cpv: raise SystemExit('REFUSED: malformed CPV')
     record=json.loads(a.dispatcher.read_text())
     if record.get('cpv') != a.cpv: raise SystemExit('REFUSED: dispatcher CPV differs from requested exact atom')
-    metadata=pathlib.Path(record['metadata']); profile=metadata.parent / pathlib.Path(record['profile']).name
+    metadata=pathlib.Path(record['metadata'])
     payload=json.loads(metadata.read_text()); ident=payload.get('profile',{})
+    profile=pathlib.Path(str(ident.get('path') or record['profile']))
     if ident.get('cpv') != a.cpv: raise SystemExit('REFUSED: metadata CPV differs from requested exact atom')
     if ident.get('repository') != a.repository:
         raise SystemExit('REFUSED: metadata repository differs from requested exact atom')
