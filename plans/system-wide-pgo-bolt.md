@@ -1,6 +1,8 @@
 # Exhaustive System-Wide PGO and BOLT Implementation Plan for Gentoo
 
 ## Progress summary
+- 2026-09-21: Independent provenance verification was strengthened at commit `98475b5`: the verifier now reopens the exact installed VDB directory, rechecks repository/build-time/counter/CONTENTS identities, validates next-build ebuild containment and SHA-256, and refuses unavailable records carrying fabricated hashes. The fixture passes with explicit live-root arguments; no profile-use wave was resumed.
+- 2026-09-21: Reverse-dependency graph generation now preserves typed `portage-build` edges in addition to runtime and ELF `DT_NEEDED` edges at commit `7c7a652`; unsupported relationship classes refuse rather than being silently merged. Integration coverage passes and the branch is pushed.
 - 2026-09-21: Extended profile-wave receipts at commit `9bdd2e3` with per-recipe identity/purpose, bounded log hash, exit/duration, before/after payload sets, expected provider-artifact bindings, and a counter-emission result. The runner remains fail-closed for recipe errors and does not claim representative provider coverage from a consumer exit alone; commit is ready to push.
 
 - 2026-09-21: Hardened the resumable generation scheduler at commit `dcd7101`: attempts are now filtered by exact generation, legacy unbound attempts cannot suppress a new compiler generation, failed/unknown attempts remain explicitly preserved, retry admission requires an explicit retry authorization, and the outgoing wave binds a digest of the exact attempt ledger considered. Regression coverage now proves old-generation success is ignored and failed remediation remains visible.
