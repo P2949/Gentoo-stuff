@@ -8595,3 +8595,13 @@ The CPV-bound phase-hook retention retry with the installed ABI flags plus `-fno
   recovery, evidence, package-env, shell, and Python gates also passed, but its
   framework-installer integration still exposes an unaccepted bootstrap matcher
   path; this remains an open validation defect and does not authorize a wave.
+
+- A fresh read-only `@world` pretend on 2026-09-22 resolves 57 operations when
+  kernel/firmware lifecycle atoms are included. Repeating it with the immutable
+  exclusions for `sys-firmware/intel-microcode`, the three kernel-source atoms,
+  `sys-kernel/dracut`, and `sys-kernel/installkernel` resolves 51 userspace
+  operations. The captured pretend is
+  `/var/lib/gentoo-optimization/reports/userspace-world-pretend-20260922.txt`
+  (SHA-256 `e0c1bea7ed65219ec3b9f2dd81a5949653ae953e8f22c1897a058822e2435753`).
+  No package mutation was performed; kernel and firmware actions remain outside
+  the automated project boundary.
