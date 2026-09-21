@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "incidents": [
+    {"cpv": "dev-libs/libayatana-indicator", "dispatcher_cpv": "dev-libs/libayatana-indicator-0.9.4", "merged_cpv": "dev-libs/libayatana-indicator-0.9.5", "classification": "profile-use-identity-drift", "authoritative": false},
+    {"cpv": "dev-libs/libayatana-appindicator", "dispatcher_cpv": "dev-libs/libayatana-appindicator-0.5.94", "merged_cpv": "dev-libs/libayatana-appindicator-0.6.0", "classification": "profile-use-identity-drift", "authoritative": false},
+    {"cpv": "dev-libs/libbsd-0.12.1", "dispatcher_repository": "gentoo", "live_repository": "codex-local", "live_ebuild_sha256": "d7a76f596a8ec08836a64965a9b6de76310120f6ff5fdf0e4db290874adcc00d", "classification": "repository-identity-drift", "authoritative": false}
+  ]
+}
