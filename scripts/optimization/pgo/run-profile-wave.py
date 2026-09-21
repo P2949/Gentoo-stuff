@@ -192,16 +192,19 @@ def main():
       raise SystemExit(f'REFUSED: unsafe workload stdin fixture for {cpv}: {stdin_path}')
      stdin_handle=open(canonical,'rb')
     start=time.monotonic()
+    output_path=Path('/tmp/gentoo-optimization-workload-logs') / (hashlib.sha256((cpv+'\0'+path).encode()).hexdigest()+'.log')
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-     proc=subprocess.Popen(argv,cwd=recipe.get('cwd','/'),env=run_env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,stdin=stdin_handle, start_new_session=True)
-     try:
-      result_stdout,_=proc.communicate(timeout=30)
-      result=subprocess.CompletedProcess(proc.args,proc.returncode,result_stdout,None)
-     except subprocess.TimeoutExpired:
-      try: os.killpg(proc.pid, signal.SIGTERM)
-      except ProcessLookupError: pass
-      proc.wait(timeout=5)
-      raise
+     with output_path.open('w', encoding='utf-8', errors='replace') as workload_log:
+      proc=subprocess.Popen(argv,cwd=recipe.get('cwd','/'),env=run_env,text=True,stdout=workload_log,stderr=subprocess.STDOUT,stdin=stdin_handle, start_new_session=True)
+      try:
+       proc.wait(timeout=min(int(recipe.get('timeout_seconds',300)), 3600))
+       result=subprocess.CompletedProcess(proc.args,proc.returncode)
+      except subprocess.TimeoutExpired:
+       try: os.killpg(proc.pid, signal.SIGTERM)
+       except ProcessLookupError: pass
+       proc.wait(timeout=5)
+       raise
     except (OSError,subprocess.TimeoutExpired) as e:
      raise SystemExit(f'REFUSED: workload recipe failed for {cpv}: {path}: {e}')
     finally:
@@ -221,7 +224,8 @@ def main():
      raise SystemExit(f'REFUSED: workload descendants did not quiesce for {cpv}: {path}')
     if result.returncode != 0:
      raise SystemExit(f'REFUSED: workload recipe exited {result.returncode} for {cpv}: {path}')
-    if not result.stdout and not recipe.get('allow_empty_output',False):
+    output_text=output_path.read_text(errors='replace')[-1024*1024:]
+    if not output_text and not recipe.get('allow_empty_output',False):
      raise SystemExit(f'REFUSED: workload recipe produced no output for {cpv}: {path}')
    # Instrumented helper processes can flush their profile files just after
    # emerge returns.  Wait for the package spool to become quiescent before
