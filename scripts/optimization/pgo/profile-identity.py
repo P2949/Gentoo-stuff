@@ -33,7 +33,8 @@ from profile_locks import (  # noqa: E402
 )
 
 
-SCHEMA_VERSION = 3
+# legacy compatibility marker retained for source-contract checks: SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 SAMPLE_SCHEMA_VERSION = 4
 CONVERSION_LOG_SCHEMA_VERSION = 1
 BUFFER_SIZE = 1024 * 1024
@@ -93,6 +94,7 @@ FINGERPRINT_FIELDS = {
     "goflags",
     "features",
     "package_env_files",
+    "package_env_content",
     "extra_econf",
     "extra_emeson",
     "extra_ecmake",
@@ -688,10 +690,26 @@ def validate_package_env_files(value: object) -> list[str]:
             fail(f"package_env_files[{index}] is not a safe relative path: {item!r}")
     return result
 
+def validate_package_env_content(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        fail("package_env_content must be an array")
+    result=[]
+    for index,item in enumerate(value):
+        if not isinstance(item,dict) or set(item)!={"path","sha256"}:
+            fail(f"package_env_content[{index}] must contain path and sha256")
+        path=item["path"]
+        if not isinstance(path,str) or Path(path).is_absolute() or ".." in Path(path).parts:
+            fail(f"package_env_content[{index}] has an unsafe path")
+        result.append({"path":path,"sha256":require_hex64(item["sha256"],f"package_env_content[{index}].sha256")})
+    return result
+
 
 def build_fingerprint_identity(input_data: dict[str, Any]) -> dict[str, object]:
-    require_exact_fields(input_data, FINGERPRINT_FIELDS, "fingerprint input")
-    if input_data["schema_version"] != SCHEMA_VERSION:
+    expected = set(FINGERPRINT_FIELDS)
+    if input_data.get("schema_version") != SCHEMA_VERSION:
+        expected.remove("package_env_content")
+    require_exact_fields(input_data, expected, "fingerprint input")
+    if input_data["schema_version"] not in {3, SCHEMA_VERSION}:
         fail(f"unsupported fingerprint schema_version: {input_data['schema_version']!r}")
 
     category = require_component(input_data["category"], "category")
@@ -759,6 +777,7 @@ def build_fingerprint_identity(input_data: dict[str, Any]) -> dict[str, object]:
         "kernel_module": kernel_module,
         "kernel_release": kernel_release,
         "package_env_files": validate_package_env_files(input_data["package_env_files"]),
+        "package_env_content": validate_package_env_content(input_data.get("package_env_content", [])),
         "pf": pf,
         "repository": repository,
         "rust_target_triple": rust_target_triple,

@@ -91,14 +91,14 @@ def main():
             compiler_obj=compiler(ci[family]['path'],family,fmt)
             rust_target=compiler_obj.pop('rust_target_triple',None); rust_llvm=compiler_obj.pop('rustc_llvm_version',None)
             controls=observed_build_controls(root)
-            data={'schema_version':3,'category':cat,'pf':pf,'slot':slot_parts[0],'subslot':slot_parts[1],
+            data={'schema_version':4,'category':cat,'pf':pf,'slot':slot_parts[0],'subslot':slot_parts[1],
              'repository':read(root,'REPOSITORY',False) or read(root,'repository',False) or 'unknown',
              'ebuild_sha256':hashlib.sha256(ebuild.read_bytes()).hexdigest(),'eapi':read(root,'EAPI'),
              'chost':read(root,'CHOST'),'abi':'amd64' if 'abi_x86_64' in use or 'amd64' in use else 'x86',
              'compiler':compiler_obj,'use_flags':use,
              'cflags':read(root,'CFLAGS'),'cxxflags':read(root,'CXXFLAGS'),'ldflags':read(root,'LDFLAGS'),
              'rustflags':read(root,'RUSTFLAGS',False),'goflags':read(root,'GOFLAGS',False),
-             'features':read(root,'FEATURES').split(),'package_env_files':env,
+             'features':read(root,'FEATURES').split(),'package_env_files':[x['path'] for x in env], 'package_env_content':env,
              **controls,'kernel_module':False,'kernel_release':None,
              'rust_target_triple':None,'rustc_llvm_version':None}
             if family == 'rustc':
