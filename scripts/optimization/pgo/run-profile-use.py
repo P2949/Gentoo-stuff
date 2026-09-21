@@ -20,6 +20,10 @@ def main() -> int:
     metadata=pathlib.Path(record['metadata']); profile=metadata.parent / pathlib.Path(record['profile']).name
     payload=json.loads(metadata.read_text()); ident=payload.get('profile',{})
     if ident.get('cpv') != a.cpv: raise SystemExit('REFUSED: metadata CPV differs from requested exact atom')
+    if ident.get('repository') != a.repository:
+        raise SystemExit('REFUSED: metadata repository differs from requested exact atom')
+    if not isinstance(ident.get('ebuild_sha256'), str) or len(ident['ebuild_sha256']) != 64:
+        raise SystemExit('REFUSED: profile metadata lacks exact ebuild identity')
     cat,pf=a.cpv.split('/',1); vdb=pathlib.Path('/var/db/pkg')/cat/pf
     if not vdb.is_dir(): raise SystemExit(f'REFUSED: exact CPV is not installed in VDB: {a.cpv}')
     repo=(vdb/'REPOSITORY').read_text().strip() if (vdb/'REPOSITORY').is_file() else (vdb/'repository').read_text().strip()
@@ -35,11 +39,14 @@ def main() -> int:
     if not ebuild.is_file(): raise SystemExit('REFUSED: exact Portage ebuild is unavailable')
     digest=sha(ebuild)
     expected=ident.get('ebuild_sha256')
-    if expected and digest != expected: raise SystemExit('REFUSED: ebuild SHA-256 differs from profile metadata')
+    if digest != expected: raise SystemExit('REFUSED: ebuild SHA-256 differs from profile metadata')
     atom=f'={a.cpv}::{a.repository}'
     started=time.time()
     a.log.parent.mkdir(parents=True,exist_ok=True)
     with a.log.open('w') as out:
+        pretend=subprocess.run(['emerge','--oneshot','--pretend','--verbose',atom],stdout=out,stderr=subprocess.STDOUT,env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null'})
+        if pretend.returncode != 0:
+            raise SystemExit('REFUSED: exact Portage pretend did not resolve the requested atom')
         proc=subprocess.run(['emerge','--oneshot','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null'})
     post=(vdb/'BUILD_TIME').read_text().strip() if (vdb/'BUILD_TIME').is_file() else ''
     receipt={'schema_version':1,'cpv':a.cpv,'repository':repo,'ebuild_sha256':digest,'dispatcher_sha256':sha(a.dispatcher),'metadata_sha256':sha(metadata),'profile_sha256':sha(profile),'exit_status':proc.returncode,'log_path':str(a.log.resolve()),'log_sha256':sha(a.log),'started_epoch':started,'finished_epoch':time.time(),'post_build_time':post}
