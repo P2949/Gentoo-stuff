@@ -7941,3 +7941,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — hidapi clang-IR generation and profile-use
 
 `dev-libs/hidapi-0.15.0` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `91ec17a04b7a733795a846d4233e8a672b05b68cfb385f76431d042521d789d0`, and dispatcher publication succeeded with record SHA-256 `90c4a969717312f2ce0b090f86b1ace84f39adb1033d02b1db7b20d6c7a55dfe`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — hyphen clang-IR generation and profile-use
+
+`dev-libs/hyphen-2.8.8-r2` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `4a2b94b35f04e9d7111761ef6d006f46d2fc97a0cf76c507e090725a7dbf6517`, and dispatcher publication succeeded with record SHA-256 `b7f437d63104161def2582142de8fbd645e28ca4a994730b4309edc26fe65fb6`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
