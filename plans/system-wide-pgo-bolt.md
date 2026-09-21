@@ -7958,6 +7958,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `dev-libs/leancrypto-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/smuellerDD/leancrypto` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/leancrypto-9999/temp/build.log`.
 
+### 2026-09-21 — libltdl exact-CPV terminal exclusion
+
+`dev-libs/libltdl-2.6.0` passed readiness and storage preflight, but the authenticated runner refused to start the transaction because the exact CPV is no longer buildable from the live Portage tree: `emerge` reported that no ebuild satisfies `=dev-libs/libltdl-2.6.0`. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. This exact CPV/buildability failure is retained as the terminal exclusion evidence.
+
 ### 2026-09-21 — libksba clang-IR generation and profile-use
 
 `dev-libs/libksba-1.8.1` completed authenticated Clang-IR generation; receipt verification passed, LLVM 22 merged the raw payload with evidence digest `df1d4684be2aa9ad266f98784aaaebbb340bee8b5c29694ed27ec033c6707043`, and dispatcher publication succeeded with record SHA-256 `5e9be8eab9fd6006c72eee4c57d1ca65e9a94ca99f3de505584acae45c720697`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
