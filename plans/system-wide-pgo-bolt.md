@@ -7809,3 +7809,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — xxd generation runner anomaly
 
 `dev-util/xxd-2025.08.24-r1` passed storage preflight and readiness, and both the original and a distinct retry generation completed Clang-IR build/install transactions with `/usr/bin/xxd -version` available and returning successfully when checked independently. Neither runner invocation sealed a receipt despite exiting zero, so no profile merge, dispatcher publication, or profile-use deployment was admitted. The raw attempts and captured retry output are preserved; this remains an unresolved runner/sealing anomaly rather than a terminal package exclusion.
+
+### 2026-09-21 — gamemode clang-IR generation and profile-use
+
+`games-util/gamemode-9999` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence was published, and dispatcher publication succeeded. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`. The live transaction emitted non-fatal `default.profraw` permission diagnostics and existing `ldconfig` warnings for unrelated ThinLTO YAML files; neither affected the authoritative profile-use result.
