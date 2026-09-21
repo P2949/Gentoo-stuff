@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/mpdecimal-4.0.1` using fingerprint `dde994db104128e69527371cdeac6909b452b252ab84f057df74e569938eb2d4` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_mpdecimal-4.0.1.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-mpdecimal-profile-use-20260921.log` SHA-256 `7ec477b7f0b04d9653d91743f575cc4403c72a0ecb9a3e5fa35152440bee0918`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/nspr-4.40` using fingerprint `fe8742954fa3f37961c5b80f02f429641b912f9cb660f1168a1dade078df85c7` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_nspr-4.40.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-nspr-profile-use-20260921.log` SHA-256 `2832da02e06879ab3ae1f1d5bc39038a2cded0dfd6a749f8b3d9566eb66cef52`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/nettle-3.10.2` using fingerprint `a2eedcd64aed04520746a92a20d8f35602afccb258c8d03b9f3406e2bc228dd1` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_nettle-3.10.2.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-nettle-profile-use-20260921.log` SHA-256 `0d9daa2a58bcfe8c0593f66ca0e8241d8e1a0df2c6623588727567938c9f1f22`. This is `clang-ir-use` evidence only; no BOLT claim.
