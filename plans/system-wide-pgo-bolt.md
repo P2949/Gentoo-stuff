@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Added immutable `profile-carry-forward-v1` production with strict equality across CPV, repository/ebuild, ordered package.env content, build controls, compiler/ABI/target, flags, workload, training/merge evidence, and profile digest; changed identities require retraining. Phase-3 coverage now reports separate package-classification, ELF-classification, and BOLT-safety gates. ELF classification no longer excludes categories by prefix, and missing build IDs are recorded as `rebuild-required-for-bolt-capture`. Added the typed reverse-dependency generator combining Portage and DT_NEEDED records. Focused identity, coverage, and carry-forward tests pass; commit `1762abb` pushed.
+
 - 2026-09-21: Regenerated a live inventory from `/var/db/pkg` against the current host, producing 1,305 packages, 684,559 owned paths, 80,056 owned directories, and one unresolved directory. This replaces the stale 1,292-CPV candidate boundary exposed by the Ayatana successor CPVs; no profile-use transaction was resumed.
 
 - 2026-09-21: Corrected fingerprint materialization was run against retained `phase3-live-candidate-20260918-postsync-r1` lanes and failed closed on the first stale CPV (`dev-libs/libayatana-appindicator-0.5.94` absent from live VDB). This confirms the collector refuses stale candidate identities instead of silently producing package.env-empty or successor-bound fingerprints; the corrected inventory and lanes must be regenerated from the current live VDB before further profile publication.
