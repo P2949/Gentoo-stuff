@@ -61,12 +61,37 @@ def main():
   'safety_counts': es['counts'],
   'elf_authority_sha256': authority.get('sha256'),
  }
- out['coverage_pass'] = not out['packages_missing_lane'] and not out['elf_missing_classification']
+ # Keep accounting completeness separate from strict BOLT safety readiness.
+ # The safety input is expected to contain one disposition for each artifact
+ # that the ELF classifier marked candidate-bolt-eligible.  Non-candidates do
+ # not create a BOLT obligation.
+ candidate = {
+  (x.get('owner_cpv'), x['path'])
+  for x in ec.get('records', ec.get('artifacts', []))
+  if x.get('state') == 'candidate-bolt-eligible'
+ }
+ safety_records = {
+  (x.get('owner_cpv'), x['path'])
+  for x in es.get('records', es.get('artifacts', []))
+ }
+ out['candidate_bolt_eligible_count'] = len(candidate)
+ out['bolt_safety_missing'] = sorted(candidate - safety_records)
+ counts = es.get('counts', {})
+ out['bolt_safety_pending'] = int(counts.get('pending', 0)) + int(counts.get('pending-safety-review', 0))
+ out['bolt_safety_failed'] = int(counts.get('failed', 0)) + int(counts.get('error', 0))
+ out['package_classification_coverage_pass'] = not out['packages_missing_lane']
+ out['elf_classification_coverage_pass'] = not out['elf_missing_classification']
+ out['bolt_safety_coverage_pass'] = (
+  not out['bolt_safety_missing'] and
+  out['bolt_safety_pending'] == 0 and
+  out['bolt_safety_failed'] == 0
+ )
+ out['coverage_pass'] = out['package_classification_coverage_pass'] and out['elf_classification_coverage_pass']
  out['sha256'] = hashlib.sha256(
   json.dumps(out, sort_keys=True, separators=(',', ':')).encode()
  ).hexdigest()
  with open(a.output, 'w') as stream:
   json.dump(out, stream, sort_keys=True, indent=2)
   stream.write('\n')
- print(json.dumps({k: out[k] for k in ('coverage_pass', 'package_count', 'elf_count', 'candidate_safety_records')}))
+ print(json.dumps({k: out[k] for k in ('coverage_pass', 'package_classification_coverage_pass', 'elf_classification_coverage_pass', 'bolt_safety_coverage_pass', 'package_count', 'elf_count', 'candidate_safety_records')}))
 if __name__=='__main__':main()

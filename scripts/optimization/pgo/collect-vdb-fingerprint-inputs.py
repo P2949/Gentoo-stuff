@@ -27,7 +27,9 @@ def package_env_stack(cpv: str, root: pathlib.Path) -> list[dict[str, str]]:
             except Exception as exc:
                 raise ValueError(f'invalid Portage package.env atom {fields[0]!r}: {exc}') from exc
             if applies:
-                result.append({'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+                # Store a stable path relative to the Portage policy root;
+                # absolute host paths are not portable generation identity.
+                result.append({'path': str(path.relative_to(policy_root)), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
                 break
     return result
 

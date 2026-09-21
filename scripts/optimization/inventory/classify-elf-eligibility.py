@@ -5,19 +5,20 @@ def main():
  ap=argparse.ArgumentParser();ap.add_argument('--metadata',required=True);ap.add_argument('--output',required=True);a=ap.parse_args(); d=json.load(open(a.metadata)); rows=[]
  for x in d['artifacts']:
   owner=x.get('owner_cpv','')
-  # Kernel and firmware artifacts are outside the userspace optimization
-  # authority.  Classify them before metadata parsing so an unreadable
-  # firmware blob cannot become a false pending userspace BOLT obligation.
-  if owner.startswith(('sys-kernel/','sys-firmware/')):
+  # Category names do not establish lifecycle policy.  Kernel/firmware
+  # exclusions must be supplied by the authoritative transaction-policy
+  # classifier; ordinary userspace ELF owned by those categories remains
+  # visible to BOLT review.
+  if x.get('kernel_policy_exclusion') is True:
    reason='kernel-policy-exclusion'; state='not-applicable'
   elif x.get('error'): reason='metadata-tool-failure'; state='pending-eligibility-review'
   elif x['class']!='ELF64' or x.get('machine') != 'Advanced Micro Devices X86-64': reason='unsupported-architecture'; state='not-applicable'
   elif x['type']=='REL (Relocatable file)': reason='relocatable-object'; state='not-applicable'
   elif x['type'] not in ('DYN (Shared object file)','DYN (Position-Independent Executable file)','EXEC (Executable file)'): reason='unsupported-elf-type'; state='not-applicable'
-  # BOLT readiness and deployment bind the input identity to a GNU build ID.
-  # An artifact without one cannot become a valid BOLT input through further
-  # review, so record the fail-closed terminal exclusion explicitly.
-  elif not x['build_id']: reason='missing-build-id'; state='not-applicable'
+  # A missing build ID is a rebuild prerequisite, not proof that the artifact
+  # can never be captured.  Keep it in the candidate accounting until the
+  # package-managed pre-strip rebuild supplies an exact identity.
+  elif not x['build_id']: reason='missing-build-id'; state='rebuild-required-for-bolt-capture'
   else: reason='requires-section-and-safety-review'; state='candidate-bolt-eligible'
   rows.append({'owner_cpv':x['owner_cpv'],'path':x['path'],'state':state,'reason_code':reason})
  out={'record_type':'elf-eligibility-classification','schema_version':1,'source_sha256':d['sha256'],'records':sorted(rows,key=lambda x:x['path'])}; out['counts']=dict(collections.Counter(x['state'] for x in rows)); out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest(); json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(json.dumps(out['counts'],sort_keys=True))
