@@ -7797,3 +7797,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — source-highlight profile-use ABI failure
 
 `dev-util/source-highlight-3.1.9-r2` completed authenticated Clang-IR generation, receipt verification, profile merge (digest `792028863a27a29dfd2471d960aada1cb22ff037cacf4d6791c251a020717950`), manifest validation, and dispatcher publication (record SHA-256 `9aed02c99acb1c25643fe59093ee25bf1f9d33e12a2e8b6e3c1a2ee67cef26f8`). Its exact profile-use rebuild was rejected by install-QA ABI guard: `libsource-highlight.so.4` changed from 1339 to 1300 exports and lost existing Boost/srchilite symbols. No optimized profile-use deployment was admitted; the complete log is `/tmp/dev-util_source-highlight-3.1.9-r2-profile-use.log`.
+
+### 2026-09-21 — unifdef workload terminal failure
+
+`dev-util/unifdef-2.12-r2` completed authenticated Clang-IR generation and install-QA, but the reviewed `/usr/bin/unifdef -h` workload exited `2` because this utility reports usage for `-h` and rejects the generated `--help` style invocation. The runner therefore refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is preserved and requires a corrected deterministic fixture before retry.
