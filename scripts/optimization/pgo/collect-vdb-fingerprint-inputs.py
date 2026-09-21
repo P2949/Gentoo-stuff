@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Materialize strict fingerprint inputs from live Portage VDB records."""
-import argparse, hashlib, json, os, pathlib, re, subprocess
+import argparse, bz2, hashlib, json, os, pathlib, re, subprocess
 
 def package_env_stack(cpv: str, root: pathlib.Path) -> list[dict[str, str]]:
     """Return the effective ordered package.env files using Portage atoms."""
@@ -30,6 +30,21 @@ def package_env_stack(cpv: str, root: pathlib.Path) -> list[dict[str, str]]:
                 result.append({'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
                 break
     return result
+
+def observed_build_controls(root: pathlib.Path) -> dict[str, str]:
+    """Read effective ebuild controls retained in the VDB environment."""
+    path = root / 'environment.bz2'
+    if not path.is_file():
+        return {'extra_econf': '', 'extra_emeson': '', 'extra_ecmake': ''}
+    raw = bz2.open(path, 'rt', errors='replace').read()
+    values = {}
+    for name, key in (('EXTRA_ECONF', 'extra_econf'), ('EXTRA_EMESON', 'extra_emeson'), ('EXTRA_ECMAKE', 'extra_ecmake')):
+        match = re.search(rf'(?m)^declare -x {name}="((?:[^"\\]|\\.)*)"$', raw)
+        if match:
+            values[key] = bytes(match.group(1), 'utf-8').decode('unicode_escape')
+        else:
+            values[key] = ''
+    return values
 
 COMPILER = {'pgo-clang-ir': ('clang', 'llvm-ir'), 'pgo-gcc': ('gcc', 'gcc-generate'),
             'pgo-go': ('go', 'go-pprof'), 'pgo-rust': ('rustc', 'rust-llvm')}
@@ -75,6 +90,7 @@ def main():
             env=package_env_stack(cpv, root)
             compiler_obj=compiler(ci[family]['path'],family,fmt)
             rust_target=compiler_obj.pop('rust_target_triple',None); rust_llvm=compiler_obj.pop('rustc_llvm_version',None)
+            controls=observed_build_controls(root)
             data={'schema_version':3,'category':cat,'pf':pf,'slot':slot_parts[0],'subslot':slot_parts[1],
              'repository':read(root,'REPOSITORY',False) or read(root,'repository',False) or 'unknown',
              'ebuild_sha256':hashlib.sha256(ebuild.read_bytes()).hexdigest(),'eapi':read(root,'EAPI'),
@@ -83,7 +99,7 @@ def main():
              'cflags':read(root,'CFLAGS'),'cxxflags':read(root,'CXXFLAGS'),'ldflags':read(root,'LDFLAGS'),
              'rustflags':read(root,'RUSTFLAGS',False),'goflags':read(root,'GOFLAGS',False),
              'features':read(root,'FEATURES').split(),'package_env_files':env,
-             'extra_econf':'','extra_emeson':'','extra_ecmake':'','kernel_module':False,'kernel_release':None,
+             **controls,'kernel_module':False,'kernel_release':None,
              'rust_target_triple':None,'rustc_llvm_version':None}
             if family == 'rustc':
                 data['rust_target_triple'] = rust_target
