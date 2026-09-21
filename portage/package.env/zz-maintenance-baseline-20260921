@@ -11,3 +11,4 @@
 =app-admin/doas-6.8.2 optimization/optimization-off.conf
 =app-arch/bzip2-1.0.8-r5 optimization/optimization-off.conf
 =app-arch/lz4-1.10.0-r1 optimization/optimization-off.conf
+=dev-util/source-highlight-3.1.9-r2 optimization/optimization-off.conf source-highlight-abi.conf
