@@ -7958,6 +7958,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `dev-libs/leancrypto-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/smuellerDD/leancrypto` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/leancrypto-9999/temp/build.log`.
 
+### 2026-09-21 — libsigc++-3 clang-IR generation and profile-use
+
+`dev-libs/libsigc++-3.8.0` completed authenticated Clang-IR generation; receipt verification passed, LLVM 22 merged the raw payload with evidence digest `f729d357c63e8fc0746246056f018d76822384548a538280ae7ee683ae09d442`, and dispatcher publication succeeded with record SHA-256 `2a32365015fca570d7976a8b4e92cc8bc21ac2be04e78a38b80e71f78e940227`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
 ### 2026-09-21 — libsigc++ clang-IR generation and profile-use
 
 `dev-libs/libsigc++-2.12.1` completed authenticated Clang-IR generation; receipt verification passed, LLVM 22 merged the raw payload with evidence digest `922b9987d18bbe59e956464bd074e1c70892bbb9d80843558ea1da6811810f02`, and dispatcher publication succeeded with record SHA-256 `b6fbfde06c8e76434aba7626a115aaf382a9538fc20fb2b14ca66724cfb14dce`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
