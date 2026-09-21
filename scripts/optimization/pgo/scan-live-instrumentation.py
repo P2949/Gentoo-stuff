@@ -55,7 +55,9 @@ def inspect(item: dict) -> dict:
     if build_match:
         result["build_id"] = build_match.group(1).lower()
     markers = []
-    for section in ("__llvm_prf_cnts", "__llvm_prf_data", "__llvm_prf_names", "__llvm_profile_runtime"):
+    for section in ("__llvm_prf_cnts", "__llvm_prf_data", "__llvm_prf_names",
+                    "__llvm_prf_vnds", "__llvm_prf_vtab", "__llvm_prf_bits",
+                    "__llvm_covmap", "__llvm_covfun"):
         if re.search(rf"\b{re.escape(section)}\b", text):
             markers.append(section)
     if re.search(r"\b\.gcov\b|\b\.gcda\b|\b\.gcno\b", text):
