@@ -7913,3 +7913,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — tcl workload terminal failure
 
 `dev-lang/tcl-8.6.17` completed authenticated Clang-IR generation, staged installation, and install-QA, but the reviewed `/usr/bin/tclsh8.6` workload produced no output. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is preserved by the runner output and requires a corrected deterministic fixture before retry.
+
+### 2026-09-21 — ayatana-ido clang-IR generation and profile-use
+
+`dev-libs/ayatana-ido-0.10.4-r1` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `35ae0a1b9f11df89d771409afb455c4e6ac1039e16b3c1310f5369d7632fc42b`, and dispatcher publication succeeded with record SHA-256 `9b42997b56694474b6b464f44af805455cbf601c0f453bad98a078d2bd208234`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
