@@ -7893,3 +7893,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — sdbus-c++ clang-IR generation and profile-use
 
 `dev-cpp/sdbus-c++-2.3.1` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `a2c146304dab4c42f82dc11848c3f2642216a388288eaebbc41a8447f4cc6519`, and dispatcher publication succeeded with record SHA-256 `cdd6af58da58ae489af1285724d4cf84760152c5808ff58073652d7455117d7d`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — tomlplusplus generation ABI-guard exclusion
+
+`dev-cpp/tomlplusplus-3.4.0` completed authenticated Clang-IR compilation and staging, but install-QA correctly rejected the replacement DSO for exported ABI loss. The guard reported `libtomlplusplus.so.3` shrinking from 219 to 218 exported symbols, missing `_ZNK4toml2v35table18is_array_of_tablesEv`. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-cpp/tomlplusplus-3.4.0/temp/build.log`.
