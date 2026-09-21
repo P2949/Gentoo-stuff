@@ -7974,6 +7974,8 @@ After the evidence commits advanced the repository source identity, the root-own
 
 The profile merger now converts `llvm-profdata` rejection into a structured terminal `REFUSED` result while preserving the original tool diagnostic. This keeps incompatible raw-profile versions fail-closed without leaking a traceback; the focused refusal fixture, Python compilation, and ABI-hook regression suite passed.
 
+The portable suite initially exposed eight stale validator-fixture expectations for the current eight-key manifest ABI: the fixtures still required the removed `cpv` row and used the old ABI row index. Those expectations were corrected without changing the frozen contract files; the focused validator suite now passes all 16 tests.
+
 ### 2026-09-21 — rocdbgapi profile merge terminal failure
 
 `dev-libs/rocdbgapi-7.2.0` completed the authenticated generation transaction and its receipt passed independent verification, but LLVM 22 profile merging failed because the collected raw profile set contained an invalid/unreadable profraw payload. No validated profile, dispatcher publication, or profile-use deployment was admitted. The raw payloads and receipt are retained for forensic diagnosis.

@@ -385,7 +385,6 @@ class ProfileValidatorTests(unittest.TestCase):
         expected = (
             "schema=gentoo-optimization-profile-v1\n"
             f"backend={backend}\n"
-            "cpv=cat/pkg-1\n"
             f"fingerprint={FINGERPRINT}\n"
             "abi=amd64\n"
             f"compiler_family={family}\n"
@@ -394,7 +393,7 @@ class ProfileValidatorTests(unittest.TestCase):
             "validation_status=passed\n"
         )
         self.assertEqual(path.read_text(encoding="ascii"), expected)
-        self.assertEqual(len(expected.splitlines()), 9)
+        self.assertEqual(len(expected.splitlines()), 8)
         self.assertEqual(path.stat().st_mode & 0o777, 0o640)
         metadata = Path(os.fspath(path) + ".metadata.json")
         self.assertEqual(metadata.stat().st_mode & 0o777, 0o640)
@@ -540,7 +539,7 @@ class ProfileValidatorTests(unittest.TestCase):
         arguments[arguments.index("--abi") + 1] = "x86"
         self._run(arguments, success=True)
         rows = manifest.read_text(encoding="ascii").splitlines()
-        self.assertEqual(rows[4], "abi=x86")
+        self.assertEqual(rows[3], "abi=x86")
         metadata = Path(os.fspath(manifest) + ".metadata.json")
         self._run(
             [
