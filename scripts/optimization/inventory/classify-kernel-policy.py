@@ -7,6 +7,7 @@ CONTENTS proves ownership of a forbidden boot/kernel artifact.
 """
 import argparse, hashlib, json, re
 from pathlib import Path
+from portage.versions import catpkgsplit
 FORBIDDEN=re.compile(r'(/boot/|/efi/|/sys/firmware/efi|/etc/kernel/)',re.I)
 LIFECYCLE_HINT=re.compile(r'(initramfs|dracut|installkernel|efibootmgr|bootctl|grub-install)',re.I)
 def main():
@@ -36,7 +37,12 @@ def main():
   # Locate the exact ebuild by CPV filename; source repositories are evidence,
   # not category policy.  Failure to locate it is explicit pending review.
   if Path(a.output).exists(): raise SystemExit('REFUSED: kernel-policy output already exists')
-  pn=item.get('pn') or pf.rsplit('-',1)[0]
+  split=catpkgsplit(pf)
+  vdb_pn=(root/'PN').read_text(errors='replace').strip() if (root/'PN').is_file() else ''
+  if not split or split[0] == 'null':
+   pn=item.get('pn') or vdb_pn or pf.rsplit('-', 1)[0]
+  else:
+   pn=item.get('pn') or split[1]
   ebuild_name=item.get('ebuild') or (pf+'.ebuild')
   repo_name=''
   for marker in ('REPOSITORY','repository'):
