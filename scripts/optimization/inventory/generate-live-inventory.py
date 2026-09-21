@@ -6,31 +6,12 @@ for paths already present in the previous reviewed inventory. New directory
 records are marked unresolved and must be reviewed before framework activation.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os, pathlib, stat
+import argparse, hashlib, json, os, pathlib, stat, collections, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3]))
+from scripts.optimization.lib.contents import parse_contents_line
 
 def sha(obj):
     return hashlib.sha256(json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-
-def parse_contents_line(line):
-    """Parse a Portage CONTENTS record without splitting spaces in paths."""
-    line = line.rstrip("\n")
-    if " " not in line:
-        return None
-    kind, rest = line.split(" ", 1)
-    if kind == "dir":
-        return kind, rest, []
-    if kind == "obj":
-        fields = rest.rsplit(" ", 2)
-        if len(fields) != 3:
-            return None
-        path, digest, mtime = fields
-        return kind, path, [digest, mtime]
-    if kind == "sym":
-        if " -> " not in rest:
-            return None
-        path, target = rest.split(" -> ", 1)
-        return kind, path, ["->", target]
-    return None
 
 def main():
     ap=argparse.ArgumentParser()
@@ -62,14 +43,20 @@ def main():
         for n in ('CATEGORY','PF','SLOT','EAPI','USE','REPOSITORY','BUILD_TIME','CFLAGS','CXXFLAGS','CHOST','FEATURES'):
           p=os.path.join(root,n)
           if os.path.isfile(p): meta[n]=open(p,errors='replace').read().strip()
-        entries=[]
+        entries=[]; kind_counts=collections.Counter()
         for line in open(contents,errors='replace'):
-          parsed=parse_contents_line(line)
+          try:
+            parsed=parse_contents_line(line)
+          except ValueError as exc:
+            raise SystemExit(f'REFUSED: malformed CONTENTS for {cpv}: {exc}') from exc
           if parsed is None: continue
           kind,path,tail=parsed; entries.append([kind,path,tail])
+          kind_counts[kind] += 1
           if kind != 'dir': paths.append({'owner_cpv':cpv,'path':path}); owners.setdefault(path,set()).add(cpv)
           if kind=='dir': dirs.setdefault(path,set()).add(cpv)
-        packages.append({'cpv':cpv,'entry_sha256':sha({'metadata':meta,'contents':entries})})
+        packages.append({'cpv':cpv,'entry_sha256':sha({'metadata':meta,'contents':entries}),
+                         'contents_record_count':sum(kind_counts.values()),
+                         'contents_kind_counts':dict(sorted(kind_counts.items()))})
     # Include parent directories of owned paths, using live stat data.
     for p in list(owners):
       cur=pathlib.PurePosixPath(p).parent
@@ -100,6 +87,8 @@ def main():
           outdirs.append({'owner_cpv':owner,'path':p,'uid':uid,'gid':gid,'mode':mode,'classification':'unresolved','resolution':{'reason_code':'requires-directory-review','registry_version':'1'}})
     unique_paths={(x['owner_cpv'],x['path']):x for x in paths}
     result={'generation_id':a.generation_id,'inventory_id':a.generation_id+'-v1','owned_directories':sorted(outdirs,key=lambda x:(x['owner_cpv'],x['path'])),'owned_paths':sorted(unique_paths.values(),key=lambda x:(x['owner_cpv'],x['path'])),'packages':sorted(packages,key=lambda x:x['cpv']),'unresolved_directories':sorted(unresolved),'record_type':'frozen-inventory','schema_version':2}
+    result['contents_record_count']=sum(x['contents_record_count'] for x in packages)
+    result['contents_kind_counts']=dict(sorted(collections.Counter(k for x in packages for k,n in x['contents_kind_counts'].items() for _ in range(n)).items()))
     pathlib.Path(a.output).parent.mkdir(parents=True,exist_ok=True)
     with open(a.output,'w') as f: json.dump(result,f,sort_keys=True,indent=2); f.write('\n')
     print(json.dumps({'packages':len(packages),'owned_paths':len(result['owned_paths']),'owned_directories':len(outdirs),'unresolved_directories':len(unresolved),'output':a.output},sort_keys=True))

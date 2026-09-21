@@ -35,10 +35,10 @@ def main():
         state = source.get("state")
         if state == "kernel-policy-exclusion":
             decision = "kernel-policy-exclusion"
-            triggers = ["owns-forbidden-artifact"]
+            triggers = [source.get("reason_code", "kernel-policy-exclusion")]
         elif state == "userspace-transaction":
             decision = "userspace"
-            triggers = ["no-forbidden-lifecycle-evidence"]
+            triggers = [source.get("reason_code", "no-forbidden-lifecycle-evidence")]
         else:
             # Portage virtual and acct-* records have no transaction ebuild by
             # design and cannot own boot/kernel artifacts.  Record that narrow
