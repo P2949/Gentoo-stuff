@@ -134,7 +134,15 @@ def main() -> None:
     if output.exists():
         raise SystemExit(f"REFUSED: output already exists: {output}")
     census = json.loads(Path(args.census).read_text())
-    items = [x for x in census.get("artifacts", []) if x.get("kind") == "regular" and x.get("elf")]
+    # Accept both the current census schema (kind/elf booleans) and the
+    # earlier authoritative ELF census (class/type fields).  A schema that
+    # cannot prove an ELF record is never treated as an eligible artifact.
+    items = []
+    for item in census.get("artifacts", []):
+        is_regular = item.get("kind", "regular") == "regular"
+        is_elf = bool(item.get("elf")) or bool(item.get("class")) or bool(item.get("type"))
+        if is_regular and is_elf:
+            items.append(item)
     workers = max(1, min(32, (os.cpu_count() or 1) * 2))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         records = list(pool.map(inspect, items))

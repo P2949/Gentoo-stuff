@@ -8576,3 +8576,16 @@ The package-env policy validator found that the new exact CPV ABI-retention mapp
 ### 2026-09-22 — source-highlight ABI remediation narrowed to one libc++ weak symbol
 
 The CPV-bound phase-hook retention retry with the installed ABI flags plus `-fno-inline -fkeep-inline-functions` restored all previously missing Boost/source-highlight exports. The ABI guard now reports exactly one remaining missing symbol: `std::__1::basic_string::__init_copy_ctor_external(char const*, unsigned long)` (`old=1339`, `new=2780`). The exact transaction remains refused. This is preserved as a changed, narrower symbol-emission failure; no further unchanged flag retry or ABI bypass was performed.
+# 2026-09-22 de-instrumentation completion evidence
+
+- The exact `dev-util/source-highlight-3.1.9-r2` cleanup transaction succeeded
+  under `GENTOO_OPT_DEINSTRUMENT=1`, after a scoped libc++ explicit-instantiation
+  shim restored the last missing weak ABI export. The ABI guard remained active.
+- A fresh VDB-owned artifact census (`owned-artifacts-20260922-post-source-highlight.json`)
+  contained 16,731 ELF records. The post-cleanup instrumentation scan contains
+  zero instrumentation-marker records; its two unresolved records are Qualcomm
+  `.mbn` firmware blobs owned by `sys-kernel/linux-firmware-99999999`, which are
+  non-ELF firmware and outside the userspace mutation boundary.
+- `clear-deinstrumentation.py` independently verified that scan and removed the
+  root-owned `deinstrument.pending` marker. No generation or profile-use wave is
+  authorized until the remaining validation gates pass.
