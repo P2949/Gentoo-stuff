@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Phase-3 coverage now refuses to overwrite an existing report and detects duplicate BOLT safety identities; strict BOLT safety coverage requires zero missing, duplicate, pending, or failed candidate records. Focused coverage regression passes; commit `21871ed` pushed.
+
 - 2026-09-21: Made reverse-dependency and consumer-workload planning artifacts write-once, preventing regeneration from overwriting prior graph/planning evidence. Updated integration tests use distinct output paths and pass; commit `effcb04` pushed.
 
 - 2026-09-21: Made `profile-identity-remediation-v1` publication write-once; an existing remediation artifact is now refused rather than overwritten. Python compilation passes; commit `e5a4ba0` pushed.
