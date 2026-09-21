@@ -8,6 +8,8 @@ def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':')).encode()
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--package-state',type=Path,required=True); ap.add_argument('--attempts',type=Path,required=True); ap.add_argument('--output',type=Path,required=True); ap.add_argument('--wave-size',type=int,default=16); ap.add_argument('--generation-id',required=True); a=ap.parse_args()
+    if Path('/var/lib/gentoo-optimization/state/deinstrument.pending').exists():
+        raise SystemExit('REFUSED: de-instrumentation is pending; generation scheduling is paused')
     if a.output.exists(): raise SystemExit('REFUSED: scheduler output already exists')
     state=json.loads(a.package_state.read_text()); rows=state.get('records',state.get('packages',[]))
     completed=set(); failed={}; considered=[]; retry_authorized=set()

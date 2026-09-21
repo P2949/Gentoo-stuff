@@ -14,6 +14,8 @@ def main() -> int:
     ap.add_argument('--cpv',required=True); ap.add_argument('--repository',required=True)
     ap.add_argument('--receipt',type=pathlib.Path,required=True); ap.add_argument('--log',type=pathlib.Path,required=True)
     a=ap.parse_args()
+    if pathlib.Path('/var/lib/gentoo-optimization/state/deinstrument.pending').exists():
+        raise SystemExit('REFUSED: de-instrumentation is pending; profile-use waves are paused')
     if a.receipt.exists() or a.log.exists():
         raise SystemExit('REFUSED: terminal profile-use evidence already exists')
     if '/' not in a.cpv: raise SystemExit('REFUSED: malformed CPV')
