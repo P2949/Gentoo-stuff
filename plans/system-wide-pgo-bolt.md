@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libaio-9999` using fingerprint `85e342fc4a02effbb888bcb7a2b5e2c271cbcfd018b1ff6acb6da851b0f7a945` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libaio-9999.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libaio-profile-use-20260921.log` has SHA-256 `2ff7eed7f16acacda3cbcc1cc808b412373413a71e8548ebba54a97adaf1cb99`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/json-glib-1.10.8` using fingerprint `cf69a5af9f828dd8d02b4be0a653aba8165513519409b6c3b62a6c515ad614fc` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_json-glib-1.10.8.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-json-glib-profile-use-20260921.log` has SHA-256 `63b2a9187dac39601eb3c300be84e9b81c314ccacfaec28e3617596bc96644b6`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/hyphen-2.8.8-r2` using fingerprint `61250aa4885f9f50ede956cac79eabac9429a89f4f3d14ceeccb6151309febe2` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_hyphen-2.8.8-r2.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-hyphen-profile-use-20260921.log` has SHA-256 `0b8b4e31c2d3da9c6955f44fcf51117f0b744cf9ac2d527ccf003032ab9708fc`. This is `clang-ir-use` evidence only; no BOLT claim.
