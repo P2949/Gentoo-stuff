@@ -1,6 +1,7 @@
 # Exhaustive System-Wide PGO and BOLT Implementation Plan for Gentoo
 
 ## Progress summary
+- 2026-09-21: The lane-override regression is now a discoverable `unittest` case at commit `459e599`, so reviewed generation-policy decisions are exercised by the normal Python test driver rather than only by direct script invocation. The complete portable suite remains active in the recovery partition.
 - 2026-09-21: Generation-specific lane exceptions are now sourced exclusively from the reviewed override artifact at commit `68e67a3`; the former exact-CPV dictionary was removed from the classifier, malformed/duplicate override rows refuse, and each decision records whether it came from reviewed policy or generic evidence. Regression `test_assign_pgo_lanes.py` passes in commit `6e7d6fb`; no broad profile-use wave was resumed.
 - 2026-09-21: Independent provenance verification was strengthened at commit `98475b5`: the verifier now reopens the exact installed VDB directory, rechecks repository/build-time/counter/CONTENTS identities, validates next-build ebuild containment and SHA-256, and refuses unavailable records carrying fabricated hashes. The fixture passes with explicit live-root arguments; no profile-use wave was resumed.
 - 2026-09-21: Reverse-dependency graph generation now preserves typed `portage-build` edges in addition to runtime and ELF `DT_NEEDED` edges at commit `7c7a652`; unsupported relationship classes refuse rather than being silently merged. Integration coverage passes and the branch is pushed.
