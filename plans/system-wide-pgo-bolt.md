@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Profile-use receipt v2 verification now requires backend-specific consumption evidence in the immutable build log (`-fprofile-use`, `-fprofile-sample-use`, `-Cprofile-use`, GCC `-fprofile-use`, or Go `-pgo`) and rejects generation-mode flags in a use transaction. Focused runner validation passes; commit `c1dcd68` pushed.
+
 - 2026-09-21: Extended profile-use receipt v2 to bind and independently hash the exact validated profile manifest in addition to dispatcher, environment, metadata, profile, ebuild, log, and generation identities. The runner refuses dispatchers without a manifest; focused identity regression passes (commit `3a552c6`).
 
 - 2026-09-21: Current live baseline recheck: userspace-only `emerge --update --deep --newuse --with-bdeps=y @world` resolved with no pending merge operations; the read-only depclean assessment reports 1,307 installed packages, 1,285 required, and 22 removable candidates. Evidence is retained at `/var/lib/gentoo-optimization/reports/userspace-baseline-depclean-current-20260921.txt` (SHA-256 `252ad03d7da51f058f73f5a21e1b5458dbf2113b296a72916405e42af2667960`). No depclean mutation was executed, and no kernel/boot/EFI/initramfs/firmware package was touched.
