@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/nettle-3.10.2` using fingerprint `a2eedcd64aed04520746a92a20d8f35602afccb258c8d03b9f3406e2bc228dd1` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_nettle-3.10.2.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-nettle-profile-use-20260921.log` SHA-256 `0d9daa2a58bcfe8c0593f66ca0e8241d8e1a0df2c6623588727567938c9f1f22`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libverto-0.3.2-r1` using fingerprint `0c95a4b2ad911c18e74339ca8bd8c5fbee0869eaeb3bad84afe949fcb3f86a71` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libverto-0.3.2-r1.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libverto-profile-use-20260921.log` SHA-256 `cfa224313ca83c6b815228afa1d413812b53bc671ca2d537a65be48b2cdf9c1e`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libusb-1.0.30` using fingerprint `79930588e31ca53f0ba8ea26d2f1ca4e8ec21499f6ca357ad5a698ddbe3f0c5c` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libusb-1.0.30.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libusb-profile-use-20260921.log` SHA-256 `1c6c4df4794f97b927de64f901ed131a99f3a239fcbf274f8847e62e26a20659`. This is `clang-ir-use` evidence only; no BOLT claim.
