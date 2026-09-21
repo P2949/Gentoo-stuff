@@ -91,7 +91,57 @@
     }
   },
   "allowed_unmatched_atoms": {},
-  "allowed_effective_atom_overlaps": [],
+  "allowed_effective_atom_overlaps": [
+    {
+      "atoms": [
+        "dev-util/glslang",
+        "=dev-util/glslang-1.4.357.0"
+      ],
+      "rationale": "Exact maintenance identity and broad package policy intentionally overlap; the exact maintenance assignment is authoritative for this CPV."
+    },
+    {
+      "atoms": [
+        "dev-util/spirv-tools",
+        "=dev-util/spirv-tools-1.4.357.0"
+      ],
+      "rationale": "Exact maintenance identity and broad package policy intentionally overlap; the exact maintenance assignment is authoritative for this CPV."
+    },
+    {
+      "atoms": [
+        "gui-libs/wlroots",
+        "=gui-libs/wlroots-0.20.2"
+      ],
+      "rationale": "Exact maintenance identity and broad package policy intentionally overlap; the exact maintenance assignment is authoritative for this CPV."
+    },
+    {
+      "atoms": [
+        "gui-wm/gamescope",
+        "=gui-wm/gamescope-3.16.28"
+      ],
+      "rationale": "Exact maintenance identity and broad package policy intentionally overlap; the exact maintenance assignment is authoritative for this CPV."
+    },
+    {
+      "atoms": [
+        "gui-wm/hyprland",
+        "=gui-wm/hyprland-9999"
+      ],
+      "rationale": "Exact maintenance identity and broad package policy intentionally overlap; the exact maintenance assignment is authoritative for this CPV."
+    },
+    {
+      "atoms": [
+        "media-libs/mesa",
+        "=media-libs/mesa-9999"
+      ],
+      "rationale": "Exact maintenance identity and broad package policy intentionally overlap; the exact maintenance assignment is authoritative for this CPV."
+    },
+    {
+      "atoms": [
+        "media-libs/vulkan-layers",
+        "=media-libs/vulkan-layers-1.4.357.0"
+      ],
+      "rationale": "Exact maintenance identity and broad package policy intentionally overlap; the exact maintenance assignment is authoritative for this CPV."
+    }
+  ],
   "compiler_profiles": {
     "clang-libstdcxx.conf": {
       "lane": "clang22-libstdcxx-llvm22-tools",
@@ -157,6 +207,19 @@
         "RANLIB": "/usr/lib/llvm/21/bin/llvm-ranlib"
       },
       "rationale": "Records the already-tested mixed Rust bootstrap lane exactly instead of incorrectly claiming that every support tool is LLVM 21."
+    },
+    "opensp-clang-cxx.conf": {
+      "lane": "clang22-active-libstdcxx-llvm22-tools",
+      "tools": {
+        "CC": "clang",
+        "CXX": "clang++-22",
+        "CPP": "clang-cpp",
+        "LD": "ld.lld",
+        "AR": "llvm-ar",
+        "NM": "llvm-nm",
+        "RANLIB": "llvm-ranlib"
+      },
+      "rationale": "OpenSP requires the reviewed Clang C++ driver and explicit libstdc++ link correction for its legacy libtool link rules."
     }
   },
   "forbidden_environment_patterns": [
