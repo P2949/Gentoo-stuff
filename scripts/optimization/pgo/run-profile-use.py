@@ -42,7 +42,7 @@ def main() -> int:
     with a.log.open('w') as out:
         proc=subprocess.run(['emerge','--oneshot','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null'})
     post=(vdb/'BUILD_TIME').read_text().strip() if (vdb/'BUILD_TIME').is_file() else ''
-    receipt={'schema_version':1,'cpv':a.cpv,'repository':repo,'ebuild_sha256':digest,'dispatcher_sha256':sha(a.dispatcher),'metadata_sha256':sha(metadata),'profile_sha256':sha(profile),'exit_status':proc.returncode,'log_sha256':sha(a.log),'started_epoch':started,'finished_epoch':time.time(),'post_build_time':post}
+    receipt={'schema_version':1,'cpv':a.cpv,'repository':repo,'ebuild_sha256':digest,'dispatcher_sha256':sha(a.dispatcher),'metadata_sha256':sha(metadata),'profile_sha256':sha(profile),'exit_status':proc.returncode,'log_path':str(a.log.resolve()),'log_sha256':sha(a.log),'started_epoch':started,'finished_epoch':time.time(),'post_build_time':post}
     a.receipt.parent.mkdir(parents=True,exist_ok=True); a.receipt.write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
     return proc.returncode
 if __name__=='__main__': raise SystemExit(main())
