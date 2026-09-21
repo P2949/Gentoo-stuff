@@ -7825,3 +7825,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — fuzzel clang-IR generation and profile-use
 
 `gui-apps/fuzzel-1.14.1` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `4f045d15d1c54d5197d343699344abb96b72690419fd1fb37f47b39093c5da53`, and dispatcher publication succeeded with record SHA-256 `7ecb99a7abb83ba7d0904c5da0d90ca8ac612dc156c514592a56dfcfa70c59f3`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — mako generation fetch-stall terminal failure
+
+`gui-apps/mako-9999` passed readiness and storage preflight, but the live Git fetch for `https://github.com/emersion/mako.git` remained idle for over two minutes with no progress. The fetch child was terminated cleanly; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/gui-apps/mako-9999/temp/build.log`.
