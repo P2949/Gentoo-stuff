@@ -7901,3 +7901,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — strace generation fetch-stall terminal failure
 
 `dev-debug/strace-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/strace/strace.git` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-debug/strace-9999/temp/build.log`.
+
+### 2026-09-21 — duktape clang-IR generation and profile-use
+
+`dev-lang/duktape-2.7.0-r3` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `00caeda521a986118b3a251eb966eee552d1e8d380d9138a1b7a6ae2b897cb64`, and dispatcher publication succeeded with record SHA-256 `a2577574fd80384c4c23f0ef5b25766ff89181e93fd72acaa1055e2334074c44`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
