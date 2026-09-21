@@ -48,7 +48,11 @@ def inspect(path: Path) -> tuple[str, str | None, set[str]]:
         # It is not a package-provided ABI symbol and is intentionally absent
         # from profile-use and ordinary builds; comparing it would reject the
         # valid transition from a training image to a deployable image.
-        if name == "__llvm_write_custom_profile":
+        # Versioned ELF symbol spellings carry @@SONAME (for example
+        # __llvm_write_custom_profile@@Qt_6).  Normalize that suffix before
+        # applying the runtime-helper exemption so de-instrumentation can
+        # legitimately replace a training DSO with its clean counterpart.
+        if name.split("@", 1)[0] == "__llvm_write_custom_profile":
             continue
         # Qt deliberately versions its private ABI namespace on patch-level
         # updates (for example QtPrivate_6_11_1 -> QtPrivate_6_11_2).  These

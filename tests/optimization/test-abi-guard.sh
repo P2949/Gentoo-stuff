@@ -112,6 +112,28 @@ cc -shared -fPIC "${work}/old.c" -Wl,-soname,libtransition.so.1 \
 ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
 echo 'PASS: ABI guard accepts SONAME transition with retained compatibility provider'
 
+# The LLVM runtime helper may be versioned by the provider SONAME.  Its ELF
+# spelling is __llvm_write_custom_profile@@<version>; the ABI guard must
+# normalize the version suffix before applying the instrumentation exemption.
+cat >"${work}/profile-helper.c" <<'EOF'
+int __llvm_write_custom_profile(void) { return 0; }
+int retained_profile_api(void) { return 0; }
+EOF
+cat >"${work}/profile-helper.map" <<'EOF'
+PROFILE_1 { global: __llvm_write_custom_profile; };
+EOF
+cc -shared -fPIC "${work}/profile-helper.c" \
+    -Wl,--version-script="${work}/profile-helper.map" \
+    -Wl,-soname,libprofile-helper.so.1 -o "${work}/root/usr/lib/libprofile-helper.so.1"
+cat >"${work}/profile-clean.c" <<'EOF'
+int retained_profile_api(void) { return 0; }
+EOF
+cc -shared -fPIC "${work}/profile-clean.c" \
+    -Wl,--version-script="${work}/profile-helper.map" \
+    -Wl,-soname,libprofile-helper.so.1 -o "${work}/ed/usr/lib/libprofile-helper.so.1"
+ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
+echo 'PASS: ABI guard ignores versioned LLVM profile runtime helper'
+
 # A package with no staged DSO candidates must not trigger a ROOT-wide walk.
 rm -rf -- "${work}/ed" "${work}/root"
 mkdir -p "${work}/ed/opt/dotnet-nugets" "${work}/root/unrelated/deep"
