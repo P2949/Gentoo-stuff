@@ -7958,6 +7958,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `dev-libs/leancrypto-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/smuellerDD/leancrypto` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/leancrypto-9999/temp/build.log`.
 
+### 2026-09-21 — rocm-comgr profile merge terminal failure
+
+`dev-libs/rocm-comgr-7.2.0` completed the authenticated generation transaction and its receipt passed independent verification, but LLVM 22 profile merging failed because the collected raw profile set contained an invalid or unreadable `.profraw` payload. No validated profile, dispatcher publication, or profile-use deployment was admitted. The raw payloads and receipt are retained for forensic diagnosis.
+
 ### 2026-09-21 — rocdbgapi profile merge terminal failure
 
 `dev-libs/rocdbgapi-7.2.0` completed the authenticated generation transaction and its receipt passed independent verification, but LLVM 22 profile merging failed because the collected raw profile set contained an invalid/unreadable profraw payload. No validated profile, dispatcher publication, or profile-use deployment was admitted. The raw payloads and receipt are retained for forensic diagnosis.
