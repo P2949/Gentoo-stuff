@@ -41,6 +41,8 @@ def main():
     ap.add_argument('--output', type=Path, required=True)
     a=ap.parse_args()
     src=load(a.source_record); dst=load(a.target_record)
+    if a.output.exists():
+        raise SystemExit('REFUSED: carry-forward output already exists')
     for label, rec in (('source',src),('target',dst)):
         missing=[k for k in REQUIRED if k not in rec]
         if missing: raise SystemExit(f'REFUSED: {label} record missing {", ".join(missing)}')
@@ -65,6 +67,8 @@ def main():
       'reason':reason, 'source_identity_sha256':digest(src_i), 'target_identity_sha256':digest(dst_i),
     }
     out['sha256']=hashlib.sha256(canon(out)).hexdigest()
-    a.output.write_text(json.dumps(out,sort_keys=True,indent=2)+'\n')
+    a.output.parent.mkdir(parents=True, exist_ok=True)
+    fd=a.output.open('x', encoding='utf-8')
+    with fd: fd.write(json.dumps(out,sort_keys=True,indent=2)+'\n')
     print(json.dumps({'decision':out['decision'],'source_cpv':out['source_cpv'],'target_cpv':out['target_cpv']}))
 if __name__=='__main__': main()
