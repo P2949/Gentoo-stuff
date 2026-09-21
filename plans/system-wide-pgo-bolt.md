@@ -7949,3 +7949,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — hyprgraphics generation compile failure
 
 `dev-libs/hyprgraphics-0.5.1-r1` passed readiness, storage, dependency, source, patch, and CMake configuration gates, but authenticated Clang-IR generation failed during the test/example linker stage. `ld.lld` reported unresolved libc++ filesystem, exception, and shared ownership symbols including `std::__1::__fs::filesystem::directory_iterator`, `std::runtime_error`, and `std::__1::__shared_weak_count`, matching the active libc++/linker tuple incompatibility. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/hyprgraphics-0.5.1-r1/temp/build.log`.
+
+### 2026-09-21 — hyprlang generation fetch-stall terminal failure
+
+`dev-libs/hyprlang-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/hyprwm/Hyprlang.git` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/hyprlang-9999/temp/build.log`.
