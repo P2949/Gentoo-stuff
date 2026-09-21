@@ -16,6 +16,8 @@
 
 - 2026-09-21: Applied the fail-closed kernel classifier to the 1,307-package candidate. It produced 8 concrete forbidden-artifact exclusions, 981 userspace transactions, and 318 pending lifecycle/source reviews; canonical mutation-policy publication correctly refuses this unresolved set. The pending count includes source-less generated/account packages and must be resolved by exact installed/next-build provenance before Phase-3 authority can close. CPV package-name derivation now uses Portage/VDB evidence for zero-version packages; commit `8740d6a` pushed.
 
+- 2026-09-21: Strengthened profile-use receipt v2 so the post-merge record binds exact CPV/repository/slot/subslot/build time/counter/ebuild identity plus hashed VDB `CONTENTS` and `environment.bz2` when present; the independent verifier reopens and rehashes those installed-state artifacts. Focused runner validation and Python compilation pass; commit `0e91021` pushed. No profile-use transaction was resumed.
+
 - 2026-09-21: Completed a fresh read-only live VDB inventory candidate after the userspace baseline check. Generation `phase3-live-baseline-check-20260921c` contains 1,307 exact package records, 684,772 owned paths, and 80,075 owned-directory records; inventory SHA-256 is `99029432a8a290033d6dc99b2469e894abbc7144777861ba534bfd70bf0ee728`. The write-once generator completed without unresolved-directory output. This remains candidate evidence until the strict framework installer accepts the exact generation/source boundary; no activation or package mutation occurred.
 
 - 2026-09-21: Made live inventory generation refuse an existing output path, preserving candidate/frozen inventory evidence across regeneration attempts. Python compilation passes; commit `7d35bb1` pushed.
