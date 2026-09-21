@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: After removing static profile-use assignments from baseline maintenance, a fresh live `@world` pretend resolves with no pending merge operations and no `profile-use-dispatcher` entries remain in repository `package.env`. The current read-only resolver evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-world-current-20260921.txt` (SHA-256 `a2b5fcd3b40e0ac8af52ef24a49e3ea049911ce85014eaeac34b196748823e6e`).
+
 - 2026-09-21: Kernel-policy classification now binds ebuild lookup to the VDB repository identity, refuses ambiguous cross-repository matches, and publishes its classification report write-once. The CONTENTS-path correction remains covered by the focused fixture; commit `b755860` pushed.
 
 - 2026-09-21: Phase-3 coverage now refuses to overwrite an existing report and detects duplicate BOLT safety identities; strict BOLT safety coverage requires zero missing, duplicate, pending, or failed candidate records. Focused coverage regression passes; commit `21871ed` pushed.
