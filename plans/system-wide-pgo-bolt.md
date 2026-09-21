@@ -7805,3 +7805,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — wayland-scanner clang-IR generation and profile-use
 
 `dev-util/wayland-scanner-9999` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `84896f04276dd9cb883c74abdb12d9a67cfad1d601717128c99dde2baa7fdc22`, and dispatcher publication succeeded with record SHA-256 `85cfbd790bfb8441f591e0936a928cc7d1f0296156185f43a7752a9acc995940`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — xxd generation runner anomaly
+
+`dev-util/xxd-2025.08.24-r1` passed storage preflight and readiness, and both the original and a distinct retry generation completed Clang-IR build/install transactions with `/usr/bin/xxd -version` available and returning successfully when checked independently. Neither runner invocation sealed a receipt despite exiting zero, so no profile merge, dispatcher publication, or profile-use deployment was admitted. The raw attempts and captured retry output are preserved; this remains an unresolved runner/sealing anomaly rather than a terminal package exclusion.
