@@ -1272,7 +1272,7 @@ gentoo_opt_strip_deinstrumentation_policy() {
         value=${!variable-}
         [[ -n ${value} ]] || continue
         cleaned=$(printf '%s\n' "${value}" | sed -E \
-            's#(^|[[:space:]])-mllvm[[:space:]]+[^[:space:]]+#\1#g; s#(^|[[:space:]])(-flto(=[^[:space:]]+)?|-ffat-lto-objects|-fforce-emit-vtables|-fwhole-program-vtables|-fsplit-lto-unit|-funified-lto|-fstrict-vtable-pointers|-fuse-ld=lld|-Wl,--lto-[^[:space:]]+|-Wl,-Bsymbolic|-Wl,--thinlto-cache-[^[:space:]]+)#\1#g')
+            's#(^|[[:space:]])-mllvm([[:space:]]+[^[:space:]]+)?#\1#g; s#(^|[[:space:]])(-polly(-vectorizer=[^[:space:]]+)?|-flto(=[^[:space:]]+)?|-ffat-lto-objects|-fforce-emit-vtables|-fwhole-program-vtables|-fsplit-lto-unit|-funified-lto|-fstrict-vtable-pointers|-fuse-ld=lld|-Wl,--lto-[^[:space:]]+|-Wl,-Bsymbolic|-Wl,--thinlto-cache-[^[:space:]]+|-march=native|-O3|-ffast-math|-fno-plt|-fomit-frame-pointer|-fno-semantic-interposition|-fno-strict-aliasing|-fno-stack-protector)#\1#g')
         printf -v "${variable}" '%s' "${cleaned}"
         export "${variable?}"
     done
