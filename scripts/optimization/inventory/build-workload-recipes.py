@@ -6,22 +6,22 @@ def main():
   if x['lane']=='pgo-go':
    # Go PGO requires a sampling/pprof-producing workload.  A generic
    # --help invocation is only a smoke test and cannot create default.pgo.
-   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'generic entrypoint smoke tests cannot collect Go pprof data'})
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'needs-training-workload','purpose':'backend-specific-training','reason':'generic entrypoint smoke tests cannot collect Go pprof data'})
    continue
   # gspell-app1 requires a configured Enchant dictionary and a terminating
   # language-aware input stream.  This installation has no dictionaries, so
   # no deterministic representative workload can produce a valid profile.
   if x['cpv'].startswith('app-text/gspell-'):
-   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'gspell-app1 has no configured language dictionaries on the live system'})
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'needs-training-workload','purpose':'training','reason':'gspell-app1 has no configured language dictionaries on the live system'})
    continue
   # sqlhist requires a live tracefs control path and cannot run safely as a
   # deterministic userspace workload in this boundary; retain accounting as
   # an explicit terminal workload exclusion rather than accepting exit 255.
   if x['cpv'].startswith('dev-libs/libtracefs-'):
-   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'sqlhist requires live tracefs control access and exits 255 without it'})
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'terminal-workload-exclusion','purpose':'training','reason':'sqlhist requires live tracefs control access and exits 255 without it'})
    continue
   if x['cpv'].startswith('sys-apps/gentoo-functions-'):
-   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'consoletype requires an interactive terminal and has no deterministic standalone invocation'})
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'needs-training-workload','purpose':'training','reason':'consoletype requires an interactive terminal and has no deterministic standalone invocation'})
    continue
   # These Wayland utilities require a live compositor/socket even for their
   # help paths.  Running them without that session exits nonzero after the
@@ -30,7 +30,7 @@ def main():
   # compositor-backed workload fixture is available; never treat the failed
   # invocation as a successful profile payload.
   if x['cpv'].startswith(('gui-apps/grim-', 'gui-apps/swayidle-', 'gui-apps/swaylock-')):
-   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'no-profile-producing-workload','reason':'Wayland session required; no deterministic compositor-backed workload is available in the live boundary'})
+   rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':[],'state':'needs-training-workload','purpose':'training','reason':'Wayland session required; no deterministic compositor-backed workload is available in the live boundary'})
    continue
   recipes=[]
   for e in x['entrypoints']:
@@ -145,6 +145,6 @@ def main():
     recipes.append(recipe)
   for recipe in recipes:
    recipe.setdefault('timeout_seconds', 300)
-  rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':recipes,'state':'recipe-ready' if recipes else 'no-runnable-entrypoint'})
+  rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':recipes,'state':'smoke-ready' if recipes else 'needs-training-workload','purpose':'smoke' if recipes else 'training','reason':None if recipes else 'no runnable entrypoint'})
  out={'record_type':'representative-workload-recipes','schema_version':1,'source_manifest':m['sha256'],'packages':rows};out['counts']=dict(collections.Counter(x['state'] for x in rows));out['recipe_count']=sum(len(x['recipes']) for x in rows);out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest();json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(out['counts'],out['recipe_count'])
 if __name__=='__main__':main()
