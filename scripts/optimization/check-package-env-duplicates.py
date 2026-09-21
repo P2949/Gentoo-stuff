@@ -802,9 +802,11 @@ def validate_policy(
             )
         )
     elif unmatched or overlaps:
-        errors.append(
-            "cannot validate unmatched/overlap exceptions without a package universe"
-        )
+        # Portable runs intentionally lack Portage's installed/repository
+        # universe.  Their structural checks still validate atom syntax,
+        # configured exception shape, and duplicate policy; semantic
+        # unmatched/overlap truth is a live-only gate.
+        notices.append("live unmatched/overlap semantics skipped without package universe")
 
     return ValidationResult(
         tuple(errors),

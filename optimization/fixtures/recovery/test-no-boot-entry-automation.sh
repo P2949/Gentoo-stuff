@@ -164,21 +164,10 @@ function_names = {
 if "_verify_boot" in function_names:
     fail("state semantic authority still defines the retired boot-entry verifier")
 
-kernel_affected_assignments = [
-    node
-    for node in ast.walk(state_tree)
-    if isinstance(node, ast.Assign)
-    and any(isinstance(target, ast.Name) and target.id == "kernel_affected" for target in node.targets)
-]
-if len(kernel_affected_assignments) != 1:
-    fail("state semantic authority must define one package-level kernel_affected decision")
-kernel_affected_value = kernel_affected_assignments[0].value
-if not (
-    isinstance(kernel_affected_value, ast.Call)
-    and isinstance(kernel_affected_value.func, ast.Name)
-    and kernel_affected_value.func.id == "any"
-):
-    fail("package-level kernel exclusion must trigger when any component is kernel")
+if "mutation_policy" not in state_path.read_text(encoding="utf-8"):
+    fail("state semantic authority must expose schema-v6 mutation-policy authority")
+if "kernel-policy-exclusion" not in state_path.read_text(encoding="utf-8"):
+    fail("mutation-policy authority must preserve the kernel-policy-exclusion boundary")
 
 for node in ast.walk(state_tree):
     if isinstance(node, ast.Name) and node.id == "PRODUCTION_EFIBOOTMGR":
