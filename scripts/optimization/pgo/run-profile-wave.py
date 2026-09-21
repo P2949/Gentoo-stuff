@@ -173,8 +173,10 @@ def main():
    # Run the exact reviewed representative recipes after the instrumented
    # package transaction.  This is the profile payload collection point; a
    # recipe failure is terminal for the wave and is recorded by the caller.
-   for recipe in item.get('recipes',[]):
+   recipe_records=[]
+   for recipe_index, recipe in enumerate(item.get('recipes',[])):
     path=recipe.get('path'); argv=recipe.get('argv')
+    recipe.setdefault('purpose', item.get('purpose','smoke'))
     if recipe.get('safe_path') is not True or not isinstance(path,str) or not isinstance(argv,list) or not argv or argv[0] != path:
      raise SystemExit(f'REFUSED: unsafe workload recipe for {cpv}: {path}')
     run_env=env.copy(); run_env.update(recipe.get('environment',{}))
@@ -192,6 +194,7 @@ def main():
       raise SystemExit(f'REFUSED: unsafe workload stdin fixture for {cpv}: {stdin_path}')
      stdin_handle=open(canonical,'rb')
     start=time.monotonic()
+    before_payloads=sorted(str(p) for p in Path(profile_path).rglob('*') if p.is_file())
     output_path=Path('/tmp/gentoo-optimization-workload-logs') / (hashlib.sha256((cpv+'\0'+path).encode()).hexdigest()+'.log')
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -227,6 +230,15 @@ def main():
     output_text=output_path.read_text(errors='replace')[-1024*1024:]
     if not output_text and not recipe.get('allow_empty_output',False):
      raise SystemExit(f'REFUSED: workload recipe produced no output for {cpv}: {path}')
+    after_payloads=sorted(str(p) for p in Path(profile_path).rglob('*') if p.is_file())
+    recipe_records.append({'recipe_id':f'{cpv}:{recipe_index}:{hashlib.sha256(json.dumps(recipe,sort_keys=True,separators=(",",":")).encode()).hexdigest()[:16]}',
+                           'purpose':recipe.get('purpose','smoke'), 'recipe':recipe,
+                           'log_path':str(output_path), 'log_sha256':hashlib.sha256(output_path.read_bytes()).hexdigest(),
+                           'exit_status':result.returncode, 'duration_seconds':round(time.monotonic()-start,6),
+                           'profile_payloads_before':before_payloads, 'profile_payloads_after':after_payloads,
+                           'new_profile_payloads':sorted(set(after_payloads)-set(before_payloads)),
+                           'expected_provider_artifacts':recipe.get('expected_provider_artifacts',[]),
+                           'counter_proof':'payload-emitted' if set(after_payloads)-set(before_payloads) else 'no-new-payload'})
    # Instrumented helper processes can flush their profile files just after
    # emerge returns.  Wait for the package spool to become quiescent before
    # sealing the receipt, otherwise a valid late payload becomes an
@@ -315,7 +327,7 @@ def main():
    payloads=[x for x in payloads if x['cpv'] != cpv]
    package_payloads=[{'cpv':x['cpv'],'path':x['path'],'sha256':x['sha256'],'size':x['size']} for x in sealed]
    payloads.extend(package_payloads)
-   package_records.append({'cpv':cpv,'lane':item.get('lane'),'attempt_id':attempt_id,'pre_transaction_fingerprint':item.get('fingerprint'),'profile_spool':profile_path,'profile_payloads':package_payloads})
+   package_records.append({'cpv':cpv,'lane':item.get('lane'),'attempt_id':attempt_id,'pre_transaction_fingerprint':item.get('fingerprint'),'profile_spool':profile_path,'profile_payloads':package_payloads,'recipe_records':recipe_records})
    _active_attempt['state']='completed'; _active_attempt['completed_at']=time.time(); _active_attempt['profile_payloads']=package_payloads; _write_attempt(_active_attempt); _active_attempt=None
  if not payloads:
   raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
