@@ -7813,3 +7813,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — gamemode clang-IR generation and profile-use
 
 `games-util/gamemode-9999` completed the authenticated Clang-IR generation wave; receipt verification passed, LLVM merge evidence was published, and dispatcher publication succeeded. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`. The live transaction emitted non-fatal `default.profraw` permission diagnostics and existing `ldconfig` warnings for unrelated ThinLTO YAML files; neither affected the authoritative profile-use result.
+
+### 2026-09-21 — dconf workload terminal failure
+
+`gnome-base/dconf-0.49.0` completed authenticated Clang-IR generation, build/install, and install-QA, but the reviewed `/usr/bin/dconf --help` workload exited `2`. The runner therefore refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is retained in the runner output and requires a corrected deterministic fixture before retry.
