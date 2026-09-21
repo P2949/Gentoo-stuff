@@ -25,12 +25,17 @@ def directory_resolution(v: object) -> None:
 
 def verify(path: Path) -> dict:
     raw=path.read_bytes(); digest=hashlib.sha256(raw).hexdigest(); d=json.loads(raw)
-    if list(d) != ['generation_id','inventory_id','owned_directories','owned_paths','packages','record_type','schema_version'] or d.get('schema_version') != 2 or d.get('record_type') != 'frozen-inventory' or not SAFE_ID.fullmatch(d.get('generation_id','')) or not SAFE_ID.fullmatch(d.get('inventory_id','')): fail('invalid top-level schema')
+    legacy = {'generation_id','inventory_id','owned_directories','owned_paths','packages','record_type','schema_version'}
+    extended = legacy | {'unresolved_directories','contents_record_count','contents_kind_counts'}
+    if set(d) not in (legacy, extended) or d.get('schema_version') != 2 or d.get('record_type') != 'frozen-inventory' or not SAFE_ID.fullmatch(d.get('generation_id','')) or not SAFE_ID.fullmatch(d.get('inventory_id','')): fail('invalid top-level schema')
     packages=d.get('packages');
     if not isinstance(packages,list) or not packages: fail('packages must be nonempty')
     cpvs=[]
     for p in packages:
-        if list(p) != ['cpv','entry_sha256'] or not CPV.fullmatch(p.get('cpv','')) or not SHA256.fullmatch(p.get('entry_sha256','')): fail('invalid package record')
+        if set(p) not in ({'cpv','entry_sha256'}, {'cpv','entry_sha256','contents_record_count','contents_kind_counts'}) or not CPV.fullmatch(p.get('cpv','')) or not SHA256.fullmatch(p.get('entry_sha256','')): fail('invalid package record')
+        if set(p) != {'cpv','entry_sha256'}:
+            if not isinstance(p.get('contents_record_count'),int) or p['contents_record_count'] < 0 or not isinstance(p.get('contents_kind_counts'),dict): fail('invalid CONTENTS accounting')
+            if any(not isinstance(k,str) or not isinstance(v,int) or v < 0 for k,v in p['contents_kind_counts'].items()) or sum(p['contents_kind_counts'].values()) != p['contents_record_count']: fail('invalid CONTENTS accounting')
         cpvs.append(p['cpv'])
     if cpvs != sorted(cpvs) or len(cpvs)!=len(set(cpvs)): fail('packages not sorted and unique')
     owners=set(cpvs)
@@ -49,6 +54,11 @@ def verify(path: Path) -> dict:
         if previous_dir_key is not None and key <= previous_dir_key: fail('owned directories not sorted and unique')
         previous_dir_key=key
     if any(e['path'] in path_set for e in dirs): fail('file and directory namespaces overlap')
+    if set(d) == extended:
+        unresolved = d.get('unresolved_directories')
+        if not isinstance(unresolved,list) or unresolved != sorted(set(unresolved)) or any(not canonical_path(x) for x in unresolved): fail('invalid unresolved directories')
+        if d['contents_record_count'] != sum(p['contents_record_count'] for p in packages): fail('CONTENTS total mismatch')
+        if d['contents_kind_counts'] != {k: sum(p['contents_kind_counts'].get(k,0) for p in packages) for k in sorted({k for p in packages for k in p.get('contents_kind_counts',{})})}: fail('CONTENTS kind totals mismatch')
     return {'cpvs':cpvs,'generation_id':d['generation_id'],'inventory_id':d['inventory_id'],'inventory_sha256':digest,'owned_path_count':len(paths),'owned_directory_count':len(dirs),'package_count':len(packages)}
 
 def main() -> int:
