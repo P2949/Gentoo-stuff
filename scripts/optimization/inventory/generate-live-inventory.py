@@ -38,6 +38,8 @@ def main():
     ap.add_argument('--directory-review', help='review JSON for newly observed directories')
     ap.add_argument('--output',required=True); ap.add_argument('--generation-id',required=True)
     a=ap.parse_args(); prev=json.load(open(a.previous))
+    if pathlib.Path(a.output).exists():
+        raise SystemExit('REFUSED: live inventory output already exists')
     review = json.load(open(a.directory_review)) if a.directory_review else None
     reviewed = {}
     if review is not None:
