@@ -1264,6 +1264,20 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
     done
 }
 
+gentoo_opt_strip_deinstrumentation_policy() {
+    [[ ${GENTOO_OPT_DEINSTRUMENT-} == 1 ||
+        -f /var/lib/gentoo-optimization/state/deinstrument.pending ]] || return 0
+    local variable value cleaned
+    for variable in CFLAGS CXXFLAGS LDFLAGS; do
+        value=${!variable-}
+        [[ -n ${value} ]] || continue
+        cleaned=$(printf '%s\n' "${value}" | sed -E \
+            's#(^|[[:space:]])-mllvm[[:space:]]+[^[:space:]]+#\1#g; s#(^|[[:space:]])(-flto(=[^[:space:]]+)?|-ffat-lto-objects|-fforce-emit-vtables|-fwhole-program-vtables|-fsplit-lto-unit|-funified-lto|-fstrict-vtable-pointers|-fuse-ld=lld|-Wl,--lto-[^[:space:]]+|-Wl,-Bsymbolic|-Wl,--thinlto-cache-[^[:space:]]+)#\1#g')
+        printf -v "${variable}" '%s' "${cleaned}"
+        export "${variable?}"
+    done
+}
+
 gentoo_opt_require_go_single_main() {
     [[ ${GENTOO_OPT_GO_MAIN_COUNT-} == 1 ]] || {
         gentoo_opt_error 'generic Go PGO requires a proven single-main package'
@@ -1583,6 +1597,8 @@ rust-generate|rust-use|go-use) ;;
         gentoo_opt_disable_ccache
         gentoo_opt_detect_compiler_family "${GENTOO_OPT_COMPILER_FAMILY}" || return 1
         GENTOO_OPT_ACTIVE_BACKEND=none
+        gentoo_opt_strip_inherited_clang_profile_flags
+        gentoo_opt_strip_deinstrumentation_policy
     fi
     gentoo_opt_apply_readiness_flags || return 1
     gentoo_opt_log_selection || return 1
