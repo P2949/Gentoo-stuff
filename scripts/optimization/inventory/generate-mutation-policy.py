@@ -40,9 +40,16 @@ def main():
             decision = "userspace"
             triggers = ["no-forbidden-lifecycle-evidence"]
         else:
-            # Pending lifecycle review is not safe to classify as userspace.
-            decision = "pending-review"
-            triggers = [source.get("reason_code", "unresolved-lifecycle-evidence")]
+            # Portage virtual and acct-* records have no transaction ebuild by
+            # design and cannot own boot/kernel artifacts.  Record that narrow
+            # semantic review explicitly; all other source-unavailable rows
+            # remain pending and refuse publication.
+            if cpv.split('/', 1)[0] in {"virtual", "acct-group", "acct-user"} and not source.get("evidence_paths"):
+                decision = "userspace"
+                triggers = ["metadata-only-package", "exact-ebuild-not-applicable"]
+            else:
+                decision = "pending-review"
+                triggers = [source.get("reason_code", "unresolved-lifecycle-evidence")]
         output.append({
             "cpv": cpv,
             "decision": decision,

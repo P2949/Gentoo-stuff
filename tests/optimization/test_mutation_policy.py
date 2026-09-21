@@ -11,14 +11,15 @@ def main():
         manifest = root / "manifest.json"
         classification = root / "kernel.json"
         policy = root / "policy.json"
-        manifest.write_text(json.dumps({"packages": [{"cpv": "app/a-1"}, {"cpv": "dev/b-2"}]}))
+        manifest.write_text(json.dumps({"packages": [{"cpv": "app/a-1"}, {"cpv": "virtual/b-2"}, {"cpv": "dev/b-2"}]}))
         classification.write_text(json.dumps({"records": [
             {"cpv": "app/a-1", "state": "userspace-transaction", "reason_code": "no-forbidden-lifecycle-evidence", "ebuild_markers": [], "evidence_paths": [], "repository": "gentoo", "ebuild_path": "/repo/a.ebuild"},
+            {"cpv": "virtual/b-2", "state": "pending-lifecycle-review", "reason_code": "source-unavailable", "ebuild_markers": [], "evidence_paths": [], "repository": "gentoo", "ebuild_path": None},
             {"cpv": "dev/b-2", "state": "kernel-policy-exclusion", "reason_code": "owned-forbidden-artifact", "ebuild_markers": [], "evidence_paths": ["/boot/x"], "repository": "gentoo", "ebuild_path": "/repo/b.ebuild"},
         ]}))
         subprocess.run(["python3", str(GEN), "--manifest", str(manifest), "--kernel-classification", str(classification), "--generation-id", "g1", "--output", str(policy)], check=True)
         subprocess.run(["python3", str(VER), "--policy", str(policy), "--manifest", str(manifest)], check=True)
-        assert [x["decision"] for x in json.loads(policy.read_text())["records"]] == ["userspace", "kernel-policy-exclusion"]
+        assert [x["decision"] for x in json.loads(policy.read_text())["records"]] == ["userspace", "kernel-policy-exclusion", "userspace"]
     print("PASS: canonical mutation policy generation and verification")
 
 if __name__ == "__main__": main()
