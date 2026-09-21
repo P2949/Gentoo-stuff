@@ -7793,3 +7793,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — ragel profile-use ABI failure
 
 `dev-util/ragel-7.0.4-r3` completed authenticated Clang-IR generation, receipt verification, profile merge, manifest validation, and dispatcher publication, but its exact `clang-ir-use` rebuild was rejected by install-QA ABI guard. `libragel.so.0` changed from 258 to 249 exported symbols and lost ten existing C++ exports. No profile-use deployment was admitted; the full retained log is `/tmp/dev-util_ragel-7.0.4-r3-profile-use.log` and the Portage build log records the ABI diff. The generated profile remains preserved for package-specific ABI remediation.
+
+### 2026-09-21 — source-highlight profile-use ABI failure
+
+`dev-util/source-highlight-3.1.9-r2` completed authenticated Clang-IR generation, receipt verification, profile merge (digest `792028863a27a29dfd2471d960aada1cb22ff037cacf4d6791c251a020717950`), manifest validation, and dispatcher publication (record SHA-256 `9aed02c99acb1c25643fe59093ee25bf1f9d33e12a2e8b6e3c1a2ee67cef26f8`). Its exact profile-use rebuild was rejected by install-QA ABI guard: `libsource-highlight.so.4` changed from 1339 to 1300 exports and lost existing Boost/srchilite symbols. No optimized profile-use deployment was admitted; the complete log is `/tmp/dev-util_source-highlight-3.1.9-r2-profile-use.log`.
