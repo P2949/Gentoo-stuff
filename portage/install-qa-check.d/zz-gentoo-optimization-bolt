@@ -53,6 +53,20 @@ fi
     gentoo_opt_hook_abort 'replacement DSO failed exported-ABI guard'
 unset hook_ed hook_root
 
+# Instrumented ELF payloads are only admissible for an explicitly targeted
+# generation transaction.  Ordinary/off/profile-use installs must never admit
+# generation markers, even when runtime output was redirected to /dev/null.
+instrumentation_checker=/usr/local/libexec/gentoo-optimization/scripts/optimization/lib/check-staged-instrumentation.py
+if [[ -x ${instrumentation_checker} ]]; then
+    if ! "${instrumentation_checker}" "${ED:-${D:-.}}"; then
+        if [[ ${GENTOO_OPT_MODE:-off} != *-generate ||
+              -z ${GENTOO_OPT_TARGET_CPV:-} ||
+              ${GENTOO_OPT_TARGET_CPV} != "${CATEGORY-}/${PF-}" ]]; then
+            gentoo_opt_hook_abort 'unauthorized LLVM instrumentation in staged payload'
+        fi
+    fi
+fi
+
 requested_stage=off
 case ${GENTOO_OPT_MODE:-off} in
     bolt-capture) requested_stage=capture ;;
