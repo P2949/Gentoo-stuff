@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/hyphen-2.8.8-r2` using fingerprint `61250aa4885f9f50ede956cac79eabac9429a89f4f3d14ceeccb6151309febe2` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_hyphen-2.8.8-r2.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-hyphen-profile-use-20260921.log` has SHA-256 `0b8b4e31c2d3da9c6955f44fcf51117f0b744cf9ac2d527ccf003032ab9708fc`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/hidapi-0.15.0` using fingerprint `815f062d8386529b5f1ac23182d4a13f948b356c5199d9e06976b391082d5422` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_hidapi-0.15.0.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-hidapi-profile-use-20260921.log` has SHA-256 `4bd516a446986ca15b29888923028c03203a8e824a062263bc175673b5681302`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/fribidi-1.0.16` using fingerprint `72740f1dab0111b3f75a5aeba366535c5a5a7ddce631e4dfe520099ec7e31dd` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_fribidi-1.0.16.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-fribidi-profile-use-20260921.log` has SHA-256 `712360fd0cc8ae6467d2845a40bfd8f92d01c859b7f96a8edf10b6218f4f5c45`. This is `clang-ir-use` evidence only; no BOLT claim.
