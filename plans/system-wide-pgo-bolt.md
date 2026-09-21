@@ -8389,3 +8389,7 @@ After republishing the identity-bound dispatcher and correcting the runner's pro
 ### 2026-09-21 — portable-complete validation checkpoint after exact identity repairs
 
 The resulting source boundary passed `PATH=/usr/bin:/bin /usr/bin/bash tests/run-optimization-tests.sh --mode portable-complete`: 87 pass, 0 fail, 12 skip, 532 required subtests passed, 0 required subtest failures, and exit status 0. The framework-installer, recovery, ABI-guard, dispatcher, BOLT fixture, package-env duplicate, and Portage semantic policy gates all passed. The skipped cases are the documented root/capability-selected integrations and do not authorize production completion.
+
+### 2026-09-21 — current inventory directory review
+
+A fresh live VDB inventory reproduced 1,307 packages, 684,772 owned paths, and 80,075 directories. Four previously unresolved absent runtime directories were independently reviewed as non-machine-code directory records (`/var/spool/cups/tmp`, `/etc/X11/xinit/xinitrc.d`, `/var/spool/cron/lastrun`, `/var/spool/cron/crontabs`) in root-owned evidence `/var/lib/gentoo-optimization/reports/frozen-directory-review-20260921-missing.json`. Regeneration with that review reached zero unresolved directories. The resulting inventory candidate SHA-256 is `63f7972dc2b2dcb76870c614fe8f5e79b967a23ae1217c37c3109ecbc2d7cbac`; it remains a candidate until generated-policy binding and strict framework publication are regenerated against this exact inventory.
