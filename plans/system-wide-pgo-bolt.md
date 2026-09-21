@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-build/bmake-20260508` using fingerprint `cb6a53e8f4327f4e0406f727d77a82cf5e43d633b873ca655852efffdb9c72d0` and profile `/var/cache/gentoo-optimization/pgo/dev-build_bmake-20260508.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-bmake-profile-use-20260921.log` SHA-256 `711d85a93e80660e8ac00bd3895b8b7597cf7dff90b7b54299fa842840def419`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-build/b2-5.5.3` using fingerprint `271a1571120bac3737e0191a0ee986622fce245907270b0dc5a704d194cdc905` and profile `/var/cache/gentoo-optimization/pgo/dev-build_b2-5.5.3.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-b2-profile-use-20260921.log` SHA-256 `5eb6590422d179ee9b9721d327726e1bceff792bbbebd463045882eda2b29db1`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/xxhash-0.8.3-r2` using fingerprint `c43b349b0320b559b81947abd685637bcbfe028573e25029597aebd8f2353b6e` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_xxhash-0.8.3-r2.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-xxhash-profile-use-20260921.log` SHA-256 `de7f8c0f8fac87bbbac37102938c017265de036256a6ca3abbc6c0f1067efd4b`. This is `clang-ir-use` evidence only; no BOLT claim.
