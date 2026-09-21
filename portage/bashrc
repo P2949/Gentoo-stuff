@@ -1267,6 +1267,11 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
 gentoo_opt_strip_deinstrumentation_policy() {
     [[ ${GENTOO_OPT_DEINSTRUMENT-} == 1 ||
         -f /var/lib/gentoo-optimization/state/deinstrument.pending ]] || return 0
+    if [[ ${GENTOO_OPT_DEINSTRUMENT_RETAIN_ABI:-0} == 1 &&
+        ${GENTOO_OPT_DEINSTRUMENT:-0} == 1 &&
+        ${CATEGORY-}/${PF-} == dev-util/source-highlight-3.1.9-r2 ]]; then
+        return 0
+    fi
     local variable value cleaned
     for variable in CFLAGS CXXFLAGS LDFLAGS; do
         value=${!variable-}
