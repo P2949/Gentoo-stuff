@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Corrected VDB fingerprint collection to fail closed when retained `environment.bz2` evidence is absent instead of silently manufacturing empty `EXTRA_ECONF`/`EXTRA_EMESON`/`EXTRA_ECMAKE` values; collector output is now write-once. Python compilation passes; commit `add9bd2` pushed.
+
 - 2026-09-21: Added generator-to-planner integration coverage proving the canonical reverse-dependency graph preserves workload executable/recipe/artifact/counter bindings and yields `consumer-workload-ready` only after the binding survives graph generation. Focused integration test passes; commit `5047523` pushed.
 
 - 2026-09-21: Corrected the v2 receipt verifier's log-path handling and exercised a synthetic immutable Clang receipt: artifact hashes and `-fprofile-use` evidence are accepted, while the backend proof remains mandatory. Commit `59495ff` pushed.
