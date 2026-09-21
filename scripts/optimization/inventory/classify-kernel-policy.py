@@ -14,6 +14,7 @@ except ImportError:
  portage=None
 FORBIDDEN=re.compile(r'(/boot/|/efi/|/sys/firmware/efi|/etc/kernel/)',re.I)
 LIFECYCLE_HINT=re.compile(r'(initramfs|dracut|installkernel|efibootmgr|bootctl|grub-install)',re.I)
+FORBIDDEN_MUTATION=re.compile(r'(\b(efibootmgr|bootctl|kernel-install|installkernel|dracut|grub-install)\b[^\n]*(/boot|/efi|initramfs)|\bmount\b[^\n]*(/boot|/efi)|\binstall\b[^\n]*(/boot|/efi))',re.I)
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--vdb',default='/var/db/pkg');ap.add_argument('--ebuild-root',default='/var/db/repos');ap.add_argument('--output',required=True);a=ap.parse_args(); m=json.loads(Path(a.manifest).read_text()); rows=[]
  for item in m['packages']:
@@ -71,8 +72,11 @@ def main():
   text=matches[0].read_text(errors='replace') if matches else ''
   markers=sorted(set(LIFECYCLE_HINT.findall(text))) if text else []
   excluded=bool(evidence)
-  state='kernel-policy-exclusion' if excluded else ('pending-lifecycle-review' if source_unavailable or markers else 'userspace-transaction')
-  reason='owned-forbidden-artifact' if excluded else ('source-unavailable' if source_unavailable else ('lifecycle-hint-review' if markers else 'no-forbidden-lifecycle-evidence'))
+  # A lifecycle keyword is only a review trigger.  Exclude the transaction
+  # only when the exact ebuild phase contains a concrete forbidden mutation.
+  concrete_mutation=bool(FORBIDDEN_MUTATION.search(text))
+  state='kernel-policy-exclusion' if excluded or concrete_mutation else ('pending-lifecycle-review' if source_unavailable else 'userspace-transaction')
+  reason='owned-forbidden-artifact' if excluded else ('package-phase-forbidden-mutation' if concrete_mutation else ('source-unavailable' if source_unavailable else ('lifecycle-hint-review' if markers else 'no-forbidden-lifecycle-evidence')))
   rows.append({'cpv':cpv,'state':state,'reason_code':reason,'evidence_paths':sorted(evidence),'ebuild_markers':markers,'repository':repo_name,'ebuild_path':str(matches[0]) if matches else None})
  out={'record_type':'kernel-policy-classification','schema_version':1,'source_manifest_sha256':hashlib.sha256(Path(a.manifest).read_bytes()).hexdigest(),'records':rows};out['counts']={}
  for x in rows: out['counts'][x['state']]=out['counts'].get(x['state'],0)+1
