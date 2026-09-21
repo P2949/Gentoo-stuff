@@ -8353,3 +8353,7 @@ The live CPV audit correctly detected that the package count remained 1,307 whil
 ### 2026-09-21 — exact profile-use runner hardening
 
 The dedicated profile-use runner now requires canonical metadata to carry the requested repository and a mandatory 64-hex ebuild identity, compares the independently resolved Portage ebuild hash without an optional fallback, and performs an exact `=CPV::repository` Portage pretend before the source transaction. A regression fixture proves CPV and repository drift refuse before any transaction. Focused runner and Python compilation checks pass.
+
+### 2026-09-21 — exact runner publication checkpoint
+
+The strengthened `run-profile-use.py` was published through the root-owned framework installer after focused CPV/repository-drift regression and Python compilation checks passed. The resulting framework `framework-5e917382dc03da08769afc8389004550f190539fbe4cd9554f8495fde7e27557` passed an independent strict installer check against the current 1,307-CPV inventory. The production runner now refuses missing or mismatched metadata repository/ebuild identity and performs an exact Portage pretend before any source transaction.
