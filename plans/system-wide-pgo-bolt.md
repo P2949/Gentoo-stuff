@@ -8589,3 +8589,9 @@ The CPV-bound phase-hook retention retry with the installed ABI flags plus `-fno
 - `clear-deinstrumentation.py` independently verified that scan and removed the
   root-owned `deinstrument.pending` marker. No generation or profile-use wave is
   authorized until the remaining validation gates pass.
+
+- The post-cleanup dispatcher regression now passes all 46 cases after the
+  fixture gained an explicit exact target CPV. The portable-complete run's
+  recovery, evidence, package-env, shell, and Python gates also passed, but its
+  framework-installer integration still exposes an unaccepted bootstrap matcher
+  path; this remains an open validation defect and does not authorize a wave.
