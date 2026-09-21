@@ -12,12 +12,18 @@ def main():
  decisions={}
  if a.mutation_policy:
   policy=json.load(open(a.mutation_policy))
+  unsigned=dict(policy); declared=unsigned.pop('sha256',None)
+  if policy.get('record_type')!='package-mutation-policy' or policy.get('schema_version') != 1 or not isinstance(declared,str) or hashlib.sha256(json.dumps(unsigned,sort_keys=True,separators=(',',':')).encode()).hexdigest()!=declared:
+   raise SystemExit('REFUSED: invalid canonical mutation-policy digest/schema')
   for row in policy.get('records',[]):
    if not isinstance(row,dict) or not row.get('cpv') or row.get('decision') not in {'userspace','kernel-policy-exclusion'}:
     raise SystemExit('REFUSED: malformed mutation-policy record')
    if row['cpv'] in decisions: raise SystemExit(f"REFUSED: duplicate mutation-policy CPV {row['cpv']}")
    decisions[row['cpv']]=row
   if not decisions: raise SystemExit('REFUSED: empty mutation-policy')
+  expected={x['cpv'] for x in m.get('packages',[])}
+  if set(decisions) != expected:
+   raise SystemExit(f'REFUSED: canonical mutation-policy coverage mismatch missing={sorted(expected-set(decisions))[:5]} extra={sorted(set(decisions)-expected)[:5]}')
  else:
   for atom in (x.strip() for x in open(a.kernel_set) if x.strip()): decisions[atom]={'decision':'kernel-policy-exclusion','triggers':['legacy-policy-set'],'evidence':[]}
  atoms={}
@@ -39,7 +45,7 @@ def main():
  rows=[]
  for cpv in [x['cpv'] for x in m['packages']]:
   policy_row=decisions.get(cpv) or decisions.get(atoms[cpv])
-  if policy_row and policy_row['decision']=='kernel-policy-exclusion': state,reason='kernel-policy-exclusion','kernel-policy-exclusion'
+  if policy_row and policy_row['decision']=='kernel-policy-exclusion': state,reason='kernel-policy-exclusion',(policy_row.get('triggers') or ['kernel-policy-exclusion'])[0]
   elif cpv not in owners: state,reason='not-applicable','no-owned-native-artifact'
   else: state,reason='pending-pgo-classification','owned-native-artifact-requires-backend-and-profile'
   mutation=policy_row or {'decision':'userspace','triggers':[],'evidence':[]}
