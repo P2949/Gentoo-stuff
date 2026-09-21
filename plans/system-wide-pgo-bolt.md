@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Made reverse-dependency and consumer-workload planning artifacts write-once, preventing regeneration from overwriting prior graph/planning evidence. Updated integration tests use distinct output paths and pass; commit `effcb04` pushed.
+
 - 2026-09-21: Made `profile-identity-remediation-v1` publication write-once; an existing remediation artifact is now refused rather than overwritten. Python compilation passes; commit `e5a4ba0` pushed.
 
 - 2026-09-21: Added direct collector regression coverage: missing VDB `environment.bz2` is refused, while explicitly empty observed build controls remain valid. Focused test passes; commit `1b25781` pushed.
