@@ -7801,3 +7801,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — unifdef workload terminal failure
 
 `dev-util/unifdef-2.12-r2` completed authenticated Clang-IR generation and install-QA, but the reviewed `/usr/bin/unifdef -h` workload exited `2` because this utility reports usage for `-h` and rejects the generated `--help` style invocation. The runner therefore refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is preserved and requires a corrected deterministic fixture before retry.
+
+### 2026-09-21 — wayland-scanner clang-IR generation and profile-use
+
+`dev-util/wayland-scanner-9999` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `84896f04276dd9cb883c74abdb12d9a67cfad1d601717128c99dde2baa7fdc22`, and dispatcher publication succeeded with record SHA-256 `85cfbd790bfb8441f591e0936a928cc7d1f0296156185f43a7752a9acc995940`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
