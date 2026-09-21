@@ -1231,6 +1231,18 @@ gentoo_opt_strip_inherited_rust_profile_flags() {
     fi
 }
 
+gentoo_opt_strip_inherited_clang_profile_flags() {
+    local variable value cleaned
+    for variable in CFLAGS CXXFLAGS LDFLAGS; do
+        value=${!variable-}
+        [[ -n ${value} ]] || continue
+        cleaned=$(printf '%s\n' "${value}" | sed -E \
+            's#(^|[[:space:]])(-fprofile-(instr-)?(generate|use|sample-use))(=[^[:space:]]+)?#\1#g; s#(^|[[:space:]])-Xclang=-fprofile-instrument-path=[^[:space:]]+#\1#g')
+        printf -v "${variable}" '%s' "${cleaned}"
+        export "${variable?}"
+    done
+}
+
 gentoo_opt_require_go_single_main() {
     [[ ${GENTOO_OPT_GO_MAIN_COUNT-} == 1 ]] || {
         gentoo_opt_error 'generic Go PGO requires a proven single-main package'
@@ -1256,6 +1268,7 @@ gentoo_opt_apply_primary_mode() {
     gentoo_opt_prepare_profile_path "${mode}" || return 1
     case ${mode} in
         clang-ir-generate)
+            gentoo_opt_strip_inherited_clang_profile_flags
             # Keep the runtime filename template in LLVM_PROFILE_FILE instead
             # of embedding it as a separate compiler argument.  libtool's
             # sanitizer removes profile-generation options from compile
@@ -1287,14 +1300,22 @@ gentoo_opt_apply_primary_mode() {
             gentoo_opt_append_flag_once CFLAGS "${flag}"
             gentoo_opt_append_flag_once CXXFLAGS "${flag}"
             gentoo_opt_append_flag_once LDFLAGS "${flag}"
+            # Keep libtool-safe operand-free generation while giving every
+            # instrumented object a harmless fallback if its environment is
+            # cleared before execution. Reviewed workloads override this via
+            # LLVM_PROFILE_FILE with their authenticated spool pattern.
+            gentoo_opt_append_flag_once CFLAGS '-Xclang=-fprofile-instrument-path=/dev/null'
+            gentoo_opt_append_flag_once CXXFLAGS '-Xclang=-fprofile-instrument-path=/dev/null'
             ;;
         clang-ir-use)
+            gentoo_opt_strip_inherited_clang_profile_flags
             flag="-fprofile-use=${GENTOO_OPT_PROFILE_PATH}"
             gentoo_opt_append_flag_once CFLAGS "${flag}"
             gentoo_opt_append_flag_once CXXFLAGS "${flag}"
             gentoo_opt_append_flag_once LDFLAGS "${flag}"
             ;;
         clang-sample-use)
+            gentoo_opt_strip_inherited_clang_profile_flags
             flag="-fprofile-sample-use=${GENTOO_OPT_PROFILE_PATH}"
             gentoo_opt_append_flag_once CFLAGS "${flag}"
             gentoo_opt_append_flag_once CXXFLAGS "${flag}"

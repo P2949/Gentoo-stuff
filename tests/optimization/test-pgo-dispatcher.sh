@@ -520,7 +520,7 @@ case_clang_generate_exact_once() (
     export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_ABI=amd64
     export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
-    CFLAGS='c'; CXXFLAGS='cxx'; LDFLAGS='ld'; FCFLAGS='fc'; FFLAGS='ff'; FEATURES='ccache'
+    CFLAGS='c -fprofile-instr-generate=/var/tmp/stale'; CXXFLAGS='cxx'; LDFLAGS='ld -fprofile-use=/var/tmp/stale'; FCFLAGS='fc'; FFLAGS='ff'; FEATURES='ccache'
     SANDBOX_WRITE='/existing/write'
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     source "${BASHRC}" >/dev/null 2>&1 || return 1
@@ -528,6 +528,9 @@ case_clang_generate_exact_once() (
     [[ $(count_token "${CFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${CXXFLAGS}" "${local_flag}") == 1 ]]
     [[ $(count_token "${LDFLAGS}" "${local_flag}") == 1 ]]
+    [[ ${CFLAGS} == *'-Xclang=-fprofile-instrument-path=/dev/null'* ]]
+    [[ ${CXXFLAGS} == *'-Xclang=-fprofile-instrument-path=/dev/null'* ]]
+    [[ ${CFLAGS} != *'/var/tmp/stale'* && ${LDFLAGS} != *'/var/tmp/stale'* ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
     [[ ${SANDBOX_WRITE} == "/existing/write:${GENTOO_OPT_PROFILE_PATH}" ]]
     assert_stage_readiness_absent
