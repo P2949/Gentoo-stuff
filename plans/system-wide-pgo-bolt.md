@@ -8321,3 +8321,7 @@ With the fresh baseline generation active, an independent userspace update path 
 ### 2026-09-21 — third independent baseline userspace update
 
 `dev-python/platformdirs-4.11.11` was rebuilt and merged as an exact userspace update under the active baseline generation. Install-QA completed successfully; this remains ordinary baseline evidence with no PGO/BOLT claim.
+
+### 2026-09-21 — fourth independent baseline userspace update
+
+`dev-python/pyproject-hooks-1.3.3` was rebuilt and merged successfully under the active baseline generation. Install-QA completed without optimization claims.
