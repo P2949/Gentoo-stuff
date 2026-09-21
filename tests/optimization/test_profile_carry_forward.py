@@ -4,6 +4,7 @@ from pathlib import Path
 SCRIPT=Path(__file__).parents[2]/'scripts/optimization/pgo/carry-forward-profiles.py'
 BASE={
  'source_cpv':'dev-libs/foo-1.0','target_cpv':'dev-libs/foo-1.0','repository':'gentoo','ebuild_sha256':'a'*64,
+ 'package_env':[{'path':'default.conf','sha256':'b'*64}],
  'package_env_content':[{'path':'default.conf','sha256':'b'*64}], 'build_controls':{'extra_econf':'','extra_emeson':'','extra_ecmake':''},
  'compiler':{'family':'clang','major':18},'abi':'x86-64','target_triple':'x86_64-pc-linux-gnu','optimization_flags':['-O2'],
  'workload_revision':'workload-1','training_receipt':{'sha256':'c'*64},'merge_evidence':{'sha256':'d'*64},'profile_sha256':'e'*64}
