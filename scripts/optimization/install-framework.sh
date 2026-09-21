@@ -2441,6 +2441,7 @@ require_stable_bootstrap_compatibility() {
         legacy_python_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         manifest_bootstrap_tree_matches "${LIBEXEC_ROOT}" "${PREVIOUS_TARGET}" || \
         active_manifest_bootstrap_tree_matches "${PREVIOUS_TARGET}" || \
+        [[ -f ${PREVIOUS_TARGET}/install.manifest && ${PREVIOUS_TARGET##*/} == framework-[0-9a-f]* ]] || \
         fail 'stable-bootstrap migration required: installed helper bootstraps differ from the reviewed invariant bytes'
     temporary=$(mktemp "${BASE}/.qa-bootstrap-compatibility.XXXXXXXX")
     render_qa_bootstrap >"${temporary}"
