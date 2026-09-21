@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Corrected the v2 receipt verifier's log-path handling and exercised a synthetic immutable Clang receipt: artifact hashes and `-fprofile-use` evidence are accepted, while the backend proof remains mandatory. Commit `59495ff` pushed.
+
 - 2026-09-21: Profile-use receipt v2 verification now requires backend-specific consumption evidence in the immutable build log (`-fprofile-use`, `-fprofile-sample-use`, `-Cprofile-use`, GCC `-fprofile-use`, or Go `-pgo`) and rejects generation-mode flags in a use transaction. Focused runner validation passes; commit `c1dcd68` pushed.
 
 - 2026-09-21: Extended profile-use receipt v2 to bind and independently hash the exact validated profile manifest in addition to dispatcher, environment, metadata, profile, ebuild, log, and generation identities. The runner refuses dispatchers without a manifest; focused identity regression passes (commit `3a552c6`).
