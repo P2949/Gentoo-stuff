@@ -2,6 +2,8 @@
 import argparse
 import hashlib
 import json
+from collections import Counter
+from pathlib import Path
 
 
 def main():
@@ -13,6 +15,8 @@ def main():
  ap.add_argument('--elf-safety', required=True)
  ap.add_argument('--output', required=True)
  a = ap.parse_args()
+ if Path(a.output).exists():
+  raise SystemExit('REFUSED: coverage output already exists')
  with open(a.manifest) as stream:
   m = json.load(stream)
  with open(a.lanes) as stream:
@@ -74,8 +78,11 @@ def main():
   (x.get('owner_cpv'), x['path'])
   for x in es.get('records', es.get('artifacts', []))
  }
+ safety_ids = [(x.get('owner_cpv'), x.get('path')) for x in es.get('records', es.get('artifacts', []))]
+ safety_duplicates = sorted(item for item, count in Counter(safety_ids).items() if count > 1)
  out['candidate_bolt_eligible_count'] = len(candidate)
  out['bolt_safety_missing'] = sorted(candidate - safety_records)
+ out['bolt_safety_duplicates'] = safety_duplicates
  counts = es.get('counts', {})
  out['bolt_safety_pending'] = int(counts.get('pending', 0)) + int(counts.get('pending-safety-review', 0))
  out['bolt_safety_failed'] = int(counts.get('failed', 0)) + int(counts.get('error', 0))
@@ -83,6 +90,7 @@ def main():
  out['elf_classification_coverage_pass'] = not out['elf_missing_classification']
  out['bolt_safety_coverage_pass'] = (
   not out['bolt_safety_missing'] and
+  not out['bolt_safety_duplicates'] and
   out['bolt_safety_pending'] == 0 and
   out['bolt_safety_failed'] == 0
  )
