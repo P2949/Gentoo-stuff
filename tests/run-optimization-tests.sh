@@ -1646,16 +1646,19 @@ elif [[ ! -f ${PACKAGE_ENV_DUPLICATE_CHECKER} ]]; then
     skip_case package-env-duplicate-policy \
         "checker is absent: ${PACKAGE_ENV_DUPLICATE_CHECKER}"
 else
-    run_case_in_repository package-env-duplicate-policy \
-        "${PYTHON_BIN}" \
-        "${PACKAGE_ENV_DUPLICATE_CHECKER}" --skip-portage-universe
     if [[ -d /var/db/pkg && -d /var/db/repos ]] && \
         PYTHONDONTWRITEBYTECODE=1 "${PYTHON_BIN}" -c 'import portage' \
             >/dev/null 2>&1; then
+        run_case_in_repository package-env-duplicate-policy \
+            "${PYTHON_BIN}" \
+            "${PACKAGE_ENV_DUPLICATE_CHECKER}" --require-portage-universe
         run_case_in_repository package-env-portage-semantic \
             "${PYTHON_BIN}" \
             "${PACKAGE_ENV_DUPLICATE_CHECKER}" --require-portage-universe
     else
+        run_case_in_repository package-env-duplicate-policy \
+            "${PYTHON_BIN}" \
+            "${PACKAGE_ENV_DUPLICATE_CHECKER}" --skip-portage-universe
         skip_case package-env-portage-semantic \
             'Portage Python API and live /var/db/pkg plus /var/db/repos are unavailable; portable policy checks ran, live atom/overlap semantics did not'
     fi
