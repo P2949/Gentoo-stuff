@@ -7785,3 +7785,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — hipcc clang-IR generation and profile-use
 
 `dev-util/hipcc-7.2.0` completed the authenticated Clang-IR generation wave for both `hipcc` and `hipconfig`; receipt verification passed, LLVM merge evidence digest was `644d69a247e222dc91db1e54fb7c5f38c2cbbfd2afc100e106a2af59c0bc6093`, and dispatcher publication succeeded with record SHA-256 `71c248d778df0a89338bae809b9d908eaa98fe5de198803574a377cd98fdd00a`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — pkgconf generation fetch stall
+
+`dev-util/pkgconf-9999` passed storage preflight and readiness, but its authenticated generation transaction stalled during the live Git fetch for `https://github.com/pkgconf/pkgconf` with the HTTPS helper idle for several minutes and no build progress. The fetch child was terminated to end the abnormal stall cleanly; no generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. This is preserved as a fetch-stall terminal attempt pending a deterministic source snapshot or corrected fetch path.
