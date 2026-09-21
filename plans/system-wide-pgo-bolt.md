@@ -7958,6 +7958,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `dev-libs/leancrypto-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/smuellerDD/leancrypto` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/leancrypto-9999/temp/build.log`.
 
+### 2026-09-21 — openssl-compat generation install-QA terminal failure
+
+`dev-libs/openssl-compat-1.1.1u` passed readiness, storage, dependency resolution, source, configure, and compilation gates, but install-QA failed in the active BOLT hook during staged installation. The retained Portage log records the authenticated `clang-ir-generate` context and the hook-abort failure; no receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/openssl-compat-1.1.1u/temp/build.log`.
+
 ### 2026-09-21 — nspr clang-IR generation and profile-use
 
 `dev-libs/nspr-4.40` completed authenticated Clang-IR generation; receipt verification passed, LLVM 22 merged the raw payload with evidence digest `b90c020a217622f7743a03aa4136626cfaccff833a86a77d71743256a61fbdf7`, and dispatcher publication succeeded with record SHA-256 `893574d0aa0b5955d6055353fcece9fc53d981d0e6753825cc2ce7f572f2efa9`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
