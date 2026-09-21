@@ -6,3 +6,4 @@
 =media-libs/libmediainfo-26.05 optimization/optimization-off.conf
 =media-video/mediainfo-26.05 optimization/optimization-off.conf
 =dev-build/cmake-4.3.5 cmake-profile-use-dispatcher.conf
+=app-admin/doas-6.8.2 doas-profile-use-dispatcher.conf
