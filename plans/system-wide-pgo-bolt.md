@@ -7837,3 +7837,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — waybar clang-IR generation and profile-use
 
 `gui-apps/waybar-9999` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `2e2ddf57fc8ce26cd09ebb9af858fe7e11f95bb831a188cbe4ed3dea36b62e6e`, and dispatcher publication succeeded with record SHA-256 `805a5ffb586dadc4249c3dc2bc70b6e38441acda5b664556a09b7fe40a24d509`. The exact profile-use rebuild consumed the published profile, passed install-QA and ABI checks, and completed with `use_rc=0`. LLVM emitted non-fatal unprofiled-file warnings during compilation.
+
+### 2026-09-21 — wl-clipboard clang-IR generation and profile-use
+
+`gui-apps/wl-clipboard-9999` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `dc9a96a97b12b0e041988aacf92ca2856bac67c340f21916a1768ce93bed24de`, and dispatcher publication succeeded with record SHA-256 `22cd633133edabf6e6569061fa63cdf38e5980c681cb7c83729a81ef0a7c259e`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
