@@ -13,7 +13,7 @@ dev-libs/blake3 no-polly.conf
 dev-libs/libffi no-polly.conf
 dev-libs/icu no-polly.conf
 dev-libs/leancrypto no-polly.conf
-dev-libs/libgcrypt no-polly.conf libgcrypt-profile-use.conf
+# libgcrypt is bound by the exact profile-use policy below
 dev-libs/libsodium no-polly.conf
 # aes/sha .S assembled with CFLAGS: cc1as rejects -mllvm
 dev-libs/nettle no-polly.conf
