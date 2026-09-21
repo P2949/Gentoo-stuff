@@ -23,12 +23,19 @@ def main():
         if not root.is_dir():
             records.append({'cpv':cpv,'old_fingerprint':None,'decision':'retrain','reason':'CPV absent from live VDB'}); continue
         corrected=dict(inp)
-        corrected['package_env_files']=package_env_stack(cpv,root)
+        env_content=package_env_stack(cpv,root)
+        corrected['package_env_files']=[x['path'] for x in env_content]
+        corrected['package_env_content']=env_content
         corrected.update(observed_build_controls(root))
         old=hashlib.sha256(canonical(inp)).hexdigest()
         new=hashlib.sha256(canonical(corrected)).hexdigest()
-        records.append({'cpv':cpv,'old_fingerprint':old,'corrected_identity_sha256':new,'decision':'carry-forward' if old==new else 'retrain','package_env':corrected['package_env_files'],'build_controls':{k:corrected[k] for k in ('extra_econf','extra_emeson','extra_ecmake')}})
-    out={'schema_version':1,'record_type':'profile-identity-remediation-v1','source_inputs_sha256':hashlib.sha256(a.inputs.read_bytes()).hexdigest(),'records':records}
+        same=old==new
+        records.append({'cpv':cpv,'old_fingerprint':old,'corrected_identity_sha256':new,
+                        'decision':'carry-forward' if same else 'retrain',
+                        'reason':'corrected identity is byte-identical' if same else 'corrected package.env/build-control identity differs',
+                        'package_env':corrected['package_env_files'],'package_env_content':env_content,
+                        'build_controls':{k:corrected[k] for k in ('extra_econf','extra_emeson','extra_ecmake')}})
+    out={'schema_version':2,'record_type':'profile-identity-remediation-v1','source_inputs_sha256':hashlib.sha256(a.inputs.read_bytes()).hexdigest(),'records':records}
     a.output.write_text(json.dumps(out,sort_keys=True,indent=2)+'\n')
     print(json.dumps({'records':len(records),'carry_forward':sum(r.get('decision')=='carry-forward' for r in records),'retrain':sum(r.get('decision')=='retrain' for r in records)}))
 if __name__=='__main__': main()
