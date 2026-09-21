@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild for `dev-build/cmake-4.3.5` was attempted with fingerprint `47ca49b637517eb93f3abbcb5cbb2afc466e7032c9a8abe80f47c40d8479e9d8` and profile `/var/cache/gentoo-optimization/pgo/dev-build_cmake-4.3.5.profdata`, but failed closed during CMake configure: the profile-use C++ compiler probe reported no `std::unique_ptr`/C++11 support. No package merge occurred. Report `/var/lib/gentoo-optimization/reports/phase3-cmake-profile-use-20260921.log` SHA-256 `a9cbd29ce00de1d7c863fe81cb5ada8be904c36b0e423651981e2347f65814ee`. This is a preserved failed attempt; no optimization success or BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-build/bmake-20260508` using fingerprint `cb6a53e8f4327f4e0406f727d77a82cf5e43d633b873ca655852efffdb9c72d0` and profile `/var/cache/gentoo-optimization/pgo/dev-build_bmake-20260508.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-bmake-profile-use-20260921.log` SHA-256 `711d85a93e80660e8ac00bd3895b8b7597cf7dff90b7b54299fa842840def419`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-build/b2-5.5.3` using fingerprint `271a1571120bac3737e0191a0ee986622fce245907270b0dc5a704d194cdc905` and profile `/var/cache/gentoo-optimization/pgo/dev-build_b2-5.5.3.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-b2-profile-use-20260921.log` SHA-256 `5eb6590422d179ee9b9721d327726e1bceff792bbbebd463045882eda2b29db1`. This is `clang-ir-use` evidence only; no BOLT claim.
