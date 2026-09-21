@@ -7885,3 +7885,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — opensp generation compile failure
 
 `app-text/opensp-1.5.2-r10` passed readiness, storage, dependency, source, patch, and configure gates, but authenticated Clang-IR generation failed while linking `onsgmls`. `ld.lld` rejected unresolved C++ exception/runtime and RTTI symbols from `libosp.so`, including `std::terminate`, `__cxxabiv1` type-info vtables, and `__gxx_personality_v0`, under the active C++ runtime/linker tuple. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/app-text/opensp-1.5.2-r10/temp/build.log`.
+
+### 2026-09-21 — muParser generation compile failure
+
+`dev-cpp/muParser-2.3.5` passed readiness, storage, dependency, source, patch, and CMake configuration gates, but authenticated Clang-IR generation failed during the example linker stage. `ld.lld` reported unresolved libc++ `std::__1` locale and stream symbols, matching the active libc++/linker tuple incompatibility seen in other C++ packages. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-cpp/muParser-2.3.5/temp/build.log`.
