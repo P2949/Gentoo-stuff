@@ -7,7 +7,7 @@ from pathlib import Path
 def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':')).encode()
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--package-state',type=Path,required=True); ap.add_argument('--attempts',type=Path,required=True); ap.add_argument('--output',type=Path,required=True); ap.add_argument('--wave-size',type=int,default=16); ap.add_argument('--generation-id',required=True); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument('--package-state',type=Path,required=True); ap.add_argument('--attempts',type=Path,required=True); ap.add_argument('--output',type=Path,required=True); ap.add_argument('--wave-size',type=int,default=16); ap.add_argument('--generation-id',required=True); ap.add_argument('--bindings',type=Path); ap.add_argument('--recipes',type=Path); a=ap.parse_args()
     if Path('/var/lib/gentoo-optimization/state/deinstrument.pending').exists():
         raise SystemExit('REFUSED: de-instrumentation is pending; generation scheduling is paused')
     if a.output.exists(): raise SystemExit('REFUSED: scheduler output already exists')
@@ -32,6 +32,14 @@ def main():
                 failed[cpv]=status
                 if status == 'retry-authorized' or rec.get('retry_authorized') is True:
                     retry_authorized.add(cpv)
+    binding_rows={}; recipe_rows={}
+    if bool(a.bindings) != bool(a.recipes):
+        raise SystemExit('REFUSED: --bindings and --recipes must be supplied together')
+    if a.bindings:
+        binding_payload=json.loads(a.bindings.read_text())
+        recipe_payload=json.loads(a.recipes.read_text())
+        binding_rows={row['cpv']:row for row in binding_payload.get('records',binding_payload.get('packages',[]))}
+        recipe_rows={row['cpv']:row for row in recipe_payload.get('packages',recipe_payload.get('records',[]))}
     candidates=[]
     for row in rows:
         cpv=row.get('cpv') or row.get('identity',{}).get('cpv')
@@ -39,7 +47,18 @@ def main():
         state_name=row.get('state') or row.get('status')
         if not cpv or cpv in completed or (cpv in failed and cpv not in retry_authorized): continue
         if lane in {'kernel-policy-exclusion','optimization-kernel-policy-exclusion'} or state_name in {'terminal-exclusion','not-applicable','optimized'}: continue
-        candidates.append({'cpv':cpv,'lane':lane,'state':'pending'})
+        enriched={'cpv':cpv,'lane':lane,'state':'pending'}
+        if a.bindings:
+            binding=binding_rows.get(cpv)
+            recipe=recipe_rows.get(cpv)
+            if not binding or not recipe:
+                continue
+            if recipe.get('state') == 'needs-training-workload' or not recipe.get('recipes'):
+                continue
+            for key in ('profile_path','compiler_sha256','recipes'):
+                if key in binding: enriched[key]=binding[key]
+            if 'recipes' not in enriched: enriched['recipes']=recipe['recipes']
+        candidates.append(enriched)
     candidates.sort(key=lambda x:(str(x['lane']),x['cpv']))
     selected=candidates[:max(1,a.wave_size)]
     ledger_sha=hashlib.sha256(canon(sorted(considered,key=lambda x:(x.get('cpv',''),x.get('attempt_id',''),x.get('state',''))))).hexdigest()
