@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Broadened package-level PGO applicability beyond the installed ELF-owner set: archives, native objects, bitcode, GPU/device artifacts, and explicit native markers remain in PGO classification even when no conventional ELF is owned. This preserves separate package PGO and artifact BOLT obligations; focused profile identity, coverage, carry-forward, dispatcher, and Python compilation validation passed.
+
 - 2026-09-21: Added immutable `profile-carry-forward-v1` production with strict equality across CPV, repository/ebuild, ordered package.env content, build controls, compiler/ABI/target, flags, workload, training/merge evidence, and profile digest; changed identities require retraining. Phase-3 coverage now reports separate package-classification, ELF-classification, and BOLT-safety gates. ELF classification no longer excludes categories by prefix, and missing build IDs are recorded as `rebuild-required-for-bolt-capture`. Added the typed reverse-dependency generator combining Portage and DT_NEEDED records. Focused identity, coverage, and carry-forward tests pass; commit `1762abb` pushed.
 
 - 2026-09-21: Regenerated a live inventory from `/var/db/pkg` against the current host, producing 1,305 packages, 684,559 owned paths, 80,056 owned directories, and one unresolved directory. This replaces the stale 1,292-CPV candidate boundary exposed by the Ayatana successor CPVs; no profile-use transaction was resumed.
