@@ -14,8 +14,11 @@ def canonical(value):
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--inputs',type=pathlib.Path,required=True); ap.add_argument('--output',type=pathlib.Path,required=True); a=ap.parse_args()
     payload=json.loads(a.inputs.read_text()); records=[]
-    for item in payload.get('records',[]):
-        inp=dict(item['input']); cpv=item['cpv']; cat,pf=cpv.split('/',1)
+    source_records=payload.get('records',[]) if isinstance(payload,dict) else []
+    if not source_records and isinstance(payload,dict) and payload.get('category') and payload.get('pf'):
+        source_records=[{'cpv':f"{payload['category']}/{payload['pf']}",'input':payload}]
+    for item in source_records:
+        inp=dict(item.get('input', item)); cpv=item['cpv']; cat,pf=cpv.split('/',1)
         root=pathlib.Path('/var/db/pkg')/cat/pf
         if not root.is_dir():
             records.append({'cpv':cpv,'old_fingerprint':None,'decision':'retrain','reason':'CPV absent from live VDB'}); continue
