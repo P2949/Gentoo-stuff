@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libutf8proc-2.11.3` using fingerprint `4cf677564384441170314be6ed914479f2bad265ea0b322dd962d0a67fd7c31c` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libutf8proc-2.11.3.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libutf8proc-profile-use-20260921.log` SHA-256 `dde52a38bbe7ae605088de861ddf028fa88683cc457e06f00e6960bbaa75bfa2`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libunistring-1.4.2` using fingerprint `59d88a0b6edaf2923e4469825fe4a2edd93fff251dbfb61fe86b3a632ea462b7` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libunistring-1.4.2.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libunistring-profile-use-20260921.log` SHA-256 `faf133fcdab2459c93f99741bc758fd1e1661e9a4e7cce795336baab25cc585d`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libtraceevent-1.9.0` using fingerprint `17a01274b29a5d1cbb398bd57f004d1a1b8387fbd75c8868b0dea34d686a5810` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libtraceevent-1.9.0.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libtraceevent-profile-use-20260921.log` SHA-256 `5fc8597ddf9ae318c69dcc9f5f47c1fe05f0123b01ecabbebc9db3d8a3bf2dd0`. This is `clang-ir-use` evidence only; no BOLT claim.
