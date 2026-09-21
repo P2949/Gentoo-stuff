@@ -14,6 +14,8 @@ def main() -> int:
     ap.add_argument('--cpv',required=True); ap.add_argument('--repository',required=True)
     ap.add_argument('--receipt',type=pathlib.Path,required=True); ap.add_argument('--log',type=pathlib.Path,required=True)
     a=ap.parse_args()
+    if a.receipt.exists() or a.log.exists():
+        raise SystemExit('REFUSED: terminal profile-use evidence already exists')
     if '/' not in a.cpv: raise SystemExit('REFUSED: malformed CPV')
     record=json.loads(a.dispatcher.read_text())
     if record.get('cpv') != a.cpv: raise SystemExit('REFUSED: dispatcher CPV differs from requested exact atom')
@@ -55,7 +57,11 @@ def main() -> int:
         out.flush()
         proc=subprocess.run(['emerge','--oneshot','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env=run_env)
     post=(vdb/'BUILD_TIME').read_text().strip() if (vdb/'BUILD_TIME').is_file() else ''
-    receipt={'schema_version':1,'cpv':a.cpv,'repository':repo,'ebuild_sha256':digest,'dispatcher_sha256':sha(a.dispatcher),'metadata_sha256':sha(metadata),'profile_sha256':sha(profile),'exit_status':proc.returncode,'log_path':str(a.log.resolve()),'log_sha256':sha(a.log),'started_epoch':started,'finished_epoch':time.time(),'post_build_time':post}
-    a.receipt.parent.mkdir(parents=True,exist_ok=True); a.receipt.write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+    finished=time.time()
+    receipt={'schema_version':2,'cpv':a.cpv,'repository':repo,'ebuild':{'path':str(ebuild.resolve()),'sha256':digest},'dispatcher':{'path':str(a.dispatcher.resolve()),'sha256':sha(a.dispatcher)},'dispatcher_env':{'path':str(dispatcher_env.resolve()),'sha256':sha(dispatcher_env)},'metadata':{'path':str(metadata.resolve()),'sha256':sha(metadata)},'profile':{'path':str(profile.resolve()),'sha256':sha(profile)},'generation':record.get('generation'),'framework':record.get('framework'),'fingerprint':ident.get('fingerprint'),'compiler':record.get('compiler'),'backend':record.get('backend'),'mode':'profile-use','exit_status':proc.returncode,'log':{'path':str(a.log.resolve()),'sha256':sha(a.log)},'started_epoch':started,'finished_epoch':finished,'post_vdb':{'path':str(vdb.resolve()),'build_time':post}}
+    a.receipt.parent.mkdir(parents=True,exist_ok=True)
+    payload=json.dumps(receipt,sort_keys=True,indent=2)+'\n'
+    fd=os.open(a.receipt,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
+    with os.fdopen(fd,'w') as out: out.write(payload)
     return proc.returncode
 if __name__=='__main__': raise SystemExit(main())

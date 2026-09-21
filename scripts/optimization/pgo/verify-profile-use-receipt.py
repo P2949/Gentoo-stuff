@@ -12,6 +12,20 @@ def digest(path: pathlib.Path) -> str:
 def main() -> int:
     ap=argparse.ArgumentParser(); ap.add_argument('--receipt',type=pathlib.Path,required=True); a=ap.parse_args()
     r=json.loads(a.receipt.read_text())
+    if r.get('schema_version') == 2:
+        required={'schema_version','cpv','repository','ebuild','dispatcher','dispatcher_env','metadata','profile','generation','framework','fingerprint','compiler','backend','mode','exit_status','log','started_epoch','finished_epoch','post_vdb'}
+        if set(r) != required: raise SystemExit('REFUSED: invalid receipt schema')
+        if r['mode'] != 'profile-use' or r['exit_status'] != 0: raise SystemExit('REFUSED: transaction did not succeed')
+        for key in ('ebuild','dispatcher','dispatcher_env','metadata','profile','log'):
+            item=r[key]
+            p=pathlib.Path(item['path'])
+            if not p.is_absolute() or not p.is_file() or digest(p) != item['sha256']:
+                raise SystemExit(f'REFUSED: {key} artifact hash mismatch')
+        if not r['generation'] or not r['framework'] or not r['fingerprint']:
+            raise SystemExit('REFUSED: incomplete generation/framework/fingerprint identity')
+        if r['finished_epoch'] < r['started_epoch']: raise SystemExit('REFUSED: invalid receipt timing')
+        print('PASS: profile-use v2 receipt independently verified')
+        return 0
     required={'schema_version','cpv','repository','ebuild_sha256','dispatcher_sha256','metadata_sha256','profile_sha256','exit_status','log_path','log_sha256','started_epoch','finished_epoch','post_build_time'}
     if set(r) != required or r['schema_version'] != 1: raise SystemExit('REFUSED: invalid receipt schema')
     if not isinstance(r['cpv'],str) or '/' not in r['cpv'] or not isinstance(r['repository'],str): raise SystemExit('REFUSED: invalid receipt package identity')
