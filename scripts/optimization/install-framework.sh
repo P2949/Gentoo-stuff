@@ -2439,10 +2439,11 @@ require_stable_bootstrap_compatibility() {
         deployed_intermediate_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         legacy_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         legacy_python_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+        manifest_bootstrap_tree_matches "${LIBEXEC_ROOT}" "${PREVIOUS_TARGET}" || \
         fail 'stable-bootstrap migration required: installed helper bootstraps differ from the reviewed invariant bytes'
     temporary=$(mktemp "${BASE}/.qa-bootstrap-compatibility.XXXXXXXX")
     render_qa_bootstrap >"${temporary}"
-    if ! cmp -s -- "${temporary}" "${qa}"; then
+    if ! cmp -s -- "${temporary}" "${qa}" && ! manifest_external_file_matches "${qa}" "${PREVIOUS_TARGET}"; then
         rm -f -- "${temporary}"
         fail 'stable-bootstrap migration required: installed QA bootstrap differs from the reviewed invariant bytes'
     fi
