@@ -7958,6 +7958,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `dev-libs/leancrypto-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/smuellerDD/leancrypto` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/leancrypto-9999/temp/build.log`.
 
+### 2026-09-21 — popt wave deferred by storage preflight
+
+The exact `dev-libs/popt-1.19-r1` wave passed readiness, but its authenticated runner refused to begin because root filesystem free space had fallen to `11.947%`, below the configured `12.0%` operational floor. No package mutation or terminal exclusion was admitted. Transient build space was measured at `31M`; the large retained stores are authenticated PGO raw payloads and rollback binpackages, which were preserved.
+
 ### 2026-09-21 — openssl-compat generation install-QA terminal failure
 
 `dev-libs/openssl-compat-1.1.1u` passed readiness, storage, dependency resolution, source, configure, and compilation gates, but install-QA failed in the active BOLT hook during staged installation. The retained Portage log records the authenticated `clang-ir-generate` context and the hook-abort failure; no receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/openssl-compat-1.1.1u/temp/build.log`.
