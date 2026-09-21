@@ -7881,3 +7881,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — gspell clang-IR generation and profile-use
 
 `app-text/gspell-1.14.4` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `4f8b0cb8c12f8e2a794ac087f10501f67b97a2548d475769f8fc84e96fc2716f`, and dispatcher publication succeeded with record SHA-256 `cf3c530403b28597fcdc0ba1618cec5598547708552cee514958a824c6a02ba6`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — opensp generation compile failure
+
+`app-text/opensp-1.5.2-r10` passed readiness, storage, dependency, source, patch, and configure gates, but authenticated Clang-IR generation failed while linking `onsgmls`. `ld.lld` rejected unresolved C++ exception/runtime and RTTI symbols from `libosp.so`, including `std::terminate`, `__cxxabiv1` type-info vtables, and `__gxx_personality_v0`, under the active C++ runtime/linker tuple. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/app-text/opensp-1.5.2-r10/temp/build.log`.
