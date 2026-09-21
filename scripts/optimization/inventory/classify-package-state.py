@@ -3,7 +3,12 @@ import argparse,json,hashlib,collections
 from portage.versions import catpkgsplit
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--census',required=True);ap.add_argument('--kernel-set',required=True);ap.add_argument('--output',required=True);ap.add_argument('--vdb',default='/var/db/pkg');a=ap.parse_args()
- m=json.load(open(a.manifest)); c=json.load(open(a.census)); owners={x['owner_cpv'] for x in c['artifacts'] if x['kind'] in ('regular','symlink') and x.get('elf')}; k=set(x.strip() for x in open(a.kernel_set) if x.strip()); atoms={}
+ m=json.load(open(a.manifest)); c=json.load(open(a.census));
+ # Package-level PGO applicability includes native artifacts that are not
+ # installed ELF owners (archives, objects, device-code/native build tools).
+ native_suffixes=('.a','.o','.lo','.bc','.ptx','.cubin')
+ owners={x['owner_cpv'] for x in c['artifacts'] if x['kind'] in ('regular','symlink') and (x.get('elf') or str(x.get('path','')).endswith(native_suffixes) or x.get('native_artifact') is True)}
+ k=set(x.strip() for x in open(a.kernel_set) if x.strip()); atoms={}
  for cpv in [x['cpv'] for x in m['packages']]:
   cat,pf=cpv.split('/',1); root=a.vdb+'/'+cat+'/'+pf
   category_file=root+'/CATEGORY'; pn_file=root+'/PN'
@@ -22,8 +27,8 @@ def main():
  rows=[]
  for cpv in [x['cpv'] for x in m['packages']]:
   if atoms[cpv] in k: state,reason='kernel-policy-exclusion','kernel-policy-exclusion'
-  elif cpv not in owners: state,reason='not-applicable','no-owned-elf-artifact'
-  else: state,reason='pending-pgo-classification','owned-elf-requires-backend-and-profile'
+  elif cpv not in owners: state,reason='not-applicable','no-owned-native-artifact'
+  else: state,reason='pending-pgo-classification','owned-native-artifact-requires-backend-and-profile'
   rows.append({'cpv':cpv,'state':state,'reason_code':reason})
  out={'record_type':'package-optimization-state','schema_version':1,'source_inventory':m.get('inventory_id'),'records':rows};out['counts']=dict(collections.Counter(x['state'] for x in rows));out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest();json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(out['counts'])
 if __name__=='__main__':main()
