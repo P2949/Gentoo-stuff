@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libksba-1.8.1` using fingerprint `cebf8e9e8fc24c7c860cdefa2fc32cfc361f2239310481a618105dcdf0a7fff7` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libksba-1.8.1.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libksba-profile-use-20260921.log` SHA-256 `e582e42c9f15d94f161b076c79dee17e76e425e88fab5a7fa8dfb48cdf4dbcf8`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libgpg-error-1.61` using fingerprint `eaa3611228466dc98e1af95d66fffc18a892a446e9c2c63f908e7db97f56fc51` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libgpg-error-1.61.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libgpg-error-profile-use-20260921.log` SHA-256 `c89ae08ec47df265b5361d39f860cb09672f206c56527255cbbcb0654353472d`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild of `dev-libs/libgcrypt-1.12.4` failed during the 32-bit compile before install-QA because libgcrypt FIPS mode requires thread-local storage (`fips.c:82`) and the profile-use multilib compile lacked the required TLS support; no merge occurred. Report `/var/lib/gentoo-optimization/reports/phase3-libgcrypt-profile-use-20260921.log` SHA-256 `f9fa78820b248e21716ca802edca521f89a516f232633050d024e59b973452c2`. This failed attempt is preserved; no BOLT claim.
