@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libtomcrypt-1.18.2-r4` using fingerprint `1833c812f56b840b7a00b36f8f512b1756015c0e7b908a6bf3ff8da847c4eb70` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libtomcrypt-1.18.2-r4.profdata`. The package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libtomcrypt-profile-use-20260921.log` SHA-256 `381f6942855038702523b7b3d59c5e51f2f172dd3e6735c6b1a4364fbe00bd99`. This is `clang-ir-use` evidence only; no BOLT claim.
+
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libtasn1-4.21.0` using fingerprint `96f67465f50258006f6f21cc640db0e160d3ccd081a1ba7650d53972379088cf` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libtasn1-4.21.0.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libtasn1-profile-use-20260921.log` SHA-256 `8bbafdf0b62dc06bf190a4204a574a2bb52613225680765039a0123d1d044c46`. This is `clang-ir-use` evidence only; no BOLT claim.
 
 - 2026-09-21: Authenticated profile-use rebuild completed for `dev-libs/libsigc++-3.8.0:3` using fingerprint `5aded3dac1baad63339eef9c8ce218af7db14ac092c6232a44e892203f55f01d` and profile `/var/cache/gentoo-optimization/pgo/dev-libs_libsigc++-3.8.0.profdata`. The 32/64-bit package compiled, installed, and passed install-QA/ABI validation; report `/var/lib/gentoo-optimization/reports/phase3-libsigc++-3.8.0-profile-use-20260921.log` SHA-256 `d48589ddced781eb6a6127ad9a5ec3504b0a9d27251e8ec63c1e4d556700c4e8`. This is `clang-ir-use` evidence only; no BOLT claim.
