@@ -37,7 +37,7 @@ def observed_build_controls(root: pathlib.Path) -> dict[str, str]:
     """Read effective ebuild controls retained in the VDB environment."""
     path = root / 'environment.bz2'
     if not path.is_file():
-        return {'extra_econf': '', 'extra_emeson': '', 'extra_ecmake': ''}
+        raise ValueError(f'missing retained VDB environment: {path}')
     raw = bz2.open(path, 'rt', errors='replace').read()
     values = {}
     for name, key in (('EXTRA_ECONF', 'extra_econf'), ('EXTRA_EMESON', 'extra_emeson'), ('EXTRA_ECMAKE', 'extra_ecmake')):
@@ -78,6 +78,7 @@ def compiler(path, family, fmt):
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--vdb',default='/var/db/pkg'); ap.add_argument('--lanes',required=True)
     ap.add_argument('--compiler-identities',required=True); ap.add_argument('--output',required=True); a=ap.parse_args()
+    if pathlib.Path(a.output).exists(): raise SystemExit('REFUSED: fingerprint input output already exists')
     lanes=json.load(open(a.lanes)); ci=json.load(open(a.compiler_identities)); out=[]
     for item in lanes['packages']:
         cpv=item['cpv']; cat,pf=cpv.split('/',1); root=pathlib.Path(a.vdb)/cat/pf
