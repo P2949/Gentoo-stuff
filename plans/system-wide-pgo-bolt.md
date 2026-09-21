@@ -7817,3 +7817,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — dconf workload terminal failure
 
 `gnome-base/dconf-0.49.0` completed authenticated Clang-IR generation, build/install, and install-QA, but the reviewed `/usr/bin/dconf --help` workload exited `2`. The runner therefore refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is retained in the runner output and requires a corrected deterministic fixture before retry.
+
+### 2026-09-21 — zenity clang-IR generation and profile-use
+
+`gnome-extra/zenity-4.2.2` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `256fdbd76c7aee289fb75564ad02c6effb469965b3af2dec6882f8963e98ef26`, and dispatcher publication succeeded with record SHA-256 `0abd655d22bfa72cb9f154a947baf5e15366985a08d5254710e07a5013386c61`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
