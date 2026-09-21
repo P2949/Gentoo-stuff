@@ -8313,3 +8313,7 @@ After framework publication, the fresh baseline generation was activated through
 ### 2026-09-21 — independent baseline userspace update
 
 With the fresh baseline generation active, an independent userspace update path was executed for `dev-python/python-discovery-1.6.1`. The exact CPV rebuilt and merged successfully through Portage install-QA under the active framework; no profile-use or BOLT claim was made. The broader read-only userspace graph remains intentionally unexecuted as a single transaction because it still contains the unresolved SPIR-V/Hyprland closure and the preserved ABI failures.
+
+### 2026-09-21 — second independent baseline userspace update
+
+`dev-python/virtualenv-21.9.0` was rebuilt as an exact single-package userspace update under the active fresh baseline framework and merged successfully through install-QA. It remains ordinary baseline evidence only; no PGO or BOLT result is claimed.
