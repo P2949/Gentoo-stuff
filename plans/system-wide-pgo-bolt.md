@@ -8572,3 +8572,7 @@ The framework was republished with the CPV-bound ABI-retention policy carried th
 ### 2026-09-21 — exact source-highlight cleanup policy overlap corrected
 
 The package-env policy validator found that the new exact CPV ABI-retention mapping overlapped the superseded broad `dev-util/source-highlight` rule. The broad rule was removed so the exact CPV policy is the sole effective mapping. The focused package-env policy suite then passed all 30 tests. A fresh `portable-complete` validation was started at the resulting source boundary; its main optimization unittest suite passed and its isolated recovery suite remains under verification.
+
+### 2026-09-22 — source-highlight ABI remediation narrowed to one libc++ weak symbol
+
+The CPV-bound phase-hook retention retry with the installed ABI flags plus `-fno-inline -fkeep-inline-functions` restored all previously missing Boost/source-highlight exports. The ABI guard now reports exactly one remaining missing symbol: `std::__1::basic_string::__init_copy_ctor_external(char const*, unsigned long)` (`old=1339`, `new=2780`). The exact transaction remains refused. This is preserved as a changed, narrower symbol-emission failure; no further unchanged flag retry or ABI bypass was performed.
