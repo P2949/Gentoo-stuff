@@ -7841,3 +7841,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — wl-clipboard clang-IR generation and profile-use
 
 `gui-apps/wl-clipboard-9999` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `dc9a96a97b12b0e041988aacf92ca2856bac67c340f21916a1768ce93bed24de`, and dispatcher publication succeeded with record SHA-256 `22cd633133edabf6e6569061fa63cdf38e5980c681cb7c83729a81ef0a7c259e`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — wlr-randr clang-IR generation and profile-use
+
+`gui-apps/wlr-randr-0.5.0` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `9c5e2ac9c18db794228ab9147702d876c806ee929fb5f742f068c6016fba40e1`, and dispatcher publication succeeded with record SHA-256 `46863ec3c2723fc2cb4eacb1bbae2a2883f123a001804e089324f7c9c983032e`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
