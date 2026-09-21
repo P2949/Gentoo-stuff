@@ -8317,3 +8317,7 @@ With the fresh baseline generation active, an independent userspace update path 
 ### 2026-09-21 — second independent baseline userspace update
 
 `dev-python/virtualenv-21.9.0` was rebuilt as an exact single-package userspace update under the active fresh baseline framework and merged successfully through install-QA. It remains ordinary baseline evidence only; no PGO or BOLT result is claimed.
+
+### 2026-09-21 — third independent baseline userspace update
+
+`dev-python/platformdirs-4.11.11` was rebuilt and merged as an exact userspace update under the active baseline generation. Install-QA completed successfully; this remains ordinary baseline evidence with no PGO/BOLT claim.
