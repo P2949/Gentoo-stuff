@@ -7897,3 +7897,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — tomlplusplus generation ABI-guard exclusion
 
 `dev-cpp/tomlplusplus-3.4.0` completed authenticated Clang-IR compilation and staging, but install-QA correctly rejected the replacement DSO for exported ABI loss. The guard reported `libtomlplusplus.so.3` shrinking from 219 to 218 exported symbols, missing `_ZNK4toml2v35table18is_array_of_tablesEv`. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-cpp/tomlplusplus-3.4.0/temp/build.log`.
+
+### 2026-09-21 — strace generation fetch-stall terminal failure
+
+`dev-debug/strace-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/strace/strace.git` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-debug/strace-9999/temp/build.log`.
