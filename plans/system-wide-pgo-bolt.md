@@ -7849,3 +7849,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — hyprcursor generation fetch-stall terminal failure
 
 `gui-libs/hyprcursor-9999` passed readiness and storage preflight, but the live Git fetch for `https://github.com/hyprwm/Hyprcursor.git` remained idle for over two minutes. The fetch child was terminated cleanly; Portage reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/gui-libs/hyprcursor-9999/temp/build.log`.
+
+### 2026-09-21 — hyprwire generation compile failure
+
+`gui-libs/hyprwire-9999` passed readiness, storage, dependency, and configuration gates, but its authenticated Clang-IR generation compile failed while linking `hyprwire-scanner`. `ld.lld` reported unresolved libc++ `std::__1` symbols, indicating the package's scanner link configuration is incompatible with the active libc++/linker tuple under this generation. No receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/gui-libs/hyprwire-9999/temp/build.log`.
