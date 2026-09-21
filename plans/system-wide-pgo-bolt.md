@@ -7869,3 +7869,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — libb2 clang-IR generation and profile-use
 
 `app-crypt/libb2-0.98.1-r3` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `6da4de8c2a686bb85545240e29d622c7bcba345c84a9dc092363c4841c8a1721`, and dispatcher publication succeeded with record SHA-256 `0150706b82923a70797009a80aadb70f6c6811f0fb28b91a9f80da726538ad3d`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — libmd clang-IR generation and profile-use
+
+`app-crypt/libmd-1.2.0` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `dbd3bb1e299ad90b2a0f27a75e3e2ea13a903e612d0ad7f8ad6707654e96c397`, and dispatcher publication succeeded with record SHA-256 `f1b4c019299d4eac5eac0a626a145cc3dc339358b985c52fc3c93fce87e44b90`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
