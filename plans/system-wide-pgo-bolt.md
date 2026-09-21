@@ -7958,6 +7958,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `dev-libs/leancrypto-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/smuellerDD/leancrypto` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/leancrypto-9999/temp/build.log`.
 
+### 2026-09-21 — libaio clang-IR generation and profile-use
+
+`dev-libs/libaio-9999` completed authenticated Clang-IR generation; receipt verification passed, LLVM 22 merged the raw payload with evidence digest `d1819b3f17e0fc9b3bed5d747a78654d3a554817abbc6f302cf7ff3301cca1b9`, and dispatcher publication succeeded with record SHA-256 `0224e5ef36c511931cc2be5090706426007ebe5dd669dab29a17db4c0ecf7821`. The first profile-use attempt exposed unreadable root-owned merge evidence; after correcting artifact read permissions, the exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
 ### 2026-09-21 — hyprlang generation fetch-stall terminal failure
 
 `dev-libs/hyprlang-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/hyprwm/Hyprlang.git` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/hyprlang-9999/temp/build.log`.
