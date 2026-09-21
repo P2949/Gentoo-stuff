@@ -13,6 +13,7 @@ def canonical(value):
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--inputs',type=pathlib.Path,required=True); ap.add_argument('--output',type=pathlib.Path,required=True); a=ap.parse_args()
+    if a.output.exists(): raise SystemExit('REFUSED: remediation output already exists')
     payload=json.loads(a.inputs.read_text()); records=[]
     source_records=payload.get('records',[]) if isinstance(payload,dict) else []
     if not source_records and isinstance(payload,dict) and payload.get('category') and payload.get('pf'):
@@ -36,6 +37,8 @@ def main():
                         'package_env':corrected['package_env_files'],'package_env_content':env_content,
                         'build_controls':{k:corrected[k] for k in ('extra_econf','extra_emeson','extra_ecmake')}})
     out={'schema_version':2,'record_type':'profile-identity-remediation-v1','source_inputs_sha256':hashlib.sha256(a.inputs.read_bytes()).hexdigest(),'records':records}
-    a.output.write_text(json.dumps(out,sort_keys=True,indent=2)+'\n')
+    a.output.parent.mkdir(parents=True, exist_ok=True)
+    with a.output.open('x', encoding='utf-8') as stream:
+        stream.write(json.dumps(out,sort_keys=True,indent=2)+'\n')
     print(json.dumps({'records':len(records),'carry_forward':sum(r.get('decision')=='carry-forward' for r in records),'retrain':sum(r.get('decision')=='retrain' for r in records)}))
 if __name__=='__main__': main()
