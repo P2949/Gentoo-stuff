@@ -8361,3 +8361,7 @@ The strengthened `run-profile-use.py` was published through the root-owned frame
 ### 2026-09-21 — old dispatcher remediation boundary verified
 
 The newly published exact profile-use runner was exercised against the retained `app-admin/doas-6.8.2` dispatcher. Its historical metadata predates the corrected repository/ebuild identity fields, so the runner refused before Portage pretend with `metadata repository differs from requested exact atom`; no package transaction started. This confirms old-generation profiles are not silently accepted under the stronger consume-time contract and must pass explicit identity remediation or retraining before reuse.
+
+### 2026-09-21 — corrected profile identity remediation ledger
+
+The corrected VDB identity collector was run against the current 538 retained PGO-lane records and emitted immutable `profile-identity-remediation-v1` evidence at `/var/lib/gentoo-optimization/reports/profile-identity-remediation-v1/20260921T112000Z.json` (SHA-256 `27ad617c569cf06b40f35bc7ee3c92ba6c5b3e8ec1f68ff791246905b6f164bf`). The ledger binds ordered package.env content hashes and observed build-control values; all 538 records currently require retraining because the corrected identity differs from the retained source material. No old profile was silently carried forward or rewritten. The remediation tool now records the complete ordered env-content structure and an explicit decision reason for every record; carry-forward remains available only for byte-identical identity evidence.
