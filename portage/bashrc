@@ -973,6 +973,7 @@ gentoo_opt_read_profile_manifest() {
 gentoo_opt_validate_profile_format() {
     local expected_validator validator metadata compiler_identity
     local metadata_compiler metadata_compiler_sha256 active_compiler_sha256
+    local metadata_cpv observed_cpv
     expected_validator=/usr/local/libexec/gentoo-optimization/pgo/validate-profile.py
     validator=${GENTOO_OPT_PROFILE_VALIDATOR:-${expected_validator}}
     if [[ ${validator} != "${expected_validator}" ]]; then
@@ -1007,6 +1008,22 @@ gentoo_opt_validate_profile_format() {
         --metadata "${metadata}" || {
         gentoo_opt_error 'authoritative profile manifest/sidecar verification failed'; return 1;
     }
+
+    # Consume-time authority is the package Portage is actually compiling.
+    # Package.env selection and the emerge command are advisory; a dispatcher
+    # for a successor or predecessor CPV must be refused before compilation.
+    if ! gentoo_opt_fixture_override_allowed; then
+        observed_cpv=${CATEGORY-}/${PF-}
+        [[ ${CATEGORY-} && ${PF-} ]] || {
+            gentoo_opt_error 'profile-use requires Portage CATEGORY/PF identity'; return 1;
+        }
+        metadata_cpv=$(/usr/bin/jq -er '.profile.cpv // empty' -- "${metadata}") || {
+            gentoo_opt_error 'cannot extract exact profile CPV from validation metadata'; return 1;
+        }
+        [[ ${metadata_cpv} == "${observed_cpv}" ]] || {
+            gentoo_opt_error "profile CPV mismatch: metadata=${metadata_cpv}, observed=${observed_cpv}"; return 1;
+        }
+    fi
 
     # The authoritative sidecar contains the complete compiler observation
     # used when the profile was published.  Family equality is not enough:

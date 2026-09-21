@@ -2,6 +2,35 @@
 """Materialize strict fingerprint inputs from live Portage VDB records."""
 import argparse, hashlib, json, os, pathlib, re, subprocess
 
+def package_env_stack(cpv: str, root: pathlib.Path) -> list[dict[str, str]]:
+    """Return the effective ordered package.env files using Portage atoms."""
+    policy_root = pathlib.Path('/etc/portage/package.env')
+    if not policy_root.is_dir():
+        return []
+    try:
+        from portage.dep import Atom
+    except Exception as exc:
+        raise ValueError(f'Portage atom matcher unavailable: {exc}') from exc
+    result = []
+    for path in sorted(policy_root.rglob('*')):
+        if not path.is_file() or path.name.startswith('.'):
+            continue
+        for raw in path.read_text(errors='replace').splitlines():
+            line = raw.split('#', 1)[0].strip()
+            if not line:
+                continue
+            fields = line.split()
+            if len(fields) < 2:
+                raise ValueError(f'malformed package.env assignment: {path}: {raw}')
+            try:
+                applies = Atom(fields[0]).match(cpv)
+            except Exception as exc:
+                raise ValueError(f'invalid Portage package.env atom {fields[0]!r}: {exc}') from exc
+            if applies:
+                result.append({'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+                break
+    return result
+
 COMPILER = {'pgo-clang-ir': ('clang', 'llvm-ir'), 'pgo-gcc': ('gcc', 'gcc-generate'),
             'pgo-go': ('go', 'go-pprof'), 'pgo-rust': ('rustc', 'rust-llvm')}
 
@@ -43,11 +72,7 @@ def main():
             slot=read(root,'SLOT'); slot_parts=slot.split('/',1); use=read(root,'USE').split()
             if len(slot_parts)!=2: slot_parts.append(slot_parts[0])
             ebuild=root/(pf+'.ebuild'); env=[]
-            package_env=pathlib.Path('/etc/portage/package.env')
-            if package_env.is_file():
-                for line in package_env.read_text(errors='replace').splitlines():
-                    bits=line.split();
-                    if bits and (bits[0]==cpv or bits[0]==cat+'/*'): env.extend(bits[1:])
+            env=package_env_stack(cpv, root)
             compiler_obj=compiler(ci[family]['path'],family,fmt)
             rust_target=compiler_obj.pop('rust_target_triple',None); rust_llvm=compiler_obj.pop('rustc_llvm_version',None)
             data={'schema_version':3,'category':cat,'pf':pf,'slot':slot_parts[0],'subslot':slot_parts[1],
