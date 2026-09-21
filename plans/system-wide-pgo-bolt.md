@@ -8385,3 +8385,7 @@ The post-merge VDB identity was re-materialized (`8c02c0ff3b6dd8b70956edb993ee61
 2026-09-21 — exact libgcrypt profile-use transaction completed
 
 After republishing the identity-bound dispatcher and correcting the runner's profile-path resolution, the dedicated exact transaction runner completed `=dev-libs/libgcrypt-1.12.4::gentoo` successfully. Receipt verification passed at `/var/lib/gentoo-optimization/reports/phase3-libgcrypt-profile-use-final-v5-receipt.json`; the receipt binds repository `gentoo`, ebuild SHA-256 `3a4d78b3cccd9dbe23afd88dff6f31d2507a83408cb5612d0063dcb732061649`, and the exact dispatcher/profile identities. Earlier refusals remain preserved as non-authoritative diagnostics (missing metadata provenance fields, inaccessible merge evidence, and the runner path bug); no failed attempt was rewritten.
+
+### 2026-09-21 — portable-complete validation checkpoint after exact identity repairs
+
+The resulting source boundary passed `PATH=/usr/bin:/bin /usr/bin/bash tests/run-optimization-tests.sh --mode portable-complete`: 87 pass, 0 fail, 12 skip, 532 required subtests passed, 0 required subtest failures, and exit status 0. The framework-installer, recovery, ABI-guard, dispatcher, BOLT fixture, package-env duplicate, and Portage semantic policy gates all passed. The skipped cases are the documented root/capability-selected integrations and do not authorize production completion.
