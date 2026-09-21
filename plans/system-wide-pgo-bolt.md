@@ -7933,3 +7933,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — ell clang-IR generation and profile-use
 
 `dev-libs/ell-9999` completed authenticated Clang-IR generation; receipt verification passed, LLVM merge evidence digest was `de010e2288dcc40b376107bcec742d03af148f675141aa7e81703dfa6c831189`, and dispatcher publication succeeded with record SHA-256 `ab5ee04a8674d4e9a8759e29152454c78985147d452376acae8306e24ad70913`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
+### 2026-09-21 — gmp generation configure failure
+
+`dev-libs/gmp-6.3.0-r2` passed readiness and storage preflight but failed its authenticated Clang-IR generation configure gate in the 32-bit multilib ABI. The configure probe failed while testing the build compiler/linker (`ld.lld: undefined symbol: main`; `clang-22: linker command failed`), so no source compilation, receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/gmp-6.3.0-r2/temp/build.log`; the authoritative probe details are in the staged `config.log`.
