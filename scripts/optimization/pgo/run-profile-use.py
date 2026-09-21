@@ -44,15 +44,16 @@ def main() -> int:
     atom=f'={a.cpv}::{a.repository}'
     started=time.time()
     a.log.parent.mkdir(parents=True,exist_ok=True)
+    dispatcher_env = a.dispatcher.with_suffix('.env')
+    if not dispatcher_env.is_file() or dispatcher_env.is_symlink():
+        raise SystemExit(f'REFUSED: exact dispatcher environment is unavailable: {dispatcher_env}')
+    run_env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null','GENTOO_OPT_RUNNER_DISPATCHER_ENV':str(dispatcher_env.resolve())}
     with a.log.open('w') as out:
         pretend=subprocess.run(['emerge','--oneshot','--pretend','--verbose',atom],stdout=out,stderr=subprocess.STDOUT,env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null'})
         if pretend.returncode != 0:
             raise SystemExit('REFUSED: exact Portage pretend did not resolve the requested atom')
-        dispatcher_env = a.dispatcher.with_suffix('.env')
-    if not dispatcher_env.is_file() or dispatcher_env.is_symlink():
-        raise SystemExit(f'REFUSED: exact dispatcher environment is unavailable: {dispatcher_env}')
-    run_env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null','GENTOO_OPT_RUNNER_DISPATCHER_ENV':str(dispatcher_env.resolve())}
-    proc=subprocess.run(['emerge','--oneshot','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env=run_env)
+        out.flush()
+        proc=subprocess.run(['emerge','--oneshot','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env=run_env)
     post=(vdb/'BUILD_TIME').read_text().strip() if (vdb/'BUILD_TIME').is_file() else ''
     receipt={'schema_version':1,'cpv':a.cpv,'repository':repo,'ebuild_sha256':digest,'dispatcher_sha256':sha(a.dispatcher),'metadata_sha256':sha(metadata),'profile_sha256':sha(profile),'exit_status':proc.returncode,'log_path':str(a.log.resolve()),'log_sha256':sha(a.log),'started_epoch':started,'finished_epoch':time.time(),'post_build_time':post}
     a.receipt.parent.mkdir(parents=True,exist_ok=True); a.receipt.write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
