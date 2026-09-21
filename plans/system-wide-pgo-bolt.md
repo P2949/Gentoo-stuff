@@ -7829,3 +7829,7 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 ### 2026-09-21 — mako generation fetch-stall terminal failure
 
 `gui-apps/mako-9999` passed readiness and storage preflight, but the live Git fetch for `https://github.com/emersion/mako.git` remained idle for over two minutes with no progress. The fetch child was terminated cleanly; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/gui-apps/mako-9999/temp/build.log`.
+
+### 2026-09-21 — slurp workload terminal failure
+
+`gui-apps/slurp-1.5.0` completed authenticated Clang-IR generation, staged install, and install-QA, but the reviewed `/usr/bin/slurp` workload exited `1` in the noninteractive wave environment. The runner refused to seal an authoritative receipt or publish a profile; no profile-use rebuild was attempted. The workload-specific terminal result is preserved by the runner and requires a corrected deterministic fixture before retry.
