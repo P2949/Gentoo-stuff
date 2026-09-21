@@ -7958,6 +7958,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `dev-libs/leancrypto-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/smuellerDD/leancrypto` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/leancrypto-9999/temp/build.log`.
 
+### 2026-09-21 — libayatana-indicator clang-IR generation and profile-use
+
+`dev-libs/libayatana-indicator-0.9.4` completed authenticated Clang-IR generation; receipt verification passed, LLVM 22 merged the raw payload with evidence digest `11bf4439eca79c45b15146dbbd8fe40458ea93da3d9a8071c4cd83437db8b4f3`, and dispatcher publication succeeded with record SHA-256 `8a7ec83cf6489b3661730d6bf6b59d79cef2a2ed1abe4f620390c18aba515eb8`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
+
 ### 2026-09-21 — libayatana-appindicator clang-IR generation and profile-use
 
 `dev-libs/libayatana-appindicator-0.5.94` completed authenticated Clang-IR generation; receipt verification passed, LLVM 22 merged the raw payload with evidence digest `2aab9971ec5a4c8b0ae9582ea003a2b5bcfca343a4c602f10687c9aa147d688f`, and dispatcher publication succeeded with record SHA-256 `8afecc5e55bae4a2a0143e135028913c5dd4b8b6021ad0caa0ab0d4d5ea2928c`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
