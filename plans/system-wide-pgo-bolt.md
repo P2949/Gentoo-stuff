@@ -7958,6 +7958,10 @@ The exact `dev-libs/dbus-glib-0.114` profile-use rebuild authenticated `clang-ir
 
 `dev-libs/leancrypto-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/smuellerDD/leancrypto` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/leancrypto-9999/temp/build.log`.
 
+### 2026-09-21 — libsass generation fetch-stall terminal failure
+
+`dev-libs/libsass-9999` passed readiness and storage preflight, but its live Git fetch from `https://github.com/sass/libsass.git` remained idle for over two minutes. Only the fetch child was terminated; Portage then reported the unpack fetch failure. No generation receipt, profile merge, dispatcher publication, or profile-use deployment was admitted. The complete retained log is `/var/tmp/gentoo-portage-build/portage/dev-libs/libsass-9999/temp/build.log`.
+
 ### 2026-09-21 — libpfm clang-IR generation and profile-use
 
 `dev-libs/libpfm-9999` completed authenticated Clang-IR generation; receipt verification passed, LLVM 22 merged the raw payload with evidence digest `7f29c41466b9c2090016557eb660a610c3edcc57a48645b9a4f3d32ad9e44d72`, and dispatcher publication succeeded with record SHA-256 `ccc1b284d918481f415c92d2a28a2c41a4d3a2afc72acaea39c79cfacf3a80e2`. The exact profile-use rebuild authenticated `clang-ir-use`, passed install-QA and ABI checks, and completed with `use_rc=0`.
