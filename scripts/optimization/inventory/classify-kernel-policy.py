@@ -8,6 +8,10 @@ CONTENTS proves ownership of a forbidden boot/kernel artifact.
 import argparse, hashlib, json, re
 from pathlib import Path
 from portage.versions import catpkgsplit
+try:
+ import portage
+except ImportError:
+ portage=None
 FORBIDDEN=re.compile(r'(/boot/|/efi/|/sys/firmware/efi|/etc/kernel/)',re.I)
 LIFECYCLE_HINT=re.compile(r'(initramfs|dracut|installkernel|efibootmgr|bootctl|grub-install)',re.I)
 def main():
@@ -56,6 +60,13 @@ def main():
    else: source_unavailable=True
   else:
    source_unavailable=True
+  if source_unavailable and repo_name and portage is not None:
+   try:
+    db=portage.create_trees()['/']['porttree'].dbapi
+    found=db.findname(cpv, myrepo=repo_name)
+    if found: matches=[Path(found)]; source_unavailable=False
+   except Exception:
+    pass
   if len(matches)>1: raise SystemExit(f'REFUSED: exact repository/ebuild identity is ambiguous for {cpv}')
   text=matches[0].read_text(errors='replace') if matches else ''
   markers=sorted(set(LIFECYCLE_HINT.findall(text))) if text else []

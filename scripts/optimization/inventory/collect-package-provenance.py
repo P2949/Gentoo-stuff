@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse, hashlib, json
 from pathlib import Path
 from portage.versions import catpkgsplit
+import portage
 
 def sha(path):
     h=hashlib.sha256()
@@ -26,6 +27,12 @@ def main():
         split=catpkgsplit(pf); pn=(split[1] if split and split[0] != 'null' else pf.rsplit('-',1)[0])
         ebuild_name=item.get('ebuild') or pf+'.ebuild'
         next_path=a.ebuild_root/repo/cat/pn/ebuild_name if repo else None
+        if repo and (next_path is None or not next_path.is_file()):
+            try:
+                found=portage.create_trees()['/']['porttree'].dbapi.findname(cpv, myrepo=repo)
+                if found: next_path=Path(found)
+            except Exception:
+                pass
         next_exists=bool(next_path and next_path.is_file())
         rows.append({'cpv':cpv,
           'installed_source':{'vdb_path':str(root),'repository':repo,'build_time':text(root,'BUILD_TIME'),'counter':text(root,'COUNTER'),'contents_sha256':sha(root/'CONTENTS') if (root/'CONTENTS').is_file() else None},
