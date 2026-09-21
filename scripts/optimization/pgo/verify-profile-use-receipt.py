@@ -21,6 +21,17 @@ def main() -> int:
             p=pathlib.Path(item['path'])
             if not p.is_absolute() or not p.is_file() or digest(p) != item['sha256']:
                 raise SystemExit(f'REFUSED: {key} artifact hash mismatch')
+        post=r['post_vdb']
+        if not isinstance(post,dict) or post.get('cpv') != r['cpv'] or post.get('repository') != r['repository']:
+            raise SystemExit('REFUSED: post-merge VDB identity does not match receipt package')
+        if post.get('ebuild_sha256') != r['ebuild']['sha256']:
+            raise SystemExit('REFUSED: post-merge ebuild identity differs')
+        for name in ('contents','environment'):
+            item=post.get(name)
+            if item is not None:
+                p=pathlib.Path(item.get('path',''))
+                if not p.is_file() or digest(p) != item.get('sha256'):
+                    raise SystemExit(f'REFUSED: post-merge {name} hash mismatch')
         log_text=pathlib.Path(r['log']['path']).read_text(errors='replace')
         backend=r['backend']
         markers={
