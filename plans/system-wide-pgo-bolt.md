@@ -8309,3 +8309,7 @@ The exact successor closure `=media-libs/libmediainfo-26.05::gentoo =media-video
 ### 2026-09-21 — baseline generation authority transition
 
 After framework publication, the fresh baseline generation was activated through `generation-authorization.py` using the root-owned lock hierarchy and inventory SHA-256 `9c0d0d941374a18d39f74ed4b1b2a781d5115fecddced05bbeaff59bcad28f01`. Independent `verify` completed successfully for generation `phase3-live-candidate-20260921-baseline-fresh` against framework `framework-6c13089d4950aac6e5325b11c9b9149eca021c390e1adee8788640502b0fb789`. The authority receipt and journal remain root-owned in the generation directory.
+
+### 2026-09-21 — independent baseline userspace update
+
+With the fresh baseline generation active, an independent userspace update path was executed for `dev-python/python-discovery-1.6.1`. The exact CPV rebuilt and merged successfully through Portage install-QA under the active framework; no profile-use or BOLT claim was made. The broader read-only userspace graph remains intentionally unexecuted as a single transaction because it still contains the unresolved SPIR-V/Hyprland closure and the preserved ABI failures.
