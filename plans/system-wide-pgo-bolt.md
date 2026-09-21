@@ -2,6 +2,8 @@
 
 ## Progress summary
 
+- 2026-09-21: Regenerated a live inventory from `/var/db/pkg` against the current host, producing 1,305 packages, 684,559 owned paths, 80,056 owned directories, and one unresolved directory. This replaces the stale 1,292-CPV candidate boundary exposed by the Ayatana successor CPVs; no profile-use transaction was resumed.
+
 - 2026-09-21: Corrected fingerprint materialization was run against retained `phase3-live-candidate-20260918-postsync-r1` lanes and failed closed on the first stale CPV (`dev-libs/libayatana-appindicator-0.5.94` absent from live VDB). This confirms the collector refuses stale candidate identities instead of silently producing package.env-empty or successor-bound fingerprints; the corrected inventory and lanes must be regenerated from the current live VDB before further profile publication.
 
 - 2026-09-21: Classified the two Ayatana stale-dispatcher transactions and the libbsd repository mismatch as permanent non-authoritative identity incidents in `plans/phase3-profile-use-identity-incidents.json`; no historical profile-use result was retroactively blessed. Live Portage resolves `dev-libs/libbsd-0.12.1` from `codex-local` with ebuild SHA-256 `d7a76f596a8ec08836a64965a9b6de76310120f6ff5fdf0e4db290874adcc00d`, so the earlier `gentoo`-sourced dispatcher remains unresolved and requires corrected-generation remediation or retraining.
