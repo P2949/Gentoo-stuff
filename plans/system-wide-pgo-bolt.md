@@ -20,6 +20,8 @@
 
 - 2026-09-21: Reworked profile-wave workload execution to use a reviewed per-recipe `timeout_seconds` (bounded to 3,600 seconds) and file-backed, tail-bounded logs instead of a fixed 30-second `stdout=PIPE` buffer. Recipe generation supplies the timeout for every generated workload, including special cases; consumer-workload regression and Python compilation pass. Commit `b009806` pushed. This improves Phase-4 execution safety but does not make smoke recipes representative by itself.
 
+- 2026-09-21: Added canonical optimization-set derivation from the mutation-policy artifact and lane classification. The generator emits userspace, kernel-exclusion, PGO backend, native, and not-applicable sets only after exact CPV coverage and decision consistency checks; synthetic integration validation passes. Commit `d2dd2c0` pushed. The live set publication remains pending until the unresolved 318 lifecycle/source records are resolved.
+
 - 2026-09-21: Completed a fresh read-only live VDB inventory candidate after the userspace baseline check. Generation `phase3-live-baseline-check-20260921c` contains 1,307 exact package records, 684,772 owned paths, and 80,075 owned-directory records; inventory SHA-256 is `99029432a8a290033d6dc99b2469e894abbc7144777861ba534bfd70bf0ee728`. The write-once generator completed without unresolved-directory output. This remains candidate evidence until the strict framework installer accepts the exact generation/source boundary; no activation or package mutation occurred.
 
 - 2026-09-21: Made live inventory generation refuse an existing output path, preserving candidate/frozen inventory evidence across regeneration attempts. Python compilation passes; commit `7d35bb1` pushed.
