@@ -16,7 +16,18 @@ FORBIDDEN=re.compile(r'(/boot/|/efi/|/sys/firmware/efi|/etc/kernel/)',re.I)
 LIFECYCLE_HINT=re.compile(r'(initramfs|dracut|installkernel|efibootmgr|bootctl|grub-install)',re.I)
 FORBIDDEN_MUTATION=re.compile(r'(\b(efibootmgr|bootctl|kernel-install|installkernel|dracut|grub-install)\b[^\n]*(/boot|/efi|initramfs)|\bmount\b[^\n]*(/boot|/efi)|\binstall\b[^\n]*(/boot|/efi))',re.I)
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--vdb',default='/var/db/pkg');ap.add_argument('--ebuild-root',default='/var/db/repos');ap.add_argument('--output',required=True);a=ap.parse_args(); m=json.loads(Path(a.manifest).read_text()); rows=[]
+ ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--vdb',default='/var/db/pkg');ap.add_argument('--ebuild-root',default='/var/db/repos');ap.add_argument('--source-review', help='generation-bound review for exact source-unavailable CPVs');ap.add_argument('--output',required=True);a=ap.parse_args(); m=json.loads(Path(a.manifest).read_text()); rows=[]
+ source_review={}
+ if a.source_review:
+  review=json.loads(Path(a.source_review).read_text())
+  if review.get('record_type') != 'source-unavailable-review' or review.get('schema_version') != 1:
+   raise SystemExit('REFUSED: invalid source-unavailable review schema')
+  for item in review.get('records',[]):
+   cpv=item.get('cpv'); decision=item.get('decision'); evidence=item.get('evidence_paths')
+   if not isinstance(cpv,str) or decision not in {'userspace-transaction','kernel-policy-exclusion'} or not isinstance(evidence,list) or not evidence:
+    raise SystemExit('REFUSED: malformed source-unavailable review record')
+   if cpv in source_review: raise SystemExit(f'REFUSED: duplicate source-unavailable review {cpv}')
+   source_review[cpv]=item
  for item in m['packages']:
   cpv=item['cpv']; cat,pf=cpv.split('/',1); root=Path(a.vdb)/cat/pf; evidence=[]
   cont=root/'CONTENTS'
@@ -75,8 +86,16 @@ def main():
   # A lifecycle keyword is only a review trigger.  Exclude the transaction
   # only when the exact ebuild phase contains a concrete forbidden mutation.
   concrete_mutation=bool(FORBIDDEN_MUTATION.search(text))
-  state='kernel-policy-exclusion' if excluded or concrete_mutation else ('pending-lifecycle-review' if source_unavailable else 'userspace-transaction')
-  reason='owned-forbidden-artifact' if excluded else ('package-phase-forbidden-mutation' if concrete_mutation else ('source-unavailable' if source_unavailable else ('lifecycle-hint-review' if markers else 'no-forbidden-lifecycle-evidence')))
+  reviewed=source_review.get(cpv)
+  if reviewed is not None and not source_unavailable:
+   raise SystemExit(f'REFUSED: source-unavailable review supplied for available ebuild {cpv}')
+  if reviewed is not None:
+   if (excluded or concrete_mutation) and reviewed['decision'] != 'kernel-policy-exclusion':
+    raise SystemExit(f'REFUSED: source-unavailable review cannot demote forbidden evidence for {cpv}')
+   state=reviewed['decision']; reason=reviewed.get('reason_code','source-unavailable-reviewed'); evidence=sorted(set(evidence+reviewed['evidence_paths']))
+  else:
+   state='kernel-policy-exclusion' if excluded or concrete_mutation else ('pending-lifecycle-review' if source_unavailable else 'userspace-transaction')
+   reason='owned-forbidden-artifact' if excluded else ('package-phase-forbidden-mutation' if concrete_mutation else ('source-unavailable' if source_unavailable else ('lifecycle-hint-review' if markers else 'no-forbidden-lifecycle-evidence')))
   rows.append({'cpv':cpv,'state':state,'reason_code':reason,'evidence_paths':sorted(evidence),'ebuild_markers':markers,'repository':repo_name,'ebuild_path':str(matches[0]) if matches else None})
  out={'record_type':'kernel-policy-classification','schema_version':1,'source_manifest_sha256':hashlib.sha256(Path(a.manifest).read_bytes()).hexdigest(),'records':rows};out['counts']={}
  for x in rows: out['counts'][x['state']]=out['counts'].get(x['state'],0)+1
