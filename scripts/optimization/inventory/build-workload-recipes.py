@@ -34,6 +34,11 @@ def main():
    continue
   recipes=[]
   for e in x['entrypoints']:
+   # A workload recipe cannot authenticate provider coverage without the
+   # provider's current build ID.  Keep the package in accounting, but defer
+   # it to the rebuild/capture path instead of creating an unverifiable recipe.
+   if not e.get('build_id'):
+    continue
    p=e['path']; safe=p.startswith(('/usr/bin/','/usr/sbin/','/bin/','/sbin/')) and not os.path.islink(p)
    # Recovery-only helpers require an input archive and are not standalone
    # representative workloads. Prefer the package's normal compressor entry

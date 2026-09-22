@@ -8631,3 +8631,7 @@ The generated-policy tree was materialized and published through the root-owned 
 ## 2026-09-22 authorized-generation wave planning boundary
 
 The new generation was fed through the scheduler and wave planner. Scheduler output selected eight exact Clang-lane records, and wave planning now handles scheduler rows with an absent lane by skipping them safely rather than raising an exception. The selected recipes are retained historical smoke recipes from the prior generation; they are not representative training closure. Accordingly, no profile-generation transaction was started from this plan, and the wave remains planning-only until current-generation representative workload bindings and proof-of-counter recipes are regenerated.
+
+## 2026-09-22 fresh workload input boundary
+
+Fresh ELF metadata was extracted from the post-cleanup authoritative census: 16,731 ELF records, metadata SHA-256 `970658148e2df749c161b4b29a18c8ebd6a6823535ad4c50e48895534dcf9940`. Rebuilding the workload manifest produced 318 direct-entrypoint candidates and 218 packages without a runnable entrypoint. The workload recipe producer was tightened so a recipe is never emitted without a current provider build ID; the regenerated recipe result therefore contains only 9 smoke recipes, 526 packages requiring representative/build-ID training work, and 1 explicit terminal workload exclusion. The prior smoke recipes are not admitted as representative training evidence, and no wave was started.
