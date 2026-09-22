@@ -8605,3 +8605,7 @@ The CPV-bound phase-hook retention retry with the installed ABI flags plus `-fno
   (SHA-256 `e0c1bea7ed65219ec3b9f2dd81a5949653ae953e8f22c1897a058822e2435753`).
   No package mutation was performed; kernel and firmware actions remain outside
   the automated project boundary.
+
+## 2026-09-22 framework reinstallation and strict check boundary
+
+After the authenticated live de-instrumentation cleanup and source-highlight ABI remediation, the root-owned bootstrap installer was synchronized byte-for-byte with the committed source installer (SHA-256 `b63edbef7e0fb133f5bec4fa8f1e147c0b53f807d45eb1481c727851f5ece5`). The framework was then reinstalled from the existing generated-policy and frozen-inventory inputs, producing active framework generation `framework-3539a522fad11168b4daa6f5a57e3691da946bfe7f2ee4ec9e4dbbaa82934859`. A subsequent root-owned strict `--check` completed successfully with the atomic-exchange preflight and reported `PASS: root-owned Phase 2 framework check verified`; no package or kernel/boot artifact transaction was performed in this step.
