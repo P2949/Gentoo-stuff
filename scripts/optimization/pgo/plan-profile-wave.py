@@ -8,7 +8,8 @@ def main():
  else:
   source_packages=b.get('records', b.get('packages', []))
  for x in source_packages:
-  if x.get('lane','').startswith('pgo-') and rec.get(x['cpv'],{}).get('recipes'):
+  lane=x.get('lane')
+  if isinstance(lane,str) and lane.startswith('pgo-') and rec.get(x['cpv'],{}).get('recipes'):
    row={'cpv':x['cpv'],'lane':x['lane'],'compiler_sha256':x.get('compiler_sha256',b.get('compiler_sha256')),'profile_path':x.get('profile_path'),'recipes':x.get('recipes') or rec[x['cpv']]['recipes']}
    if not row['compiler_sha256'] or not row['profile_path']: raise SystemExit(f"REFUSED: scheduled package lacks compiler/profile identity: {x['cpv']}")
    by[x['lane']].append(row)
