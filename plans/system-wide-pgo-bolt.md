@@ -9474,3 +9474,7 @@ A read-only `eclean-dist --pretend --deep --verbose` was captured at `/var/lib/g
 ### 2026-09-27 bounded storage-root inventory
 
 A bounded post-cleanup inventory was captured for ccache, ThinLTO, live distfiles, raw PGO payloads, and the content-addressed evidence object store. Report: `/var/lib/gentoo-optimization/reports/storage-inventory-cache-roots-20260927.json`, SHA-256 `56f4a05729863dc74def88ace2391d66442654d1b1b982982ca6840a63f3d746`. It records XFS reflink support, ccache 2,046,717,952 logical bytes, ThinLTO 1,097,375,744 bytes, distfiles 58,639,347,712 bytes, raw profiles 44,974,026,752 bytes, and retained objects 42,835,824,640 bytes. The inventory is bounded to known storage roots and does not authorize deletion of evidence or unclassified distfiles.
+
+### 2026-09-27 storage preflight after cache bounding
+
+The live fail-closed storage preflight was rerun after ccache/ThinLTO cleanup with the configured initial floors of 100 GiB and 12% free space. It passed: `/` has 175,488,151,552 bytes free (18.1682%). Durable report: `/var/lib/gentoo-optimization/reports/storage-preflight-cache-bounds-20260927.json`. No mutation occurred during this verification.
