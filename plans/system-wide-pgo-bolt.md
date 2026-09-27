@@ -8740,3 +8740,18 @@ source/proprietary/toolchain decisions: 538 `pgo-clang-ir`, 20 `pgo-rust`,
 Optimization-set generation completed, but fingerprints, policy bindings,
 framework installation, and final authority verification remain outstanding;
 no wave was started.
+
+## 2026-09-27 corrected identity materialization boundary
+
+The reviewed lane set was fed through the corrected VDB fingerprint collector and
+materialized for 565 profile-eligible records. The collector observed ordered
+`package.env` content hashes and current build flags from the VDB; result was
+captured at `/tmp/fingerprint-result-20260927.json` during this boundary and is
+not yet authority because retained profile remediation/carry-forward has not
+been independently proven. Policy bindings were rebuilt for all 1,344 CPVs
+(SHA-256 `d57f21abc8b3371ef9b4bf1431cc078ab5d7a73d4c5387fa6bd2557b597b5c78`)
+and a generation-scoped policy tree was materialized from the reviewed
+bindings. The strict installer check reached the trusted-bootstrap migration
+boundary but refused because the installed helper bootstrap bytes do not yet
+match the reviewed invariant tree. No active framework or generation authority
+was replaced and no package wave was started.
