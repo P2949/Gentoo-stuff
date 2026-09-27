@@ -30,14 +30,15 @@ def inspect_elf(path: pathlib.Path, timeout: float = 10.0) -> tuple[bool, str]:
     try:
         result = subprocess.run(
             ["/usr/bin/readelf", "-SWs", str(path)], check=False,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise InspectionError(f"readelf failed for {path}: {exc}") from exc
     if result.returncode != 0:
-        raise InspectionError(f"readelf returned {result.returncode} for {path}: {result.stderr.strip()}")
-    data = result.stdout
+        err = result.stderr.decode("utf-8", errors="replace") if isinstance(result.stderr, bytes) else result.stderr
+        raise InspectionError(f"readelf returned {result.returncode} for {path}: {err.strip()}")
+    data = result.stdout.decode("utf-8", errors="replace") if isinstance(result.stdout, bytes) else result.stdout
     for marker in LLVM_MARKERS:
         if marker in data:
             return True, "llvm"
