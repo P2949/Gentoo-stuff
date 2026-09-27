@@ -68,7 +68,7 @@ count_token() {
 }
 
 assert_stage_readiness_absent() {
-    local variable value flag
+    local variable value flag allow_build_id=${1:-0}
     for variable in CFLAGS CXXFLAGS FCFLAGS FFLAGS; do
         value=${!variable-}
         for flag in -gline-tables-only -g1 -fdebug-info-for-profiling \
@@ -77,10 +77,12 @@ assert_stage_readiness_absent() {
             -fno-reorder-blocks-and-partition; do
             [[ $(count_token "${value}" "${flag}") == 0 ]] || return 1
         done
-        [[ ${value} != *--emit-relocs* && ${value} != *--build-id* ]] || return 1
+        [[ ${value} != *--emit-relocs* ]] || return 1
+        (( allow_build_id )) || [[ ${value} != *--build-id* ]] || return 1
     done
     value=${LDFLAGS-}
-    [[ ${value} != *--emit-relocs* && ${value} != *--build-id* ]] || return 1
+    [[ ${value} != *--emit-relocs* ]] || return 1
+    (( allow_build_id )) || [[ ${value} != *--build-id* ]] || return 1
     value=${RUSTFLAGS-}
     [[ ${value} != *debuginfo=1* && ${value} != *--emit-relocs* &&
         ${value} != *--build-id* ]] || return 1
@@ -522,9 +524,11 @@ case_exact_profile_compiler_identity_is_bound() (
 
 case_clang_generate_exact_once() (
     export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang ABI=amd64
+    export CATEGORY=app-test PF=phase2-pgo-use-fixture
     export GENTOO_OPT_MODE=clang-ir-generate GENTOO_OPT_ABI=amd64
     export GENTOO_OPT_FINGERPRINT=${FINGERPRINT}
     export GENTOO_OPT_PROFILE_PATH="${TMP}/profiles/raw-clang"
+    export GENTOO_OPT_TARGET_CPV=app-test/phase2-pgo-use-fixture
     CFLAGS='c -fprofile-instr-generate=/var/tmp/stale'; CXXFLAGS='cxx'; LDFLAGS='ld -fprofile-use=/var/tmp/stale'; FCFLAGS='fc'; FFLAGS='ff'; FEATURES='ccache'
     SANDBOX_WRITE='/existing/write'
     source "${BASHRC}" >/dev/null 2>&1 || return 1
@@ -538,7 +542,7 @@ case_clang_generate_exact_once() (
     [[ ${CFLAGS} != *'/var/tmp/stale'* && ${LDFLAGS} != *'/var/tmp/stale'* ]]
     [[ ${FCFLAGS} == fc && ${FFLAGS} == ff ]]
     [[ ${SANDBOX_WRITE} == "/existing/write:${GENTOO_OPT_PROFILE_PATH}" ]]
-    assert_stage_readiness_absent
+    assert_stage_readiness_absent 1
 )
 
 case_compiler_masquerades_are_bypassed() (

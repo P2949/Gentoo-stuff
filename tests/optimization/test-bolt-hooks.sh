@@ -166,7 +166,7 @@ if "${CAPTURE}" --test-mode --ed "${ED}" --cache-root "${CACHE}" \
         >"${WORK}/lock-content.out" 2>"${WORK}/lock-content.err"; then
     fail 'transaction accepted project lock content for another generation'
 fi
-grep -Fq 'does not match the exact proof generation' "${WORK}/lock-content.err" || \
+grep -Eq '(project|generation) writer lock content does not match the exact proof generation' "${WORK}/lock-content.err" || \
     fail 'generation-lock content rejection lacked an exact reason'
 [[ ! -e ${CACHE}/locks/${FINGERPRINT}.lock ]] || \
     fail 'fingerprint lock was created before generation content validation'

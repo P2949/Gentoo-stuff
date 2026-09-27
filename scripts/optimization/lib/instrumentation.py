@@ -17,6 +17,16 @@ class InspectionError(RuntimeError):
 
 def inspect_elf(path: pathlib.Path, timeout: float = 10.0) -> tuple[bool, str]:
     """Return (instrumented, kind); raise InspectionError on tool failure."""
+    # Avoid invoking readelf on the ordinary payload files that are present in
+    # every staged image (documentation, metadata, scripts, and VDB copies).
+    # A valid ELF must begin with the magic bytes below; unreadable files still
+    # fail closed because the probe itself is not silently swallowed.
+    try:
+        with path.open("rb") as stream:
+            if stream.read(4) != b"\\x7fELF":
+                return False, "non-elf"
+    except OSError as exc:
+        raise InspectionError(f"cannot read staged file {path}: {exc}") from exc
     try:
         result = subprocess.run(
             ["/usr/bin/readelf", "-SWs", str(path)], check=False,
