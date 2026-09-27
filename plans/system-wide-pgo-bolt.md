@@ -9376,3 +9376,9 @@ The root XFS filesystem has 131,784,843,264 bytes free (13.6436%), above the
 configured 100 GiB and 12% floors. The preflight passed without mutating any
 cache, evidence, profile, recovery, boot, kernel, EFI, initramfs, or firmware
 state.
+
+The exact profile-use runner now invokes the same fail-closed storage preflight
+before resolving or executing its Portage transaction, with an explicit
+`--storage-path` override for isolated fixtures. Its identity-drift regression
+continues to pass after this integration, so profile-use cannot consume the
+remaining capacity margin without the configured storage floor being satisfied.
