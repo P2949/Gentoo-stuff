@@ -9418,3 +9418,9 @@ Binpkg-retention receipt publication now fsyncs the temporary report and its
 parent directory before returning success. The binpkg-retention and storage-GC
 regressions pass, so a successful duplicate-prune classification cannot be
 reported before its machine-readable receipt is durable.
+
+Checkpoint-compaction receipt publication now has the same file and directory
+fsync boundary. The checkpoint fixture and fresh live dry-run pass again with
+10 `EVIDENCE_KEEP`, one `LIVE_REQUIRED`, and zero candidates; the current
+durable receipt is
+`/var/lib/gentoo-optimization/reports/checkpoint-compaction-followup3-20260927.json`.
