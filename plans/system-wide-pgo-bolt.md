@@ -9551,3 +9551,14 @@ filesystem-free delta of `52,371,456` bytes; the smaller physical delta is
 consistent with shared/reflinked historical storage.  No active Portage process
 was present, the quarantine protocol completed, and the original state records
 remain intact.
+
+A bounded second prerequisite retirement batch then processed
+`jsonschema-source-20260907T000000Z` and `jsonschema-source-20260907T030000Z`
+using the same validated retry-disposition/reconciliation inputs.  Their
+original nonterminal state records were not modified; both expanded
+`distfiles.staging` payloads were hashed, quarantined, deleted, and recorded
+in `/var/lib/gentoo-optimization/reports/prerequisite-storage-retirement-execute-20260927-batch2.json`.
+The measured filesystem-free delta was `206,184,448` bytes.  The large logical
+payloads are reflink/shared storage, so physical recovery is lower than the
+logical retirement.  The storage receipt retains the authority hash and
+per-child manifests; unknown and unreconciled rows remain protected.
