@@ -9694,6 +9694,15 @@ third-party overlay metadata warnings were retained in the report and did not
 alter the signed Gentoo synchronization result. No kernel, boot, EFI,
 initramfs, or firmware state was touched.
 
+The post-interruption binpkg retention dry-run was rerun against the complete
+optimization reference root, live VDB, and recovery indexes. Report
+`/var/lib/gentoo-optimization/reports/binpkg-retention-20260927-post-interrupt.json`
+(SHA-256
+`d7cc1e4921493d72b4944235d071a7c9cb5d8d88554265778cacbd93bf6a90a6`)
+classifies 1,145 archives as `RECOVERY_REQUIRED`, 364 as `LIVE_REQUIRED`, and
+357 as `UNKNOWN`; no archive is authorized for deletion by this scan. Unknown
+objects remain retained.
+
 ## 2026-09-27 userspace baseline transaction storage-floor stop
 
 The optimization-off userspace baseline transaction was intentionally stopped
