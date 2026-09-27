@@ -9587,3 +9587,18 @@ fell from approximately 348 GB to approximately 4.36 GB of remaining small
 historical trees.  The five measured batch deltas total `464,453,632` physical
 free bytes.  Post-batch storage preflight remains passing at
 `175,896,907,776` free bytes (`18.2105%`).
+
+The prerequisite transaction root now contains only approximately 4.36 GB of
+small historical trees; all seven approximately 43 GB staging payloads have
+been retired through authority-bound batches.  A new fail-closed
+`build-profile-compaction-authority.py` utility was added for the next storage
+frontier.  It requires exactly one completed/validated immutable receipt that
+explicitly binds a raw-profile attempt; otherwise it publishes
+`KEEP_EXPANDED` and never mutates the spool.  Live authority checks for
+`phase3-live-candidate-20260920-sway-mesa-abi-reviewed` and
+`phase3-live-candidate-20260921-restored` found no uniquely bound receipt, so
+both large raw-profile roots remain expanded as required.  Their authority
+reports are:
+
+- `/var/lib/gentoo-optimization/reports/profile-compaction-authority-20260920-sway-mesa-abi-reviewed-20260927.json`
+- `/var/lib/gentoo-optimization/reports/profile-compaction-authority-20260921-restored-20260927.json`
