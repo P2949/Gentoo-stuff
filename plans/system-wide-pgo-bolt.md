@@ -9610,3 +9610,13 @@ addressed objects `42,835,824,640` logical bytes, generations
 `10,598,473,728`, merged profiles `146,595,840`, and reports
 `9,763,127,296`.  The inventory is measurement-only; no durable evidence was
 removed based on size alone.
+
+A fail-closed source-aware distfile retention builder was added at
+`scripts/optimization/storage/build-distfile-retention-set.py`.  It joins live
+`/var/cache/distfiles` entries against all configured Portage repository
+Manifests, records declared size/digest provenance, and leaves every unmatched
+or size-mismatched file as `UNKNOWN` (there is no deletion path).  The live
+report `/var/lib/gentoo-optimization/reports/distfile-retention-set-20260927.json`
+found 96,369 manifest names, 17,522,901,279 bytes positively matched as
+`EVIDENCE_REQUIRED`, and 9,825,638,475 bytes still `UNKNOWN`; the unknown set
+remains protected.  Its focused regression passes.
