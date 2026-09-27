@@ -15,8 +15,14 @@ def _provider_build_id(path):
  return match.group(1).lower()
 
 def _profile_binary_ids(path):
+ tool=shutil.which('llvm-profdata')
+ if not tool:
+  candidates=sorted(Path('/usr/lib/llvm').glob('*/bin/llvm-profdata'))
+  tool=str(candidates[-1]) if candidates else None
+ if not tool:
+  raise SystemExit('REFUSED: llvm-profdata is unavailable for binary-ID proof')
  try:
-  out=subprocess.run(['llvm-profdata','show','--binary-ids',path],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,check=False,timeout=30)
+  out=subprocess.run([tool,'show','--binary-ids',path],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,check=False,timeout=30)
  except (OSError,subprocess.TimeoutExpired) as exc:
   raise SystemExit(f'REFUSED: profile binary-ID inspection failed for {path}: {exc}')
  if out.returncode != 0:
@@ -127,8 +133,11 @@ def main():
    if not os.path.isfile(fingerprint_file):
     raise SystemExit(f'REFUSED: missing reviewed fingerprint file for {cpv}: {fingerprint_file}')
    spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw')
-   base_profile_path=(os.path.join(spool, a.generation_id, cpv.replace('/','_'))
-                      if a.mode == 'exhaustive-generation' else item['profile_path'])
+   # The planner's cache path is an identity binding, not a writable runtime
+   # destination.  All live generation/training payloads must be isolated in
+   # the authenticated attempt-scoped raw spool; otherwise readiness succeeds
+   # but execution is rejected (or, worse, writes outside the trusted spool).
+   base_profile_path=os.path.join(spool, a.generation_id, cpv.replace('/','_'))
    canonical=os.path.realpath(base_profile_path)
    if not isinstance(base_profile_path,str) or not base_profile_path.startswith(spool+'/') or not canonical.startswith(spool+'/'):
     raise SystemExit(f'REFUSED: profile path escapes trusted spool: {base_profile_path}')

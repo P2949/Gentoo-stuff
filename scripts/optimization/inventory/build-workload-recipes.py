@@ -48,6 +48,10 @@ def main():
    # without requiring a policy file or a child command.
    if x['cpv'].startswith('app-arch/rpm2targz-') and p == '/usr/bin/rpmoffset':
     argv=[p]; allow_empty_output=True
+    # rpmoffset consumes a fixed, root-owned RPM fixture.  This exercises the
+    # package's actual conversion path rather than a version/help smoke path,
+    # so it is eligible for representative training once its post-generation
+    # provider build ID is bound.
     recipes.append({'path':p,'build_id':e.get('build_id'),'provider_identity':'post-generation-required','argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'stdin_path':'/var/lib/gentoo-optimization/workloads/rpm2targz/minimal.rpm','execution_state':'not-run'})
     continue
    # funzip and unzipsfx require archive/input context; unzip -v is the
@@ -148,6 +152,7 @@ def main():
     recipes.append(recipe)
   for recipe in recipes:
    recipe.setdefault('timeout_seconds', 300)
-  rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':recipes,'state':'smoke-ready' if recipes else 'needs-training-workload','purpose':'smoke' if recipes else 'training','reason':None if recipes else 'no runnable entrypoint'})
+  training_ready = x['cpv'].startswith('app-arch/rpm2targz-') and bool(recipes)
+  rows.append({'cpv':x['cpv'],'lane':x['lane'],'recipes':recipes,'state':'training-ready' if training_ready else ('smoke-ready' if recipes else 'needs-training-workload'),'purpose':'training' if training_ready else ('smoke' if recipes else 'training'),'reason':None if recipes else 'no runnable entrypoint'})
  out={'record_type':'representative-workload-recipes','schema_version':1,'source_manifest':m['sha256'],'packages':rows};out['counts']=dict(collections.Counter(x['state'] for x in rows));out['recipe_count']=sum(len(x['recipes']) for x in rows);out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest();json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(out['counts'],out['recipe_count'])
 if __name__=='__main__':main()

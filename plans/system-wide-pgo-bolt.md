@@ -8901,3 +8901,28 @@ recipe now binds the deterministic root-owned RPM stdin fixture and the fresh
 provider build ID. This is a valid workload identity boundary, but the recipe
 remains smoke/provisional until it is run as representative training and emits
 provider-matching counters.
+
+## 2026-09-27 representative RPM workload canary
+
+The workload schema and wave plumbing were corrected at the coherent source
+boundary. Training readiness now carries the exact generation ID and accepts
+the planner's immutable generation cache path while the runner remaps every
+runtime payload into the authenticated attempt-scoped raw spool. The runner
+also resolves the versioned LLVM `llvm-profdata` tool when it is absent from
+PATH, preserving fail-closed binary-ID inspection.
+
+`app-arch/rpm2targz-2021.03.16` was promoted from smoke to
+`training-ready`: `/usr/bin/rpmoffset` consumes the root-owned fixture
+`/var/lib/gentoo-optimization/workloads/rpm2targz/minimal.rpm`, completed with
+exit status zero, emitted a nonempty raw profile, and matched provider build ID
+`425869e0ab96edb775c573633610cbe051fefb3a`. The canary receipt is retained at
+`/var/lib/gentoo-optimization/reports/profile-wave-receipt-rpm2targz-training-20260927.json`
+(SHA-256 `478530c138422be53158924d902e903ca01173597812c096f2ec648730abe2a7`).
+LLVM 22 merged the payload into
+`/var/lib/gentoo-optimization/merged-profiles/phase3-live-candidate-20260927-reviewed/app-arch_rpm2targz-2021.03.16.profdata`
+(SHA-256 `4c5d6efbd030e9fad98a49c5f4107de75d7943621798973ce292f2bf8bc89847`);
+merge evidence is retained at
+`profile-merge-rpm2targz-training-20260927.json` (SHA-256
+`65e9f1e2f4da8476970c0e06da28f82d0f48d68c92c2dd2ef51d17b3acfccb89`). This
+is the first fresh representative training payload in the reviewed generation;
+no profile-use or BOLT deployment is claimed yet.

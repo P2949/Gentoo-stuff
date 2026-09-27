@@ -2,10 +2,30 @@
 import argparse,json,hashlib,os,collections
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--manifest',required=True);ap.add_argument('--identity',required=True);ap.add_argument('--identity-root');ap.add_argument('--output',required=True);ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training');a=ap.parse_args();w=json.load(open(a.wave));md=json.load(open(a.manifest));m=set(md.get('cpvs',[x['cpv'] for x in md.get('packages',[])]));i=json.load(open(a.identity));identity_root=a.identity_root;bad=[]; rows=[]
- spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw'); wave_cpvs={x['cpv'] for x in w['packages']}
+ spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw')
+ # Bind the declared cache destination to the exact generation as well as
+ # accepting the attempt-scoped raw spool used during execution.  The planner
+ # publishes canonical cache paths, while the runner remaps them into the
+ # root-owned raw spool; rejecting the former here made every training wave
+ # fail readiness before it could start.  Both roots remain strict descendants
+ # with symlink components rejected below.
+ generation = w.get('generation_id') or w.get('generation') or ''
+ cache_root = os.path.realpath('/var/cache/gentoo-optimization/pgo/' + generation) if generation else ''
+ wave_cpvs={x['cpv'] for x in w['packages']}
  for x in w['packages']:
   p=x['profile_path']; canonical=os.path.realpath(p) if isinstance(p,str) else ''
-  safe=isinstance(p,str) and p.startswith(spool+'/') and canonical.startswith(spool+'/') and not any(os.path.islink(cur) for cur in [spool]+[os.path.join(spool,*p[len(spool):].strip('/').split('/')[:n]) for n in range(1,len(p[len(spool):].strip('/').split('/'))+1)])
+  roots = [spool]
+  if a.mode == 'training' and cache_root:
+   roots.append(cache_root)
+  safe=False
+  if isinstance(p,str):
+   for root in roots:
+    if canonical.startswith(root + '/'):
+     rel=p[len(root):].strip('/')
+     components=rel.split('/') if rel else []
+     if not any(os.path.islink(cur) for cur in [root]+[os.path.join(root,*components[:n]) for n in range(1,len(components)+1)]):
+      safe=True
+      break
   if identity_root:
    key=x['cpv'].replace('/','_')
    fingerprint=any(os.path.isfile(os.path.join(identity_root, candidate)) for candidate in (os.path.join(key,'fingerprint.env'), key+'.fingerprint.env'))
