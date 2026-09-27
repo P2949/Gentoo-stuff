@@ -9637,3 +9637,11 @@ payloads.  The live dry-run now classifies 1,145 archives / 6,463,344,640 bytes
 as `RECOVERY_REQUIRED`, 395 / 7,215,011,840 as `LIVE_REQUIRED`, and leaves 326
 archives / 11,523,031,040 bytes as `UNKNOWN`.  Unknown bytes remain protected.
 A focused recovery-index regression passes.
+
+The raw-profile compaction authority was tightened to inspect nested
+`profile_payloads` paths and receipt `state` as well as `status`.  The restored
+raw attempt now has 18 completed receipts that reference its payloads, so the
+authority correctly returns `KEEP_EXPANDED` for an ambiguous evidence set and
+records all candidate receipt hashes.  This is stronger evidence than treating
+the absence of a top-level attempt field as proof of no receipt; no raw bytes
+were removed.

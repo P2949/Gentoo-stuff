@@ -22,6 +22,16 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def contains_attempt_path(value: object, attempt: Path) -> bool:
+    if isinstance(value, str):
+        return value.startswith(str(attempt) + os.sep) or value == str(attempt)
+    if isinstance(value, dict):
+        return any(contains_attempt_path(item, attempt) for item in value.values())
+    if isinstance(value, list):
+        return any(contains_attempt_path(item, attempt) for item in value)
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--attempt", type=Path, required=True)
@@ -43,14 +53,20 @@ def main() -> int:
                 continue
             if not isinstance(value, dict):
                 continue
-            if value.get("status") not in {"completed", "validated", "merged-validated"}:
+            status = value.get("status", value.get("state"))
+            if status not in {"completed", "validated", "merged-validated"}:
                 continue
-            bound = {str(value.get(k)) for k in ("attempt", "attempt_path", "profile_root") if value.get(k)}
-            if str(attempt) in bound:
+            if contains_attempt_path(value, attempt):
                 candidates.append((path, value))
+    merge_complete = len(candidates) == 1 and any(
+        key in candidates[0][1] for key in ("merged_profile_validation", "merge_validation", "validated_merge")
+    )
     if len(candidates) != 1:
         state = "KEEP_EXPANDED"
         reason = "no unique completed/validated receipt binds attempt" if not candidates else "ambiguous completed/validated receipts bind attempt"
+    elif not merge_complete:
+        state = "KEEP_EXPANDED"
+        reason = "receipt binds attempt but lacks explicit merged-profile validation"
     else:
         path, value = candidates[0]
         state = "COMPACTION_AUTHORIZED"
@@ -60,7 +76,7 @@ def main() -> int:
         "attempt": str(attempt),
         "decision": state,
         "reason": reason,
-        "candidates": [{"path": str(p), "sha256": sha256(p), "status": v.get("status")} for p, v in candidates],
+        "candidates": [{"path": str(p), "sha256": sha256(p), "status": v.get("status", v.get("state"))} for p, v in candidates],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     tmp = args.output.with_suffix(args.output.suffix + ".tmp")
