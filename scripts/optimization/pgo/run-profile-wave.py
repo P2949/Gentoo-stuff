@@ -37,7 +37,7 @@ def _finish_failed_attempt():
   except Exception: pass
 atexit.register(_finish_failed_attempt)
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--attempt-root',default='/var/lib/gentoo-optimization/profile-attempts');ap.add_argument('--generation-id');ap.add_argument('--inventory-id');ap.add_argument('--inventory-sha256');ap.add_argument('--authorization-root',default='/run/gentoo-optimization');ap.add_argument('--storage-path',default='/');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
+ ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--readiness',required=True);ap.add_argument('--framework-generation',required=True);ap.add_argument('--framework-current',default='/var/lib/gentoo-optimization/framework-current');ap.add_argument('--identity-root');ap.add_argument('--receipt');ap.add_argument('--attempt-root',default='/var/lib/gentoo-optimization/profile-attempts');ap.add_argument('--generation-id');ap.add_argument('--inventory-id');ap.add_argument('--inventory-sha256');ap.add_argument('--authorization-root',default='/run/gentoo-optimization');ap.add_argument('--storage-path',default='/');ap.add_argument('--mode',choices=('canary','exhaustive-generation','system-training'),default='canary');ap.add_argument('--execute',action='store_true');a=ap.parse_args();w=json.load(open(a.wave));r=json.load(open(a.readiness));active=os.path.realpath(a.framework_current)
  if os.path.exists('/var/lib/gentoo-optimization/state/deinstrument.pending'):
   raise SystemExit('REFUSED: de-instrumentation is pending; profile waves are paused')
  global _attempt_root,_active_attempt
@@ -185,6 +185,14 @@ def main():
     # prevents disposable host-helper residue from becoming a staged package
     # payload and colliding with Portage's install QA.
     pass
+   # Phase-6 installation and Phase-7 training are intentionally separate.
+   # A generation transaction installs only; system-training consumes a
+   # previously installed closure in a distinct driver.
+   if a.mode == 'exhaustive-generation':
+    recipe_records=[]
+    continue
+   if a.mode == 'system-training':
+    raise SystemExit('REFUSED: system-training requires the complete instrumented closure and a separate training driver')
    # Run the exact reviewed representative recipes after the instrumented
    # package transaction.  This is the profile payload collection point; a
    # recipe failure is terminal for the wave and is recorded by the caller.
