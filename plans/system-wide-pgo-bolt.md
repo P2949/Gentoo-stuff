@@ -9201,3 +9201,13 @@ guard rejected its changed versioned LuaJIT export
 `luaJIT_version_2_1_1782726002` under the unchanged SONAME. Neither failure
 produced an authoritative profile payload or merge; both complete Portage
 logs and attempt records remain preserved, and neither was retried unchanged.
+
+## 2026-09-27 yad representative canary refusal
+
+The independent `gnome-extra/yad-9999` representative canary was refused before
+build because the exact pretend resolved an additional
+`dev-util/spirv-headers-1.4.350.0` operation alongside the requested CPV.
+The runner's dependency/co-build reconciliation therefore correctly admitted
+no transaction and no profile payload. The refusal is retained as a current
+resolver-closure finding; it was not bypassed with a generic atom or retried
+unchanged.
