@@ -9171,3 +9171,10 @@ snapshot was materialized at
 generated profile), and the checked-in `maya-gentoo.conf` now binds Portage to
 that canonical trusted snapshot. No ebuild content was changed and no boot or
 kernel state was touched.
+
+The corrected source boundary then passed
+`tests/run-optimization-tests.sh --mode portable-complete`: 87 top-level
+passes, 0 failures, 12 skips, 533 required subtests passed, and 0 required
+subtests failed. The earlier untrusted-Maya-directory failure is therefore
+resolved by the root-owned repository snapshot while the trust contract
+remains fail-closed.
