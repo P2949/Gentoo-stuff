@@ -9317,6 +9317,18 @@ The first retention pass is retained at `/var/lib/gentoo-optimization/reports/st
 
 The binpkg retention inventory `/var/lib/gentoo-optimization/reports/binpkg-retention-20260927.json` found 4,142 package archives totaling 38,007,480,320 bytes. All entries remain `UNKNOWN` until active rollback, transaction, and recovery references are joined; the dry-run made no deletion.
 
+## 2026-09-27 binpkg duplicate-instance cleanup
+
+The follow-up machine-readable retention pass joined installed VDB CPVs and
+project reference roots. It classified 1,304 archives (12,598,794,240 bytes)
+as `LIVE_REQUIRED`, retained 562 archives (12,602,593,280 bytes) as
+`UNKNOWN`, and identified 2,276 older duplicate instances (12,806,092,800
+bytes) as `ARCHIVE_CANDIDATE`. The explicit duplicate-prune transaction was
+run only after the dry-run, with the project and generation locks held and no
+Portage transaction active. It quarantined and removed exactly those 2,276
+paths; unknown and live-required objects were untouched. The immutable
+receipt is `/var/lib/gentoo-optimization/reports/binpkg-retention-execute-20260927.json`.
+
 # 2026-09-27 storage recovery-selector rehydration
 
 The first checkpoint-compactor dry-run found that the existing
