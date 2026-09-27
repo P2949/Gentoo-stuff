@@ -1745,7 +1745,7 @@ def validate_quality_command(
         expected_tools = {
             "perf-record": {"/usr/bin/perf"},
             "perf-report": {"/usr/bin/perf"},
-            "perf2bolt": {"/usr/lib/llvm/22/bin/perf2bolt"},
+            "perf2bolt": {"/usr/lib/llvm/22/bin/perf2bolt", "/usr/lib/llvm/22/bin/llvm-bolt"},
             "merge-fdata": {PRODUCTION_MERGE_FDATA},
         }
         if role in expected_tools and tool["path"] not in expected_tools[role]:

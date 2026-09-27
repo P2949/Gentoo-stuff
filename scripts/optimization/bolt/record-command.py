@@ -43,6 +43,7 @@ def main() -> int:
     if any(not allowed(p) for p in [*args.input, args.stdout, args.stderr, args.metrics]):
         raise SystemExit("production evidence must remain under approved roots")
     tool = identity(args.tool)
+    argv[0] = str(tool["path"])
     inputs = [identity(p) for p in args.input]
     stdout, stderr = identity(args.stdout), identity(args.stderr)
     metrics = json.loads(args.metrics.read_text(encoding="utf-8"))
