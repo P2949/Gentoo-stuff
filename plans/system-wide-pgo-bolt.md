@@ -9192,3 +9192,12 @@ Merge evidence is retained at
 `/var/lib/gentoo-optimization/reports/profile-merge-elfutils-training-v2-20260927.json`.
 This is representative profile-training evidence only; no profile-use or BOLT
 deployment is claimed.
+
+The bounded follow-up canaries preserved two package-local generation failures.
+`dev-util/pkgconf-9999` failed in `src_prepare` because the live fetched tree
+does not contain the configure inputs required by its `eautoreconf`/`aclocal`
+path. `dev-lang/luajit-2.1.9999999999` reached staged install but the ABI
+guard rejected its changed versioned LuaJIT export
+`luaJIT_version_2_1_1782726002` under the unchanged SONAME. Neither failure
+produced an authoritative profile payload or merge; both complete Portage
+logs and attempt records remain preserved, and neither was retried unchanged.
