@@ -9295,3 +9295,7 @@ reconciliation requires a single intended CPV. No install, workload receipt,
 profile payload, or merge evidence was admitted. This preserves the current
 SPIR-V closure blocker without bypassing it or retrying the unchanged
 transaction.
+
+## 2026-09-27 coordinated SPIR-V userspace closure fetch-boundary failure
+
+The planned userspace-only SPIR-V 1.4.357 closure transaction was launched with profile output disabled and `GENTOO_OPT_MODE=off` for `dev-util/spirv-tools`, `dev-util/glslang`, `media-libs/vulkan-layers`, `dev-util/vulkan-tools`, `media-libs/shaderc`, `media-libs/mesa`, both retained `gui-libs/wlroots` slots, `gui-wm/hyprland`, and `x11-apps/mesa-progs`. Mesa completed both multilib compilations and `gui-libs/wlroots-0.20.2` reached its merge boundary. The transaction then terminated during the `gui-wm/hyprland-9999` upstream Git fetch; the retained build log ends at `git fetch https://github.com/hyprwm/Hyprland.git +HEAD:refs/git-r3/HEAD`, with no install-QA admission for Hyprland or later packages. No kernel, boot, EFI, initramfs, or firmware action was involved. The closure remains unresolved and was not retried unchanged; its exact fetch-boundary log is retained at `/var/tmp/gentoo-portage-build/portage/gui-wm/hyprland-9999/temp/build.log`.
