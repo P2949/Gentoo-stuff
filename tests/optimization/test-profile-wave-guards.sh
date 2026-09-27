@@ -36,3 +36,13 @@ if ! grep -Fq 'os.environ["LLVM_PROFILE_FILE"] = "/dev/null"' \
   exit 1
 fi
 echo 'PASS: profile-wave administrative helpers discard LLVM profile output'
+
+if python3 scripts/optimization/pgo/run-profile-wave.py \
+  --mode system-training --wave "$root/wave.json" --readiness "$root/readiness.json" \
+  --framework-generation "$framework" --framework-current "$root/current" \
+  >"$root/system-training-output" 2>&1; then
+  echo 'FAIL: system-training mode was allowed to mutate or continue' >&2
+  exit 1
+fi
+grep -q 'system-training requires run-system-training.py' "$root/system-training-output"
+echo 'PASS: system-training refuses before framework and package mutation'
