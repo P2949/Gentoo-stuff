@@ -9,6 +9,7 @@ import os
 import subprocess
 import tarfile
 import tempfile
+import shutil
 from pathlib import Path
 
 
@@ -25,6 +26,11 @@ def main() -> int:
     parser.add_argument("--attempt", type=Path, required=True)
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--receipt", type=Path)
+    parser.add_argument("--seal-record", type=Path,
+                        help="machine-readable completed/validated attempt receipt required for retirement")
+    parser.add_argument("--retire-expanded", action="store_true",
+                        help="remove the expanded spool only after archive reconstruction verification")
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
     root = args.attempt.resolve()
@@ -36,6 +42,19 @@ def main() -> int:
     if not members:
         raise SystemExit("REFUSED: empty attempt spool")
     payload = {"schema": "profile-archive-manifest-v1", "attempt": str(root), "members": members}
+    if args.retire_expanded and not args.execute:
+        raise SystemExit("REFUSED: --retire-expanded requires --execute")
+    if args.retire_expanded:
+        if args.seal_record is None or not args.seal_record.is_file():
+            raise SystemExit("REFUSED: retirement requires a sealed attempt receipt")
+        try:
+            seal = json.loads(args.seal_record.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"REFUSED: unreadable seal record: {exc}")
+        if seal.get("status") not in {"completed", "merged-validated", "validated"}:
+            raise SystemExit("REFUSED: attempt receipt is not completed and validated")
+        payload["seal_record"] = {"path": str(args.seal_record.resolve()),
+                                   "sha256": hashlib.sha256(args.seal_record.read_bytes()).hexdigest()}
     if args.execute:
         args.archive.parent.mkdir(parents=True, exist_ok=True)
         args.manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -52,7 +71,17 @@ def main() -> int:
             observed = manifest(Path(tmp))
             if observed != members:
                 raise SystemExit("REFUSED: compressed archive failed member verification")
-    print(json.dumps({"schema": "profile-archive-plan-v1", "attempt": str(root), "members": len(members), "execute": args.execute}, indent=2))
+        if args.retire_expanded:
+            # Do not remove the seal record or archive/manifest; only retire
+            # the expanded representation after a full reconstruction check.
+            shutil.rmtree(root)
+    result = {"schema": "profile-archive-plan-v1", "attempt": str(root),
+              "members": len(members), "execute": args.execute,
+              "retired_expanded": bool(args.execute and args.retire_expanded)}
+    if args.receipt:
+        args.receipt.parent.mkdir(parents=True, exist_ok=True)
+        args.receipt.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(result, indent=2))
     return 0
 
 
