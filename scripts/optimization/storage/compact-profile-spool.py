@@ -55,6 +55,9 @@ def main() -> int:
             raise SystemExit("REFUSED: attempt receipt is not completed and validated")
         payload["seal_record"] = {"path": str(args.seal_record.resolve()),
                                    "sha256": hashlib.sha256(args.seal_record.read_bytes()).hexdigest()}
+        for key in ("backend", "cpv", "attempt_id", "generation", "generation_id"):
+            if key in seal:
+                payload[key] = seal[key]
     if args.execute:
         args.archive.parent.mkdir(parents=True, exist_ok=True)
         args.manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -65,6 +68,9 @@ def main() -> int:
         compressed = args.archive.with_suffix(args.archive.suffix + ".zst")
         subprocess.run(["zstd", "-T0", "-19", "--rm", os.fspath(partial), "-o", os.fspath(compressed)], check=True)
         args.manifest.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        for path in (compressed, args.manifest):
+            with path.open("rb") as stream:
+                os.fsync(stream.fileno())
         # Re-open through zstd/tar and compare every member before retirement.
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run(["tar", "--zstd", "-xf", os.fspath(compressed), "-C", tmp], check=True)
