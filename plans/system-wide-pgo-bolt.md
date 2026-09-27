@@ -9885,3 +9885,33 @@ an unrelated OBS transaction had finished. The retirement helper preserved one
 remaining build log and removed the inactive Portage workspace. Receipt:
 `/var/lib/gentoo-optimization/reports/portage-build-retirement-hyprtoolkit-20260930.json`
 (SHA-256 `8b4a189315a3515aa45f21e5b42deec896038abb48fb6a79c564dccbb8980d04`).
+
+### 2026-09-30 Hyprland compile attempt interrupted during observation
+
+An exact optimization-off, no-dependency transaction for
+`gui-wm/hyprland-9999::hyproverlay` was started after the earlier source-fetch
+failure had been cleared. The observation session was interrupted while Ninja
+was compiling `src/keybinds/Manager.cpp.o`; no active emerge or ebuild process
+remained afterward and no merge occurred. The preserved log ended at Ninja
+`[760/1075]` with exit code 255 but no compiler diagnostic, so this is recorded
+as an `interrupted-observation` attempt rather than a package-root compile
+failure and is not treated as an unchanged retry authorization. The exact
+command was:
+
+```text
+GENTOO_OPT_MODE=off LLVM_PROFILE_FILE=/dev/null emerge --oneshot --nodeps --buildpkg=n --usepkg=n =gui-wm/hyprland-9999::hyprover
+```
+
+The durable log is
+`/var/lib/gentoo-optimization/reports/package-failures/gui-wm-hyprland-9999/build-interrupted.log`
+(SHA-256
+`0716e598ebabdfb411ecbb41322b5432722f0d2cb5e7b1db4d1f0be7259b3434`), and the
+structured attempt record is
+`/var/lib/gentoo-optimization/reports/package-failures/gui-wm-hyprland-9999/compile-interrupted.json`
+(SHA-256
+`bb829ffbce34621fccfba47a94ac6670351859520fcfff8f9b80e4c9906507e8`). The
+inactive build-tree retirement preserved one log and removed the workspace;
+its receipt is
+`/var/lib/gentoo-optimization/reports/portage-build-retirement-hyprland-interrupted-20260930.json`
+(SHA-256
+`08462a876fd3dbe5fead4a8075cb31a68f70c0c293ea3ee974582343f7b12314`).
