@@ -9033,3 +9033,14 @@ check passed. This validation does not close representative workload or BOLT
 execution gates. The current `rpm2targz` BOLT diagnostic profile remains
 non-authoritative because its perf2bolt out-of-range trace ratio exceeded the
 strict production threshold; no BOLT quality proof or deployment was admitted.
+
+## 2026-09-27 post-validation framework source rebinding
+
+After commit `8cdcb72`, the strict live framework check correctly refused the
+previously published framework because its source snapshot was one commit
+behind the clean repository. The framework was republished root-only through
+the authenticated bootstrap-migration path from the current source, and the
+strict installer check then passed with the reviewed generation policy and
+frozen inventory. Live framework authority is therefore rebound to the exact
+validated source boundary; no package/profile wave was started by this
+republication.
