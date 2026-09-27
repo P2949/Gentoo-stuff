@@ -254,3 +254,6 @@
 # Keep the stable Tree-sitter ABI required by the installed Python binding
 # until a compatible dev-python/tree-sitter release is available.
 >=dev-libs/tree-sitter-9999
+# MangoHud 0.8.4 is pinned to these ABI revisions.
+>=media-libs/imgui-1.92.8
+>=media-libs/implot-1.0

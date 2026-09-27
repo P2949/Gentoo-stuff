@@ -9122,3 +9122,14 @@ package mask now excludes only `>=dev-libs/tree-sitter-9999` until a compatible
 Python binding is available; no package was rebuilt or downgraded. The next
 pretend advances to the independent graphics slot conflicts and the masked
 LLVM-24/libclc transition, which remain ordinary baseline dependency work.
+
+## 2026-09-27 graphics dependency closure
+
+The next baseline pretend isolated three package-local API constraints. The
+current `sys-apps/lact-0.9.1[gui]` ebuild requires `media-libs/libdisplay-info:0/3`,
+while the current gamescope closure requires `libdisplay-info:0/4`; no
+compatible lact update is available. The persistent baseline policy therefore
+disables only lact's optional `gui` USE flag. MangoHud 0.8.4 likewise pins
+imgui 1.91.6 and implot 0.16 APIs, so newer incompatible imgui/implot versions
+are narrowly excluded until a compatible MangoHud consumer is available. No
+broad graphics mask or package transaction was performed.
