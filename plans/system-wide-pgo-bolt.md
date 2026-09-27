@@ -8988,3 +8988,9 @@ ELF at `/var/cache/gentoo-optimization/bolt/outputs/rpmoffset.bolt` with exit
 status 0. This remains a diagnostic/profile-generation result until the
 strict workload/profile/fdata quality proofs and immutable command receipt are
 registered; deployment and installed-output verification are still open.
+
+The exact cached input was also measured with sanitized `perf stat` on the
+fixed RPM fixture: 1,008,237 cycles, 818,803 instructions, 160,117 branches,
+and 5,667 branch misses. The supporting report is retained at
+`/var/cache/gentoo-optimization/bolt/evidence/rpm2targz/perf-stat.txt` while
+the strict command-record producer is completed.
