@@ -2482,7 +2482,7 @@ legacy_schema_tree_matches() {
 }
 
 manifest_bootstrap_tree_matches() {
-    local root=$1 candidate=$2 relative path directory expected_hash expected_mode expected_owner
+    local root=$1 candidate=$2 relative path directory expected_hash expected_mode expected_owner helper helper_known
     local actual_hash actual_mode actual_owner
     local -a actual_files=() manifest_files=()
     [[ -d ${root} && ! -L ${root} && -f ${candidate}/install.manifest ]] || return 1
@@ -2496,10 +2496,11 @@ manifest_bootstrap_tree_matches() {
     [[ ${#actual_files[@]} -gt 0 ]] || return 1
     for relative in "${actual_files[@]}"; do
         if ! printf '%s\n' "${manifest_files[@]}" | grep -Fxq -- "${relative}"; then
-            case " ${HELPER_RELATIVE[*]} " in
-                *" ${relative} "*) ;;
-                *) return 1 ;;
-            esac
+            helper_known=0
+            for helper in "${HELPER_RELATIVE[@]}"; do
+                [[ ${helper} == "${relative}" ]] && helper_known=1 && break
+            done
+            (( helper_known == 1 )) || return 1
         fi
     done
     for relative in "${manifest_files[@]}"; do
