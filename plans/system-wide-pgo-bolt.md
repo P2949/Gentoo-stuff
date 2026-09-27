@@ -9843,5 +9843,5 @@ run separately; both fetched from their live Git repositories, compiled,
 passed install-QA and the exported-ABI guard, and merged. The post-merge VDB
 identity report is
 `/var/lib/gentoo-optimization/reports/userspace-baseline-hypr-fetch-recovery-20260930.json`
-(SHA-256 recorded by the root-owned producer). These were source-recovery
+(SHA-256 `d77b4acbfd171207ca5e376bba403f4b509908b928cab4dacc6fe347b9a67de0`). These were source-recovery
 retries after the fetch cause changed. No ABI failure was retried or bypassed.
