@@ -2909,6 +2909,13 @@ hold_bolt_locks
 validate_legacy_migration
 get_previous_target
 
+# Reject a renderer/bootstrap ABI change before constructing or publishing a
+# candidate.  This keeps the fixed helper tree byte-stable even when a source
+# checkout changes the installer itself between generations.
+if [[ ${MODE} == install && ${PREVIOUS_TARGET} != none ]]; then
+    require_stable_bootstrap_compatibility
+fi
+
 if [[ ${MODE} == check ]]; then
     verify_no_stale_publication_debris
     [[ ! -e ${ACTIVATION_JOURNAL} && ! -L ${ACTIVATION_JOURNAL} ]] || \
