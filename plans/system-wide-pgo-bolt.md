@@ -9133,3 +9133,13 @@ disables only lact's optional `gui` USE flag. MangoHud 0.8.4 likewise pins
 imgui 1.91.6 and implot 0.16 APIs, so newer incompatible imgui/implot versions
 are narrowly excluded until a compatible MangoHud consumer is available. No
 broad graphics mask or package transaction was performed.
+
+## 2026-09-27 graphics baseline mask correction
+
+The subsequent deep pretend showed that the initial implot boundary stopped
+at 1.0 while the installed MangoHud ABI still conflicts with implot 0.17.
+The source policy was tightened to exclude only `>=media-libs/implot-0.17`.
+The same pretend exposed gamescope's incompatible `libdisplay-info:0/4`
+consumer against the installed lact ABI; the source policy now also excludes
+`>=media-libs/libdisplay-info-0.4`. These are compatibility constraints for
+the current userspace baseline, not authorization for a broad graphics update.
