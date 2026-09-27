@@ -9759,3 +9759,30 @@ unresolved CPs. The corrected authoritative partition is
 `b1b4ebd36cc5736b30620da005927b27c66802d07a51ab2319e0e6528e21de5b`). It
 contains 56 userspace operations and 9 `kernel-policy-exclusion` operations;
 only the userspace partition was admitted to the subsequent transaction.
+
+## 2026-09-30 userspace baseline transaction terminal result
+
+The corrected 56-CPV userspace transaction was allowed to run to a terminal
+result with optimization disabled. It exited `rc=1` after preserving all
+Portage output. The final transaction log is
+`/var/lib/gentoo-optimization/reports/userspace-world-apply-final-20260927.log`
+(SHA-256
+`bebdf56ddd98f3c4bff6dbe59a256ecabd4646b8f86afb13af2ae3e9e5b3c056`). The
+structured terminal summary is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-final-summary-20260930.json`
+(SHA-256
+`a34e6402d2b2a3c78092cb3d2b6b359c19787ed219f2b0b563ae8b3cc90f86c8`). It
+records 28 failed package messages, including source-fetch failures and
+package-local build/install-QA failures; no unchanged retry is authorized.
+The transaction also emitted the existing strict ABI-guard failures for
+`gui-wm/gamescope-3.16.29` and `www-client/firefox-bin-153.3.0`, which remain
+preserved for narrow remediation.
+
+After the transaction ended, the inactive Portage build tree was retired only
+after the storage tool's root-owned log preservation pass. The execute receipt
+is
+`/var/lib/gentoo-optimization/reports/portage-build-retirement-final-20260930-execute.json`
+(SHA-256
+`a701728c0bafe66e8016849ea5a4a3e063b6f1ad4dd9f987079c3e5a7fccb0cc`). It
+preserved 31 build logs and recovered the root filesystem to 155 GiB free
+(83%). No active Portage transaction remained when the tree was removed.
