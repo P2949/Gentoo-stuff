@@ -1626,7 +1626,8 @@ def bind_inventory_candidates(proof: dict[str, Any], artifacts: list[dict[str, A
     )
     if actual != expected:
         fail(
-            "captured BOLT candidate paths/artifact facts differ from the frozen inventory proof"
+            "captured BOLT candidate paths/artifact facts differ from the frozen "
+            f"inventory proof (actual={actual!r} expected={expected!r})"
         )
 
 
