@@ -9786,3 +9786,25 @@ is
 `a701728c0bafe66e8016849ea5a4a3e063b6f1ad4dd9f987079c3e5a7fccb0cc`). It
 preserved 31 build logs and recovered the root filesystem to 155 GiB free
 (83%). No active Portage transaction remained when the tree was removed.
+
+## 2026-09-30 fresh post-transaction world pretend
+
+After the terminal userspace transaction and build-tree retirement, a fresh
+optimization-off `@world` pretend completed successfully. Its complete output
+is retained at
+`/var/lib/gentoo-optimization/reports/world-pretend-20260930.txt`
+(SHA-256
+`3090ffa95be5e25b7e1a9f2ec38c4e04cb4b6998158bd1a9d719df90f8700711`). The
+pretend contains 62 resolver operations, including a separate kernel and
+lifecycle closure that remains outside automated scope.
+
+The canonical mutation-policy partition is retained at
+`/var/lib/gentoo-optimization/reports/world-pretend-mutation-partition-20260930.json`
+(SHA-256
+`4d8fcc4cde654a72d72460a9c2dbdd6ec5ecf8a6d444e80c2afb5dc6444d63d7`). It
+contains 53 userspace operations and 9 `kernel-policy-exclusion` operations.
+The excluded closure was not executed. The 53-package userspace set is not a
+coherent retry closure: several members have fresh source or fetch failures,
+and others have preserved ABI or install-QA failures from the terminal
+transaction. Those failures remain pending narrow remediation rather than an
+unchanged bulk retry.
