@@ -276,6 +276,17 @@ def main():
     if declared_provider_id and declared_provider_id.lower() != resolved_provider_id:
      raise SystemExit(f'REFUSED: stale provider build ID for {cpv}: {path}')
     recipe['resolved_provider_build_id']=resolved_provider_id
+    expected_provider_records=[]
+    for provider in recipe.get('expected_provider_artifacts',[]):
+     provider_path=provider.get('path') if isinstance(provider,dict) else provider
+     if not isinstance(provider_path,str) or not os.path.isfile(provider_path) or os.path.islink(provider_path):
+      raise SystemExit(f'REFUSED: expected provider artifact is absent or symlinked for {cpv}: {provider_path}')
+     provider_id=_provider_build_id(provider_path)
+     declared_id=provider.get('build_id') if isinstance(provider,dict) else None
+     if declared_id and declared_id.lower() != provider_id:
+      raise SystemExit(f'REFUSED: stale expected provider build ID for {cpv}: {provider_path}')
+     expected_provider_records.append({'path':provider_path,'build_id':provider_id,'owner_cpv':provider.get('owner_cpv') if isinstance(provider,dict) else None})
+    recipe['resolved_provider_artifacts']=expected_provider_records
     run_env=env.copy(); run_env.update(recipe.get('environment',{}))
     if item['lane'] in ('pgo-clang-ir', 'pgo-gcc', 'pgo-rust') and env.get('GENTOO_OPT_MODE','').endswith('generate'):
      run_env['LLVM_PROFILE_FILE']=os.path.join(profile_path, '%m-%p.profraw')
@@ -337,6 +348,7 @@ def main():
     payload_delta=_profile_payload_delta(before_payloads,after_payloads)
     new_payload_paths=[row['path'] for row in payload_delta['created'] + payload_delta['modified']]
     matching_payloads=[]
+    required_ids={resolved_provider_id} | {row['build_id'] for row in expected_provider_records}
     if item.get('lane') == 'pgo-gcc':
      # GCC gcda payloads are not LLVM raw profiles and cannot be inspected
      # with llvm-profdata --binary-ids.  Require non-empty native gcda output;
@@ -349,10 +361,11 @@ def main():
     else:
      for payload in new_payload_paths:
       ids=_profile_binary_ids(payload)
-      if resolved_provider_id in ids:
+      if required_ids.issubset(ids):
        matching_payloads.append(payload)
-     if not matching_payloads:
-      raise SystemExit(f'REFUSED: raw profile payloads lack rebuilt provider build ID for {cpv}: {resolved_provider_id}')
+    if not matching_payloads:
+     missing_ids=', '.join(sorted(required_ids))
+     raise SystemExit(f'REFUSED: raw profile payloads lack all expected provider build IDs for {cpv}: {missing_ids}')
     recipe_records.append({'recipe_id':recipe_id,
                            'purpose':recipe.get('purpose','smoke'), 'recipe':recipe,
                            'log_path':str(output_path), 'log_sha256':hashlib.sha256(output_path.read_bytes()).hexdigest(),
@@ -361,6 +374,7 @@ def main():
                            'profile_payload_delta':payload_delta,
                            'new_profile_payloads':new_payload_paths,
                            'expected_provider_artifacts':recipe.get('expected_provider_artifacts',[]),
+                           'resolved_provider_artifacts':expected_provider_records,
                            'provider_build_id':resolved_provider_id,
                            'matching_provider_payloads':matching_payloads,
                            'counter_proof':'provider-binary-id-matched'})
