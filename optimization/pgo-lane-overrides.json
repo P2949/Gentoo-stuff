@@ -686,6 +686,180 @@
       },
       "lane": "unsupported-by-upstream-toolchain",
       "reason_code": "binary-only-no-rebuild-source"
+    },
+    {
+      "cpv": "app-arch/gzip-1.15",
+      "evidence": {
+        "source": "live-20260927-review"
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "reviewed-native-source-build"
+    },
+    {
+      "cpv": "dev-build/xfce4-dev-tools-4.20.0",
+      "evidence": {
+        "source": "live-20260927-review"
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "reviewed-native-source-build"
+    },
+    {
+      "cpv": "dev-libs/libunibreak-8.0",
+      "evidence": {
+        "source": "live-20260927-review"
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "reviewed-native-source-build"
+    },
+    {
+      "cpv": "sys-fs/xfsprogs-7.2.0",
+      "evidence": {
+        "source": "live-20260927-review"
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "reviewed-native-source-build"
+    },
+    {
+      "cpv": "app-autodesk/adp-desktop-sdk-6.3.34-r1",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "app-autodesk/adsk-identity-manager-1.18.1.2-r2",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "app-autodesk/adsk-licensing-16.0.3.14414",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "app-editors/sublime-text-4_p4200",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "app-office/onlyoffice-bin-9.4.0",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "dev-games/unityhub-3.21.3",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "dev-util/shellcheck-bin-0.11.0",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "media-gfx/bifrost-3.1.0.8",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "media-gfx/lookdevx-2.2.0",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "media-gfx/maya-2027.2-r2",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "media-gfx/maya-usd-0.37.0",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "media-gfx/substance-maya-3.0.6",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "media-sound/spotify-1.2.96",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "www-client/firefox-bin-152.0.5",
+      "evidence": {
+        "identity": "prebuilt-or-proprietary-payload",
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
+      "cpv": "net-misc/netifrc-9999",
+      "evidence": {
+        "source": "live-20260927-review"
+      },
+      "lane": "not-applicable",
+      "reason_code": "no-owned-native-artifact"
+    },
+    {
+      "cpv": "sys-devel/gcc-17.0.9999-r1",
+      "evidence": {
+        "source": "live-20260927-review"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "toolchain-self-hosting-exclusion"
     }
   ],
   "record_type": "pgo-lane-reviewed-overrides",
