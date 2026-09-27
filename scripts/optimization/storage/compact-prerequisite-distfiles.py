@@ -10,10 +10,12 @@ untouched.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -47,6 +49,24 @@ def durable_write(path: Path, value: object) -> None:
     finally: os.close(fd)
 
 
+def acquire_lock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        raise SystemExit(f"REFUSED: active storage lock {path}")
+    return handle
+
+
+def active_portage() -> bool:
+    return any(
+        subprocess.run(["pgrep", "-x", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
+        for name in ("emerge", "ebuild", "quickpkg")
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--transactions", type=Path, required=True)
@@ -57,8 +77,18 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--limit-transactions", type=int)
     parser.add_argument("--transaction-id", action="append", default=[])
+    parser.add_argument("--project-lock", type=Path)
+    parser.add_argument("--generation-lock", type=Path)
     args = parser.parse_args()
     root = args.transactions.resolve(); state = args.state_dir.resolve(); objects = args.objects.resolve()
+    locks = []
+    if args.execute:
+        if active_portage():
+            raise SystemExit("REFUSED: active Portage transaction")
+        project_lock = args.project_lock or Path("/run/gentoo-optimization/project.lock")
+        generation_lock = args.generation_lock or Path("/run/gentoo-optimization/generation.lock")
+        if os.geteuid() == 0 or args.project_lock or args.generation_lock:
+            locks = [acquire_lock(project_lock), acquire_lock(generation_lock)]
     if not root.is_dir() or not state.is_dir():
         raise SystemExit("REFUSED: transaction or state directory is unavailable")
     rows: list[dict[str, object]] = []
@@ -119,6 +149,8 @@ def main() -> int:
                     retired.append({"transaction_id": row["transaction_id"], "authority": str(authority), "authority_retired": True})
     payload = {"schema": "gentoo-optimization-prerequisite-distfile-retirement-v1", "timestamp": int(time.time()), "mode": "execute" if args.execute else "dry-run", "transactions": rows, "retired": retired}
     durable_write(args.receipt, payload)
+    for handle in locks:
+        handle.close()
     print(json.dumps({"schema": payload["schema"], "mode": payload["mode"], "transactions": len(rows), "files": sum(len(x["files"]) for x in rows), "retired": len(retired)}, indent=2))
     return 0
 
