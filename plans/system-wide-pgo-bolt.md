@@ -8955,3 +8955,10 @@ SHA-256 is `5c69155cf1a61889bfc7e4a189602a22904bd6d298cd9e94608d1c0aafcfb447`.
 Dispatcher record SHA-256 is
 `184ea80c8f681a21794d2d89d00adb27257e624fa7985898aabe53bae4813d88`.
 This is exact Clang profile-use evidence only; BOLT deployment remains open.
+
+## 2026-09-27 post-profile-use full validation
+
+The complete local optimization suite was rerun after the first exact
+profile-use deployment and merge-evidence permission fix: 374 tests ran in
+89.964 seconds, with 8 explicit skips and zero failures. The independently
+verified `rpm2targz` profile-use receipt remains valid at this source boundary.
