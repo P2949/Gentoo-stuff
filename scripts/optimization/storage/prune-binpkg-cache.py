@@ -71,7 +71,13 @@ def main() -> int:
             if not m: continue
             st = f.stat()
             rel = f.relative_to(a.root)
-            cpv_hint = f"{rel.parts[0]}/{m.group('cpv')}" if len(rel.parts) > 1 else m.group("cpv")
+            raw_cpv = m.group("cpv")
+            # GLEP-78 archives append a build instance number after the CPV
+            # (for example ``foo-1.2-3``).  Normalize that instance suffix so
+            # retention groups actual CPVs rather than treating each build as
+            # a distinct installed package.
+            raw_cpv = re.sub(r"-[0-9]+$", "", raw_cpv)
+            cpv_hint = f"{rel.parts[0]}/{raw_cpv}" if len(rel.parts) > 1 else raw_cpv
             rows.append({"path": str(f), "cpv_hint": cpv_hint, "size": st.st_size, "mtime_ns": st.st_mtime_ns,
                          "sha256": hashlib.sha256(f.read_bytes()).hexdigest() if st.st_size <= 64*1024*1024 else None,
                          "state": "UNKNOWN", "reason": "no positive retention decision"})
