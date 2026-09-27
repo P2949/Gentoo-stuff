@@ -199,7 +199,8 @@ def main() -> int:
                          "allocated_bytes": allocated})
     candidates = [r for r in rows if r["state"] == "ARCHIVE_CANDIDATE"]
     retired = []
-    free_before = free_bytes(cache)
+    measurement_root = cache if cache.exists() else durable
+    free_before = free_bytes(measurement_root)
     try:
         if args.execute:
             quarantine = durable.parent / ".checkpoint-gc-quarantine"
@@ -218,7 +219,7 @@ def main() -> int:
                     if dst.exists() and not src.exists():
                         os.replace(dst, src)
                 raise
-        free_after = free_bytes(cache)
+        free_after = free_bytes(measurement_root)
         receipt = {"schema": "checkpoint-compaction-v1", "timestamp": int(time.time()),
                    "mode": "execute" if args.execute else "dry-run",
                    "selector": str(selector), "selector_target": str(target) if target else None,
