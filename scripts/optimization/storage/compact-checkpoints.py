@@ -9,6 +9,7 @@ top-level objects.  Unknown or ambiguous checkpoints are retained.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -103,6 +104,24 @@ def write_receipt(path: Path, receipt: dict) -> None:
     os.replace(temp, path)
 
 
+def acquire_locks(paths: list[Path]) -> list[object]:
+    handles = []
+    try:
+        for path in paths:
+            fd = path.open("a+")
+            try:
+                fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                fd.close()
+                raise SystemExit(f"REFUSED: active project lock: {path}")
+            handles.append(fd)
+    except BaseException:
+        for fd in handles:
+            fd.close()
+        raise
+    return handles
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache-root", type=Path, default=Path("/var/cache/gentoo-optimization/binpkgs"))
@@ -110,10 +129,13 @@ def main() -> int:
     ap.add_argument("--selector", type=Path, default=None)
     ap.add_argument("--reference-root", action="append", type=Path, default=[])
     ap.add_argument("--receipt", type=Path, required=True)
+    ap.add_argument("--project-lock", type=Path, default=Path("/run/gentoo-optimization/project.lock"))
+    ap.add_argument("--generation-lock", type=Path, default=Path("/run/gentoo-optimization/generation.lock"))
     ap.add_argument("--execute", action="store_true")
     args = ap.parse_args()
     if active_portage():
         raise SystemExit("REFUSED: Portage transaction is active")
+    handles = acquire_locks([args.project_lock, args.generation_lock])
     cache = args.cache_root.resolve()
     durable = args.durable_root.resolve()
     selector = args.selector or cache / "critical-current"
@@ -148,23 +170,27 @@ def main() -> int:
                          "allocated_bytes": allocated})
     candidates = [r for r in rows if r["state"] == "ARCHIVE_CANDIDATE"]
     retired = []
-    if args.execute:
-        quarantine = durable.parent / ".checkpoint-gc-quarantine"
-        quarantine.mkdir(mode=0o700, exist_ok=True)
-        for row in candidates:
-            src = Path(row["path"])
-            dst = quarantine / (src.name + "." + str(os.getpid()))
-            os.replace(src, dst)
-            shutil.rmtree(dst)
-            retired.append(row["path"])
-    receipt = {"schema": "checkpoint-compaction-v1", "timestamp": int(time.time()),
-               "mode": "execute" if args.execute else "dry-run",
-               "selector": str(selector), "selector_target": str(target) if target else None,
-               "objects": rows, "candidates": candidates, "retired": retired,
-               "unknown_retained": True}
-    write_receipt(args.receipt, receipt)
-    print(json.dumps(receipt, indent=2, sort_keys=True))
-    return 0
+    try:
+        if args.execute:
+            quarantine = durable.parent / ".checkpoint-gc-quarantine"
+            quarantine.mkdir(mode=0o700, exist_ok=True)
+            for row in candidates:
+                src = Path(row["path"])
+                dst = quarantine / (src.name + "." + str(os.getpid()))
+                os.replace(src, dst)
+                shutil.rmtree(dst)
+                retired.append(row["path"])
+        receipt = {"schema": "checkpoint-compaction-v1", "timestamp": int(time.time()),
+                   "mode": "execute" if args.execute else "dry-run",
+                   "selector": str(selector), "selector_target": str(target) if target else None,
+                   "objects": rows, "candidates": candidates, "retired": retired,
+                   "unknown_retained": True}
+        write_receipt(args.receipt, receipt)
+        print(json.dumps(receipt, indent=2, sort_keys=True))
+        return 0
+    finally:
+        for fd in handles:
+            fd.close()
 
 
 if __name__ == "__main__":

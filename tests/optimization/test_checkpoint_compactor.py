@@ -26,10 +26,14 @@ class CheckpointCompactorTests(unittest.TestCase):
             )
             (cache / "critical-current").symlink_to(target)
             receipt = root / "receipt.json"
+            project_lock = root / "project.lock"
+            generation_lock = root / "generation.lock"
             subprocess.run(
                 ["python3", str(SCRIPT), "--cache-root", str(cache),
                  "--durable-root", str(durable), "--reference-root", str(root),
-                 "--receipt", str(receipt)], check=True, capture_output=True, text=True
+                 "--receipt", str(receipt), "--project-lock", str(project_lock),
+                 "--generation-lock", str(generation_lock)], check=True,
+                capture_output=True, text=True
             )
             report = json.loads(receipt.read_text(encoding="utf-8"))
             states = {Path(row["path"]).name: row["state"] for row in report["objects"]}
@@ -50,10 +54,13 @@ class CheckpointCompactorTests(unittest.TestCase):
                 '{"terminal_state":"offline-restore-proven"}\n', encoding="utf-8"
             )
             receipt = root / "receipt.json"
+            project_lock = root / "project.lock"
+            generation_lock = root / "generation.lock"
             subprocess.run(
                 ["python3", str(SCRIPT), "--cache-root", str(cache),
                  "--durable-root", str(durable), "--reference-root", str(root),
-                 "--receipt", str(receipt), "--execute"], check=True,
+                 "--receipt", str(receipt), "--project-lock", str(project_lock),
+                 "--generation-lock", str(generation_lock), "--execute"], check=True,
                 capture_output=True, text=True
             )
             report = json.loads(receipt.read_text(encoding="utf-8"))
