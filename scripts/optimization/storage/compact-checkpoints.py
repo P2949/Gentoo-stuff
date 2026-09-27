@@ -128,6 +128,11 @@ def write_receipt(path: Path, receipt: dict) -> None:
         os.close(directory_fd)
 
 
+def free_bytes(path: Path) -> int:
+    stat = os.statvfs(path)
+    return stat.f_bavail * stat.f_frsize
+
+
 def acquire_locks(paths: list[Path]) -> list[object]:
     handles = []
     try:
@@ -194,20 +199,33 @@ def main() -> int:
                          "allocated_bytes": allocated})
     candidates = [r for r in rows if r["state"] == "ARCHIVE_CANDIDATE"]
     retired = []
+    free_before = free_bytes(cache)
     try:
         if args.execute:
             quarantine = durable.parent / ".checkpoint-gc-quarantine"
             quarantine.mkdir(mode=0o700, exist_ok=True)
-            for row in candidates:
-                src = Path(row["path"])
-                dst = quarantine / (src.name + "." + str(os.getpid()))
-                os.replace(src, dst)
-                shutil.rmtree(dst)
-                retired.append(row["path"])
+            try:
+                for row in candidates:
+                    src = Path(row["path"])
+                    dst = quarantine / (src.name + "." + str(os.getpid()))
+                    os.replace(src, dst)
+                    shutil.rmtree(dst)
+                    retired.append(row["path"])
+            except BaseException:
+                for original in retired:
+                    src = Path(original)
+                    dst = quarantine / (src.name + "." + str(os.getpid()))
+                    if dst.exists() and not src.exists():
+                        os.replace(dst, src)
+                raise
+        free_after = free_bytes(cache)
         receipt = {"schema": "checkpoint-compaction-v1", "timestamp": int(time.time()),
                    "mode": "execute" if args.execute else "dry-run",
                    "selector": str(selector), "selector_target": str(target) if target else None,
                    "objects": rows, "candidates": candidates, "retired": retired,
+                   "filesystem_free_bytes_before": free_before,
+                   "filesystem_free_bytes_after": free_after,
+                   "filesystem_free_delta": free_after - free_before,
                    "unknown_retained": True}
         write_receipt(args.receipt, receipt)
         print(json.dumps(receipt, indent=2, sort_keys=True))
