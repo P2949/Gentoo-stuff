@@ -9224,3 +9224,15 @@ generation merged-profile store. Merge evidence is retained at
 `/var/lib/gentoo-optimization/reports/profile-merge-doas-training-v3-20260927.json`.
 This is representative profile-training evidence only; no profile-use or BOLT
 deployment is claimed.
+
+## 2026-09-27 dav1d representative canary configure failure
+
+The independent `media-libs/dav1d-9999` representative canary resolved to an
+exact single CPV and entered the authenticated Clang-IR generation transaction.
+The 32-bit multilib Meson configure probe failed because the active compiler
+reported no usable `stdatomic.h` or GCC-style atomics (`Atomics not supported`).
+No install-QA admission, workload receipt, profile merge, dispatcher
+publication, or profile-use deployment was made. The complete retained log is
+`/var/tmp/gentoo-portage-build/portage/media-libs/dav1d-9999/temp/build.log`;
+the failure remains a package/multilib configure remediation item and was not
+retried unchanged.
