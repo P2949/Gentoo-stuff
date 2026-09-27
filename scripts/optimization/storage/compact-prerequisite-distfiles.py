@@ -55,12 +55,16 @@ def main() -> int:
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--limit-transactions", type=int)
+    parser.add_argument("--transaction-id", action="append", default=[])
     args = parser.parse_args()
     root = args.transactions.resolve(); state = args.state_dir.resolve(); objects = args.objects.resolve()
     if not root.is_dir() or not state.is_dir():
         raise SystemExit("REFUSED: transaction or state directory is unavailable")
     rows: list[dict[str, object]] = []
     transactions = [p for p in sorted(root.iterdir()) if p.is_dir()]
+    if args.transaction_id:
+        wanted = set(args.transaction_id)
+        transactions = [p for p in transactions if p.name in wanted]
     if args.limit_transactions is not None:
         transactions = transactions[:args.limit_transactions]
     for tx in transactions:
