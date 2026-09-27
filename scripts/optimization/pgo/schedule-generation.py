@@ -7,7 +7,7 @@ from pathlib import Path
 def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':')).encode()
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--package-state',type=Path,required=True); ap.add_argument('--attempts',type=Path,required=True); ap.add_argument('--output',type=Path,required=True); ap.add_argument('--wave-size',type=int,default=16); ap.add_argument('--generation-id',required=True); ap.add_argument('--bindings',type=Path); ap.add_argument('--recipes',type=Path); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument('--package-state',type=Path,required=True); ap.add_argument('--attempts',type=Path,required=True); ap.add_argument('--output',type=Path,required=True); ap.add_argument('--wave-size',type=int,default=16); ap.add_argument('--generation-id',required=True); ap.add_argument('--bindings',type=Path); ap.add_argument('--recipes',type=Path); ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training'); a=ap.parse_args()
     if Path('/var/lib/gentoo-optimization/state/deinstrument.pending').exists():
         raise SystemExit('REFUSED: de-instrumentation is pending; generation scheduling is paused')
     if a.output.exists(): raise SystemExit('REFUSED: scheduler output already exists')
@@ -54,10 +54,11 @@ def main():
             recipe=recipe_rows.get(cpv)
             if not binding or not recipe:
                 continue
-            if recipe.get('state') not in {'training-ready','consumer-training-ready','backend-specific-training-ready'}:
-                continue
-            if not recipe.get('recipes'):
-                continue
+            if a.mode == 'training':
+                if recipe.get('state') not in {'training-ready','consumer-training-ready','backend-specific-training-ready'}:
+                    continue
+                if not recipe.get('recipes'):
+                    continue
             for key in ('profile_path','compiler_sha256','recipes'):
                 if key in binding: enriched[key]=binding[key]
             enriched['identity_sha256']=binding.get('identity_sha256')

@@ -126,7 +126,10 @@ def main():
    _write_attempt(_active_attempt)
    if not os.path.isfile(fingerprint_file):
     raise SystemExit(f'REFUSED: missing reviewed fingerprint file for {cpv}: {fingerprint_file}')
-   base_profile_path=item['profile_path']; spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw'); canonical=os.path.realpath(base_profile_path)
+   spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw')
+   base_profile_path=(os.path.join(spool, a.generation_id, cpv.replace('/','_'))
+                      if a.mode == 'exhaustive-generation' else item['profile_path'])
+   canonical=os.path.realpath(base_profile_path)
    if not isinstance(base_profile_path,str) or not base_profile_path.startswith(spool+'/') or not canonical.startswith(spool+'/'):
     raise SystemExit(f'REFUSED: profile path escapes trusted spool: {base_profile_path}')
    # Every retry receives an immutable leaf.  Failed attempts remain available
