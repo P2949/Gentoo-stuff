@@ -9044,3 +9044,19 @@ strict installer check then passed with the reviewed generation policy and
 frozen inventory. Live framework authority is therefore rebound to the exact
 validated source boundary; no package/profile wave was started by this
 republication.
+
+## 2026-09-27 exhaustive-wave de-instrumentation closure
+
+A fresh live instrumentation census after the exhaustive provider wave found
+five instrumented ELF records: `/usr/bin/doas` and the installed/debug
+`sysklogd` objects. Their origin was retained as pre-framework/unknown rather
+than silently accepted. The durable `deinstrument.pending` marker was asserted,
+and the dependency-layered de-instrumentation plan selected one exact batch
+containing `app-admin/doas-6.8.2` and `app-admin/sysklogd-2.7.2`.
+
+The batch ran with `GENTOO_OPT_MODE=off`, `GENTOO_OPT_DEINSTRUMENT=1`,
+`LLVM_PROFILE_FILE=/dev/null`, exact `=CPV` atoms, `--nodeps`, and the normal
+ABI/install-QA path. The post-transaction census reported 16,947 inspected
+ELF records and zero instrumentation markers. The independent
+`verify-deinstrumentation.py` check passed, and only then was the durable
+marker cleared. No instrumented residual remains in this census boundary.
