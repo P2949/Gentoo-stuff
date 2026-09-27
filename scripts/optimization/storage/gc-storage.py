@@ -56,6 +56,11 @@ def durable_write(path: Path, text: str) -> None:
         os.close(directory_fd)
 
 
+def free_bytes(path: Path) -> int:
+    stat = os.statvfs(path)
+    return stat.f_bavail * stat.f_frsize
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--retention", type=Path, required=True)
@@ -73,20 +78,31 @@ def main() -> int:
     candidates = [Path(row["path"]) for row in report.get("objects", []) if row.get("state") == "ARCHIVE_CANDIDATE"]
     unknown = [row for row in report.get("objects", []) if row.get("state") == "UNKNOWN"]
     deleted: list[str] = []
+    measurement_root = Path("/var/tmp/gentoo-optimization")
+    free_before = free_bytes(measurement_root)
     try:
         if args.execute:
             quarantine = Path("/var/tmp/gentoo-optimization/storage-gc-quarantine")
             quarantine.mkdir(parents=True, exist_ok=True)
-            for path in candidates:
-                if not path.is_dir() or not path.is_absolute():
-                    raise SystemExit(f"REFUSED: invalid candidate {path}")
-                target = quarantine / (path.name + "." + str(os.getpid()))
-                os.replace(path, target)
-                shutil.rmtree(target)
-                deleted.append(str(path))
+            try:
+                for path in candidates:
+                    if not path.is_dir() or not path.is_absolute():
+                        raise SystemExit(f"REFUSED: invalid candidate {path}")
+                    target = quarantine / (path.name + "." + str(os.getpid()))
+                    os.replace(path, target)
+                    shutil.rmtree(target)
+                    deleted.append(str(path))
+            except BaseException:
+                for original in deleted:
+                    path = Path(original)
+                    target = quarantine / (path.name + "." + str(os.getpid()))
+                    if target.exists() and not path.exists():
+                        os.replace(target, path)
+                raise
     finally:
         for handle in locks:
             handle.close()
+    free_after = free_bytes(measurement_root)
     receipt = {
         "schema": "storage-gc-v1",
         "timestamp": int(time.time()),
@@ -95,6 +111,9 @@ def main() -> int:
         "deleted": deleted,
         "unknown_count": len(unknown),
         "unknown_retained": True,
+        "filesystem_free_bytes_before": free_before,
+        "filesystem_free_bytes_after": free_after,
+        "filesystem_free_delta": free_after - free_before,
     }
     durable_write(args.receipt, json.dumps(receipt, indent=2, sort_keys=True) + "\n")
     print(json.dumps(receipt, indent=2, sort_keys=True))
