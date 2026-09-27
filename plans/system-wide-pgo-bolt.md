@@ -9382,3 +9382,10 @@ before resolving or executing its Portage transaction, with an explicit
 `--storage-path` override for isolated fixtures. Its identity-drift regression
 continues to pass after this integration, so profile-use cannot consume the
 remaining capacity margin without the configured storage floor being satisfied.
+
+The follow-up checkpoint compaction dry-run at
+`/var/lib/gentoo-optimization/reports/checkpoint-compaction-followup-20260927.json`
+now resolves the repaired `critical-current` selector and proposes zero
+retirements. Five referenced cache snapshots remain evidence-retained, the
+selector target is `LIVE_REQUIRED`, and the only unclassified cache snapshot
+is retained as `UNKNOWN` because it lacks a terminal state/Packages manifest.
