@@ -8962,3 +8962,17 @@ The complete local optimization suite was rerun after the first exact
 profile-use deployment and merge-evidence permission fix: 374 tests ran in
 89.964 seconds, with 8 explicit skips and zero failures. The independently
 verified `rpm2targz` profile-use receipt remains valid at this source boundary.
+
+## 2026-09-27 BOLT capture boundary validation
+
+The first live BOLT capture transaction for the exact `rpm2targz` profile-use
+output initially exposed three fail-closed integration defects: the state
+validator rejected additive frozen-inventory census fields, the proof checker
+double-prefixed canonical absolute paths, and the staged candidate scanner
+compared relative paths against absolute proof identities. These were fixed in
+source, pushed, and republished through the root-owned framework installer.
+The corrected capture then completed successfully for one eligible artifact
+(`/usr/bin/rpmoffset`) and produced an immutable input manifest and cached ELF
+under the reviewed fingerprint. The failed attempts remain preserved in the
+Portage build log. Perf/fdata generation and BOLT deployment remain open; no
+BOLT output is claimed from this capture alone.
