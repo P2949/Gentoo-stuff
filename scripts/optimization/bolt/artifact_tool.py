@@ -1474,10 +1474,15 @@ def canonical_command_output(path_text: str) -> Path:
 
 def inventory_candidate_identity(artifact: dict[str, Any]) -> dict[str, Any]:
     """Stable exact candidate facts required from the frozen inventory proof."""
+    def absolute(path: Any) -> Any:
+        if not isinstance(path, str):
+            return path
+        return path if path.startswith("/") else f"/{path}"
+
     return {
-        "artifact_id": artifact.get("artifact_id"),
-        "canonical_path": artifact.get("canonical_path"),
-        "paths": artifact.get("paths"),
+        "artifact_id": hashlib.sha256(absolute(artifact.get("canonical_path")).encode("utf-8")).hexdigest() if isinstance(artifact.get("canonical_path"), str) else artifact.get("artifact_id"),
+        "canonical_path": absolute(artifact.get("canonical_path")),
+        "paths": [absolute(path) for path in artifact.get("paths", [])],
         "hardlink_count": artifact.get("hardlink_count"),
         "elf_class": artifact.get("elf_class"),
         "elf_data": artifact.get("elf_data"),
