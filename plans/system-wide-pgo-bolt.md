@@ -9718,6 +9718,14 @@ The result includes userspace upgrades and a separate kernel/lifecycle closure
 was executed from this pretend. The userspace and kernel-policy partitions
 must be derived from the canonical mutation policy before the next transaction.
 
+The 65 resolver operations were then partitioned by CP against the reviewed
+mutation-policy authority. The machine-readable partition is
+`/var/lib/gentoo-optimization/reports/world-pretend-mutation-partition-20260927.json`
+(SHA-256
+`18ff228d624c6d0f1d8e02d4482007bbdea2eccb4ffe2d2400a880bbbdd1cd7d`). It
+contains 59 authorized userspace operations and 6 kernel-policy exclusions;
+the excluded closure was not executed.
+
 The post-interruption binpkg retention dry-run was rerun against the complete
 optimization reference root, live VDB, and recovery indexes. Report
 `/var/lib/gentoo-optimization/reports/binpkg-retention-20260927-post-interrupt.json`
