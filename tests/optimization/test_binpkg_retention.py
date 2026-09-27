@@ -16,9 +16,9 @@ with tempfile.TemporaryDirectory() as t:
 
 with tempfile.TemporaryDirectory() as t:
     root=Path(t)/'pkgs'; (root/'app-test/old').mkdir(parents=True); (root/'app-test/new').mkdir(parents=True)
-    (root/'app-test/old/app-test-1.gpkg.tar.zst').write_bytes(b'old')
-    (root/'app-test/new/app-test-1.gpkg.tar.zst').write_bytes(b'new')
-    vdb=Path(t)/'vdb/app-test/app-test-1'; vdb.mkdir(parents=True)
+    (root/'app-test/old/app-test-1.0-1.gpkg.tar.zst').write_bytes(b'old')
+    (root/'app-test/new/app-test-1.0-1.gpkg.tar.zst').write_bytes(b'new')
+    vdb=Path(t)/'vdb/app-test/app-test-1.0'; vdb.mkdir(parents=True)
     out=Path(t)/'report.json'
     subprocess.run([sys.executable,str(TOOL),'--root',str(root),'--vdb',str(Path(t)/'vdb'),
                     '--output',str(out),'--prune-duplicates','--execute',
