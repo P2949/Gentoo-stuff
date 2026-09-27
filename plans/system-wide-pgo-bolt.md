@@ -9158,3 +9158,16 @@ dependency block. It resolves 1,277 operations (36 upgrades, four new slots,
 and 1,237 rebuilds), with the known glslang-to-wlroots rebuild edge. This is a
 resolver-clean baseline boundary; the broad transaction remains intentionally
 unstarted pending the documented userspace freeze and optimization-wave gates.
+
+## 2026-09-27 Maya repository trust-boundary correction
+
+The portable-complete live-policy preflight correctly rejected the restored
+Maya repository because its configured location under `/home/p2949` is
+user-owned, outside the root/portage trust set required for authoritative
+repository identity. The overlay itself is a small ebuild/configuration tree;
+its unrelated generated `default.profraw` residue was removed. A root-owned
+snapshot was materialized at
+`/var/lib/gentoo-optimization/repos/maya-gentoo` (excluding `.git` and that
+generated profile), and the checked-in `maya-gentoo.conf` now binds Portage to
+that canonical trusted snapshot. No ebuild content was changed and no boot or
+kernel state was touched.
