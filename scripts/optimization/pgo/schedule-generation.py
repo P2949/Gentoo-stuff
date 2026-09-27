@@ -24,7 +24,8 @@ def main():
             # Attempts are generation-scoped evidence.  Legacy records without
             # a generation binding are deliberately ignored rather than
             # allowing an older compiler wave to suppress this wave.
-            if rec.get('generation_id') != a.generation_id:
+            gen=rec.get('generation',{})
+            if not (gen.get('generation_id') == a.generation_id or rec.get('generation_id') == a.generation_id):
                 continue
             considered.append(rec)
             if cpv and status in {'succeeded','optimized','completed'}: completed.add(cpv)
@@ -53,16 +54,19 @@ def main():
             recipe=recipe_rows.get(cpv)
             if not binding or not recipe:
                 continue
-            if recipe.get('state') == 'needs-training-workload' or not recipe.get('recipes'):
+            if recipe.get('state') not in {'training-ready','consumer-training-ready','backend-specific-training-ready'}:
+                continue
+            if not recipe.get('recipes'):
                 continue
             for key in ('profile_path','compiler_sha256','recipes'):
                 if key in binding: enriched[key]=binding[key]
+            enriched['identity_sha256']=binding.get('identity_sha256')
             if 'recipes' not in enriched: enriched['recipes']=recipe['recipes']
         candidates.append(enriched)
     candidates.sort(key=lambda x:(str(x['lane']),x['cpv']))
     selected=candidates[:max(1,a.wave_size)]
     ledger_sha=hashlib.sha256(canon(sorted(considered,key=lambda x:(x.get('cpv',''),x.get('attempt_id',''),x.get('state',''))))).hexdigest()
-    wave={'record_type':'optimization-generation-wave','schema_version':2,'generation_id':a.generation_id,'created_epoch':time.time(),'source_state_sha256':hashlib.sha256(a.package_state.read_bytes()).hexdigest(),'source_attempts_sha256':ledger_sha,'packages':selected,'remaining_pending':len(candidates)-len(selected),'failed_preserved':sorted(failed),'retry_authorized':sorted(retry_authorized)}
+    wave={'record_type':'optimization-generation-wave','schema_version':3,'generation_id':a.generation_id,'created_epoch':time.time(),'source_state_sha256':hashlib.sha256(a.package_state.read_bytes()).hexdigest(),'source_attempts_sha256':ledger_sha,'source_bindings_sha256':hashlib.sha256(a.bindings.read_bytes()).hexdigest() if a.bindings else None,'source_recipes_sha256':hashlib.sha256(a.recipes.read_bytes()).hexdigest() if a.recipes else None,'packages':selected,'remaining_pending':len(candidates)-len(selected),'failed_preserved':sorted(failed),'retry_authorized':sorted(retry_authorized)}
     wave['sha256']=hashlib.sha256(canon(wave)).hexdigest()
     a.output.parent.mkdir(parents=True,exist_ok=True); a.output.write_text(json.dumps(wave,sort_keys=True,indent=2)+'\n')
     print(json.dumps({'selected':len(selected),'remaining_pending':wave['remaining_pending'],'failed_preserved':len(failed)}))
