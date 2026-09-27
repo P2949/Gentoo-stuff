@@ -8829,3 +8829,34 @@ reports a missing magic number as clean. Failed attempts remain preserved in
 the profile-attempt ledger. This generation-install boundary does not claim
 representative PGO training or profile-use success; fresh provider identities
 must now be rebound from the live VDB before any workload wave.
+
+## 2026-09-27 post-build-ID provider rebinding
+
+The generation readiness policy now requires GNU SHA-1 build IDs for Clang and
+GCC generate lanes. After reinstalling the authenticated framework and
+reactivating the reviewed generation, a bounded exhaustive-generation wave for
+`app-admin/doas-6.8.2` and `app-admin/sysklogd-2.7.2` completed with exact
+transactions and was independently verified. Receipt:
+`/var/lib/gentoo-optimization/reports/exhaustive-generation-wave-postbuildid-20260927.json`
+(SHA-256 `ecd403a622954eaf72e103e83e492d81ad52f310ad0ab2802da9def6fa41e284`).
+The installed provider build IDs are `9ab4dda1e38117c852294504f237e3aa69a659a6`
+for `/usr/bin/doas` and `8fa598989f9cd129762bb42a4b224c9fd793cc6d` for
+`/usr/sbin/syslogd`.
+
+A fresh live census and metadata extraction were retained after the wave:
+16,977 ELF records in `elf-metadata-postbuildid-20260927.json` (SHA-256
+`979ae851b01d34475da2079f922dfcd205fdff10596e66b0da70ac1daa0a4edb`), and
+fresh workload manifest/recipes in
+`workload-manifest-postbuildid-20260927.json` (SHA-256
+`a09737daf75cbc2d1020df0e8380d3afedfa23cd6bb4ddc6bb0992cab64c4108`) and
+`workload-recipes-postbuildid-20260927.json` (SHA-256
+`c96eb57bc38aea8a1007006692d1ec59f480190dd36e1ce04dc4f28a6ed68023`).
+The manifest reports 327 workload candidates and 238 no-runnable-entrypoint
+records; recipes report 296 smoke-ready, 268 needing representative training,
+one terminal exclusion, and 1,030 recipes. Provider resolution against the
+fresh identities produced 49 resolved recipes and 981 unresolved records across
+565 packages; the retained report is
+`consumer-candidates-postbuildid-20260927.json` (SHA-256
+`6ef4e2a38b059d9aff1034310be7f3b023cef1132b8ec2cc32ad56a606ee3e83`). These
+records establish provider identity only; smoke recipes remain provisional and
+do not close the representative-training gate.
