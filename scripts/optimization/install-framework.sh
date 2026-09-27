@@ -2493,13 +2493,31 @@ manifest_bootstrap_tree_matches() {
             'index($1, prefix) == 1 { print substr($1, length(prefix) + 1) }' \
             "${candidate}/install.manifest" | sort
     )
-    [[ ${#actual_files[@]} -gt 0 && ${actual_files[*]} == "${manifest_files[*]}" ]] || return 1
+    [[ ${#actual_files[@]} -gt 0 ]] || return 1
+    for relative in "${actual_files[@]}"; do
+        if ! printf '%s\n' "${manifest_files[@]}" | grep -Fxq -- "${relative}"; then
+            case " ${HELPER_RELATIVE[*]} " in
+                *" ${relative} "*) ;;
+                *) return 1 ;;
+            esac
+        fi
+    done
+    for relative in "${manifest_files[@]}"; do
+        printf '%s\n' "${actual_files[@]}" | grep -Fxq -- "${relative}" || return 1
+    done
     while IFS= read -r -d '' directory; do
         [[ $(stat -c '%u:%g' -- "${directory}") == "${EXPECTED_UID}:${EXPECTED_GID}" ]] || return 1
         mode_is_trusted "$(stat -c %a -- "${directory}")" || return 1
     done < <(find "${root}" -type d -print0)
     for relative in "${actual_files[@]}"; do
         path=${root}/${relative}
+        if ! printf '%s\n' "${manifest_files[@]}" | grep -Fxq -- "${relative}"; then
+            temporary=$(mktemp "${BASE}/.helper-bootstrap-check.XXXXXXXX")
+            render_helper_bootstrap "${relative}" >"${temporary}"
+            cmp -s -- "${temporary}" "${path}" || { rm -f -- "${temporary}"; return 1; }
+            rm -f -- "${temporary}"
+            continue
+        fi
         IFS=$'\t' read -r expected_hash expected_mode expected_owner < <(
             awk -F '\t' -v exact="${path}" \
                 '$1 == exact { count++; hash=$2; mode=$3; owner=$4 } END { if (count == 1) print hash "\t" mode "\t" owner }' \
