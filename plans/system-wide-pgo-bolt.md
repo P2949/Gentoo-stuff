@@ -8658,3 +8658,16 @@ counts alongside both input hashes. The existing consumer-workload regression
 passes and confirms workload bindings survive graph generation. This is a
 producer-boundary fix; a live graph still requires current Portage dependency
 records and DT_NEEDED resolution before consumer training can be authorized.
+
+## 2026-09-27 live reverse-dependency and consumer planning boundary
+
+New live producers generated Portage dependency edges from the VDB and DT_NEEDED
+edges from the authoritative ELF metadata. Portage source covers 1,344 CPVs
+and 8,597 typed records; ELF resolution produced 966 unique `elf-needed`
+records and retained 32,288 unresolved/ambiguous names as explicit evidence.
+The combined graph contains 9,562 typed edges with source hashes bound into the
+report. Consumer planning was then run against the fresh workload manifest and
+ELF census: all 218 no-runnable-entrypoint packages remain explicitly
+`needs-consumer-workload`, because no consumer recipe has yet supplied the
+required executable, expected provider artifacts, and counter proof. No package
+wave was started.
