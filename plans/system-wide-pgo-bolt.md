@@ -9316,3 +9316,17 @@ The first root-owned storage inventory is retained at `/var/lib/gentoo-optimizat
 The first retention pass is retained at `/var/lib/gentoo-optimization/reports/storage-retention-20260927.json` with a dry-run receipt at `/var/lib/gentoo-optimization/reports/storage-gc-20260927.json`. It found the nine visible raw-profile generation directories either referenced by machine-readable state or active, so the fail-closed collector selected zero deletion candidates. This is an evidence result, not a cleanup failure: historical references must be reconciled or compacted before any raw generation can be retired.
 
 The binpkg retention inventory `/var/lib/gentoo-optimization/reports/binpkg-retention-20260927.json` found 4,142 package archives totaling 38,007,480,320 bytes. All entries remain `UNKNOWN` until active rollback, transaction, and recovery references are joined; the dry-run made no deletion.
+# 2026-09-27 storage checkpoint compaction boundary
+
+Added `scripts/optimization/storage/compact-checkpoints.py`, a dry-run-first,
+reference-aware checkpoint compactor with selector protection, terminal-state
+requirements, unknown retention, two-phase quarantine on explicit execution,
+and immutable compaction receipts. Focused fixture coverage is in
+`tests/optimization/test_checkpoint_compactor.py` (2/2 pass). The first live
+dry-run was correctly refused because `/var/cache/gentoo-optimization/binpkgs/critical-current`
+is a dangling selector to the absent
+`critical-checkpoint-post-jsonschema-20260906T012300Z-v3`; no checkpoint was
+deleted and the refusal receipt is
+`/var/lib/gentoo-optimization/reports/checkpoint-compaction-20260927.json`.
+This is an active recovery-authority issue and must be reconciled before any
+checkpoint retirement or selector mutation.
