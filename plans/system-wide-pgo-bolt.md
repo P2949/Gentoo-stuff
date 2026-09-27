@@ -9253,3 +9253,18 @@ published. The failed attempt record is retained under the generation's
 `profile-wave-attempt-libjxl-training-v3` directory. This is a package/profile
 payload integrity failure requiring diagnosis of GCC multilib profile writing;
 it was not retried unchanged.
+
+## 2026-09-27 libjxl representative training canary v4
+
+After correcting the wave runner's backend proof, the fourth immutable
+`media-libs/libjxl-9999` GCC canary completed the exact 32-bit and 64-bit
+transaction, installed successfully, and emitted native GCC profile payloads.
+The receipt independently verifies at
+`/var/lib/gentoo-optimization/reports/profile-wave-receipt-libjxl-training-v4-20260927.json`.
+Native `gcov-tool overlap` accepted all 171 `.gcda` files and reported 20 hot
+files in the self-merged payload at
+`/var/lib/gentoo-optimization/merged-profiles/phase3-live-candidate-20260927-reviewed/media-libs_libjxl-9999-gcc`.
+The earlier v3 refusal was a runner defect: LLVM `llvm-profdata --binary-ids`
+was incorrectly applied to GCC `.gcda` files. The first two stale-provider-ID
+attempts and v3 invalid-payload attempt remain historical non-authoritative
+records; v4 is the first valid representative GCC training result for libjxl.
