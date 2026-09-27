@@ -9211,3 +9211,16 @@ The runner's dependency/co-build reconciliation therefore correctly admitted
 no transaction and no profile payload. The refusal is retained as a current
 resolver-closure finding; it was not bypassed with a generic atom or retried
 unchanged.
+
+## 2026-09-27 doas representative training canary
+
+`app-admin/doas-6.8.2` completed a fresh exact Clang-IR generation canary under
+`phase3-live-candidate-20260927-reviewed`. The exact single-CPV transaction
+compiled and installed through the active ABI/install-QA gates; its bound
+`/usr/bin/doas` workload completed, the immutable receipt independently
+verified at `/var/lib/gentoo-optimization/reports/profile-wave-receipt-doas-training-v3-20260927.json`, and LLVM 22 merged the payload with digest
+`8bc4f5ef122d7540d1513485af351b1903b2fca34f25c5ffbb640f1ab6150a44` into the
+generation merged-profile store. Merge evidence is retained at
+`/var/lib/gentoo-optimization/reports/profile-merge-doas-training-v3-20260927.json`.
+This is representative profile-training evidence only; no profile-use or BOLT
+deployment is claimed.
