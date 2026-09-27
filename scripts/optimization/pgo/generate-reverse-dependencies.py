@@ -9,6 +9,9 @@ def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--portage',required=True); ap.add_argument('--elf',required=True); ap.add_argument('--output',required=True); a=ap.parse_args()
  if Path(a.output).exists(): raise SystemExit('REFUSED: reverse-dependency output already exists')
  p,e=load(a.portage),load(a.elf); rows=[]
+ if not isinstance(p,dict) or not isinstance(e,dict): raise SystemExit('REFUSED: reverse-dependency sources must be JSON objects')
+ if not isinstance(p.get('records',[]),list) or not isinstance(p.get('build_records',[]),list): raise SystemExit('REFUSED: Portage graph source has invalid record lists')
+ if not isinstance(e.get('records',e.get('edges',[])),list): raise SystemExit('REFUSED: ELF graph source has invalid edge list')
  sources=((p,'records','portage-runtime'),(p,'build_records','portage-build'),(e,'records','elf-needed'),(e,'edges','elf-needed'))
  for source,key,rel in sources:
   if key not in source: continue
@@ -23,6 +26,7 @@ def main():
     if isinstance(x.get('workload'),dict): row['workload']=x['workload']
     rows.append(row)
  unique={(x['provider_cpv'],x['consumer_cpv'],x['relationship']):x for x in rows}
- out={'record_type':'reverse-dependency-graph','schema_version':1,'portage_source_sha256':hashlib.sha256(Path(a.portage).read_bytes()).hexdigest(),'elf_source_sha256':hashlib.sha256(Path(a.elf).read_bytes()).hexdigest(),'records':sorted(unique.values(),key=lambda x:(x['provider_cpv'],x['consumer_cpv'],x['relationship']))}
+ ordered=sorted(unique.values(),key=lambda x:(x['provider_cpv'],x['consumer_cpv'],x['relationship']))
+ out={'record_type':'reverse-dependency-graph','schema_version':2,'source_contract':{'portage_runtime_records':sum(1 for x in ordered if x['relationship']=='portage-runtime'),'portage_build_records':sum(1 for x in ordered if x['relationship']=='portage-build'),'elf_needed_records':sum(1 for x in ordered if x['relationship']=='elf-needed')},'portage_source_sha256':hashlib.sha256(Path(a.portage).read_bytes()).hexdigest(),'elf_source_sha256':hashlib.sha256(Path(a.elf).read_bytes()).hexdigest(),'records':ordered}
  out['sha256']=hashlib.sha256(canon(out)).hexdigest(); Path(a.output).write_text(json.dumps(out,sort_keys=True,indent=2)+'\n'); print(json.dumps({'records':len(out['records']),'sha256':out['sha256']}))
 if __name__=='__main__': main()
