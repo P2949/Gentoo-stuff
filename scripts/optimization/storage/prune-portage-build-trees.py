@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Retire inactive Portage build trees after extracting durable logs."""
 from __future__ import annotations
-import argparse, hashlib, json, os, shutil, subprocess, time
+import argparse, fcntl, hashlib, json, os, shutil, subprocess, time
 from pathlib import Path
 
 def active() -> bool:
@@ -18,11 +18,20 @@ def durable(path: Path, obj: object) -> None:
     with t.open('w') as f: json.dump(obj,f,indent=2,sort_keys=True); f.write('\n'); f.flush(); os.fsync(f.fileno())
     os.replace(t,path); fd=os.open(path.parent,os.O_RDONLY|getattr(os,'O_DIRECTORY',0)); os.fsync(fd); os.close(fd)
 
+def lock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True); fd=path.open('a+')
+    try: fcntl.flock(fd.fileno(), fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except OSError: fd.close(); raise SystemExit(f'REFUSED: active storage lock {path}')
+    return fd
+
 def main()->int:
-    ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--reports',type=Path,required=True); ap.add_argument('--receipt',type=Path,required=True); ap.add_argument('--execute',action='store_true'); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--reports',type=Path,required=True); ap.add_argument('--receipt',type=Path,required=True); ap.add_argument('--execute',action='store_true'); ap.add_argument('--project-lock',type=Path); ap.add_argument('--generation-lock',type=Path); a=ap.parse_args()
     root=a.root.resolve()
     if not root.is_dir(): raise SystemExit('REFUSED: build root is not a directory')
     if active(): raise SystemExit('REFUSED: emerge/ebuild is active')
+    locks=[]
+    if a.execute and (os.geteuid()==0 or a.project_lock or a.generation_lock):
+        locks=[lock(a.project_lock or Path('/run/gentoo-optimization/project.lock')),lock(a.generation_lock or Path('/run/gentoo-optimization/generation.lock'))]
     logs=[]
     for p in sorted(root.rglob('build.log')):
         if p.is_file(): logs.append({'source':str(p),'size':p.stat().st_size,'sha256':digest(p)})
@@ -34,5 +43,6 @@ def main()->int:
         shutil.rmtree(root)
         moved=[x['source'] for x in logs]
     out={'schema':'gentoo-optimization-portage-build-retirement-v1','timestamp':int(time.time()),'mode':'execute' if a.execute else 'dry-run','root':str(root),'logs':logs,'retired_root':a.execute,'moved_logs':len(moved)}
+    for handle in locks: handle.close()
     durable(a.receipt,out); print(json.dumps({'schema':out['schema'],'mode':out['mode'],'logs':len(logs),'moved_logs':len(moved)})); return 0
 if __name__=='__main__': raise SystemExit(main())

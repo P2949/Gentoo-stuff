@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -37,6 +38,17 @@ def durable_write(path: Path, text: str) -> None:
         os.close(directory_fd)
 
 
+def acquire_lock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        raise SystemExit(f"REFUSED: active storage lock {path}")
+    return handle
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--attempt", type=Path, required=True)
@@ -48,8 +60,16 @@ def main() -> int:
     parser.add_argument("--retire-expanded", action="store_true",
                         help="remove the expanded spool only after archive reconstruction verification")
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--project-lock", type=Path)
+    parser.add_argument("--generation-lock", type=Path)
     args = parser.parse_args()
     root = args.attempt.resolve()
+    locks = []
+    if args.execute:
+        project_lock = args.project_lock or Path("/run/gentoo-optimization/project.lock")
+        generation_lock = args.generation_lock or Path("/run/gentoo-optimization/generation.lock")
+        if os.geteuid() == 0 or args.project_lock or args.generation_lock:
+            locks = [acquire_lock(project_lock), acquire_lock(generation_lock)]
     if not root.is_dir():
         raise SystemExit("REFUSED: attempt spool is not a directory")
     if (root / "pending").exists() or (root / "unresolved").exists():
@@ -102,6 +122,8 @@ def main() -> int:
               "retired_expanded": bool(args.execute and args.retire_expanded)}
     if args.receipt:
         durable_write(args.receipt, json.dumps(result, indent=2, sort_keys=True) + "\n")
+    for handle in locks:
+        handle.close()
     print(json.dumps(result, indent=2))
     return 0
 
