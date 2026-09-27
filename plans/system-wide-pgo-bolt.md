@@ -8879,3 +8879,25 @@ bound executable/service/test recipe yet. The report is retained at
 (SHA-256 `47aefaa5c107babac7931adc74d66eeefe5102542a3b594f0b9efaa1c102ed8c`).
 This is an open representative-training requirement, not a terminal exclusion
 and not permission to start a broad profile wave.
+
+## 2026-09-27 input-bound workload provider capture
+
+The previously unresolved `app-arch/rpm2targz-2021.03.16` workload now has a
+fresh generation-installed provider identity. Its exact exhaustive transaction
+was independently verified by
+`exhaustive-generation-wave-rpm2targz-20260927.json`; receipt SHA-256 is
+`d5940fdc760171d343852528805d499aae7e28ef264c1dab7134936a093208f1`. The
+rebuilt `/usr/bin/rpmoffset` carries build ID
+`425869e0ab96edb775c573633610cbe051fefb3a`.
+
+Fresh ELF metadata and workload records were regenerated from the resulting
+live VDB. ELF metadata SHA-256 is
+`1794a0afb33810671456ae546f1b56477cbff19287460681b9b53485a8f58bd9`, workload
+manifest SHA-256 is
+`25b1673b201a79e424be387b78cbb00ce140fee5811ada5e90f7eb9d65aac9d6`, and
+recipe SHA-256 is
+`bb5e4760904258aad9f5b3794b23614c14523f9a488f6750373f402d30ee76ac`. The
+recipe now binds the deterministic root-owned RPM stdin fixture and the fresh
+provider build ID. This is a valid workload identity boundary, but the recipe
+remains smoke/provisional until it is run as representative training and emits
+provider-matching counters.
