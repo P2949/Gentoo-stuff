@@ -9268,3 +9268,18 @@ The earlier v3 refusal was a runner defect: LLVM `llvm-profdata --binary-ids`
 was incorrectly applied to GCC `.gcda` files. The first two stale-provider-ID
 attempts and v3 invalid-payload attempt remain historical non-authoritative
 records; v4 is the first valid representative GCC training result for libjxl.
+
+## 2026-09-27 sysklogd representative training canary
+
+`app-admin/sysklogd-2.7.2` completed an exact single-CPV Clang-IR generation
+canary under `phase3-live-candidate-20260927-reviewed`. The bound
+`/usr/sbin/syslogd --help` representative workload completed, the immutable
+receipt independently verified at
+`/var/lib/gentoo-optimization/reports/profile-wave-receipt-sysklogd-training-20260927.json`,
+and LLVM 22 merged the emitted payload with digest
+`f33b8560832686bc41873e1480478a03222e251d66023e160b24f5e27fffc959` into
+`/var/lib/gentoo-optimization/merged-profiles/phase3-live-candidate-20260927-reviewed/app-admin_sysklogd-2.7.2.profdata`.
+Merge evidence is retained at
+`/var/lib/gentoo-optimization/reports/profile-merge-sysklogd-training-20260927.json`.
+This is representative profile-training evidence only; no profile-use or BOLT
+deployment is claimed.
