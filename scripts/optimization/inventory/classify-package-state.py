@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-import argparse,json,hashlib,collections
-from portage.versions import catpkgsplit
+import argparse,json,hashlib,collections,sys
+from pathlib import Path
+try:
+ from portage.versions import catpkgsplit
+except ImportError:
+ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
+ from cpv import catpkgsplit
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--census',required=True);ap.add_argument('--kernel-set');ap.add_argument('--mutation-policy');ap.add_argument('--output',required=True);ap.add_argument('--vdb',default='/var/db/pkg');a=ap.parse_args()
  if not a.kernel_set and not a.mutation_policy: raise SystemExit('REFUSED: provide canonical --mutation-policy (legacy --kernel-set is accepted only for compatibility)')

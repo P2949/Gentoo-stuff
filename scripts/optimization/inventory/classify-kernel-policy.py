@@ -5,13 +5,15 @@ Category names are never used as the decision.  A CPV is excluded only when
 its exact ebuild contains a reviewed lifecycle mutation marker or its VDB
 CONTENTS proves ownership of a forbidden boot/kernel artifact.
 """
-import argparse, hashlib, json, re
+import argparse, hashlib, json, re, sys
 from pathlib import Path
-from portage.versions import catpkgsplit
 try:
  import portage
+ from portage.versions import catpkgsplit
 except ImportError:
  portage=None
+ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
+ from cpv import catpkgsplit
 FORBIDDEN=re.compile(r'(/boot/|/efi/|/sys/firmware/efi|/etc/kernel/)',re.I)
 LIFECYCLE_HINT=re.compile(r'(initramfs|dracut|installkernel|efibootmgr|bootctl|grub-install)',re.I)
 FORBIDDEN_MUTATION=re.compile(r'(\b(efibootmgr|bootctl|kernel-install|installkernel|dracut|grub-install)\b[^\n]*(/boot|/efi|initramfs)|\bmount\b[^\n]*(/boot|/efi)|\binstall\b[^\n]*(/boot|/efi))',re.I)
