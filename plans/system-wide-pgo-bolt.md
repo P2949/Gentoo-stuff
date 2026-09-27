@@ -9406,3 +9406,10 @@ and generation locks for both dry-run and execution, and releases them on all
 paths. Its focused regression and the storage retention, binpkg, checkpoint,
 and raw-spool compaction tests pass; concurrent cleanup cannot race a package
 or generation transaction.
+
+Checkpoint compaction now recognizes valid same-tree selector aliases such as
+`snapshot-current` instead of misclassifying them as unknown directories. The
+focused fixture and a fresh live dry-run pass; the live checkpoint set is now
+10 `EVIDENCE_KEEP`, one `LIVE_REQUIRED`, and zero archive candidates or
+unexplained unknown aliases. The receipt is
+`/var/lib/gentoo-optimization/reports/checkpoint-compaction-followup2-20260927.json`.

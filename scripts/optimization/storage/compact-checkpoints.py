@@ -78,6 +78,14 @@ def machine_refs(roots: list[Path]) -> set[str]:
 
 def classify(path: Path, active: Path | None, refs: set[str]) -> tuple[str, str]:
     name = path.name
+    if path.is_symlink():
+        try:
+            target = path.resolve(strict=True)
+        except OSError:
+            return "UNKNOWN", "dangling checkpoint alias"
+        if target.is_dir():
+            return "EVIDENCE_KEEP", f"symlink alias to checkpoint {target.name}"
+        return "UNKNOWN", "checkpoint alias target is not a directory"
     if name.startswith(".") or ".partial." in name:
         return "UNKNOWN", "partial or hidden checkpoint requires reconciliation"
     if active is not None and path.resolve() == active:

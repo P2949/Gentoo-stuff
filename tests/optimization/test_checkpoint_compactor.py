@@ -16,6 +16,8 @@ class CheckpointCompactorTests(unittest.TestCase):
             cache = root / "cache"
             durable = root / "durable"
             (cache / "snapshot-unknown").mkdir(parents=True)
+            (cache / "snapshot-retained").mkdir(parents=True)
+            (cache / "snapshot-current").symlink_to(cache / "snapshot-retained")
             target = durable / "critical-active"
             target.mkdir(parents=True)
             old = durable / "critical-old"
@@ -39,6 +41,7 @@ class CheckpointCompactorTests(unittest.TestCase):
             states = {Path(row["path"]).name: row["state"] for row in report["objects"]}
             self.assertEqual(states["critical-active"], "LIVE_REQUIRED")
             self.assertEqual(states["snapshot-unknown"], "UNKNOWN")
+            self.assertEqual(states["snapshot-current"], "EVIDENCE_KEEP")
             self.assertEqual(states["critical-old"], "ARCHIVE_CANDIDATE")
             self.assertEqual(report["retired"], [])
 
