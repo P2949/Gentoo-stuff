@@ -1,0 +1,14 @@
+[
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_assign_pgo_lanes.ReviewedLaneOverrideTests.test_override_is_explicit_policy_input"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_publish_profile_dispatcher.DispatcherPathTrustTests.test_safe_rejects_symlinked_ancestor_after_path_spelling"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_publish_profile_dispatcher.DispatcherPathTrustTests.test_safe_rejects_symlinked_final_path"
+  }
+]

@@ -47,24 +47,39 @@ CHECKED_RE = re.compile(r"^\s*-\s+\[[xX]\]\s+")
 TOP_TEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,1023}$")
 SUBTEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$")
 
-# Phase 2's immutable unittest identity digest remains authoritative.  These
-# two identities were added to the live Phase 3 suite after that freeze; they
-# are executed and checked as ordinary additive tests without rewriting the
-# frozen contract.
-ADDITIVE_UNittest_IDENTITIES = frozenset(
-    {
-        (
-            "python-unit-tests:tests/optimization",
-            "python.test_publish_profile_dispatcher.DispatcherPathTrustTests."
-            "test_safe_rejects_symlinked_ancestor_after_path_spelling",
-        ),
-        (
-            "python-unit-tests:tests/optimization",
-            "python.test_publish_profile_dispatcher.DispatcherPathTrustTests."
-            "test_safe_rejects_symlinked_final_path",
-        ),
-    }
+# Phase 2's immutable unittest identity digest remains authoritative.  New
+# Phase 3 identities live in a tracked registry so the additive surface is
+# explicit, reviewable, and cannot be silently widened by this verifier.
+ADDITIVE_UNittest_REGISTRY = (
+    Path(__file__).resolve().parents[3]
+    / "optimization"
+    / "phase3-additive-test-identities.json"
 )
+
+
+def load_additive_unittest_identities() -> frozenset[tuple[str, str]]:
+    try:
+        payload = json.loads(ADDITIVE_UNittest_REGISTRY.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"cannot load additive unittest identity registry: {exc}")
+    if not isinstance(payload, list):
+        fail("additive unittest identity registry must be a JSON list")
+    identities: set[tuple[str, str]] = set()
+    for entry in payload:
+        if not isinstance(entry, dict) or set(entry) != {"test", "subtest"}:
+            fail("additive unittest identity registry entry is malformed")
+        test_name = entry["test"]
+        subtest_name = entry["subtest"]
+        if not isinstance(test_name, str) or not isinstance(subtest_name, str):
+            fail("additive unittest identity registry values must be strings")
+        identity = (test_name, subtest_name)
+        if identity in identities:
+            fail(f"duplicate additive unittest identity: {identity!r}")
+        identities.add(identity)
+    return frozenset(identities)
+
+
+ADDITIVE_UNittest_IDENTITIES = load_additive_unittest_identities()
 CATEGORY_PATTERN_TEXT = r"[A-Za-z0-9_][A-Za-z0-9+_.-]*"
 PACKAGE_PATTERN_TEXT = r"[A-Za-z0-9_][A-Za-z0-9+_-]*"
 VERSION_PATTERN_TEXT = (
