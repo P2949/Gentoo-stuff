@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Receipt-driven indexed LLVM profile merge and immutable publication."""
-import argparse, hashlib, json, os, pathlib, subprocess, tempfile
+import argparse, hashlib, json, os, pathlib, subprocess, tempfile, grp
 
 def sha(path):
  h=hashlib.sha256()
@@ -88,5 +88,13 @@ def main():
   os.close(fd); os.unlink(tmp)
   raise SystemExit(f'REFUSED: refusing to overwrite existing merge evidence: {a.evidence}')
  with os.fdopen(fd,'w') as f: json.dump(evidence,f,sort_keys=True,indent=2); f.write('\n'); f.flush(); os.fsync(f.fileno())
- os.replace(tmp,a.evidence); print(evidence['sha256'])
+ os.replace(tmp,a.evidence)
+ # Profile-use validation runs under Portage's unprivileged group and must be
+ # able to independently hash the merge evidence referenced by metadata.
+ os.chmod(a.evidence, 0o640)
+ try:
+  os.chown(a.evidence, -1, grp.getgrnam('portage').gr_gid)
+ except KeyError:
+  raise SystemExit('REFUSED: portage group is unavailable for merge evidence')
+ print(evidence['sha256'])
 if __name__=='__main__': main()

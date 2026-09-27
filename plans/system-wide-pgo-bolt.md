@@ -8935,3 +8935,23 @@ Focused workload and wave regressions passed after the canary changes:
 `test-wave-receipt-verifier.sh`. The receipt verifier continued to reject an
 empty completed payload, while the valid canary receipt remained internally
 consistent.
+
+## 2026-09-27 first exact profile-use deployment in reviewed generation
+
+The first fresh representative payload was validated and published through a
+generation-scoped dispatcher for `app-arch/rpm2targz-2021.03.16`. The initial
+profile-use attempt exposed that merge evidence was root-only and unreadable by
+the Portage build user; the artifact was corrected to root:portage mode 0640,
+and the merge publisher is now fail-closed if the `portage` group is absent.
+The original refusal remains preserved as historical evidence.
+
+The corrected exact profile-use runner then completed the source transaction
+with exit status 0, emitted `-fprofile-use` in the compiler command, passed the
+install-QA/ABI guard, and merged the exact CPV from the `gentoo` repository.
+The receipt passed independent verification (`PASS: profile-use v2 receipt
+independently verified`). Receipt SHA-256 is
+`0b3c13c6e1401b8a66419fdaadd420239b7196f95214b3ef709c01bf3498864a`; build log
+SHA-256 is `5c69155cf1a61889bfc7e4a189602a22904bd6d298cd9e94608d1c0aafcfb447`.
+Dispatcher record SHA-256 is
+`184ea80c8f681a21794d2d89d00adb27257e624fa7985898aabe53bae4813d88`.
+This is exact Clang profile-use evidence only; BOLT deployment remains open.
