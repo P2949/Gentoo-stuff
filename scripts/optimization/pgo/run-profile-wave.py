@@ -405,7 +405,7 @@ def main():
    package_records.append({'cpv':cpv,'lane':item.get('lane'),'attempt_id':attempt_id,'pre_transaction_fingerprint':item.get('fingerprint'),'profile_spool':profile_path,'profile_payloads':package_payloads,'recipe_records':recipe_records})
    _active_attempt['state']='completed'; _active_attempt['completed_at']=time.time(); _active_attempt['profile_payloads']=package_payloads; _write_attempt(_active_attempt); _active_attempt=None
  if not payloads and a.mode != 'exhaustive-generation':
- raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
+  raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
  if a.receipt:
   if os.path.lexists(a.receipt):
    raise SystemExit(f'REFUSED: refusing to overwrite existing completed wave receipt: {a.receipt}')
