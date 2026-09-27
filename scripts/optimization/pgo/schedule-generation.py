@@ -18,6 +18,8 @@ def main():
     state=json.loads(a.package_state.read_text()); rows=state.get('records',state.get('packages',[]))
     completed=set(); failed={}; considered=[]; retry_authorized=set()
     state_generation=state.get('generation_id') or state.get('source_generation')
+    requested_inventory_id = state.get('inventory_id')
+    requested_inventory_sha = state.get('inventory_sha256')
     if state_generation and state_generation != a.generation_id:
         raise SystemExit(f'REFUSED: package state generation {state_generation} does not match requested {a.generation_id}')
     if a.attempts.is_dir():
@@ -29,7 +31,11 @@ def main():
             # a generation binding are deliberately ignored rather than
             # allowing an older compiler wave to suppress this wave.
             gen=rec.get('generation',{})
-            if not (gen.get('generation_id') == a.generation_id or rec.get('generation_id') == a.generation_id):
+            if gen.get('generation_id') != a.generation_id:
+                continue
+            if requested_inventory_id and gen.get('inventory_id') != requested_inventory_id:
+                continue
+            if requested_inventory_sha and gen.get('inventory_sha256') != requested_inventory_sha:
                 continue
             considered.append(rec)
             if cpv and status in {'succeeded','optimized','completed'}: completed.add(cpv)
@@ -59,7 +65,7 @@ def main():
             if not binding or not recipe:
                 continue
             if a.mode == 'training':
-                if recipe.get('state') not in {'training-ready','consumer-training-ready','backend-specific-training-ready'}:
+                if recipe.get('state') not in {'direct-training-ready','consumer-training-ready','backend-specific-training-ready'}:
                     continue
                 if not recipe.get('recipes'):
                     continue
