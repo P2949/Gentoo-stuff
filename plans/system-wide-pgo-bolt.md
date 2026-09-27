@@ -9562,3 +9562,12 @@ The measured filesystem-free delta was `206,184,448` bytes.  The large logical
 payloads are reflink/shared storage, so physical recovery is lower than the
 logical retirement.  The storage receipt retains the authority hash and
 per-child manifests; unknown and unreconciled rows remain protected.
+
+A third bounded prerequisite retirement batch processed
+`jsonschema-source-20260907T120000Z` and `jsonschema-source-20260907T130000Z`.
+Both were nonterminal consumed rows authorized by the validated retry-disposition
+join; their original state records remain unchanged.  The two 42.85 GB logical
+`distfiles.staging` trees were hashed, quarantined, removed, and receipt-bound
+at `/var/lib/gentoo-optimization/reports/prerequisite-storage-retirement-execute-20260927-batch3.json`.
+Measured physical free-space recovery was `76,562,432` bytes; shared/reflink
+allocation explains the smaller physical delta.
