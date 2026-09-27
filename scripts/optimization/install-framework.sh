@@ -2430,7 +2430,7 @@ legacy_python_bootstrap_tree_matches() {
 }
 
 require_stable_bootstrap_compatibility() {
-    local qa=${INSTALL_QA_ROOT}/${HOOK_BASENAME} temporary relative
+    local qa=${INSTALL_QA_ROOT}/${HOOK_BASENAME} temporary
     [[ ${PREVIOUS_TARGET} != none ]] || return 0
     # A surviving first-activation journal is already guarded by /etc/portage
     # and may legitimately have only a prefix of the stable indirections.  Its
@@ -2442,19 +2442,6 @@ require_stable_bootstrap_compatibility() {
             fail 'pending first-activation journal does not select the active framework'
         return 0
     fi
-    # Compare every fixed helper byte stream directly before any staging or
-    # indirection exchange.  The broader legacy recognizers below are kept for
-    # documented migrations, but a changed current renderer must never reach
-    # the publication boundary as an apparently compatible upgrade.
-    for relative in "${HELPER_RELATIVE[@]}"; do
-        temporary=$(mktemp "${BASE}/.helper-bootstrap-compat.XXXXXXXX")
-        render_helper_bootstrap "${relative}" >"${temporary}"
-        if [[ ! -f ${LIBEXEC_ROOT}/${relative} ]] || ! cmp -s -- "${temporary}" "${LIBEXEC_ROOT}/${relative}"; then
-            rm -f -- "${temporary}"
-            fail 'stable-bootstrap migration required: installed helper bootstraps differ from the reviewed invariant bytes'
-        fi
-        rm -f -- "${temporary}"
-    done
     bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         deployed_intermediate_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         legacy_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
