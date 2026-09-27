@@ -9833,3 +9833,15 @@ merged successfully. The machine-readable post-merge identity report is
 `627a10aad6071bbb49d47f00537b9b2a58e1592cbed51a097612a85139f8b23c`). This
 was a source-recovery retry after the fetch cause changed; no ABI failure was
 retried or bypassed.
+
+### 2026-09-30 narrow userspace baseline recovery: Hypr overlay fetch failures
+
+The prior unpack failures for `gui-libs/hyprutils-9999` and
+`sys-auth/hyprpolkitagent-9999` were recovered after repository synchronization
+and network restoration. Exact optimization-off `--nodeps` transactions were
+run separately; both fetched from their live Git repositories, compiled,
+passed install-QA and the exported-ABI guard, and merged. The post-merge VDB
+identity report is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-hypr-fetch-recovery-20260930.json`
+(SHA-256 recorded by the root-owned producer). These were source-recovery
+retries after the fetch cause changed. No ABI failure was retried or bypassed.
