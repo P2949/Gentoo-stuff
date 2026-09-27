@@ -23,6 +23,10 @@ def references(roots: list[Path]) -> set[str]:
         for path in root.rglob("*"):
             if not path.is_file() or path.stat().st_size > 8 * 1024 * 1024:
                 continue
+            # Authority is machine-readable; avoid walking large binary
+            # payloads and profile archives merely to search their bytes.
+            if path.suffix.lower() not in {".json", ".txt", ".manifest", ".env", ".sha256", ".receipt"}:
+                continue
             try:
                 data = path.read_bytes()
             except OSError:
