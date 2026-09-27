@@ -1455,6 +1455,18 @@ gentoo_opt_apply_readiness_flags() {
             gentoo_opt_append_flag_once CXXFLAGS "${flag}"
         done
     fi
+    case ${GENTOO_OPT_MODE:-off} in
+        clang-ir-generate|clang-sample-generate|gcc-generate)
+            case ${family} in
+                clang|gcc)
+                    gentoo_opt_require_no_build_id_policy CFLAGS || return 1
+                    gentoo_opt_require_no_build_id_policy CXXFLAGS || return 1
+                    gentoo_opt_require_exact_build_id_policy LDFLAGS -Wl,--build-id=sha1 || return 1
+                    gentoo_opt_append_flag_once LDFLAGS -Wl,--build-id=sha1
+                    ;;
+            esac
+            ;;
+    esac
     if [[ ${GENTOO_OPT_ACTIVE_BOLT_STAGE} == capture ||
         ${GENTOO_OPT_ACTIVE_BOLT_STAGE} == deploy ]]; then
         case ${family} in

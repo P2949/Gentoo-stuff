@@ -3,6 +3,8 @@ import argparse,json,hashlib,collections
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--lanes',required=True);ap.add_argument('--elf',required=True);ap.add_argument('--output',required=True);a=ap.parse_args(); lanes=json.load(open(a.lanes)); lane={x['cpv']:x['lane'] for x in lanes['packages'] if x['lane'].startswith('pgo-')}; by=collections.defaultdict(list)
  for x in json.load(open(a.elf))['artifacts']:
+  if x.get('error') or not x.get('type'):
+   continue
   if x['owner_cpv'] not in lane:continue
   # A runnable native entrypoint does not require PT_INTERP: statically linked
   # executables are valid workload targets too.  Preserve every entrypoint;
