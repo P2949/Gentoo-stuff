@@ -156,14 +156,22 @@ def main() -> int:
                 durable_write(args.receipt.with_suffix(args.receipt.suffix + ".prepared.json"), prepared)
                 os.replace(path, quarantine)
                 retired.append({"transaction_id": tx.name, "name": child["name"], "before": child, "quarantine": str(quarantine)})
+    if args.execute:
+        try:
+            for row in retired:
+                quarantine = Path(str(row["quarantine"]))
+                if quarantine.exists():
+                    shutil.rmtree(quarantine)
+        except BaseException:
+            for row in reversed(retired):
+                quarantine = Path(str(row["quarantine"]))
+                source = Path(str(row["before"]["path"]))
+                if quarantine.exists() and not source.exists():
+                    os.replace(quarantine, source)
+            raise
     free_after = free_bytes(root)
     payload = {"schema": "gentoo-optimization-prerequisite-retirement-v1", "timestamp": int(time.time()), "mode": "execute" if args.execute else "dry-run", "transactions": rows, "retired": retired, "unknown_retained": True, "filesystem_free_bytes_before": free_before, "filesystem_free_bytes_after": free_after, "filesystem_free_delta": free_after - free_before}
     durable_write(args.receipt, payload)
-    if args.execute:
-        for row in retired:
-            quarantine = Path(str(row["quarantine"]))
-            if quarantine.exists():
-                shutil.rmtree(quarantine)
     for handle in locks:
         handle.close()
     print(json.dumps(payload, indent=2, sort_keys=True))
