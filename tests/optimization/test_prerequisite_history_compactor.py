@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import fcntl
 from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
@@ -25,3 +26,14 @@ with tempfile.TemporaryDirectory() as tmp:
     prepared_data = json.loads(prepared.read_text(encoding="utf-8"))
     assert prepared_data["schema"] == "gentoo-optimization-prerequisite-retirement-prepared-v1"
     assert prepared_data["transaction_id"] == "done"
+
+    project_lock = Path(tmp) / "project.lock"
+    generation_lock = Path(tmp) / "generation.lock"
+    with project_lock.open("a+") as held:
+        fcntl.flock(held.fileno(), fcntl.LOCK_EX)
+        refused = subprocess.run(
+            [sys.executable, str(TOOL), "--transactions", str(base), "--receipt", str(Path(tmp) / "locked.json"), "--execute", "--project-lock", str(project_lock), "--generation-lock", str(generation_lock)],
+            capture_output=True, text=True,
+        )
+        assert refused.returncode != 0
+        assert "active storage lock" in refused.stderr
