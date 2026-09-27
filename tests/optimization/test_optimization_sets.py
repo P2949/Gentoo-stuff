@@ -9,5 +9,7 @@ def main():
   subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/generate-optimization-sets.py'),'--mutation-policy',str(m),'--lanes',str(l),'--output-root',str(o)],check=True)
   assert (o/'pgo-clang-ir').read_text()=='app/a\n'
   assert (o/'optimization-kernel-policy-exclusion').read_text()=='sys-kernel/k\n'
+  assert not (o/'manifest.json').exists()
+  assert (p/'sets.manifest.json').exists()
  print('PASS: optimization sets derive from canonical mutation policy')
 if __name__=='__main__': main()
