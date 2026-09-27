@@ -9628,3 +9628,12 @@ cover digest verification.  The live v2 report produced the same positive
 `EVIDENCE_REQUIRED` and protected `UNKNOWN` totals as the preliminary scan:
 `17,522,901,279` and `9,825,638,475` bytes respectively, confirming no
 unverified source was promoted into the keep authority.
+
+The binpkg retention classifier now joins recovery checkpoint `Packages`
+indexes in `/var/lib/gentoo-optimization/recovery/binpkgs` and marks matching
+CPVs `RECOVERY_REQUIRED` instead of leaving them `UNKNOWN`.  The recovery scan
+is bounded to the binpkg subtree and does not traverse unrelated durable
+payloads.  The live dry-run now classifies 1,145 archives / 6,463,344,640 bytes
+as `RECOVERY_REQUIRED`, 395 / 7,215,011,840 as `LIVE_REQUIRED`, and leaves 326
+archives / 11,523,031,040 bytes as `UNKNOWN`.  Unknown bytes remain protected.
+A focused recovery-index regression passes.

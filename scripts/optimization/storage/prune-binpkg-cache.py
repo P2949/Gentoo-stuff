@@ -39,6 +39,23 @@ def installed_cpvs(vdb: Path) -> set[str]:
             if pf.is_dir(): result.add(f"{category.name}/{pf.name}")
     return result
 
+def recovery_cpvs(root: Path) -> set[str]:
+    found = set()
+    if not root.is_dir():
+        return found
+    package_root = root / "binpkgs" if (root / "binpkgs").is_dir() else root
+    for path in package_root.rglob("Packages"):
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if line.startswith("CPV:"):
+                value = line.split(":", 1)[1].strip()
+                if "/" in value:
+                    found.add(value)
+    return found
+
 def locked(paths: list[Path]) -> list[object]:
     handles=[]
     try:
@@ -86,6 +103,7 @@ def main() -> int:
     p.add_argument("--hash-objects", action="store_true", help="hash package archives while inventorying")
     p.add_argument("--reference-root", action="append", type=Path, default=[])
     p.add_argument("--vdb", type=Path, default=Path("/var/db/pkg"))
+    p.add_argument("--recovery-root", type=Path, default=Path("/var/lib/gentoo-optimization/recovery"))
     p.add_argument("--project-lock", type=Path, default=Path("/run/gentoo-optimization/project.lock"))
     p.add_argument("--generation-lock", type=Path, default=Path("/run/gentoo-optimization/generation.lock"))
     a = p.parse_args()
@@ -97,6 +115,7 @@ def main() -> int:
     rows = []
     references = refs(a.reference_root or [Path("/var/lib/gentoo-optimization")])
     live = installed_cpvs(a.vdb)
+    recovery = recovery_cpvs(a.recovery_root)
     if a.root.is_dir():
         for f in a.root.rglob("*"):
             if not f.is_file(): continue
@@ -121,6 +140,11 @@ def main() -> int:
         group.sort(key=lambda r: (r["mtime_ns"], r["path"]), reverse=True)
         if cpv in references or any(Path(r["path"]).name in references for r in group):
             continue
+        if cpv in recovery:
+            for row in group:
+                row["state"] = "RECOVERY_REQUIRED"
+                row["reason"] = "CPV retained by authenticated recovery Packages index"
+            continue
         # Installed CPVs retain the newest convenience rollback instance. Older
         # duplicates are only candidates when the caller explicitly opts in.
         for row in group[1:] if cpv in live else []:
@@ -141,7 +165,7 @@ def main() -> int:
     report = {"schema": "binpkg-retention-v1", "timestamp": int(time.time()), "root": str(a.root),
               "mode": "execute" if a.execute else "dry-run", "objects": rows,
               "unknown_retained": True, "deleted": deleted,
-              "references": sorted(references), "live_cpvs": sorted(live)}
+              "references": sorted(references), "live_cpvs": sorted(live), "recovery_cpvs": sorted(recovery)}
     a.output.parent.mkdir(parents=True, exist_ok=True)
     durable_replace(a.output, json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"schema": report["schema"], "objects": len(rows), "bytes": sum(r["size"] for r in rows), "mode": report["mode"]}, indent=2))

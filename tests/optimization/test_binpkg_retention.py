@@ -34,3 +34,14 @@ with tempfile.TemporaryDirectory() as t:
                     '--project-lock',str(Path(t)/'project.lock'),
                     '--generation-lock',str(Path(t)/'generation.lock')],check=True,stdout=subprocess.DEVNULL)
     d=json.loads(out.read_text()); assert len(d['deleted']) == 1
+
+with tempfile.TemporaryDirectory() as t:
+    root=Path(t)/'pkgs'; (root/'app-test').mkdir(parents=True)
+    (root/'app-test/app-test-1.0-1.gpkg.tar.zst').write_bytes(b'pkg')
+    recovery=Path(t)/'recovery/binpkgs/checkpoint'; recovery.mkdir(parents=True)
+    (recovery/'Packages').write_text('CPV: app-test/app-test-1.0\n', encoding='utf-8')
+    out=Path(t)/'report.json'
+    subprocess.run([sys.executable,str(TOOL),'--root',str(root),'--recovery-root',str(Path(t)/'recovery'),
+                    '--output',str(out),'--project-lock',str(Path(t)/'project.lock'),
+                    '--generation-lock',str(Path(t)/'generation.lock')],check=True,stdout=subprocess.DEVNULL)
+    d=json.loads(out.read_text()); assert d['objects'][0]['state']=='RECOVERY_REQUIRED'
