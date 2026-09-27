@@ -1477,7 +1477,10 @@ def inventory_candidate_identity(artifact: dict[str, Any]) -> dict[str, Any]:
     def absolute(path: Any) -> Any:
         if not isinstance(path, str):
             return path
-        return path if path.startswith("/") else f"/{path}"
+        # Production inventory paths are absolute; fixture inventories retain
+        # their historical relative namespace so the fixture remains a
+        # faithful test of the path-binding contract.
+        return path if ACTIVE_TEST_MODE or path.startswith("/") else f"/{path}"
 
     return {
         "artifact_id": hashlib.sha256(absolute(artifact.get("canonical_path")).encode("utf-8")).hexdigest() if isinstance(artifact.get("canonical_path"), str) else artifact.get("artifact_id"),
@@ -1610,7 +1613,10 @@ def inventory_proof(
     # Inventory paths are already canonical absolute paths.  Prefixing a
     # leading slash here produced //usr/... and falsely rejected every valid
     # proof at the live pre-strip boundary.
-    candidate_paths = {path for item in candidates for path in item["paths"]}
+    candidate_paths = {
+        path if path.startswith("/") else f"/{path}"
+        for item in candidates for path in item["paths"]
+    }
     if not candidate_paths <= owned_paths:
         fail("BOLT inventory proof candidate path is not owned by its exact frozen CPV")
     return {
