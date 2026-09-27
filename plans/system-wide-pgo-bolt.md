@@ -9060,3 +9060,22 @@ ABI/install-QA path. The post-transaction census reported 16,947 inspected
 ELF records and zero instrumentation markers. The independent
 `verify-deinstrumentation.py` check passed, and only then was the durable
 marker cleared. No instrumented residual remains in this census boundary.
+
+## 2026-09-27 live userspace-set reconciliation
+
+A current deep `@world` pretend exposed stale exact-version optimization set
+entries left by the September framework, including unavailable
+`dev-python/tree-sitter-0.26.0_p20260816`. The reviewed generation's
+`generate-optimization-sets.py` was rerun against its authenticated
+mutation-policy and lane artifacts and produced CP-atom sets for 1,269
+userspace packages, 533 Clang-IR lanes, 1 GCC lane, 6 Go lanes, and 18 Rust
+lanes. The corresponding root-owned `/etc/portage/sets` entries were replaced
+with those generation-derived CP-atom files; their hashes were captured in
+the live command output.
+
+The follow-up `@world` pretend no longer reports the unavailable tree-sitter
+atom. It still refuses on a pre-existing Autodesk overlay provenance conflict:
+installed `maya-gentoo` CPVs have no currently available `maya-gentoo` ebuild,
+while `local-autodesk` offers older same-slot CPVs. No downgrade or overlay
+substitution was performed. That conflict remains a baseline source/repository
+reconciliation item and no optimization wave was started.
