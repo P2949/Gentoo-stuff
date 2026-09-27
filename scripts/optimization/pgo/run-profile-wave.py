@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 import argparse,json,os,signal,subprocess,sys,time,hashlib,tempfile,atexit,shutil,re
 from pathlib import Path
+
+def _provider_build_id(path):
+ try:
+  out=subprocess.run(['/usr/bin/readelf','-n','--',path],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,check=False,timeout=10)
+ except (OSError,subprocess.TimeoutExpired) as exc:
+  raise SystemExit(f'REFUSED: provider inspection failed for {path}: {exc}')
+ if out.returncode != 0:
+  raise SystemExit(f'REFUSED: provider is not inspectable ELF: {path}: {out.stderr.strip()}')
+ match=re.search(r'Build ID:\s*([0-9A-Fa-f]+)',out.stdout)
+ if not match:
+  raise SystemExit(f'REFUSED: generated provider has no build ID: {path}')
+ return match.group(1).lower()
 from profile_locks import profile_lock_hierarchy
 # The orchestration process itself must never emit package profile payloads.
 # An unset LLVM_PROFILE_FILE is unsafe for an instrumented helper: LLVM then
@@ -202,6 +214,13 @@ def main():
     recipe.setdefault('purpose', item.get('purpose','smoke'))
     if recipe.get('safe_path') is not True or not isinstance(path,str) or not isinstance(argv,list) or not argv or argv[0] != path:
      raise SystemExit(f'REFUSED: unsafe workload recipe for {cpv}: {path}')
+    if not os.path.isfile(path) or os.path.islink(path):
+     raise SystemExit(f'REFUSED: provider path is absent or symlinked: {path}')
+    resolved_provider_id=_provider_build_id(path)
+    declared_provider_id=recipe.get('build_id')
+    if declared_provider_id and declared_provider_id.lower() != resolved_provider_id:
+     raise SystemExit(f'REFUSED: stale provider build ID for {cpv}: {path}')
+    recipe['resolved_provider_build_id']=resolved_provider_id
     run_env=env.copy(); run_env.update(recipe.get('environment',{}))
     if item['lane'] in ('pgo-clang-ir', 'pgo-gcc', 'pgo-rust') and env.get('GENTOO_OPT_MODE','').endswith('generate'):
      run_env['LLVM_PROFILE_FILE']=os.path.join(profile_path, '%m-%p.profraw')
@@ -261,6 +280,7 @@ def main():
                            'profile_payloads_before':before_payloads, 'profile_payloads_after':after_payloads,
                            'new_profile_payloads':sorted(set(after_payloads)-set(before_payloads)),
                            'expected_provider_artifacts':recipe.get('expected_provider_artifacts',[]),
+                           'provider_build_id':resolved_provider_id,
                            'counter_proof':'payload-emitted' if set(after_payloads)-set(before_payloads) else 'no-new-payload'})
    # Instrumented helper processes can flush their profile files just after
    # emerge returns.  Wait for the package spool to become quiescent before
