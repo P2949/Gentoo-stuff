@@ -1541,7 +1541,15 @@ def observe_driver_shell(
     bash_entrypoint = require_object(
         bash_record.get("entrypoint"), "executed Bash entry point"
     )
-    if argv0 != bash_entrypoint.get("requested_path"):
+    requested_bash = bash_entrypoint.get("requested_path")
+    # Bash reports a normalized argv[0] of ``bash`` when the driver is
+    # launched by a shell script or through PATH.  The executable identity
+    # above remains authoritative in that case; reject only an explicit
+    # absolute entry point that differs from the reviewed request.
+    normalized_argv0 = argv0.rsplit("/", 1)[-1]
+    if argv0 != requested_bash and not (
+        normalized_argv0 in {"bash", "-bash"} and executable == runtime["binary"]
+    ):
         fail("active test-driver Bash was not invoked through its requested path")
     return {
         "argv0": argv0,
