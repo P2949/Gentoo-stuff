@@ -9482,3 +9482,7 @@ The live fail-closed storage preflight was rerun after ccache/ThinLTO cleanup wi
 ### 2026-09-27 stale distfile lock cleanup
 
 With no active `emerge` or `ebuild` process, the distfile cache contained one zero-byte lock artifact dated 2026-09-20: `.llvm-project-23.1.1.src.tar.xz.portage_lockfile`. It was retired as a stale lock only; no source tree or payload archive was touched. Durable record: `/var/lib/gentoo-optimization/reports/distfile-stale-lock-retirement-20260927.json`. The remaining distfile cache remains protected pending an authenticated source-aware retention set.
+
+### 2026-09-27 binpkg retention dry-run
+
+The authenticated binpkg retention dry-run completed after the cache-bound cleanup. Reports `/var/lib/gentoo-optimization/reports/storage-retention-live-20260927.json` (`storage-retention-set-v1`, `unknown_count=0`) and `/var/lib/gentoo-optimization/reports/binpkg-prune-pretend-20260927.json` (`binpkg-retention-v1`) cover the live project references and VDB. The dry-run inspected 1,866 artifacts totaling approximately 25.2 GB: 1,304 artifacts totaling approximately 12.6 GB are `LIVE_REQUIRED` for installed CPVs, while 562 artifacts totaling approximately 12.6 GB remain explicit `UNKNOWN`. Zero artifacts were positively eligible for deletion, so no binpkg deletion was performed; the unknown set remains protected pending positive classification.
