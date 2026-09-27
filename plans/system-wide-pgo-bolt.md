@@ -8692,3 +8692,17 @@ structural rejections. The root-owned report is
 `/var/lib/gentoo-optimization/reports/verified-consumer-workload-candidates-20260927.json`.
 These remain candidates only: the counter-proof field is still pending until a
 full instrumented-system workload run emits matching provider binary IDs.
+
+## 2026-09-27 live VDB drift boundary
+
+A direct comparison against the authorized `phase3-live-candidate-20260922-post-cleanup-v2`
+found live CPV drift: the frozen inventory contains 1,307 CPVs while the live
+VDB contains 1,344. Thirty-nine CPVs are newly installed and two frozen CPVs
+are absent, so the authorized generation is stale and remains ineligible for
+any package wave. A fresh root-owned inventory attempt was captured as
+`/var/lib/gentoo-optimization/reports/phase3-live-current-20260927-drift.json`
+(SHA-256 `e09137098518b987311f43c648c811ff80f9426c902d0e0fc8f115d96ee232c2`),
+with 1,344 package records, 688,254 paths, 80,733 directories, and 268
+unresolved directory records caused by newly observed paths outside the prior
+directory review. No generation authority was updated and no package wave was
+started.
