@@ -9663,3 +9663,20 @@ not accepted because traversing the expanded prerequisite-authority tree did
 not finish within the bounded operational window.  The reachability report
 therefore does not authorize deletion; all candidate objects remain retained
 until recovery references are fully scanned and independently verified.
+
+The content-object reachability authority was subsequently completed over the
+entire `/var/lib/gentoo-optimization` root, including recovery authorities,
+reports, generations, receipts, and source/checkpoint trees.  The complete
+report is `/var/lib/gentoo-optimization/reports/content-object-reachability-20260927-full.json`;
+it found 39,936 objects, 1,422,129 referenced SHA-256 identities, zero unknown
+bytes, and 42,729,717,168 bytes positively unreachable.  Execute mode was then
+run against that complete authority root under the project lock with inactive
+Portage, same-filesystem quarantine, and rollback-on-error enforcement.  Receipt
+`/var/lib/gentoo-optimization/reports/content-object-reachability-20260927-execute.json`
+records 39,857 quarantined-and-unlinked candidates, zero unknown deletions, and
+an 8,294,400-byte measured physical free-space delta; the much larger logical
+retirement is expected to share XFS reflink extents.  The storage preflight
+remains passing after the retirement.  Execute mode refuses any reference set
+other than the complete optimization root, so reports-only scans cannot become
+deletion authority.  The focused reachability regression now also covers this
+refusal.

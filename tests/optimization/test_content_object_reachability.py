@@ -22,4 +22,16 @@ class ContentObjectReachabilityTests(unittest.TestCase):
             self.assertEqual(rows["a" * 64]["state"], "LIVE_REQUIRED")
             self.assertEqual(rows["not-a-digest"]["state"], "UNKNOWN")
 
+    def test_execute_requires_complete_authority_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); objects = root / "objects"; refs = root / "refs"
+            objects.mkdir(); refs.mkdir(); (objects / ("b" * 64)).write_bytes(b"candidate")
+            out = root / "out.json"
+            result = subprocess.run([sys.executable, str(SCRIPT), "--objects", str(objects),
+                                     "--reference-root", str(refs), "--output", str(out),
+                                     "--execute"], text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("complete optimization authority root", result.stderr + result.stdout)
+            self.assertTrue((objects / ("b" * 64)).exists())
+
 if __name__ == "__main__": unittest.main()
