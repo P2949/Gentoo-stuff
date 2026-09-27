@@ -9856,3 +9856,9 @@ VDB identity report is
 `/var/lib/gentoo-optimization/reports/userspace-baseline-vim-fetch-recovery-20260930.json`
 (SHA-256 `995fb6ac8f8935f7a51f1de67fd1178491aa34beae211a8db41faabb26a4500f`). This was a source-recovery retry after
 the fetch cause changed; no ABI failure was retried or bypassed.
+
+The Vim retry left no active Portage workspace. The authenticated build-tree
+retirement helper ran in execute mode with zero remaining logs and removed the
+inactive `/var/tmp/gentoo-portage-build` root. Its receipt is
+`/var/lib/gentoo-optimization/reports/portage-build-retirement-vim-20260930.json`
+(SHA-256 `fec750ca3c108d4a89558841568f3afc98610f5187d7c34539a6ed1b31aac63f`).
