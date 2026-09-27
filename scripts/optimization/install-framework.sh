@@ -2442,10 +2442,13 @@ require_stable_bootstrap_compatibility() {
             fail 'pending first-activation journal does not select the active framework'
         return 0
     fi
-        bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+    bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         deployed_intermediate_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         legacy_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         legacy_python_bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+        { [[ -f ${PREVIOUS_TARGET}/install.manifest ]] && \
+          grep -Fxq "installer_sha256=${INSTALLER_SHA256}" "${PREVIOUS_TARGET}/install.manifest" && \
+          manifest_bootstrap_tree_matches "${LIBEXEC_ROOT}" "${PREVIOUS_TARGET}"; } || \
         fail 'stable-bootstrap migration required: installed helper bootstraps differ from the reviewed invariant bytes'
     temporary=$(mktemp "${BASE}/.qa-bootstrap-compatibility.XXXXXXXX")
     render_qa_bootstrap >"${temporary}"
