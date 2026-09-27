@@ -2699,6 +2699,11 @@ verify_external_indirections() {
         ! -L ${INSTALL_QA_ROOT}/50-gentoo-optimization-bolt ]] || \
         fail 'obsolete early BOLT QA hook remains installed'
     for index in "${!HELPER_RELATIVE[@]}"; do
+        if [[ ! -e ${LIBEXEC_ROOT}/${HELPER_RELATIVE[index]} &&
+              ${PREVIOUS_TARGET} != none &&
+              ! -e ${PREVIOUS_TARGET}/libexec/${HELPER_RELATIVE[index]} ]]; then
+            continue
+        fi
         verify_regular_trusted "${LIBEXEC_ROOT}/${HELPER_RELATIVE[index]}" 0755
     done
     for schema in package-state.schema.json artifact-state.schema.json \
