@@ -8722,3 +8722,21 @@ This is a verified current-state inventory, not yet a generation authority:
 the 39-added/2-missing CPV drift still requires regeneration of mutation policy,
 kernel/lifecycle decisions, lanes, fingerprints, policy bindings, and framework
 authority before any profile or generation wave can start.
+
+## 2026-09-27 reviewed-generation classification boundary
+
+The reviewed 1,344-CPV inventory was classified without activating authority.
+Kernel/lifecycle classification covers all 1,344 CPVs (10 explicit
+`kernel-policy-exclusion`, 1,334 userspace transactions) and binds inventory
+SHA-256 `e1dff264df964036ca37702ff458e3d20db3aa5a2204e1cba9055efe24414c60`.
+The mutation-policy verifier passed for all 1,344 records; its SHA-256 is
+`5b411554710569749be74c1b841e5e3db83fff1cd26e6f7c655730fe1e70e61e`.
+Backend correlation was regenerated from the live VDB/ebuild tree for all 1,344
+CPVs. Lane assignment now has no pending classifications after reviewed
+source/proprietary/toolchain decisions: 538 `pgo-clang-ir`, 20 `pgo-rust`,
+6 `pgo-go`, 1 `pgo-gcc`, 249 unsupported/prebuilt, 520 not-applicable, and
+10 kernel-policy exclusions. The lane report SHA-256 is
+`70b5af72ab01d9e0faf094a7e88284efbb5c3f0ec5fd4e2cf48a007280616ab4`.
+Optimization-set generation completed, but fingerprints, policy bindings,
+framework installation, and final authority verification remain outstanding;
+no wave was started.
