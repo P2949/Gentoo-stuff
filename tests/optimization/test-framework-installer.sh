@@ -1654,6 +1654,7 @@ grep -Fq 'usage:' "${shell_helper_log}"
 GENTOO_OPT_TEST_QA_GENERATION=old-bound
 GENTOO_OPT_TEST_MODE=1
 GENTOO_OPT_ABI_GUARD=/bin/true
+GENTOO_OPT_INSTRUMENTATION_CHECKER=/bin/true
 source "${qa_bootstrap}"
 [[ ${GENTOO_OPT_TEST_QA_GENERATION} == old-bound ]]
 die() { return 98; }
