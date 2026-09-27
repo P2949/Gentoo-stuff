@@ -9429,3 +9429,8 @@ Raw profile-spool compaction now durably publishes both its archive manifest
 and optional retirement receipt with file and parent-directory fsyncs. The
 focused spool-compaction regression passes, preserving the existing
 reconstruction check before expanded-spool retirement.
+
+The storage baseline inventory publisher now uses the same durable temporary
+write, file fsync, atomic replace, and parent-directory fsync sequence. A
+temporary-directory inventory fixture passed, so capacity evidence cannot be
+reported before its JSON file is durable.
