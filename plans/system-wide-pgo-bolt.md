@@ -9013,4 +9013,5 @@ installer mode was added for this authenticated generation-independent helper
 migration; it remains root/install-only and ordinary upgrades still retain the
 stable-bootstrap compatibility gate. The live framework was republished through
 that migration path and its install manifest verification passed. Full
-installer integration is still being rerun at this source boundary.
+installer integration then completed successfully with the snapshot,
+publication, rollback, and generation-bound QA race fixture green.
