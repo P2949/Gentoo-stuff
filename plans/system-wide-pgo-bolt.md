@@ -9808,3 +9808,14 @@ coherent retry closure: several members have fresh source or fetch failures,
 and others have preserved ABI or install-QA failures from the terminal
 transaction. Those failures remain pending narrow remediation rather than an
 unchanged bulk retry.
+
+## 2026-09-30 post-baseline storage preflight
+
+After the terminal userspace transaction and build-tree retirement, the
+fail-closed storage preflight was rerun before any further package action. It
+passed with 165,842,157,568 bytes free (17.1696%) against the configured
+100 GiB and 12% floors. The root-owned report is
+`/var/lib/gentoo-optimization/reports/storage-preflight-post-baseline-20260930.json`
+(SHA-256
+`91967b68d3feeedb977f8ef11dedc9358ea76803630f276a1bb144f266ce6eed`). No
+mutation or garbage collection occurred during this verification.
