@@ -281,6 +281,8 @@ declare -a HELPER_SOURCE_RELATIVE=(
     scripts/optimization/pgo/production-profile-lock-transaction.py
     scripts/optimization/pgo/authorization-token-scan.py
     scripts/optimization/lib/state.py
+    scripts/optimization/lib/instrumentation.py
+    scripts/optimization/lib/check-staged-instrumentation.py
     scripts/optimization/verify/reconcile-state.py
     scripts/optimization/verify/abi-guard.py
     scripts/optimization/recovery/verify-binpkg-snapshot.py
