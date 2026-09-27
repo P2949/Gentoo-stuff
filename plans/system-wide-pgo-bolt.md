@@ -8755,3 +8755,23 @@ bindings. The strict installer check reached the trusted-bootstrap migration
 boundary but refused because the installed helper bootstrap bytes do not yet
 match the reviewed invariant tree. No active framework or generation authority
 was replaced and no package wave was started.
+
+## 2026-09-27 framework migration and authority boundary
+
+The trusted bootstrap migration was repaired without bypassing manifest or helper
+byte checks. The installer now authenticates the previously deployed helper tree
+against its immutable active install manifest while allowing only the explicitly
+reviewed additive instrumentation helpers, each checked against the current
+renderer. The root-owned installer completed successfully and the independent
+strict `--check` also passed. Active framework is now
+`framework-bd6daeb74b4742adda2a3bda70796056ed7b360a48a0d96d11968ea2a06d2cc9`.
+
+The reviewed current generation was then activated and independently verified:
+`phase3-live-candidate-20260927-reviewed`, inventory SHA-256
+`e1dff264df964036ca37702ff458e3d20db3aa5a2204e1cba9055efe24414c60`.
+The authorization receipt is
+`/var/lib/gentoo-optimization/phase3-generation-authorization-20260927-reviewed.json`.
+Scheduling against the current package state, corrected bindings, and retained
+workload records selected zero rows because no representative training recipe
+has yet supplied the required current-generation counter proof. No package wave
+was started.
