@@ -9819,3 +9819,17 @@ passed with 165,842,157,568 bytes free (17.1696%) against the configured
 (SHA-256
 `91967b68d3feeedb977f8ef11dedc9358ea76803630f276a1bb144f266ce6eed`). No
 mutation or garbage collection occurred during this verification.
+
+### 2026-09-30 narrow userspace baseline recovery: hyprutils
+
+The previous `gui-libs/hyprutils-9999::hyproverlay` failure was an unpack
+fetch timeout, not a compiler or ABI failure. After repository synchronization
+and a successful direct `git ls-remote` probe, an exact fetch-only admission
+was run followed by an exact optimization-off `--nodeps` transaction. The
+package fetched, built, passed install-QA and the exported-ABI guard, and
+merged successfully. The machine-readable post-merge identity report is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-hyprutils-fetch-recovery-20260930.json`
+(SHA-256
+`627a10aad6071bbb49d47f00537b9b2a58e1592cbed51a097612a85139f8b23c`). This
+was a source-recovery retry after the fetch cause changed; no ABI failure was
+retried or bypassed.
