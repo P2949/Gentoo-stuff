@@ -35,7 +35,7 @@ if [[ ${qa_generation} == "${qa_implementation}" ]]; then
 fi
 [[ ${qa_generation} == /* && -d ${qa_generation} ]] || \
     gentoo_opt_hook_abort 'QA implementation generation root is unavailable'
-abi_guard=${qa_generation}/scripts/optimization/verify/abi-guard.py
+abi_guard=${qa_generation}/libexec/scripts/optimization/verify/abi-guard.py
 if [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 || -n ${GENTOO_OPT_ABI_GUARD:-} ]]; then
     [[ -z ${EBUILD_PHASE-} ]] || \
         gentoo_opt_hook_abort 'test-only ABI guard override is forbidden in an ebuild phase'
@@ -63,7 +63,7 @@ unset hook_ed hook_root
 # Instrumented ELF payloads are only admissible for an explicitly targeted
 # generation transaction.  Ordinary/off/profile-use installs must never admit
 # generation markers, even when runtime output was redirected to /dev/null.
-instrumentation_checker=${qa_generation}/scripts/optimization/lib/check-staged-instrumentation.py
+instrumentation_checker=${qa_generation}/libexec/scripts/optimization/lib/check-staged-instrumentation.py
 [[ -x ${instrumentation_checker} ]] || gentoo_opt_hook_abort 'staged instrumentation checker is missing'
 instrumentation_rc=0
 "${instrumentation_checker}" "${ED:-${D:-.}}" || instrumentation_rc=$?
