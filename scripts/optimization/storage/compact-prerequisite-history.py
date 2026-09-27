@@ -10,6 +10,7 @@ transactions and refuses ambiguous or active state.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -87,6 +88,24 @@ def free_bytes(path: Path) -> int:
     return stat.f_bavail * stat.f_frsize
 
 
+def acquire_lock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        raise SystemExit(f"REFUSED: active storage lock {path}")
+    return handle
+
+
+def active_portage() -> bool:
+    for name in ("emerge", "ebuild", "quickpkg"):
+        if subprocess.run(["pgrep", "-x", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0:
+            return True
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--transactions", type=Path, required=True)
@@ -94,11 +113,21 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--keep-child", action="append", default=[])
     parser.add_argument("--state-dir", type=Path, help="external durable prerequisite state directory")
+    parser.add_argument("--project-lock", type=Path)
+    parser.add_argument("--generation-lock", type=Path)
     args = parser.parse_args()
     root = args.transactions.resolve()
     if not root.is_dir():
         raise SystemExit("REFUSED: prerequisite transaction root is not a directory")
     keep = set(args.keep_child)
+    locks = []
+    if args.execute:
+        if active_portage():
+            raise SystemExit("REFUSED: active Portage transaction")
+        project_lock = args.project_lock or Path("/run/gentoo-optimization/project.lock")
+        generation_lock = args.generation_lock or Path("/run/gentoo-optimization/generation.lock")
+        if os.geteuid() == 0 or args.project_lock or args.generation_lock:
+            locks = [acquire_lock(project_lock), acquire_lock(generation_lock)]
     free_before = free_bytes(root)
     rows: list[dict[str, object]] = []
     state_dir = args.state_dir.resolve() if args.state_dir else None
@@ -123,6 +152,8 @@ def main() -> int:
                     continue
                 path = tx / str(child["name"])
                 quarantine = tx / ("." + str(child["name"]) + ".retiring." + str(os.getpid()))
+                prepared = {"schema": "gentoo-optimization-prerequisite-retirement-prepared-v1", "timestamp": int(time.time()), "transaction_id": tx.name, "child": child, "source": str(path), "quarantine": str(quarantine)}
+                durable_write(args.receipt.with_suffix(args.receipt.suffix + ".prepared.json"), prepared)
                 os.replace(path, quarantine)
                 retired.append({"transaction_id": tx.name, "name": child["name"], "before": child, "quarantine": str(quarantine)})
     free_after = free_bytes(root)
@@ -133,6 +164,8 @@ def main() -> int:
             quarantine = Path(str(row["quarantine"]))
             if quarantine.exists():
                 shutil.rmtree(quarantine)
+    for handle in locks:
+        handle.close()
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
