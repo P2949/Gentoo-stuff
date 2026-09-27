@@ -9478,3 +9478,7 @@ A bounded post-cleanup inventory was captured for ccache, ThinLTO, live distfile
 ### 2026-09-27 storage preflight after cache bounding
 
 The live fail-closed storage preflight was rerun after ccache/ThinLTO cleanup with the configured initial floors of 100 GiB and 12% free space. It passed: `/` has 175,488,151,552 bytes free (18.1682%). Durable report: `/var/lib/gentoo-optimization/reports/storage-preflight-cache-bounds-20260927.json`. No mutation occurred during this verification.
+
+### 2026-09-27 stale distfile lock cleanup
+
+With no active `emerge` or `ebuild` process, the distfile cache contained one zero-byte lock artifact dated 2026-09-20: `.llvm-project-23.1.1.src.tar.xz.portage_lockfile`. It was retired as a stale lock only; no source tree or payload archive was touched. Durable record: `/var/lib/gentoo-optimization/reports/distfile-stale-lock-retirement-20260927.json`. The remaining distfile cache remains protected pending an authenticated source-aware retention set.
