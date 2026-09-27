@@ -28,7 +28,13 @@ def main():
       break
   if identity_root:
    key=x['cpv'].replace('/','_')
-   fingerprint=any(os.path.isfile(os.path.join(identity_root, candidate)) for candidate in (os.path.join(key,'fingerprint.env'), key+'.fingerprint.env'))
+   candidates=(os.path.join(identity_root,key,'fingerprint.env'), os.path.join(identity_root,key+'.fingerprint.env'))
+   fingerprint=False
+   for candidate in candidates:
+    if os.path.isfile(candidate):
+     values={line.rstrip('\n').split('=',1)[0]:line.rstrip('\n').split('=',1)[1] for line in open(candidate,encoding='utf-8') if '=' in line}
+     fingerprint = values.get('fingerprint') == x.get('identity_sha256')
+     break
   else:
    fingerprint=True
   ok=x['cpv'] in m and x['compiler_sha256']==i[{'pgo-clang-ir':'clang','pgo-gcc':'gcc','pgo-rust':'rustc','pgo-go':'go'}[x['lane']]]['sha256'] and (safe or a.mode == 'exhaustive-generation') and fingerprint

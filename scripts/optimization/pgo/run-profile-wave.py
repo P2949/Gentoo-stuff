@@ -131,7 +131,7 @@ def main():
   for item in w['packages']:
    cpv=item['cpv']; fingerprint_file=fingerprint_path(cpv)
    attempt_id=w['sha256']+'-'+cpv.replace('/','_')+'-'+hashlib.sha256(os.urandom(16)).hexdigest()[:16]
-   _active_attempt={'record_type':'profile-wave-package-attempt','schema_version':1,'attempt_id':attempt_id,'wave_sha256':w['sha256'],'cpv':cpv,'lane':item.get('lane'),'state':'started','started_at':time.time(),'generation':expected_generation,'framework_generation':active,'profile_path':item.get('profile_path'),'pre_transaction_identity':item.get('fingerprint')}
+   _active_attempt={'record_type':'profile-wave-package-attempt','schema_version':1,'attempt_id':attempt_id,'wave_sha256':w['sha256'],'cpv':cpv,'lane':item.get('lane'),'state':'started','started_at':time.time(),'generation':expected_generation,'framework_generation':active,'profile_path':item.get('profile_path'),'pre_transaction_identity':item.get('identity_sha256')}
    _write_attempt(_active_attempt)
    if not os.path.isfile(fingerprint_file):
     raise SystemExit(f'REFUSED: missing reviewed fingerprint file for {cpv}: {fingerprint_file}')
@@ -233,7 +233,7 @@ def main():
    if a.mode == 'exhaustive-generation':
     recipe_records=[]
     package_records.append({'cpv':cpv,'lane':item.get('lane'),'attempt_id':attempt_id,
-                            'pre_transaction_fingerprint':item.get('fingerprint'),
+                            'pre_transaction_fingerprint':item.get('identity_sha256'),
                             'profile_spool':profile_path,'profile_payloads':[],
                             'recipe_records':[],'state':'generation-installed'})
     _active_attempt['state']='completed'; _active_attempt['completed_at']=time.time(); _active_attempt['profile_payloads']=[]; _write_attempt(_active_attempt); _active_attempt=None
@@ -422,7 +422,7 @@ def main():
    payloads=[x for x in payloads if x['cpv'] != cpv]
    package_payloads=[{'cpv':x['cpv'],'path':x['path'],'sha256':x['sha256'],'size':x['size']} for x in sealed]
    payloads.extend(package_payloads)
-   package_records.append({'cpv':cpv,'lane':item.get('lane'),'attempt_id':attempt_id,'pre_transaction_fingerprint':item.get('fingerprint'),'profile_spool':profile_path,'profile_payloads':package_payloads,'recipe_records':recipe_records})
+   package_records.append({'cpv':cpv,'lane':item.get('lane'),'attempt_id':attempt_id,'pre_transaction_fingerprint':item.get('identity_sha256'),'profile_spool':profile_path,'profile_payloads':package_payloads,'recipe_records':recipe_records})
    _active_attempt['state']='completed'; _active_attempt['completed_at']=time.time(); _active_attempt['profile_payloads']=package_payloads; _write_attempt(_active_attempt); _active_attempt=None
  if not payloads and a.mode != 'exhaustive-generation':
   raise SystemExit('REFUSED: completed package transactions produced no profile payloads')
