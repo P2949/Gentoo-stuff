@@ -8810,3 +8810,22 @@ suite was rerun at the coherent source boundary. Python/unit and script-backed
 optimization tests completed with 374 tests run, 8 explicit skips, and zero
 failures. The separate representative workload gate remains intentionally open;
 this green test result does not authorize a profile wave by itself.
+
+## 2026-09-27 exhaustive-generation transaction boundary
+
+A separate `exhaustive-generation` scheduler/readiness mode was added so
+post-generation provider identity can be established without treating smoke
+recipes as representative training. The first bounded exact wave installed
+`app-admin/doas-6.8.2` and `app-admin/sysklogd-2.7.2` under the authorized
+Clang generate lane with `--nodeps`; both exact transactions completed and the
+receipt was independently verified as a generation-install receipt with empty
+profile payloads. The receipt is
+`/var/lib/gentoo-optimization/reports/exhaustive-generation-wave-20260927d.json`.
+
+The wave exposed and fixed two real defects before completion: fingerprint
+inputs must live inside the root-owned generation namespace, and staged
+instrumentation inspection must treat ordinary non-ELF files whose readelf
+reports a missing magic number as clean. Failed attempts remain preserved in
+the profile-attempt ledger. This generation-install boundary does not claim
+representative PGO training or profile-use success; fresh provider identities
+must now be rebound from the live VDB before any workload wave.
