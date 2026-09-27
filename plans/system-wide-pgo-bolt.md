@@ -8860,3 +8860,11 @@ fresh identities produced 49 resolved recipes and 981 unresolved records across
 `6ef4e2a38b059d9aff1034310be7f3b023cef1132b8ec2cc32ad56a606ee3e83`). These
 records establish provider identity only; smoke recipes remain provisional and
 do not close the representative-training gate.
+
+## 2026-09-27 coherent-source full validation
+
+At the post-build-ID source boundary, the complete optimization unittest suite
+was rerun with `PATH=/usr/bin:/bin`: 374 tests ran, 8 explicit skips, and zero
+failures in 89.903 seconds. Focused detector, scheduler, and provider-resolution
+checks also passed. This validates the source changes and evidence plumbing; it
+does not close the separate representative workload or BOLT execution gates.
