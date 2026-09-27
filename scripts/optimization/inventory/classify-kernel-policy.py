@@ -7,12 +7,13 @@ CONTENTS proves ownership of a forbidden boot/kernel artifact.
 """
 import argparse, hashlib, json, re, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
+from contents import parse_contents_line
 try:
  import portage
  from portage.versions import catpkgsplit
 except ImportError:
  portage=None
- sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
  from cpv import catpkgsplit
 FORBIDDEN=re.compile(r'(/boot/|/efi/|/sys/firmware/efi|/etc/kernel/)',re.I)
 LIFECYCLE_HINT=re.compile(r'(initramfs|dracut|installkernel|efibootmgr|bootctl|grub-install)',re.I)
@@ -35,23 +36,11 @@ def main():
   cont=root/'CONTENTS'
   if cont.is_file():
    for line in cont.read_text(errors='replace').splitlines():
-    fields=line.rstrip('\n').split(' ', 1)
-    if len(fields) != 2: raise SystemExit(f'REFUSED: malformed CONTENTS record for {cpv}')
-    kind, rest = fields
-    if kind == 'obj':
-     parts=rest.rsplit(' ', 2)
-     if len(parts) == 3:
-      path=parts[0]
-     elif len(parts) == 2 and parts[1]:
-      # Minimal fixtures and older VDBs may omit mtime; the path remains the
-      # first token only after the final digest separator.
-      path=parts[0]
-     else: raise SystemExit(f'REFUSED: malformed obj CONTENTS record for {cpv}')
-     if FORBIDDEN.search(path): evidence.append(path)
-    elif kind == 'sym':
-     if ' -> ' not in rest: raise SystemExit(f'REFUSED: malformed sym CONTENTS record for {cpv}')
-     path=rest.split(' -> ', 1)[0]
-     if FORBIDDEN.search(path): evidence.append(path)
+    try:
+     parsed=parse_contents_line(line)
+    except ValueError as exc:
+     raise SystemExit(f'REFUSED: malformed CONTENTS record for {cpv}: {exc}')
+    if parsed and FORBIDDEN.search(parsed[1]): evidence.append(parsed[1])
   # Locate the exact ebuild by CPV filename; source repositories are evidence,
   # not category policy.  Failure to locate it is explicit pending review.
   if Path(a.output).exists(): raise SystemExit('REFUSED: kernel-policy output already exists')
