@@ -9706,6 +9706,18 @@ The root filesystem returned to approximately 156 GiB free / 83% used; no
 protected profile, recovery, binpkg, boot, kernel, EFI, initramfs, or firmware
 state was changed.
 
+With the build root retired and storage back above the operational floor, a
+fresh `@world` pretend was run after the signed repository synchronization.
+The resolver completed successfully in 24.13 seconds and its complete output
+is retained at
+`/var/lib/gentoo-optimization/reports/world-pretend-20260927-post-retirement.txt`
+(SHA-256
+`c6a760804986b1f233cb4b2c2216ab3bb9c7dadbf81855dd32dbd12ff9090798`).
+The result includes userspace upgrades and a separate kernel/lifecycle closure
+(including firmware, kernel sources, dracut, and installkernel); no operation
+was executed from this pretend. The userspace and kernel-policy partitions
+must be derived from the canonical mutation policy before the next transaction.
+
 The post-interruption binpkg retention dry-run was rerun against the complete
 optimization reference root, live VDB, and recovery indexes. Report
 `/var/lib/gentoo-optimization/reports/binpkg-retention-20260927-post-interrupt.json`
