@@ -9236,3 +9236,20 @@ publication, or profile-use deployment was made. The complete retained log is
 `/var/tmp/gentoo-portage-build/portage/media-libs/dav1d-9999/temp/build.log`;
 the failure remains a package/multilib configure remediation item and was not
 retried unchanged.
+
+## 2026-09-27 libjxl representative training canary
+
+The `media-libs/libjxl-9999` GCC representative canary completed both multilib
+compilations and merged the exact CPV, but the runner rejected the resulting
+raw profile payload as invalid because
+`jxl_extras_core-obj.dir/extras/common.cc.gcda` contained truncated profile data.
+The first two attempts were also correctly refused before workload execution
+because their predeclared provider build IDs were stale after the
+attempt-specific rebuild. A third immutable attempt removed the unstable
+predeclared IDs and resolved provider IDs after installation; it reached the
+workload/profile validation boundary, where the truncated GCC payload was
+identified. No receipt, merged profile, or authoritative training evidence was
+published. The failed attempt record is retained under the generation's
+`profile-wave-attempt-libjxl-training-v3` directory. This is a package/profile
+payload integrity failure requiring diagnosis of GCC multilib profile writing;
+it was not retried unchanged.
