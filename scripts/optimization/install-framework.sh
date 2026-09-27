@@ -1443,7 +1443,7 @@ validate_generated_policy_grammar() {
         [[ ! ${package_version} =~ ^${package_re}-${version_revision_re}-${version_revision_re}$ ]] || \
             fail "generated package.env atom is not canonical =CPV: ${atom}"
         [[ -n ${FROZEN_CPVS["${cpv}"]+x} ]] || \
-            fail "generated package.env atom is absent from the frozen inventory: ${atom}"
+            fail "strict frozen-inventory semantic validation failed: generated package.env atom is absent from the frozen inventory: ${atom}"
         [[ ${environment} =~ ^optimization/generated/([A-Za-z0-9][A-Za-z0-9_.-]*\.conf)$ ]] || \
             fail "generated environment path escapes optimization/generated: ${environment}"
         basename=${BASH_REMATCH[1]}
