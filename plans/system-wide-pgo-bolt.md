@@ -8706,3 +8706,19 @@ with 1,344 package records, 688,254 paths, 80,733 directories, and 268
 unresolved directory records caused by newly observed paths outside the prior
 directory review. No generation authority was updated and no package wave was
 started.
+
+## 2026-09-27 reviewed live inventory boundary
+
+The 268 newly observed directory identities were independently reviewed from
+root-owned filesystem metadata and merged with the prior directory review.
+The resulting review is `/var/lib/gentoo-optimization/reports/frozen-directory-review-20260927.json`
+(SHA-256 `f409f31895e456c69b0fdd20326552e4bfcfc05db522b22f77f9539f5a23b8c5`).
+Regenerating the live inventory against that review produced
+`/var/lib/gentoo-optimization/reports/phase3-live-current-20260927-reviewed.json`
+(SHA-256 `e1dff264df964036ca37702ff458e3d20db3aa5a2204e1cba9055efe24414c60`)
+with 1,344 CPVs, 688,254 owned paths, 80,733 owned directories, and zero
+unresolved directories. The frozen-inventory verifier passed (exit 0).
+This is a verified current-state inventory, not yet a generation authority:
+the 39-added/2-missing CPV drift still requires regeneration of mutation policy,
+kernel/lifecycle decisions, lanes, fingerprints, policy bindings, and framework
+authority before any profile or generation wave can start.
