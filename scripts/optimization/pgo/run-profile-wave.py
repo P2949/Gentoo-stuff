@@ -270,10 +270,16 @@ def main():
      stdin_handle=open(canonical,'rb')
     start=time.monotonic()
     before_payloads=sorted(str(p) for p in Path(profile_path).rglob('*') if p.is_file())
-    output_path=Path('/tmp/gentoo-optimization-workload-logs') / (hashlib.sha256((cpv+'\0'+path).encode()).hexdigest()+'.log')
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    recipe_id=f'{cpv}:{recipe_index}:{hashlib.sha256(json.dumps(recipe,sort_keys=True,separators=(",",":")).encode()).hexdigest()[:16]}'
+    # Logs are attempt evidence.  Keep them under the authenticated attempt
+    # root and key them by the complete recipe identity; a package may have
+    # multiple recipes for one executable and those records must never
+    # overwrite one another.
+    output_path=Path(_attempt_root) / attempt_id / 'logs' / (hashlib.sha256(recipe_id.encode()).hexdigest()+'.log')
+    subprocess.run(['doas','install','-d','-o','root','-g','root','-m','0750','--',str(output_path.parent)],check=True)
     try:
-     with output_path.open('w', encoding='utf-8', errors='replace') as workload_log:
+     fd=os.open(output_path, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o640)
+     with os.fdopen(fd,'w', encoding='utf-8', errors='replace') as workload_log:
       proc=subprocess.Popen(argv,cwd=recipe.get('cwd','/'),env=run_env,text=True,stdout=workload_log,stderr=subprocess.STDOUT,stdin=stdin_handle, start_new_session=True)
       try:
        proc.wait(timeout=min(int(recipe.get('timeout_seconds',300)), 3600))
@@ -324,7 +330,7 @@ def main():
        matching_payloads.append(payload)
      if not matching_payloads:
       raise SystemExit(f'REFUSED: raw profile payloads lack rebuilt provider build ID for {cpv}: {resolved_provider_id}')
-    recipe_records.append({'recipe_id':f'{cpv}:{recipe_index}:{hashlib.sha256(json.dumps(recipe,sort_keys=True,separators=(",",":")).encode()).hexdigest()[:16]}',
+    recipe_records.append({'recipe_id':recipe_id,
                            'purpose':recipe.get('purpose','smoke'), 'recipe':recipe,
                            'log_path':str(output_path), 'log_sha256':hashlib.sha256(output_path.read_bytes()).hexdigest(),
                            'exit_status':result.returncode, 'duration_seconds':round(time.monotonic()-start,6),
