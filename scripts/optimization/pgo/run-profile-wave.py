@@ -307,12 +307,22 @@ def main():
     after_payloads=sorted(str(p) for p in Path(profile_path).rglob('*') if p.is_file())
     new_payload_paths=sorted(set(after_payloads)-set(before_payloads))
     matching_payloads=[]
-    for payload in new_payload_paths:
-     ids=_profile_binary_ids(payload)
-     if resolved_provider_id in ids:
-      matching_payloads.append(payload)
-    if not matching_payloads:
-     raise SystemExit(f'REFUSED: raw profile payloads lack rebuilt provider build ID for {cpv}: {resolved_provider_id}')
+    if item.get('lane') == 'pgo-gcc':
+     # GCC gcda payloads are not LLVM raw profiles and cannot be inspected
+     # with llvm-profdata --binary-ids.  Require non-empty native gcda output;
+     # validate-profile.py performs the authoritative gcov-tool completeness
+     # and hot-file checks before admission.
+     matching_payloads=[payload for payload in new_payload_paths
+                        if payload.endswith('.gcda') and os.path.getsize(payload) > 0]
+     if not matching_payloads:
+      raise SystemExit(f'REFUSED: GCC workload emitted no non-empty gcda payload for {cpv}')
+    else:
+     for payload in new_payload_paths:
+      ids=_profile_binary_ids(payload)
+      if resolved_provider_id in ids:
+       matching_payloads.append(payload)
+     if not matching_payloads:
+      raise SystemExit(f'REFUSED: raw profile payloads lack rebuilt provider build ID for {cpv}: {resolved_provider_id}')
     recipe_records.append({'recipe_id':f'{cpv}:{recipe_index}:{hashlib.sha256(json.dumps(recipe,sort_keys=True,separators=(",",":")).encode()).hexdigest()[:16]}',
                            'purpose':recipe.get('purpose','smoke'), 'recipe':recipe,
                            'log_path':str(output_path), 'log_sha256':hashlib.sha256(output_path.read_bytes()).hexdigest(),
