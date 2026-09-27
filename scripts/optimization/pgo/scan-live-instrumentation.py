@@ -33,44 +33,26 @@ def _readelf(path: str) -> tuple[int, str]:
 
 def inspect(item: dict) -> dict:
     path = item["path"]
-    result = {
-        "owner_cpv": item["owner_cpv"],
-        "path": path,
-        "kind": item.get("kind"),
-        "instrumentation_markers": [],
-        "build_id": None,
-        "elf_type": None,
-        "status": "clean-normal",
-        "error": None,
-    }
+    result = {"owner_cpv": item["owner_cpv"], "path": path, "kind": item.get("kind"),
+              "instrumentation_markers": [], "build_id": None, "elf_type": None,
+              "status": "clean-normal", "error": None}
     try:
-        rc, text = _readelf(path)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        result["status"] = "instrumentation-unknown-origin"
-        result["error"] = f"readelf: {exc}"
-        return result
-    if rc != 0:
-        result["status"] = "instrumentation-unknown-origin"
-        result["error"] = f"readelf exit {rc}"
-        return result
-    type_match = re.search(r"Type:\s+([^\n]+)", text)
-    if type_match:
-        result["elf_type"] = type_match.group(1).strip()
-    build_match = re.search(r"Build ID:\s*([0-9A-Fa-f]+)", text)
-    if build_match:
-        result["build_id"] = build_match.group(1).lower()
-    markers = []
-    for section in ("__llvm_prf_cnts", "__llvm_prf_data", "__llvm_prf_names",
-                    "__llvm_prf_vnds", "__llvm_prf_vtab", "__llvm_prf_bits",
-                    "__llvm_covmap", "__llvm_covfun"):
-        if re.search(rf"\b{re.escape(section)}\b", text):
-            markers.append(section)
-    for marker in ("__gcov_init", "__gcov_exit", "__gcov_merge_", "__gcov_"):
-        if marker in text:
-            markers.append(marker)
-    result["instrumentation_markers"] = sorted(set(markers))
-    if markers:
-        result["status"] = "instrumented-unknown-origin"
+        instrumented, kind = _detector.inspect_elf(Path(path))
+        meta = subprocess.run(["/usr/bin/readelf", "-h", "--", path], stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, check=False, timeout=30, text=True)
+        if meta.returncode != 0:
+            raise _detector.InspectionError(f"readelf metadata exit {meta.returncode}: {meta.stderr.strip()}")
+        text = meta.stdout
+        type_match = re.search(r"Type:\s+([^\n]+)", text)
+        if type_match: result["elf_type"] = type_match.group(1).strip()
+        build_match = re.search(r"Build ID:\s*([0-9A-Fa-f]+)", text)
+        if build_match: result["build_id"] = build_match.group(1).lower()
+        if instrumented:
+            result["instrumentation_markers"] = [_detector.LLVM_MARKERS[0] if kind == "llvm" else _detector.GCC_MARKERS[0]]
+            result["status"] = "instrumented-unknown-origin"
+    except (OSError, subprocess.TimeoutExpired, _detector.InspectionError) as exc:
+        result["status"] = "instrumentation-inspection-failed"
+        result["error"] = str(exc)
     return result
 
 

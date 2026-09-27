@@ -30,8 +30,10 @@ def main():
             recipe['expected_provider_artifacts']=recipe.get('expected_provider_artifacts') or [path]
             out_recipes.append(recipe)
         nr['recipes']=out_recipes
-        if out_recipes and row.get('state') in {'smoke-ready','training-ready'}:
+        if out_recipes and row.get('state') == 'training-ready':
             nr['state']='direct-training-ready'; nr['purpose']='training'
+        elif out_recipes and row.get('state') == 'smoke-ready':
+            nr['state']='smoke-provider-bound'; nr['purpose']='smoke'
         elif not out_recipes and row.get('state') not in {'terminal-workload-exclusion'}:
             nr['state']='needs-training-workload'
         rows.append(nr)

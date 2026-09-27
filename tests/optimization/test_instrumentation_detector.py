@@ -9,6 +9,7 @@ detector=importlib.util.module_from_spec(spec); spec.loader.exec_module(detector
 
 def main():
     p=Path('/tmp/detector-fixture')
+    p.write_bytes(b'\x7fELFfixture')
     with patch('subprocess.run', return_value=subprocess.CompletedProcess([],0,'clean ELF','')):
         assert detector.inspect_elf(p)==(False,'elf')
     with patch('subprocess.run', return_value=subprocess.CompletedProcess([],0,'__llvm_prf_data','')):

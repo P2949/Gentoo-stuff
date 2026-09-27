@@ -23,7 +23,7 @@ def inspect_elf(path: pathlib.Path, timeout: float = 10.0) -> tuple[bool, str]:
     # fail closed because the probe itself is not silently swallowed.
     try:
         with path.open("rb") as stream:
-            if stream.read(4) != b"\\x7fELF":
+            if stream.read(4) != b"\x7fELF":
                 return False, "non-elf"
     except OSError as exc:
         raise InspectionError(f"cannot read staged file {path}: {exc}") from exc
@@ -36,11 +36,6 @@ def inspect_elf(path: pathlib.Path, timeout: float = 10.0) -> tuple[bool, str]:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise InspectionError(f"readelf failed for {path}: {exc}") from exc
     if result.returncode != 0:
-        # A positively non-ELF file is clean; all other inspection failures are fatal.
-        if ("File format not recognized" in result.stderr or
-                "Not an ELF" in result.stderr or
-                "Failed to read file's magic number" in result.stderr):
-            return False, "non-elf"
         raise InspectionError(f"readelf returned {result.returncode} for {path}: {result.stderr.strip()}")
     data = result.stdout
     for marker in LLVM_MARKERS:

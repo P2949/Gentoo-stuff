@@ -34,6 +34,7 @@ def main():
    continue
   recipes=[]
   for e in x['entrypoints']:
+   stdin_path = None
    # Baseline artifacts may not have a build ID.  That is a post-generation
    # capture requirement, not a reason to discard the semantic workload plan.
    # The runner resolves and binds the rebuilt provider identity before use.
@@ -146,9 +147,9 @@ def main():
    if safe:
     recipe={'path':p,'build_id':e.get('build_id'),'provider_identity':'post-generation-required','argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'timeout_seconds':300,'execution_state':'not-run'}
     if x['cpv'].startswith('app-crypt/argon2-') and p == '/usr/bin/argon2':
-     recipe['stdin_path']=stdin_path
+     if stdin_path is not None: recipe['stdin_path']=stdin_path
     if p in {'/usr/bin/evtest','/usr/bin/scdoc'}:
-     recipe['stdin_path']=stdin_path
+     if stdin_path is not None: recipe['stdin_path']=stdin_path
     recipes.append(recipe)
   for recipe in recipes:
    recipe.setdefault('timeout_seconds', 300)
