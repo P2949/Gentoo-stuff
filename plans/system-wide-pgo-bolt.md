@@ -9750,3 +9750,12 @@ The transaction recorded exported-ABI guard failures for
 `media-video/ffmpeg-9.0.2` and `media-libs/libde265-1.1.3`; those attempts
 remain preserved for later narrow remediation. No kernel, boot, EFI,
 initramfs, or firmware state was touched.
+
+The initial partition record above was superseded before execution because it
+did not apply the repository's immutable kernel/firmware boundary to the
+unresolved CPs. The corrected authoritative partition is
+`/var/lib/gentoo-optimization/reports/world-pretend-mutation-partition-20260927-v2.json`
+(SHA-256
+`b1b4ebd36cc5736b30620da005927b27c66802d07a51ab2319e0e6528e21de5b`). It
+contains 56 userspace operations and 9 `kernel-policy-exclusion` operations;
+only the userspace partition was admitted to the subsequent transaction.
