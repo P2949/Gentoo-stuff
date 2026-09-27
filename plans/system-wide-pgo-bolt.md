@@ -9862,3 +9862,20 @@ retirement helper ran in execute mode with zero remaining logs and removed the
 inactive `/var/tmp/gentoo-portage-build` root. Its receipt is
 `/var/lib/gentoo-optimization/reports/portage-build-retirement-vim-20260930.json`
 (SHA-256 `fec750ca3c108d4a89558841568f3afc98610f5187d7c34539a6ed1b31aac63f`).
+
+### 2026-09-30 narrow baseline failure: hyprtoolkit ABI preservation
+
+After `gui-libs/hyprutils-9999` was recovered, an exact optimization-off
+`--nodeps` retry of `gui-libs/hyprtoolkit-9999::hyproverlay` fetched and
+compiled successfully but was rejected by the fail-closed exported-ABI guard.
+The replacement `libhyprtoolkit.so.6` has 2,349 observed exports versus 2,348
+in the installed provider and is missing eleven established
+`preferredSize(const Hyprutils::Math::Vector2D&)` symbols. No merge was
+admitted and the guard was not weakened. The preserved build log is
+`/var/lib/gentoo-optimization/reports/package-failures/gui-libs-hyprtoolkit-9999/build.log`
+(SHA-256 `aed0446befe57c8d9f9b06364151e20bd8f1554cca8ac3fec430cef30b990436`);
+the structured ABI failure record is
+`/var/lib/gentoo-optimization/reports/package-failures/gui-libs-hyprtoolkit-9999/abi-failure.json`
+(SHA-256 `13dfa92ea6545780f734d71a20bb0b59ccc225e1d7ca0293a6c97d4c5e9c0658`).
+This remains a package-local ABI remediation item, not a terminal success or
+an unchanged retry authorization.
