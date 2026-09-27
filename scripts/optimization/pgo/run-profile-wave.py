@@ -13,6 +13,15 @@ def _provider_build_id(path):
  if not match:
   raise SystemExit(f'REFUSED: generated provider has no build ID: {path}')
  return match.group(1).lower()
+
+def _profile_binary_ids(path):
+ try:
+  out=subprocess.run(['llvm-profdata','show','--binary-ids',path],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,check=False,timeout=30)
+ except (OSError,subprocess.TimeoutExpired) as exc:
+  raise SystemExit(f'REFUSED: profile binary-ID inspection failed for {path}: {exc}')
+ if out.returncode != 0:
+  raise SystemExit(f'REFUSED: invalid raw profile {path}: {out.stderr.strip()}')
+ return {x.lower() for x in re.findall(r'\b[0-9a-fA-F]{8,64}\b',out.stdout)}
 from profile_locks import profile_lock_hierarchy
 # The orchestration process itself must never emit package profile payloads.
 # An unset LLVM_PROFILE_FILE is unsafe for an instrumented helper: LLVM then
@@ -273,15 +282,24 @@ def main():
     if not output_text and not recipe.get('allow_empty_output',False):
      raise SystemExit(f'REFUSED: workload recipe produced no output for {cpv}: {path}')
     after_payloads=sorted(str(p) for p in Path(profile_path).rglob('*') if p.is_file())
+    new_payload_paths=sorted(set(after_payloads)-set(before_payloads))
+    matching_payloads=[]
+    for payload in new_payload_paths:
+     ids=_profile_binary_ids(payload)
+     if resolved_provider_id in ids:
+      matching_payloads.append(payload)
+    if not matching_payloads:
+     raise SystemExit(f'REFUSED: raw profile payloads lack rebuilt provider build ID for {cpv}: {resolved_provider_id}')
     recipe_records.append({'recipe_id':f'{cpv}:{recipe_index}:{hashlib.sha256(json.dumps(recipe,sort_keys=True,separators=(",",":")).encode()).hexdigest()[:16]}',
                            'purpose':recipe.get('purpose','smoke'), 'recipe':recipe,
                            'log_path':str(output_path), 'log_sha256':hashlib.sha256(output_path.read_bytes()).hexdigest(),
                            'exit_status':result.returncode, 'duration_seconds':round(time.monotonic()-start,6),
                            'profile_payloads_before':before_payloads, 'profile_payloads_after':after_payloads,
-                           'new_profile_payloads':sorted(set(after_payloads)-set(before_payloads)),
+                           'new_profile_payloads':new_payload_paths,
                            'expected_provider_artifacts':recipe.get('expected_provider_artifacts',[]),
                            'provider_build_id':resolved_provider_id,
-                           'counter_proof':'payload-emitted' if set(after_payloads)-set(before_payloads) else 'no-new-payload'})
+                           'matching_provider_payloads':matching_payloads,
+                           'counter_proof':'provider-binary-id-matched'})
    # Instrumented helper processes can flush their profile files just after
    # emerge returns.  Wait for the package spool to become quiescent before
    # sealing the receipt, otherwise a valid late payload becomes an
