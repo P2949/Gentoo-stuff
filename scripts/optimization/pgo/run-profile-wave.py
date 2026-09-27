@@ -28,6 +28,28 @@ def _profile_binary_ids(path):
  if out.returncode != 0:
   raise SystemExit(f'REFUSED: invalid raw profile {path}: {out.stderr.strip()}')
  return {x.lower() for x in re.findall(r'\b[0-9a-fA-F]{8,64}\b',out.stdout)}
+
+def _profile_payload_snapshot(root):
+ """Return immutable metadata for every payload currently under *root*."""
+ rows=[]
+ base=Path(root)
+ if not base.is_dir():
+  return rows
+ for path in sorted(p for p in base.rglob('*') if p.is_file()):
+  try:
+   digest=hashlib.sha256(path.read_bytes()).hexdigest()
+   rows.append({'path':str(path),'size':path.stat().st_size,'sha256':digest})
+  except OSError as exc:
+   raise SystemExit(f'REFUSED: profile payload snapshot failed for {path}: {exc}')
+ return rows
+
+def _profile_payload_delta(before, after):
+ old={row['path']:row for row in before}; new={row['path']:row for row in after}
+ created=[new[path] for path in sorted(set(new)-set(old))]
+ removed=[old[path] for path in sorted(set(old)-set(new))]
+ modified=[new[path] for path in sorted(set(old)&set(new)) if old[path]['sha256'] != new[path]['sha256'] or old[path]['size'] != new[path]['size']]
+ unchanged=[new[path] for path in sorted(set(old)&set(new)) if old[path] == new[path]]
+ return {'created':created,'modified':modified,'unchanged':unchanged,'removed':removed}
 from profile_locks import profile_lock_hierarchy
 # The orchestration process itself must never emit package profile payloads.
 # An unset LLVM_PROFILE_FILE is unsafe for an instrumented helper: LLVM then
@@ -269,7 +291,7 @@ def main():
       raise SystemExit(f'REFUSED: unsafe workload stdin fixture for {cpv}: {stdin_path}')
      stdin_handle=open(canonical,'rb')
     start=time.monotonic()
-    before_payloads=sorted(str(p) for p in Path(profile_path).rglob('*') if p.is_file())
+    before_payloads=_profile_payload_snapshot(profile_path)
     recipe_id=f'{cpv}:{recipe_index}:{hashlib.sha256(json.dumps(recipe,sort_keys=True,separators=(",",":")).encode()).hexdigest()[:16]}'
     # Logs are attempt evidence.  Keep them under the authenticated attempt
     # root and key them by the complete recipe identity; a package may have
@@ -311,8 +333,9 @@ def main():
     output_text=output_path.read_text(errors='replace')[-1024*1024:]
     if not output_text and not recipe.get('allow_empty_output',False):
      raise SystemExit(f'REFUSED: workload recipe produced no output for {cpv}: {path}')
-    after_payloads=sorted(str(p) for p in Path(profile_path).rglob('*') if p.is_file())
-    new_payload_paths=sorted(set(after_payloads)-set(before_payloads))
+    after_payloads=_profile_payload_snapshot(profile_path)
+    payload_delta=_profile_payload_delta(before_payloads,after_payloads)
+    new_payload_paths=[row['path'] for row in payload_delta['created'] + payload_delta['modified']]
     matching_payloads=[]
     if item.get('lane') == 'pgo-gcc':
      # GCC gcda payloads are not LLVM raw profiles and cannot be inspected
@@ -335,6 +358,7 @@ def main():
                            'log_path':str(output_path), 'log_sha256':hashlib.sha256(output_path.read_bytes()).hexdigest(),
                            'exit_status':result.returncode, 'duration_seconds':round(time.monotonic()-start,6),
                            'profile_payloads_before':before_payloads, 'profile_payloads_after':after_payloads,
+                           'profile_payload_delta':payload_delta,
                            'new_profile_payloads':new_payload_paths,
                            'expected_provider_artifacts':recipe.get('expected_provider_artifacts',[]),
                            'provider_build_id':resolved_provider_id,
