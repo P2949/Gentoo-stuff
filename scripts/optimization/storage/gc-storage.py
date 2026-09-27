@@ -68,7 +68,7 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--project-lock", type=Path, default=Path("/run/gentoo-optimization/project.lock"))
     parser.add_argument("--generation-lock", type=Path, default=Path("/run/gentoo-optimization/generation.lock"))
-    parser.add_argument("--measurement-root", type=Path, default=Path("/var/tmp/gentoo-optimization"))
+    parser.add_argument("--measurement-root", type=Path)
     parser.add_argument("--quarantine-root", type=Path, default=Path("/var/tmp/gentoo-optimization/storage-gc-quarantine"))
     args = parser.parse_args()
     report = json.loads(args.retention.read_text(encoding="utf-8"))
@@ -80,7 +80,14 @@ def main() -> int:
     candidates = [Path(row["path"]) for row in report.get("objects", []) if row.get("state") == "ARCHIVE_CANDIDATE"]
     unknown = [row for row in report.get("objects", []) if row.get("state") == "UNKNOWN"]
     deleted: list[str] = []
-    measurement_root = args.measurement_root
+    if args.measurement_root is None:
+        if args.execute:
+            raise SystemExit("REFUSED: --measurement-root is required for execute mode")
+        measurement_root = args.retention.parent
+    else:
+        measurement_root = args.measurement_root
+    if not measurement_root.exists():
+        raise SystemExit(f"REFUSED: measurement root is unavailable: {measurement_root}")
     free_before = free_bytes(measurement_root)
     try:
         if args.execute:

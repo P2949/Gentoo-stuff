@@ -29,16 +29,29 @@ def digest(path: Path) -> tuple[str, int]:
     return h.hexdigest(), size
 
 
-def publish_object(source: Path, target: Path) -> None:
+def reflink_capable(directory: Path) -> bool:
+    directory.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".reflink-capability-", dir=directory) as probe:
+        src = Path(probe) / "source"
+        dst = Path(probe) / "clone"
+        src.write_bytes(b"gentoo-optimization-reflink-probe")
+        try:
+            subprocess.run(["cp", "--reflink=always", os.fspath(src), os.fspath(dst)], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.CalledProcessError):
+            return False
+        return dst.read_bytes() == src.read_bytes()
+
+
+def publish_object(source: Path, target: Path, *, require_reflink: bool = False) -> None:
     """Publish a verified object without silently allocating a full CoW copy."""
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_suffix(".partial." + str(os.getpid()))
-    same_filesystem = os.stat(source).st_dev == os.stat(target.parent).st_dev
     try:
         subprocess.run(["cp", "--reflink=always", os.fspath(source), os.fspath(partial)], check=True)
     except (OSError, subprocess.CalledProcessError):
         partial.unlink(missing_ok=True)
-        if same_filesystem:
+        if require_reflink:
             raise SystemExit("REFUSED: reflink publication failed on same filesystem")
         shutil.copyfile(source, partial)
     observed, observed_size = digest(partial)
@@ -99,6 +112,7 @@ def main() -> int:
     parser.add_argument("--transaction-id", action="append", default=[])
     parser.add_argument("--project-lock", type=Path)
     parser.add_argument("--generation-lock", type=Path)
+    parser.add_argument("--require-reflink", action="store_true")
     args = parser.parse_args()
     root = args.transactions.resolve(); state = args.state_dir.resolve(); objects = args.objects.resolve()
     locks = []
@@ -111,6 +125,8 @@ def main() -> int:
             locks = [acquire_lock(project_lock), acquire_lock(generation_lock)]
     if not root.is_dir() or not state.is_dir():
         raise SystemExit("REFUSED: transaction or state directory is unavailable")
+    if args.require_reflink and not reflink_capable(objects.parent):
+        raise SystemExit("REFUSED: required reflink capability is unavailable")
     rows: list[dict[str, object]] = []
     transactions = [p for p in sorted(root.iterdir()) if p.is_dir()]
     if args.transaction_id:
@@ -138,7 +154,7 @@ def main() -> int:
                 target = objects / sha[:2] / sha
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if not target.exists():
-                    publish_object(source, target)
+                    publish_object(source, target, require_reflink=args.require_reflink)
                     observed, observed_size = digest(target)
                     if observed != sha or observed_size != int(member["size"]):
                         target.unlink(missing_ok=True); raise SystemExit("REFUSED: object verification failed")

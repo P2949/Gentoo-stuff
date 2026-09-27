@@ -2,12 +2,15 @@ import json
 import subprocess
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 TOOL = ROOT / "scripts/optimization/storage/compact-prerequisite-distfiles.py"
 
-with tempfile.TemporaryDirectory() as tmp:
+class PrerequisiteDistfileCompactorTest(unittest.TestCase):
+  def test_execute(self):
+   with tempfile.TemporaryDirectory() as tmp:
     base = Path(tmp); txroot = base / "tx"; state = base / "state"; objects = base / "objects"; authorities = base / "authorities"
     txroot.mkdir(); state.mkdir(); authorities.mkdir()
     tx = txroot / "done"; (tx / "distfiles.staging").mkdir(parents=True)
@@ -17,7 +20,11 @@ with tempfile.TemporaryDirectory() as tmp:
     (state / "jsonschema-prerequisite-done.success.json").write_text('{"phase":"success"}\n', encoding="utf-8")
     receipt = base / "receipt.json"
     subprocess.run([sys.executable, str(TOOL), "--transactions", str(txroot), "--state-dir", str(state), "--objects", str(objects), "--authorities", str(authorities), "--receipt", str(receipt), "--execute"], check=True)
-    assert not (tx / "distfiles.staging" / "source.tar.xz").exists()
-    assert len(list(objects.rglob("*"))) == 2
-    assert not (authorities / "done" / "distfiles").exists()
-    assert json.loads(receipt.read_text())['retired'][0]['sha256']
+    self.assertFalse((tx / "distfiles.staging" / "source.tar.xz").exists())
+    self.assertEqual(len(list(objects.rglob("*"))), 2)
+    self.assertFalse((authorities / "done" / "distfiles").exists())
+    self.assertTrue(json.loads(receipt.read_text())['retired'][0]['sha256'])
+
+
+if __name__ == "__main__":
+    unittest.main()
