@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Collect a read-only, machine-readable storage baseline.
+
+The report deliberately records both logical usage and filesystem capacity:
+reflinked trees can make directory totals exceed physical blocks consumed.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+DEFAULT_PATHS = (
+    "/var",
+    "/var/lib/gentoo-optimization",
+    "/var/cache/gentoo-optimization",
+    "/var/cache/gentoo-optimization/binpkgs",
+    "/var/lib/gentoo-optimization/recovery/binpkgs",
+    "/var/cache/binpkgs",
+    "/var/tmp/gentoo-optimization",
+    "/var/tmp/gentoo-optimization/pgo-raw",
+    "/var/tmp/gentoo-portage-build",
+    "/var/tmp/ccache",
+    "/var/tmp/thinlto-cache",
+    "/var/cache/distfiles",
+)
+
+
+def filesystem(path: Path) -> dict[str, object]:
+    vfs = os.statvfs(path)
+    stat = os.stat(path)
+    fs_type = subprocess.run(
+        ["stat", "-f", "-c", "%T", os.fspath(path)],
+        text=True, capture_output=True, check=False,
+    ).stdout.strip() or "unknown"
+    return {
+        "device": stat.st_dev,
+        "filesystem_type": fs_type,
+        "free_bytes": vfs.f_bavail * vfs.f_frsize,
+        "total_bytes": vfs.f_blocks * vfs.f_frsize,
+        "mount_id": stat.st_dev,
+    }
+
+
+def logical_usage(path: Path) -> int | None:
+    result = subprocess.run(
+        ["du", "-sxB1", os.fspath(path)],
+        text=True, capture_output=True, check=False,
+    )
+    if result.returncode:
+        return None
+    try:
+        return int(result.stdout.split()[0])
+    except (IndexError, ValueError):
+        return None
+
+
+def counts(path: Path) -> tuple[int, int]:
+    files = 0
+    allocated = 0
+    for root, dirs, names in os.walk(path):
+        dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
+        for name in names:
+            candidate = Path(root) / name
+            try:
+                st = candidate.stat()
+            except OSError:
+                continue
+            files += 1
+            allocated += st.st_blocks * 512
+    return files, allocated
+
+
+def reflink_probe(directory: Path) -> dict[str, object]:
+    directory.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".reflink-probe-", dir=directory) as tmp:
+        src = Path(tmp) / "source"
+        dst = Path(tmp) / "clone"
+        src.write_bytes(b"gentoo-optimization-reflink-probe")
+        result = subprocess.run(
+            ["cp", "--reflink=always", os.fspath(src), os.fspath(dst)],
+            text=True, capture_output=True, check=False,
+        )
+        return {"supported": result.returncode == 0, "stderr": result.stderr.strip()}
+
+
+def entry(raw: str) -> dict[str, object]:
+    path = Path(raw)
+    if not path.exists():
+        return {"path": raw, "exists": False}
+    files, allocated = counts(path)
+    return {
+        "path": raw,
+        "exists": True,
+        "logical_bytes": logical_usage(path),
+        "allocated_bytes": allocated,
+        "file_count": files,
+        "filesystem": filesystem(path),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--path", action="append", dest="paths")
+    args = parser.parse_args()
+    paths = args.paths or list(DEFAULT_PATHS)
+    report = {
+        "schema": "storage-inventory-v1",
+        "created_at": int(time.time()),
+        "entries": [entry(item) for item in paths],
+        "reflink_probe": reflink_probe(Path("/var/tmp")),
+    }
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = args.output.with_suffix(args.output.suffix + ".tmp")
+    temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temporary, args.output)
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
