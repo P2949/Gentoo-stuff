@@ -1377,7 +1377,7 @@ def _inventory(raw: Any, path: str = "inventory") -> dict[str, Any]:
     # generator and frozen-inventory verifier.  Accept that extended shape at
     # every trusted read boundary; rejecting it here made the production BOLT
     # hook unable to validate an otherwise valid reviewed inventory.
-    item = _object(raw, path, {"schema_version", "record_type", "generation_id", "inventory_id", "packages", "owned_paths", "owned_directories", "contents_kind_counts", "contents_record_count", "unresolved_directories"}, optional={"contents_kind_counts", "contents_record_count", "unresolved_directories"})
+    item = _object(raw, path, {"schema_version", "record_type", "generation_id", "inventory_id", "packages", "owned_paths", "owned_directories"}, optional={"contents_kind_counts", "contents_record_count", "unresolved_directories"})
     if item["schema_version"] != 2 or item["record_type"] != "frozen-inventory":
         _error(path, "requires schema_version=2 and record_type=frozen-inventory")
     if "contents_kind_counts" in item:
