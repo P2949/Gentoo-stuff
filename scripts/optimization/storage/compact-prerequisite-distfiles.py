@@ -29,6 +29,26 @@ def digest(path: Path) -> tuple[str, int]:
     return h.hexdigest(), size
 
 
+def publish_object(source: Path, target: Path) -> None:
+    """Publish a verified object without silently allocating a full CoW copy."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_suffix(".partial." + str(os.getpid()))
+    same_filesystem = os.stat(source).st_dev == os.stat(target.parent).st_dev
+    try:
+        subprocess.run(["cp", "--reflink=always", os.fspath(source), os.fspath(partial)], check=True)
+    except (OSError, subprocess.CalledProcessError):
+        partial.unlink(missing_ok=True)
+        if same_filesystem:
+            raise SystemExit("REFUSED: reflink publication failed on same filesystem")
+        shutil.copyfile(source, partial)
+    observed, observed_size = digest(partial)
+    expected, expected_size = digest(source)
+    if observed != expected or observed_size != expected_size:
+        partial.unlink(missing_ok=True)
+        raise SystemExit("REFUSED: object verification failed")
+    os.replace(partial, target)
+
+
 def terminal_state(state_dir: Path, tx: str) -> dict[str, object] | None:
     prefix = state_dir / ("jsonschema-prerequisite-" + tx)
     for suffix in ("success", "rolled-back", "recovery-failed", "abandoned"):
@@ -118,12 +138,10 @@ def main() -> int:
                 target = objects / sha[:2] / sha
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if not target.exists():
-                    partial = target.with_suffix(".partial." + str(os.getpid()))
-                    shutil.copyfile(source, partial)
-                    observed, observed_size = digest(partial)
+                    publish_object(source, target)
+                    observed, observed_size = digest(target)
                     if observed != sha or observed_size != int(member["size"]):
-                        partial.unlink(missing_ok=True); raise SystemExit("REFUSED: object verification failed")
-                    os.replace(partial, target)
+                        target.unlink(missing_ok=True); raise SystemExit("REFUSED: object verification failed")
                 observed, observed_size = digest(target)
                 if observed != sha or observed_size != int(member["size"]):
                     raise SystemExit("REFUSED: existing object hash mismatch")
