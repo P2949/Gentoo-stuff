@@ -8635,3 +8635,16 @@ The new generation was fed through the scheduler and wave planner. Scheduler out
 ## 2026-09-22 fresh workload input boundary
 
 Fresh ELF metadata was extracted from the post-cleanup authoritative census: 16,731 ELF records, metadata SHA-256 `970658148e2df749c161b4b29a18c8ebd6a6823535ad4c50e48895534dcf9940`. Rebuilding the workload manifest produced 318 direct-entrypoint candidates and 218 packages without a runnable entrypoint. The workload recipe producer was tightened so a recipe is never emitted without a current provider build ID; the regenerated recipe result therefore contains only 9 smoke recipes, 526 packages requiring representative/build-ID training work, and 1 explicit terminal workload exclusion. The prior smoke recipes are not admitted as representative training evidence, and no wave was started.
+
+## 2026-09-27 post-generation provider binding boundary
+
+The new `resolve-workload-providers.py` producer was applied to the retained
+post-cleanup workload recipe set and fresh ELF metadata. The resulting
+root-owned report is `/var/lib/gentoo-optimization/reports/workload-providers-candidate22.json`
+(SHA-256 `3c4563c805f733bcb1dffc4fdeb9bc24d3d898fa9cd8d6be0fcce8f50d21d33a`).
+All 536 PGO package records were reopened against the fresh owner/path census;
+all 9 existing smoke recipes resolved to current provider identities and zero
+provider records were unresolved. The report keeps the 526 packages requiring
+representative training work and one explicit terminal workload exclusion.
+This is provider-binding evidence only; smoke recipes remain ineligible for
+normal production scheduling and no package wave was started.
