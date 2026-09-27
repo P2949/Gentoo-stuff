@@ -9693,3 +9693,19 @@ transaction was performed. `eix-update` rebuilt its database, while unrelated
 third-party overlay metadata warnings were retained in the report and did not
 alter the signed Gentoo synchronization result. No kernel, boot, EFI,
 initramfs, or firmware state was touched.
+
+## 2026-09-27 userspace baseline transaction storage-floor stop
+
+The optimization-off userspace baseline transaction was intentionally stopped
+with SIGINT after its root filesystem free space crossed the absolute 100 GiB
+floor while `media-libs/opencv-4.12.0-r2` was compiling. The coordinator had
+been active and making progress; this was a storage-safety stop rather than a
+resolver or compiler conclusion. The root-owned interruption report is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-interrupted-20260927.txt`
+(SHA-256
+`df16cf09ebd1d43b576a0a88b866d356f97d77e9cb09d336317bd1a73d0d370e`).
+Portage and build logs remain authoritative for the partial transaction.
+The transaction recorded exported-ABI guard failures for
+`media-video/ffmpeg-9.0.2` and `media-libs/libde265-1.1.3`; those attempts
+remain preserved for later narrow remediation. No kernel, boot, EFI,
+initramfs, or firmware state was touched.
