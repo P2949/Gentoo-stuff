@@ -34,11 +34,9 @@ def main():
    continue
   recipes=[]
   for e in x['entrypoints']:
-   # A workload recipe cannot authenticate provider coverage without the
-   # provider's current build ID.  Keep the package in accounting, but defer
-   # it to the rebuild/capture path instead of creating an unverifiable recipe.
-   if not e.get('build_id'):
-    continue
+   # Baseline artifacts may not have a build ID.  That is a post-generation
+   # capture requirement, not a reason to discard the semantic workload plan.
+   # The runner resolves and binds the rebuilt provider identity before use.
    p=e['path']; safe=p.startswith(('/usr/bin/','/usr/sbin/','/bin/','/sbin/')) and not os.path.islink(p)
    # Recovery-only helpers require an input archive and are not standalone
    # representative workloads. Prefer the package's normal compressor entry
@@ -50,7 +48,7 @@ def main():
    # without requiring a policy file or a child command.
    if x['cpv'].startswith('app-arch/rpm2targz-') and p == '/usr/bin/rpmoffset':
     argv=[p]; allow_empty_output=True
-    recipes.append({'path':p,'build_id':e['build_id'],'argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'stdin_path':'/var/lib/gentoo-optimization/workloads/rpm2targz/minimal.rpm','execution_state':'not-run'})
+    recipes.append({'path':p,'build_id':e.get('build_id'),'provider_identity':'post-generation-required','argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'stdin_path':'/var/lib/gentoo-optimization/workloads/rpm2targz/minimal.rpm','execution_state':'not-run'})
     continue
    # funzip and unzipsfx require archive/input context; unzip -v is the
    # successful non-destructive representative workload for this package.
@@ -142,7 +140,7 @@ def main():
    else:
     argv=[p,'--help']; allow_empty_output=False
    if safe:
-    recipe={'path':p,'build_id':e['build_id'],'argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'timeout_seconds':300,'execution_state':'not-run'}
+    recipe={'path':p,'build_id':e.get('build_id'),'provider_identity':'post-generation-required','argv':argv,'cwd':'/','environment':{'LC_ALL':'C','LANG':'C'},'safe_path':True,'allow_empty_output':allow_empty_output,'timeout_seconds':300,'execution_state':'not-run'}
     if x['cpv'].startswith('app-crypt/argon2-') and p == '/usr/bin/argon2':
      recipe['stdin_path']=stdin_path
     if p in {'/usr/bin/evtest','/usr/bin/scdoc'}:
