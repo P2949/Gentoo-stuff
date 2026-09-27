@@ -9000,3 +9000,17 @@ The new `record-command.py` producer emitted
 The production `artifact_tool.py` quality-command validator reopened that
 record and accepted its exact tool/input/output identities and structured
 metrics (`functional_passed=true`, `repetitions=10000`).
+
+## 2026-09-27 generation-bound QA helper migration
+
+The old-generation framework race exposed that the install-QA hook used fixed
+global helper paths, allowing an old-bound QA process to resolve helpers from a
+newly activated generation. The QA implementation now derives its ABI-guard and
+staged-instrumentation helper paths from the QA implementation generation,
+handling both framework-local QA paths and the fixed compatibility path. The
+focused QA-hook suite passes 13/13. A root-owned `--bootstrap-migration`
+installer mode was added for this authenticated generation-independent helper
+migration; it remains root/install-only and ordinary upgrades still retain the
+stable-bootstrap compatibility gate. The live framework was republished through
+that migration path and its install manifest verification passed. Full
+installer integration is still being rerun at this source boundary.
