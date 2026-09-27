@@ -9879,3 +9879,9 @@ the structured ABI failure record is
 (SHA-256 `13dfa92ea6545780f734d71a20bb0b59ccc225e1d7ca0293a6c97d4c5e9c0658`).
 This remains a package-local ABI remediation item, not a terminal success or
 an unchanged retry authorization.
+
+The hyprtoolkit attempt was followed by an inactive build-tree retirement after
+an unrelated OBS transaction had finished. The retirement helper preserved one
+remaining build log and removed the inactive Portage workspace. Receipt:
+`/var/lib/gentoo-optimization/reports/portage-build-retirement-hyprtoolkit-20260930.json`
+(SHA-256 `8b4a189315a3515aa45f21e5b42deec896038abb48fb6a79c564dccbb8980d04`).
