@@ -45,6 +45,29 @@ def locked(paths: list[Path]) -> list[object]:
         raise
     return handles
 
+
+def durable_replace(path: Path, payload: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        raise
+    os.replace(temporary, path)
+    directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--root", type=Path, default=Path("/var/cache/binpkgs"))
@@ -110,9 +133,7 @@ def main() -> int:
               "unknown_retained": True, "deleted": deleted,
               "references": sorted(references), "live_cpvs": sorted(live)}
     a.output.parent.mkdir(parents=True, exist_ok=True)
-    tmp = a.output.with_suffix(a.output.suffix + ".tmp")
-    tmp.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(tmp, a.output)
+    durable_replace(a.output, json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"schema": report["schema"], "objects": len(rows), "bytes": sum(r["size"] for r in rows), "mode": report["mode"]}, indent=2))
     return 0
 

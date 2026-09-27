@@ -9413,3 +9413,8 @@ focused fixture and a fresh live dry-run pass; the live checkpoint set is now
 10 `EVIDENCE_KEEP`, one `LIVE_REQUIRED`, and zero archive candidates or
 unexplained unknown aliases. The receipt is
 `/var/lib/gentoo-optimization/reports/checkpoint-compaction-followup2-20260927.json`.
+
+Binpkg-retention receipt publication now fsyncs the temporary report and its
+parent directory before returning success. The binpkg-retention and storage-GC
+regressions pass, so a successful duplicate-prune classification cannot be
+reported before its machine-readable receipt is durable.
