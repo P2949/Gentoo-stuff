@@ -9424,3 +9424,8 @@ fsync boundary. The checkpoint fixture and fresh live dry-run pass again with
 10 `EVIDENCE_KEEP`, one `LIVE_REQUIRED`, and zero candidates; the current
 durable receipt is
 `/var/lib/gentoo-optimization/reports/checkpoint-compaction-followup3-20260927.json`.
+
+Raw profile-spool compaction now durably publishes both its archive manifest
+and optional retirement receipt with file and parent-directory fsyncs. The
+focused spool-compaction regression passes, preserving the existing
+reconstruction check before expanded-spool retirement.

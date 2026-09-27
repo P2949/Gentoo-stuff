@@ -21,6 +21,22 @@ def manifest(root: Path) -> list[dict[str, object]]:
     return rows
 
 
+def durable_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(text)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+    directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--attempt", type=Path, required=True)
@@ -67,7 +83,7 @@ def main() -> int:
                 tar.add(root / str(row["path"]), arcname=str(row["path"]), recursive=False)
         compressed = args.archive.with_suffix(args.archive.suffix + ".zst")
         subprocess.run(["zstd", "-T0", "-19", "--rm", os.fspath(partial), "-o", os.fspath(compressed)], check=True)
-        args.manifest.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        durable_write(args.manifest, json.dumps(payload, indent=2, sort_keys=True) + "\n")
         for path in (compressed, args.manifest):
             with path.open("rb") as stream:
                 os.fsync(stream.fileno())
@@ -85,8 +101,7 @@ def main() -> int:
               "members": len(members), "execute": args.execute,
               "retired_expanded": bool(args.execute and args.retire_expanded)}
     if args.receipt:
-        args.receipt.parent.mkdir(parents=True, exist_ok=True)
-        args.receipt.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        durable_write(args.receipt, json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result, indent=2))
     return 0
 
