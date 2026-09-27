@@ -52,6 +52,7 @@ def main() -> int:
     parser.add_argument("--transactions", type=Path, required=True)
     parser.add_argument("--state-dir", type=Path, required=True)
     parser.add_argument("--objects", type=Path, required=True)
+    parser.add_argument("--authorities", type=Path, help="matching prerequisite authority root")
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--limit-transactions", type=int)
@@ -100,6 +101,22 @@ def main() -> int:
                 os.replace(source, quarantine)
                 quarantine.unlink()
                 retired.append({"transaction_id": row["transaction_id"], "path": str(member["path"]), "sha256": sha, "object": str(target)})
+            if args.authorities:
+                authority = args.authorities.resolve() / str(row["transaction_id"]) / "distfiles"
+                if authority.is_dir():
+                    if not row["files"]:
+                        raise SystemExit("REFUSED: authority retirement requires a non-empty source manifest")
+                    for member in row["files"]:  # type: ignore[union-attr]
+                        source = authority / str(member["path"])
+                        if not source.is_file():
+                            raise SystemExit(f"REFUSED: authority member missing: {source}")
+                        observed, size = digest(source)
+                        if observed != str(member["sha256"]) or size != int(member["size"]):
+                            raise SystemExit(f"REFUSED: authority hash mismatch: {source}")
+                    quarantine = authority.with_name(".distfiles.retiring." + str(os.getpid()))
+                    os.replace(authority, quarantine)
+                    shutil.rmtree(quarantine)
+                    retired.append({"transaction_id": row["transaction_id"], "authority": str(authority), "authority_retired": True})
     payload = {"schema": "gentoo-optimization-prerequisite-distfile-retirement-v1", "timestamp": int(time.time()), "mode": "execute" if args.execute else "dry-run", "transactions": rows, "retired": retired}
     durable_write(args.receipt, payload)
     print(json.dumps({"schema": payload["schema"], "mode": payload["mode"], "transactions": len(rows), "files": sum(len(x["files"]) for x in rows), "retired": len(retired)}, indent=2))
