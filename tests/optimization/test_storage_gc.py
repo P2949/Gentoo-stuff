@@ -23,4 +23,16 @@ with tempfile.TemporaryDirectory() as tmp:
                     "--project-lock", str(root / "project.lock"),
                     "--generation-lock", str(root / "generation.lock")], check=True, stdout=subprocess.DEVNULL)
     assert candidate.exists() and unknown.exists()
-    assert json.loads(receipt.read_text())["mode"] == "dry-run"
+    dry = json.loads(receipt.read_text())
+    assert dry["mode"] == "dry-run"
+    assert "filesystem_free_delta" in dry
+    execute_receipt = root / "execute-receipt.json"
+    subprocess.run([sys.executable, str(GC), "--retention", str(retention), "--receipt", str(execute_receipt), "--execute",
+                    "--project-lock", str(root / "project.lock"), "--generation-lock", str(root / "generation.lock"),
+                    "--measurement-root", str(root), "--quarantine-root", str(root / "quarantine")], check=True, stdout=subprocess.DEVNULL)
+    executed = json.loads(execute_receipt.read_text())
+    assert executed["mode"] == "execute"
+    assert executed["deleted"] == [str(candidate)]
+    assert not candidate.exists() and unknown.exists()
+    assert "filesystem_free_bytes_before" in executed
+    assert "filesystem_free_bytes_after" in executed
