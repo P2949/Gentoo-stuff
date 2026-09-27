@@ -8682,3 +8682,13 @@ consumer CPV, executable, expected provider artifact, and a
 `pending-runtime-proof` counter state. These records are not training
 authority and are not admitted to normal scheduling until an actual workload
 run proves counters for the post-generation provider identity.
+
+## 2026-09-27 consumer candidate structural verification
+
+The independent consumer-candidate verifier reopened all 3,557 candidate
+recipes against the fresh ELF census and live filesystem. It verified every
+consumer executable path and every expected provider artifact owner, with zero
+structural rejections. The root-owned report is
+`/var/lib/gentoo-optimization/reports/verified-consumer-workload-candidates-20260927.json`.
+These remain candidates only: the counter-proof field is still pending until a
+full instrumented-system workload run emits matching provider binary IDs.
