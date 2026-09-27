@@ -9395,3 +9395,8 @@ emitting a wave. Its focused regression proves normal scheduling succeeds
 above the 100 GiB/12% floor and refuses when an injected minimum exceeds free
 space; no wave can therefore be scheduled without a current storage-margin
 check.
+
+The exact de-instrumentation runner now applies the same capacity gate before
+its batch transaction (including dry-run validation), with explicit fixture
+overrides for the path and thresholds. Python compilation passes; the runner
+cannot begin restoration work while the storage floor is unsafe.

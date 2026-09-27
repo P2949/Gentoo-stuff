@@ -47,10 +47,22 @@ def main() -> int:
     ap.add_argument("--receipt-dir", type=Path, required=True)
     ap.add_argument("--log-dir", type=Path, required=True)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--storage-path", type=Path, default=Path("/"))
+    ap.add_argument("--storage-minimum-bytes", type=int, default=100 * 1024**3)
+    ap.add_argument("--storage-minimum-percent", type=float, default=12.0)
     args = ap.parse_args()
 
     if not MARKER.exists():
         raise SystemExit("REFUSED: deinstrument.pending marker is absent")
+    storage_preflight = Path(__file__).resolve().parents[1] / "verify" / "storage-preflight.py"
+    if not storage_preflight.is_file():
+        raise SystemExit(f"REFUSED: storage preflight helper is missing: {storage_preflight}")
+    subprocess.run(
+        [sys.executable, str(storage_preflight), "--path", str(args.storage_path),
+         "--minimum-bytes", str(args.storage_minimum_bytes),
+         "--minimum-percent", str(args.storage_minimum_percent)],
+        check=True,
+    )
     plan = load_plan(args.plan)
     selected = [b for b in plan["batches"] if b.get("batch_id") == args.batch_id]
     if len(selected) != 1:
