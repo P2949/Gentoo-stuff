@@ -8976,3 +8976,15 @@ The corrected capture then completed successfully for one eligible artifact
 under the reviewed fingerprint. The failed attempts remain preserved in the
 Portage build log. Perf/fdata generation and BOLT deployment remain open; no
 BOLT output is claimed from this capture alone.
+
+The captured `rpmoffset` input was executed through a serialized perf session
+using the fixed RPM fixture. A short run produced no matching binary-ID
+samples; the workload was therefore rerun 10,000 times with branch-stack
+collection (`perf record -j any`). `perf2bolt` then matched build ID
+`24cc22be7f2fe41b17fecb2a920257b4f8d8c798`, read 30,763 branch samples, and
+wrote `/var/cache/gentoo-optimization/bolt/fdata/rpm2targz.fdata` containing
+42 objects. `llvm-bolt` consumed that fdata and produced a 6.3 MiB transformed
+ELF at `/var/cache/gentoo-optimization/bolt/outputs/rpmoffset.bolt` with exit
+status 0. This remains a diagnostic/profile-generation result until the
+strict workload/profile/fdata quality proofs and immutable command receipt are
+registered; deployment and installed-output verification are still open.
