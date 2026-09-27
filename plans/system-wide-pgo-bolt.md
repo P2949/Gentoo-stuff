@@ -9645,3 +9645,13 @@ authority correctly returns `KEEP_EXPANDED` for an ambiguous evidence set and
 records all candidate receipt hashes.  This is stronger evidence than treating
 the absence of a top-level attempt field as proof of no receipt; no raw bytes
 were removed.
+
+Added report-only content-addressed object reachability marking at
+`scripts/optimization/storage/gc-content-addressed-objects.py`.  It marks
+objects by explicit SHA-256 references in supplied machine-readable authority
+roots and keeps malformed/unknown objects.  A report over the durable reports
+root found `28,668` referenced objects and approximately `42.73 GB` of
+positively unreachable object payload, but this is classification-only: no
+object is deleted, and the report is not treated as deletion authority until
+all recovery-authority roots are included in a bounded scan.  The focused
+reachability regression passes.
