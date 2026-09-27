@@ -82,6 +82,33 @@ def counts(path: Path) -> tuple[int, int]:
     return files, allocated
 
 
+def counts_with_children(path: Path) -> tuple[int, int, dict[str, tuple[int, int]]]:
+    """Count a tree once while retaining direct-child file/allocated totals."""
+    files = 0
+    allocated = 0
+    children: dict[str, tuple[int, int]] = {}
+    for root, dirs, names in os.walk(path):
+        dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
+        direct = Path(root).relative_to(path).parts
+        child_name = direct[0] if direct else None
+        child_files, child_allocated = children.get(child_name, (0, 0)) if child_name else (0, 0)
+        for name in names:
+            candidate = Path(root) / name
+            try:
+                st = candidate.stat()
+            except OSError:
+                continue
+            blocks = st.st_blocks * 512
+            files += 1
+            allocated += blocks
+            if child_name:
+                child_files += 1
+                child_allocated += blocks
+        if child_name:
+            children[child_name] = (child_files, child_allocated)
+    return files, allocated, children
+
+
 def reflink_probe(directory: Path) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".reflink-probe-", dir=directory) as tmp:
@@ -99,12 +126,12 @@ def entry(raw: str) -> dict[str, object]:
     path = Path(raw)
     if not path.exists():
         return {"path": raw, "exists": False}
-    files, allocated = counts(path)
+    files, allocated, child_counts = counts_with_children(path)
     children = []
     for child in sorted(path.iterdir()):
         if child.is_dir() and not child.is_symlink():
             child_logical = logical_usage(child)
-            child_files, child_allocated = counts(child)
+            child_files, child_allocated = child_counts.get(child.name, (0, 0))
             children.append({"path": str(child), "logical_bytes": child_logical, "allocated_bytes": child_allocated, "file_count": child_files})
     children.sort(key=lambda item: (item["logical_bytes"] is not None, item["logical_bytes"] or 0), reverse=True)
     return {

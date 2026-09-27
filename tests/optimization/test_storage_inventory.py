@@ -24,4 +24,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert item["exists"] is True
     assert item["file_count"] == 1
     assert item["allocated_bytes"] >= 0
+    files, allocated, children = MODULE.counts_with_children(root / "a")
+    assert (files, allocated) == (1, item["allocated_bytes"])
+    assert children["b"][0] == 1
     assert json.loads(json.dumps(item))["path"] == str(root / "a")
