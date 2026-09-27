@@ -13,6 +13,7 @@ def main():
         dispatcher = root / "dispatcher.json"
         receipt = root / "receipt.json"
         log = root / "transaction.log"
+        storage_args = ["--storage-path", str(root), "--storage-minimum-bytes", "0", "--storage-minimum-percent", "0"]
         profile.write_bytes(b"profile")
         metadata.write_text(json.dumps({"profile": {
             "cpv": "dev-libs/foo-1.0",
@@ -27,7 +28,7 @@ def main():
         bad = subprocess.run([
             "python3", str(SCRIPT), "--dispatcher", str(dispatcher),
             "--cpv", "dev-libs/foo-1.1", "--repository", "gentoo",
-            "--receipt", str(receipt), "--log", str(log),
+            "--receipt", str(receipt), "--log", str(log), *storage_args,
         ], capture_output=True, text=True)
         assert bad.returncode != 0
         assert "dispatcher CPV" in bad.stderr + bad.stdout
@@ -39,7 +40,7 @@ def main():
         bad = subprocess.run([
             "python3", str(SCRIPT), "--dispatcher", str(dispatcher),
             "--cpv", "dev-libs/foo-1.0", "--repository", "gentoo",
-            "--receipt", str(receipt), "--log", str(log),
+            "--receipt", str(receipt), "--log", str(log), *storage_args,
         ], capture_output=True, text=True)
         assert bad.returncode != 0
         assert "metadata repository" in bad.stderr + bad.stdout

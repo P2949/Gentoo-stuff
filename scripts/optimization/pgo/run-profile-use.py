@@ -21,6 +21,8 @@ def main() -> int:
     ap.add_argument('--cpv',required=True); ap.add_argument('--repository',required=True)
     ap.add_argument('--receipt',type=pathlib.Path,required=True); ap.add_argument('--log',type=pathlib.Path,required=True)
     ap.add_argument('--storage-path',type=pathlib.Path,default=pathlib.Path('/'))
+    ap.add_argument('--storage-minimum-bytes',type=int,default=100*1024**3)
+    ap.add_argument('--storage-minimum-percent',type=float,default=12.0)
     a=ap.parse_args()
     if pathlib.Path('/var/lib/gentoo-optimization/state/deinstrument.pending').exists():
         raise SystemExit('REFUSED: de-instrumentation is pending; profile-use waves are paused')
@@ -29,7 +31,7 @@ def main() -> int:
     storage_preflight = pathlib.Path(__file__).resolve().parents[1] / 'verify' / 'storage-preflight.py'
     if not storage_preflight.is_file():
         raise SystemExit(f'REFUSED: storage preflight helper is missing: {storage_preflight}')
-    subprocess.run([sys.executable, str(storage_preflight), '--path', str(a.storage_path)], check=True)
+    subprocess.run([sys.executable, str(storage_preflight), '--path', str(a.storage_path), '--minimum-bytes', str(a.storage_minimum_bytes), '--minimum-percent', str(a.storage_minimum_percent)], check=True)
     if '/' not in a.cpv: raise SystemExit('REFUSED: malformed CPV')
     record=json.loads(a.dispatcher.read_text())
     if record.get('cpv') != a.cpv: raise SystemExit('REFUSED: dispatcher CPV differs from requested exact atom')
