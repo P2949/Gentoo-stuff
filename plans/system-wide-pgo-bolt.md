@@ -9434,3 +9434,8 @@ The storage baseline inventory publisher now uses the same durable temporary
 write, file fsync, atomic replace, and parent-directory fsync sequence. A
 temporary-directory inventory fixture passed, so capacity evidence cannot be
 reported before its JSON file is durable.
+
+The retention-set builder and generic storage-GC receipt now use the same
+durable publication sequence. The retention and GC regressions pass, so both
+the deletion candidate set and the resulting cleanup receipt survive a power
+loss boundary before storage automation reports success.
