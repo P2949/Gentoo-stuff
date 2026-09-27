@@ -31,7 +31,8 @@ class ProfileCompactionAuthorityTests(unittest.TestCase):
             attempt.mkdir(); evidence.mkdir()
             (attempt / "sample.profraw").write_bytes(b"profile")
             (evidence / "receipt.json").write_text(json.dumps({
-                "status": "merged-validated", "attempt": str(attempt)
+                "status": "merged-validated", "attempt": str(attempt),
+                "merged_profile_validation": {"status": "validated"}
             }))
             out = root / "authority.json"
             subprocess.run([sys.executable, str(SCRIPT), "--attempt", str(attempt),
