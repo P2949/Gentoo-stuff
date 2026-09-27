@@ -8994,3 +8994,9 @@ fixed RPM fixture: 1,008,237 cycles, 818,803 instructions, 160,117 branches,
 and 5,667 branch misses. The supporting report is retained at
 `/var/cache/gentoo-optimization/bolt/evidence/rpm2targz/perf-stat.txt` while
 the strict command-record producer is completed.
+
+The new `record-command.py` producer emitted
+`/var/cache/gentoo-optimization/bolt/evidence/rpm2targz/workload.command.json`.
+The production `artifact_tool.py` quality-command validator reopened that
+record and accepted its exact tool/input/output identities and structured
+metrics (`functional_passed=true`, `repetitions=10000`).
