@@ -9079,3 +9079,18 @@ installed `maya-gentoo` CPVs have no currently available `maya-gentoo` ebuild,
 while `local-autodesk` offers older same-slot CPVs. No downgrade or overlay
 substitution was performed. That conflict remains a baseline source/repository
 reconciliation item and no optimization wave was started.
+
+## 2026-09-27 checked-in optimization-set source correction
+
+The prior live set replacement was correctly derived but was overwritten by
+framework activation because the repository's checked-in `portage/sets`
+inputs were still stale exact-version files. The generation-derived CP-atom
+set family is now checked into `portage/sets` (including its manifest and all
+lane/exclusion sets) at commit `c52933f`. A fresh framework publication from
+that source no longer restores the obsolete tree-sitter exact atom.
+
+The current `@world` pretend is reduced to the pre-existing Autodesk source
+provenance conflict: installed `maya-gentoo` revisions remain present while
+that repository has no available ebuild, and the local-autodesk replacement
+is fetch-restricted and would be a same-slot revision transition. No package
+transaction or repository substitution was performed.
