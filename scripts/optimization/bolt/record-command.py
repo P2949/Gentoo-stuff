@@ -23,7 +23,8 @@ def allowed(path: Path) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--role", required=True)
-    ap.add_argument("--argv", nargs="+", required=True)
+    ap.add_argument("--argv", nargs="+")
+    ap.add_argument("--argv-json")
     ap.add_argument("--tool", required=True, type=Path)
     ap.add_argument("--input", action="append", type=Path, default=[])
     ap.add_argument("--stdout", required=True, type=Path)
@@ -34,15 +35,20 @@ def main() -> int:
     ap.add_argument("--exit-status", type=int, default=0)
     ap.add_argument("--output", required=True, type=Path)
     args = ap.parse_args()
-    paths = [args.tool, *args.input, args.stdout, args.stderr, args.metrics]
-    if any(not allowed(p) for p in paths): raise SystemExit("production evidence must remain under approved roots")
+    if args.argv is None and args.argv_json is None:
+        raise SystemExit("one of --argv or --argv-json is required")
+    argv = args.argv if args.argv is not None else json.loads(args.argv_json)
+    if not isinstance(argv, list) or not all(isinstance(item, str) and item for item in argv):
+        raise SystemExit("argv must be a nonempty string array")
+    if any(not allowed(p) for p in [*args.input, args.stdout, args.stderr, args.metrics]):
+        raise SystemExit("production evidence must remain under approved roots")
     tool = identity(args.tool)
     inputs = [identity(p) for p in args.input]
     stdout, stderr = identity(args.stdout), identity(args.stderr)
     metrics = json.loads(args.metrics.read_text(encoding="utf-8"))
     for value in (args.started, args.completed):
         datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    doc = {"schema": SCHEMA, "role": args.role, "argv": args.argv,
+    doc = {"schema": SCHEMA, "role": args.role, "argv": argv,
            "environment": {"LC_ALL":"C", "LANG":"C", "PATH":"/usr/bin:/bin"},
            "tool": tool, "inputs": inputs, "stdout": stdout, "stderr": stderr,
            "exit_status": args.exit_status, "started_at_utc": args.started,
