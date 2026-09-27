@@ -9178,3 +9178,17 @@ passes, 0 failures, 12 skips, 533 required subtests passed, and 0 required
 subtests failed. The earlier untrusted-Maya-directory failure is therefore
 resolved by the root-owned repository snapshot while the trust contract
 remains fail-closed.
+
+## 2026-09-27 elfutils representative training canary
+
+The first `dev-libs/elfutils-0.196` canary preserved a stale-provider-ID
+refusal after the exact generation rebuild; no receipt or payload was admitted
+from that attempt. The recipe was rebound to the newly installed provider
+build IDs and rerun under a new immutable wave identity. The exact CPV merged,
+18 provider-bound `--help` recipes emitted nonempty Clang raw payloads, the
+wave receipt independently verified, and LLVM 22 merged the payload into
+`/var/lib/gentoo-optimization/merged-profiles/phase3-live-candidate-20260927-reviewed/dev-libs_elfutils-0.196.profdata`.
+Merge evidence is retained at
+`/var/lib/gentoo-optimization/reports/profile-merge-elfutils-training-v2-20260927.json`.
+This is representative profile-training evidence only; no profile-use or BOLT
+deployment is claimed.
