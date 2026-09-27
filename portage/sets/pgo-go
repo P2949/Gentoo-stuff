@@ -1,0 +1,6 @@
+app-shells/direnv
+dev-lang/go
+dev-util/github-cli
+dev-vcs/git-lfs
+net-vpn/tailscale
+sys-apps/earlyoom

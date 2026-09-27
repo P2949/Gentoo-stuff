@@ -1,0 +1,17 @@
+{
+  "lane_sha256": "70b5af72ab01d9e0faf094a7e88284efbb5c3f0ec5fd4e2cf48a007280616ab4",
+  "mutation_policy_sha256": "5b411554710569749be74c1b841e5e3db83fff1cd26e6f7c655730fe1e70e61e",
+  "record_type": "optimization-package-sets",
+  "schema_version": 1,
+  "sets": {
+    "optimization-kernel-policy-exclusion": 10,
+    "optimization-not-applicable": 712,
+    "pgo-bolt-all-userspace": 1269,
+    "pgo-clang-ir": 533,
+    "pgo-clang-sample": 0,
+    "pgo-ebuild-native": 0,
+    "pgo-gcc": 1,
+    "pgo-go": 6,
+    "pgo-rust": 18
+  }
+}
