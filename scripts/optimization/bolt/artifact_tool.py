@@ -520,7 +520,12 @@ def resolve_elf_tool(value: str, expected: str, label: str, test_mode: bool) -> 
         expected_path = Path(expected)
         validate_root_owned_nonwritable_chain(expected_path.parent, f"{label} parent")
         link_info = expected_path.lstat()
-        if link_info.st_uid != 0 or stat.S_IMODE(link_info.st_mode) & 0o022:
+        # Gentoo installs binutils front-ends as root-owned symlinks whose
+        # link mode is conventionally 0777.  Trust the resolved regular
+        # target (validated above) while still rejecting untrusted owners.
+        if link_info.st_uid != 0 or (
+            not stat.S_ISLNK(link_info.st_mode) and stat.S_IMODE(link_info.st_mode) & 0o022
+        ):
             fail(f"production {label} entry is untrusted: {expected_path}")
         validate_root_owned_nonwritable_chain(path, label)
     return str(path)
