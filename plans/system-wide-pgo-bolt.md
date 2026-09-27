@@ -9147,8 +9147,8 @@ the current userspace baseline, not authorization for a broad graphics update.
 ## 2026-09-27 LLVM runtime closure boundary
 
 The post-graphics baseline pretend isolated the remaining resolver failure to
-`llvm-runtimes/libclc-24.0.0.9999`, whose dependency requires Clang 24 while
+`llvm-runtimes/libclc-23.1.1`, whose dependency requires Clang 23 while
 the reviewed migration deliberately retains the LLVM 22 lane and masks the
 incomplete LLVM 24 toolchain. The source policy now excludes only
-`>=llvm-runtimes/libclc-24` so libclc cannot advance independently of its
+`>=llvm-runtimes/libclc-23` so libclc cannot advance independently of its
 compiler closure. No LLVM or kernel transaction was started.
