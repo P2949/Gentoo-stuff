@@ -1597,7 +1597,10 @@ def inventory_proof(
         item["path"] for item in frozen_inventory["owned_paths"]
         if isinstance(item, dict) and item.get("owner_cpv") == cpv
     }
-    candidate_paths = {f"/{path}" for item in candidates for path in item["paths"]}
+    # Inventory paths are already canonical absolute paths.  Prefixing a
+    # leading slash here produced //usr/... and falsely rejected every valid
+    # proof at the live pre-strip boundary.
+    candidate_paths = {path for item in candidates for path in item["paths"]}
     if not candidate_paths <= owned_paths:
         fail("BOLT inventory proof candidate path is not owned by its exact frozen CPV")
     return {
