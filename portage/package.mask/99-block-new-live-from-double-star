@@ -193,6 +193,9 @@
 >=llvm-core/clang-linker-config-23
 >=llvm-core/clang-toolchain-symlinks-23
 >=llvm-runtimes/compiler-rt-23
+# Keep libclc aligned with the retained LLVM 22 compiler lane until the
+# complete LLVM 24 toolchain closure is available.
+>=llvm-runtimes/libclc-24
 >=llvm-runtimes/compiler-rt-sanitizers-23
 >=llvm-runtimes/libunwind-23
 >=llvm-runtimes/libcxxabi-23
