@@ -9015,3 +9015,21 @@ stable-bootstrap compatibility gate. The live framework was republished through
 that migration path and its install manifest verification passed. Full
 installer integration then completed successfully with the snapshot,
 publication, rollback, and generation-bound QA race fixture green.
+
+## 2026-09-27 additive identity registry and portable validation boundary
+
+The frozen Phase-2 unittest identity contract remains unchanged. A tracked
+Phase-3 additive registry was added at
+`optimization/phase3-additive-test-identities.json`; the Phase-2 evidence
+verifier now loads and validates that registry fail-closed, including exact
+entry shape and duplicate rejection. It contains the three post-freeze
+optimization-suite identities and admits them without changing the frozen
+Phase-2 digest.
+
+The corrected full portable-complete run passed at the resulting source
+boundary: 87 top-level tests passed, 0 failed, 12 skipped; 533 required
+subtests passed, 0 required subtests failed, and the test-contract identity
+check passed. This validation does not close representative workload or BOLT
+execution gates. The current `rpm2targz` BOLT diagnostic profile remains
+non-authoritative because its perf2bolt out-of-range trace ratio exceeded the
+strict production threshold; no BOLT quality proof or deployment was admitted.
