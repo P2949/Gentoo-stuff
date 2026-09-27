@@ -66,6 +66,15 @@ unset hook_ed hook_root
 # generation transaction.  Ordinary/off/profile-use installs must never admit
 # generation markers, even when runtime output was redirected to /dev/null.
 instrumentation_checker=${qa_libexec}/scripts/optimization/lib/check-staged-instrumentation.py
+if [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 || -n ${GENTOO_OPT_INSTRUMENTATION_CHECKER:-} ]]; then
+    [[ -z ${EBUILD_PHASE-} ]] || \
+        gentoo_opt_hook_abort 'test-only instrumentation checker override is forbidden in an ebuild phase'
+    [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 && -n ${GENTOO_OPT_INSTRUMENTATION_CHECKER:-} ]] || \
+        gentoo_opt_hook_abort 'incomplete instrumentation checker fixture override'
+    [[ ${GENTOO_OPT_INSTRUMENTATION_CHECKER} == /* ]] || \
+        gentoo_opt_hook_abort 'instrumentation checker fixture path must be absolute'
+    instrumentation_checker=${GENTOO_OPT_INSTRUMENTATION_CHECKER}
+fi
 [[ -x ${instrumentation_checker} ]] || gentoo_opt_hook_abort 'staged instrumentation checker is missing'
 instrumentation_rc=0
 "${instrumentation_checker}" "${ED:-${D:-.}}" || instrumentation_rc=$?

@@ -17,6 +17,10 @@ PASSING_GUARD=${TMP}/passing-abi-guard.py
 printf '#!/usr/bin/env python3\n' > "${PASSING_GUARD}"
 printf 'raise SystemExit(0)\n' >> "${PASSING_GUARD}"
 chmod +x "${PASSING_GUARD}"
+PASSING_CHECKER=${TMP}/passing-instrumentation-checker.py
+printf '#!/usr/bin/env python3\n' > "${PASSING_CHECKER}"
+printf 'raise SystemExit(0)\n' >> "${PASSING_CHECKER}"
+chmod +x "${PASSING_CHECKER}"
 
 run_case() {
     local name=$1
@@ -38,7 +42,8 @@ new_marker() {
     : > "${PORTAGE_BUILDDIR}/.installed"
     GENTOO_OPT_TEST_MODE=1
     GENTOO_OPT_ABI_GUARD=${PASSING_GUARD}
-    export PORTAGE_TMPDIR PORTAGE_BUILDDIR GENTOO_OPT_TEST_MODE GENTOO_OPT_ABI_GUARD
+    GENTOO_OPT_INSTRUMENTATION_CHECKER=${PASSING_CHECKER}
+    export PORTAGE_TMPDIR PORTAGE_BUILDDIR GENTOO_OPT_TEST_MODE GENTOO_OPT_ABI_GUARD GENTOO_OPT_INSTRUMENTATION_CHECKER
 }
 
 case_off_is_noop() (
