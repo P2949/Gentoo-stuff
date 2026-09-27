@@ -9283,3 +9283,15 @@ Merge evidence is retained at
 `/var/lib/gentoo-optimization/reports/profile-merge-sysklogd-training-20260927.json`.
 This is representative profile-training evidence only; no profile-use or BOLT
 deployment is claimed.
+
+## 2026-09-27 mesa-progs representative canary refusal
+
+The safe userspace `x11-apps/mesa-progs-9999` representative canary was
+constructed from the current generation-bound direct-training recipe set, but
+the exact Portage pretend resolved both
+`x11-apps/mesa-progs-9999` and `dev-util/spirv-headers-1.4.350.0`. The wave
+runner refused the transaction before compilation because dependency/co-build
+reconciliation requires a single intended CPV. No install, workload receipt,
+profile payload, or merge evidence was admitted. This preserves the current
+SPIR-V closure blocker without bypassing it or retrying the unchanged
+transaction.
