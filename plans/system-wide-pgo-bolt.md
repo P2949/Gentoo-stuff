@@ -8926,3 +8926,12 @@ merge evidence is retained at
 `65e9f1e2f4da8476970c0e06da28f82d0f48d68c92c2dd2ef51d17b3acfccb89`). This
 is the first fresh representative training payload in the reviewed generation;
 no profile-use or BOLT deployment is claimed yet.
+
+## 2026-09-27 workload-plumbing regression validation
+
+Focused workload and wave regressions passed after the canary changes:
+`test_build_workload_manifest.py`, `test_consumer_workload_planner.py`,
+`test_schedule_generation.py`, `test-profile-wave-guards.sh`, and
+`test-wave-receipt-verifier.sh`. The receipt verifier continued to reject an
+empty completed payload, while the valid canary receipt remained internally
+consistent.
