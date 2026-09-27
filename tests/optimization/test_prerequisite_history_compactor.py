@@ -20,3 +20,8 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([sys.executable, str(TOOL), "--transactions", str(base), "--receipt", str(receipt), "--execute"], check=True)
     assert not (terminal / "tmp").exists()
     assert (active / "tmp").exists()
+    prepared = Path(str(receipt) + ".prepared.json")
+    assert prepared.exists()
+    prepared_data = json.loads(prepared.read_text(encoding="utf-8"))
+    assert prepared_data["schema"] == "gentoo-optimization-prerequisite-retirement-prepared-v1"
+    assert prepared_data["transaction_id"] == "done"
