@@ -8868,3 +8868,14 @@ was rerun with `PATH=/usr/bin:/bin`: 374 tests ran, 8 explicit skips, and zero
 failures in 89.903 seconds. Focused detector, scheduler, and provider-resolution
 checks also passed. This validates the source changes and evidence plumbing; it
 does not close the separate representative workload or BOLT execution gates.
+
+## 2026-09-27 consumer-workload rebinding
+
+The consumer-workload planner was rerun against the post-build-ID ELF census,
+reviewed reverse-dependency graph, and fresh workload manifest. It records 238
+`needs-consumer-workload` packages, each with consumer CPV candidates but no
+bound executable/service/test recipe yet. The report is retained at
+`/var/lib/gentoo-optimization/reports/consumer-workload-plan-postbuildid-20260927.json`
+(SHA-256 `47aefaa5c107babac7931adc74d66eeefe5102542a3b594f0b9efaa1c102ed8c`).
+This is an open representative-training requirement, not a terminal exclusion
+and not permission to start a broad profile wave.
