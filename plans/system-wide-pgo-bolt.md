@@ -8648,3 +8648,13 @@ provider records were unresolved. The report keeps the 526 packages requiring
 representative training work and one explicit terminal workload exclusion.
 This is provider-binding evidence only; smoke recipes remain ineligible for
 normal production scheduling and no package wave was started.
+
+## 2026-09-27 reverse-dependency source contract
+
+`generate-reverse-dependencies.py` now validates both Portage and ELF source
+schemas before combining them, preserves typed `portage-runtime`,
+`portage-build`, and `elf-needed` relationships, and records source-contract
+counts alongside both input hashes. The existing consumer-workload regression
+passes and confirms workload bindings survive graph generation. This is a
+producer-boundary fix; a live graph still requires current Portage dependency
+records and DT_NEEDED resolution before consumer training can be authorized.
