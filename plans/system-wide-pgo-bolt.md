@@ -8671,3 +8671,14 @@ ELF census: all 218 no-runnable-entrypoint packages remain explicitly
 `needs-consumer-workload`, because no consumer recipe has yet supplied the
 required executable, expected provider artifacts, and counter proof. No package
 wave was started.
+
+## 2026-09-27 consumer workload candidate binding
+
+`bind-consumer-workload-candidates.py` transformed the live consumer plan into
+explicit, still-provisional candidates. It bound 3,557 consumer executable
+recipes for 168 of the 218 no-entrypoint packages; 50 packages remain without
+a deterministic installed consumer executable. Every candidate records the
+consumer CPV, executable, expected provider artifact, and a
+`pending-runtime-proof` counter state. These records are not training
+authority and are not admitted to normal scheduling until an actual workload
+run proves counters for the post-generation provider identity.
