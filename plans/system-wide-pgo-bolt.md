@@ -9526,3 +9526,28 @@ Repository synchronization exposed an invalid `manifest.json` inside the live Po
 Binpkg retention scanning was bounded in commit `f634d58` by restricting reference discovery under a project root to durable metadata subtrees (`reports`, `state`, `generations`, and `receipts`) instead of recursively reading payload/object trees. Archive hashing is now opt-in via `--hash-objects`; retention classification does not need to read every package archive, while execute-mode candidate verification can request hashes explicitly. The focused regression covers the scoped-reference boundary, and the live dry-run completed with 1,866 artifacts without mutation.
 
 Storage inventory traversal was optimized in the working tree to count each requested tree once while deriving direct-child file and allocated-byte totals, avoiding the previous second recursive walk for every child. The new `counts_with_children` regression passes, Python compilation and `git diff --check` pass, and a root-owned live check over ccache and ThinLTO completed successfully with 147,599 and 11,373 files respectively. No storage mutation occurred.
+
+## 2026-09-27 storage prerequisite retirement authority extension
+
+`compact-prerequisite-history.py` now accepts the independently validated
+`gentoo-optimization-jsonschema-prerequisite-retry-disposition-v1` authority
+and the exact reconciliation input.  It keeps each original transaction state
+immutable while deriving a separate `payload_retirement_authorized` decision;
+nonterminal consumed/reconciled classifications are eligible only when
+`reusable` is false and required reconciliation is present.  The tool now
+includes `distfiles.staging` in the explicitly reconstructible payload set,
+supports transaction-scoped bounded batches, records authority hashes in
+`gentoo-optimization-prerequisite-retirement-v2` receipts, and avoids reading
+large payload bytes during dry-run measurement; execute mode always hashes
+before quarantine.  The focused prerequisite-history regression and Python
+compile pass.
+
+A bounded live execute retired the validated, externally reconciled
+`jsonschema-source-20260907T013000Z` payload from its original transaction
+without changing its rollback-in-progress state.  The retirement receipt is
+`/var/lib/gentoo-optimization/reports/prerequisite-storage-retirement-execute-20260927-jsonschema-source-20260907T013000Z.json`.
+It recorded `distfiles.staging` logical bytes `42,852,191,009` and a measured
+filesystem-free delta of `52,371,456` bytes; the smaller physical delta is
+consistent with shared/reflinked historical storage.  No active Portage process
+was present, the quarantine protocol completed, and the original state records
+remain intact.
