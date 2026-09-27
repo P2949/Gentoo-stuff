@@ -15,6 +15,10 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from importlib.util import module_from_spec, spec_from_file_location
+_spec = spec_from_file_location('instrumentation', Path(__file__).parents[1] / 'lib' / 'instrumentation.py')
+_detector = module_from_spec(_spec); assert _spec.loader; _spec.loader.exec_module(_detector)
+
 
 def _readelf(path: str) -> tuple[int, str]:
     proc = subprocess.run(
@@ -61,8 +65,9 @@ def inspect(item: dict) -> dict:
                     "__llvm_covmap", "__llvm_covfun"):
         if re.search(rf"\b{re.escape(section)}\b", text):
             markers.append(section)
-    if re.search(r"\b\.gcov\b|\b\.gcda\b|\b\.gcno\b", text):
-        markers.append("gcc-gcov")
+    for marker in ("__gcov_init", "__gcov_exit", "__gcov_merge_", "__gcov_"):
+        if marker in text:
+            markers.append(marker)
     result["instrumentation_markers"] = sorted(set(markers))
     if markers:
         result["status"] = "instrumented-unknown-origin"
