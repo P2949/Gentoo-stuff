@@ -9152,3 +9152,9 @@ the reviewed migration deliberately retains the LLVM 22 lane and masks the
 incomplete LLVM 24 toolchain. The source policy now excludes only
 `>=llvm-runtimes/libclc-23` so libclc cannot advance independently of its
 compiler closure. No LLVM or kernel transaction was started.
+
+The refreshed `@world` pretend after this correction has no unsatisfied
+dependency block. It resolves 1,277 operations (36 upgrades, four new slots,
+and 1,237 rebuilds), with the known glslang-to-wlroots rebuild edge. This is a
+resolver-clean baseline boundary; the broad transaction remains intentionally
+unstarted pending the documented userspace freeze and optimization-wave gates.
