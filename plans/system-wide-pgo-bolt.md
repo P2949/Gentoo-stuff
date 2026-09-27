@@ -8790,3 +8790,15 @@ Coverage report SHA-256 is `a3142679068e4257fb69652d1ca04933facc7dbdc22fe8b64e66
 This establishes accounting and safety completeness for the reviewed generation;
 representative workload closure and profile payload production remain separate
 requirements and no profile wave was started.
+
+## 2026-09-27 representative workload gate
+
+The independent workload-coverage audit was run against the reviewed lane set
+and the retained recipe records. It correctly refuses representative closure:
+565 PGO packages are in scope, zero recipes currently have an admitted training
+state, one explicit terminal workload exclusion is recorded, and 564 packages
+remain missing representative training closure. Both `coverage_pass` and
+`representative_training_coverage_pass` are false. The report is retained at
+`/var/lib/gentoo-optimization/reports/workload-coverage-20260927.json`; no
+profile-generation wave was started merely to satisfy this missing-workload
+state.
