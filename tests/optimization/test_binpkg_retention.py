@@ -3,6 +3,14 @@ import json, subprocess, sys, tempfile
 from pathlib import Path
 ROOT=Path(__file__).parents[2]
 TOOL=ROOT/'scripts/optimization/storage/prune-binpkg-cache.py'
+spec = __import__('importlib.util').util.spec_from_file_location('binpkg_retention', TOOL)
+module = __import__('importlib.util').util.module_from_spec(spec); assert spec.loader; spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as t:
+    root = Path(t) / 'project'; (root / 'reports').mkdir(parents=True); (root / 'storage' / 'objects').mkdir(parents=True)
+    (root / 'reports' / 'keep.json').write_text('{"snapshot-live": true}', encoding='utf-8')
+    (root / 'storage' / 'objects' / 'payload.json').write_text('{"snapshot-should-not-be-scanned": true}', encoding='utf-8')
+    assert module.refs([root]) == {'snapshot-live'}
+
 with tempfile.TemporaryDirectory() as t:
     root=Path(t)/'pkgs'; root.mkdir()
     (root/'app-test').mkdir()
@@ -13,6 +21,7 @@ with tempfile.TemporaryDirectory() as t:
                     '--generation-lock',str(Path(t)/'generation.lock'),
                     '--reference-root',str(Path(t)/'no-references')],check=True,stdout=subprocess.DEVNULL)
     d=json.loads(out.read_text()); assert d['objects'][0]['state']=='UNKNOWN'; assert d['mode']=='dry-run'
+    assert d['objects'][0]['sha256'] is None
 
 with tempfile.TemporaryDirectory() as t:
     root=Path(t)/'pkgs'; (root/'app-test/old').mkdir(parents=True); (root/'app-test/new').mkdir(parents=True)

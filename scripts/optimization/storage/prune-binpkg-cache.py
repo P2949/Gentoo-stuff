@@ -13,12 +13,21 @@ def refs(roots: list[Path]) -> set[str]:
     found = set()
     for root in roots:
         if not root.is_dir(): continue
-        for p in root.rglob("*"):
-            if not p.is_file() or p.stat().st_size > 8 * 1024 * 1024: continue
-            if p.suffix.lower() not in {".json", ".receipt", ".manifest", ".txt", ".sha256"}: continue
-            try: text = p.read_text(encoding="utf-8", errors="ignore")
-            except OSError: continue
-            found.update(re.findall(r"(?:snapshot|critical)-[A-Za-z0-9._-]+", text))
+        # A project root also contains multi-gigabyte payload/object trees.
+        # Retention references are authoritative only in the small durable
+        # metadata subtrees; scanning payloads here made a dry-run unbounded.
+        scoped = [root]
+        named = {"reports", "state", "generations", "receipts"}
+        children = [child for child in root.iterdir() if child.is_dir() and child.name in named]
+        if children:
+            scoped = children
+        for base in scoped:
+            for p in base.rglob("*"):
+                if not p.is_file() or p.stat().st_size > 8 * 1024 * 1024: continue
+                if p.suffix.lower() not in {".json", ".receipt", ".manifest", ".txt", ".sha256"}: continue
+                try: text = p.read_text(encoding="utf-8", errors="ignore")
+                except OSError: continue
+                found.update(re.findall(r"(?:snapshot|critical)-[A-Za-z0-9._-]+", text))
     return found
 
 def installed_cpvs(vdb: Path) -> set[str]:
@@ -74,6 +83,7 @@ def main() -> int:
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--execute", action="store_true")
     p.add_argument("--prune-duplicates", action="store_true")
+    p.add_argument("--hash-objects", action="store_true", help="hash package archives while inventorying")
     p.add_argument("--reference-root", action="append", type=Path, default=[])
     p.add_argument("--vdb", type=Path, default=Path("/var/db/pkg"))
     p.add_argument("--project-lock", type=Path, default=Path("/run/gentoo-optimization/project.lock"))
@@ -102,7 +112,7 @@ def main() -> int:
             raw_cpv = re.sub(r"-[0-9]+$", "", raw_cpv)
             cpv_hint = f"{rel.parts[0]}/{raw_cpv}" if len(rel.parts) > 1 else raw_cpv
             rows.append({"path": str(f), "cpv_hint": cpv_hint, "size": st.st_size, "mtime_ns": st.st_mtime_ns,
-                         "sha256": hashlib.sha256(f.read_bytes()).hexdigest() if st.st_size <= 64*1024*1024 else None,
+                         "sha256": hashlib.sha256(f.read_bytes()).hexdigest() if a.hash_objects and st.st_size <= 64*1024*1024 else None,
                          "state": "UNKNOWN", "reason": "no positive retention decision"})
     rows.sort(key=lambda r: (r["cpv_hint"], r["mtime_ns"], r["path"]))
     by_cpv = {}
