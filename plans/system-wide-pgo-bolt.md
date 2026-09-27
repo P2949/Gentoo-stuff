@@ -8802,3 +8802,11 @@ remain missing representative training closure. Both `coverage_pass` and
 `/var/lib/gentoo-optimization/reports/workload-coverage-20260927.json`; no
 profile-generation wave was started merely to satisfy this missing-workload
 state.
+
+## 2026-09-27 post-authority focused validation
+
+After the framework migration and generation activation, the optimization test
+suite was rerun at the coherent source boundary. Python/unit and script-backed
+optimization tests completed with 374 tests run, 8 explicit skips, and zero
+failures. The separate representative workload gate remains intentionally open;
+this green test result does not authorize a profile wave by itself.
