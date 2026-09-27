@@ -26,8 +26,6 @@ RETRY_RETIREABLE = {
     "locked-authority-only-consumed",
     "externally-reconciled-consumed-nonterminal",
     "rollback-in-progress-with-external-reconciliation",
-    "terminal-rolled-back",
-    "terminal-recovery-failed",
 }
 
 
