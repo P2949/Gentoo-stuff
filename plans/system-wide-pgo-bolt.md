@@ -9400,3 +9400,9 @@ The exact de-instrumentation runner now applies the same capacity gate before
 its batch transaction (including dry-run validation), with explicit fixture
 overrides for the path and thresholds. Python compilation passes; the runner
 cannot begin restoration work while the storage floor is unsafe.
+
+The generic retention-driven storage GC now acquires the nonblocking project
+and generation locks for both dry-run and execution, and releases them on all
+paths. Its focused regression and the storage retention, binpkg, checkpoint,
+and raw-spool compaction tests pass; concurrent cleanup cannot race a package
+or generation transaction.

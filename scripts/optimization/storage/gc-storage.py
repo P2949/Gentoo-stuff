@@ -7,6 +7,7 @@ explicitly marked ARCHIVE_CANDIDATE; UNKNOWN and all authority states remain.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import shutil
@@ -20,30 +21,56 @@ def active_portage() -> bool:
     return result.returncode == 0
 
 
+def acquire_locks(paths: list[Path]) -> list[object]:
+    handles = []
+    try:
+        for path in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handle = path.open("a+")
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                handle.close()
+                raise SystemExit(f"REFUSED: active storage lock: {path}")
+            handles.append(handle)
+    except BaseException:
+        for handle in handles:
+            handle.close()
+        raise
+    return handles
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--retention", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--project-lock", type=Path, default=Path("/run/gentoo-optimization/project.lock"))
+    parser.add_argument("--generation-lock", type=Path, default=Path("/run/gentoo-optimization/generation.lock"))
     args = parser.parse_args()
     report = json.loads(args.retention.read_text(encoding="utf-8"))
     if report.get("schema") != "storage-retention-set-v1":
         raise SystemExit("REFUSED: unsupported retention report schema")
     if active_portage():
         raise SystemExit("REFUSED: Portage transaction is active")
+    locks = acquire_locks([args.project_lock, args.generation_lock])
     candidates = [Path(row["path"]) for row in report.get("objects", []) if row.get("state") == "ARCHIVE_CANDIDATE"]
     unknown = [row for row in report.get("objects", []) if row.get("state") == "UNKNOWN"]
     deleted: list[str] = []
-    if args.execute:
-        quarantine = Path("/var/tmp/gentoo-optimization/storage-gc-quarantine")
-        quarantine.mkdir(parents=True, exist_ok=True)
-        for path in candidates:
-            if not path.is_dir() or not path.is_absolute():
-                raise SystemExit(f"REFUSED: invalid candidate {path}")
-            target = quarantine / (path.name + "." + str(os.getpid()))
-            os.replace(path, target)
-            shutil.rmtree(target)
-            deleted.append(str(path))
+    try:
+        if args.execute:
+            quarantine = Path("/var/tmp/gentoo-optimization/storage-gc-quarantine")
+            quarantine.mkdir(parents=True, exist_ok=True)
+            for path in candidates:
+                if not path.is_dir() or not path.is_absolute():
+                    raise SystemExit(f"REFUSED: invalid candidate {path}")
+                target = quarantine / (path.name + "." + str(os.getpid()))
+                os.replace(path, target)
+                shutil.rmtree(target)
+                deleted.append(str(path))
+    finally:
+        for handle in locks:
+            handle.close()
     receipt = {
         "schema": "storage-gc-v1",
         "timestamp": int(time.time()),

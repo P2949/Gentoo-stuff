@@ -19,6 +19,8 @@ with tempfile.TemporaryDirectory() as tmp:
         {"path": str(candidate), "state": "ARCHIVE_CANDIDATE"},
         {"path": str(unknown), "state": "UNKNOWN"},
     ]}), encoding="utf-8")
-    subprocess.run([sys.executable, str(GC), "--retention", str(retention), "--receipt", str(receipt)], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run([sys.executable, str(GC), "--retention", str(retention), "--receipt", str(receipt),
+                    "--project-lock", str(root / "project.lock"),
+                    "--generation-lock", str(root / "generation.lock")], check=True, stdout=subprocess.DEVNULL)
     assert candidate.exists() and unknown.exists()
     assert json.loads(receipt.read_text())["mode"] == "dry-run"
