@@ -9845,3 +9845,14 @@ identity report is
 `/var/lib/gentoo-optimization/reports/userspace-baseline-hypr-fetch-recovery-20260930.json`
 (SHA-256 `d77b4acbfd171207ca5e376bba403f4b509908b928cab4dacc6fe347b9a67de0`). These were source-recovery
 retries after the fetch cause changed. No ABI failure was retried or bypassed.
+
+### 2026-09-30 narrow userspace baseline recovery: Vim
+
+The prior `app-editors/vim-9999::gentoo` failure was an unpack fetch timeout.
+After the repository/network recovery, the exact fetch and an optimization-off
+`--nodeps` transaction completed successfully. Vim configured, compiled,
+installed, passed the active install-QA/ABI checks, and merged. The post-merge
+VDB identity report is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-vim-fetch-recovery-20260930.json`
+(SHA-256 `995fb6ac8f8935f7a51f1de67fd1178491aa34beae211a8db41faabb26a4500f`). This was a source-recovery retry after
+the fetch cause changed; no ABI failure was retried or bypassed.
