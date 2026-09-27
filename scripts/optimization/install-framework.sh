@@ -2363,7 +2363,7 @@ bootstrap_tree_matches() {
     local -a actual=()
     [[ -d ${root} && ! -L ${root} ]] || return 1
     mapfile -t actual < <(find "${root}" -mindepth 1 -printf '%y\t%P\n' | sort)
-    [[ ${actual[*]} == $'d\tbolt\nd\tpgo\nd\trecovery\nd\tscripts\nd\tscripts/optimization\nd\tscripts/optimization/lib\nd\tscripts/optimization/verify\nf\tbolt/artifact_tool.py\nf\tbolt/capture-input.sh\nf\tbolt/deploy-output.sh\nf\tbolt/register-output.sh\nf\tpgo/authorization-token-scan.py\nf\tpgo/production-profile-lock-transaction.py\nf\tpgo/profile-identity.py\nf\tpgo/profile_locks.py\nf\tpgo/validate-profile.py\nf\trecovery/verify-binpkg-snapshot.py\nf\tscripts/optimization/lib/state.py\nf\tscripts/optimization/verify/abi-guard.py\nf\tscripts/optimization/verify/reconcile-state.py' ]] || return 1
+    [[ ${actual[*]} == $'d\tbolt\nd\tpgo\nd\trecovery\nd\tscripts\nd\tscripts/optimization\nd\tscripts/optimization/lib\nd\tscripts/optimization/verify\nf\tbolt/artifact_tool.py\nf\tbolt/capture-input.sh\nf\tbolt/deploy-output.sh\nf\tbolt/register-output.sh\nf\tpgo/authorization-token-scan.py\nf\tpgo/production-profile-lock-transaction.py\nf\tpgo/profile-identity.py\nf\tpgo/profile_locks.py\nf\tpgo/validate-profile.py\nf\trecovery/verify-binpkg-snapshot.py\nf\tscripts/optimization/lib/state.py\nf\tscripts/optimization/lib/instrumentation.py\nf\tscripts/optimization/lib/check-staged-instrumentation.py\nf\tscripts/optimization/verify/abi-guard.py\nf\tscripts/optimization/verify/reconcile-state.py' ]] || return 1
     for index in "${!HELPER_RELATIVE[@]}"; do
         temporary=$(mktemp "${BASE}/.helper-bootstrap-check.XXXXXXXX")
         render_helper_bootstrap "${HELPER_RELATIVE[index]}" >"${temporary}"
