@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 import sys
@@ -15,7 +16,8 @@ class DistfileRetentionTests(unittest.TestCase):
             root = Path(tmp); dist = root / "dist"; repo = root / "repo"; dist.mkdir(); repo.mkdir()
             (dist / "known.tar.xz").write_bytes(b"known")
             (dist / "unknown.tar.xz").write_bytes(b"unknown")
-            (repo / "Manifest").write_text("DIST known.tar.xz 5 deadbeef\n")
+            digest = hashlib.sha512(b"known").hexdigest()
+            (repo / "Manifest").write_text(f"DIST known.tar.xz 5 SHA512 {digest}\n")
             out = root / "report.json"
             subprocess.run([sys.executable, str(SCRIPT), "--distfiles", str(dist),
                             "--manifest-root", str(repo), "--output", str(out)], check=True,

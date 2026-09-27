@@ -28,8 +28,9 @@ def manifest_refs(roots: list[Path]) -> dict[str, dict[str, object]]:
                 fields = line.split()
                 if len(fields) < 3 or fields[0] not in {"DIST", "AUX"}:
                     continue
-                name, size, digest = fields[1], fields[2], fields[3] if len(fields) > 3 else ""
-                refs.setdefault(name, {"manifest": str(path), "size": int(size) if size.isdigit() else None, "sha256": digest})
+                name, size = fields[1], fields[2]
+                digests = dict(zip(fields[3::2], fields[4::2]))
+                refs.setdefault(name, {"manifest": str(path), "size": int(size) if size.isdigit() else None, "digests": digests})
     return refs
 
 
@@ -48,7 +49,16 @@ def main() -> int:
         except OSError:
             continue
         if ref and ref.get("size") == size:
-            state, reason = "EVIDENCE_REQUIRED", "matched Portage Manifest size/digest"
+            digest_name = "SHA512" if "SHA512" in ref.get("digests", {}) else "BLAKE2B"
+            digest = hashlib.sha512() if digest_name == "SHA512" else hashlib.blake2b(digest_size=64)
+            with path.open("rb") as stream:
+                for block in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(block)
+            observed = digest.hexdigest()
+            if observed == ref.get("digests", {}).get(digest_name):
+                state, reason = "EVIDENCE_REQUIRED", f"matched Portage Manifest {digest_name} digest"
+            else:
+                state, reason = "UNKNOWN", "Manifest digest mismatch"
         elif ref:
             state, reason = "UNKNOWN", "Manifest filename matched but size differs"
         else:

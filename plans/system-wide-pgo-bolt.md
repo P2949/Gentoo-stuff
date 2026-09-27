@@ -9620,3 +9620,11 @@ report `/var/lib/gentoo-optimization/reports/distfile-retention-set-20260927.jso
 found 96,369 manifest names, 17,522,901,279 bytes positively matched as
 `EVIDENCE_REQUIRED`, and 9,825,638,475 bytes still `UNKNOWN`; the unknown set
 remains protected.  Its focused regression passes.
+
+The distfile retention builder was tightened to require an actual Portage
+Manifest digest match (SHA512 when present, otherwise BLAKE2B), rather than
+classifying by filename and size alone.  The focused regression was updated to
+cover digest verification.  The live v2 report produced the same positive
+`EVIDENCE_REQUIRED` and protected `UNKNOWN` totals as the preliminary scan:
+`17,522,901,279` and `9,825,638,475` bytes respectively, confirming no
+unverified source was promoted into the keep authority.
