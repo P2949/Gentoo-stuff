@@ -9680,3 +9680,16 @@ remains passing after the retirement.  Execute mode refuses any reference set
 other than the complete optimization root, so reports-only scans cannot become
 deletion authority.  The focused reachability regression now also covers this
 refusal.
+
+## 2026-09-27 Gentoo repository synchronization boundary
+
+The Gentoo repository was synchronized again from the signed rsync source and
+reported `Action: sync for repo: gentoo, returned code = 0`; the manifest
+signature was validated against the Gentoo release key. The complete output is
+`/var/lib/gentoo-optimization/reports/repository-sync-gentoo-20260927.txt`,
+SHA-256 `bee926a9690a5a8e117188749a1e5a388f3b2d022fbae39d5d2eae63107274fa`.
+The repository was already current after the first sync, so no package
+transaction was performed. `eix-update` rebuilt its database, while unrelated
+third-party overlay metadata warnings were retained in the report and did not
+alter the signed Gentoo synchronization result. No kernel, boot, EFI,
+initramfs, or firmware state was touched.
