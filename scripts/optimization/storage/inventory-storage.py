@@ -28,6 +28,12 @@ DEFAULT_PATHS = (
     "/var/tmp/ccache",
     "/var/tmp/thinlto-cache",
     "/var/cache/distfiles",
+    "/var/cache/gentoo-optimization/prerequisite-transactions",
+    "/var/lib/gentoo-optimization/recovery/prerequisite-authorities",
+    "/var/lib/gentoo-optimization/recovery/binpkgs",
+    "/var/lib/gentoo-optimization/merged-profiles",
+    "/var/cache/gentoo-optimization/pgo",
+    "/var/cache/gentoo-optimization/bolt",
 )
 
 
@@ -94,6 +100,13 @@ def entry(raw: str) -> dict[str, object]:
     if not path.exists():
         return {"path": raw, "exists": False}
     files, allocated = counts(path)
+    children = []
+    for child in sorted(path.iterdir()):
+        if child.is_dir() and not child.is_symlink():
+            child_logical = logical_usage(child)
+            child_files, child_allocated = counts(child)
+            children.append({"path": str(child), "logical_bytes": child_logical, "allocated_bytes": child_allocated, "file_count": child_files})
+    children.sort(key=lambda item: (item["logical_bytes"] is not None, item["logical_bytes"] or 0), reverse=True)
     return {
         "path": raw,
         "exists": True,
@@ -101,6 +114,7 @@ def entry(raw: str) -> dict[str, object]:
         "allocated_bytes": allocated,
         "file_count": files,
         "filesystem": filesystem(path),
+        "children": children,
     }
 
 
