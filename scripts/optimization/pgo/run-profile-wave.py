@@ -204,6 +204,12 @@ def main():
    command_env['LLVM_PROFILE_FILE']='/dev/null'
    try:
     subprocess.run(command,env=command_env,check=True)
+   except subprocess.CalledProcessError as exc:
+    _active_attempt.update({'state':'failed','completed_at':time.time(),
+                            'failure_observed_by':'runner-subprocess',
+                            'returncode':exc.returncode})
+    _write_attempt(_active_attempt)
+    raise
    finally:
     # No profile output path is granted to the privileged transaction.  This
     # prevents disposable host-helper residue from becoming a staged package
