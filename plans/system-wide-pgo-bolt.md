@@ -9439,3 +9439,9 @@ The retention-set builder and generic storage-GC receipt now use the same
 durable publication sequence. The retention and GC regressions pass, so both
 the deletion candidate set and the resulting cleanup receipt survive a power
 loss boundary before storage automation reports success.
+
+A fresh root-owned retention classification of the live raw-profile root is
+recorded at `/var/lib/gentoo-optimization/reports/storage-retention-followup-20260927.json`.
+It finds nine generation directories: one `LIVE_REQUIRED`, eight
+`EVIDENCE_KEEP`, zero `UNKNOWN`, and zero deletion candidates. No raw profile
+payload was removed.
