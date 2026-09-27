@@ -41,7 +41,7 @@ def tree_info(path: Path) -> dict[str, object]:
     return {"path": str(path), "files": files, "logical_bytes": logical, "sha256": digest.hexdigest()}
 
 
-def terminal_marker(root: Path) -> dict[str, object] | None:
+def terminal_marker(root: Path, state_dir: Path | None = None) -> dict[str, object] | None:
     for name in STATE_NAMES:
         candidate = root / name
         if not candidate.is_file():
@@ -53,6 +53,16 @@ def terminal_marker(root: Path) -> dict[str, object] | None:
         state = str(value.get("state", value.get("status", ""))).lower()
         if state in {"completed", "success", "successful", "rolled-back", "recovery-failed", "abandoned", "terminal"} or value.get("terminal") is True:
             return {"path": str(candidate), "sha256": hashlib.sha256(candidate.read_bytes()).hexdigest(), "state": state or "terminal"}
+    if state_dir is not None:
+        prefix = state_dir / ("jsonschema-prerequisite-" + root.name)
+        for suffix in ("success", "rolled-back", "recovery-failed", "abandoned"):
+            candidate = prefix.with_name(prefix.name + "." + suffix + ".json")
+            if candidate.is_file():
+                try:
+                    value = json.loads(candidate.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                return {"path": str(candidate), "sha256": hashlib.sha256(candidate.read_bytes()).hexdigest(), "state": suffix, "record": value}
     return None
 
 
@@ -72,20 +82,28 @@ def active_users(path: Path) -> bool:
     return result.returncode == 0
 
 
+def free_bytes(path: Path) -> int:
+    stat = os.statvfs(path)
+    return stat.f_bavail * stat.f_frsize
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--transactions", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--keep-child", action="append", default=[])
+    parser.add_argument("--state-dir", type=Path, help="external durable prerequisite state directory")
     args = parser.parse_args()
     root = args.transactions.resolve()
     if not root.is_dir():
         raise SystemExit("REFUSED: prerequisite transaction root is not a directory")
     keep = set(args.keep_child)
+    free_before = free_bytes(root)
     rows: list[dict[str, object]] = []
+    state_dir = args.state_dir.resolve() if args.state_dir else None
     for tx in sorted(p for p in root.iterdir() if p.is_dir()):
-        marker = terminal_marker(tx)
+        marker = terminal_marker(tx, state_dir)
         children = []
         for name in EPHEMERAL:
             child = tx / name
@@ -107,7 +125,8 @@ def main() -> int:
                 quarantine = tx / ("." + str(child["name"]) + ".retiring." + str(os.getpid()))
                 os.replace(path, quarantine)
                 retired.append({"transaction_id": tx.name, "name": child["name"], "before": child, "quarantine": str(quarantine)})
-    payload = {"schema": "gentoo-optimization-prerequisite-retirement-v1", "timestamp": int(time.time()), "mode": "execute" if args.execute else "dry-run", "transactions": rows, "retired": retired, "unknown_retained": True}
+    free_after = free_bytes(root)
+    payload = {"schema": "gentoo-optimization-prerequisite-retirement-v1", "timestamp": int(time.time()), "mode": "execute" if args.execute else "dry-run", "transactions": rows, "retired": retired, "unknown_retained": True, "filesystem_free_bytes_before": free_before, "filesystem_free_bytes_after": free_after, "filesystem_free_delta": free_after - free_before}
     durable_write(args.receipt, payload)
     if args.execute:
         for row in retired:
