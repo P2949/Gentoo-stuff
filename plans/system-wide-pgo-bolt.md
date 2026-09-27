@@ -9915,3 +9915,28 @@ its receipt is
 `/var/lib/gentoo-optimization/reports/portage-build-retirement-hyprland-interrupted-20260930.json`
 (SHA-256
 `08462a876fd3dbe5fead4a8075cb31a68f70c0c293ea3ee974582343f7b12314`).
+
+### 2026-09-30 Hyprland constrained retry: source fetch remained terminal
+
+A changed-condition retry used `MAKEOPTS='-j4 -l4'` and the exact
+`=gui-wm/hyprland-9999::hyproverlay --nodeps` optimization-off transaction.
+The Portage result did not admit a merge: the durable build log ends in the
+`git-r3` unpack phase with `Unable to fetch from any of EGIT_REPO_URI`, and the
+installed VDB identity is unchanged. The partial compiler output observed
+before the terminal Portage result is therefore not treated as a successful
+build or as evidence of a reproducible compiler failure. The preserved retry
+log is
+`/var/lib/gentoo-optimization/reports/package-failures/gui-wm-hyprland-9999/build-retry-j4.log`
+(SHA-256
+`ce25f03a0183c632c72d5d21f70063309bc09f15b2f15003e859ab0fb834a548`), with
+structured record
+`/var/lib/gentoo-optimization/reports/package-failures/gui-wm-hyprland-9999/fetch-retry-j4.json`
+(SHA-256
+`66b0ccfec6f4f9727c14bce1653c026b8e6f6bc4b6ed3264e052bbee52df02e1`). The
+inactive-tree retirement helper found no remaining workspace logs; its receipt
+is
+`/var/lib/gentoo-optimization/reports/portage-build-retirement-hyprland-retry-20260930.json`
+(SHA-256
+`c6d23d602ca27b476e7d76343add8f26c50f8513a764b6437be847ecb9c20055`).
+Further Hyprland retries require a new source-fetch diagnosis and are not
+authorized as unchanged compile retries.
