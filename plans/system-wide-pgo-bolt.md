@@ -9316,6 +9316,24 @@ The first root-owned storage inventory is retained at `/var/lib/gentoo-optimizat
 The first retention pass is retained at `/var/lib/gentoo-optimization/reports/storage-retention-20260927.json` with a dry-run receipt at `/var/lib/gentoo-optimization/reports/storage-gc-20260927.json`. It found the nine visible raw-profile generation directories either referenced by machine-readable state or active, so the fail-closed collector selected zero deletion candidates. This is an evidence result, not a cleanup failure: historical references must be reconciled or compacted before any raw generation can be retired.
 
 The binpkg retention inventory `/var/lib/gentoo-optimization/reports/binpkg-retention-20260927.json` found 4,142 package archives totaling 38,007,480,320 bytes. All entries remain `UNKNOWN` until active rollback, transaction, and recovery references are joined; the dry-run made no deletion.
+
+# 2026-09-27 storage recovery-selector rehydration
+
+The first checkpoint-compactor dry-run found that the existing
+`critical-current` selector was dangling: its durable target
+`critical-checkpoint-post-jsonschema-20260906T012300Z-v3` was absent while the
+matching verified cache snapshot and retained offline-restore evidence still
+existed. With no Portage transaction active, the missing durable target was
+rehydrated by one same-filesystem `cp -a --reflink=always` clone from that
+verified cache snapshot. The selector now resolves again, and source/durable
+`Packages` hashes match (`fe7500de1c4a038c4370f06a8affa0b193f63446c9b28ade4403debb706c995d`).
+The rehydration receipt is
+`/var/lib/gentoo-optimization/reports/checkpoint-rehydration-20260927.json`.
+A fresh verifier against the current VDB reports 401 missing live CPVs because
+the checkpoint predates current userspace drift; this is recorded as
+`fail-current-vdb-drift`, while the retained 2026-09-06 offline-restore receipt
+remains the historical checkpoint proof. No checkpoint was retired and no
+boot, kernel, EFI, initramfs, or firmware state was touched.
 # 2026-09-27 storage checkpoint compaction boundary
 
 Added `scripts/optimization/storage/compact-checkpoints.py`, a dry-run-first,
