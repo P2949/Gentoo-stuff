@@ -9348,3 +9348,10 @@ deleted and the refusal receipt is
 `/var/lib/gentoo-optimization/reports/checkpoint-compaction-20260927.json`.
 This is an active recovery-authority issue and must be reconciled before any
 checkpoint retirement or selector mutation.
+
+The raw-profile compactor now requires an explicit sealed attempt receipt with
+`completed`, `validated`, or `merged-validated` status before `--retire-expanded`
+can remove any expanded spool. It reconstructs and hashes the compressed
+archive first, writes the archive manifest/retirement receipt, and only then
+retires the expanded directory. The dry-run behavior remains non-mutating;
+focused spool-compaction coverage now includes the retirement path.
