@@ -54,6 +54,11 @@ def main():
                 raise SystemExit("REFUSED: v3 package record is incomplete")
     payloads = receipt.get("profile_payloads")
     if receipt.get("state") == "completed":
+        if receipt.get("authorization") == "generation-installed":
+            if not isinstance(payloads, list) or payloads:
+                raise SystemExit("REFUSED: generation-install receipt contains profile payloads")
+            print("PASS: exhaustive generation receipt is internally consistent")
+            return
         if receipt.get("authorization") != "profile-payloads-collected":
             raise SystemExit("REFUSED: completed receipt lacks payload authorization")
         if not isinstance(payloads, list) or not payloads:
