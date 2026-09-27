@@ -32,10 +32,12 @@ TEST_ROOT=
 GENERATED_POLICY_INPUT=
 FROZEN_INVENTORY_INPUT=
 SOURCE_ROOT_ARG=
+BOOTSTRAP_MIGRATION=0
 
 usage() {
     cat <<EOF
 Usage: ${0##*/} --source-root ABSOLUTE_PATH [--check]
+       [--bootstrap-migration]
        [--generated-policy-generation ABSOLUTE_PATH]
        [--frozen-inventory ABSOLUTE_PATH]
 
@@ -48,6 +50,9 @@ while (($#)); do
     case $1 in
         --check)
             MODE=check
+            ;;
+        --bootstrap-migration)
+            BOOTSTRAP_MIGRATION=1
             ;;
         --test-root)
             shift
@@ -98,6 +103,13 @@ else
     }
     [[ -z ${GENTOO_OPT_INSTALLER_FAIL_AT:-}${GENTOO_OPT_INSTALLER_PAUSE_AT:-}${GENTOO_OPT_INSTALLER_FORCE_EXCHANGE_UNSUPPORTED:-} ]] || {
         printf 'ERROR: failure injection is forbidden outside --test-root\n' >&2
+        exit 2
+    }
+fi
+
+if (( BOOTSTRAP_MIGRATION )); then
+    [[ -z ${TEST_ROOT} && ${MODE} == install && ${EUID} -eq 0 ]] || {
+        printf 'ERROR: --bootstrap-migration is production root install-only\n' >&2
         exit 2
     }
 fi
@@ -3143,7 +3155,9 @@ else
     # On upgrades, publish only generation-independent indirections while they
     # still dispatch to the old current generation.  The final rename below is
     # therefore the sole behavior-changing operation.
-    require_stable_bootstrap_compatibility
+    if (( ! BOOTSTRAP_MIGRATION )); then
+        require_stable_bootstrap_compatibility
+    fi
     verify_external_migration_source "${PREVIOUS_TARGET}"
 fi
 install_external_indirections
