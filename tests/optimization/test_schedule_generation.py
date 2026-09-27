@@ -11,5 +11,8 @@ def main():
   out2=p/'wave2.json'
   subprocess.run(['python3',str(ROOT/'scripts/optimization/pgo/schedule-generation.py'),'--package-state',str(s),'--attempts',str(attempts),'--output',str(out2),'--generation-id','g1','--wave-size','1','--bindings',str(b),'--recipes',str(r)],check=True)
   enriched=json.loads(out2.read_text())['packages'][0]; assert enriched['profile_path']=='/profiles/c'; assert enriched['recipes'][0]['recipe_id']=='c-help'; assert enriched['identity_sha256']=='d'*64
+  refused=p/'refused.json'
+  blocked=subprocess.run(['python3',str(ROOT/'scripts/optimization/pgo/schedule-generation.py'),'--package-state',str(s),'--attempts',str(attempts),'--output',str(refused),'--generation-id','g1','--storage-minimum-bytes',str(10**18)],capture_output=True,text=True)
+  assert blocked.returncode != 0 and 'storage free-space floor' in (blocked.stdout + blocked.stderr)
  print('PASS: generation scheduler resumes, preserves attempts, and carries workload bindings')
 if __name__=='__main__': main()

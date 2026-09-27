@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """Emit the next resumable bounded optimization wave from package state."""
 from __future__ import annotations
-import argparse, hashlib, json, time
+import argparse, hashlib, json, subprocess, sys, time
 from pathlib import Path
 
 def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':')).encode()
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--package-state',type=Path,required=True); ap.add_argument('--attempts',type=Path,required=True); ap.add_argument('--output',type=Path,required=True); ap.add_argument('--wave-size',type=int,default=16); ap.add_argument('--generation-id',required=True); ap.add_argument('--bindings',type=Path); ap.add_argument('--recipes',type=Path); ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training'); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument('--package-state',type=Path,required=True); ap.add_argument('--attempts',type=Path,required=True); ap.add_argument('--output',type=Path,required=True); ap.add_argument('--wave-size',type=int,default=16); ap.add_argument('--generation-id',required=True); ap.add_argument('--bindings',type=Path); ap.add_argument('--recipes',type=Path); ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training'); ap.add_argument('--storage-path',type=Path,default=Path('/')); ap.add_argument('--storage-minimum-bytes',type=int,default=100*1024**3); ap.add_argument('--storage-minimum-percent',type=float,default=12.0); a=ap.parse_args()
     if Path('/var/lib/gentoo-optimization/state/deinstrument.pending').exists():
         raise SystemExit('REFUSED: de-instrumentation is pending; generation scheduling is paused')
+    storage_preflight = Path(__file__).resolve().parents[1] / 'verify' / 'storage-preflight.py'
+    if not storage_preflight.is_file():
+        raise SystemExit(f'REFUSED: storage preflight helper is missing: {storage_preflight}')
+    subprocess.run([sys.executable, str(storage_preflight), '--path', str(a.storage_path), '--minimum-bytes', str(a.storage_minimum_bytes), '--minimum-percent', str(a.storage_minimum_percent)], check=True)
     if a.output.exists(): raise SystemExit('REFUSED: scheduler output already exists')
     state=json.loads(a.package_state.read_text()); rows=state.get('records',state.get('packages',[]))
     completed=set(); failed={}; considered=[]; retry_authorized=set()

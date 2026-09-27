@@ -9389,3 +9389,9 @@ now resolves the repaired `critical-current` selector and proposes zero
 retirements. Five referenced cache snapshots remain evidence-retained, the
 selector target is `LIVE_REQUIRED`, and the only unclassified cache snapshot
 is retained as `UNKNOWN` because it lacks a terminal state/Packages manifest.
+
+The generation scheduler now invokes the same capacity preflight before
+emitting a wave. Its focused regression proves normal scheduling succeeds
+above the 100 GiB/12% floor and refuses when an injected minimum exceeds free
+space; no wave can therefore be scheduled without a current storage-margin
+check.
