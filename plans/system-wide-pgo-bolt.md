@@ -9694,6 +9694,18 @@ third-party overlay metadata warnings were retained in the report and did not
 alter the signed Gentoo synchronization result. No kernel, boot, EFI,
 initramfs, or firmware state was touched.
 
+After the baseline transaction was stopped, the inactive Portage build-tree
+retirement authority was run with the project and generation locks. It copied
+and rehashed 27 retained build logs (243,282,808 bytes) into the durable
+reports tree, then removed the now-inactive `/var/tmp/gentoo-portage-build`
+root. Execute receipt:
+`/var/lib/gentoo-optimization/reports/portage-build-retirement-post-interrupt-20260927-execute.json`
+(SHA-256
+`035a083c77893b516e5823f114b0826cd0ece545747f1e2940617f522a4055f1`).
+The root filesystem returned to approximately 156 GiB free / 83% used; no
+protected profile, recovery, binpkg, boot, kernel, EFI, initramfs, or firmware
+state was changed.
+
 The post-interruption binpkg retention dry-run was rerun against the complete
 optimization reference root, live VDB, and recovery indexes. Report
 `/var/lib/gentoo-optimization/reports/binpkg-retention-20260927-post-interrupt.json`
