@@ -9111,3 +9111,14 @@ returns a complete dependency graph, but identifies remaining baseline work:
 conflicts, a masked LLVM 24/libclc transition, and an explicit glslang-to-wlroots
 rebuild closure. No broad transaction was started; these are preserved as the
 next ordinary userspace dependency-closure boundary.
+
+## 2026-09-27 tree-sitter ABI dependency closure
+
+The baseline pretend's first tree-sitter conflict was resolved with the
+narrowest source policy: the live `dev-python/tree-sitter-0.26.0_p20260816`
+binding requires the installed `dev-libs/tree-sitter-0.26.13` ABI, while the
+available `9999` library moves to an incompatible subslot. The reviewed
+package mask now excludes only `>=dev-libs/tree-sitter-9999` until a compatible
+Python binding is available; no package was rebuilt or downgraded. The next
+pretend advances to the independent graphics slot conflicts and the masked
+LLVM-24/libclc transition, which remain ordinary baseline dependency work.

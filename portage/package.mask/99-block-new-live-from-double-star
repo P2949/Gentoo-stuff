@@ -251,3 +251,6 @@
 =app-emulation/wine-staging-9999*
 # Phase 3 ABI guard evidence: Firefox 156 removes two established libmozsandbox exports.
 =www-client/firefox-bin-156.0*
+# Keep the stable Tree-sitter ABI required by the installed Python binding
+# until a compatible dev-python/tree-sitter release is available.
+>=dev-libs/tree-sitter-9999
