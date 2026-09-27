@@ -2684,7 +2684,9 @@ verify_external_indirections() {
         fail 'external manifest is not bound to framework-current/install.manifest'
     verify_installed_tmpfiles_rule
     verify_directory "${LIBEXEC_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
-    bootstrap_tree_matches "${LIBEXEC_ROOT}" || fail 'fixed helper bootstrap tree differs'
+    bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
+        manifest_bootstrap_tree_matches "${LIBEXEC_ROOT}" "${PREVIOUS_TARGET}" || \
+        fail 'fixed helper bootstrap tree differs'
     verify_regular_trusted "${qa}" 0644
     temporary=$(mktemp "${BASE}/.qa-bootstrap-check.XXXXXXXX")
     render_qa_bootstrap >"${temporary}"
