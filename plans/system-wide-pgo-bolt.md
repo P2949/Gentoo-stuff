@@ -9571,3 +9571,19 @@ join; their original state records remain unchanged.  The two 42.85 GB logical
 at `/var/lib/gentoo-optimization/reports/prerequisite-storage-retirement-execute-20260927-batch3.json`.
 Measured physical free-space recovery was `76,562,432` bytes; shared/reflink
 allocation explains the smaller physical delta.
+
+The remaining three approximately 43 GB prerequisite trees were retired in
+bounded batches under the same authority:
+
+- `jsonschema-source-20260907T140000Z` and
+  `jsonschema-source-20260907T150000Z` via
+  `prerequisite-storage-retirement-execute-20260927-batch4.json`;
+- `jsonschema-source-20260907T180000Z` via
+  `prerequisite-storage-retirement-execute-20260927-batch5.json`.
+
+All source state records remain immutable and all payloads were hashed before
+same-filesystem quarantine and deletion.  The prerequisite transaction root
+fell from approximately 348 GB to approximately 4.36 GB of remaining small
+historical trees.  The five measured batch deltas total `464,453,632` physical
+free bytes.  Post-batch storage preflight remains passing at
+`175,896,907,776` free bytes (`18.2105%`).
