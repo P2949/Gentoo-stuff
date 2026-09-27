@@ -2705,7 +2705,7 @@ verify_external_indirections() {
     verify_directory "${LIBEXEC_ROOT}" "${EXPECTED_UID}" "${EXPECTED_GID}" 0755
     bootstrap_tree_matches "${LIBEXEC_ROOT}" || \
         manifest_bootstrap_tree_matches "${LIBEXEC_ROOT}" "${PREVIOUS_TARGET}" || \
-        fail 'fixed helper bootstrap tree differs'
+        fail 'stable-bootstrap migration required: installed helper bootstraps differ'
     verify_regular_trusted "${qa}" 0644
     temporary=$(mktemp "${BASE}/.qa-bootstrap-check.XXXXXXXX")
     render_qa_bootstrap >"${temporary}"
