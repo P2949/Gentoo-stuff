@@ -9367,3 +9367,12 @@ can remove any expanded spool. It reconstructs and hashes the compressed
 archive first, writes the archive manifest/retirement receipt, and only then
 retires the expanded directory. The dry-run behavior remains non-mutating;
 focused spool-compaction coverage now includes the retirement path.
+
+## 2026-09-27 post-cleanup storage preflight
+
+The current capacity authority is
+`/var/lib/gentoo-optimization/reports/storage-preflight-post-binpkg-20260927.json`.
+The root XFS filesystem has 131,784,843,264 bytes free (13.6436%), above the
+configured 100 GiB and 12% floors. The preflight passed without mutating any
+cache, evidence, profile, recovery, boot, kernel, EFI, initramfs, or firmware
+state.
