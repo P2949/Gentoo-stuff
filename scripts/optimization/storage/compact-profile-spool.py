@@ -95,14 +95,22 @@ def main() -> int:
             if key in seal:
                 payload[key] = seal[key]
     if args.execute:
+        if args.retire_expanded:
+            for candidate, label in ((args.archive, "archive"), (args.manifest, "manifest"), (args.receipt, "receipt")):
+                if candidate is not None and root == candidate.resolve() or (candidate is not None and root in candidate.resolve().parents):
+                    raise SystemExit(f"REFUSED: {label} must be outside attempt spool")
         args.archive.parent.mkdir(parents=True, exist_ok=True)
         args.manifest.parent.mkdir(parents=True, exist_ok=True)
-        partial = args.archive.with_suffix(args.archive.suffix + ".partial")
-        with tarfile.open(partial, "w") as tar:
-            for row in members:
-                tar.add(root / str(row["path"]), arcname=str(row["path"]), recursive=False)
         compressed = args.archive.with_suffix(args.archive.suffix + ".zst")
-        subprocess.run(["zstd", "-T0", "-19", "--rm", os.fspath(partial), "-o", os.fspath(compressed)], check=True)
+        with compressed.open("wb") as archive_stream:
+            compressor = subprocess.Popen(["zstd", "-T0", "-19", "-q", "-c"], stdin=subprocess.PIPE, stdout=archive_stream)
+            assert compressor.stdin is not None
+            with tarfile.open(fileobj=compressor.stdin, mode="w|") as tar:
+                for row in members:
+                    tar.add(root / str(row["path"]), arcname=str(row["path"]), recursive=False)
+            compressor.stdin.close()
+            if compressor.wait() != 0:
+                raise SystemExit("REFUSED: streaming zstd archive failed")
         durable_write(args.manifest, json.dumps(payload, indent=2, sort_keys=True) + "\n")
         for path in (compressed, args.manifest):
             with path.open("rb") as stream:
