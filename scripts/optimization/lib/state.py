@@ -155,12 +155,13 @@ def _error(path: str, message: str) -> NoReturn:
     raise StateValidationError(f"{path}: {message}")
 
 
-def _object(value: Any, path: str, keys: set[str]) -> dict[str, Any]:
+def _object(value: Any, path: str, keys: set[str], optional: set[str] | None = None) -> dict[str, Any]:
     if not isinstance(value, dict):
         _error(path, "must be an object")
     actual = set(value)
-    if actual != keys:
-        _error(path, f"keys differ (missing={sorted(keys-actual)}, extra={sorted(actual-keys)})")
+    optional = optional or set()
+    if not keys <= actual or actual - keys - optional:
+        _error(path, f"keys differ (missing={sorted(keys-actual)}, extra={sorted(actual-keys-optional)})")
     return value
 
 
@@ -1372,9 +1373,25 @@ def _load_records(paths: Iterable[Path], kind: str) -> list[dict[str, Any]]:
 
 
 def _inventory(raw: Any, path: str = "inventory") -> dict[str, Any]:
-    item = _object(raw, path, {"schema_version", "record_type", "generation_id", "inventory_id", "packages", "owned_paths", "owned_directories"})
+    # Live Phase-3 inventories carry additive census fields used by the
+    # generator and frozen-inventory verifier.  Accept that extended shape at
+    # every trusted read boundary; rejecting it here made the production BOLT
+    # hook unable to validate an otherwise valid reviewed inventory.
+    item = _object(raw, path, {"schema_version", "record_type", "generation_id", "inventory_id", "packages", "owned_paths", "owned_directories", "contents_kind_counts", "contents_record_count", "unresolved_directories"}, optional={"contents_kind_counts", "contents_record_count", "unresolved_directories"})
     if item["schema_version"] != 2 or item["record_type"] != "frozen-inventory":
         _error(path, "requires schema_version=2 and record_type=frozen-inventory")
+    if "contents_kind_counts" in item:
+        if not isinstance(item["contents_kind_counts"], dict) or any(
+            not isinstance(key, str) or not isinstance(value, int) or value < 0
+            for key, value in item["contents_kind_counts"].items()
+        ):
+            _error(f"{path}.contents_kind_counts", "must be a map of nonnegative counts")
+    if "contents_record_count" in item:
+        _int(item["contents_record_count"], f"{path}.contents_record_count")
+    if "unresolved_directories" in item:
+        unresolved = item["unresolved_directories"]
+        if not isinstance(unresolved, list) or any(not isinstance(value, str) for value in unresolved):
+            _error(f"{path}.unresolved_directories", "must be an array of paths")
     for key in ("generation_id", "inventory_id"):
         _string(item[key], f"{path}.{key}")
     packages = item["packages"]
@@ -1383,7 +1400,16 @@ def _inventory(raw: Any, path: str = "inventory") -> dict[str, Any]:
     package_keys: list[str] = []
     for index, raw_package in enumerate(packages):
         ppath = f"{path}.packages[{index}]"
-        package = _object(raw_package, ppath, {"cpv", "entry_sha256"})
+        package = _object(raw_package, ppath, {"cpv", "entry_sha256"}, optional={"contents_kind_counts", "contents_record_count"})
+        if "contents_kind_counts" in package and (
+            not isinstance(package["contents_kind_counts"], dict) or any(
+                not isinstance(key, str) or not isinstance(value, int) or value < 0
+                for key, value in package["contents_kind_counts"].items()
+            )
+        ):
+            _error(f"{ppath}.contents_kind_counts", "must be a map of nonnegative counts")
+        if "contents_record_count" in package:
+            _int(package["contents_record_count"], f"{ppath}.contents_record_count")
         cpv = _cpv(package["cpv"], f"{ppath}.cpv")
         package_keys.append(cpv)
         _sha(package["entry_sha256"], f"{ppath}.entry_sha256")
