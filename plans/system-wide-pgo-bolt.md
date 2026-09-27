@@ -9655,3 +9655,11 @@ positively unreachable object payload, but this is classification-only: no
 object is deleted, and the report is not treated as deletion authority until
 all recovery-authority roots are included in a bounded scan.  The focused
 reachability regression passes.
+
+The content-object reachability pass remains intentionally report-only.  A
+reports-root scan found approximately 42.73 GB of object payload that is not
+referenced by the supplied reports, but a complete recovery-authority scan was
+not accepted because traversing the expanded prerequisite-authority tree did
+not finish within the bounded operational window.  The reachability report
+therefore does not authorize deletion; all candidate objects remain retained
+until recovery references are fully scanned and independently verified.
