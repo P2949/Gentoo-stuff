@@ -9602,3 +9602,11 @@ reports are:
 
 - `/var/lib/gentoo-optimization/reports/profile-compaction-authority-20260920-sway-mesa-abi-reviewed-20260927.json`
 - `/var/lib/gentoo-optimization/reports/profile-compaction-authority-20260921-restored-20260927.json`
+
+A fresh child-level inventory of durable storage was published at
+`/var/lib/gentoo-optimization/reports/storage-inventory-major-children-20260927.json`.
+It records XFS reflink support and the current major durable classes: content-
+addressed objects `42,835,824,640` logical bytes, generations
+`10,598,473,728`, merged profiles `146,595,840`, and reports
+`9,763,127,296`.  The inventory is measurement-only; no durable evidence was
+removed based on size alone.
