@@ -1,1 +1,2 @@
 media-libs/libde265 dec265 enc265 tools
+dev-lang/ispc llvm_slot_21

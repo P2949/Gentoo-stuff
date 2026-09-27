@@ -9094,3 +9094,20 @@ provenance conflict: installed `maya-gentoo` revisions remain present while
 that repository has no available ebuild, and the local-autodesk replacement
 is fetch-restricted and would be a same-slot revision transition. No package
 transaction or repository substitution was performed.
+
+## 2026-09-27 userspace repository and USE baseline reconciliation
+
+The missing `maya-gentoo` repository registration was restored in the checked-in
+Portage configuration, pointing to the documented native overlay source tree;
+this preserves the installed VDB repository identity instead of attempting a
+same-slot downgrade to `local-autodesk`. The current local overlay source was
+reindexed and its manifests regenerated. The reviewed baseline also records
+`dev-lang/ispc`'s installed `llvm_slot_21` choice in the persistent package USE
+policy, resolving the prior REQUIRED_USE failure.
+
+A new deep `@world` pretend now resolves the Autodesk repository identity and
+returns a complete dependency graph, but identifies remaining baseline work:
+1,277 rebuild/upgrade operations, tree-sitter and graphics dependency slot
+conflicts, a masked LLVM 24/libclc transition, and an explicit glslang-to-wlroots
+rebuild closure. No broad transaction was started; these are preserved as the
+next ordinary userspace dependency-closure boundary.
