@@ -41,7 +41,7 @@ def main():
   pn=open(pn_file).read().strip() if __import__('os').path.isfile(pn_file) else ''
   if not pn:
    split=catpkgsplit(pf)
-   if not split or split[0] != 'null':
+   if not split or split[0] == 'null':
     raise SystemExit(f'REFUSED: cannot derive authoritative PN for {cpv}')
    pn=split[1]
   if category != cat or not category or not pn or '/' in pn:
