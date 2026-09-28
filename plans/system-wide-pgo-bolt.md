@@ -10388,3 +10388,9 @@ regression, compilation, and diff checks pass.
 Hardened `extract-elf-metadata.py` to refuse duplicate `(owner_cpv,path)` ELF
 identities and write-once output publication. Added a focused regression for
 both refusal paths; the regression and Python compilation pass.
+
+### 2026-09-28 package backend authority publication hardening
+
+Hardened `classify-package-backends.py` with write-once output and explicit CPV
+identity tracking before backend classification. Added a focused publication
+regression; test and Python compilation pass.
