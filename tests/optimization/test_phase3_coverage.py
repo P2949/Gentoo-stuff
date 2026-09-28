@@ -83,6 +83,18 @@ def main() -> None:
     assert safety_report["bolt_safety_extra"] == [["cat/pkg-1", "/usr/lib/extra.so"]]
     assert safety_report["bolt_safety_coverage_pass"] is False
 
+    invalid_report = run_case(
+        {"artifacts": [{"owner_cpv": "cat/pkg-1", "path": "/usr/bin/tool",
+                         "elf": {"class": 2, "type": 3}}], "sha256": "fixture"},
+        elf_records=[candidate],
+        safety_records=[{"owner_cpv": "cat/pkg-1", "path": "/usr/bin/tool",
+                         "state": "invented-disposition"}],
+    )
+    assert invalid_report["bolt_safety_invalid"] == [[
+        "cat/pkg-1", "/usr/bin/tool", "invented-disposition"
+    ]]
+    assert invalid_report["bolt_safety_coverage_pass"] is False
+
     try:
         run_case({"artifacts": [{"owner_cpv": "cat/pkg-1", "path": "/usr/bin/tool", "elf": None}]})
     except subprocess.CalledProcessError:

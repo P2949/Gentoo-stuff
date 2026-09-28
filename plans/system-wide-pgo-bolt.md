@@ -10275,3 +10275,7 @@ Strengthened `phase3-coverage.py` so the strict BOLT safety gate rejects safety 
 ### 2026-09-30 BOLT safety producer identity hardening
 
 Hardened `review-bolt-safety.py` to refuse duplicate or incomplete candidate `(owner_cpv,path)` identities, duplicate metadata identities, missing candidate metadata, and overwrite of an existing safety report. Records are now keyed and sorted by owner/path and the report schema is version 2. Added `test_review_bolt_safety.py` covering duplicate candidate refusal. Producer regression, Phase-3 coverage regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 BOLT safety disposition vocabulary
+
+The strict coverage verifier now validates every safety record against the producer's disposition vocabulary (`bolt-ready-pending-profile`, `intrinsically-not-applicable`, `rebuild-required-for-bolt-capture`, or `pending-safety-review`). Unknown dispositions are reported in `bolt_safety_invalid` and fail the BOLT safety gate. Extended `test_phase3_coverage.py` with an unknown-disposition refusal fixture. Focused regression, Python compilation, and diff validation pass.

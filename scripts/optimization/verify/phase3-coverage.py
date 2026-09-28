@@ -5,6 +5,13 @@ import json
 from collections import Counter
 from pathlib import Path
 
+VALID_BOLT_SAFETY_STATES = {
+ 'bolt-ready-pending-profile',
+ 'intrinsically-not-applicable',
+ 'rebuild-required-for-bolt-capture',
+ 'pending-safety-review',
+}
+
 
 def main():
  ap = argparse.ArgumentParser()
@@ -80,10 +87,16 @@ def main():
  }
  safety_ids = [(x.get('owner_cpv'), x.get('path')) for x in es.get('records', es.get('artifacts', []))]
  safety_duplicates = sorted(item for item, count in Counter(safety_ids).items() if count > 1)
+ safety_invalid = sorted(
+  (x.get('owner_cpv'), x.get('path'), x.get('state'))
+  for x in es.get('records', es.get('artifacts', []))
+  if x.get('state') not in VALID_BOLT_SAFETY_STATES
+ )
  out['candidate_bolt_eligible_count'] = len(candidate)
  out['bolt_safety_missing'] = sorted(candidate - safety_records)
  out['bolt_safety_extra'] = sorted(safety_records - candidate)
  out['bolt_safety_duplicates'] = safety_duplicates
+ out['bolt_safety_invalid'] = safety_invalid
  counts = es.get('counts', {})
  out['bolt_safety_pending'] = int(counts.get('pending', 0)) + int(counts.get('pending-safety-review', 0))
  out['bolt_safety_failed'] = int(counts.get('failed', 0)) + int(counts.get('error', 0))
@@ -93,6 +106,7 @@ def main():
   not out['bolt_safety_missing'] and
   not out['bolt_safety_extra'] and
   not out['bolt_safety_duplicates'] and
+  not out['bolt_safety_invalid'] and
   out['bolt_safety_pending'] == 0 and
   out['bolt_safety_failed'] == 0
  )
