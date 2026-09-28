@@ -10291,3 +10291,7 @@ Hardened `schedule-generation.py` so a binding artifact cannot override the auth
 ### 2026-09-30 wave-planner workload admission gate
 
 Aligned `plan-profile-wave.py` with the scheduler and coverage workload contract. Training planning now refuses missing recipe records and malformed/unbound recipes instead of silently omitting a PGO package; wave output is also write-once. Added `test_plan_profile_wave.py` covering refusal of an invocation-only recipe. Focused planner regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 wave-readiness workload gate
+
+Aligned `verify-wave-readiness.py` with the scheduler and planner contracts. Training readiness now requires a nonempty executable/path-bound invocation recipe for every wave package; malformed training inputs become `invalid_inputs`. Readiness output is write-once. Added `test_verify_wave_readiness.py`; the readiness regression, profile-wave guard shell suite, Python compilation, and diff validation pass.

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import argparse,json,hashlib,os,collections
+def valid_recipes(value):
+ return isinstance(value,list) and bool(value) and all(isinstance(x,dict) and (x.get('path') or x.get('executable')) and (x.get('argv') or x.get('command') or x.get('recipe')) for x in value)
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--wave',required=True);ap.add_argument('--manifest',required=True);ap.add_argument('--identity',required=True);ap.add_argument('--identity-root');ap.add_argument('--output',required=True);ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training');a=ap.parse_args();w=json.load(open(a.wave));md=json.load(open(a.manifest));m=set(md.get('cpvs',[x['cpv'] for x in md.get('packages',[])]));i=json.load(open(a.identity));identity_root=a.identity_root;bad=[]; rows=[]
+ if os.path.exists(a.output): raise SystemExit('REFUSED: readiness output already exists')
  spool=os.path.realpath('/var/tmp/gentoo-optimization/pgo-raw')
  # Bind the declared cache destination to the exact generation as well as
  # accepting the attempt-scoped raw spool used during execution.  The planner
@@ -37,7 +40,8 @@ def main():
      break
   else:
    fingerprint=True
-  ok=x['cpv'] in m and x['compiler_sha256']==i[{'pgo-clang-ir':'clang','pgo-gcc':'gcc','pgo-rust':'rustc','pgo-go':'go'}[x['lane']]]['sha256'] and (safe or a.mode == 'exhaustive-generation') and fingerprint
+  recipe_ok = a.mode == 'exhaustive-generation' or valid_recipes(x.get('recipes'))
+  ok=x['cpv'] in m and x['compiler_sha256']==i[{'pgo-clang-ir':'clang','pgo-gcc':'gcc','pgo-rust':'rustc','pgo-go':'go'}[x['lane']]]['sha256'] and (safe or a.mode == 'exhaustive-generation') and fingerprint and recipe_ok
   if not ok:bad.append(x['cpv'])
   rows.append({'cpv':x['cpv'],'input_valid':ok,'execution_state':'not-authorized-framework-gate'})
  out={'record_type':'profile-wave-readiness','schema_version':1,'mode':a.mode,'source_wave':w['sha256'],'records':rows,'invalid_inputs':bad,'ready_count':sum(x['input_valid'] for x in rows),'authorization_state':'pending-framework-terminal-check'};out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest();json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(out['ready_count'],len(rows),len(bad))
