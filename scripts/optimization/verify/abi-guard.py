@@ -152,18 +152,41 @@ def current_package_owns(root: Path, installed_path: Path) -> bool | None:
     """
     category = os.environ.get("CATEGORY")
     pf = os.environ.get("PF")
+    pn = os.environ.get("PN")
     vdb_root = Path(os.environ.get("GENTOO_OPT_VDB_ROOT", "/var/db/pkg"))
     if not category or not pf:
         return None
-    contents = vdb_root / category / pf / "CONTENTS"
-    if not contents.is_file():
+    instances = []
+    exact = vdb_root / category / pf / "CONTENTS"
+    if exact.is_file():
+        instances.append(exact)
+    # During an upgrade Portage has not installed the target PF yet.  Use the
+    # installed package's PN to locate the predecessor VDB instance instead of
+    # treating the absent target CONTENTS as unknown.  This is what lets the
+    # guard distinguish an old SONAME owned by the predecessor package from a
+    # same-family SONAME owned by an unrelated package.
+    if pn:
+        category_dir = vdb_root / category
+        try:
+            for instance in sorted(category_dir.iterdir()):
+                if not instance.is_dir() or instance == exact.parent:
+                    continue
+                pn_file = instance / "PN"
+                if pn_file.is_file() and pn_file.read_text(encoding="utf-8").strip() == pn:
+                    contents = instance / "CONTENTS"
+                    if contents.is_file():
+                        instances.append(contents)
+        except OSError:
+            return None
+    if not instances:
         return None
     try:
         wanted = installed_path.relative_to(root).as_posix()
-        for line in contents.read_text(encoding="utf-8", errors="strict").splitlines():
-            parsed = parse_contents_line(line)
-            if parsed and parsed[1].lstrip("/") == wanted.lstrip("/"):
-                return True
+        for contents in instances:
+            for line in contents.read_text(encoding="utf-8", errors="strict").splitlines():
+                parsed = parse_contents_line(line)
+                if parsed and parsed[1].lstrip("/") == wanted.lstrip("/"):
+                    return True
         return False
     except (OSError, UnicodeError, ValueError):
         return None
