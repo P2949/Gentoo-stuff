@@ -10211,3 +10211,7 @@ The canonical reverse-dependency generator now refuses an empty Portage dependen
 ### 2026-09-30 loader-correct ELF dependency resolution
 
 Hardened `generate-live-elf-dependencies.py` so `DT_NEEDED` resolution uses authenticated ELF SONAMEs when present and only falls back to path basenames for legacy inventories without SONAME capture. Added `tests/optimization/test_live_elf_dependencies.py`, proving a same-basename unrelated artifact with a different SONAME is not selected as the provider. Python compilation, focused regression, and diff validation pass.
+
+### 2026-09-30 identity and graph regression boundary
+
+Focused regressions passed together after the authority changes: VDB fingerprint collection requires retained build identity evidence; reverse-dependency generation requires both Portage and ELF authorities; ELF dependency resolution uses authenticated SONAMEs; and ELF eligibility joins generation-bound mutation policy. No live generation or profile wave was authorized by these tests.
