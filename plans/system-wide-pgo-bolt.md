@@ -10195,3 +10195,7 @@ The exact optimization-off transition for `dev-libs/tree-sitter-0.27.0::gentoo` 
 ### 2026-09-30 MediaInfo ABI-provider rejection
 
 The exact optimization-off transition for `media-libs/libmediainfo-26.05::gentoo` reached install-QA but was correctly rejected by the ABI guard. `libmediainfo.so.0` exported 7,851 symbols in the staged image versus 7,079 previously, while 12 prior exports disappeared. No merge occurred. Build log SHA-256 `e746908608c4a1188aa8bbe1364a20f0337d49df6fcf33659c5ee3b56e4d4ff3`; structured failure evidence `/var/lib/gentoo-optimization/reports/package-failures-media-libs-libmediainfo-26.05-20260930.json`; retirement receipt `/var/lib/gentoo-optimization/reports/portage-build-retirement-libmediainfo-20260930.json`. This provider transition remains unresolved and was not retried unchanged.
+
+### 2026-09-30 scheduler and identity regression verification
+
+Focused regressions passed for the current source boundary: `test_schedule_generation.py` confirms direct/consumer training state filtering, generation/inventory binding, and failed-attempt preservation; `test_profile_carry_forward.py` confirms exact identity equality is required for carry-forward and changed CPVs/identities retrain; `test_phase3_coverage.py` confirms package, ELF, and BOLT safety gates remain separate and join the authoritative ELF census. No source changes were needed because the required contracts are already present at this boundary.
