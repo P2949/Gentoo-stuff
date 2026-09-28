@@ -12,6 +12,10 @@ def main():
   out2=p/'wave2.json'
   subprocess.run(['python3',str(ROOT/'scripts/optimization/pgo/schedule-generation.py'),'--package-state',str(s),'--attempts',str(attempts),'--output',str(out2),'--generation-id','g1','--wave-size','1','--bindings',str(b),'--recipes',str(r),*common],check=True)
   enriched=json.loads(out2.read_text())['packages'][0]; assert enriched['profile_path']=='/profiles/c'; assert enriched['recipes'][0]['recipe_id']=='c-help'; assert enriched['identity_sha256']=='d'*64
+  mismatched=p/'mismatched.json'; mismatched.write_text(json.dumps({'records':[{'cpv':'app/c-1','profile_path':'/profiles/c','compiler_sha256':'c'*64,'identity_sha256':'d'*64,'recipes':[{'recipe_id':'other','path':'/usr/bin/other','argv':['--help']}]}]}))
+  refused_binding=p/'refused-binding.json'
+  mismatch=subprocess.run(['python3',str(ROOT/'scripts/optimization/pgo/schedule-generation.py'),'--package-state',str(s),'--attempts',str(attempts),'--output',str(refused_binding),'--generation-id','g1','--wave-size','1','--bindings',str(mismatched),'--recipes',str(r),*common],capture_output=True,text=True)
+  assert mismatch.returncode != 0 and 'recipes differ' in (mismatch.stdout + mismatch.stderr)
   refused=p/'refused.json'
   blocked=subprocess.run(['python3',str(ROOT/'scripts/optimization/pgo/schedule-generation.py'),'--package-state',str(s),'--attempts',str(attempts),'--output',str(refused),'--generation-id','g1','--inventory-id','i1','--inventory-sha256','a'*64,'--storage-minimum-bytes',str(10**18)],capture_output=True,text=True)
   assert blocked.returncode != 0 and 'storage free-space floor' in (blocked.stdout + blocked.stderr)
