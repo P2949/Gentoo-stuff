@@ -1258,7 +1258,7 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
         value=${!variable-}
         [[ -n ${value} ]] || continue
         cleaned=$(printf '%s\n' "${value}" | sed -E \
-            's#(^|[[:space:]])(-fprofile-(instr-)?(generate|use|sample-use)|-fprofile-arcs|-ftest-coverage|--coverage)(=[^[:space:]]+)?#\1#g; s#(^|[[:space:]])-Xclang=-fprofile-instrument-path=[^[:space:]]+#\1#g')
+            's#(^|[[:space:]])(-fprofile-(instr-)?(generate|use|sample-use)|-fprofile-arcs|-ftest-coverage|--coverage|-fsave-optimization-record|-foptimization-record-file|-foptimization-record-passes)(=[^[:space:]]+)?#\1#g; s#(^|[[:space:]])-Xclang=-fprofile-instrument-path=[^[:space:]]+#\1#g')
         printf -v "${variable}" '%s' "${cleaned}"
         export "${variable?}"
     done

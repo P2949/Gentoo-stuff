@@ -361,6 +361,18 @@ case_off_scrubs_inherited_rust_profile_destination() (
     [[ ${CARGO_ENCODED_RUSTFLAGS} != *'/var/tmp/stale-encoded'* ]]
 )
 
+case_off_scrubs_inherited_optimization_record_destination() (
+    export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang CXX=clang++ ABI=amd64
+    export GENTOO_OPT_MODE=off GENTOO_OPT_COMPILER_FAMILY=clang
+    CFLAGS='-O3 -fsave-optimization-record=yaml -foptimization-record-file=/dev/null.opt.yaml -foptimization-record-passes=inline'
+    CXXFLAGS="${CFLAGS}" LDFLAGS='-flto'
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
+    [[ ${CFLAGS} != *fsave-optimization-record* &&
+        ${CFLAGS} != *foptimization-record-file* &&
+        ${CFLAGS} != *foptimization-record-passes* ]]
+    [[ ${CXXFLAGS} != *fsave-optimization-record* ]]
+)
+
 case_profile_map_stage_is_exact() (
     export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang CXX=clang++ ABI=amd64
     export GENTOO_OPT_MODE=off GENTOO_OPT_COMPILER_FAMILY=clang
@@ -1064,6 +1076,7 @@ run_case 'durable framework activation journal blocks Portage' case_framework_ac
 run_case 'durable profile transaction journal requires exact coordinator authorization' case_profile_transaction_journal_authorization_is_fail_closed
 run_case 'ordinary repository policy contains no stage readiness' case_repository_ordinary_flags_are_stage_clean
 run_case 'ordinary lanes scrub inherited Rust profile destinations' case_off_scrubs_inherited_rust_profile_destination
+run_case 'ordinary lanes scrub inherited optimization record destinations' case_off_scrubs_inherited_optimization_record_destination
 run_case 'profile-map readiness owns its complete exact stage set' case_profile_map_stage_is_exact
 run_case 'stage build-ID policy rejects conflicts and duplicates' case_stage_build_id_policy_fails_closed
 run_case 'legacy marker paths fail closed' case_legacy_rejected
