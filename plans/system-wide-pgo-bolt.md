@@ -10247,3 +10247,7 @@ Hardened `generate-live-elf-dependencies.py` to refuse overwriting an existing d
 ### 2026-09-30 Bullet ABI-provider rejection
 
 The exact optimization-off transition for `sci-physics/bullet-3.21::gentoo` reached install-QA but was correctly rejected after multiple Bullet DSO providers lost established exports. Affected providers include `libBulletSoftBody.so`, `libBulletCollision.so`, `libBulletDynamics.so`, and `libLinearMath.so`. No merge occurred. Build log SHA-256 `b60c54754f0214e052c8aa149d0ce4c794f06e2abd7cbd5b2262cdd2488c0a06`; structured failure evidence `/var/lib/gentoo-optimization/reports/package-failures-sci-physics-bullet-3.21-20260930.json`; retirement receipt `/var/lib/gentoo-optimization/reports/portage-build-retirement-bullet-20260930.json`. The ABI guard remains fail-closed and the unchanged transaction was not retried.
+
+### 2026-09-30 resolver after Bullet rejection
+
+A fresh `@world` pretend after the Bullet ABI-provider rejection remains stable at 51 operations (26 upgrades, 4 new slots, 21 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-post-bullet.txt` has SHA-256 `c9f00a83f794577971e7062d09aa5344977ad1c34b119aab9d0985e1b02da7c3`. No resolver state changed and no protected lifecycle transaction was attempted.
