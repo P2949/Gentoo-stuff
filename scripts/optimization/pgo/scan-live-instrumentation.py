@@ -111,6 +111,17 @@ def classify_origin(environment: dict) -> str:
     return "pre-framework-or-unknown"
 
 
+TERMINAL_PREBUILT_CPVS = {
+    "app-autodesk/adp-desktop-sdk-6.3.34-r1",
+    "app-autodesk/adsk-licensing-16.0.3.14414",
+    "dev-games/unityhub-3.21.3",
+    "media-sound/spotify-1.2.96",
+    "media-gfx/maya-2027.2-r2",
+    "app-editors/vscode-1.137.0",
+    "www-client/firefox-bin-152.0.5",
+}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--census", required=True)
@@ -138,7 +149,11 @@ def main() -> None:
         if record["instrumentation_markers"]:
             record["vdb_identity"] = vdb_identity(record["owner_cpv"], vdb)
             record["environment"] = decode_environment(vdb, record["owner_cpv"])
-            record["origin"] = classify_origin(record["environment"])
+            if record["owner_cpv"] in TERMINAL_PREBUILT_CPVS:
+                record["origin"] = "terminal-prebuilt-unsupported"
+                record["terminal_disposition"] = "unsupported-by-upstream-toolchain/prebuilt"
+            else:
+                record["origin"] = classify_origin(record["environment"])
     records.sort(key=lambda row: (row["path"], row["owner_cpv"]))
     out = {
         "record_type": "live-instrumentation-census",

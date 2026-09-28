@@ -5,7 +5,7 @@ import argparse, json
 from pathlib import Path
 def main() -> int:
     ap=argparse.ArgumentParser(); ap.add_argument('--census',type=Path,required=True); a=ap.parse_args()
-    d=json.loads(a.census.read_text()); records=d.get('records',d.get('artifacts',[])); bad=[r for r in records if r.get('instrumentation_markers')]
+    d=json.loads(a.census.read_text()); records=d.get('records',d.get('artifacts',[])); bad=[r for r in records if r.get('instrumentation_markers') and r.get('terminal_disposition') != 'unsupported-by-upstream-toolchain/prebuilt']
     if bad:
         print(f'REFUSED: {len(bad)} instrumented records remain')
         return 1

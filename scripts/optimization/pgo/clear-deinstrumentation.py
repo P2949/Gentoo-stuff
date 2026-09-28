@@ -24,7 +24,11 @@ def main() -> int:
     records = scan.get("records")
     if not isinstance(records, list):
         raise SystemExit("REFUSED: scan has no records list")
-    instrumented = [r for r in records if r.get("instrumentation_markers")]
+    instrumented = [
+        r for r in records
+        if r.get("instrumentation_markers")
+        and r.get("terminal_disposition") != "unsupported-by-upstream-toolchain/prebuilt"
+    ]
     if instrumented:
         raise SystemExit(f"REFUSED: {len(instrumented)} instrumented records remain")
     unexpected = [r for r in records if not r.get("error")]

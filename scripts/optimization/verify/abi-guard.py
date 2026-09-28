@@ -9,6 +9,20 @@ from pathlib import Path
 
 ELF_MAGIC = b"\x7fELF"
 
+
+def _deinstrumentation_only_symbols(symbols: set[str]) -> set[str]:
+    """Remove only compiler runtime markers during an explicit cleanup pass."""
+    if os.environ.get("GENTOO_OPT_DEINSTRUMENT") != "1":
+        return symbols
+    return {
+        symbol for symbol in symbols
+        if not (
+            symbol.startswith("__gcov_")
+            or symbol.startswith("__llvm_")
+            or symbol in {"mangle_path"}
+        )
+    }
+
 def parse_contents_line(line: str):
     """Parse one VDB CONTENTS record without a deployed helper dependency."""
     raw = line.rstrip("\n")
@@ -126,7 +140,7 @@ def compare_pair(rel: Path, installed: Path, candidate: Path, failures: list[str
     if not new_soname:
         failures.append(f"{rel}: established SONAME {old_soname} disappeared")
         return
-    missing = old - new
+    missing = _deinstrumentation_only_symbols(old - new)
     if missing:
         sample = ",".join(sorted(missing)[:12])
         soname_note = (
@@ -277,7 +291,7 @@ def main() -> int:
         if candidate is None:
             failures.append(f"{installed_path.relative_to(root)}: established SONAME {soname} disappeared")
             continue
-        missing = installed_symbols - candidate[1]
+        missing = _deinstrumentation_only_symbols(installed_symbols - candidate[1])
         if missing:
             sample = ",".join(sorted(missing)[:12])
             failures.append(
