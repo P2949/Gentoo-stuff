@@ -10704,3 +10704,17 @@ with SHA-256 `af00d1f47ab51a2a4587f91e88987cb3c091d76394447090fc56b6bbe166dab2`.
 Because this exact transaction changed the installed VDB, the earlier
 Phase-3 candidate inventory is stale and must be regenerated before any
 candidate-authority or profile-wave action.
+
+### 2026-09-28 post-systemd-utils candidate refresh
+
+The successful systemd-utils ABI regression replaced the installed CPV
+`sys-apps/systemd-utils-260.1-r1` with `sys-apps/systemd-utils-262`, so the
+previous 1,346-CPV candidate was stale. A fresh live-VDB inventory was
+regenerated with the authenticated post-sync directory review at
+`/var/lib/gentoo-optimization/generations/phase3-live-20260928-systemd-utils-reviewed/frozen-inventory.json`.
+The strict verifier accepted it: 1,346 CPVs, 692,532 owned paths, 80,811
+owned directories, zero unresolved directories, inventory SHA-256
+`4838a8097f2ed47ee76599589d4cb28ab2cac1c2af7e298d8e55da123468673c`.
+This is a candidate inventory only; kernel/mutation/backend/lane and all
+fingerprint authorities must be regenerated against this exact VDB before any
+framework generation or profile wave can be authorized.
