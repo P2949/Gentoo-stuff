@@ -10589,3 +10589,16 @@ for malformed ordinary CPVs. The regenerated package state is
 with 519 `not-applicable`, 817 `pending-pgo-classification`, and 10
 `kernel-policy-exclusion` records. No generation or package transaction was
 activated from this candidate state.
+
+### 2026-09-28 post-sync backend/lane classification
+
+The post-sync backend producer covered all 1,346 CPVs and was preserved at
+`/var/lib/gentoo-optimization/reports/backend-postsync-20260928.json`
+(SHA-256 `71d6ae053cd744f213354f773bd53d79591efd72d234656ebc30e42e250f6a87`).
+Lane assignment against the reviewed package state produced
+`/var/lib/gentoo-optimization/reports/pgo-lanes-postsync-20260928.json`
+(SHA-256 `16cbcccbb0cf75a172843a7267ca27143735830a3da66a2bf24ac0805eb19b68`):
+519 not-applicable, 89 unsupported-by-upstream-toolchain, 728
+pending-pgo-classification, and 10 kernel-policy-exclusion. The pending lane
+records require ebuild/build-log/native-artifact review before any wave; no
+profile generation or use transaction was started.
