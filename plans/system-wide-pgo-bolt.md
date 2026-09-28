@@ -10845,3 +10845,18 @@ artifacts are `workload-exclusions-v2.json` (SHA-256
 `336241b36989fd5130236a6bfa4af363456aaa3d290c028730ce5ddb31e7f283`). No
 profile wave is authorized from smoke recipes or from this failed coverage
 gate.
+
+### 2026-09-28 consumer-candidate binding refresh
+
+The first consumer binding pass had been generated against a stale ELF path
+set. It was rerun against `consumer-workload-plan-v4.json` and the refreshed
+17,092-record ELF census. Structural binding now yields 18,714 candidate
+(provider, consumer, executable, expected-artifact) records across 130 provider
+plans; independent ownership/path verification accepts 2,429 records and
+rejects 16,285 records whose expected path is not owned by the provider CPV.
+All accepted records retain `counter_proof=pending-runtime-proof`; none is
+promoted to representative training authority. The immutable refresh artifacts
+are `consumer-workload-candidates-v3.json` (SHA-256
+`cea4266a668e3e27fc6d6c254b3e992751130cddc7d5a4151093a64ccfee2eb5`) and
+`verified-consumer-workload-candidates-v2.json` (SHA-256
+`624381156971d5e86b7be8264ae9d603bd1b8f8f83c5ffe4e25752877aeddad0`).
