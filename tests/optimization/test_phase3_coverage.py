@@ -15,7 +15,8 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
-def run_case(authority: dict[str, object]) -> dict[str, object]:
+def run_case(authority: dict[str, object], elf_records: list[dict[str, object]] | None = None,
+             safety_records: list[dict[str, object]] | None = None) -> dict[str, object]:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         manifest = root / "manifest.json"
@@ -26,11 +27,10 @@ def run_case(authority: dict[str, object]) -> dict[str, object]:
         output = root / "coverage.json"
         write_json(manifest, {"packages": [{"cpv": "cat/pkg-1"}]})
         write_json(lanes, {"packages": [{"cpv": "cat/pkg-1"}], "counts": {}})
-        write_json(
-            elf_class,
-            {"records": [{"owner_cpv": "cat/pkg-1", "path": "/usr/bin/tool"}]},
-        )
-        write_json(elf_safety, {"records": [], "counts": {}})
+        write_json(elf_class, {"records": elf_records if elf_records is not None else [
+            {"owner_cpv": "cat/pkg-1", "path": "/usr/bin/tool"}
+        ]})
+        write_json(elf_safety, {"records": safety_records or [], "counts": {}})
         write_json(authority_path, authority)
         subprocess.run(
             [
@@ -71,6 +71,17 @@ def main() -> None:
     assert report["elf_count"] == 1
     assert report["elf_missing_classification"] == []
     assert report["coverage_pass"] is True
+
+    candidate = {"owner_cpv": "cat/pkg-1", "path": "/usr/bin/tool",
+                 "state": "candidate-bolt-eligible"}
+    extra = {"owner_cpv": "cat/pkg-1", "path": "/usr/lib/extra.so",
+             "state": "not-applicable"}
+    safety_report = run_case(
+        {"artifacts": [{"owner_cpv": "cat/pkg-1", "path": "/usr/bin/tool",
+                         "elf": {"class": 2, "type": 3}}], "sha256": "fixture"},
+        elf_records=[candidate], safety_records=[candidate, extra])
+    assert safety_report["bolt_safety_extra"] == [["cat/pkg-1", "/usr/lib/extra.so"]]
+    assert safety_report["bolt_safety_coverage_pass"] is False
 
     try:
         run_case({"artifacts": [{"owner_cpv": "cat/pkg-1", "path": "/usr/bin/tool", "elf": None}]})

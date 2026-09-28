@@ -10267,3 +10267,7 @@ Reopened the retained post-deinstrumentation census `/var/lib/gentoo-optimizatio
 ### 2026-09-30 workload executable-identity tightening
 
 Tightened the workload coverage gate so a `recipe_id` and invocation are insufficient by themselves: every authoritative recipe must also identify its executable/path target. Added a negative regression for identity-only recipes; valid path/executable-bound recipes remain accepted. Workload coverage, consumer planner, scheduler, Python compilation, and diff validation pass. No live training wave was authorized.
+
+### 2026-09-30 strict BOLT safety identity closure
+
+Strengthened `phase3-coverage.py` so the strict BOLT safety gate rejects safety records outside the exact `candidate-bolt-eligible` ELF identity set. The report now emits `bolt_safety_extra`; missing, extra, duplicate, pending, or failed safety records all fail `bolt_safety_coverage_pass`. Extended `test_phase3_coverage.py` with an extra-record refusal fixture. Focused coverage regression, Python compilation, and diff validation pass.

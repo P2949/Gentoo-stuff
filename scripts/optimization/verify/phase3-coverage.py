@@ -82,6 +82,7 @@ def main():
  safety_duplicates = sorted(item for item, count in Counter(safety_ids).items() if count > 1)
  out['candidate_bolt_eligible_count'] = len(candidate)
  out['bolt_safety_missing'] = sorted(candidate - safety_records)
+ out['bolt_safety_extra'] = sorted(safety_records - candidate)
  out['bolt_safety_duplicates'] = safety_duplicates
  counts = es.get('counts', {})
  out['bolt_safety_pending'] = int(counts.get('pending', 0)) + int(counts.get('pending-safety-review', 0))
@@ -90,6 +91,7 @@ def main():
  out['elf_classification_coverage_pass'] = not out['elf_missing_classification']
  out['bolt_safety_coverage_pass'] = (
   not out['bolt_safety_missing'] and
+  not out['bolt_safety_extra'] and
   not out['bolt_safety_duplicates'] and
   out['bolt_safety_pending'] == 0 and
   out['bolt_safety_failed'] == 0
