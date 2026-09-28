@@ -10303,3 +10303,7 @@ Hardened `schedule-generation.py` so duplicate CPV rows in either the binding au
 ### 2026-09-30 wave-planner authority uniqueness
 
 Hardened `plan-profile-wave.py` to reject duplicate CPV rows in the recipe authority before building its lookup map. Added planner regression coverage for duplicate recipe CPVs, closing the remaining silent-overwrite path after scheduler admission. Planner regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 profile-payload authority hardening
+
+Hardened `verify-profile-payloads.py` to refuse existing output paths and duplicate CPV identities in profile bindings, workload exclusions, or terminal exclusions before materializing the audit. Added `test_verify_profile_payloads.py` covering duplicate-binding refusal. Focused regression, Python compilation, and diff validation pass.

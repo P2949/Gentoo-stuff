@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 import argparse,json,hashlib,glob,os,collections
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--bindings',required=True);ap.add_argument('--output',required=True);ap.add_argument('--exclusions',help='authoritative workload-exclusion artifact');ap.add_argument('--terminal-exclusions',help='authoritative package correctness-terminal artifact');a=ap.parse_args();b=json.load(open(a.bindings)); exclusions={}; terminals={}
+ ap=argparse.ArgumentParser();ap.add_argument('--bindings',required=True);ap.add_argument('--output',required=True);ap.add_argument('--exclusions',help='authoritative workload-exclusion artifact');ap.add_argument('--terminal-exclusions',help='authoritative package correctness-terminal artifact');a=ap.parse_args();
+ if os.path.exists(a.output): raise SystemExit('REFUSED: profile-payload audit output already exists')
+ b=json.load(open(a.bindings)); exclusions={}; terminals={}
  if a.exclusions:
-  e=json.load(open(a.exclusions)); exclusions={x['cpv']:x for x in e.get('records',[])}
+  e=json.load(open(a.exclusions)); exclusion_rows=e.get('records',[])
+  if len({x.get('cpv') for x in exclusion_rows}) != len(exclusion_rows): raise SystemExit('REFUSED: duplicate CPV in workload exclusions')
+  exclusions={x['cpv']:x for x in exclusion_rows}
  if a.terminal_exclusions:
-  t=json.load(open(a.terminal_exclusions)); terminals={x['cpv']:x for x in t.get('records',[])}
+  t=json.load(open(a.terminal_exclusions)); terminal_rows=t.get('records',[])
+  if len({x.get('cpv') for x in terminal_rows}) != len(terminal_rows): raise SystemExit('REFUSED: duplicate CPV in terminal exclusions')
+  terminals={x['cpv']:x for x in terminal_rows}
+ binding_rows=b['records']
+ if len({x.get('cpv') for x in binding_rows}) != len(binding_rows): raise SystemExit('REFUSED: duplicate CPV in profile bindings')
  rows=[]
  for x in b['records']:
   if not x['compiler']:continue
