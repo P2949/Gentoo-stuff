@@ -9981,3 +9981,22 @@ its receipt is
 `/var/lib/gentoo-optimization/reports/portage-build-retirement-hyprland-success-20260930.json`
 (SHA-256
 `b19655361f1cc00ef697f76e2ea50c5d153786d48a8dd92db9f4c174fd75e69a`).
+
+### 2026-09-30 post-Hyprland resolver boundary
+
+After the successful Hyprland recovery, storage preflight still passed with
+163,154,685,952 bytes free (16.8913%). A fresh signed userspace resolver
+pretend was captured before any further mutation. The update/newuse/deep
+pretend contains 60 operations: 31 upgrades, 4 new slots, 25 reinstalls and 1
+uninstall, with the Firefox rapid/ESR soft-block pair explicitly reported.
+The raw resolver output is
+`/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-hyprland.txt`
+(SHA-256
+`4053bd7466c253cc0bb2996015694b112fefa93894b5c47c691d915dc048d529`), and its
+summary is
+`/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-hyprland-summary.json`
+(SHA-256
+`394f034a64870e9caf37212229811ebb3cb1cf7db6e160a46e14cacd399303f8`). No
+bulk userspace transaction was started from this boundary; the Firefox slot
+conflict and the already-recorded Hyprtoolkit ABI transition require narrow
+resolution and a new pretend before any coherent closure.
