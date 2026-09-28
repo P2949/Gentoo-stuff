@@ -10674,3 +10674,17 @@ their mutation decisions or PGO lanes differ. A regression covers the
 incompatible-decision case; the existing CP-atom and duplicate-CPV checks still
 pass. This closes the previous silent slot/version collapse path without
 activating the candidate sets.
+
+### 2026-09-28 ABI ownership guard bootstrap correction and full validation
+
+The ABI guard's package-ownership fix is now self-contained: its strict VDB
+`CONTENTS` parser is embedded in `scripts/optimization/verify/abi-guard.py`
+so the deployed fixed helper tree does not depend on an undeployed source-tree
+module. Commit `9ed2064` records and pushes this correction. The focused ABI
+and Portage QA-hook regressions pass. A complete
+`PATH=/usr/bin:/bin bash tests/run-optimization-tests.sh --mode portable-complete`
+then completed with 87 passes, 0 failures, 12 selected-mode skips, and 547
+required subtests passed (exit 0). The active framework has not yet been
+republished from this validated source; the source-tree fix therefore remains
+pending live framework installation and a fresh exact systemd-utils QA
+regression.
