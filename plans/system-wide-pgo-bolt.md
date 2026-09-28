@@ -10359,3 +10359,12 @@ Hardened `generate-live-elf-dependencies.py` to reject duplicate `(owner_cpv,pat
 ### 2026-09-30 ELF eligibility authority hardening
 
 Hardened `classify-elf-eligibility.py` to publish write-once output and reject duplicate `(owner_cpv,path)` metadata identities before joining mutation policy. Extended `test_elf_mutation_policy_join.py` with duplicate-identity refusal. Focused regression, Python compilation, and diff validation pass.
+
+### 2026-09-28 package-state authority publication hardening
+
+Hardened `classify-package-state.py` so package optimization state is an immutable
+producer output: an existing output path is refused, and duplicate or missing
+inventory CPV identities are rejected before classification. Added
+`tests/optimization/test_classify_package_state.py`, which proves both duplicate
+CPV refusal and write-once publication. Focused regression, Python compilation,
+and `git diff --check` pass.

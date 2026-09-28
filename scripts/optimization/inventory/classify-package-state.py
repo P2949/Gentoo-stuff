@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,json,hashlib,collections,sys
+import argparse,json,hashlib,collections,sys,os
 from pathlib import Path
 try:
  from portage.versions import catpkgsplit
@@ -8,8 +8,13 @@ except ImportError:
  from cpv import catpkgsplit
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--census',required=True);ap.add_argument('--kernel-set');ap.add_argument('--mutation-policy');ap.add_argument('--output',required=True);ap.add_argument('--vdb',default='/var/db/pkg');a=ap.parse_args()
+ if os.path.exists(a.output): raise SystemExit(f'REFUSED: package optimization state output already exists: {a.output}')
  if not a.kernel_set and not a.mutation_policy: raise SystemExit('REFUSED: provide canonical --mutation-policy (legacy --kernel-set is accepted only for compatibility)')
  m=json.load(open(a.manifest)); c=json.load(open(a.census));
+ package_rows=m.get('packages',[])
+ package_cpvs=[row.get('cpv') for row in package_rows if isinstance(row,dict)]
+ if len(package_cpvs) != len(set(package_cpvs)) or any(not cpv for cpv in package_cpvs):
+  raise SystemExit('REFUSED: duplicate or missing CPV in inventory authority')
  # Package-level PGO applicability includes native artifacts that are not
  # installed ELF owners (archives, objects, device-code/native build tools).
  native_suffixes=('.a','.o','.lo','.bc','.ptx','.cubin')
@@ -32,7 +37,7 @@ def main():
  else:
   for atom in (x.strip() for x in open(a.kernel_set) if x.strip()): decisions[atom]={'decision':'kernel-policy-exclusion','triggers':['legacy-policy-set'],'evidence':[]}
  atoms={}
- for cpv in [x['cpv'] for x in m['packages']]:
+ for cpv in package_cpvs:
   cat,pf=cpv.split('/',1); root=a.vdb+'/'+cat+'/'+pf
   category_file=root+'/CATEGORY'; pn_file=root+'/PN'
   if not __import__('os').path.isfile(category_file):
@@ -48,7 +53,7 @@ def main():
    raise SystemExit(f'REFUSED: invalid authoritative VDB CATEGORY/PN metadata for {cpv}')
   atoms[cpv]=category+'/'+pn
  rows=[]
- for cpv in [x['cpv'] for x in m['packages']]:
+ for cpv in package_cpvs:
   policy_row=decisions.get(cpv) or decisions.get(atoms[cpv])
   if policy_row and policy_row['decision']=='kernel-policy-exclusion': state,reason='kernel-policy-exclusion',(policy_row.get('triggers') or ['kernel-policy-exclusion'])[0]
   elif cpv not in owners: state,reason='not-applicable','no-owned-native-artifact'
