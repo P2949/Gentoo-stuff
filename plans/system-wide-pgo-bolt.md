@@ -10646,3 +10646,13 @@ includes kernel/lifecycle packages and a large graphics/SPIR-V closure; no
 transaction was executed. This output supersedes the smaller prior pretend and
 requires canonical mutation-policy partitioning before any userspace closure
 can be considered for execution.
+
+The structured partition of the fresh world pretend is preserved at
+`/var/lib/gentoo-optimization/reports/world-pretend-mutation-partition-20260928-v3.json`
+(SHA-256 `31d213b79f71145f565d246de482208a05d03e25e3d81affa9a3a8588f43f812`).
+The resolver output contains 982 operations matching the reviewed userspace
+mutation authority, 2 explicit kernel-policy exclusions, and 294 CPVs absent
+from the installed-state policy because they are successor/replacement CPVs.
+Those 294 remain unresolved and are not executable; the partition is therefore
+evidence for the next candidate-generation step rather than authorization for a
+bulk transaction.
