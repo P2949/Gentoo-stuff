@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-import argparse,json,hashlib,collections
+import argparse,json,hashlib,collections,os
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--workloads',required=True);ap.add_argument('--elf',required=True);ap.add_argument('--output',required=True);a=ap.parse_args();w=json.load(open(a.workloads)); e=json.load(open(a.elf)); by=collections.defaultdict(list)
+ ap=argparse.ArgumentParser();ap.add_argument('--workloads',required=True);ap.add_argument('--elf',required=True);ap.add_argument('--output',required=True);a=ap.parse_args()
+ if os.path.exists(a.output): raise SystemExit('REFUSED: workload exclusion output already exists')
+ w=json.load(open(a.workloads)); e=json.load(open(a.elf)); by=collections.defaultdict(list); seen=set()
  for x in e['artifacts']:by[x['owner_cpv']].append(x)
+ for x in w.get('packages',[]):
+  if x.get('cpv') in seen: raise SystemExit(f"REFUSED: duplicate workload CPV {x.get('cpv')}")
+  seen.add(x.get('cpv'))
  rows=[]
  for x in w['packages']:
   if x['state'] not in {'no-runnable-entrypoint','no-profile-producing-workload'}:continue
