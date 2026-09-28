@@ -18,6 +18,7 @@ def main():
  if not elf_edges:
   raise SystemExit('REFUSED: ELF DT_NEEDED authority is empty')
  sources=((p,'records','portage-runtime'),(p,'build_records','portage-build'),(e,'records','elf-needed'),(e,'edges','elf-needed'))
+ seen=set()
  for source,key,rel in sources:
   if key not in source: continue
   for x in source.get(key,[]):
@@ -26,12 +27,15 @@ def main():
     row={'provider_cpv':provider,'consumer_cpv':consumer,'relationship':x.get('relationship',rel),'evidence':x.get('evidence',{})}
     if row['relationship'] not in {'portage-runtime','portage-build','elf-needed'}:
      raise SystemExit(f"REFUSED: unsupported reverse-dependency relationship: {row['relationship']}")
+    identity=(provider,consumer,row['relationship'])
+    if identity in seen:
+     raise SystemExit(f"REFUSED: duplicate reverse-dependency edge: {identity}")
+    seen.add(identity)
     # Preserve an authenticated workload binding when the upstream source has one;
     # dropping it here makes the planner appear to have no representative consumer.
     if isinstance(x.get('workload'),dict): row['workload']=x['workload']
     rows.append(row)
- unique={(x['provider_cpv'],x['consumer_cpv'],x['relationship']):x for x in rows}
- ordered=sorted(unique.values(),key=lambda x:(x['provider_cpv'],x['consumer_cpv'],x['relationship']))
+ ordered=sorted(rows,key=lambda x:(x['provider_cpv'],x['consumer_cpv'],x['relationship']))
  out={'record_type':'reverse-dependency-graph','schema_version':2,'source_contract':{'portage_runtime_records':sum(1 for x in ordered if x['relationship']=='portage-runtime'),'portage_build_records':sum(1 for x in ordered if x['relationship']=='portage-build'),'elf_needed_records':sum(1 for x in ordered if x['relationship']=='elf-needed')},'portage_source_sha256':hashlib.sha256(Path(a.portage).read_bytes()).hexdigest(),'elf_source_sha256':hashlib.sha256(Path(a.elf).read_bytes()).hexdigest(),'records':ordered}
  out['sha256']=hashlib.sha256(canon(out)).hexdigest(); Path(a.output).write_text(json.dumps(out,sort_keys=True,indent=2)+'\n'); print(json.dumps({'records':len(out['records']),'sha256':out['sha256']}))
 if __name__=='__main__': main()

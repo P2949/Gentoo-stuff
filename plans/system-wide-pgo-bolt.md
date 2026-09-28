@@ -10339,3 +10339,7 @@ Hardened `assign-pgo-lanes.py` to publish lane candidates write-once and reject 
 ### 2026-09-30 optimization-set authority hardening
 
 Hardened `generate-optimization-sets.py` to refuse an existing summary manifest and duplicate CPVs in mutation-policy or lane authorities before deriving Portage sets. Extended `test_optimization_sets.py` with duplicate-policy refusal while retaining CP-atom and kernel-exclusion assertions. Focused regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 reverse-dependency edge uniqueness
+
+Hardened `generate-reverse-dependencies.py` to reject duplicate typed `(provider_cpv, consumer_cpv, relationship)` edges instead of silently deduplicating source evidence. Added regression coverage for duplicate Portage edges; both authority-presence and duplicate-edge refusal remain fail-closed. Focused regression, Python compilation, and diff validation pass.

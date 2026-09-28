@@ -24,6 +24,13 @@ def main() -> None:
         empty.write_text(json.dumps({"records": []}))
         result = subprocess.run(["python3", str(SCRIPT), "--portage", str(empty), "--elf", str(elf), "--output", str(refused)], capture_output=True, text=True)
         assert result.returncode != 0 and "Portage dependency authority is empty" in result.stderr
+        duplicate = root / "duplicate.json"
+        duplicate.write_text(json.dumps({"records": [
+            {"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1"},
+            {"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1"},
+        ], "build_records": []}))
+        duplicate_result = subprocess.run(["python3", str(SCRIPT), "--portage", str(duplicate), "--elf", str(elf), "--output", str(root / "duplicate-graph.json")], capture_output=True, text=True)
+        assert duplicate_result.returncode != 0 and "duplicate reverse-dependency edge" in duplicate_result.stderr
     print("PASS: reverse-dependency graph requires Portage and DT_NEEDED authority")
 
 
