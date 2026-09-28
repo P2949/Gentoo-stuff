@@ -860,10 +860,24 @@
       },
       "lane": "unsupported-by-upstream-toolchain",
       "reason_code": "toolchain-self-hosting-exclusion"
+    },
+    {
+      "cpv": "sys-apps/kbd-2.10.0",
+      "evidence": {
+        "ebuild": "/var/db/repos/gentoo/sys-apps/kbd/kbd-2.10.0.ebuild",
+        "ebuild_sha256": "a9362d4e14f301297dfeaa5501c9578736599f8c64d58bda8d21be593156978a",
+        "inherits": [
+          "multiprocessing"
+        ],
+        "native_phase": "src_configure uses econf and src_compile defaults",
+        "source": "post-sync-reviewed-20260928"
+      },
+      "lane": "pgo-clang-ir",
+      "reason_code": "reviewed-native-autotools-build"
     }
   ],
   "record_type": "pgo-lane-reviewed-overrides",
   "schema_version": 1,
-  "sha256": "427c5814766ff7c06c80eecbb414295816b031d90597d82c0387e1b76564de3a",
+  "sha256": "98dfa4c11d697ac55584ef4b98b64813ce7c383ae1ab1f7139b9194e1b236a7b",
   "source_backend_correlation": "841a85d0c6fcaa0f9920587c04e75d01f379e7847d4d5c91dbf63b90d5fe8061"
 }

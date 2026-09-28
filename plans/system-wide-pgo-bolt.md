@@ -10624,3 +10624,12 @@ one remaining pending record (`sys-apps/kbd-2.10.0`) for explicit backend
 review. The refreshed report hashes are `de479adffa942d32196f2140a26dbf98346a91b4b1eb86da39641d9e3a61c2fa`
 and `44f830be3669ed0eff171d7f5b1f58da2335da011ea483699d4c8b696da586d0`.
 No package transaction or generation activation was performed.
+
+The sole remaining post-sync pending lane, `sys-apps/kbd-2.10.0`, was
+resolved by an explicit reviewed override bound to the live ebuild SHA-256 and
+its native `src_configure`/default compile path. The refreshed lane report is
+`/var/lib/gentoo-optimization/reports/pgo-lanes-postsync-20260928.json` with
+SHA-256 `807e6c8efab41ef9f605f559a202fde2adf684fac9b4d9db97cd2a7a57e16861`.
+The post-sync lane candidate now has zero pending records; this is still a
+candidate classification and does not activate a generation or authorize a
+wave.
