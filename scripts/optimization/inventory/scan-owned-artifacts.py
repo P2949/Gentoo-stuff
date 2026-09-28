@@ -21,6 +21,7 @@ def inspect_path(item):
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--vdb',default='/var/db/pkg'); ap.add_argument('--output',required=True); a=ap.parse_args()
+ if os.path.exists(a.output): raise SystemExit(f'REFUSED: owned-artifact census output already exists: {a.output}')
  items=[]; seen=set()
  for cat in sorted(os.listdir(a.vdb)):
   cd=os.path.join(a.vdb,cat)
@@ -34,7 +35,7 @@ def main():
     except ValueError as exc: raise SystemExit(f'REFUSED: {c}: {exc}')
     if parsed is None or parsed[0] not in ('obj','sym'): continue
     path=parsed[1]; key=(path,owner)
-    if key in seen: continue
+    if key in seen: raise SystemExit(f'REFUSED: duplicate owned artifact identity {owner} {path}')
     seen.add(key); items.append(key)
  workers=max(1,min(32,(os.cpu_count() or 1)*2))
  with ThreadPoolExecutor(max_workers=workers) as pool:

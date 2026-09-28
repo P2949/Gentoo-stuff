@@ -10375,3 +10375,10 @@ Hardened `correlate-ebuild-backends.py` to reject duplicate or malformed CPV
 identities before correlation and to publish write-once output. Added a focused
 regression proving duplicate CPV and overwrite refusal; the test, compilation,
 and diff checks pass.
+
+### 2026-09-28 owned-artifact census authority hardening
+
+Hardened `scan-owned-artifacts.py` to publish the census write-once and to
+refuse duplicate `(owner_cpv,path)` identities instead of silently collapsing
+repeated CONTENTS records. Added `test_scan_owned_artifacts.py`; focused
+regression, compilation, and diff checks pass.
