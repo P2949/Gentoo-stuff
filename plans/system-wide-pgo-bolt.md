@@ -10191,3 +10191,7 @@ The exact optimization-off transition for `dev-libs/expat-2.8.5::gentoo` reached
 ### 2026-09-30 tree-sitter SONAME transition rejection
 
 The exact optimization-off transition for `dev-libs/tree-sitter-0.27.0::gentoo` reached install-QA but was correctly rejected because the established `libtree-sitter.so.0.26` SONAME disappeared while the staged provider installs `libtree-sitter.so.0.27`. No merge occurred. Build log SHA-256 `d3fd8856dfd886549c7b0f43352dd365fb3e8b749918e90d280b5a8b39420d`; structured failure evidence `/var/lib/gentoo-optimization/reports/package-failures-dev-libs-tree-sitter-0.27.0-20260930.json`; retirement receipt `/var/lib/gentoo-optimization/reports/portage-build-retirement-tree-sitter-20260930.json`. This remains a coordinated provider/consumer transition and was not retried unchanged.
+
+### 2026-09-30 MediaInfo ABI-provider rejection
+
+The exact optimization-off transition for `media-libs/libmediainfo-26.05::gentoo` reached install-QA but was correctly rejected by the ABI guard. `libmediainfo.so.0` exported 7,851 symbols in the staged image versus 7,079 previously, while 12 prior exports disappeared. No merge occurred. Build log SHA-256 `e746908608c4a1188aa8bbe1364a20f0337d49df6fcf33659c5ee3b56e4d4ff3`; structured failure evidence `/var/lib/gentoo-optimization/reports/package-failures-media-libs-libmediainfo-26.05-20260930.json`; retirement receipt `/var/lib/gentoo-optimization/reports/portage-build-retirement-libmediainfo-20260930.json`. This provider transition remains unresolved and was not retried unchanged.
