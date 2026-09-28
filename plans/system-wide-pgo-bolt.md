@@ -10494,3 +10494,19 @@ was captured correctly. The v2 report is
 with the same 50-operation set and `pretend_rc=0`; its SHA-256 is recorded
 beside the report. This remains a read-only resolver result and is not a
 mutation authorization.
+
+### 2026-09-28 post-sync live inventory and lifecycle classification
+
+A read-only regeneration from the authoritative `/var/db/pkg` after the
+signed repository sync produced
+`/var/lib/gentoo-optimization/reports/frozen-inventory-postsync-20260928.json`
+(SHA-256 `c030f3ce3e4f94c68bfa9e72f6ba307da85c59ff83015bf58bc4ba517165121b`):
+1,346 installed CPVs, 692,525 owned paths, 80,803 owned directories, and 215
+unresolved directory-owner records. The corresponding exact-evidence
+lifecycle classification is
+`/var/lib/gentoo-optimization/reports/kernel-classification-postsync-20260928.json`
+(SHA-256 `5107a534b6f38e2e6ec85e8cd13604abc9acc47f2f162af08f316df0d14278a7`):
+1,329 userspace transactions, 9 explicit kernel-policy exclusions, and 8
+source-unavailable pending lifecycle reviews. Because pending reviews remain,
+no mutation policy or generation authority was published and no package
+transaction was run from these artifacts.
