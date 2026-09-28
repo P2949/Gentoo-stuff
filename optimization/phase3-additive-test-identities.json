@@ -5,6 +5,46 @@
   },
   {
     "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_checkpoint_compactor.CheckpointCompactorTests.test_dry_run_protects_selector_and_retains_unknown"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_checkpoint_compactor.CheckpointCompactorTests.test_execute_requires_terminal_state_and_only_retires_candidate"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_content_object_reachability.ContentObjectReachabilityTests.test_execute_requires_complete_authority_root"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_content_object_reachability.ContentObjectReachabilityTests.test_referenced_object_is_live_unknown_name_is_kept"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_distfile_retention_set.DistfileRetentionTests.test_manifest_match_is_evidence_and_unknown_is_kept"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_prerequisite_distfile_compactor.PrerequisiteDistfileCompactorTest.test_execute"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_prerequisite_history_compactor.PrerequisiteHistoryCompactorTests.test_dry_run_execute_and_lock_refusal"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_profile_compaction_authority.ProfileCompactionAuthorityTests.test_missing_binding_keeps_expanded"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_profile_compaction_authority.ProfileCompactionAuthorityTests.test_unique_valid_binding_authorizes"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_prune_portage_build_trees.PortageBuildTreeRetirementTests.test_dry_run_and_execute"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
     "subtest": "python.test_publish_profile_dispatcher.DispatcherPathTrustTests.test_safe_rejects_symlinked_ancestor_after_path_spelling"
   },
   {
@@ -13,11 +53,7 @@
   },
   {
     "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_prerequisite_history_compactor.PrerequisiteHistoryCompactorTests.test_dry_run_execute_and_lock_refusal"
-  },
-  {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_prune_portage_build_trees.PortageBuildTreeRetirementTests.test_dry_run_and_execute"
+    "subtest": "python.test_storage_gc.StorageGCTest.test_retention_and_execution"
   },
   {
     "test": "python-unit-tests:tests/optimization",
