@@ -10462,3 +10462,18 @@ one Maya fetch restriction. The proposed set includes kernel/lifecycle CPVs
 `scx`, `scx-loader`, firmware/microcode) alongside userspace work. It therefore
 must be partitioned through a freshly regenerated mutation policy before any
 live transaction; no package mutation was run from this pretend.
+
+### 2026-09-28 signed-sync resolver refresh
+
+After the signed Gentoo repository synchronization, a fresh read-only
+`@world` dependency calculation produced the current resolver boundary. The
+captured report is
+`/var/lib/gentoo-optimization/reports/userspace-world-pretend-20260928-signed-sync.txt`
+with SHA-256
+`e677553b8ead440f23dfc3fa6053e90071169666368a066c32bdcd7038f5c4e8`.
+It contains 50 scheduled operations: 26 upgrades, 4 new slots, 20
+reinstalls, and one Firefox-bin replacement/uninstall pair. The operation set
+still includes kernel/lifecycle and firmware CPVs, the SPIR-V/graphics
+closure, and a Maya fetch restriction; it is therefore evidence for the next
+mutation-policy partition only. No package transaction was run from this
+pretend, and the storage/portable validation remained read-only.
