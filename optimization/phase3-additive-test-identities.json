@@ -5,6 +5,10 @@
   },
   {
     "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_assign_pgo_lanes.ReviewedLaneOverrideTests.test_prebuilt_evidence_cannot_receive_compilable_lane"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
     "subtest": "python.test_checkpoint_compactor.CheckpointCompactorTests.test_dry_run_protects_selector_and_retains_unknown"
   },
   {
