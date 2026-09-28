@@ -10251,3 +10251,7 @@ The exact optimization-off transition for `sci-physics/bullet-3.21::gentoo` reac
 ### 2026-09-30 resolver after Bullet rejection
 
 A fresh `@world` pretend after the Bullet ABI-provider rejection remains stable at 51 operations (26 upgrades, 4 new slots, 21 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-post-bullet.txt` has SHA-256 `c9f00a83f794577971e7062d09aa5344977ad1c34b119aab9d0985e1b02da7c3`. No resolver state changed and no protected lifecycle transaction was attempted.
+
+### 2026-09-30 workload-authority payload gate
+
+Hardened `verify-workload-coverage.py` so a package cannot be counted as training-ready merely by declaring a ready state. Every ready record must now contain a nonempty, identified recipe payload (or a consumer-workload payload) with an executable/path and invocation; malformed or empty ready records are reported as `invalid_ready` and force both accounting and representative-training coverage gates false. Schema version advanced to 3. Added `tests/optimization/test_verify_workload_coverage.py` covering empty-ready refusal and a valid identified recipe. Focused regression, Python compilation, and diff validation pass. No live training wave was authorized.
