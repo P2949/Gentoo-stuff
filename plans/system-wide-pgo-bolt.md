@@ -10424,3 +10424,13 @@ now passes its full snapshot/publication/rollback fixture. The complete
 portable gate reached 86 passing tests and then correctly refused finalization
 because this source fix was not yet committed; commit follows after focused
 validation.
+
+### 2026-09-30 portable-complete identity closure
+
+The clean-boundary portable-complete run completed 87 passing top-level tests,
+zero failing subtests, and 12 selected-mode skips before refusing only on the
+additive unittest identity registry. The discovered prebuilt-lane regression
+identity was added to `optimization/phase3-additive-test-identities.json`; the
+phase2 test-contract verifier now passes against the deterministic discovery.
+The full run's earlier framework-installer failure is resolved by commit
+`68154ea`; a fresh complete run remains required after this registry update.
