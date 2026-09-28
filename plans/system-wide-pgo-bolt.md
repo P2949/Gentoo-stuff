@@ -10487,3 +10487,10 @@ subtests passed, and exit status 0. The recovery and framework-installer
 fixtures completed successfully. This validates the source framework only;
 it does not authorize activation of an older generation or any profile wave
 against the post-sync live VDB.
+
+The resolver boundary was rerun with a Bash wrapper so the Portage return code
+was captured correctly. The v2 report is
+`/var/lib/gentoo-optimization/reports/userspace-world-pretend-20260928-signed-sync-v2.txt`
+with the same 50-operation set and `pretend_rc=0`; its SHA-256 is recorded
+beside the report. This remains a read-only resolver result and is not a
+mutation authorization.
