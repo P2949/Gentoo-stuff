@@ -7,10 +7,30 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
-from contents import parse_contents_line
-
 ELF_MAGIC = b"\x7fELF"
+
+def parse_contents_line(line: str):
+    """Parse one VDB CONTENTS record without a deployed helper dependency."""
+    raw = line.rstrip("\n")
+    if not raw.strip():
+        return None
+    try:
+        kind, rest = raw.split(" ", 1)
+    except ValueError as exc:
+        raise ValueError("missing CONTENTS fields") from exc
+    if kind == "dir":
+        return kind, rest, []
+    if kind == "obj":
+        fields = rest.rsplit(" ", 2)
+        if len(fields) not in (2, 3):
+            raise ValueError("malformed obj CONTENTS record")
+        return kind, fields[0], fields[1:]
+    if kind == "sym":
+        if " -> " not in rest:
+            raise ValueError("malformed sym CONTENTS record")
+        path, target = rest.split(" -> ", 1)
+        return kind, path, ["->", target]
+    raise ValueError(f"unsupported CONTENTS record type: {kind}")
 
 
 def is_elf(path: Path) -> bool:
