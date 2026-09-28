@@ -10688,3 +10688,19 @@ required subtests passed (exit 0). The active framework has not yet been
 republished from this validated source; the source-tree fix therefore remains
 pending live framework installation and a fresh exact systemd-utils QA
 regression.
+
+### 2026-09-28 live ABI ownership regression passed
+
+After the self-contained ABI guard and predecessor-PF ownership fallback were
+validated (portable-complete: 87 pass, 0 fail, 547 required subtests), the
+root-owned framework installer republished the current source and its strict
+`--check` passed. A real exact transaction
+`=sys-apps/systemd-utils-262` with `GENTOO_OPT_MODE=off` and
+`LLVM_PROFILE_FILE=/dev/null` then completed successfully (`emerge_rc=0`).
+The prior false rejection of unrelated `libudev.so.0` from
+`sys-libs/libudev-compat` is resolved. The authenticated live log is
+`/var/lib/gentoo-optimization/reports/userspace-systemd-utils-262-abi-ownership-fix-v2-20260928.log`
+with SHA-256 `af00d1f47ab51a2a4587f91e88987cb3c091d76394447090fc56b6bbe166dab2`.
+Because this exact transaction changed the installed VDB, the earlier
+Phase-3 candidate inventory is stale and must be regenerated before any
+candidate-authority or profile-wave action.
