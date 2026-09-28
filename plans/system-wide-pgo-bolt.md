@@ -10413,3 +10413,14 @@ both refusal paths; test, compilation, and diff checks pass.
 Hardened `classify-no-entrypoint.py` to refuse duplicate workload CPVs and
 write-once output publication. Added a focused regression for duplicate identity
 and overwrite refusal; the corrected test and Python compilation pass.
+
+### 2026-09-30 readonly framework binding cleanup
+
+Fixed `portage/bashrc` administrative/off-mode cleanup so a framework binding
+that is intentionally readonly in generation-continuity fixtures is preserved
+without aborting on `unset`; mutable stale bindings are still removed, and
+active identity checks remain fail-closed. The framework-installer regression
+now passes its full snapshot/publication/rollback fixture. The complete
+portable gate reached 86 passing tests and then correctly refused finalization
+because this source fix was not yet committed; commit follows after focused
+validation.

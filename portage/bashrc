@@ -19,8 +19,21 @@ unset __LLVM_PROFILE_RT_INIT_ONCE
 # recovery transactions intentionally replace that package with a baseline
 # binary; discard that stale inherited binding before binding the live
 # framework.  Active optimization transactions remain fail-closed below.
+# Some framework fixtures intentionally bind this variable readonly to prove
+# generation continuity.  A readonly stale binding cannot be removed from the
+# shell, but it must not make administrative/off-mode dispatch abort before the
+# later fail-closed identity checks run.
+gentoo_opt_unset_if_mutable() {
+    local name declaration
+    for name in "$@"; do
+        declaration=$(declare -p "${name}" 2>/dev/null || true)
+        [[ ${declaration} =~ ^declare\ -[a-z]*r ]] && continue
+        unset "${name}" || return 1
+    done
+}
+
 if [[ ${GENTOO_OPT_MODE-} == off ]]; then
-    unset GENTOO_OPT_FRAMEWORK_TARGET
+    gentoo_opt_unset_if_mutable GENTOO_OPT_FRAMEWORK_TARGET
 fi
 
 # Root-owned baseline recovery may need to replace an installed package whose
@@ -32,7 +45,7 @@ if [[ ${GENTOO_OPT_MODE:-off} == off ||
     ${GENTOO_OPT_DEINSTRUMENT-} == 1 ||
     -f /var/lib/gentoo-optimization/state/deinstrument.pending ]]; then
     export GENTOO_OPT_MODE=off
-    unset GENTOO_OPT_FRAMEWORK_TARGET GENTOO_OPT_PROFILE_PATH
+    gentoo_opt_unset_if_mutable GENTOO_OPT_FRAMEWORK_TARGET GENTOO_OPT_PROFILE_PATH
 fi
 
 # Instrumented package programs may run during install/QA and inherit the
