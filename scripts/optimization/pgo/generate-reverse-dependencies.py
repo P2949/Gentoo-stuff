@@ -11,7 +11,12 @@ def main():
  p,e=load(a.portage),load(a.elf); rows=[]
  if not isinstance(p,dict) or not isinstance(e,dict): raise SystemExit('REFUSED: reverse-dependency sources must be JSON objects')
  if not isinstance(p.get('records',[]),list) or not isinstance(p.get('build_records',[]),list): raise SystemExit('REFUSED: Portage graph source has invalid record lists')
- if not isinstance(e.get('records',e.get('edges',[])),list): raise SystemExit('REFUSED: ELF graph source has invalid edge list')
+ elf_edges = e.get('records', e.get('edges', []))
+ if not isinstance(elf_edges,list): raise SystemExit('REFUSED: ELF graph source has invalid edge list')
+ if not p.get('records') and not p.get('build_records'):
+  raise SystemExit('REFUSED: Portage dependency authority is empty')
+ if not elf_edges:
+  raise SystemExit('REFUSED: ELF DT_NEEDED authority is empty')
  sources=((p,'records','portage-runtime'),(p,'build_records','portage-build'),(e,'records','elf-needed'),(e,'edges','elf-needed'))
  for source,key,rel in sources:
   if key not in source: continue

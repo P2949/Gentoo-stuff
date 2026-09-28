@@ -10203,3 +10203,7 @@ Focused regressions passed for the current source boundary: `test_schedule_gener
 ### 2026-09-30 mutation-policy to ELF eligibility join
 
 Closed the artifact-policy wiring gap identified in the Phase-3 review. `classify-elf-eligibility.py` now accepts the generation-bound `package-mutation-policy` authority, refuses missing/duplicate/pending owner decisions, and derives kernel-policy exclusion from the authoritative package decision rather than relying on a pre-populated artifact field. Added `tests/optimization/test_elf_mutation_policy_join.py`, which proves a category-independent `kernel-policy-exclusion` decision reaches ELF eligibility as `not-applicable`. Focused regression and Python compilation pass.
+
+### 2026-09-30 reverse-dependency authority hardening
+
+The canonical reverse-dependency generator now refuses an empty Portage dependency authority or an empty ELF `DT_NEEDED` authority instead of publishing an apparently valid graph from one source alone. Added `tests/optimization/test_generate_reverse_dependencies.py`, covering typed Portage and ELF edges and both refusal paths. Python compilation, focused regression, and diff validation pass.
