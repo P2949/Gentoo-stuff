@@ -16,6 +16,15 @@ def sha(path: pathlib.Path) -> str:
         for block in iter(lambda:f.read(1024*1024),b''): h.update(block)
     return h.hexdigest()
 
+def compilation_observed(log: pathlib.Path) -> bool:
+    """Require an actual compiler invocation, not only the profile-use banner."""
+    text = log.read_text(errors='replace')
+    return any(re.search(pattern, text, re.MULTILINE) for pattern in (
+        r'(^|\s)(clang|clang\+\+|gcc|g\+\+|rustc|go)\b.*(?:\s-c(?:\s|$)|compile|link)',
+        r'(^|\s)libtool:\s+(?:compile|link):',
+        r'(^|\s)(?:ninja|make).*\b(?:clang|gcc|rustc|go)\b',
+    ))
+
 def main() -> int:
     ap=argparse.ArgumentParser(); ap.add_argument('--dispatcher',type=pathlib.Path,required=True)
     ap.add_argument('--cpv',required=True); ap.add_argument('--repository',required=True)
@@ -78,6 +87,9 @@ def main() -> int:
         if proposed != [a.cpv]:
             raise SystemExit(f'REFUSED: resolver proposed {proposed!r} for {a.cpv}; dependency/co-build reconciliation is required')
         proc=subprocess.run(['emerge','--oneshot','--nodeps','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env=run_env)
+    compiled = compilation_observed(a.log)
+    if not compiled:
+        raise SystemExit('REFUSED: profile-use transaction produced no compiler invocation evidence')
     def vdb_text(name):
         p=vdb/name
         return p.read_text(errors='replace').strip() if p.is_file() else None
@@ -92,7 +104,7 @@ def main() -> int:
           'ebuild_sha256':digest, 'contents':vdb_artifact('CONTENTS'),
           'environment':vdb_artifact('environment.bz2')}
     finished=time.time()
-    receipt={'schema_version':2,'cpv':a.cpv,'repository':repo,'ebuild':{'path':str(ebuild.resolve()),'sha256':digest},'dispatcher':{'path':str(a.dispatcher.resolve()),'sha256':sha(a.dispatcher)},'dispatcher_env':{'path':str(dispatcher_env.resolve()),'sha256':sha(dispatcher_env)},'manifest':{'path':str(manifest.resolve()),'sha256':sha(manifest)},'metadata':{'path':str(metadata.resolve()),'sha256':sha(metadata)},'profile':{'path':str(profile.resolve()),'sha256':sha(profile)},'generation':record.get('generation'),'framework':record.get('framework'),'fingerprint':ident.get('fingerprint') or record.get('fingerprint'),'compiler':record.get('compiler'),'backend':record.get('backend'),'mode':'profile-use','exit_status':proc.returncode,'log':{'path':str(a.log.resolve()),'sha256':sha(a.log)},'started_epoch':started,'finished_epoch':finished,'post_vdb':post}
+    receipt={'schema_version':2,'cpv':a.cpv,'repository':repo,'ebuild':{'path':str(ebuild.resolve()),'sha256':digest},'dispatcher':{'path':str(a.dispatcher.resolve()),'sha256':sha(a.dispatcher)},'dispatcher_env':{'path':str(dispatcher_env.resolve()),'sha256':sha(dispatcher_env)},'manifest':{'path':str(manifest.resolve()),'sha256':sha(manifest)},'metadata':{'path':str(metadata.resolve()),'sha256':sha(metadata)},'profile':{'path':str(profile.resolve()),'sha256':sha(profile)},'generation':record.get('generation'),'framework':record.get('framework'),'fingerprint':ident.get('fingerprint') or record.get('fingerprint'),'compiler':record.get('compiler'),'backend':record.get('backend'),'mode':'profile-use','exit_status':proc.returncode,'compile_evidence':{'observed':compiled,'log_sha256':sha(a.log)},'log':{'path':str(a.log.resolve()),'sha256':sha(a.log)},'started_epoch':started,'finished_epoch':finished,'post_vdb':post}
     a.receipt.parent.mkdir(parents=True,exist_ok=True)
     payload=json.dumps(receipt,sort_keys=True,indent=2)+'\n'
     fd=os.open(a.receipt,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)

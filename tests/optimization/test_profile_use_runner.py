@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Regression checks for exact profile-use identity refusal."""
-import json, subprocess, tempfile
+import json, subprocess, tempfile, importlib.util
 from pathlib import Path
 
 SCRIPT = Path(__file__).parents[2] / "scripts/optimization/pgo/run-profile-use.py"
+SPEC = importlib.util.spec_from_file_location("profile_use_runner", SCRIPT)
+MODULE = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader
+SPEC.loader.exec_module(MODULE)
 
 def main():
     with tempfile.TemporaryDirectory() as td:
@@ -47,6 +51,12 @@ def main():
     source = SCRIPT.read_text()
     assert "GENTOO_OPT_RUNNER_DISPATCHER_ENV" in source
     assert "with_suffix('.env')" in source
+    with tempfile.TemporaryDirectory() as td:
+        log = Path(td) / "log"
+        log.write_text("gentoo-optimization: profile-use backend clang-ir-use\n")
+        assert MODULE.compilation_observed(log) is False
+        log.write_text("libtool: compile: clang -c source.c -o source.o\n")
+        assert MODULE.compilation_observed(log) is True
     print("PASS: profile-use runner refuses identity drift and supplies exact dispatcher handoff")
 
 if __name__ == "__main__":

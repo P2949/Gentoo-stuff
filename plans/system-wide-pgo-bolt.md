@@ -10223,3 +10223,7 @@ The canonical optimization-set generator was revalidated at the current source b
 ### 2026-09-30 prebuilt lane classification hardening
 
 `assign-pgo-lanes.py` now recognizes explicit VDB/backend prebuilt evidence (`qa_prebuilt`, `prebuilt`, or a `QA_PREBUILT` marker) before generic build-system evidence and assigns `unsupported-by-upstream-toolchain` with reason `prebuilt-artifact-no-compile-evidence`. Reviewed generation overrides remain authoritative. Added a regression proving a prebuilt record with CMake evidence cannot receive a compilable PGO lane. Focused unittest, Python compilation, and diff validation pass.
+
+### 2026-09-30 profile-use compile-evidence gate
+
+Hardened `run-profile-use.py` so a profile-use receipt cannot be published from a banner-only or prebuilt transaction. The runner now requires compiler/libtool compile or link invocation evidence in the retained transaction log and records the observed compile-evidence binding in the receipt. Added a regression proving profile-use banners alone are refused while a compiler invocation is accepted. Focused runner regression, Python compilation, and diff validation pass.
