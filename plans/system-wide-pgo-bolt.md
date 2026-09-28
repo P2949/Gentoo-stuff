@@ -10368,3 +10368,10 @@ inventory CPV identities are rejected before classification. Added
 `tests/optimization/test_classify_package_state.py`, which proves both duplicate
 CPV refusal and write-once publication. Focused regression, Python compilation,
 and `git diff --check` pass.
+
+### 2026-09-28 ebuild backend authority publication hardening
+
+Hardened `correlate-ebuild-backends.py` to reject duplicate or malformed CPV
+identities before correlation and to publish write-once output. Added a focused
+regression proving duplicate CPV and overwrite refusal; the test, compilation,
+and diff checks pass.
