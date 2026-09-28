@@ -10760,3 +10760,14 @@ CPVs across nine sets: 10 kernel-policy, 823 not-applicable, 1,270 all-userspace
 427 Clang-IR, 1 GCC, 5 Go, and 16 Rust entries (the remaining lane sets are
 empty by classification). These sets remain candidate artifacts and have not
 been installed into Portage or used to authorize a wave.
+
+The corrected VDB fingerprint-input collector was exercised against the
+successor candidate. It materialized ordered `package.env` paths with content
+SHA-256 values and read the retained VDB build controls from `environment.bz2`
+for all 450 PGO-lane records; the focused collector regression passed. The
+identity remediation tool then produced
+`profile-identity-remediation-v1.json` with 450 records classified as
+carry-forward-compatible and 0 retrain decisions at the identity-input level.
+This is not profile-use authorization: retained training receipts and profile
+payload evidence still have to be matched before any carry-forward is
+published.
