@@ -10130,3 +10130,7 @@ The exact optimization-off transaction for `dev-python/tree-sitter-0.26.0_p20260
 ### 2026-09-30 resolver after Python tree-sitter transition
 
 A fresh `@world` pretend after the Python tree-sitter transition completed successfully with 55 operations (26 upgrades, 4 new slots, 25 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-tree-python.txt` has SHA-256 `b11d6970236ded912a15f55c76bb5ea16604d171aee09f683f16feee3739edd7`. Storage preflight remains passing at `163567091712` free bytes and `16.9340%`. The native tree-sitter provider, SPIR-V provider, and protected lifecycle graph entries remain unresolved boundaries.
+
+### 2026-09-30 VS Code baseline ABI rejection
+
+The exact optimization-off transition for `app-editors/vscode-1.139.1::gentoo` reached install-QA but was correctly rejected by the ABI guard for bundled `opt/vscode/libffmpeg.so`: exports increased from 1530 to 1542 while four prior exports disappeared (`ff_emulated_edge_mc_8`, `ff_pb_FC`, `ff_pw_15`, `ff_pw_20`). No merge occurred. Build log SHA-256 `ad42485e72824d1c01aac48f2427dcf7b13fb70296d6d340ea0be7cc00d73448`, structured record `/var/lib/gentoo-optimization/reports/package-failures/app-editors-vscode-1.139.1-20260930.json` SHA-256 `672f711efc6a7a05bb17ebac021091ba1c4ab0bd25a597ba95a80eb6c27274f8`, retirement receipt `/var/lib/gentoo-optimization/reports/portage-build-retirement-vscode-20260930.json`. The guard remains fail-closed and no optimization claim is made.
