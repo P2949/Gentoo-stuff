@@ -10510,3 +10510,25 @@ lifecycle classification is
 source-unavailable pending lifecycle reviews. Because pending reviews remain,
 no mutation policy or generation authority was published and no package
 transaction was run from these artifacts.
+
+### 2026-09-28 source-unavailable review and mutation-policy candidate
+
+The eight post-sync source-unavailable records were reviewed against their
+exact installed VDB evidence (`CONTENTS`, `BUILD_TIME`, `REPOSITORY`,
+`INHERITED`, `USE`, and `EAPI`). The review is preserved at
+`/var/lib/gentoo-optimization/reports/source-unavailable-review-postsync-20260928.json`
+(SHA-256 `7ea3d3106c26d49dc876b85c16123ac06eceff5e75b17b730481acaa2675b9db`);
+`sys-kernel/dracut-111-r1` remains explicitly `kernel-policy-exclusion` and
+the other seven receive an evidence-backed userspace disposition.
+
+Regenerated classification is preserved at
+`/var/lib/gentoo-optimization/reports/kernel-classification-postsync-reviewed-20260928.json`
+(SHA-256 `b120e1847948d81e65b0c1e729a4ad708024f832e2875075c0733353b7b8dd93`)
+with 1,336 userspace decisions and 10 kernel-policy exclusions. The derived
+candidate mutation policy is
+`/var/lib/gentoo-optimization/reports/mutation-policy-postsync-20260928.json`
+(SHA-256 `f8d8aecf3fcafa6c0e2160bcba46c8f6c235c3db3bccc31c740938a8347cd5e3`);
+`verify-mutation-policy.py` independently passed complete 1,346-CPV coverage.
+These artifacts are not yet activated as a Phase-3 generation because the
+post-sync directory-owner and downstream artifact/fingerprint authorities have
+not been regenerated and verified.
