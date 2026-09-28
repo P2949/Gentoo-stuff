@@ -10255,3 +10255,7 @@ A fresh `@world` pretend after the Bullet ABI-provider rejection remains stable 
 ### 2026-09-30 workload-authority payload gate
 
 Hardened `verify-workload-coverage.py` so a package cannot be counted as training-ready merely by declaring a ready state. Every ready record must now contain a nonempty, identified recipe payload (or a consumer-workload payload) with an executable/path and invocation; malformed or empty ready records are reported as `invalid_ready` and force both accounting and representative-training coverage gates false. Schema version advanced to 3. Added `tests/optimization/test_verify_workload_coverage.py` covering empty-ready refusal and a valid identified recipe. Focused regression, Python compilation, and diff validation pass. No live training wave was authorized.
+
+### 2026-09-30 consumer-graph fixture authority repair
+
+The consumer-workload integration fixture was stale after the reverse-dependency generator was correctly hardened to require nonempty Portage and ELF authorities. Updated `tests/optimization/test_consumer_workload_planner.py` to provide an authenticated ELF edge while retaining the workload binding, so the fixture exercises the current two-authority contract instead of bypassing it. The complete focused Phase-3 script regression set (workload manifest, consumer planner, live inventory parser, mutation policy, package provenance, scheduler, and VDB fingerprint collector) passed, along with Python compilation and diff validation.

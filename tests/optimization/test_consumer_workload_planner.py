@@ -17,7 +17,11 @@ def main():
   # Integration regression: the canonical graph generator must preserve the
   # authenticated binding before the planner consumes the graph.
   build_edge={'provider_cpv':'dev-libs/a-1','consumer_cpv':'dev-util/build-1','relationship':'portage-build'}
-  (p/'portage').write_text(json.dumps({'records':[edge],'build_records':[build_edge]})); (p/'elfsrc').write_text(json.dumps({'records':[]})); graph=p/'graph'
+  # The canonical generator requires both authorities to be nonempty.  Keep
+  # the authenticated workload binding in the ELF edge as well as Portage's
+  # runtime/build evidence so this fixture exercises the real contract.
+  elf_edge=dict(edge)
+  (p/'portage').write_text(json.dumps({'records':[edge],'build_records':[build_edge]})); (p/'elfsrc').write_text(json.dumps({'records':[elf_edge]})); graph=p/'graph'
   subprocess.run(['python3',str(GRAPH),'--portage',str(p/'portage'),'--elf',str(p/'elfsrc'),'--output',str(graph)],check=True)
   generated=json.loads(graph.read_text()); assert generated['records'][0]['workload']['counter_proof']=='receipt.json'
   assert any(r['relationship']=='portage-build' for r in generated['records'])
