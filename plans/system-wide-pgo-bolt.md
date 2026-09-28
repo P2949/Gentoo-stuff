@@ -10783,3 +10783,15 @@ CPVs have no retained prior identity record. No carry-forward artifact was
 published from this comparison. The retained profile payloads therefore remain
 historical/provisional until each package is independently reconciled or
 retrained under the successor generation identity.
+
+### 2026-09-28 candidate fingerprint and policy materialization
+
+The successor candidate's 450 corrected fingerprint identities were
+materialized under `fingerprints-v4`; the immutable policy-binding builder
+completed with digest
+`e05c2d85b6507d8a97c340f301a2bcc5ffdf47907e5be342a5c741910020d70a`.
+A generation-local policy tree was then materialized at
+`generated-policy-v1` for all 1,346 CPVs using the candidate bindings and
+retained environment policy inputs. This remains candidate evidence: the
+policy tree has not been installed or activated, and profile payload/receipt
+identity matching still has to be completed before generation authorization.
