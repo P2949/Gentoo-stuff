@@ -10058,3 +10058,7 @@ compiler result. The structured historical record is
 binds the original transaction log SHA-256
 `bebdf56ddd98f3c4bff6dbe59a256ecabd4646b8f86afb13af2ae3e9e5b3c056`.
 Further retries require a changed network/module-cache condition.
+
+### 2026-09-30 git-lfs retry remains blocked by resolver instability
+
+A fresh exact off transaction for `dev-vcs/git-lfs-9999::gentoo` was attempted after an external `getent`/`curl` probe succeeded. The Go toolchain nevertheless failed to resolve `proxy.golang.org` on the IPv6 resolver interface during module acquisition. No merge occurred. The complete build log is retained at `/var/lib/gentoo-optimization/reports/portage-build-logs/portage-build-logs/portage/dev-vcs/git-lfs-9999/temp/build.log` (SHA-256 `8be72112ea07ecc43a26ea06f0434380cea028a3691d77268f4f90f9bd88fb17`), with structured retry evidence `/var/lib/gentoo-optimization/reports/package-failures/dev-vcs-git-lfs-9999/fetch-retry-20260930.json` (SHA-256 `14dc877aed7c117ef048e68212b553f9f7fc888e4ee41f2f0e7df81cc0d29aae`) and retirement receipt `/var/lib/gentoo-optimization/reports/portage-build-retirement-git-lfs-20260930-retry.json`. This remains a narrow external network failure; no optimization or ABI guard was weakened.
