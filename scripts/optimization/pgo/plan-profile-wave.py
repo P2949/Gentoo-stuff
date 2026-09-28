@@ -3,7 +3,9 @@ import argparse,json,hashlib,collections
 def valid_recipes(value):
  return isinstance(value,list) and bool(value) and all(isinstance(x,dict) and (x.get('path') or x.get('executable')) and (x.get('argv') or x.get('command') or x.get('recipe')) for x in value)
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--bindings',required=True);ap.add_argument('--recipes',required=True);ap.add_argument('--output',required=True);ap.add_argument('--per-lane',type=int,default=4);ap.add_argument('--schedule');ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training');a=ap.parse_args();b=json.load(open(a.bindings));r=json.load(open(a.recipes)); rec={x['cpv']:x for x in r['packages']}; by=collections.defaultdict(list)
+ ap=argparse.ArgumentParser();ap.add_argument('--bindings',required=True);ap.add_argument('--recipes',required=True);ap.add_argument('--output',required=True);ap.add_argument('--per-lane',type=int,default=4);ap.add_argument('--schedule');ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training');a=ap.parse_args();b=json.load(open(a.bindings));r=json.load(open(a.recipes)); recipe_rows=r['packages'];
+ if len({row.get('cpv') for row in recipe_rows}) != len(recipe_rows): raise SystemExit('REFUSED: duplicate CPV in recipe authority')
+ rec={x['cpv']:x for x in recipe_rows}; by=collections.defaultdict(list)
  if __import__('pathlib').Path(a.output).exists(): raise SystemExit('REFUSED: wave plan output already exists')
  if a.schedule:
   scheduled=json.load(open(a.schedule)); source_packages=scheduled.get('packages',[])

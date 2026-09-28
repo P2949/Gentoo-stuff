@@ -10299,3 +10299,7 @@ Aligned `verify-wave-readiness.py` with the scheduler and planner contracts. Tra
 ### 2026-09-30 scheduler authority uniqueness
 
 Hardened `schedule-generation.py` so duplicate CPV rows in either the binding authority or recipe authority refuse before dictionary materialization; duplicate rows can no longer silently replace an earlier identity. Added scheduler coverage for duplicate binding CPVs. Regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 wave-planner authority uniqueness
+
+Hardened `plan-profile-wave.py` to reject duplicate CPV rows in the recipe authority before building its lookup map. Added planner regression coverage for duplicate recipe CPVs, closing the remaining silent-overwrite path after scheduler admission. Planner regression, Python compilation, and diff validation pass.

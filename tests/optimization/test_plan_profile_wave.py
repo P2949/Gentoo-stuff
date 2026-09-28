@@ -29,6 +29,16 @@ def main() -> None:
         assert refused.returncode != 0
         assert "incomplete workload recipe" in (refused.stdout + refused.stderr)
         assert not output.exists()
+        duplicate = root / "duplicate-recipes.json"
+        duplicate.write_text(json.dumps({"sha256": "r", "packages": [
+            {"cpv": "cat/pkg-1"}, {"cpv": "cat/pkg-1"},
+        ]}))
+        duplicate_result = subprocess.run([
+            "python3", str(SCRIPT), "--bindings", str(bindings),
+            "--recipes", str(duplicate), "--output", str(root / "duplicate-wave.json"),
+        ], capture_output=True, text=True)
+        assert duplicate_result.returncode != 0
+        assert "duplicate CPV in recipe authority" in (duplicate_result.stdout + duplicate_result.stderr)
     print("PASS: profile wave planner refuses unbound workload recipes")
 
 
