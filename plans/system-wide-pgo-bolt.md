@@ -10434,3 +10434,25 @@ identity was added to `optimization/phase3-additive-test-identities.json`; the
 phase2 test-contract verifier now passes against the deterministic discovery.
 The full run's earlier framework-installer failure is resolved by commit
 `68154ea`; a fresh complete run remains required after this registry update.
+
+### 2026-09-28 storage portability regression revalidated
+
+The storage portability fixes from `879208e` are present at the current source
+boundary and were revalidated with focused regressions:
+`test_prerequisite_distfile_compactor` and `test_storage_gc` both pass. Reflink
+handling uses a disposable clone capability probe and only requires reflinks
+under explicit `--require-reflink`; portable execution permits ordinary copies.
+`gc-storage.py` requires an explicit measurement root for execution and refuses
+an unavailable root instead of dereferencing a universal path. No storage
+mutation was performed during this validation.
+
+### 2026-09-28 post-sync userspace resolver boundary
+
+A fresh read-only `@world` pretend after the signed Gentoo repository sync
+resolved 51 package operations (26 upgrades, 4 new slots, 21 reinstalls and one
+Firefox-bin replacement/uninstall pair), with two soft Firefox slot blocks and
+one Maya fetch restriction. The proposed set includes kernel/lifecycle CPVs
+(`gentoo-sources`, `zen-sources`, `cachyos-sources`, `dracut`, `installkernel`,
+`scx`, `scx-loader`, firmware/microcode) alongside userspace work. It therefore
+must be partitioned through a freshly regenerated mutation policy before any
+live transaction; no package mutation was run from this pretend.
