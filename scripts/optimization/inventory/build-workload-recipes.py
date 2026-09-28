@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import argparse,json,hashlib,collections,os,re
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--output',required=True);a=ap.parse_args();m=json.load(open(a.manifest)); rows=[]
+ ap=argparse.ArgumentParser();ap.add_argument('--manifest',required=True);ap.add_argument('--output',required=True);a=ap.parse_args();
+ if os.path.exists(a.output): raise SystemExit('REFUSED: workload recipe output already exists')
+ m=json.load(open(a.manifest)); rows=[]
  for x in m['packages']:
   if x['lane']=='pgo-go':
    # Go PGO requires a sampling/pprof-producing workload.  A generic

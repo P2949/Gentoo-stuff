@@ -10319,3 +10319,7 @@ After the scheduler, wave planner, readiness, payload, BOLT producer, and covera
 ### 2026-09-30 live operational boundary revalidation
 
 The live storage preflight passed at 163,541,454,848 free bytes (16.9313%, above the 100 GiB/12% floor). The retained post-deinstrumentation census independently reports a clean installed instrumentation state, and `/var/lib/gentoo-optimization/state/deinstrument.pending` is absent. Repository worktree is clean; no live package or profile wave was started from this read-only boundary.
+
+### 2026-09-30 workload recipe publication immutability
+
+Hardened `build-workload-recipes.py` to refuse an existing output path, preserving immutable representative-workload recipe manifests across regeneration attempts. Added `test_build_workload_recipes.py` covering write-once publication; workload-manifest regression, recipe regression, Python compilation, and diff validation pass.
