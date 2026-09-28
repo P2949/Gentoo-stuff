@@ -10394,3 +10394,10 @@ both refusal paths; the regression and Python compilation pass.
 Hardened `classify-package-backends.py` with write-once output and explicit CPV
 identity tracking before backend classification. Added a focused publication
 regression; test and Python compilation pass.
+
+### 2026-09-28 fingerprint materialization authority hardening
+
+Hardened `materialize-fingerprints.py` to refuse replacement of an output root
+or result record and to reject duplicate/malformed CPV identities before running
+fingerprint workers. Added a focused regression covering duplicate identity and
+write-once refusal; test, compilation, and diff checks pass.

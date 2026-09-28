@@ -9,7 +9,12 @@ def one(record, root):
     return {'cpv':record['cpv'],'returncode':r.returncode,'stdout':r.stdout.strip(),'stderr':r.stderr.strip()}
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--inputs',required=True); ap.add_argument('--output-root',required=True); ap.add_argument('--workers',type=int,default=4); ap.add_argument('--result',required=True); a=ap.parse_args()
-    records=json.load(open(a.inputs))['records']; root=pathlib.Path(a.output_root); root.mkdir(parents=True,exist_ok=True)
+    root=pathlib.Path(a.output_root)
+    if root.exists(): raise SystemExit('REFUSED: fingerprint output root already exists')
+    if pathlib.Path(a.result).exists(): raise SystemExit('REFUSED: fingerprint materialization result already exists')
+    records=json.load(open(a.inputs))['records']; cpvs=[x.get('cpv') for x in records]
+    if len(cpvs) != len(set(cpvs)) or any(not isinstance(cpv,str) or not cpv for cpv in cpvs): raise SystemExit('REFUSED: duplicate or malformed fingerprint CPV authority')
+    root.mkdir(parents=True)
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as ex: results=list(ex.map(lambda x:one(x,root),records))
     out={'record_type':'vdb-fingerprint-materialization','schema_version':1,'results':results,'total':len(results),'successes':sum(x['returncode']==0 for x in results),'failures':sum(x['returncode']!=0 for x in results)}
     json.dump(out,open(a.result,'w'),sort_keys=True,indent=2); open(a.result,'a').write('\n')
