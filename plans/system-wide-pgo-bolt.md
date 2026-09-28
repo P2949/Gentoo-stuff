@@ -10311,3 +10311,7 @@ Hardened `verify-profile-payloads.py` to refuse existing output paths and duplic
 ### 2026-09-30 policy-binding publication immutability
 
 Hardened `build-policy-bindings.py` to refuse an existing output path, preserving one immutable per-generation binding artifact. Added `test_build_policy_bindings.py` covering write-once publication. Focused regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 Phase-3 authority focused boundary
+
+After the scheduler, wave planner, readiness, payload, BOLT producer, and coverage hardening changes, the complete focused Phase-3 script boundary passed: workload manifest, consumer planner, live inventory parser, mutation policy, package provenance, scheduler, VDB fingerprint collector, workload coverage, wave readiness, Phase-3 coverage, BOLT safety producer, wave planner, profile-payload audit, and policy-binding publication regressions. No live generation or profile-use transaction was authorized from this synthetic boundary.
