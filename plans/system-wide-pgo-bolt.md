@@ -10243,3 +10243,7 @@ A fresh `@world` pretend after the systemd-utils provider rejection remains at 5
 ### 2026-09-30 ELF dependency evidence immutability
 
 Hardened `generate-live-elf-dependencies.py` to refuse overwriting an existing dependency graph output. Added regression coverage for the immutable-output refusal alongside SONAME provider resolution. Focused regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 Bullet ABI-provider rejection
+
+The exact optimization-off transition for `sci-physics/bullet-3.21::gentoo` reached install-QA but was correctly rejected after multiple Bullet DSO providers lost established exports. Affected providers include `libBulletSoftBody.so`, `libBulletCollision.so`, `libBulletDynamics.so`, and `libLinearMath.so`. No merge occurred. Build log SHA-256 `b60c54754f0214e052c8aa149d0ce4c794f06e2abd7cbd5b2262cdd2488c0a06`; structured failure evidence `/var/lib/gentoo-optimization/reports/package-failures-sci-physics-bullet-3.21-20260930.json`; retirement receipt `/var/lib/gentoo-optimization/reports/portage-build-retirement-bullet-20260930.json`. The ABI guard remains fail-closed and the unchanged transaction was not retried.
