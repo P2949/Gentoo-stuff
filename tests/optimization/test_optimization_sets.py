@@ -21,5 +21,7 @@ def main():
   conflict=subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/generate-optimization-sets.py'),'--mutation-policy',str(conflict_m),'--lanes',str(conflict_l),'--output-root',str(p/'conflict-sets')],capture_output=True,text=True)
   assert conflict.returncode == 0
   assert (p/'conflict-sets'/'pgo-clang-ir').read_text() == '=app/foo-1\n'
+  verifier=subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/verify-optimization-sets.py'),'--mutation-policy',str(conflict_m),'--lanes',str(conflict_l),'--manifest',str(p/'conflict-sets.manifest.json'),'--sets-root',str(p/'conflict-sets')],capture_output=True,text=True)
+  assert verifier.returncode == 0 and 'verified 2 CPVs' in verifier.stdout
  print('PASS: optimization sets derive from canonical mutation policy')
 if __name__=='__main__': main()

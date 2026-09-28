@@ -91,12 +91,16 @@ def main():
                 members_by_atom.setdefault(atom, []).append(cpv)
         rewritten=[]
         for atom, cpvs in members_by_atom.items():
-            if name in {'pgo-bolt-all-userspace', 'optimization-kernel-policy-exclusion'}:
-                rewritten.append(atom)
-                continue
             selected={cpv for cpv in cpvs if cpv in selected_members}
             signatures={(decisions[cpv], lane_rows[cpv].get('lane')) for cpv in cpvs}
-            if selected == set(cpvs) and len(signatures) == 1:
+            mutation_signatures={decisions[cpv] for cpv in cpvs}
+            safe_partition = (
+                selected == set(cpvs)
+                and ((name == 'pgo-bolt-all-userspace' and mutation_signatures == {'userspace'})
+                     or (name == 'optimization-kernel-policy-exclusion' and mutation_signatures == {'kernel-policy-exclusion'})
+                     or (name not in {'pgo-bolt-all-userspace', 'optimization-kernel-policy-exclusion'} and len(signatures) == 1))
+            )
+            if safe_partition:
                 rewritten.append(atom)
             else:
                 rewritten.extend(f'={cpv}' for cpv in sorted(selected))
