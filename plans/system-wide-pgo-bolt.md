@@ -10171,3 +10171,7 @@ A fresh `@world` pretend after the Hyprgraphics transition completed successfull
 
 The exact optimization-off transaction for `gui-libs/aquamarine-9999::hyproverlay` completed and merged under the ABI guard. VDB `CONTENTS` SHA-256 is `15624359a1024caa91ac373db067adf8bbf7998602d19574e1fbf14cf3e24040`, and `environment.bz2` SHA-256 is `c6d64f05d5bb828564ebe1624716281da04d2156585aa28505e1d45efea97c73`. Structured evidence `/var/lib/gentoo-optimization/reports/package-success-gui-libs-aquamarine-9999-20260930.json` was retained with SHA-256 recorded below. No PGO/BOLT claim is made. The transaction's Portage build tree was retired immediately after completion.
 c76da444d4da9c7dff10a78d5b316d89110f86c67a26f5bf0c4895bb395a5c60  /var/lib/gentoo-optimization/reports/package-success-gui-libs-aquamarine-9999-20260930.json
+
+### 2026-09-30 resolver after Aquamarine transition
+
+A fresh `@world` pretend after the Aquamarine transition completed successfully with 51 operations (26 upgrades, 4 new slots, 21 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-aquamarine.txt` has SHA-256 `5dfa554c7fe63e2aa81c49c4a8846c5a26419f6451b67c1225bba6bda30eb65b`. The resolver still exposes protected kernel/firmware lifecycle entries and unresolved SPIR-V/FFmpeg/provider closure; no protected transaction was executed. Storage preflight remains above policy.
