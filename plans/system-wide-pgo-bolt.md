@@ -10896,3 +10896,21 @@ source rebuilds for abseil/libjxl encountered the existing exported-ABI guard.
 These records remain non-authoritative remediation evidence. No profile wave or
 final-generation freeze is authorized until the residual instrumentation and
 package-specific ABI/prebuilt dispositions are resolved.
+
+### 2026-09-28 prebuilt instrumentation disposition
+
+The staged instrumentation gate was extended with an explicit `QA_PREBUILT`
+terminal path. Vendor archives with no compilation boundary are now admitted
+only when the ebuild declares their payload as `QA_PREBUILT`; they remain
+outside PGO/BOLT authority and are classified as unsupported prebuilt artifacts.
+The guard remains fail-closed for all compiled/off/profile-use transactions
+without that declaration. The QA-hook regression suite now reports 14/14
+passing, including the prebuilt-terminal case. Autodesk ADP Desktop SDK and
+Adsk Licensing ebuilds were updated and pushed in maya-gentoo commit
+`ef37458`; the UnityHub local ebuild was updated in the live local repository.
+
+The subsequent prebuilt-only de-instrumentation attempt still recorded the
+older installed payloads as unauthorized because their VDB/effective ebuild
+state predates the new declarations. That receipt remains immutable evidence;
+a fresh exact reinstall is required before the new terminal disposition can be
+observed.
