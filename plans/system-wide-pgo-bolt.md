@@ -10114,3 +10114,7 @@ The first exact off-mode `dev-util/bindgen-0.73.2::gentoo` attempt failed becaus
 ### 2026-09-30 resolver after bindgen recovery
 
 A fresh `@world` pretend after the bindgen recovery completed successfully with 56 operations (27 upgrades, 4 new slots, 25 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-bindgen.txt` has SHA-256 `d1a741fa5963be1047e44085a6540efe5106e436f401f683da00e1113a466c69`. Storage preflight remains passing at `163123826688` free bytes and `16.8881%`. Protected lifecycle items and unresolved SPIR-V/graphics/media closure remain outside the safe exact userspace transitions completed so far.
+
+### 2026-09-30 libde265 baseline ABI rejection
+
+The exact optimization-off transaction for `media-libs/libde265-1.1.3::gentoo` reached install-QA and was rejected by the ABI guard. `libde265.so.0` changed from 878 exports to 106 and removed 12 prior exported symbols, including internal decoder/transformation symbols and `libde265` helper APIs. No merge occurred. Build log SHA-256 `4d022ef5b0bcb2c7ae10d26d74c240cfd33566b791fd649ea1d11081ecbada2d`, structured record `/var/lib/gentoo-optimization/reports/package-failures/media-libs-libde265-1.1.3-20260930.json` SHA-256 `35c2a96eadd6c11d23e1e4da9889aba2d891582559cf1efaf7d125ca2e3c5939`, retirement receipt `/var/lib/gentoo-optimization/reports/portage-build-retirement-libde265-20260930.json`. The ABI guard remains unchanged and no optimization claim is made.
