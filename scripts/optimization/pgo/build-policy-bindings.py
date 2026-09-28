@@ -17,6 +17,8 @@ def main():
     ap.add_argument('--compiler-identities', required=True); ap.add_argument('--profile-root', required=True)
     ap.add_argument('--generation-id', required=True); ap.add_argument('--output', required=True)
     a = ap.parse_args()
+    if os.path.exists(a.output):
+        raise SystemExit('REFUSED: policy-binding output already exists')
     lanes = json.load(open(a.lanes)); comp = json.load(open(a.compiler_identities))
     records = []
     seen = set()

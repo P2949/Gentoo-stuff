@@ -10307,3 +10307,7 @@ Hardened `plan-profile-wave.py` to reject duplicate CPV rows in the recipe autho
 ### 2026-09-30 profile-payload authority hardening
 
 Hardened `verify-profile-payloads.py` to refuse existing output paths and duplicate CPV identities in profile bindings, workload exclusions, or terminal exclusions before materializing the audit. Added `test_verify_profile_payloads.py` covering duplicate-binding refusal. Focused regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 policy-binding publication immutability
+
+Hardened `build-policy-bindings.py` to refuse an existing output path, preserving one immutable per-generation binding artifact. Added `test_build_policy_bindings.py` covering write-once publication. Focused regression, Python compilation, and diff validation pass.
