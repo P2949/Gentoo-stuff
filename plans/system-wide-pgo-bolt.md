@@ -10343,3 +10343,7 @@ Hardened `generate-optimization-sets.py` to refuse an existing summary manifest 
 ### 2026-09-30 reverse-dependency edge uniqueness
 
 Hardened `generate-reverse-dependencies.py` to reject duplicate typed `(provider_cpv, consumer_cpv, relationship)` edges instead of silently deduplicating source evidence. Added regression coverage for duplicate Portage edges; both authority-presence and duplicate-edge refusal remain fail-closed. Focused regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 consumer-workload edge uniqueness
+
+Hardened `plan-consumer-workloads.py` to reject duplicate typed reverse-dependency identities before deriving consumer candidates. Updated the integration fixture to preserve the source-specific relationship defaults and added duplicate-edge refusal coverage. Consumer planner, reverse-dependency integration, Python compilation, and diff validation pass.

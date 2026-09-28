@@ -18,10 +18,15 @@ def main():
     for item in elf.get('artifacts', []):
         elf_by_owner[item.get('owner_cpv')].append(item)
     edges = collections.defaultdict(list)
+    seen_edges = set()
     for edge in reverse.get('records', reverse.get('edges', [])):
         provider = edge.get('provider_cpv') or edge.get('cpv')
         consumer = edge.get('consumer_cpv') or edge.get('consumer')
         if provider and consumer and provider != consumer:
+            identity = (provider, consumer, edge.get('relationship'))
+            if identity in seen_edges:
+                raise SystemExit(f'REFUSED: duplicate reverse-dependency edge: {identity}')
+            seen_edges.add(identity)
             edges[provider].append(edge)
     rows = []
     for item in workloads.get('packages', []):
