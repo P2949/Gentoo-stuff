@@ -10179,3 +10179,7 @@ A fresh `@world` pretend after the Aquamarine transition completed successfully 
 ### 2026-09-30 storage portability regression verification
 
 The current source already contains the narrow storage portability repair in commit `879208e`: prerequisite distfile compaction uses an actual disposable reflink capability probe with explicit `--require-reflink` policy, `gc-storage.py` requires an explicit measurement root for execution and returns a reasoned `REFUSED` for unavailable roots, and storage regression modules defer filesystem side effects until selected tests execute. Focused storage regressions passed (`test_storage_inventory`, `test_storage_retention`, `test_storage_gc`, and `test_prerequisite_distfile_compactor`, 4/4). The broader portable-complete run was started at this source boundary; its recovery unittest phase remains active under the repository's bounded test harness and has not been counted as complete yet.
+
+### 2026-09-30 current userspace resolver boundary
+
+A fresh `@world` pretend after the Aquamarine transition remains stable at 51 operations (26 upgrades, 4 new slots, 21 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-current.txt` has SHA-256 `d3138ad0d6b8c7ca19114cde772af890706a0060b7b2c97d9361962f0e768b9b`. The remaining graph still includes protected kernel/firmware lifecycle packages and unresolved SPIR-V, FFmpeg, and provider rebuild closures; these remain outside automated mutation scope.
