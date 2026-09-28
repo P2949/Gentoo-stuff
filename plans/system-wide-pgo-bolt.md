@@ -10829,3 +10829,19 @@ all `needs-consumer-workload`; the binding pass produced zero candidate
 workloads. Existing historical consumer records retain `pending-runtime-proof`
 and are not promoted. This is the current representative-workload gap, not an
 authorization failure or a reason to invent bindings.
+
+### 2026-09-28 workload-coverage gate
+
+The refreshed workload exclusion and coverage artifacts were independently
+verified from the successor manifest, lanes, recipes, and ELF census. The
+exclusion classifier emitted 199 records, all `needs-consumer-workload` (zero
+terminal exclusions), and the coverage verifier reported `coverage_pass=false`
+and `representative_training_coverage_pass=false`: 450 PGO packages are in
+scope, zero have an authenticated ready recipe, zero are terminally excluded,
+and all 450 remain missing representative workload closure. The immutable
+artifacts are `workload-exclusions-v2.json` (SHA-256
+`be329b8a1b79631644249303f45a06a14168fd170619bdbc5f02ec7e9de362d5`) and
+`workload-coverage-v2.json` (SHA-256
+`336241b36989fd5130236a6bfa4af363456aaa3d290c028730ce5ddb31e7f283`). No
+profile wave is authorized from smoke recipes or from this failed coverage
+gate.
