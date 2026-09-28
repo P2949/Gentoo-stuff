@@ -10102,3 +10102,7 @@ The exact optimization-off transition for `dev-util/spirv-tools-1.4.357.0::gento
 ### 2026-09-30 Vulkan tools userspace baseline transition
 
 The exact optimization-off transaction for `dev-util/vulkan-tools-1.4.357.0::gentoo` completed and merged. VDB `CONTENTS` SHA-256 is `f3d890535d53a67da52d5e70e9c96f6ecc609009c78b60cecab79febdafa1f73`, `environment.bz2` SHA-256 is `4a61958f2434fcf0ae65abded46efd5498675f8192480d00d093e672faf7e234`. Structured evidence `/var/lib/gentoo-optimization/reports/package-success-dev-util-vulkan-tools-1.4.357.0-20260930.json` has SHA-256 `0e900b8e2632977f247f47dec5d0e30cd38008d8312ff7e8031238b9ed3182fd`. This is baseline userspace evidence only; SPIR-V tools ABI closure remains unresolved and no PGO/BOLT success is claimed.
+
+### 2026-09-30 resolver after Vulkan tools transition
+
+A fresh `@world` pretend after the Vulkan tools merge completed successfully with 57 operations (28 upgrades, 4 new slots, 25 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-vulkan-tools.txt` has SHA-256 `1281f1df6df399dad65addc9f93cbdab5cfc46d52102c6322d1c63f02098aa34`. The remaining graph still contains protected kernel/firmware lifecycle items and unresolved SPIR-V/graphics/media closure; no broad profile-use wave is authorized.
