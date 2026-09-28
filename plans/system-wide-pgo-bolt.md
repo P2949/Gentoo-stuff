@@ -10871,3 +10871,28 @@ framework installer, ABI/BOLT fixtures, dispatcher, QA-hook, rollback, and all
 other selected portable gates passed. The 12 skips are capability/real-root
 integration gates explicitly excluded by portable mode; no required subtest
 failed.
+
+### 2026-09-28 userspace baseline transaction and de-instrumentation boundary
+
+Repository synchronization completed successfully through `doas emaint sync -a`. A
+userspace-only `@world` transaction was then attempted with all kernel,
+firmware, dracut, installkernel, and scx lifecycle packages excluded, with
+`GENTOO_OPT_MODE=off`, `LLVM_PROFILE_FILE=/dev/null`, and `--buildpkg=n`.
+The immutable root-owned log is
+`/var/lib/gentoo-optimization/reports/userspace-update-20260928.log` (SHA-256
+`e9d6f1a8cc5d1a5c809826cb02bcf7ac2fbc5e8eedde86e28709045d0c34d862`). The
+transaction exited 1 after the fail-closed QA and ABI guards rejected
+residual instrumented/prebuilt payloads and several ABI-changing replacements;
+no guard was bypassed.
+
+A fresh VDB CONTENTS scan found 39 instrumented ELF files across 10 installed
+CPVs. The generated de-instrumentation plan is
+`/var/lib/gentoo-optimization/state/deinstrumentation-plan-20260928-current.json`.
+The first attempted batch recorded unavailable historical CPVs without
+mutation; the available batch receipt is
+`/var/lib/gentoo-optimization/reports/deinstrumentation-20260928-available/batch-0001.json`.
+That batch exited 1: proprietary/prebuilt payloads remained instrumented and
+source rebuilds for abseil/libjxl encountered the existing exported-ABI guard.
+These records remain non-authoritative remediation evidence. No profile wave or
+final-generation freeze is authorized until the residual instrumentation and
+package-specific ABI/prebuilt dispositions are resolved.
