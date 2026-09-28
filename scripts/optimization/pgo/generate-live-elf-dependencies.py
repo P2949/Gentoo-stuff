@@ -6,6 +6,7 @@ from pathlib import Path
 def canon(v): return json.dumps(v,sort_keys=True,separators=(",",":")).encode()
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--elf',required=True,type=Path); ap.add_argument('--output',required=True,type=Path); a=ap.parse_args()
+ if a.output.exists(): raise SystemExit('REFUSED: ELF dependency output already exists')
  src=json.loads(a.elf.read_text()); providers={}
  for x in src.get('artifacts',[]):
   # DT_NEEDED names resolve through the loader's SONAME namespace.  A path

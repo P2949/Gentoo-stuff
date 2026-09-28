@@ -22,6 +22,8 @@ def main() -> None:
         records = json.loads(output.read_text())["records"]
         assert records[0]["provider_cpv"] == "dev/provider-2"
         assert records[0]["consumer_cpv"] == "app/consumer-1"
+        refused = subprocess.run(["python3", str(SCRIPT), "--elf", str(source), "--output", str(output)], capture_output=True, text=True)
+        assert refused.returncode != 0 and "output already exists" in refused.stderr
     print("PASS: ELF dependency resolution uses authenticated SONAMEs")
 
 
