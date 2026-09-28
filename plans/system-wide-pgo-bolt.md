@@ -10146,3 +10146,7 @@ A fresh `@world` pretend after the Hyprlang and cpupower residue-remediation tra
 ### 2026-09-30 unowned default.profraw residue remediation
 
 An independent live `/usr` and `/opt` scan found four root-owned, unowned `default.profraw` files outside package `CONTENTS`: `/usr/lib/python3.15/site-packages/default.profraw`, `/usr/local/lib/default.profraw`, `/usr/local/default.profraw`, and `/usr/share/wine-staging-9999/man/default.profraw`. Their SHA-256 values were recorded before removal. They were removed as stale profile residue, and the same scan now reports zero `profraw`, `default.profraw`, or optimization-record YAML files in the scanned trees. Structured evidence `/var/lib/gentoo-optimization/reports/unowned-profile-residue-20260930.json` has SHA-256 `fab5145a10e1ab6056901bb99513531be09e72d9feefee33f22a2813365dcbaf`.
+
+### 2026-09-30 resolver after profile residue cleanup
+
+A fresh `@world` pretend after removing unowned profile residue completed successfully with 54 operations (26 upgrades, 4 new slots, 24 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-profile-residue.txt` has SHA-256 `d518bbf358ccf6896fec7b0812280e6f9da7822d8a2fb94a42e1e526c74079c2`. Storage preflight remains passing at `163563950080` free bytes and `16.9337%`.
