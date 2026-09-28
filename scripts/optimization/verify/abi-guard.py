@@ -7,6 +7,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from contents import parse_contents_line
+
 ELF_MAGIC = b"\x7fELF"
 
 
@@ -141,6 +144,31 @@ def collect_soname_providers(
     return providers
 
 
+def current_package_owns(root: Path, installed_path: Path) -> bool | None:
+    """Return ownership for an installed path when Portage VDB proves it.
+
+    ``None`` means the hook is running outside a real Portage VDB context; in
+    that case callers retain the historical fail-closed provider behavior.
+    """
+    category = os.environ.get("CATEGORY")
+    pf = os.environ.get("PF")
+    vdb_root = Path(os.environ.get("GENTOO_OPT_VDB_ROOT", "/var/db/pkg"))
+    if not category or not pf:
+        return None
+    contents = vdb_root / category / pf / "CONTENTS"
+    if not contents.is_file():
+        return None
+    try:
+        wanted = installed_path.relative_to(root).as_posix()
+        for line in contents.read_text(encoding="utf-8", errors="strict").splitlines():
+            parsed = parse_contents_line(line)
+            if parsed and parsed[1].lstrip("/") == wanted.lstrip("/"):
+                return True
+        return False
+    except (OSError, UnicodeError, ValueError):
+        return None
+
+
 def main() -> int:
     if "--help" in sys.argv[1:]:
         print(__doc__)
@@ -183,6 +211,14 @@ def main() -> int:
         ).items()
     }
     for soname, (installed_path, installed_symbols) in installed_providers.items():
+        ownership = current_package_owns(root, installed_path)
+        if ownership is False:
+            # A same-family DSO in the candidate directory may belong to a
+            # different installed package (for example libudev-compat's
+            # libudev.so.0 beside systemd-utils' libudev.so.1).  It is not a
+            # provider transition caused by this package and must not create a
+            # false disappearance failure.
+            continue
         candidate = candidate_providers.get(soname)
         if candidate is None:
             failures.append(f"{installed_path.relative_to(root)}: established SONAME {soname} disappeared")

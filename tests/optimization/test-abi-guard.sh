@@ -150,3 +150,17 @@ cp "${work}/root/usr/lib/libscoped.so.1" "${work}/root/usr/lib/unrelated/deep/li
 for n in $(seq 1 2000); do printf x >"${work}/root/usr/lib/unrelated/deep/file-${n}"; done
 ED="${work}/ed" ROOT="${work}/root" /usr/bin/timeout 5 python3 "${guard}"
 echo 'PASS: provider discovery does not recurse below candidate parent'
+
+# An unrelated provider sharing the candidate family must not be attributed to
+# the package currently merging when Portage VDB ownership proves otherwise.
+rm -rf -- "${work}/root" "${work}/ed" "${work}/vdb"
+mkdir -p "${work}/root/usr/lib" "${work}/ed/usr/lib" "${work}/vdb/app/test-1"
+cp "${work}/old.c" "${work}/foreign.c"
+cc -shared -fPIC "${work}/old.c" -Wl,-soname,libforeign.so.0 -o "${work}/root/usr/lib/libforeign.so.0"
+cc -shared -fPIC "${work}/new.c" -Wl,-soname,libforeign.so.1 -o "${work}/ed/usr/lib/libforeign.so.1"
+printf 'obj /usr/lib/libcandidate.so.1 deadbeef 1\n' >"${work}/vdb/app/test-1/CONTENTS"
+if ! CATEGORY=app PF=test-1 GENTOO_OPT_VDB_ROOT="${work}/vdb" ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"; then
+    echo 'ABI guard attributed unrelated provider to current package' >&2
+    exit 1
+fi
+echo 'PASS: provider disappearance is scoped to current package ownership'
