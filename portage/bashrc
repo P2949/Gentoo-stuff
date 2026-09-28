@@ -1265,6 +1265,18 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
     done
 }
 
+gentoo_opt_strip_inherited_rust_optimization_policy() {
+    local variable value cleaned
+    for variable in RUSTFLAGS CARGO_BUILD_RUSTFLAGS; do
+        value=${!variable-}
+        [[ -n ${value} ]] || continue
+        cleaned=$(printf '%s\n' "${value}" | sed -E \
+            's#(^|[[:space:]])-C[[:space:]]*(lto|linker-plugin-lto|embed-bitcode)(=[^[:space:]]+)?#\1#g')
+        printf -v "${variable}" '%s' "${cleaned}"
+        export "${variable?}"
+    done
+}
+
 gentoo_opt_strip_deinstrumentation_policy() {
     [[ ${GENTOO_OPT_DEINSTRUMENT-} == 1 ||
         -f /var/lib/gentoo-optimization/state/deinstrument.pending ]] || return 0
@@ -1274,6 +1286,7 @@ gentoo_opt_strip_deinstrumentation_policy() {
         return 0
     fi
     local variable value cleaned
+    gentoo_opt_strip_inherited_rust_optimization_policy
     for variable in CFLAGS CXXFLAGS LDFLAGS; do
         value=${!variable-}
         [[ -n ${value} ]] || continue
@@ -1287,11 +1300,12 @@ gentoo_opt_strip_deinstrumentation_policy() {
 # package.env files are sourced after this bashrc.  Reapply the cleanup at
 # phase-hook boundaries so the exact off transaction cannot compile with a
 # generation's stale COMMON_FLAGS after Portage has reconstructed them.
-if [[ ${GENTOO_OPT_DEINSTRUMENT-} == 1 ||
+if [[ ${GENTOO_OPT_MODE:-off} == off ||
+    ${GENTOO_OPT_DEINSTRUMENT-} == 1 ||
     -f /var/lib/gentoo-optimization/state/deinstrument.pending ]]; then
-    pre_src_configure() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_deinstrumentation_policy; }
-    pre_src_compile() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_deinstrumentation_policy; }
-    pre_src_install() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_deinstrumentation_policy; }
+    pre_src_configure() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_inherited_rust_optimization_policy; gentoo_opt_strip_deinstrumentation_policy; }
+    pre_src_compile() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_inherited_rust_optimization_policy; gentoo_opt_strip_deinstrumentation_policy; }
+    pre_src_install() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_inherited_rust_optimization_policy; gentoo_opt_strip_deinstrumentation_policy; }
 fi
 
 gentoo_opt_require_go_single_main() {
@@ -1589,6 +1603,7 @@ rust-generate|rust-use|go-use) ;;
         ${GENTOO_OPT_PROFILE_MAP_READY:-0} != 1 &&
         ${GENTOO_OPT_BOLT_GCC_READY:-0} != 1 ]]; then
         gentoo_opt_strip_inherited_clang_profile_flags
+        gentoo_opt_strip_inherited_rust_optimization_policy
         gentoo_opt_strip_deinstrumentation_policy
         return 0
     fi

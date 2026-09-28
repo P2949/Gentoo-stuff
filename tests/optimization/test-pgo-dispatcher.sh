@@ -359,6 +359,10 @@ case_off_scrubs_inherited_rust_profile_destination() (
     [[ ${RUSTFLAGS} != *'/var/tmp/stale-generation'* ]]
     [[ ${CARGO_BUILD_RUSTFLAGS} != *'/var/tmp/stale-use'* ]]
     [[ ${CARGO_ENCODED_RUSTFLAGS} != *'/var/tmp/stale-encoded'* ]]
+    RUSTFLAGS='-Clto=thin -Clinker-plugin-lto -Cembed-bitcode=yes -Copt-level=3'
+    source "${BASHRC}" >/dev/null 2>&1 || return 1
+    [[ ${RUSTFLAGS} != *'-Clto='* && ${RUSTFLAGS} != *'-Clinker-plugin-lto'* &&
+        ${RUSTFLAGS} != *'-Cembed-bitcode'* ]]
 )
 
 case_off_scrubs_inherited_optimization_record_destination() (
