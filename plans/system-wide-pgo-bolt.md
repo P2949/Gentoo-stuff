@@ -10126,3 +10126,7 @@ The exact optimization-off transaction for `media-sound/ncspot-1.4.0::gentoo` co
 ### 2026-09-30 Python tree-sitter baseline transition
 
 The exact optimization-off transaction for `dev-python/tree-sitter-0.26.0_p20260816-r1::gentoo` completed and merged under the ABI guard. VDB `CONTENTS` SHA-256 is `217bd9ca08eb2737208a4b86de0f3f501e5a59c85973322eccd0b944d382afea`, `environment.bz2` SHA-256 is `921e04e687074bb02a479bd7b6933a7b953adfd0404539fdc843191fcb62b9b5`. Structured evidence `/var/lib/gentoo-optimization/reports/package-success-dev-python-tree-sitter-0.26.0_p20260816-r1-20260930.json` has SHA-256 `d8c2c041b1d9f5ac1a9dc687e35e7d82eb71b4c59f4d12af3155cbc4eaf88ef8`. This records the Python binding transition only; the native tree-sitter provider ABI transition remains separately tracked.
+
+### 2026-09-30 resolver after Python tree-sitter transition
+
+A fresh `@world` pretend after the Python tree-sitter transition completed successfully with 55 operations (26 upgrades, 4 new slots, 25 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-tree-python.txt` has SHA-256 `b11d6970236ded912a15f55c76bb5ea16604d171aee09f683f16feee3739edd7`. Storage preflight remains passing at `163567091712` free bytes and `16.9340%`. The native tree-sitter provider, SPIR-V provider, and protected lifecycle graph entries remain unresolved boundaries.
