@@ -10532,3 +10532,27 @@ candidate mutation policy is
 These artifacts are not yet activated as a Phase-3 generation because the
 post-sync directory-owner and downstream artifact/fingerprint authorities have
 not been regenerated and verified.
+
+### 2026-09-28 post-sync directory review and complete mutation-policy candidate
+
+The 215 newly observed directory records were reviewed against live `stat(2)`
+identity and preserved at
+`/var/lib/gentoo-optimization/reports/frozen-directory-review-postsync-20260928.json`
+(SHA-256 `06861ecdd312bdb77059df2fe44655ff859a8affb33eba2fd9001e529e6edd31`).
+A regenerated inventory using that review now has zero unresolved directories,
+1,346 CPVs, 692,525 owned paths, and 80,803 owned directories. Its evidence is
+`/var/lib/gentoo-optimization/reports/frozen-inventory-postsync-reviewed-20260928.json`
+(SHA-256 `fb2b3f47dad383354584783875640a46ffe6eb79fe465fe62625dc543e87a6c9`),
+independently accepted by `verify/frozen-inventory.py`.
+
+Lifecycle classification was regenerated against this exact reviewed inventory
+at
+`/var/lib/gentoo-optimization/reports/kernel-classification-postsync-reviewed-final-20260928.json`
+(SHA-256 `aff7b9a323f57aeb7ba5fa39666306ac511766c7fa92dfa857e12ff6a26bdf8d`),
+with 1,336 userspace and 10 kernel-policy exclusions. The corresponding
+mutation policy is
+`/var/lib/gentoo-optimization/reports/mutation-policy-postsync-reviewed-20260928.json`
+(SHA-256 `bb112cab06efd2edad1f143f41f922db8ad72bba2c4ddfd463b5a812d191b45f`);
+`verify-mutation-policy.py` passed complete 1,346-CPV coverage. These remain
+candidate artifacts pending downstream provenance, lane, fingerprint, and
+framework authority regeneration.
