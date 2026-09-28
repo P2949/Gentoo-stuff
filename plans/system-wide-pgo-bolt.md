@@ -10335,3 +10335,7 @@ Hardened `build-workload-manifest.py` to reject duplicate CPV rows in the PGO la
 ### 2026-09-30 lane-authority publication hardening
 
 Hardened `assign-pgo-lanes.py` to publish lane candidates write-once and reject duplicate CPV identities in package state or backend authority before classification. Extended the lane unittest with a second-publication refusal. Focused unittest, Python compilation, and diff validation pass.
+
+### 2026-09-30 optimization-set authority hardening
+
+Hardened `generate-optimization-sets.py` to refuse an existing summary manifest and duplicate CPVs in mutation-policy or lane authorities before deriving Portage sets. Extended `test_optimization_sets.py` with duplicate-policy refusal while retaining CP-atom and kernel-exclusion assertions. Focused regression, Python compilation, and diff validation pass.

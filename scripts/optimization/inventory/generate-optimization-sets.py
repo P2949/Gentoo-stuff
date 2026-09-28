@@ -42,10 +42,19 @@ def main():
     args=ap.parse_args()
     if args.output_root.exists() and any(args.output_root.iterdir()):
         raise SystemExit('REFUSED: optimization set output root is not empty')
+    manifest = args.manifest or args.output_root.parent / f'{args.output_root.name}.manifest.json'
+    if manifest.exists():
+        raise SystemExit('REFUSED: optimization set manifest already exists')
     policy=json.loads(args.mutation_policy.read_text())
     lanes=json.loads(args.lanes.read_text())
-    decisions={x['cpv']:x['decision'] for x in policy.get('records',[])}
-    lane_rows={x['cpv']:x for x in lanes.get('packages',lanes.get('records',[]))}
+    policy_rows=policy.get('records',[])
+    lane_list=lanes.get('packages',lanes.get('records',[]))
+    if len({x.get('cpv') for x in policy_rows}) != len(policy_rows):
+        raise SystemExit('REFUSED: duplicate CPV in mutation policy')
+    if len({x.get('cpv') for x in lane_list}) != len(lane_list):
+        raise SystemExit('REFUSED: duplicate CPV in lane authority')
+    decisions={x['cpv']:x['decision'] for x in policy_rows}
+    lane_rows={x['cpv']:x for x in lane_list}
     if set(decisions) != set(lane_rows): raise SystemExit('REFUSED: mutation policy and lane coverage differ')
     sets={'pgo-bolt-all-userspace':[], 'optimization-kernel-policy-exclusion':[], 'optimization-not-applicable':[]}
     for name in LANE_SET.values(): sets[name]=[]
@@ -66,7 +75,6 @@ def main():
         path=args.output_root/name
         path.write_text(''.join(x+'\n' for x in values))
     summary={'record_type':'optimization-package-sets','schema_version':1,'mutation_policy_sha256':hashlib.sha256(args.mutation_policy.read_bytes()).hexdigest(),'lane_sha256':hashlib.sha256(args.lanes.read_bytes()).hexdigest(),'sets':{k:len(v) for k,v in sets.items()}}
-    manifest = args.manifest or args.output_root.parent / f'{args.output_root.name}.manifest.json'
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(json.dumps(summary,sort_keys=True,indent=2)+'\n')
     print(json.dumps(summary['sets'],sort_keys=True))

@@ -11,5 +11,9 @@ def main():
   assert (o/'optimization-kernel-policy-exclusion').read_text()=='sys-kernel/k\n'
   assert not (o/'manifest.json').exists()
   assert (p/'sets.manifest.json').exists()
+  second=subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/generate-optimization-sets.py'),'--mutation-policy',str(m),'--lanes',str(l),'--output-root',str(p/'sets2'),'--manifest',str(p/'immutable.json')],check=True)
+  duplicate=p/'duplicate.json'; duplicate.write_text(json.dumps({'records':[{'cpv':'app/a-1','decision':'userspace'},{'cpv':'app/a-1','decision':'userspace'}]}))
+  refused=subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/generate-optimization-sets.py'),'--mutation-policy',str(duplicate),'--lanes',str(l),'--output-root',str(p/'sets3')],capture_output=True,text=True)
+  assert refused.returncode != 0 and 'duplicate CPV in mutation policy' in (refused.stdout+refused.stderr)
  print('PASS: optimization sets derive from canonical mutation policy')
 if __name__=='__main__': main()
