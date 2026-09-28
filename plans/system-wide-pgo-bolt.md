@@ -10235,3 +10235,7 @@ The exact optimization-off transition for `sys-apps/systemd-utils-262::gentoo` w
 ### 2026-09-30 profile-use compiler evidence refinement
 
 Refined the profile-use compile-evidence detector to recognize direct compiler link invocations (`clang source.o -o app`) in addition to compile, libtool, and build-tool forms. The banner-only refusal remains covered. Focused runner regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 resolver after systemd-utils rejection
+
+A fresh `@world` pretend after the systemd-utils provider rejection remains at 51 operations (26 upgrades, 4 new slots, 21 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-post-systemd.txt` has SHA-256 `76e57cf37ba9167338356a7ca2f10950b73323bb14ad8a62131789a177193e86`. The protected lifecycle entries and unresolved provider closures remain unchanged; no protected mutation was attempted.
