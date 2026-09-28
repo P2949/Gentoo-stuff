@@ -2,14 +2,25 @@
 """Assign an explicit preliminary PGO/BOLT state to every ELF record."""
 import argparse,json,hashlib,collections
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--metadata',required=True);ap.add_argument('--output',required=True);a=ap.parse_args(); d=json.load(open(a.metadata)); rows=[]
+ ap=argparse.ArgumentParser();ap.add_argument('--metadata',required=True);ap.add_argument('--output',required=True);ap.add_argument('--mutation-policy', help='generation-bound package mutation policy authority');a=ap.parse_args(); d=json.load(open(a.metadata)); policy={}
+ if a.mutation_policy:
+  p=json.load(open(a.mutation_policy))
+  if p.get('record_type') != 'package-mutation-policy': raise SystemExit('REFUSED: unsupported mutation-policy schema')
+  policy={row['cpv']: row for row in p.get('records', [])}
+  if len(policy) != len(p.get('records', [])): raise SystemExit('REFUSED: duplicate mutation-policy CPV')
+ rows=[]
  for x in d['artifacts']:
   owner=x.get('owner_cpv','')
   # Category names do not establish lifecycle policy.  Kernel/firmware
   # exclusions must be supplied by the authoritative transaction-policy
   # classifier; ordinary userspace ELF owned by those categories remains
   # visible to BOLT review.
-  if x.get('kernel_policy_exclusion') is True:
+  owner_policy=policy.get(owner)
+  if a.mutation_policy and owner_policy is None:
+   reason='missing-mutation-policy-owner'; state='pending-eligibility-review'
+  elif owner_policy and owner_policy.get('decision') == 'pending-review':
+   reason='pending-mutation-policy'; state='pending-eligibility-review'
+  elif (owner_policy and owner_policy.get('decision') == 'kernel-policy-exclusion') or x.get('kernel_policy_exclusion') is True:
    reason='kernel-policy-exclusion'; state='not-applicable'
   elif x.get('error'): reason='metadata-tool-failure'; state='pending-eligibility-review'
   elif x['class']!='ELF64' or x.get('machine') != 'Advanced Micro Devices X86-64': reason='unsupported-architecture'; state='not-applicable'
