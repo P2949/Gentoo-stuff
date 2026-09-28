@@ -10315,3 +10315,7 @@ Hardened `build-policy-bindings.py` to refuse an existing output path, preservin
 ### 2026-09-30 Phase-3 authority focused boundary
 
 After the scheduler, wave planner, readiness, payload, BOLT producer, and coverage hardening changes, the complete focused Phase-3 script boundary passed: workload manifest, consumer planner, live inventory parser, mutation policy, package provenance, scheduler, VDB fingerprint collector, workload coverage, wave readiness, Phase-3 coverage, BOLT safety producer, wave planner, profile-payload audit, and policy-binding publication regressions. No live generation or profile-use transaction was authorized from this synthetic boundary.
+
+### 2026-09-30 live operational boundary revalidation
+
+The live storage preflight passed at 163,541,454,848 free bytes (16.9313%, above the 100 GiB/12% floor). The retained post-deinstrumentation census independently reports a clean installed instrumentation state, and `/var/lib/gentoo-optimization/state/deinstrument.pending` is absent. Repository worktree is clean; no live package or profile wave was started from this read-only boundary.
