@@ -10263,3 +10263,7 @@ The consumer-workload integration fixture was stale after the reverse-dependency
 ### 2026-09-30 live instrumentation clean-state revalidation
 
 Reopened the retained post-deinstrumentation census `/var/lib/gentoo-optimization/reports/live-instrumentation-post-deinstrument-20260927.json` with the independent verifier. It reports `PASS: live instrumentation census is clean`; the durable `deinstrument.pending` marker is absent, so no generation or profile-use wave is blocked by residual instrumented installed artifacts at this boundary. This is a state revalidation only; no package transaction was started.
+
+### 2026-09-30 workload executable-identity tightening
+
+Tightened the workload coverage gate so a `recipe_id` and invocation are insufficient by themselves: every authoritative recipe must also identify its executable/path target. Added a negative regression for identity-only recipes; valid path/executable-bound recipes remain accepted. Workload coverage, consumer planner, scheduler, Python compilation, and diff validation pass. No live training wave was authorized.

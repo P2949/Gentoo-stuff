@@ -16,6 +16,8 @@ def _recipe_is_identified(recipe):
     """Require an immutable identity and executable payload for each recipe."""
     if not isinstance(recipe, dict):
         return False
+    if not (recipe.get('path') or recipe.get('executable')):
+        return False
     if recipe.get('recipe_id'):
         return bool(recipe.get('argv') or recipe.get('command') or recipe.get('recipe'))
     # Older generated records have no recipe_id; their path+argv is still a

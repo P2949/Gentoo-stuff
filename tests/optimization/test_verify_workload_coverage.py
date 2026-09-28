@@ -37,6 +37,13 @@ def main() -> None:
     invalid = run({"cpv": "cat/pkg-1", "state": "direct-training-ready", "recipes": []})
     assert invalid["coverage_pass"] is False
     assert invalid["invalid_ready"] == ["cat/pkg-1"]
+    identity_only = run({
+        "cpv": "cat/pkg-1",
+        "state": "direct-training-ready",
+        "recipes": [{"recipe_id": "r1", "argv": ["--help"]}],
+    })
+    assert identity_only["coverage_pass"] is False
+    assert identity_only["invalid_ready"] == ["cat/pkg-1"]
     valid = run({
         "cpv": "cat/pkg-1",
         "state": "direct-training-ready",
