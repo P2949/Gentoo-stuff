@@ -10347,3 +10347,7 @@ Hardened `generate-reverse-dependencies.py` to reject duplicate typed `(provider
 ### 2026-09-30 consumer-workload edge uniqueness
 
 Hardened `plan-consumer-workloads.py` to reject duplicate typed reverse-dependency identities before deriving consumer candidates. Updated the integration fixture to preserve the source-specific relationship defaults and added duplicate-edge refusal coverage. Consumer planner, reverse-dependency integration, Python compilation, and diff validation pass.
+
+### 2026-09-30 live boundary after authority hardening
+
+The live storage preflight remains passing at 163,537,772,544 free bytes (16.9310%, above the 100 GiB/12% floor). The retained post-deinstrumentation census remains independently clean. The worktree is clean at the consumer/reverse-dependency authority boundary; no package mutation or profile wave was started from this read-only verification.
