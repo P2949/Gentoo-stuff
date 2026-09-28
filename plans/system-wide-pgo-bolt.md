@@ -9940,3 +9940,26 @@ is
 `c6d23d602ca27b476e7d76343add8f26c50f8513a764b6437be847ecb9c20055`).
 Further Hyprland retries require a new source-fetch diagnosis and are not
 authorized as unchanged compile retries.
+
+### 2026-09-30 exact-head storage regression repair and portable gate
+
+The current source regression in the storage tooling was repaired narrowly. The
+prerequisite distfile compactor now keeps reflink capability detection separate
+from the explicit production `--require-reflink` policy; ordinary portable
+execution may use verified regular copies when the capability probe is false.
+The storage GC measurement root remains explicit for execute mode and derives
+only from an existing retention filesystem for dry runs, with unavailable roots
+refused through a reasoned error. Storage regression fixtures that previously
+performed filesystem transactions during module import were converted to
+ordinary unittest methods, so authoritative discovery is side-effect free. The
+additive Phase-3 registry now contains the exact 16 post-freeze unittest
+identities, preserving the immutable 324-name Phase-2 set.
+
+Focused storage/retention/checkpoint tests passed (7/7). The complete
+`PATH=/usr/bin:/bin /usr/bin/bash tests/run-optimization-tests.sh --mode
+portable-complete` gate then passed with 87 top-level PASS, 0 FAIL, 12
+explicit SKIP, 546 required subtests PASS, 25 required subtests SKIP, and exit
+status 0. Its machine-readable evidence is under
+`/tmp/gentoo-optimization-tests.RJfsrXA3/` for this run. The source changes
+are commits `2f6ac46`, `5425ad9`, `b3eb1ad`, and `efa02e2`, all pushed to
+`feat/system-wide-pgo-bolt`.
