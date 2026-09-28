@@ -10731,3 +10731,17 @@ exclusions, and zero pending lifecycle records at
 `mutation-policy-v2.json` with exactly one decision for every CPV. Backend,
 provenance, lane, fingerprint, and framework authorities have not yet been
 regenerated for this successor candidate.
+
+### 2026-09-28 downstream candidate regeneration after systemd-utils
+
+The successor inventory now has a fresh owned-artifact census (692,532
+records, 17,092 ELF records). Backend correlation was regenerated for all
+1,346 CPVs. Package-state/lane derivation against the refreshed mutation
+policy and backend correlation completed with zero pending lanes: 520
+not-applicable, 366 unsupported/prebuilt, 428 `pgo-clang-ir`, 16 Rust, 5 Go,
+1 GCC, and 10 kernel-policy exclusions. The resulting candidate artifacts are
+retained under `/var/lib/gentoo-optimization/generations/phase3-live-20260928-systemd-utils-reviewed/`.
+A new provenance materialization was also produced for all 1,346 CPVs; its
+independent verifier requires the repository-root mapping to be rerun with the
+full configured overlay roots before it can be treated as verified authority.
+No framework activation or profile wave has been started from this candidate.
