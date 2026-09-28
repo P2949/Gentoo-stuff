@@ -57,7 +57,10 @@ def main():
     lane_rows={x['cpv']:x for x in lane_list}
     if set(decisions) != set(lane_rows): raise SystemExit('REFUSED: mutation policy and lane coverage differ')
     sets={'pgo-bolt-all-userspace':[], 'optimization-kernel-policy-exclusion':[], 'optimization-not-applicable':[]}
-    for name in LANE_SET.values(): sets[name]=[]
+    set_members={name:[] for name in sets}
+    for name in LANE_SET.values():
+        sets[name]=[]
+        set_members[name]=[]
     atom_bindings={}
     for cpv in sorted(decisions):
         cp = cp_atom(cpv)
@@ -65,20 +68,39 @@ def main():
         atom_bindings.setdefault(cp, []).append({'cpv': cpv, 'decision': decision, 'lane': lane})
         if decision == 'kernel-policy-exclusion':
             sets['optimization-kernel-policy-exclusion'].append(cp)
+            set_members['optimization-kernel-policy-exclusion'].append(cpv)
             continue
         if decision != 'userspace': raise SystemExit(f'REFUSED: unresolved mutation decision for {cpv}')
         sets['pgo-bolt-all-userspace'].append(cp)
+        set_members['pgo-bolt-all-userspace'].append(cpv)
         if lane in LANE_SET: sets[LANE_SET[lane]].append(cp)
         elif lane in {'not-applicable','unsupported-by-upstream-toolchain'}: sets['optimization-not-applicable'].append(cp)
         else: raise SystemExit(f'REFUSED: unsupported lane for {cpv}: {lane}')
-    # A CP atom may represent multiple installed versions/slots.  It is safe
-    # to collapse those only when every exact CPV has the same mutation and
-    # lane decision; otherwise a single unqualified set entry would silently
-    # select an incompatible slot.  Keep the exact mapping in the manifest.
-    for atom, members in atom_bindings.items():
-        compatibility={(m['decision'], m['lane']) for m in members}
-        if len(compatibility) > 1:
-            raise SystemExit(f'REFUSED: incompatible exact CPV decisions share atom {atom}')
+        if lane in LANE_SET: set_members[LANE_SET[lane]].append(cpv)
+        elif lane in {'not-applicable','unsupported-by-upstream-toolchain'}: set_members['optimization-not-applicable'].append(cpv)
+    # A CP atom may represent multiple installed versions/slots. Keep the
+    # compact CP atom when all members of a particular set are equivalent for
+    # that set; otherwise retain exact atoms in that set. This handles real
+    # multi-slot systems whose versions use different backend lanes.
+    for name, values in list(sets.items()):
+        members_by_atom={}
+        selected_members=set(set_members.get(name, []))
+        for cpv in sorted(decisions):
+            atom=cp_atom(cpv)
+            if atom in values or any(v.startswith('='+cpv) for v in values):
+                members_by_atom.setdefault(atom, []).append(cpv)
+        rewritten=[]
+        for atom, cpvs in members_by_atom.items():
+            if name in {'pgo-bolt-all-userspace', 'optimization-kernel-policy-exclusion'}:
+                rewritten.append(atom)
+                continue
+            selected={cpv for cpv in cpvs if cpv in selected_members}
+            signatures={(decisions[cpv], lane_rows[cpv].get('lane')) for cpv in cpvs}
+            if selected == set(cpvs) and len(signatures) == 1:
+                rewritten.append(atom)
+            else:
+                rewritten.extend(f'={cpv}' for cpv in sorted(selected))
+        sets[name]=rewritten
     args.output_root.mkdir(parents=True,exist_ok=True)
     for name, values in sets.items():
         values[:] = sorted(set(values))
