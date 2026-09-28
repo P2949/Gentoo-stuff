@@ -10795,3 +10795,17 @@ A generation-local policy tree was then materialized at
 retained environment policy inputs. This remains candidate evidence: the
 policy tree has not been installed or activated, and profile payload/receipt
 identity matching still has to be completed before generation authorization.
+
+### 2026-09-28 refreshed ELF and BOLT safety coverage
+
+The successor owned-artifact census was re-extracted after the systemd-utils
+merge and contains 17,092 ELF records (3,180 with build IDs and 2,584 with
+interpreters). Fresh eligibility classification produced 2,534
+`candidate-bolt-eligible`, 3,345 terminal not-applicable, and 11,213
+`rebuild-required-for-bolt-capture` records. Safety review assigned every
+candidate eligible artifact exactly one disposition: 1,950
+`bolt-ready-pending-profile`, 480 intrinsically not-applicable, and 104
+rebuild-required-for-capture. The corrected Phase-3 coverage verifier then
+passed all separate gates: package classification, ELF classification, and
+BOLT safety coverage, with 1,346 packages and 2,534 candidate safety records.
+This is accounting/safety completeness, not BOLT deployment completion.
