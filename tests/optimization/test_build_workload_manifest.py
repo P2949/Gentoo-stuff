@@ -28,6 +28,15 @@ def test_static_and_all_entrypoints_are_retained(tmp_path: Path) -> None:
     second = subprocess.run(["python3", str(SCRIPT), "--lanes", str(lanes), "--elf", str(elfs), "--output", str(output)], capture_output=True, text=True)
     assert second.returncode != 0
     assert "workload manifest output already exists" in (second.stdout + second.stderr)
+    duplicate_lanes = tmp_path / "duplicate-lanes.json"
+    duplicate_lanes.write_text(json.dumps({"packages": [
+        {"cpv": "cat/pkg-1", "lane": "pgo-clang-ir"},
+        {"cpv": "cat/pkg-1", "lane": "pgo-gcc"},
+    ], "sha256": "lanes"}))
+    duplicate_output = tmp_path / "duplicate-manifest.json"
+    duplicate_result = subprocess.run(["python3", str(SCRIPT), "--lanes", str(duplicate_lanes), "--elf", str(elfs), "--output", str(duplicate_output)], capture_output=True, text=True)
+    assert duplicate_result.returncode != 0
+    assert "duplicate CPV in lane authority" in (duplicate_result.stdout + duplicate_result.stderr)
 
 
 if __name__ == "__main__":

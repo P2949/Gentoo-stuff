@@ -10327,3 +10327,7 @@ Hardened `build-workload-recipes.py` to refuse an existing output path, preservi
 ### 2026-09-30 workload manifest publication immutability
 
 Hardened `build-workload-manifest.py` to refuse an existing output path, preserving the source entrypoint authority that feeds representative recipe generation. Extended `test_build_workload_manifest.py` with a second-publication refusal. Workload manifest/recipe regressions, Python compilation, and diff validation pass.
+
+### 2026-09-30 workload-manifest lane authority uniqueness
+
+Hardened `build-workload-manifest.py` to reject duplicate CPV rows in the PGO lane authority before constructing its owner map. Extended the workload-manifest regression with duplicate-lane refusal. Focused regression, Python compilation, and diff validation pass.

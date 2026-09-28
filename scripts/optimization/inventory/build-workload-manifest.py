@@ -3,7 +3,9 @@ import argparse,json,hashlib,collections
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--lanes',required=True);ap.add_argument('--elf',required=True);ap.add_argument('--output',required=True);a=ap.parse_args()
  if __import__('os').path.exists(a.output): raise SystemExit('REFUSED: workload manifest output already exists')
- lanes=json.load(open(a.lanes)); lane={x['cpv']:x['lane'] for x in lanes['packages'] if x['lane'].startswith('pgo-')}; by=collections.defaultdict(list)
+ lanes=json.load(open(a.lanes)); lane_rows=[x for x in lanes['packages'] if x.get('lane','').startswith('pgo-')]
+ if len({x.get('cpv') for x in lane_rows}) != len(lane_rows): raise SystemExit('REFUSED: duplicate CPV in lane authority')
+ lane={x['cpv']:x['lane'] for x in lane_rows}; by=collections.defaultdict(list)
  for x in json.load(open(a.elf))['artifacts']:
   if x.get('error') or not x.get('type'):
    continue
