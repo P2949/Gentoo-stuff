@@ -8,7 +8,11 @@ def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--elf',required=True,type=Path); ap.add_argument('--output',required=True,type=Path); a=ap.parse_args()
  if a.output.exists(): raise SystemExit('REFUSED: ELF dependency output already exists')
  src=json.loads(a.elf.read_text()); providers={}
- for x in src.get('artifacts',[]):
+ artifacts=src.get('artifacts',[])
+ identities=[(x.get('owner_cpv'),x.get('path')) for x in artifacts]
+ if len(set(identities)) != len(identities):
+  raise SystemExit('REFUSED: duplicate ELF artifact identity')
+ for x in artifacts:
   # DT_NEEDED names resolve through the loader's SONAME namespace.  A path
   # basename is only a compatibility fallback for inventories that predate
   # explicit SONAME capture; it must never replace an authenticated SONAME.
@@ -21,7 +25,7 @@ def main():
    for name in set(names):
     providers.setdefault(name,[]).append(x)
  rows=[]; unresolved=[]
- for x in src.get('artifacts',[]):
+ for x in artifacts:
   consumer=x.get('owner_cpv');
   for needed in x.get('needed',[]) or []:
    matches=providers.get(needed,[])

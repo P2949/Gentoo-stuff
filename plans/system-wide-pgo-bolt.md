@@ -10351,3 +10351,7 @@ Hardened `plan-consumer-workloads.py` to reject duplicate typed reverse-dependen
 ### 2026-09-30 live boundary after authority hardening
 
 The live storage preflight remains passing at 163,537,772,544 free bytes (16.9310%, above the 100 GiB/12% floor). The retained post-deinstrumentation census remains independently clean. The worktree is clean at the consumer/reverse-dependency authority boundary; no package mutation or profile wave was started from this read-only verification.
+
+### 2026-09-30 ELF dependency identity hardening
+
+Hardened `generate-live-elf-dependencies.py` to reject duplicate `(owner_cpv,path)` artifact identities before resolving SONAME providers. Added regression coverage for duplicate ELF records; authenticated SONAME resolution and immutable output refusal remain passing.
