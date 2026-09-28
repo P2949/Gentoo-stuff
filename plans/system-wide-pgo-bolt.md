@@ -10401,3 +10401,9 @@ Hardened `materialize-fingerprints.py` to refuse replacement of an output root
 or result record and to reject duplicate/malformed CPV identities before running
 fingerprint workers. Added a focused regression covering duplicate identity and
 write-once refusal; test, compilation, and diff checks pass.
+
+### 2026-09-30 wave receipt authority hardening
+
+Hardened `create-wave-receipt.py` to refuse duplicate or malformed wave package
+identities and immutable receipt overwrite. Added a focused regression covering
+both refusal paths; test, compilation, and diff checks pass.
