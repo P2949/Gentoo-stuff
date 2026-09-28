@@ -10633,3 +10633,16 @@ SHA-256 `807e6c8efab41ef9f605f559a202fde2adf684fac9b4d9db97cd2a7a57e16861`.
 The post-sync lane candidate now has zero pending records; this is still a
 candidate classification and does not activate a generation or authorize a
 wave.
+
+### 2026-09-28 fresh post-sync world pretend
+
+A fresh read-only `@world` pretend was run after the signed repository sync with
+optimization disabled. It returned `pretend_rc=0` and is preserved at
+`/var/lib/gentoo-optimization/reports/userspace-world-pretend-20260928-v3.txt`
+(SHA-256 `22aa5866f53605aae3f3a8d3c7b07fe1866c63efbc87b13ed265ee134547b63f`).
+The resolver currently proposes 1,277 operations: 24 upgrades, 4 new slots,
+1,249 reinstalls, and one Firefox-bin slot replacement/uninstall pair. It also
+includes kernel/lifecycle packages and a large graphics/SPIR-V closure; no
+transaction was executed. This output supersedes the smaller prior pretend and
+requires canonical mutation-policy partitioning before any userspace closure
+can be considered for execution.
