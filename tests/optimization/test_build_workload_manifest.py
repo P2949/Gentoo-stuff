@@ -25,6 +25,9 @@ def test_static_and_all_entrypoints_are_retained(tmp_path: Path) -> None:
     assert package["state"] == "workload-candidate"
     assert len(package["entrypoints"]) == 12
     assert package["entrypoints"][0]["path"] == "/usr/bin/tool-0"
+    second = subprocess.run(["python3", str(SCRIPT), "--lanes", str(lanes), "--elf", str(elfs), "--output", str(output)], capture_output=True, text=True)
+    assert second.returncode != 0
+    assert "workload manifest output already exists" in (second.stdout + second.stderr)
 
 
 if __name__ == "__main__":

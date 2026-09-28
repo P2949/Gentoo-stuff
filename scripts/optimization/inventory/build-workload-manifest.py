@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import argparse,json,hashlib,collections
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--lanes',required=True);ap.add_argument('--elf',required=True);ap.add_argument('--output',required=True);a=ap.parse_args(); lanes=json.load(open(a.lanes)); lane={x['cpv']:x['lane'] for x in lanes['packages'] if x['lane'].startswith('pgo-')}; by=collections.defaultdict(list)
+ ap=argparse.ArgumentParser();ap.add_argument('--lanes',required=True);ap.add_argument('--elf',required=True);ap.add_argument('--output',required=True);a=ap.parse_args()
+ if __import__('os').path.exists(a.output): raise SystemExit('REFUSED: workload manifest output already exists')
+ lanes=json.load(open(a.lanes)); lane={x['cpv']:x['lane'] for x in lanes['packages'] if x['lane'].startswith('pgo-')}; by=collections.defaultdict(list)
  for x in json.load(open(a.elf))['artifacts']:
   if x.get('error') or not x.get('type'):
    continue

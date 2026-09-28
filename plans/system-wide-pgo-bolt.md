@@ -10323,3 +10323,7 @@ The live storage preflight passed at 163,541,454,848 free bytes (16.9313%, above
 ### 2026-09-30 workload recipe publication immutability
 
 Hardened `build-workload-recipes.py` to refuse an existing output path, preserving immutable representative-workload recipe manifests across regeneration attempts. Added `test_build_workload_recipes.py` covering write-once publication; workload-manifest regression, recipe regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 workload manifest publication immutability
+
+Hardened `build-workload-manifest.py` to refuse an existing output path, preserving the source entrypoint authority that feeds representative recipe generation. Extended `test_build_workload_manifest.py` with a second-publication refusal. Workload manifest/recipe regressions, Python compilation, and diff validation pass.
