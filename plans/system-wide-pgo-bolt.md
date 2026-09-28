@@ -10158,3 +10158,7 @@ The exact optimization-off transaction for `gui-libs/hyprwire-9999::hyproverlay`
 ### 2026-09-30 resolver after Hyprwire transition
 
 A fresh `@world` pretend after the Hyprwire transition completed successfully with 53 operations (26 upgrades, 4 new slots, 23 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-hyprwire.txt` has SHA-256 `428718de5849bef753e5cee1e3714a1d26dc3b2c318c8f3297a3800f1358060f`. Storage preflight remains passing at `163562663936` free bytes and `16.9336%`.
+
+### 2026-09-30 Hyprgraphics baseline transition
+
+The exact optimization-off transaction for `dev-libs/hyprgraphics-9999::hyproverlay` completed and merged under the ABI guard. VDB `CONTENTS` SHA-256 is `48db66dd6dc0cf0af9c9aefe32a09964ea0dc88be5e4479201cddcb266578a5f`, `environment.bz2` SHA-256 is `582054b581ec462cf9aa213abadcccf574b6adba9d858bacdca3db30e86f8ada`. Structured evidence `/var/lib/gentoo-optimization/reports/package-success-dev-libs-hyprgraphics-9999-20260930.json` has SHA-256 `60c0cb3ce7c1981f4313779ed07d1a6568981a6b72e5c802c37b00bc14a5d26e`. No PGO/BOLT claim is made.
