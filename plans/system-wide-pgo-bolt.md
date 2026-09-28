@@ -10154,3 +10154,7 @@ A fresh `@world` pretend after removing unowned profile residue completed succes
 ### 2026-09-30 Hyprwire baseline transition
 
 The exact optimization-off transaction for `gui-libs/hyprwire-9999::hyproverlay` completed and merged under the ABI guard. VDB `CONTENTS` SHA-256 is `3ff4df1f0b2f3fb26fa59dff19115d1792a3867dc7e74c6c83482e66392705ab`, `environment.bz2` SHA-256 is `8634336f2456879583eac0c4fa5b9205571ae289e862bb32c63b07de022c897e`. Structured evidence `/var/lib/gentoo-optimization/reports/package-success-gui-libs-hyprwire-9999-20260930.json` has SHA-256 `be305ea6f9383797e8662a0fa7b7ad4ca69d856fa1c619a63aa01c8a9fe65795`. No PGO/BOLT claim is made.
+
+### 2026-09-30 resolver after Hyprwire transition
+
+A fresh `@world` pretend after the Hyprwire transition completed successfully with 53 operations (26 upgrades, 4 new slots, 23 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-hyprwire.txt` has SHA-256 `428718de5849bef753e5cee1e3714a1d26dc3b2c318c8f3297a3800f1358060f`. Storage preflight remains passing at `163562663936` free bytes and `16.9336%`.
