@@ -10602,3 +10602,11 @@ Lane assignment against the reviewed package state produced
 pending-pgo-classification, and 10 kernel-policy-exclusion. The pending lane
 records require ebuild/build-log/native-artifact review before any wave; no
 profile generation or use transaction was started.
+
+### 2026-09-28 portable gate after provenance/package-state fixes
+
+The authority-path fixes for configured repository-root provenance and
+zero-version VDB package identities were validated by a fresh full
+`portable-complete` run: 87 top-level passes, 0 failures, 12 selected skips,
+547 required subtests passed, and exit status 0. The recovery, framework
+installer, ABI, BOLT, and boot-boundary fixtures all completed successfully.
