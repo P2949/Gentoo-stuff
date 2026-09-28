@@ -10199,3 +10199,7 @@ The exact optimization-off transition for `media-libs/libmediainfo-26.05::gentoo
 ### 2026-09-30 scheduler and identity regression verification
 
 Focused regressions passed for the current source boundary: `test_schedule_generation.py` confirms direct/consumer training state filtering, generation/inventory binding, and failed-attempt preservation; `test_profile_carry_forward.py` confirms exact identity equality is required for carry-forward and changed CPVs/identities retrain; `test_phase3_coverage.py` confirms package, ELF, and BOLT safety gates remain separate and join the authoritative ELF census. No source changes were needed because the required contracts are already present at this boundary.
+
+### 2026-09-30 mutation-policy to ELF eligibility join
+
+Closed the artifact-policy wiring gap identified in the Phase-3 review. `classify-elf-eligibility.py` now accepts the generation-bound `package-mutation-policy` authority, refuses missing/duplicate/pending owner decisions, and derives kernel-policy exclusion from the authoritative package decision rather than relying on a pre-populated artifact field. Added `tests/optimization/test_elf_mutation_policy_join.py`, which proves a category-independent `kernel-policy-exclusion` decision reaches ELF eligibility as `not-applicable`. Focused regression and Python compilation pass.
