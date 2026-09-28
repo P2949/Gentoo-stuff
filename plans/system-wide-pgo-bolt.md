@@ -10219,3 +10219,7 @@ Focused regressions passed together after the authority changes: VDB fingerprint
 ### 2026-09-30 canonical optimization-set verification
 
 The canonical optimization-set generator was revalidated at the current source boundary. `tests/optimization/test_optimization_sets.py` passed and Python compilation passed; generated persistent-set entries are deduplicated CP atoms while exact CPV identity remains in the separate source policy/lane manifests. No live set regeneration was performed from synthetic fixtures.
+
+### 2026-09-30 prebuilt lane classification hardening
+
+`assign-pgo-lanes.py` now recognizes explicit VDB/backend prebuilt evidence (`qa_prebuilt`, `prebuilt`, or a `QA_PREBUILT` marker) before generic build-system evidence and assigns `unsupported-by-upstream-toolchain` with reason `prebuilt-artifact-no-compile-evidence`. Reviewed generation overrides remain authoritative. Added a regression proving a prebuilt record with CMake evidence cannot receive a compilable PGO lane. Focused unittest, Python compilation, and diff validation pass.

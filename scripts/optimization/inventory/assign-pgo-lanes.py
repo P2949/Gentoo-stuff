@@ -13,6 +13,7 @@ def main():
  for x in s['records']:
   cpv=x['cpv']; info=b.get(cpv,{}); artifact_languages=info.get('artifact_language_evidence',{}); ev=sorted(set(info.get('backend_evidence',[])+info.get('inherits',[])+list(artifact_languages))); phases=info.get('phase_functions',[])
   if cpv in overrides: lane,reason=overrides[cpv]
+  elif info.get('qa_prebuilt') is True or info.get('prebuilt') is True or 'QA_PREBUILT' in info.get('vdb_environment_markers',[]): lane='unsupported-by-upstream-toolchain';reason='prebuilt-artifact-no-compile-evidence'
   elif x['state']!='pending-pgo-classification': lane=x['state']; reason=x['reason_code']
   elif any('python' in z or 'java' in z or 'ruby' in z or 'perl' in z or z in ('distutils-r1','pypi','ruby-fakegem','perl-module') for z in ev) or any(token in cpv.lower().split('/',1)[-1] for token in ('python','ruby','perl','openjdk','jdk')): lane='unsupported-by-upstream-toolchain';reason='managed-language-or-runtime-eclass'
   elif any('cargo' in z or z in ('rust','rust-toolchain') for z in ev): lane='pgo-rust';reason='cargo-or-rust-eclass'

@@ -28,6 +28,21 @@ class ReviewedLaneOverrideTests(unittest.TestCase):
             self.assertEqual(row["lane"], "pgo-clang-ir")
             self.assertEqual(row["decision_source"], "reviewed-generation-override")
 
+    def test_prebuilt_evidence_cannot_receive_compilable_lane(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            state = {"records": [{"cpv": "cat/prebuilt-1", "state": "pending-pgo-classification", "reason_code": "pending"}]}
+            state["sha256"] = digest(state)
+            (p / "state.json").write_text(json.dumps(state))
+            (p / "backends.json").write_text(json.dumps({"packages": [{
+                "cpv": "cat/prebuilt-1", "backend_evidence": ["cmake"], "qa_prebuilt": True
+            }]}))
+            output = p / "lanes.json"
+            subprocess.run(["python3", str(SCRIPT), "--states", str(p / "state.json"), "--backends", str(p / "backends.json"), "--output", str(output)], check=True)
+            row = json.loads(output.read_text())["packages"][0]
+            self.assertEqual(row["lane"], "unsupported-by-upstream-toolchain")
+            self.assertEqual(row["reason_code"], "prebuilt-artifact-no-compile-evidence")
+
 
 if __name__ == "__main__":
     unittest.main()
