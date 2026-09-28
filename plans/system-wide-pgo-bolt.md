@@ -10752,3 +10752,11 @@ overlay. It now passes installed/next-build provenance coverage for all 1,346
 CPVs. The earlier single-root refusal was a verifier-input omission, not a
 source mismatch; the multi-root verification is the authoritative result for
 this candidate.
+
+Optimization sets were regenerated from the refreshed mutation policy and
+zero-pending lane report into `sets-v3` with manifest
+`optimization-sets-manifest-v3.json`. The independent verifier passed all 1,346
+CPVs across nine sets: 10 kernel-policy, 823 not-applicable, 1,270 all-userspace,
+427 Clang-IR, 1 GCC, 5 Go, and 16 Rust entries (the remaining lane sets are
+empty by classification). These sets remain candidate artifacts and have not
+been installed into Portage or used to authorize a wave.
