@@ -9963,3 +9963,21 @@ status 0. Its machine-readable evidence is under
 `/tmp/gentoo-optimization-tests.RJfsrXA3/` for this run. The source changes
 are commits `2f6ac46`, `5425ad9`, `b3eb1ad`, and `efa02e2`, all pushed to
 `feat/system-wide-pgo-bolt`.
+
+### 2026-09-30 narrow userspace baseline recovery: Hyprland
+
+After the constrained retry initially exposed a transient source-fetch failure,
+`emerge --fetchonly =gui-wm/hyprland-9999::hyproverlay` completed successfully
+for the exact seven-package source closure. A subsequent exact optimization-off
+`--nodeps` transaction with `MAKEOPTS='-j4 -l4'` completed the Hyprland build,
+install-QA and ABI admission and merged the intended CPV. The installed VDB
+identity report is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-hyprland-fetch-recovery-20260930.json`
+(SHA-256
+`b3090db796eaa5d7387a8b4187ef950680bb20f66711ca729f56d8202bcde984`), binding
+the post-merge environment and `CONTENTS` hashes. No dependency co-build was
+allowed. The inactive build-tree retirement helper found no remaining logs;
+its receipt is
+`/var/lib/gentoo-optimization/reports/portage-build-retirement-hyprland-success-20260930.json`
+(SHA-256
+`b19655361f1cc00ef697f76e2ea50c5d153786d48a8dd92db9f4c174fd75e69a`).
