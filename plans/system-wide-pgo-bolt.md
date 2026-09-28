@@ -10809,3 +10809,11 @@ rebuild-required-for-capture. The corrected Phase-3 coverage verifier then
 passed all separate gates: package classification, ELF classification, and
 BOLT safety coverage, with 1,346 packages and 2,534 candidate safety records.
 This is accounting/safety completeness, not BOLT deployment completion.
+
+The refreshed workload accounting was regenerated against the successor lanes
+and ELF metadata. It produced 251 workload candidates and 199 explicit
+no-runnable-entrypoint records. Recipe generation produced 774 recipes: 234
+smoke-ready, 1 training-ready, and 215 requiring representative training
+workload work (the remaining records are non-runnable/accounting records).
+This confirms that the candidate is not yet representative-workload complete;
+smoke recipes remain provisional and were not used to authorize profile waves.
