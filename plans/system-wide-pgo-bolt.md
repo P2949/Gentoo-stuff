@@ -10259,3 +10259,7 @@ Hardened `verify-workload-coverage.py` so a package cannot be counted as trainin
 ### 2026-09-30 consumer-graph fixture authority repair
 
 The consumer-workload integration fixture was stale after the reverse-dependency generator was correctly hardened to require nonempty Portage and ELF authorities. Updated `tests/optimization/test_consumer_workload_planner.py` to provide an authenticated ELF edge while retaining the workload binding, so the fixture exercises the current two-authority contract instead of bypassing it. The complete focused Phase-3 script regression set (workload manifest, consumer planner, live inventory parser, mutation policy, package provenance, scheduler, and VDB fingerprint collector) passed, along with Python compilation and diff validation.
+
+### 2026-09-30 live instrumentation clean-state revalidation
+
+Reopened the retained post-deinstrumentation census `/var/lib/gentoo-optimization/reports/live-instrumentation-post-deinstrument-20260927.json` with the independent verifier. It reports `PASS: live instrumentation census is clean`; the durable `deinstrument.pending` marker is absent, so no generation or profile-use wave is blocked by residual instrumented installed artifacts at this boundary. This is a state revalidation only; no package transaction was started.
