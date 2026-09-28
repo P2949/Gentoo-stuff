@@ -10231,3 +10231,7 @@ Hardened `run-profile-use.py` so a profile-use receipt cannot be published from 
 ### 2026-09-30 systemd-utils libudev provider rejection
 
 The exact optimization-off transition for `sys-apps/systemd-utils-262::gentoo` was attempted with `-boot -kernel-install` and completed its userspace build, but install-QA correctly rejected the replacement because the established `libudev.so.0` SONAME disappeared. No merge occurred. Build log SHA-256 `7055c12d791fdc0d6b54e6925fd8f4fddf38ff40fc4844b0cae04a0dece5b461`; structured failure evidence `/var/lib/gentoo-optimization/reports/package-failures-sys-apps-systemd-utils-262-20260930.json`; retirement receipt `/var/lib/gentoo-optimization/reports/portage-build-retirement-systemd-utils-20260930.json`. The protected lifecycle features remained disabled and no kernel/boot/initramfs state was mutated.
+
+### 2026-09-30 profile-use compiler evidence refinement
+
+Refined the profile-use compile-evidence detector to recognize direct compiler link invocations (`clang source.o -o app`) in addition to compile, libtool, and build-tool forms. The banner-only refusal remains covered. Focused runner regression, Python compilation, and diff validation pass.

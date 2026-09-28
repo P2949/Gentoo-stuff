@@ -20,7 +20,7 @@ def compilation_observed(log: pathlib.Path) -> bool:
     """Require an actual compiler invocation, not only the profile-use banner."""
     text = log.read_text(errors='replace')
     return any(re.search(pattern, text, re.MULTILINE) for pattern in (
-        r'(^|\s)(clang|clang\+\+|gcc|g\+\+|rustc|go)\b.*(?:\s-c(?:\s|$)|compile|link)',
+        r'(^|\s)(clang|clang\+\+|gcc|g\+\+|rustc|go)\b.*(?:\s-c(?:\s|$)|\s-o\s|compile|link)',
         r'(^|\s)libtool:\s+(?:compile|link):',
         r'(^|\s)(?:ninja|make).*\b(?:clang|gcc|rustc|go)\b',
     ))

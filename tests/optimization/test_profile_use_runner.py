@@ -57,6 +57,8 @@ def main():
         assert MODULE.compilation_observed(log) is False
         log.write_text("libtool: compile: clang -c source.c -o source.o\n")
         assert MODULE.compilation_observed(log) is True
+        log.write_text("clang source.o -o app\n")
+        assert MODULE.compilation_observed(log) is True
     print("PASS: profile-use runner refuses identity drift and supplies exact dispatcher handoff")
 
 if __name__ == "__main__":
