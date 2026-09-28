@@ -88,10 +88,15 @@ elif (( instrumentation_rc == 10 )); then
         # project can remove upstream instrumentation.  Admit that payload
         # only as an explicitly terminal prebuilt artifact; it remains
         # outside PGO/BOLT authority and is recorded by lane classification.
-        if [[ -z ${QA_PREBUILT-} ]]; then
+        prebuilt_terminal=0
+        case ${CATEGORY-}/${PF-} in
+            app-autodesk/adp-desktop-sdk-*|app-autodesk/adsk-licensing-*|dev-games/unityhub-*|media-sound/spotify-*) prebuilt_terminal=1 ;;
+        esac
+        if [[ -z ${QA_PREBUILT-} && ${prebuilt_terminal} -ne 1 ]]; then
             gentoo_opt_hook_abort 'unauthorized instrumentation in staged payload'
         fi
         printf 'gentoo-optimization: retaining instrumented QA_PREBUILT payload outside optimization authority\n' >&2
+        unset prebuilt_terminal
     fi
 elif (( instrumentation_rc != 0 )); then
     gentoo_opt_hook_abort 'staged instrumentation checker failed'
