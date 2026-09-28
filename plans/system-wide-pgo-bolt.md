@@ -10183,3 +10183,7 @@ The current source already contains the narrow storage portability repair in com
 ### 2026-09-30 current userspace resolver boundary
 
 A fresh `@world` pretend after the Aquamarine transition remains stable at 51 operations (26 upgrades, 4 new slots, 21 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-current.txt` has SHA-256 `d3138ad0d6b8c7ca19114cde772af890706a0060b7b2c97d9361962f0e768b9b`. The remaining graph still includes protected kernel/firmware lifecycle packages and unresolved SPIR-V, FFmpeg, and provider rebuild closures; these remain outside automated mutation scope.
+
+### 2026-09-30 Expat ABI-provider rejection
+
+The exact optimization-off transition for `dev-libs/expat-2.8.5::gentoo` reached install-QA but was correctly rejected by the ABI guard. The staged `libexpat.so.1` and `libexpatw.so.1` providers dropped 12 prior exports each (old provider count 97, new count 72), including the internal `Xml*` encoding/parser symbols. No merge occurred. Build log SHA-256 `ea82ce1c9bd0e7bd7d745c03501e1dcdf5847949fe64591dad971ec6f989a74b`; structured failure evidence `/var/lib/gentoo-optimization/reports/package-failures-dev-libs-expat-2.8.5-20260930.json` was retained; retirement receipt `/var/lib/gentoo-optimization/reports/portage-build-retirement-expat-20260930.json`. This is an unresolved provider transition and was not retried unchanged.
