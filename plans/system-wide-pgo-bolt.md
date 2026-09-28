@@ -10166,3 +10166,8 @@ The exact optimization-off transaction for `dev-libs/hyprgraphics-9999::hyprover
 ### 2026-09-30 resolver after Hyprgraphics transition
 
 A fresh `@world` pretend after the Hyprgraphics transition completed successfully with 52 operations (26 upgrades, 4 new slots, 22 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-hyprgraphics.txt` has SHA-256 `7ff4c7d377c3daa35e0fe51bcee877e6b22b8c8f3aed1818fd292a35105ae18f`. Storage preflight remains passing at `163563761664` free bytes and `16.9337%`.
+
+### 2026-09-30 Aquamarine baseline transition
+
+The exact optimization-off transaction for `gui-libs/aquamarine-9999::hyproverlay` completed and merged under the ABI guard. VDB `CONTENTS` SHA-256 is `15624359a1024caa91ac373db067adf8bbf7998602d19574e1fbf14cf3e24040`, and `environment.bz2` SHA-256 is `c6d64f05d5bb828564ebe1624716281da04d2156585aa28505e1d45efea97c73`. Structured evidence `/var/lib/gentoo-optimization/reports/package-success-gui-libs-aquamarine-9999-20260930.json` was retained with SHA-256 recorded below. No PGO/BOLT claim is made. The transaction's Portage build tree was retired immediately after completion.
+c76da444d4da9c7dff10a78d5b316d89110f86c67a26f5bf0c4895bb395a5c60  /var/lib/gentoo-optimization/reports/package-success-gui-libs-aquamarine-9999-20260930.json
