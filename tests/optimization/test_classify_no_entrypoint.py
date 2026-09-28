@@ -12,7 +12,7 @@ def main():
         cmd = ["python3", str(SCRIPT), "--workloads", str(w), "--elf", str(e), "--output", str(out)]
         r = subprocess.run(cmd, text=True, capture_output=True)
         assert r.returncode != 0 and "duplicate" in r.stderr
-        w.write_text(json.dumps({"packages": []}))
+        w.write_text(json.dumps({"sha256": "fixture", "packages": []}))
         assert subprocess.run(cmd, check=False).returncode == 0
         r = subprocess.run(cmd, text=True, capture_output=True)
         assert r.returncode != 0 and "already exists" in r.stderr

@@ -10407,3 +10407,9 @@ write-once refusal; test, compilation, and diff checks pass.
 Hardened `create-wave-receipt.py` to refuse duplicate or malformed wave package
 identities and immutable receipt overwrite. Added a focused regression covering
 both refusal paths; test, compilation, and diff checks pass.
+
+### 2026-09-30 workload exclusion authority hardening
+
+Hardened `classify-no-entrypoint.py` to refuse duplicate workload CPVs and
+write-once output publication. Added a focused regression for duplicate identity
+and overwrite refusal; the corrected test and Python compilation pass.
