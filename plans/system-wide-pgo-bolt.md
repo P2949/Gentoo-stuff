@@ -10610,3 +10610,17 @@ zero-version VDB package identities were validated by a fresh full
 `portable-complete` run: 87 top-level passes, 0 failures, 12 selected skips,
 547 required subtests passed, and exit status 0. The recovery, framework
 installer, ABI, BOLT, and boot-boundary fixtures all completed successfully.
+
+### 2026-09-28 post-sync backend evidence enrichment
+
+The backend collector now reads authoritative VDB `INHERITED` and decoded
+`QA_PREBUILT` markers from `environment.bz2`, preserving the existing
+artifact-suffix evidence while making lane assignment positive rather than
+absence-based. A fixture covers both markers. Re-running the collector and
+lane classifier against the reviewed post-sync VDB produced 1,346 package
+records with 427 `pgo-clang-ir`, 16 `pgo-rust`, 5 `pgo-go`, 1 `pgo-gcc`, 366
+unsupported/prebuilt, 520 not-applicable, 10 kernel-policy exclusions, and
+one remaining pending record (`sys-apps/kbd-2.10.0`) for explicit backend
+review. The refreshed report hashes are `de479adffa942d32196f2140a26dbf98346a91b4b1eb86da39641d9e3a61c2fa`
+and `44f830be3669ed0eff171d7f5b1f58da2335da011ea483699d4c8b696da586d0`.
+No package transaction or generation activation was performed.
