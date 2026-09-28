@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,json,hashlib,collections,sys,os
+import argparse,json,hashlib,collections,sys,os,re
 from pathlib import Path
 try:
  from portage.versions import catpkgsplit
@@ -46,9 +46,18 @@ def main():
   pn=open(pn_file).read().strip() if __import__('os').path.isfile(pn_file) else ''
   if not pn:
    split=catpkgsplit(pf)
-   if not split or split[0] == 'null':
+   if split and split[0] == 'null' and len(split) >= 2 and split[1] not in {'null', ''}:
+    pn=split[1]
+   elif not split or split[0] == 'null':
+    # Metadata-only acct-* and virtual records commonly use a zero version
+    # and intentionally omit PN/PVR from VDB. Portage's structural splitter
+    # correctly returns null for these, so derive only the unambiguous
+    # category-scoped form; all other malformed CPVs remain fail-closed.
+    if category.startswith(('acct-group','acct-user','virtual')):
+     match=re.fullmatch(r'(.+)-0(?:-r[0-9]+)?',pf)
+     if match: pn=match.group(1)
+   if not pn:
     raise SystemExit(f'REFUSED: cannot derive authoritative PN for {cpv}')
-   pn=split[1]
   if category != cat or not category or not pn or '/' in pn:
    raise SystemExit(f'REFUSED: invalid authoritative VDB CATEGORY/PN metadata for {cpv}')
   atoms[cpv]=category+'/'+pn

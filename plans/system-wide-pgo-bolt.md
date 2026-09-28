@@ -10569,3 +10569,23 @@ repository, the Maya overlay, the framework local overlay, and other configured
 repositories, while continuing to reject paths outside every trusted root.
 The focused provenance regression and Python compilation pass, and the live
 provenance verifier now passes all 1,346 CPVs. No package transaction was run.
+
+### 2026-09-28 post-sync package-state and artifact census
+
+The post-sync owned-artifact census is preserved at
+`/var/lib/gentoo-optimization/reports/owned-artifacts-postsync-20260928.json`
+(SHA-256 `0d5e3eadee1047eccc2c6d7cfd5ada7ff3b2d21089b7c6ad7e820d084f430af9`):
+692,525 owned artifacts, including 17,092 ELF records. Backend classification
+covers all 1,346 CPVs at
+`/var/lib/gentoo-optimization/reports/backend-postsync-20260928.json`
+(SHA-256 `71d6ae053cd744f213354f773bd53d79591efd72d234656ebc30e42e250f6a87`).
+
+`classify-package-state.py` was corrected for Portage's four-tuple `null`
+CPV split result on metadata-only zero-version `acct-*`/virtual records; a
+focused regression now proves the structural PN fallback and retains refusal
+for malformed ordinary CPVs. The regenerated package state is
+`/var/lib/gentoo-optimization/reports/package-state-postsync-20260928.json`
+(SHA-256 `d400065710a5e752f13f39b67e8083dfe4b36216af271a72f997495d42219e15`)
+with 519 `not-applicable`, 817 `pending-pgo-classification`, and 10
+`kernel-policy-exclusion` records. No generation or package transaction was
+activated from this candidate state.
