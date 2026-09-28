@@ -10175,3 +10175,7 @@ c76da444d4da9c7dff10a78d5b316d89110f86c67a26f5bf0c4895bb395a5c60  /var/lib/gento
 ### 2026-09-30 resolver after Aquamarine transition
 
 A fresh `@world` pretend after the Aquamarine transition completed successfully with 51 operations (26 upgrades, 4 new slots, 21 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-aquamarine.txt` has SHA-256 `5dfa554c7fe63e2aa81c49c4a8846c5a26419f6451b67c1225bba6bda30eb65b`. The resolver still exposes protected kernel/firmware lifecycle entries and unresolved SPIR-V/FFmpeg/provider closure; no protected transaction was executed. Storage preflight remains above policy.
+
+### 2026-09-30 storage portability regression verification
+
+The current source already contains the narrow storage portability repair in commit `879208e`: prerequisite distfile compaction uses an actual disposable reflink capability probe with explicit `--require-reflink` policy, `gc-storage.py` requires an explicit measurement root for execution and returns a reasoned `REFUSED` for unavailable roots, and storage regression modules defer filesystem side effects until selected tests execute. Focused storage regressions passed (`test_storage_inventory`, `test_storage_retention`, `test_storage_gc`, and `test_prerequisite_distfile_compactor`, 4/4). The broader portable-complete run was started at this source boundary; its recovery unittest phase remains active under the repository's bounded test harness and has not been counted as complete yet.
