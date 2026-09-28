@@ -10142,3 +10142,7 @@ The exact optimization-off transition for `app-editors/vscode-1.139.1::gentoo` r
 ### 2026-09-30 resolver after residue remediation
 
 A fresh `@world` pretend after the Hyprlang and cpupower residue-remediation transactions completed successfully with 54 operations (26 upgrades, 4 new slots, 24 reinstalls, 1 uninstall). Raw output `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-residue.txt` has SHA-256 `3b509428377ef7a92236774fdc8eb43617ad09fa8d4706f6abce5f17ae22afe4`. Storage remains above policy at `163559329792` free bytes and `16.9332%`; the independent `/usr/lib64` optimization-record residue scan returns zero files.
+
+### 2026-09-30 unowned default.profraw residue remediation
+
+An independent live `/usr` and `/opt` scan found four root-owned, unowned `default.profraw` files outside package `CONTENTS`: `/usr/lib/python3.15/site-packages/default.profraw`, `/usr/local/lib/default.profraw`, `/usr/local/default.profraw`, and `/usr/share/wine-staging-9999/man/default.profraw`. Their SHA-256 values were recorded before removal. They were removed as stale profile residue, and the same scan now reports zero `profraw`, `default.profraw`, or optimization-record YAML files in the scanned trees. Structured evidence `/var/lib/gentoo-optimization/reports/unowned-profile-residue-20260930.json` has SHA-256 `fab5145a10e1ab6056901bb99513531be09e72d9feefee33f22a2813365dcbaf`.
