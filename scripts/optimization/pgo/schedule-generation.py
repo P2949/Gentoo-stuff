@@ -63,8 +63,14 @@ def main():
     if a.bindings:
         binding_payload=json.loads(a.bindings.read_text())
         recipe_payload=json.loads(a.recipes.read_text())
-        binding_rows={row['cpv']:row for row in binding_payload.get('records',binding_payload.get('packages',[]))}
-        recipe_rows={row['cpv']:row for row in recipe_payload.get('packages',recipe_payload.get('records',[]))}
+        binding_list=binding_payload.get('records',binding_payload.get('packages',[]))
+        recipe_list=recipe_payload.get('packages',recipe_payload.get('records',[]))
+        if len({row.get('cpv') for row in binding_list}) != len(binding_list):
+            raise SystemExit('REFUSED: duplicate CPV in binding authority')
+        if len({row.get('cpv') for row in recipe_list}) != len(recipe_list):
+            raise SystemExit('REFUSED: duplicate CPV in recipe authority')
+        binding_rows={row['cpv']:row for row in binding_list}
+        recipe_rows={row['cpv']:row for row in recipe_list}
     candidates=[]
     for row in rows:
         cpv=row.get('cpv') or row.get('identity',{}).get('cpv')

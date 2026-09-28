@@ -16,6 +16,11 @@ def main():
   refused_binding=p/'refused-binding.json'
   mismatch=subprocess.run(['python3',str(ROOT/'scripts/optimization/pgo/schedule-generation.py'),'--package-state',str(s),'--attempts',str(attempts),'--output',str(refused_binding),'--generation-id','g1','--wave-size','1','--bindings',str(mismatched),'--recipes',str(r),*common],capture_output=True,text=True)
   assert mismatch.returncode != 0 and 'recipes differ' in (mismatch.stdout + mismatch.stderr)
+  duplicate=p/'duplicate.json'; duplicate.write_text(json.dumps({'records':[
+      {'cpv':'app/c-1'}, {'cpv':'app/c-1'}]}))
+  refused_duplicate=p/'refused-duplicate.json'
+  duplicate_result=subprocess.run(['python3',str(ROOT/'scripts/optimization/pgo/schedule-generation.py'),'--package-state',str(s),'--attempts',str(attempts),'--output',str(refused_duplicate),'--generation-id','g1','--wave-size','1','--bindings',str(duplicate),'--recipes',str(r),*common],capture_output=True,text=True)
+  assert duplicate_result.returncode != 0 and 'duplicate CPV in binding authority' in (duplicate_result.stdout + duplicate_result.stderr)
   refused=p/'refused.json'
   blocked=subprocess.run(['python3',str(ROOT/'scripts/optimization/pgo/schedule-generation.py'),'--package-state',str(s),'--attempts',str(attempts),'--output',str(refused),'--generation-id','g1','--inventory-id','i1','--inventory-sha256','a'*64,'--storage-minimum-bytes',str(10**18)],capture_output=True,text=True)
   assert blocked.returncode != 0 and 'storage free-space floor' in (blocked.stdout + blocked.stderr)

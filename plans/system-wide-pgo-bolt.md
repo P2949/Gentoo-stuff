@@ -10295,3 +10295,7 @@ Aligned `plan-profile-wave.py` with the scheduler and coverage workload contract
 ### 2026-09-30 wave-readiness workload gate
 
 Aligned `verify-wave-readiness.py` with the scheduler and planner contracts. Training readiness now requires a nonempty executable/path-bound invocation recipe for every wave package; malformed training inputs become `invalid_inputs`. Readiness output is write-once. Added `test_verify_wave_readiness.py`; the readiness regression, profile-wave guard shell suite, Python compilation, and diff validation pass.
+
+### 2026-09-30 scheduler authority uniqueness
+
+Hardened `schedule-generation.py` so duplicate CPV rows in either the binding authority or recipe authority refuse before dictionary materialization; duplicate rows can no longer silently replace an earlier identity. Added scheduler coverage for duplicate binding CPVs. Regression, Python compilation, and diff validation pass.
