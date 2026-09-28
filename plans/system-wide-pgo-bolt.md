@@ -10271,3 +10271,7 @@ Tightened the workload coverage gate so a `recipe_id` and invocation are insuffi
 ### 2026-09-30 strict BOLT safety identity closure
 
 Strengthened `phase3-coverage.py` so the strict BOLT safety gate rejects safety records outside the exact `candidate-bolt-eligible` ELF identity set. The report now emits `bolt_safety_extra`; missing, extra, duplicate, pending, or failed safety records all fail `bolt_safety_coverage_pass`. Extended `test_phase3_coverage.py` with an extra-record refusal fixture. Focused coverage regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 BOLT safety producer identity hardening
+
+Hardened `review-bolt-safety.py` to refuse duplicate or incomplete candidate `(owner_cpv,path)` identities, duplicate metadata identities, missing candidate metadata, and overwrite of an existing safety report. Records are now keyed and sorted by owner/path and the report schema is version 2. Added `test_review_bolt_safety.py` covering duplicate candidate refusal. Producer regression, Phase-3 coverage regression, Python compilation, and diff validation pass.

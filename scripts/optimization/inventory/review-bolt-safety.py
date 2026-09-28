@@ -9,13 +9,27 @@ def read(args,p):
  except (OSError,subprocess.TimeoutExpired,RuntimeError,UnicodeError) as e:
   raise RuntimeError(f'readelf invocation failed for {p}: {e}') from e
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--metadata',required=True);ap.add_argument('--classification',required=True);ap.add_argument('--output',required=True);a=ap.parse_args(); m=json.load(open(a.metadata)); c=json.load(open(a.classification)); cand={x['path'] for x in c['records'] if x['state']=='candidate-bolt-eligible'}; rows=[]
+ ap=argparse.ArgumentParser();ap.add_argument('--metadata',required=True);ap.add_argument('--classification',required=True);ap.add_argument('--output',required=True);a=ap.parse_args()
+ if __import__('pathlib').Path(a.output).exists(): raise SystemExit('REFUSED: BOLT safety output already exists')
+ m=json.load(open(a.metadata)); c=json.load(open(a.classification));
+ candidate_rows=[x for x in c['records'] if x['state']=='candidate-bolt-eligible']
+ candidate_ids=[(x.get('owner_cpv'),x.get('path')) for x in candidate_rows]
+ if any(not owner or not path for owner,path in candidate_ids): raise SystemExit('REFUSED: candidate BOLT identity is incomplete')
+ dup=sorted(item for item,count in collections.Counter(candidate_ids).items() if count>1)
+ if dup: raise SystemExit(f'REFUSED: duplicate candidate BOLT identities: {dup}')
+ cand=set(candidate_ids); rows=[]; metadata_by_id={}
  for x in m['artifacts']:
-  if x['path'] not in cand:continue
+  ident=(x.get('owner_cpv'),x.get('path'))
+  if ident in metadata_by_id: raise SystemExit(f'REFUSED: duplicate ELF metadata identity: {ident}')
+  metadata_by_id[ident]=x
+ missing=sorted(cand-set(metadata_by_id))
+ if missing: raise SystemExit(f'REFUSED: candidate ELF metadata missing: {missing}')
+ for ident in sorted(cand):
+  x=metadata_by_id[ident]
   try:
    sec=read(['-S'],x['path']); syms=read(['-sW'],x['path'])
   except RuntimeError as e:
    rows.append({'owner_cpv':x['owner_cpv'],'path':x['path'],'text_section':None,'defined_function_symbols':None,'state':'pending-safety-review','reason_code':'tool-invocation-failed','error':str(e)}); continue
   text=any(' .text ' in (' '+l+' ') and 'PROGBITS' in l for l in sec.splitlines()); funcs=sum(1 for l in syms.splitlines() if ' FUNC ' in l and ' UND ' not in l); rows.append({'owner_cpv':x['owner_cpv'],'path':x['path'],'text_section':text,'defined_function_symbols':funcs,'state':'bolt-ready-pending-profile' if text and funcs else ('intrinsically-not-applicable' if not text else 'rebuild-required-for-bolt-capture'),'reason_code':None if text and funcs else ('missing-text-section' if not text else 'no-defined-function-symbols')})
- out={'record_type':'bolt-safety-review','schema_version':1,'source_sha256':m['sha256'],'records':sorted(rows,key=lambda z:z['path'])};out['counts']=dict(collections.Counter(x['state'] for x in rows));out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest();json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(out['counts'])
+ out={'record_type':'bolt-safety-review','schema_version':2,'source_sha256':m['sha256'],'records':sorted(rows,key=lambda z:(z['owner_cpv'],z['path']))};out['counts']=dict(collections.Counter(x['state'] for x in rows));out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest();json.dump(out,open(a.output,'w'),sort_keys=True,indent=2);open(a.output,'a').write('\n');print(out['counts'])
 if __name__=='__main__':main()
