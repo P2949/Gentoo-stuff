@@ -10331,3 +10331,7 @@ Hardened `build-workload-manifest.py` to refuse an existing output path, preserv
 ### 2026-09-30 workload-manifest lane authority uniqueness
 
 Hardened `build-workload-manifest.py` to reject duplicate CPV rows in the PGO lane authority before constructing its owner map. Extended the workload-manifest regression with duplicate-lane refusal. Focused regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 lane-authority publication hardening
+
+Hardened `assign-pgo-lanes.py` to publish lane candidates write-once and reject duplicate CPV identities in package state or backend authority before classification. Extended the lane unittest with a second-publication refusal. Focused unittest, Python compilation, and diff validation pass.

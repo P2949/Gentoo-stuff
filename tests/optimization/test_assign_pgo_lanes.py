@@ -26,6 +26,9 @@ class ReviewedLaneOverrideTests(unittest.TestCase):
             subprocess.run(["python3", str(SCRIPT), "--states", str(p / "state.json"), "--backends", str(p / "backends.json"), "--overrides", str(p / "overrides.json"), "--output", str(output)], check=True)
             row = json.loads(output.read_text())["packages"][0]
             self.assertEqual(row["lane"], "pgo-clang-ir")
+            second = subprocess.run(["python3", str(SCRIPT), "--states", str(p / "state.json"), "--backends", str(p / "backends.json"), "--output", str(output)], capture_output=True, text=True)
+            self.assertNotEqual(second.returncode, 0)
+            self.assertIn("lane output already exists", second.stdout + second.stderr)
             self.assertEqual(row["decision_source"], "reviewed-generation-override")
 
     def test_prebuilt_evidence_cannot_receive_compilable_lane(self):

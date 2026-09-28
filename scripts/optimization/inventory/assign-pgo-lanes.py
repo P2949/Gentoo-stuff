@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-import argparse,json,hashlib,collections
+import argparse,json,hashlib,collections,os
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--states',required=True);ap.add_argument('--backends',required=True);ap.add_argument('--overrides');ap.add_argument('--output',required=True);a=ap.parse_args();s=json.load(open(a.states));b={x['cpv']:x for x in json.load(open(a.backends))['packages']}; rows=[]
+ ap=argparse.ArgumentParser();ap.add_argument('--states',required=True);ap.add_argument('--backends',required=True);ap.add_argument('--overrides');ap.add_argument('--output',required=True);a=ap.parse_args()
+ if os.path.exists(a.output): raise SystemExit('REFUSED: lane output already exists')
+ s=json.load(open(a.states)); backend_rows=json.load(open(a.backends))['packages']
+ if len({x.get('cpv') for x in backend_rows}) != len(backend_rows): raise SystemExit('REFUSED: duplicate CPV in backend authority')
+ b={x['cpv']:x for x in backend_rows}; rows=[]
+ if len({x.get('cpv') for x in s['records']}) != len(s['records']): raise SystemExit('REFUSED: duplicate CPV in package state authority')
  overrides={}
  if a.overrides:
   extra=json.load(open(a.overrides))
