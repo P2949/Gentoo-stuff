@@ -10043,3 +10043,18 @@ package-local ABI records, with no retry or guard weakening:
 Each record binds the original transaction log SHA-256
 `bebdf56ddd98f3c4bff6dbe59a256ecabd4646b8f86afb13af2ae3e9e5b3c056` and
 remains pending narrow upstream/version remediation.
+
+### 2026-09-30 historical baseline source failure: git-lfs
+
+The retained baseline log shows `dev-vcs/git-lfs-9999::gentoo` failed during
+Go compilation because every required module/mod-file request to
+`proxy.golang.org` failed DNS resolution on the configured IPv6 resolver
+interface (`dial udp ...:53: connect: invalid argument`). No merge occurred;
+this is a source/network remediation item rather than an optimization or
+compiler result. The structured historical record is
+`/var/lib/gentoo-optimization/reports/package-failures/dev-vcs-git-lfs-9999/fetch-failure.json`
+(SHA-256
+`eebf97de675275ecc92ef57658fbacaca45f9f02583f471a2c574d13d79ff397`) and
+binds the original transaction log SHA-256
+`bebdf56ddd98f3c4bff6dbe59a256ecabd4646b8f86afb13af2ae3e9e5b3c056`.
+Further retries require a changed network/module-cache condition.
