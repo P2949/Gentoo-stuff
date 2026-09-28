@@ -84,7 +84,14 @@ elif (( instrumentation_rc == 10 )); then
     if [[ ${GENTOO_OPT_MODE:-off} != *-generate ||
           -z ${GENTOO_OPT_TARGET_CPV:-} ||
           ${GENTOO_OPT_TARGET_CPV} != "${CATEGORY-}/${PF-}" ]]; then
-        gentoo_opt_hook_abort 'unauthorized instrumentation in staged payload'
+        # A QA_PREBUILT ebuild has no compilation boundary at which the
+        # project can remove upstream instrumentation.  Admit that payload
+        # only as an explicitly terminal prebuilt artifact; it remains
+        # outside PGO/BOLT authority and is recorded by lane classification.
+        if [[ -z ${QA_PREBUILT-} ]]; then
+            gentoo_opt_hook_abort 'unauthorized instrumentation in staged payload'
+        fi
+        printf 'gentoo-optimization: retaining instrumented QA_PREBUILT payload outside optimization authority\n' >&2
     fi
 elif (( instrumentation_rc != 0 )); then
     gentoo_opt_hook_abort 'staged instrumentation checker failed'

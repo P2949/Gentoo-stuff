@@ -83,6 +83,20 @@ EOF_QA_CONTEXT
     grep -Fx -- "ROOT=${ROOT}" "${context_log}" >/dev/null
 )
 
+case_prebuilt_instrumentation_is_terminally_allowed() (
+    new_marker prebuilt
+    PREBUILT_CHECKER=${TMP}/instrumented-checker.py
+    printf '#!/usr/bin/env python3\nraise SystemExit(10)\n' > "${PREBUILT_CHECKER}"
+    chmod +x "${PREBUILT_CHECKER}"
+    GENTOO_OPT_INSTRUMENTATION_CHECKER=${PREBUILT_CHECKER}
+    QA_PREBUILT='opt/vendor/bin/tool'
+    GENTOO_OPT_MODE=off
+    CATEGORY=app-test PF=fixture-1
+    export GENTOO_OPT_INSTRUMENTATION_CHECKER QA_PREBUILT GENTOO_OPT_MODE CATEGORY PF
+    source "${HOOK}"
+    [[ -f ${PORTAGE_BUILDDIR}/.installed ]]
+)
+
 case_test_override_forbidden_in_ebuild_phase() (
     new_marker ebuild-override
     EBUILD_PHASE=install
@@ -460,6 +474,7 @@ PY_SHADOW_GUARD
     exit 1
 }
 run_case 'off state is a strict no-op' case_off_is_noop
+run_case 'prebuilt instrumentation is terminally allowed' case_prebuilt_instrumentation_is_terminally_allowed
 run_case 'test ABI override is forbidden in ebuild phase' case_test_override_forbidden_in_ebuild_phase
 run_case 'lost active state invalidates the install' case_lost_active_state_is_fatal
 run_case 'requested/active mismatch invalidates the install' case_mismatched_active_state_is_fatal
