@@ -13,10 +13,15 @@ def field(text,label):
   if l.strip().startswith(label+':'): return l.split(':',1)[1].strip()
  return None
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--census',required=True);ap.add_argument('--output',required=True);a=ap.parse_args(); c=json.load(open(a.census)); out=[]
+ ap=argparse.ArgumentParser();ap.add_argument('--census',required=True);ap.add_argument('--output',required=True);a=ap.parse_args()
+ if os.path.exists(a.output): raise SystemExit('REFUSED: ELF metadata output already exists')
+ c=json.load(open(a.census)); out=[]; seen=set()
  for i,x in enumerate(c['artifacts']):
   if not x.get('elf'): continue
   p=x['path']
+  identity=(x.get('owner_cpv'),p)
+  if identity in seen: raise SystemExit(f'REFUSED: duplicate ELF identity {identity[0]} {identity[1]}')
+  seen.add(identity)
   try: h=run(['-h'],p); ph=run(['-l'],p); d=run(['-d'],p); n=run(['-n'],p)
   except RuntimeError as e:
    out.append({'owner_cpv':x['owner_cpv'],'path':p,'error':str(e),'build_id':None,'interpreter':None}); continue

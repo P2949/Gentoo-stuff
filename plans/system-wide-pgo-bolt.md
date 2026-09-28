@@ -10382,3 +10382,9 @@ Hardened `scan-owned-artifacts.py` to publish the census write-once and to
 refuse duplicate `(owner_cpv,path)` identities instead of silently collapsing
 repeated CONTENTS records. Added `test_scan_owned_artifacts.py`; focused
 regression, compilation, and diff checks pass.
+
+### 2026-09-28 ELF metadata authority publication hardening
+
+Hardened `extract-elf-metadata.py` to refuse duplicate `(owner_cpv,path)` ELF
+identities and write-once output publication. Added a focused regression for
+both refusal paths; the regression and Python compilation pass.
