@@ -8,7 +8,7 @@ def main():
   subprocess.run(['python3',str(ROOT/'scripts/optimization/pgo/schedule-generation.py'),'--package-state',str(s),'--attempts',str(attempts),'--output',str(out),'--generation-id','g1','--wave-size','1',*common],check=True)
   wave=json.loads(out.read_text()); assert [x['cpv'] for x in wave['packages']]==['app/c-1']; assert wave['remaining_pending']==0; assert wave['failed_preserved']==['app/b-1']; assert wave['schema_version']==4
   b=p/'b.json'; b.write_text(json.dumps({'records':[{'cpv':'app/c-1','lane':'pgo-clang-ir','profile_path':'/profiles/c','compiler_sha256':'c'*64,'identity_sha256':'d'*64}]}))
-  r=p/'r.json'; r.write_text(json.dumps({'packages':[{'cpv':'app/c-1','state':'direct-training-ready','recipes':[{'recipe_id':'c-help'}]}]}))
+  r=p/'r.json'; r.write_text(json.dumps({'packages':[{'cpv':'app/c-1','state':'direct-training-ready','recipes':[{'recipe_id':'c-help','path':'/usr/bin/c','argv':['--help']}]}]}))
   out2=p/'wave2.json'
   subprocess.run(['python3',str(ROOT/'scripts/optimization/pgo/schedule-generation.py'),'--package-state',str(s),'--attempts',str(attempts),'--output',str(out2),'--generation-id','g1','--wave-size','1','--bindings',str(b),'--recipes',str(r),*common],check=True)
   enriched=json.loads(out2.read_text())['packages'][0]; assert enriched['profile_path']=='/profiles/c'; assert enriched['recipes'][0]['recipe_id']=='c-help'; assert enriched['identity_sha256']=='d'*64

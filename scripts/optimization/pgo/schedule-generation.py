@@ -6,6 +6,14 @@ from pathlib import Path
 
 def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':')).encode()
 
+def valid_recipes(value):
+    if not isinstance(value, list) or not value:
+        return False
+    return all(isinstance(item, dict) and
+               (item.get('path') or item.get('executable')) and
+               (item.get('argv') or item.get('command') or item.get('recipe'))
+               for item in value)
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--package-state',type=Path,required=True); ap.add_argument('--attempts',type=Path,required=True); ap.add_argument('--output',type=Path,required=True); ap.add_argument('--wave-size',type=int,default=16); ap.add_argument('--generation-id',required=True); ap.add_argument('--inventory-id',required=True); ap.add_argument('--inventory-sha256',required=True); ap.add_argument('--bindings',type=Path); ap.add_argument('--recipes',type=Path); ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training'); ap.add_argument('--storage-path',type=Path,default=Path('/')); ap.add_argument('--storage-minimum-bytes',type=int,default=100*1024**3); ap.add_argument('--storage-minimum-percent',type=float,default=12.0); a=ap.parse_args()
     if Path('/var/lib/gentoo-optimization/state/deinstrument.pending').exists():
@@ -69,7 +77,7 @@ def main():
             if a.mode == 'training':
                 if recipe.get('state') not in {'direct-training-ready','consumer-training-ready','backend-specific-training-ready'}:
                     continue
-                if not recipe.get('recipes'):
+                if not valid_recipes(recipe.get('recipes')):
                     continue
             for key in ('profile_path','compiler_sha256','recipes'):
                 if key in binding: enriched[key]=binding[key]

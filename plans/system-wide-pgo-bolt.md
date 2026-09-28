@@ -10279,3 +10279,7 @@ Hardened `review-bolt-safety.py` to refuse duplicate or incomplete candidate `(o
 ### 2026-09-30 BOLT safety disposition vocabulary
 
 The strict coverage verifier now validates every safety record against the producer's disposition vocabulary (`bolt-ready-pending-profile`, `intrinsically-not-applicable`, `rebuild-required-for-bolt-capture`, or `pending-safety-review`). Unknown dispositions are reported in `bolt_safety_invalid` and fail the BOLT safety gate. Extended `test_phase3_coverage.py` with an unknown-disposition refusal fixture. Focused regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 scheduler recipe-authority alignment
+
+Aligned `schedule-generation.py` with the workload coverage contract. Training waves now admit only recipe lists whose entries identify an executable/path and invocation payload; a nonempty list or `recipe_id` alone no longer qualifies. Updated the scheduler fixture with a valid path-bound recipe. Scheduler, workload coverage, Python compilation, and diff validation pass.
