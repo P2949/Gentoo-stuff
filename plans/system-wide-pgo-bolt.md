@@ -10556,3 +10556,16 @@ mutation policy is
 `verify-mutation-policy.py` passed complete 1,346-CPV coverage. These remain
 candidate artifacts pending downstream provenance, lane, fingerprint, and
 framework authority regeneration.
+
+### 2026-09-28 post-sync package provenance authority
+
+Collected installed/next-build provenance for all 1,346 post-sync CPVs. The
+collector found 1,334 next-build ebuilds and 12 unavailable sources. The
+provenance report is
+`/var/lib/gentoo-optimization/reports/package-provenance-postsync-20260928.json`;
+its SHA-256 is recorded with the report. The verifier was corrected to accept
+multiple explicitly configured trusted repository roots, including the Gentoo
+repository, the Maya overlay, the framework local overlay, and other configured
+repositories, while continuing to reject paths outside every trusted root.
+The focused provenance regression and Python compilation pass, and the live
+provenance verifier now passes all 1,346 CPVs. No package transaction was run.
