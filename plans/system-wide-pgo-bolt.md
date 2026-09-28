@@ -10355,3 +10355,7 @@ The live storage preflight remains passing at 163,537,772,544 free bytes (16.931
 ### 2026-09-30 ELF dependency identity hardening
 
 Hardened `generate-live-elf-dependencies.py` to reject duplicate `(owner_cpv,path)` artifact identities before resolving SONAME providers. Added regression coverage for duplicate ELF records; authenticated SONAME resolution and immutable output refusal remain passing.
+
+### 2026-09-30 ELF eligibility authority hardening
+
+Hardened `classify-elf-eligibility.py` to publish write-once output and reject duplicate `(owner_cpv,path)` metadata identities before joining mutation policy. Extended `test_elf_mutation_policy_join.py` with duplicate-identity refusal. Focused regression, Python compilation, and diff validation pass.

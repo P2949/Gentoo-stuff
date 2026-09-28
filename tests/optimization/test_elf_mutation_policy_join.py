@@ -33,6 +33,15 @@ def main() -> None:
         records = json.loads(output.read_text())["records"]
         assert records[0]["state"] == "not-applicable"
         assert records[0]["reason_code"] == "kernel-policy-exclusion"
+        duplicate_metadata = root / "duplicate-metadata.json"
+        duplicate_metadata.write_text(json.dumps({"sha256": "b" * 64, "artifacts": [
+            metadata_data for metadata_data in json.loads(metadata.read_text())["artifacts"] * 2
+        ]}))
+        duplicate_result = subprocess.run([
+            "python3", str(SCRIPT), "--metadata", str(duplicate_metadata),
+            "--mutation-policy", str(policy), "--output", str(root / "duplicate-output.json")
+        ], capture_output=True, text=True)
+        assert duplicate_result.returncode != 0 and "duplicate ELF eligibility identity" in duplicate_result.stderr
     print("PASS: ELF eligibility joins mutation-policy kernel exclusions")
 
 

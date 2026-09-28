@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Assign an explicit preliminary PGO/BOLT state to every ELF record."""
-import argparse,json,hashlib,collections
+import argparse,json,hashlib,collections,os
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--metadata',required=True);ap.add_argument('--output',required=True);ap.add_argument('--mutation-policy', help='generation-bound package mutation policy authority');a=ap.parse_args(); d=json.load(open(a.metadata)); policy={}
+ ap=argparse.ArgumentParser();ap.add_argument('--metadata',required=True);ap.add_argument('--output',required=True);ap.add_argument('--mutation-policy', help='generation-bound package mutation policy authority');a=ap.parse_args()
+ if os.path.exists(a.output): raise SystemExit('REFUSED: ELF eligibility output already exists')
+ d=json.load(open(a.metadata)); identities=[(x.get('owner_cpv'),x.get('path')) for x in d['artifacts']]
+ if len(set(identities)) != len(identities): raise SystemExit('REFUSED: duplicate ELF eligibility identity')
+ policy={}
  if a.mutation_policy:
   p=json.load(open(a.mutation_policy))
   if p.get('record_type') != 'package-mutation-policy': raise SystemExit('REFUSED: unsupported mutation-policy schema')
