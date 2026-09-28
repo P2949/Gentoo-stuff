@@ -192,7 +192,18 @@ def current_package_owns(root: Path, installed_path: Path) -> bool | None:
                 if not instance.is_dir() or instance == exact.parent:
                     continue
                 pn_file = instance / "PN"
-                if pn_file.is_file() and pn_file.read_text(encoding="utf-8").strip() == pn:
+                instance_pn = pn_file.read_text(encoding="utf-8").strip() if pn_file.is_file() else ""
+                if not instance_pn:
+                    pf_file = instance / "PF"
+                    if pf_file.is_file():
+                        try:
+                            import portage.versions
+                            instance_pn = portage.versions.catpkgsplit(
+                                f"{category}/{pf_file.read_text(encoding='utf-8').strip()}"
+                            )[1]
+                        except (ImportError, TypeError, ValueError, IndexError):
+                            instance_pn = ""
+                if instance_pn == pn:
                     contents = instance / "CONTENTS"
                     if contents.is_file():
                         instances.append(contents)
