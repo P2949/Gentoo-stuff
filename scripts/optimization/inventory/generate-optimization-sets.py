@@ -58,9 +58,11 @@ def main():
     if set(decisions) != set(lane_rows): raise SystemExit('REFUSED: mutation policy and lane coverage differ')
     sets={'pgo-bolt-all-userspace':[], 'optimization-kernel-policy-exclusion':[], 'optimization-not-applicable':[]}
     for name in LANE_SET.values(): sets[name]=[]
+    atom_bindings={}
     for cpv in sorted(decisions):
         cp = cp_atom(cpv)
         decision=decisions[cpv]; row=lane_rows[cpv]; lane=row.get('lane')
+        atom_bindings.setdefault(cp, []).append({'cpv': cpv, 'decision': decision, 'lane': lane})
         if decision == 'kernel-policy-exclusion':
             sets['optimization-kernel-policy-exclusion'].append(cp)
             continue
@@ -69,12 +71,20 @@ def main():
         if lane in LANE_SET: sets[LANE_SET[lane]].append(cp)
         elif lane in {'not-applicable','unsupported-by-upstream-toolchain'}: sets['optimization-not-applicable'].append(cp)
         else: raise SystemExit(f'REFUSED: unsupported lane for {cpv}: {lane}')
+    # A CP atom may represent multiple installed versions/slots.  It is safe
+    # to collapse those only when every exact CPV has the same mutation and
+    # lane decision; otherwise a single unqualified set entry would silently
+    # select an incompatible slot.  Keep the exact mapping in the manifest.
+    for atom, members in atom_bindings.items():
+        compatibility={(m['decision'], m['lane']) for m in members}
+        if len(compatibility) > 1:
+            raise SystemExit(f'REFUSED: incompatible exact CPV decisions share atom {atom}')
     args.output_root.mkdir(parents=True,exist_ok=True)
     for name, values in sets.items():
         values[:] = sorted(set(values))
         path=args.output_root/name
         path.write_text(''.join(x+'\n' for x in values))
-    summary={'record_type':'optimization-package-sets','schema_version':1,'mutation_policy_sha256':hashlib.sha256(args.mutation_policy.read_bytes()).hexdigest(),'lane_sha256':hashlib.sha256(args.lanes.read_bytes()).hexdigest(),'sets':{k:len(v) for k,v in sets.items()}}
+    summary={'record_type':'optimization-package-sets','schema_version':2,'mutation_policy_sha256':hashlib.sha256(args.mutation_policy.read_bytes()).hexdigest(),'lane_sha256':hashlib.sha256(args.lanes.read_bytes()).hexdigest(),'sets':{k:len(v) for k,v in sets.items()},'atom_bindings':{k:atom_bindings[k] for k in sorted(atom_bindings)}}
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(json.dumps(summary,sort_keys=True,indent=2)+'\n')
     print(json.dumps(summary['sets'],sort_keys=True))

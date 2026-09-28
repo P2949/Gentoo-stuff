@@ -15,5 +15,10 @@ def main():
   duplicate=p/'duplicate.json'; duplicate.write_text(json.dumps({'records':[{'cpv':'app/a-1','decision':'userspace'},{'cpv':'app/a-1','decision':'userspace'}]}))
   refused=subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/generate-optimization-sets.py'),'--mutation-policy',str(duplicate),'--lanes',str(l),'--output-root',str(p/'sets3')],capture_output=True,text=True)
   assert refused.returncode != 0 and 'duplicate CPV in mutation policy' in (refused.stdout+refused.stderr)
+  conflict_m=p/'conflict-m.json'; conflict_l=p/'conflict-l.json'
+  conflict_m.write_text(json.dumps({'records':[{'cpv':'app/foo-1','decision':'userspace'},{'cpv':'app/foo-2','decision':'kernel-policy-exclusion'}]}))
+  conflict_l.write_text(json.dumps({'packages':[{'cpv':'app/foo-1','lane':'pgo-clang-ir'},{'cpv':'app/foo-2','lane':'not-applicable'}]}))
+  conflict=subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/generate-optimization-sets.py'),'--mutation-policy',str(conflict_m),'--lanes',str(conflict_l),'--output-root',str(p/'conflict-sets')],capture_output=True,text=True)
+  assert conflict.returncode != 0 and 'incompatible exact CPV decisions' in (conflict.stdout+conflict.stderr)
  print('PASS: optimization sets derive from canonical mutation policy')
 if __name__=='__main__': main()
