@@ -10656,3 +10656,12 @@ from the installed-state policy because they are successor/replacement CPVs.
 Those 294 remain unresolved and are not executable; the partition is therefore
 evidence for the next candidate-generation step rather than authorization for a
 bulk transaction.
+
+### 2026-09-28 slot-safe optimization set authority
+
+`generate-optimization-sets.py` now retains an exact atom-to-CPV binding in its
+manifest and refuses to collapse multiple exact CPVs sharing one CP atom when
+their mutation decisions or PGO lanes differ. A regression covers the
+incompatible-decision case; the existing CP-atom and duplicate-CPV checks still
+pass. This closes the previous silent slot/version collapse path without
+activating the candidate sets.
