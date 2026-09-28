@@ -10817,3 +10817,15 @@ smoke-ready, 1 training-ready, and 215 requiring representative training
 workload work (the remaining records are non-runnable/accounting records).
 This confirms that the candidate is not yet representative-workload complete;
 smoke recipes remain provisional and were not used to authorize profile waves.
+
+### 2026-09-28 refreshed consumer-workload closure audit
+
+The typed reverse-dependency graph was regenerated from the retained Portage
+runtime/build and ELF DT_NEEDED sources: 9,562 deduplicated typed edges with
+source digest `f4bd62c1af4d293f07d2d59c86947c1a0619bf77c1325a538ec8bc69086662f0`.
+The successor workload planner was then run against the refreshed workload
+manifest and owned-artifact census. It produced 199 consumer-workload plans,
+all `needs-consumer-workload`; the binding pass produced zero candidate
+workloads. Existing historical consumer records retain `pending-runtime-proof`
+and are not promoted. This is the current representative-workload gap, not an
+authorization failure or a reason to invent bindings.
