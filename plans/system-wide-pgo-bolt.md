@@ -10477,3 +10477,13 @@ still includes kernel/lifecycle and firmware CPVs, the SPIR-V/graphics
 closure, and a Maya fetch restriction; it is therefore evidence for the next
 mutation-policy partition only. No package transaction was run from this
 pretend, and the storage/portable validation remained read-only.
+
+### 2026-09-28 portable-complete gate at signed-sync boundary
+
+A fresh `PATH=/usr/bin:/bin bash tests/run-optimization-tests.sh
+--mode portable-complete` run completed at the signed-sync source boundary:
+87 top-level passes, 0 failures, 12 selected-mode skips, 547 required
+subtests passed, and exit status 0. The recovery and framework-installer
+fixtures completed successfully. This validates the source framework only;
+it does not authorize activation of an older generation or any profile wave
+against the post-sync live VDB.
