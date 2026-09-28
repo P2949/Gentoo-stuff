@@ -10000,3 +10000,24 @@ summary is
 bulk userspace transaction was started from this boundary; the Firefox slot
 conflict and the already-recorded Hyprtoolkit ABI transition require narrow
 resolution and a new pretend before any coherent closure.
+
+### 2026-09-30 narrow baseline failure: Firefox ESR ABI guard
+
+The resolver's Firefox rapid/ESR slot conflict was tested through an exact
+oneshot replacement transaction for `www-client/firefox-bin-153.3.0::gentoo`.
+The transaction correctly resolved the old rapid slot, unpacked and installed
+the new image, but the fail-closed exported-ABI guard rejected
+`opt/firefox/libmozsandbox.so`: the SONAME provider changed from 76 to 77
+exports and lost two established libstdc++ symbols. No merge was admitted and
+the ABI guard was not weakened. The preserved log is
+`/var/lib/gentoo-optimization/reports/package-failures/www-client-firefox-bin-153.3.0/build.log`
+(SHA-256 recorded in the structured record), and the ABI record is
+`/var/lib/gentoo-optimization/reports/package-failures/www-client-firefox-bin-153.3.0/abi-failure.json`
+(SHA-256
+`f0bee29877821c3116caefbd0c5fc9b809aaa8efa3f86b6ebc601ba42973cb57`). The
+inactive build-tree retirement receipt is
+`/var/lib/gentoo-optimization/reports/portage-build-retirement-firefox-bin-153-20260930.json`
+(SHA-256
+`f187664f03b086d1f5be442e4160257d1b069d1cb22c7ddf2e5cc81cea0392c6`). This
+is now a package-local ABI remediation item; the old rapid slot remains
+installed until an evidence-backed compatible replacement is available.
