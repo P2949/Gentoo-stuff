@@ -10771,3 +10771,15 @@ carry-forward-compatible and 0 retrain decisions at the identity-input level.
 This is not profile-use authorization: retained training receipts and profile
 payload evidence still have to be matched before any carry-forward is
 published.
+
+### 2026-09-28 retained-profile identity audit
+
+The retained identity corpus from `phase3-live-candidate-20260927-reviewed`
+was compared against the corrected 450-record successor VDB fingerprint-input
+set using the material observed axes (CPV, repository, ebuild hash, slot/ABI,
+flags, features, ordered package.env paths/content hashes, and build controls).
+No exact observed-axis matches were found: 437 records differ and 13 current
+CPVs have no retained prior identity record. No carry-forward artifact was
+published from this comparison. The retained profile payloads therefore remain
+historical/provisional until each package is independently reconciled or
+retrained under the successor generation identity.
