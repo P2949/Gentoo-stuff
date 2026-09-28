@@ -10,5 +10,21 @@
   {
     "test": "python-unit-tests:tests/optimization",
     "subtest": "python.test_publish_profile_dispatcher.DispatcherPathTrustTests.test_safe_rejects_symlinked_final_path"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_prerequisite_history_compactor.PrerequisiteHistoryCompactorTests.test_dry_run_execute_and_lock_refusal"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_prune_portage_build_trees.PortageBuildTreeRetirementTests.test_dry_run_and_execute"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_storage_inventory.StorageInventoryTests.test_entry_and_children_are_discovery_safe"
+  },
+  {
+    "test": "python-unit-tests:tests/optimization",
+    "subtest": "python.test_storage_retention.StorageRetentionTests.test_classification_fixture_runs_only_when_selected"
   }
 ]
