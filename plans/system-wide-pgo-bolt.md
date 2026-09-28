@@ -10021,3 +10021,25 @@ inactive build-tree retirement receipt is
 `f187664f03b086d1f5be442e4160257d1b069d1cb22c7ddf2e5cc81cea0392c6`). This
 is now a package-local ABI remediation item; the old rapid slot remains
 installed until an evidence-backed compatible replacement is available.
+
+### 2026-09-30 historical baseline ABI failures normalized
+
+The preserved terminal userspace transaction log was re-read for three failures
+that had completed compilation but were rejected at install-QA. `dev-libs/expat-2.8.5`
+changed the `libexpat`/`libexpatw` provider export set from 97 to 72 and lost
+established internal symbols; `dev-libs/tree-sitter-0.27.0` removed the
+established `libtree-sitter.so.0.26` SONAME; and
+`media-libs/libmediainfo-26.05` changed its provider from 7,079 to 7,851
+exports while losing eleven established symbols. These are immutable
+package-local ABI records, with no retry or guard weakening:
+
+- `dev-libs/expat-2.8.5`: `abi-failure.json` SHA-256
+  `0bcfe3f8f03544587e88d9361c216c01925b8cc972dd986799f9fce71630b4c6`
+- `dev-libs/tree-sitter-0.27.0`: `abi-failure.json` SHA-256
+  `44df9f7cfff00610bc091d6e2f9ac2746ce54c3493c783976a283cbbc4ac486d`
+- `media-libs/libmediainfo-26.05`: `abi-failure.json` SHA-256
+  `0ca0f1aceb0ea96e1c8ef727d6b16a4dd101348aecef613548c37bc1eea9c8b1`
+
+Each record binds the original transaction log SHA-256
+`bebdf56ddd98f3c4bff6dbe59a256ecabd4646b8f86afb13af2ae3e9e5b3c056` and
+remains pending narrow upstream/version remediation.
