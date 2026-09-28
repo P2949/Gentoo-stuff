@@ -10215,3 +10215,7 @@ Hardened `generate-live-elf-dependencies.py` so `DT_NEEDED` resolution uses auth
 ### 2026-09-30 identity and graph regression boundary
 
 Focused regressions passed together after the authority changes: VDB fingerprint collection requires retained build identity evidence; reverse-dependency generation requires both Portage and ELF authorities; ELF dependency resolution uses authenticated SONAMEs; and ELF eligibility joins generation-bound mutation policy. No live generation or profile wave was authorized by these tests.
+
+### 2026-09-30 canonical optimization-set verification
+
+The canonical optimization-set generator was revalidated at the current source boundary. `tests/optimization/test_optimization_sets.py` passed and Python compilation passed; generated persistent-set entries are deduplicated CP atoms while exact CPV identity remains in the separate source policy/lane manifests. No live set regeneration was performed from synthetic fixtures.
