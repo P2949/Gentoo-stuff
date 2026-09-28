@@ -10745,3 +10745,10 @@ A new provenance materialization was also produced for all 1,346 CPVs; its
 independent verifier requires the repository-root mapping to be rerun with the
 full configured overlay roots before it can be treated as verified authority.
 No framework activation or profile wave has been started from this candidate.
+
+The provenance verifier was rerun with the complete configured overlay-root
+set, including the root-owned Maya optimization checkout and framework local
+overlay. It now passes installed/next-build provenance coverage for all 1,346
+CPVs. The earlier single-root refusal was a verifier-input omission, not a
+source mismatch; the multi-root verification is the authoritative result for
+this candidate.
