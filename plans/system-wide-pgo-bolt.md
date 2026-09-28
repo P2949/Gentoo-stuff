@@ -10207,3 +10207,7 @@ Closed the artifact-policy wiring gap identified in the Phase-3 review. `classif
 ### 2026-09-30 reverse-dependency authority hardening
 
 The canonical reverse-dependency generator now refuses an empty Portage dependency authority or an empty ELF `DT_NEEDED` authority instead of publishing an apparently valid graph from one source alone. Added `tests/optimization/test_generate_reverse_dependencies.py`, covering typed Portage and ELF edges and both refusal paths. Python compilation, focused regression, and diff validation pass.
+
+### 2026-09-30 loader-correct ELF dependency resolution
+
+Hardened `generate-live-elf-dependencies.py` so `DT_NEEDED` resolution uses authenticated ELF SONAMEs when present and only falls back to path basenames for legacy inventories without SONAME capture. Added `tests/optimization/test_live_elf_dependencies.py`, proving a same-basename unrelated artifact with a different SONAME is not selected as the provider. Python compilation, focused regression, and diff validation pass.

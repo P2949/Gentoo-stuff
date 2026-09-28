@@ -8,9 +8,17 @@ def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--elf',required=True,type=Path); ap.add_argument('--output',required=True,type=Path); a=ap.parse_args()
  src=json.loads(a.elf.read_text()); providers={}
  for x in src.get('artifacts',[]):
-  name=os.path.basename(x.get('path',''))
-  if name and x.get('owner_cpv'):
-   providers.setdefault(name,[]).append(x)
+  # DT_NEEDED names resolve through the loader's SONAME namespace.  A path
+  # basename is only a compatibility fallback for inventories that predate
+  # explicit SONAME capture; it must never replace an authenticated SONAME.
+  names=[]
+  if x.get('soname'):
+   names.append(str(x['soname']))
+  elif x.get('path'):
+   names.append(os.path.basename(x['path']))
+  if x.get('owner_cpv'):
+   for name in set(names):
+    providers.setdefault(name,[]).append(x)
  rows=[]; unresolved=[]
  for x in src.get('artifacts',[]):
   consumer=x.get('owner_cpv');
