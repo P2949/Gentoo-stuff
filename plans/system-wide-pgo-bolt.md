@@ -10122,3 +10122,7 @@ The exact optimization-off transaction for `media-libs/libde265-1.1.3::gentoo` r
 ### 2026-09-30 ncspot Rust baseline transition
 
 The exact optimization-off transaction for `media-sound/ncspot-1.4.0::gentoo` completed and merged. This was a substantial Rust build with a 3.3 GiB temporary build tree, which was retired immediately after merge under the storage retention policy. VDB `CONTENTS` SHA-256 is `7c64ee93106d51301c2028eec2bc19aecd11930ec5a17ba36c96bd759aecabc4`, `environment.bz2` SHA-256 is `4c05fb86e4d8c97f357b60a33a5a88d6d17197de9a4fbe99cbe04a3296b08bad`. Structured evidence `/var/lib/gentoo-optimization/reports/package-success-media-sound-ncspot-1.4.0-20260930.json` has SHA-256 `cc0c4ec6cfe00bdf88825ac6694d5ae287f7b08de923d4349c8e22a4b464c7a5`. No PGO/BOLT claim is made.
+
+### 2026-09-30 Python tree-sitter baseline transition
+
+The exact optimization-off transaction for `dev-python/tree-sitter-0.26.0_p20260816-r1::gentoo` completed and merged under the ABI guard. VDB `CONTENTS` SHA-256 is `217bd9ca08eb2737208a4b86de0f3f501e5a59c85973322eccd0b944d382afea`, `environment.bz2` SHA-256 is `921e04e687074bb02a479bd7b6933a7b953adfd0404539fdc843191fcb62b9b5`. Structured evidence `/var/lib/gentoo-optimization/reports/package-success-dev-python-tree-sitter-0.26.0_p20260816-r1-20260930.json` has SHA-256 `d8c2c041b1d9f5ac1a9dc687e35e7d82eb71b4c59f4d12af3155cbc4eaf88ef8`. This records the Python binding transition only; the native tree-sitter provider ABI transition remains separately tracked.
