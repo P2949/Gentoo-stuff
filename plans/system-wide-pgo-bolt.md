@@ -10090,3 +10090,7 @@ The exact optimization-off transition for `dev-util/pahole-1.32::gentoo` reached
 ### 2026-09-30 SPIR-V headers userspace baseline transition
 
 The exact optimization-off transaction for `dev-util/spirv-headers-1.4.357.0::gentoo` completed and merged under the ABI guard. VDB `CONTENTS` SHA-256 is `0f7fe495967c2de48d8e5ddbc668159ecaa47877f97d3727a13aba379582f97e`, `environment.bz2` SHA-256 is `6707a62cee9090f517afa458b90d19335415eb7367937c424a0152d20588c946`. Structured evidence `/var/lib/gentoo-optimization/reports/package-success-dev-util-spirv-headers-1.4.357.0-20260930.json` has SHA-256 `8ca5ee3b5e93fe4d8961399445e8fb9976cff8b63400c6aa3e4f509e4ffe27b0`. This records only the header provider transition; the coordinated SPIR-V consumer closure remains pending and no PGO/BOLT success is claimed.
+
+### 2026-09-30 post-userspace transition resolver boundary
+
+After the coreutils and SPIR-V headers transitions, a fresh signed `@world` pretend again completed successfully. Raw output is `/var/lib/gentoo-optimization/reports/world-update-pretend-20260930-after-coreutils-spirv.txt` (SHA-256 `9ed56329fc11527bf5281f65810310e0c067c0e2160e51fce8c72fc266d3c235`). The graph still requires the protected kernel/firmware items to remain excluded from automated mutation and still contains the SPIR-V/glslang consumer closure, FFmpeg/media rebuild closure, and tree-sitter consumers. Baseline closure is therefore ongoing; no final-generation authority or broad profile-use wave is authorized.
