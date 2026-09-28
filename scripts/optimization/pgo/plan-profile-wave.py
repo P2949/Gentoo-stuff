@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import argparse,json,hashlib,collections
+def valid_recipes(value):
+ return isinstance(value,list) and bool(value) and all(isinstance(x,dict) and (x.get('path') or x.get('executable')) and (x.get('argv') or x.get('command') or x.get('recipe')) for x in value)
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--bindings',required=True);ap.add_argument('--recipes',required=True);ap.add_argument('--output',required=True);ap.add_argument('--per-lane',type=int,default=4);ap.add_argument('--schedule');ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training');a=ap.parse_args();b=json.load(open(a.bindings));r=json.load(open(a.recipes)); rec={x['cpv']:x for x in r['packages']}; by=collections.defaultdict(list)
+ if __import__('pathlib').Path(a.output).exists(): raise SystemExit('REFUSED: wave plan output already exists')
  if a.schedule:
   scheduled=json.load(open(a.schedule)); source_packages=scheduled.get('packages',[])
   if scheduled.get('state') not in {None,'planned-not-authorized'}: raise SystemExit('REFUSED: scheduler output is not an unconsumed plan')
@@ -11,8 +14,12 @@ def main():
   lane=x.get('lane')
   if a.schedule and (not isinstance(lane,str) or not lane.startswith('pgo-')):
    raise SystemExit(f"REFUSED: scheduled package has incomplete lane: {x.get('cpv')}")
-  if isinstance(lane,str) and lane.startswith('pgo-') and (a.mode == 'exhaustive-generation' or rec.get(x['cpv'],{}).get('recipes')):
-   recipe_source=x.get('recipes') or rec[x['cpv']]['recipes']
+  if isinstance(lane,str) and lane.startswith('pgo-'):
+   if a.mode == 'training' and x['cpv'] not in rec:
+    raise SystemExit(f"REFUSED: package is missing workload recipe record: {x['cpv']}")
+   recipe_source=x.get('recipes') or rec.get(x['cpv'],{}).get('recipes',[])
+   if a.mode == 'training' and not valid_recipes(recipe_source):
+    raise SystemExit(f"REFUSED: package has incomplete workload recipe: {x['cpv']}")
    package_purpose=rec.get(x['cpv'],{}).get('purpose')
    row={'cpv':x['cpv'],'lane':x['lane'],'compiler_sha256':x.get('compiler_sha256',b.get('compiler_sha256')),'profile_path':x.get('profile_path'),'recipes':[dict(recipe, purpose=package_purpose) if package_purpose else dict(recipe) for recipe in recipe_source]}
    row['identity_sha256']=x.get('identity_sha256')

@@ -10287,3 +10287,7 @@ Aligned `schedule-generation.py` with the workload coverage contract. Training w
 ### 2026-09-30 scheduler binding/recipe consistency gate
 
 Hardened `schedule-generation.py` so a binding artifact cannot override the authoritative recipe manifest with a divergent workload payload. When both provide recipes, canonical recipe structures must match exactly; mismatches refuse scheduling. Added a scheduler regression for divergent binding recipes. Scheduler regression, Python compilation, and diff validation pass.
+
+### 2026-09-30 wave-planner workload admission gate
+
+Aligned `plan-profile-wave.py` with the scheduler and coverage workload contract. Training planning now refuses missing recipe records and malformed/unbound recipes instead of silently omitting a PGO package; wave output is also write-once. Added `test_plan_profile_wave.py` covering refusal of an invocation-only recipe. Focused planner regression, Python compilation, and diff validation pass.
