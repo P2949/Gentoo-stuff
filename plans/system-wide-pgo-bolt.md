@@ -10718,3 +10718,16 @@ owned directories, zero unresolved directories, inventory SHA-256
 This is a candidate inventory only; kernel/mutation/backend/lane and all
 fingerprint authorities must be regenerated against this exact VDB before any
 framework generation or profile wave can be authorized.
+
+### 2026-09-28 refreshed kernel and mutation candidate after systemd-utils
+
+Against the refreshed 1,346-CPV inventory, kernel-policy classification was
+regenerated with the authenticated source-unavailable review
+`/var/lib/gentoo-optimization/reports/source-unavailable-review-postsync-20260928.json`.
+The result is 1,336 userspace transactions, 10 explicit kernel-policy
+exclusions, and zero pending lifecycle records at
+`/var/lib/gentoo-optimization/generations/phase3-live-20260928-systemd-utils-reviewed/kernel-classification-v2.json`.
+`generate-mutation-policy.py` and its independent verifier then accepted
+`mutation-policy-v2.json` with exactly one decision for every CPV. Backend,
+provenance, lane, fingerprint, and framework authorities have not yet been
+regenerated for this successor candidate.
