@@ -70,5 +70,9 @@ class DeinstrumentationStateTests(unittest.TestCase):
         self.assertIn("${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-*", bashrc)
         self.assertIn("gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables", bashrc)
 
+    def test_extended_marker_remains_armed(self):
+        source = (ROOT / "scripts/optimization/pgo/extend-deinstrumentation.py").read_text()
+        self.assertIn('"state": "armed"', source)
+
 if __name__ == "__main__":
     unittest.main()

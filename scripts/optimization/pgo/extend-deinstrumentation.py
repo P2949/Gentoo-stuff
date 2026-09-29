@@ -52,6 +52,7 @@ def main() -> int:
     merged = sorted(set(old_cpvs) | set(new_cpvs))
     payload = {
         "schema": "deinstrument-pending-v1",
+        "state": "armed",
         "plan": str(args.plan.resolve()),
         "plan_sha256": digest(args.plan),
         "batch_id": args.batch_id,
