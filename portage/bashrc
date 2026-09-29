@@ -1276,6 +1276,13 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
         printf -v "${variable}" '%s' "${cleaned}"
         export "${variable?}"
     done
+    # Abseil's installed ABI includes these weak RTTI/vtable definitions.
+    # The normal optimization scrub removes vtable-emission policy, so retain
+    # the minimal ABI-preserving flag for its exact de-instrumentation rebuild.
+    if [[ ${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-* ]]; then
+        gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables
+        export CXXFLAGS
+    fi
 }
 
 gentoo_opt_strip_inherited_rust_optimization_policy() {

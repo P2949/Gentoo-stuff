@@ -65,5 +65,10 @@ class DeinstrumentationStateTests(unittest.TestCase):
         }))
         self.assertFalse(module.terminal_clean({"instrumentation_markers": ["prf"]}))
 
+    def test_abseil_deinstrumentation_retains_abi_vtables(self):
+        bashrc = (ROOT / "portage/bashrc").read_text()
+        self.assertIn("${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-*", bashrc)
+        self.assertIn("gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables", bashrc)
+
 if __name__ == "__main__":
     unittest.main()
