@@ -97,6 +97,20 @@ case_prebuilt_instrumentation_is_terminally_allowed() (
     [[ -f ${PORTAGE_BUILDDIR}/.installed ]]
 )
 
+case_deinstrumentation_allows_markers_for_cleanup() (
+    new_marker deinstrumentation
+    DEINSTRUMENT_CHECKER=${TMP}/deinstrumentation-checker.py
+    printf '#!/usr/bin/env python3\nraise SystemExit(10)\n' > "${DEINSTRUMENT_CHECKER}"
+    chmod +x "${DEINSTRUMENT_CHECKER}"
+    GENTOO_OPT_INSTRUMENTATION_CHECKER=${DEINSTRUMENT_CHECKER}
+    GENTOO_OPT_MODE=off
+    GENTOO_OPT_DEINSTRUMENT=1
+    CATEGORY=app-test PF=fixture-1
+    export GENTOO_OPT_INSTRUMENTATION_CHECKER GENTOO_OPT_MODE GENTOO_OPT_DEINSTRUMENT CATEGORY PF
+    source "${HOOK}"
+    [[ -f ${PORTAGE_BUILDDIR}/.installed ]]
+)
+
 case_test_override_forbidden_in_ebuild_phase() (
     new_marker ebuild-override
     EBUILD_PHASE=install

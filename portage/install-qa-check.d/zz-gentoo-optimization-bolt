@@ -81,7 +81,13 @@ instrumentation_rc=0
 if (( instrumentation_rc == 20 || instrumentation_rc == 21 )); then
     gentoo_opt_hook_abort 'staged ELF instrumentation inspection failed'
 elif (( instrumentation_rc == 10 )); then
-    if [[ ${GENTOO_OPT_MODE:-off} != *-generate ||
+    if [[ ${GENTOO_OPT_DEINSTRUMENT:-0} == 1 ]]; then
+        # A de-instrumentation transaction intentionally admits the old
+        # markers so the package can be rebuilt without them.  The dedicated
+        # runner sets this only for an exact, marker-clearing transaction and
+        # the ABI guard remains active with its instrumentation-only filter.
+        printf 'gentoo-optimization: admitting instrumentation for de-instrumentation cleanup\n' >&2
+    elif [[ ${GENTOO_OPT_MODE:-off} != *-generate ||
           -z ${GENTOO_OPT_TARGET_CPV:-} ||
           ${GENTOO_OPT_TARGET_CPV} != "${CATEGORY-}/${PF-}" ]]; then
         # A QA_PREBUILT ebuild has no compilation boundary at which the
