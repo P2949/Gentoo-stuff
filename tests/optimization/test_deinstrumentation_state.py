@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import bz2
 import json
 from pathlib import Path
 import subprocess
@@ -20,6 +21,21 @@ def load(name: str, path: Path):
     return module
 
 class DeinstrumentationStateTests(unittest.TestCase):
+    def test_scanner_decodes_portage_declarations_and_prebuilt_marker(self):
+        module = load("scan_live_instrumentation", ROOT / "scripts/optimization/pgo/scan-live-instrumentation.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            vdb = Path(tmp) / "app" / "demo-1"
+            vdb.mkdir(parents=True)
+            (vdb / "environment.bz2").write_bytes(bz2.compress(
+                b'declare -x GENTOO_OPT_MODE="gcc-generate"\n'
+                b'declare -x GENTOO_OPT_PROFILE_PATH="/var/tmp/p"\n'
+                b'declare -- QA_PREBUILT="*"\n'
+            ))
+            values = module.decode_environment(Path(tmp), "app/demo-1")
+            self.assertEqual(values["GENTOO_OPT_MODE"], "gcc-generate")
+            self.assertEqual(values["GENTOO_OPT_PROFILE_PATH"], "/var/tmp/p")
+            self.assertEqual(values["QA_PREBUILT"], "present")
+
     def test_planner_partitions_terminal_prebuilt_and_failures(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)

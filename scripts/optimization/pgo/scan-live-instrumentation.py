@@ -87,13 +87,19 @@ def decode_environment(vdb: Path, cpv: str) -> dict:
     }
     values = {}
     for line in text.splitlines():
-        match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+        # VDB environment snapshots are shell declarations (normally
+        # ``declare -x NAME=...``), while small fixtures may use plain
+        # assignments.  Decode both forms without sourcing the snapshot.
+        match = re.match(
+            r"^(?:declare\s+(?:-[^\s]+\s+)?|)([A-Za-z_][A-Za-z0-9_]*)=(.*)$",
+            line,
+        )
         if match and match.group(1) in wanted:
             value = match.group(2).strip()
             if len(value) >= 2 and value[0] == value[-1] == '"':
                 value = value[1:-1]
             values[match.group(1)] = value
-    if re.search(r"(?m)^declare -a QA_PREBUILT=\(", text) or re.search(r"(?m)^QA_PREBUILT=", text):
+    if re.search(r"(?m)^declare\s+(?:-[^\s]+\s+)?QA_PREBUILT=", text) or re.search(r"(?m)^QA_PREBUILT=", text):
         values["QA_PREBUILT"] = "present"
     return values
 
