@@ -10953,3 +10953,29 @@ its authoritative census SHA-256 is
 scanner output SHA-256 is
 `10ba034a25f7e0dac291432c25f6f1a733f92c47a38552adc2e783dbff685367`. The
 marker remains armed and no profile wave or framework activation is authorized.
+
+## 2026-09-30 de-instrumentation continuation evidence
+
+The exact `app-admin/sysklogd-2.7.2` de-instrumentation batch completed with
+exit status 0. Its immutable receipt is
+`/var/lib/gentoo-optimization/reports/deinstrumentation-20260930-sysklogd-b4/batch-0004.json`
+(SHA-256 `a801e2234a75b7bf80d9e947d15a34c5c167cd96304dfa1901e1bf0fe63fe355`).
+
+The first Abseil retry receipt completed with exit status 0 but the independent
+post-transaction scan still found four instrumented Abseil artifacts; it is
+therefore retained as insufficient de-instrumentation evidence. Receipt:
+`/var/lib/gentoo-optimization/reports/deinstrumentation-20260930-abseil-b5/batch-0005.json`
+(SHA-256 `a7604ed0c968f09b72787c939863dc711ce2f3649066f07069f3b57d64d1c70a`).
+A second exact retry with `CCACHE_DISABLE=1` also completed with exit status 0,
+but the fresh scan still reports 32 instrumented records and the verifier
+refuses clearance. Receipt:
+`/var/lib/gentoo-optimization/reports/deinstrumentation-20260930-abseil-b6/batch-0006.json`
+(SHA-256 `c19e60c7e7590f0dde3c55db3c921eb116844bd1dfc496059b353f72988a14e7`).
+The post-sysklogd scan is
+`/var/lib/gentoo-optimization/reports/live-instrumentation-scan-20260930-after-sysklogd.json`
+(SHA-256 `8c7f43ff977491cba265a2a9cbf81c5154e8ba685479c9314d1ec83a8354640b`);
+the post-Abseil no-cache scan is
+`/var/lib/gentoo-optimization/reports/live-instrumentation-scan-20260930-after-abseil-nocache.json`
+(SHA-256 `829d3ae5f18eed22fb5bcb677421fdbd87c98ca6e215d334e60ae2d13d6c5620`).
+The de-instrumentation marker remains armed; no profile wave or framework
+activation is authorized while residual records remain.
