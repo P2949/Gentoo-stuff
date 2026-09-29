@@ -1281,6 +1281,10 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
     # the minimal ABI-preserving flag for its exact de-instrumentation rebuild.
     if [[ ${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-* ]]; then
         gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables
+        gentoo_opt_append_flag_once CXXFLAGS -fstrict-vtable-pointers
+        gentoo_opt_append_flag_once CXXFLAGS -fwhole-program-vtables
+        gentoo_opt_append_flag_once CXXFLAGS -fsplit-lto-unit
+        gentoo_opt_append_flag_once CXXFLAGS -funified-lto
         export CXXFLAGS
     fi
 }
@@ -1320,6 +1324,10 @@ gentoo_opt_strip_deinstrumentation_policy() {
     # exact de-instrumentation rebuild, so restore only this reviewed flag.
     if [[ ${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-* ]]; then
         gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables
+        gentoo_opt_append_flag_once CXXFLAGS -fstrict-vtable-pointers
+        gentoo_opt_append_flag_once CXXFLAGS -fwhole-program-vtables
+        gentoo_opt_append_flag_once CXXFLAGS -fsplit-lto-unit
+        gentoo_opt_append_flag_once CXXFLAGS -funified-lto
         export CXXFLAGS
     fi
 }
