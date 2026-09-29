@@ -123,7 +123,12 @@ def main() -> int:
                         "GENTOO_OPT_MODE": "off", "GENTOO_OPT_TARGET_CPV": cpv,
                         "GENTOO_OPT_DEINSTRUMENT_PLAN": str(args.plan.resolve()),
                         "GENTOO_OPT_DEINSTRUMENT_PLAN_SHA256": plan_sha})
-            pretend_command = ["emerge", "--oneshot", "--pretend", "--verbose", atom]
+            # De-instrumentation is an exact replacement of an already
+            # installed CPV.  Dependency-aware pretend can select unrelated
+            # repository transitions (for example a historical Maya ebuild
+            # asks for a superseded SPIR-V header); the real transaction is
+            # already --nodeps and must be previewed with the same boundary.
+            pretend_command = ["emerge", "--oneshot", "--nodeps", "--pretend", "--verbose", atom]
             stream.write("PRETEND: " + " ".join(pretend_command) + "\n")
             pretend = subprocess.run(pretend_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      text=True, encoding="utf-8", errors="replace", env=env)
