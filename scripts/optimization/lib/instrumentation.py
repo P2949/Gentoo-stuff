@@ -42,8 +42,13 @@ def inspect_elf(path: pathlib.Path, timeout: float = 10.0) -> tuple[bool, str]:
     for marker in LLVM_MARKERS:
         if marker in data:
             return True, "llvm"
-    for marker in GCC_MARKERS:
-        if marker in data:
+    # A weak undefined __gcov_dump/__gcov_flush reference is emitted by some
+    # otherwise ordinary toolchain builds.  It is not coverage instrumentation;
+    # require a defined GCC runtime symbol (an UND symbol is only a reference).
+    for line in data.splitlines():
+        if " UND " in line:
+            continue
+        if any(marker in line for marker in GCC_MARKERS):
             return True, "gcc"
     return False, "elf"
 

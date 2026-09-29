@@ -74,5 +74,21 @@ class DeinstrumentationStateTests(unittest.TestCase):
         source = (ROOT / "scripts/optimization/pgo/extend-deinstrumentation.py").read_text()
         self.assertIn('"state": "armed"', source)
 
+    def test_undefined_gcov_runtime_reference_is_not_instrumentation(self):
+        module = load("instrumentation", ROOT / "scripts/optimization/lib/instrumentation.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lib.so"
+            path.write_bytes(b"\x7fELF")
+            class Result:
+                returncode = 0
+                stdout = b" 1: 0 FUNC GLOBAL DEFAULT 1 foo\n 2: 0 NOTYPE WEAK DEFAULT UND __gcov_flush\n"
+                stderr = b""
+            original = module.subprocess.run
+            module.subprocess.run = lambda *args, **kwargs: Result()
+            try:
+                self.assertEqual(module.inspect_elf(path), (False, "elf"))
+            finally:
+                module.subprocess.run = original
+
 if __name__ == "__main__":
     unittest.main()
