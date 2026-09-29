@@ -1315,6 +1315,13 @@ gentoo_opt_strip_deinstrumentation_policy() {
         printf -v "${variable}" '%s' "${cleaned}"
         export "${variable?}"
     done
+    # The generic scrub above removes inherited vtable/LTO policy. Abseil's
+    # installed ABI requires these weak RTTI/vtable definitions during the
+    # exact de-instrumentation rebuild, so restore only this reviewed flag.
+    if [[ ${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-* ]]; then
+        gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables
+        export CXXFLAGS
+    fi
 }
 
 # package.env files are sourced after this bashrc.  Reapply the cleanup at
