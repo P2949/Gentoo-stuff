@@ -10914,3 +10914,23 @@ older installed payloads as unauthorized because their VDB/effective ebuild
 state predates the new declarations. That receipt remains immutable evidence;
 a fresh exact reinstall is required before the new terminal disposition can be
 observed.
+
+### 2026-09-29 GCC de-instrumentation batch and fresh census
+
+The exact de-instrumentation transaction for `sys-devel/gcc-17.0.9999-r1::codex-local`
+completed successfully with `--nodeps`, `GENTOO_OPT_MODE=off`,
+`GENTOO_OPT_DEINSTRUMENT=1`, and `LLVM_PROFILE_FILE=/dev/null`. The immutable
+receipt is `/var/lib/gentoo-optimization/reports/deinstrumentation-20260929-gcc-j4/batch-0001.json`
+(SHA-256 `d2fe1541b1b4b9df96d64ff7ae8587a349b29bf170cc827bf3e37d05fd1ce2dd`)
+and records `exit_status=0` for exactly one CPV. The durable marker remains
+armed because residual instrumentation still exists.
+
+A fresh VDB CONTENTS/ELF census was generated at `/tmp/current-instrumented-20260929.json`
+(SHA-256 `4aabf70e3664bf6e98f6dbc8d1110ec5fd5766e3abf8c88b3ce48844a2ac2660`)
+and scanned to `/tmp/live-instrumentation-final.json` (SHA-256
+`380c551519a326d2ca1a08e85b94b7b3220d332371967717727f2a640e4a3ea4`). It
+contains 39 instrumented ELF records across 10 CPVs. Seven records are now
+classified as `unsupported-by-upstream-toolchain/prebuilt`; 32 remain
+rebuild-required or require an explicit package-specific disposition. The
+clean-state verifier correctly refused to clear the marker. No profile wave or
+framework activation is authorized from this state.
