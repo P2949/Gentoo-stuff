@@ -170,7 +170,7 @@ def main() -> int:
     with os.fdopen(fd, "w", encoding="utf-8") as stream:
         json.dump(record, stream, sort_keys=True, indent=2)
         stream.write("\n")
-    return proc.returncode
+    return proc_rc
 
 
 if __name__ == "__main__":
