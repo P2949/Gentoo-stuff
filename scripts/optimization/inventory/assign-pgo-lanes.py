@@ -17,10 +17,11 @@ def main():
    overrides[item['cpv']]=(item['lane'],item['reason_code'])
  for x in s['records']:
   cpv=x['cpv']; info=b.get(cpv,{}); artifact_languages=info.get('artifact_language_evidence',{}); ev=sorted(set(info.get('backend_evidence',[])+info.get('inherits',[])+list(artifact_languages))); phases=info.get('phase_functions',[])
+  native_artifact_evidence=any(artifact_languages.get(k, 0) for k in ('c','c++','elf-shared','static-archive','object','native'))
   if cpv in overrides: lane,reason=overrides[cpv]
   elif info.get('qa_prebuilt') is True or info.get('prebuilt') is True or 'QA_PREBUILT' in info.get('vdb_environment_markers',[]): lane='unsupported-by-upstream-toolchain';reason='prebuilt-artifact-no-compile-evidence'
   elif x['state']!='pending-pgo-classification': lane=x['state']; reason=x['reason_code']
-  elif any('python' in z or 'java' in z or 'ruby' in z or 'perl' in z or z in ('distutils-r1','pypi','ruby-fakegem','perl-module') for z in ev) or any(token in cpv.lower().split('/',1)[-1] for token in ('python','ruby','perl','openjdk','jdk')): lane='unsupported-by-upstream-toolchain';reason='managed-language-or-runtime-eclass'
+  elif not native_artifact_evidence and (any('python' in z or 'java' in z or 'ruby' in z or 'perl' in z or z in ('distutils-r1','pypi','ruby-fakegem','perl-module') for z in ev) or any(token in cpv.lower().split('/',1)[-1] for token in ('python','ruby','perl','openjdk','jdk'))): lane='unsupported-by-upstream-toolchain';reason='managed-language-or-runtime-eclass'
   elif any('cargo' in z or z in ('rust','rust-toolchain') for z in ev): lane='pgo-rust';reason='cargo-or-rust-eclass'
   elif any('go' in z for z in ev): lane='pgo-go';reason='go-eclass'
   elif any(any(k in z for k in ('cmake','meson','autotools','llvm','toolchain-funcs','libtool','ecm','frameworks.kde.org','xorg-3','multilib','qt6-build','gstreamer')) for z in ev): lane='pgo-clang-ir';reason='native-compiled-eclass'

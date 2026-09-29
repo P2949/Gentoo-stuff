@@ -46,6 +46,21 @@ class ReviewedLaneOverrideTests(unittest.TestCase):
             self.assertEqual(row["lane"], "unsupported-by-upstream-toolchain")
             self.assertEqual(row["reason_code"], "prebuilt-artifact-no-compile-evidence")
 
+    def test_managed_eclass_does_not_hide_native_artifacts(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            state = {"records": [{"cpv": "dev-libs/native-python-1", "state": "pending-pgo-classification", "reason_code": "pending"}]}
+            state["sha256"] = digest(state)
+            (p / "state.json").write_text(json.dumps(state))
+            (p / "backends.json").write_text(json.dumps({"packages": [{
+                "cpv": "dev-libs/native-python-1", "inherits": ["distutils-r1", "cmake"],
+                "backend_evidence": ["cmake"], "artifact_language_evidence": {"c": 2, "elf-shared": 1}
+            }]}))
+            output = p / "lanes.json"
+            subprocess.run(["python3", str(SCRIPT), "--states", str(p / "state.json"), "--backends", str(p / "backends.json"), "--output", str(output)], check=True)
+            row = json.loads(output.read_text())["packages"][0]
+            self.assertEqual(row["lane"], "pgo-clang-ir")
+
 
 if __name__ == "__main__":
     unittest.main()
