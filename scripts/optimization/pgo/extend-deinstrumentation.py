@@ -56,7 +56,10 @@ def main() -> int:
     if len(batches) != 1:
         raise SystemExit("REFUSED: extension batch id is not unique")
     new_cpvs = sorted(set(batches[0].get("cpvs", [])))
-    if not new_cpvs or not set(old_cpvs).isdisjoint(new_cpvs):
+    retry_cpvs = set(plan.get("retry_cpvs", []))
+    if not retry_cpvs.issubset(set(old_cpvs)):
+        raise SystemExit("REFUSED: retry_cpvs must already be marker-authorized")
+    if not new_cpvs or (set(old_cpvs) & set(new_cpvs)) - retry_cpvs:
         raise SystemExit("REFUSED: extension batch overlaps an already-authorized CPV")
     merged = sorted(set(old_cpvs) | set(new_cpvs))
     payload = {
