@@ -29,12 +29,15 @@ def main():
   consumer=x.get('owner_cpv');
   for needed in x.get('needed',[]) or []:
    matches=providers.get(needed,[])
-   owners=sorted({m['owner_cpv'] for m in matches if m['owner_cpv'] != consumer})
+   owners=sorted({m['owner_cpv'] for m in matches})
    if len(owners)==1:
-    rows.append({'provider_cpv':owners[0],'consumer_cpv':consumer,'relationship':'elf-needed','evidence':{'consumer_path':x.get('path'),'needed':needed,'provider_paths':sorted(m['path'] for m in matches if m['owner_cpv']==owners[0])}})
+    for provider in matches:
+     if provider.get('owner_cpv') != owners[0]:
+      continue
+     rows.append({'provider_cpv':owners[0],'consumer_cpv':consumer,'relationship':'elf-needed','evidence':{'consumer_path':x.get('path'),'needed':needed,'provider_path':provider.get('path'),'provider_soname':provider.get('soname')}})
    elif not owners: unresolved.append({'consumer_cpv':consumer,'consumer_path':x.get('path'),'needed':needed,'reason':'provider-not-owned'})
    else: unresolved.append({'consumer_cpv':consumer,'consumer_path':x.get('path'),'needed':needed,'reason':'provider-ambiguous','owners':owners})
- unique={(x['provider_cpv'],x['consumer_cpv'],x['relationship']):x for x in rows}
+ unique={(x['provider_cpv'],x['consumer_cpv'],x['relationship'],x['evidence']['consumer_path'],x['evidence']['provider_path'],x['evidence']['needed']):x for x in rows}
  out={'record_type':'live-elf-dependency-source','schema_version':1,'source_elf_sha256':hashlib.sha256(a.elf.read_bytes()).hexdigest(),'records':sorted(unique.values(),key=lambda x:(x['provider_cpv'],x['consumer_cpv'])),'unresolved':unresolved}
  out['sha256']=hashlib.sha256(canon(out)).hexdigest(); a.output.write_text(json.dumps(out,sort_keys=True,indent=2)+'\n'); print(json.dumps({'records':len(out['records']),'unresolved':len(unresolved),'sha256':out['sha256']}))
 if __name__=='__main__': main()
