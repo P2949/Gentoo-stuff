@@ -101,6 +101,14 @@ elif (( instrumentation_rc == 10 )); then
         actual_plan_sha256=$(/usr/bin/sha256sum -- "${GENTOO_OPT_DEINSTRUMENT_PLAN}" | /usr/bin/awk '{print $1}')
         [[ ${actual_plan_sha256} == "${GENTOO_OPT_DEINSTRUMENT_PLAN_SHA256}" ]] || \
             gentoo_opt_hook_abort 'de-instrumentation plan digest mismatch'
+        /usr/bin/jq -e --arg plan "${GENTOO_OPT_DEINSTRUMENT_PLAN}" \
+            --arg sha "${GENTOO_OPT_DEINSTRUMENT_PLAN_SHA256}" \
+            --arg cpv "${GENTOO_OPT_TARGET_CPV}" \
+            '(.schema == "deinstrument-pending-v1") and (.state == "armed") and
+             (.plan == $plan) and (.plan_sha256 == $sha) and
+             ((.cpvs // []) | index($cpv) != null)' \
+            "${deinstrument_marker}" >/dev/null 2>&1 || \
+            gentoo_opt_hook_abort 'de-instrumentation marker authority mismatch'
         /usr/bin/jq -e --arg cpv "${GENTOO_OPT_TARGET_CPV}" \
             '[.batches[]?.cpvs[]?] | index($cpv) != null' \
             "${GENTOO_OPT_DEINSTRUMENT_PLAN}" >/dev/null 2>&1 || \

@@ -31,9 +31,13 @@ def main() -> int:
     ]
     if instrumented:
         raise SystemExit(f"REFUSED: {len(instrumented)} instrumented records remain")
-    unexpected = [r for r in records if not r.get("error")]
-    if unexpected:
-        raise SystemExit("REFUSED: scan contains unexplained non-instrumented records")
+    unresolved = [
+        r for r in records
+        if r.get("error")
+        and r.get("terminal_disposition") != "unsupported-by-upstream-toolchain/prebuilt"
+    ]
+    if unresolved:
+        raise SystemExit("REFUSED: scan contains unresolved inspection failures")
     if not args.marker.is_file() or args.marker.is_symlink():
         raise SystemExit("REFUSED: de-instrumentation marker is not a regular file")
     if os.geteuid() != 0:

@@ -110,6 +110,9 @@ def main() -> int:
                           "plan_sha256": plan_sha}, sort_keys=True))
         return 0
     per_package = []
+    command = None
+    proc_rc = 0
+    terminal_state = "complete"
     with log.open("x", encoding="utf-8") as stream:
         stream.write("PLAN_SHA256: " + plan_sha + "\n")
         for cpv in cpvs:
@@ -128,13 +131,17 @@ def main() -> int:
             if pretend.returncode != 0 or proposed != [cpv]:
                 stream.write(f"REFUSED_TARGET_RESOLUTION: expected={[cpv]!r} proposed={proposed!r}\n")
                 per_package.append({"cpv": cpv, "exit_status": pretend.returncode or 1, "state": "refused-target-resolution"})
+                terminal_state = "refused-target-resolution"
+                proc_rc = pretend.returncode or 1
                 break
             command = [*base_command, atom]
             stream.write("COMMAND: " + " ".join(command) + "\n")
             stream.flush()
             proc = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, env=env)
+            proc_rc = proc.returncode
             per_package.append({"cpv": cpv, "exit_status": proc.returncode, "state": "complete" if proc.returncode == 0 else "failed"})
             if proc.returncode != 0:
+                terminal_state = "failed"
                 break
     finished = time.time()
     record = {
@@ -143,12 +150,13 @@ def main() -> int:
         "plan": {"path": str(args.plan.resolve()), "sha256": digest(args.plan)},
         "cpvs": cpvs,
         "marker": str(MARKER),
-        "command": command,
+        "command": command or [*base_command, "<refused-before-emerge>"],
         "packages": per_package,
         "environment": {"GENTOO_OPT_MODE": "off", "GENTOO_OPT_DEINSTRUMENT": "1", "LLVM_PROFILE_FILE": "/dev/null"},
         "started_epoch": started,
         "finished_epoch": finished,
-        "exit_status": proc.returncode,
+        "exit_status": proc_rc,
+        "state": terminal_state,
         "log": {"path": str(log.resolve()), "sha256": digest(log)},
         "marker_cleared": False,
     }
