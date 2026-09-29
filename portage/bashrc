@@ -1296,6 +1296,22 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
         gentoo_opt_append_flag_once CXXFLAGS -funified-lto
         export CXXFLAGS
     fi
+    if [[ ${CATEGORY-}/${PF-} == media-libs/libjxl-* ]]; then
+        # The installed libjxl ABI was produced with this package's reviewed
+        # native optimization policy.  Keep that policy while removing only
+        # the stale profile-generation path; otherwise libjxl_cms loses its
+        # exported libstdc++ vector symbols at install QA.
+        for variable in CFLAGS CXXFLAGS; do
+            for flag in -march=native -Ofast -falign-functions=32 \
+                -falign-loops=32 -ftree-vectorize -fno-plt -fomit-frame-pointer \
+                -fno-semantic-interposition -fno-signed-zeros \
+                -fno-trapping-math -fno-strict-aliasing -fno-math-errno \
+                -fno-stack-protector; do
+                gentoo_opt_append_flag_once "${variable}" "${flag}"
+            done
+            export "${variable}"
+        done
+    fi
 }
 
 gentoo_opt_strip_inherited_rust_optimization_policy() {
@@ -1347,6 +1363,18 @@ gentoo_opt_strip_deinstrumentation_policy() {
         gentoo_opt_append_flag_once CXXFLAGS -fsplit-lto-unit
         gentoo_opt_append_flag_once CXXFLAGS -funified-lto
         export CXXFLAGS
+    fi
+    if [[ ${CATEGORY-}/${PF-} == media-libs/libjxl-* ]]; then
+        for variable in CFLAGS CXXFLAGS; do
+            for flag in -march=native -Ofast -falign-functions=32 \
+                -falign-loops=32 -ftree-vectorize -fno-plt -fomit-frame-pointer \
+                -fno-semantic-interposition -fno-signed-zeros \
+                -fno-trapping-math -fno-strict-aliasing -fno-math-errno \
+                -fno-stack-protector; do
+                gentoo_opt_append_flag_once "${variable}" "${flag}"
+            done
+            export "${variable}"
+        done
     fi
 }
 
