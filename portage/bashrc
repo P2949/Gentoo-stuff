@@ -1280,6 +1280,13 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
     # The normal optimization scrub removes vtable-emission policy, so retain
     # the minimal ABI-preserving flag for its exact de-instrumentation rebuild.
     if [[ ${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-* ]]; then
+        # The installed Abseil ABI was produced with this retained policy;
+        # removing it changes weak RTTI/vtable retention even without PGO.
+        for flag in -mllvm -polly -mllvm -polly-vectorizer=stripmine -march=native \
+            -O3 -ffast-math -fno-plt -fomit-frame-pointer \
+            -fno-semantic-interposition -fno-strict-aliasing -fno-stack-protector; do
+            gentoo_opt_append_flag_once CXXFLAGS "${flag}"
+        done
         gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables
         gentoo_opt_append_flag_once CXXFLAGS -fstrict-vtable-pointers
         gentoo_opt_append_flag_once CXXFLAGS -flto=thin
@@ -1325,6 +1332,13 @@ gentoo_opt_strip_deinstrumentation_policy() {
     # installed ABI requires these weak RTTI/vtable definitions during the
     # exact de-instrumentation rebuild, so restore only this reviewed flag.
     if [[ ${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-* ]]; then
+        # The installed Abseil ABI was produced with this retained policy;
+        # removing it changes weak RTTI/vtable retention even without PGO.
+        for flag in -mllvm -polly -mllvm -polly-vectorizer=stripmine -march=native \
+            -O3 -ffast-math -fno-plt -fomit-frame-pointer \
+            -fno-semantic-interposition -fno-strict-aliasing -fno-stack-protector; do
+            gentoo_opt_append_flag_once CXXFLAGS "${flag}"
+        done
         gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables
         gentoo_opt_append_flag_once CXXFLAGS -fstrict-vtable-pointers
         gentoo_opt_append_flag_once CXXFLAGS -flto=thin
