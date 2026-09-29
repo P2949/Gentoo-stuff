@@ -24,7 +24,7 @@ def main():
    env={}
    for n in ('CFLAGS','CXXFLAGS','LDFLAGS','CHOST','FEATURES','USE','REPOSITORY'):
     p=os.path.join(root,n)
-   if os.path.isfile(p):env[n]=open(p,errors='replace').read().strip()
+    if os.path.isfile(p):env[n]=open(p,errors='replace').read().strip()
    inherited=[]
    inherited_path=os.path.join(root,'INHERITED')
    if os.path.isfile(inherited_path):

@@ -38,7 +38,7 @@ def inspect(item: dict) -> dict:
               "status": "clean-normal", "error": None}
     try:
         instrumented, kind = _detector.inspect_elf(Path(path))
-        meta = subprocess.run(["/usr/bin/readelf", "-h", "--", path], stdout=subprocess.PIPE,
+        meta = subprocess.run(["/usr/bin/readelf", "-SWn", "-h", "--", path], stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, check=False, timeout=30, text=True)
         if meta.returncode != 0:
             raise _detector.InspectionError(f"readelf metadata exit {meta.returncode}: {meta.stderr.strip()}")
@@ -93,6 +93,8 @@ def decode_environment(vdb: Path, cpv: str) -> dict:
             if len(value) >= 2 and value[0] == value[-1] == '"':
                 value = value[1:-1]
             values[match.group(1)] = value
+    if re.search(r"(?m)^declare -a QA_PREBUILT=\(", text) or re.search(r"(?m)^QA_PREBUILT=", text):
+        values["QA_PREBUILT"] = "present"
     return values
 
 
@@ -109,17 +111,6 @@ def classify_origin(environment: dict) -> str:
     if profile:
         return "unknown-origin"
     return "pre-framework-or-unknown"
-
-
-TERMINAL_PREBUILT_CPVS = {
-    "app-autodesk/adp-desktop-sdk-6.3.34-r1",
-    "app-autodesk/adsk-licensing-16.0.3.14414",
-    "dev-games/unityhub-3.21.3",
-    "media-sound/spotify-1.2.96",
-    "media-gfx/maya-2027.2-r2",
-    "app-editors/vscode-1.137.0",
-    "www-client/firefox-bin-152.0.5",
-}
 
 
 def main() -> None:
@@ -149,7 +140,7 @@ def main() -> None:
         if record["instrumentation_markers"]:
             record["vdb_identity"] = vdb_identity(record["owner_cpv"], vdb)
             record["environment"] = decode_environment(vdb, record["owner_cpv"])
-            if record["owner_cpv"] in TERMINAL_PREBUILT_CPVS:
+            if record.get("environment", {}).get("QA_PREBUILT") == "present":
                 record["origin"] = "terminal-prebuilt-unsupported"
                 record["terminal_disposition"] = "unsupported-by-upstream-toolchain/prebuilt"
             else:

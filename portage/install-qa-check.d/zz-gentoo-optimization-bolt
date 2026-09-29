@@ -30,20 +30,32 @@ gentoo_opt_hook_abort() {
 # ABI safety net for ordinary package installs, independent of BOLT mode.
 qa_implementation=${BASH_SOURCE[0]}
 qa_generation=${qa_implementation%/qa/*}
-if [[ ${qa_generation} == "${qa_implementation}" ]]; then
-    qa_generation=/usr/local/libexec/gentoo-optimization
-fi
-[[ ${qa_generation} == /* && -d ${qa_generation} ]] || \
-    gentoo_opt_hook_abort 'QA implementation generation root is unavailable'
-qa_libexec=${qa_generation}
-[[ ${qa_generation##*/} == gentoo-optimization ]] || qa_libexec=${qa_generation}/libexec
-abi_guard=${qa_libexec}/scripts/optimization/verify/abi-guard.py
-if [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 || -n ${GENTOO_OPT_ABI_GUARD:-} ]]; then
+test_helpers=0
+if [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 || -n ${GENTOO_OPT_ABI_GUARD:-} || -n ${GENTOO_OPT_INSTRUMENTATION_CHECKER:-} ]]; then
     [[ -z ${EBUILD_PHASE-} ]] || \
         gentoo_opt_hook_abort 'test-only ABI guard override is forbidden in an ebuild phase'
     [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 && -n ${GENTOO_OPT_ABI_GUARD:-} ]] || \
         gentoo_opt_hook_abort 'incomplete ABI guard fixture override'
+    [[ ${GENTOO_OPT_ABI_GUARD} == /* && -x ${GENTOO_OPT_ABI_GUARD} ]] || \
+        gentoo_opt_hook_abort 'ABI guard fixture path must be absolute and executable'
+    [[ -n ${GENTOO_OPT_INSTRUMENTATION_CHECKER:-} && ${GENTOO_OPT_INSTRUMENTATION_CHECKER} == /* &&
+        -x ${GENTOO_OPT_INSTRUMENTATION_CHECKER} ]] || \
+        gentoo_opt_hook_abort 'instrumentation checker fixture path must be absolute and executable'
+    test_helpers=1
+fi
+if (( test_helpers == 0 )); then
+    if [[ ${qa_generation} == "${qa_implementation}" ]]; then
+        qa_generation=/usr/local/libexec/gentoo-optimization
+    fi
+    [[ ${qa_generation} == /* && -d ${qa_generation} ]] || \
+        gentoo_opt_hook_abort 'QA implementation generation root is unavailable'
+    qa_libexec=${qa_generation}
+    [[ ${qa_generation##*/} == gentoo-optimization ]] || qa_libexec=${qa_generation}/libexec
+    abi_guard=${qa_libexec}/scripts/optimization/verify/abi-guard.py
+    instrumentation_checker=${qa_libexec}/scripts/optimization/lib/check-staged-instrumentation.py
+else
     abi_guard=${GENTOO_OPT_ABI_GUARD}
+    instrumentation_checker=${GENTOO_OPT_INSTRUMENTATION_CHECKER}
 fi
 [[ -x ${abi_guard} ]] || gentoo_opt_hook_abort 'production ABI guard helper is missing'
 # Portage keeps ED/ROOT as shell locals while sourcing install-QA hooks; pass
@@ -65,16 +77,6 @@ unset hook_ed hook_root
 # Instrumented ELF payloads are only admissible for an explicitly targeted
 # generation transaction.  Ordinary/off/profile-use installs must never admit
 # generation markers, even when runtime output was redirected to /dev/null.
-instrumentation_checker=${qa_libexec}/scripts/optimization/lib/check-staged-instrumentation.py
-if [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 || -n ${GENTOO_OPT_INSTRUMENTATION_CHECKER:-} ]]; then
-    [[ -z ${EBUILD_PHASE-} ]] || \
-        gentoo_opt_hook_abort 'test-only instrumentation checker override is forbidden in an ebuild phase'
-    [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 && -n ${GENTOO_OPT_INSTRUMENTATION_CHECKER:-} ]] || \
-        gentoo_opt_hook_abort 'incomplete instrumentation checker fixture override'
-    [[ ${GENTOO_OPT_INSTRUMENTATION_CHECKER} == /* ]] || \
-        gentoo_opt_hook_abort 'instrumentation checker fixture path must be absolute'
-    instrumentation_checker=${GENTOO_OPT_INSTRUMENTATION_CHECKER}
-fi
 [[ -x ${instrumentation_checker} ]] || gentoo_opt_hook_abort 'staged instrumentation checker is missing'
 instrumentation_rc=0
 "${instrumentation_checker}" "${ED:-${D:-.}}" || instrumentation_rc=$?
@@ -82,10 +84,27 @@ if (( instrumentation_rc == 20 || instrumentation_rc == 21 )); then
     gentoo_opt_hook_abort 'staged ELF instrumentation inspection failed'
 elif (( instrumentation_rc == 10 )); then
     if [[ ${GENTOO_OPT_DEINSTRUMENT:-0} == 1 ]]; then
-        # A de-instrumentation transaction intentionally admits the old
-        # markers so the package can be rebuilt without them.  The dedicated
-        # runner sets this only for an exact, marker-clearing transaction and
-        # the ABI guard remains active with its instrumentation-only filter.
+        # A de-instrumentation transaction intentionally admits old markers,
+        # but only after authenticating the exact target and reviewed plan.
+        # The ABI guard remains active with its instrumentation-only filter.
+        deinstrument_marker=/var/lib/gentoo-optimization/state/deinstrument.pending
+        if [[ ${GENTOO_OPT_TEST_MODE:-0} == 1 && -n ${GENTOO_OPT_DEINSTRUMENT_MARKER:-} ]]; then
+            deinstrument_marker=${GENTOO_OPT_DEINSTRUMENT_MARKER}
+        fi
+        [[ -s ${deinstrument_marker} ]] || \
+            gentoo_opt_hook_abort 'de-instrumentation marker is empty'
+        [[ -n ${GENTOO_OPT_TARGET_CPV:-} && ${GENTOO_OPT_TARGET_CPV} == "${CATEGORY-}/${PF-}" ]] || \
+            gentoo_opt_hook_abort 'de-instrumentation target CPV mismatch'
+        [[ -n ${GENTOO_OPT_DEINSTRUMENT_PLAN:-} && -f ${GENTOO_OPT_DEINSTRUMENT_PLAN} &&
+           -n ${GENTOO_OPT_DEINSTRUMENT_PLAN_SHA256:-} ]] || \
+            gentoo_opt_hook_abort 'de-instrumentation plan identity is missing'
+        actual_plan_sha256=$(/usr/bin/sha256sum -- "${GENTOO_OPT_DEINSTRUMENT_PLAN}" | /usr/bin/awk '{print $1}')
+        [[ ${actual_plan_sha256} == "${GENTOO_OPT_DEINSTRUMENT_PLAN_SHA256}" ]] || \
+            gentoo_opt_hook_abort 'de-instrumentation plan digest mismatch'
+        /usr/bin/jq -e --arg cpv "${GENTOO_OPT_TARGET_CPV}" \
+            '[.batches[]?.cpvs[]?] | index($cpv) != null' \
+            "${GENTOO_OPT_DEINSTRUMENT_PLAN}" >/dev/null 2>&1 || \
+            gentoo_opt_hook_abort 'de-instrumentation target is absent from reviewed plan'
         printf 'gentoo-optimization: admitting instrumentation for de-instrumentation cleanup\n' >&2
     elif [[ ${GENTOO_OPT_MODE:-off} != *-generate ||
           -z ${GENTOO_OPT_TARGET_CPV:-} ||

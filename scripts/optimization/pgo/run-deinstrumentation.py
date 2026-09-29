@@ -15,6 +15,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import re
 
 MARKER = Path("/var/lib/gentoo-optimization/state/deinstrument.pending")
 
@@ -38,6 +39,15 @@ def load_plan(path: Path) -> dict:
     if not isinstance(batches, list) or not batches:
         raise SystemExit("REFUSED: plan contains no batches")
     return data
+
+
+def pretend_cpvs(output: str) -> list[str]:
+    found = []
+    for line in output.splitlines():
+        match = re.search(r'^\s*\[(?:ebuild|binary)\s+[^]]*\]\s+([^\s:]+/[^\s:]+)(?::[^\s]*)?::[^\s]+', line)
+        if match:
+            found.append(match.group(1))
+    return sorted(set(found))
 
 
 def main() -> int:
@@ -80,33 +90,50 @@ def main() -> int:
         raise SystemExit("REFUSED: batch evidence already exists; refusing overwrite")
     args.receipt_dir.mkdir(parents=True, exist_ok=True)
     args.log_dir.mkdir(parents=True, exist_ok=True)
-    atom_args = [f"={cpv}" for cpv in cpvs]
-    env = dict(os.environ)
-    env.update(
-        {
-            "LLVM_PROFILE_FILE": "/dev/null",
-            "GENTOO_OPT_DEINSTRUMENT": "1",
-            "GENTOO_OPT_MODE": "off",
-        }
-    )
-    command = [
-        "emerge",
-        "--oneshot",
-        "--nodeps",
-        "--usepkg=n",
-        "--buildpkg=n",
-        "--quiet-build=y",
-        *atom_args,
-    ]
+    plan_sha = digest(args.plan)
+    # The marker is a durable authority input, not a boolean bypass switch.
+    # Bind it to this exact reviewed plan before any transaction starts.
+    marker_payload = json.dumps({"schema": "deinstrument-pending-v1", "plan": str(args.plan.resolve()), "plan_sha256": plan_sha, "cpvs": cpvs}, sort_keys=True) + "\n"
+    if not args.dry_run:
+        marker_existing = MARKER.read_text(encoding="utf-8") if MARKER.exists() else ""
+        try:
+            marker_data = json.loads(marker_existing)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"REFUSED: deinstrument.pending is not an authenticated marker: {exc}")
+        if marker_data.get("plan_sha256") != plan_sha or sorted(marker_data.get("cpvs", [])) != cpvs:
+            raise SystemExit("REFUSED: deinstrument.pending is bound to a different de-instrumentation plan")
+    base_command = ["emerge", "--oneshot", "--nodeps", "--usepkg=n", "--buildpkg=n", "--quiet-build=y"]
     started = time.time()
     if args.dry_run:
         print(json.dumps({"batch_id": args.batch_id, "cpvs": cpvs, "command": command}, sort_keys=True))
         return 0
+    per_package = []
     with log.open("x", encoding="utf-8") as stream:
-        stream.write("COMMAND: " + " ".join(command) + "\n")
-        stream.write("CPVS: " + " ".join(cpvs) + "\n")
-        stream.flush()
-        proc = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, env=env)
+        stream.write("PLAN_SHA256: " + plan_sha + "\n")
+        for cpv in cpvs:
+            atom = f"={cpv}"
+            env = dict(os.environ)
+            env.update({"LLVM_PROFILE_FILE": "/dev/null", "GENTOO_OPT_DEINSTRUMENT": "1",
+                        "GENTOO_OPT_MODE": "off", "GENTOO_OPT_TARGET_CPV": cpv,
+                        "GENTOO_OPT_DEINSTRUMENT_PLAN": str(args.plan.resolve()),
+                        "GENTOO_OPT_DEINSTRUMENT_PLAN_SHA256": plan_sha})
+            pretend_command = ["emerge", "--oneshot", "--pretend", "--verbose", atom]
+            stream.write("PRETEND: " + " ".join(pretend_command) + "\n")
+            pretend = subprocess.run(pretend_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                     text=True, encoding="utf-8", errors="replace", env=env)
+            stream.write(pretend.stdout)
+            proposed = pretend_cpvs(pretend.stdout)
+            if pretend.returncode != 0 or proposed != [cpv]:
+                stream.write(f"REFUSED_TARGET_RESOLUTION: expected={[cpv]!r} proposed={proposed!r}\n")
+                per_package.append({"cpv": cpv, "exit_status": pretend.returncode or 1, "state": "refused-target-resolution"})
+                break
+            command = [*base_command, atom]
+            stream.write("COMMAND: " + " ".join(command) + "\n")
+            stream.flush()
+            proc = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, env=env)
+            per_package.append({"cpv": cpv, "exit_status": proc.returncode, "state": "complete" if proc.returncode == 0 else "failed"})
+            if proc.returncode != 0:
+                break
     finished = time.time()
     record = {
         "schema": "deinstrumentation-batch-receipt-v1",
@@ -115,6 +142,7 @@ def main() -> int:
         "cpvs": cpvs,
         "marker": str(MARKER),
         "command": command,
+        "packages": per_package,
         "environment": {"GENTOO_OPT_MODE": "off", "GENTOO_OPT_DEINSTRUMENT": "1", "LLVM_PROFILE_FILE": "/dev/null"},
         "started_epoch": started,
         "finished_epoch": finished,

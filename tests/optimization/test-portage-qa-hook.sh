@@ -102,11 +102,21 @@ case_deinstrumentation_allows_markers_for_cleanup() (
     DEINSTRUMENT_CHECKER=${TMP}/deinstrumentation-checker.py
     printf '#!/usr/bin/env python3\nraise SystemExit(10)\n' > "${DEINSTRUMENT_CHECKER}"
     chmod +x "${DEINSTRUMENT_CHECKER}"
+    DEINSTRUMENT_MARKER=${TMP}/deinstrument.pending
+    DEINSTRUMENT_PLAN=${TMP}/plan.json
+    printf 'authorized\n' > "${DEINSTRUMENT_MARKER}"
+    printf '{"batches":[{"batch_id":1,"cpvs":["app-test/fixture-1"]}]}\n' > "${DEINSTRUMENT_PLAN}"
+    PLAN_SHA=$(/usr/bin/sha256sum "${DEINSTRUMENT_PLAN}" | /usr/bin/awk '{print $1}')
     GENTOO_OPT_INSTRUMENTATION_CHECKER=${DEINSTRUMENT_CHECKER}
     GENTOO_OPT_MODE=off
     GENTOO_OPT_DEINSTRUMENT=1
+    GENTOO_OPT_TARGET_CPV=app-test/fixture-1
+    GENTOO_OPT_DEINSTRUMENT_MARKER=${DEINSTRUMENT_MARKER}
+    GENTOO_OPT_DEINSTRUMENT_PLAN=${DEINSTRUMENT_PLAN}
+    GENTOO_OPT_DEINSTRUMENT_PLAN_SHA256=${PLAN_SHA}
     CATEGORY=app-test PF=fixture-1
-    export GENTOO_OPT_INSTRUMENTATION_CHECKER GENTOO_OPT_MODE GENTOO_OPT_DEINSTRUMENT CATEGORY PF
+    export GENTOO_OPT_INSTRUMENTATION_CHECKER GENTOO_OPT_MODE GENTOO_OPT_DEINSTRUMENT GENTOO_OPT_TARGET_CPV
+    export GENTOO_OPT_DEINSTRUMENT_MARKER GENTOO_OPT_DEINSTRUMENT_PLAN GENTOO_OPT_DEINSTRUMENT_PLAN_SHA256 CATEGORY PF
     source "${HOOK}"
     [[ -f ${PORTAGE_BUILDDIR}/.installed ]]
 )
@@ -489,6 +499,7 @@ PY_SHADOW_GUARD
 }
 run_case 'off state is a strict no-op' case_off_is_noop
 run_case 'prebuilt instrumentation is terminally allowed' case_prebuilt_instrumentation_is_terminally_allowed
+run_case 'de-instrumentation admission is plan-bound' case_deinstrumentation_allows_markers_for_cleanup
 run_case 'test ABI override is forbidden in ebuild phase' case_test_override_forbidden_in_ebuild_phase
 run_case 'lost active state invalidates the install' case_lost_active_state_is_fatal
 run_case 'requested/active mismatch invalidates the install' case_mismatched_active_state_is_fatal
