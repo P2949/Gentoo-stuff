@@ -100,8 +100,9 @@ def main() -> int:
             marker_data = json.loads(marker_existing)
         except json.JSONDecodeError as exc:
             raise SystemExit(f"REFUSED: deinstrument.pending is not an authenticated marker: {exc}")
-        if marker_data.get("plan_sha256") != plan_sha or sorted(marker_data.get("cpvs", [])) != cpvs:
-            raise SystemExit("REFUSED: deinstrument.pending is bound to a different de-instrumentation plan")
+        marker_cpvs = sorted(set(marker_data.get("cpvs", [])))
+        if marker_data.get("plan_sha256") != plan_sha or not set(cpvs).issubset(marker_cpvs):
+            raise SystemExit("REFUSED: deinstrument.pending is not bound to this de-instrumentation batch")
     base_command = ["emerge", "--oneshot", "--nodeps", "--usepkg=n", "--buildpkg=n", "--quiet-build=y"]
     started = time.time()
     if args.dry_run:
