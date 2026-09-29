@@ -9,6 +9,12 @@ from pathlib import Path
 
 MARKER = Path("/var/lib/gentoo-optimization/state/deinstrument.pending")
 
+TERMINAL_PREBUILT = "unsupported-by-upstream-toolchain/prebuilt"
+
+def terminal_clean(record: dict) -> bool:
+    """Return whether a census record is an authenticated acceptable terminal state."""
+    return record.get("terminal_disposition") == TERMINAL_PREBUILT
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -27,14 +33,14 @@ def main() -> int:
     instrumented = [
         r for r in records
         if r.get("instrumentation_markers")
-        and r.get("terminal_disposition") != "unsupported-by-upstream-toolchain/prebuilt"
+        and not terminal_clean(r)
     ]
     if instrumented:
         raise SystemExit(f"REFUSED: {len(instrumented)} instrumented records remain")
     unresolved = [
         r for r in records
         if r.get("error")
-        and r.get("terminal_disposition") != "unsupported-by-upstream-toolchain/prebuilt"
+        and not terminal_clean(r)
     ]
     if unresolved:
         raise SystemExit("REFUSED: scan contains unresolved inspection failures")
