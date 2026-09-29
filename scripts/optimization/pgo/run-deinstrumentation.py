@@ -105,7 +105,9 @@ def main() -> int:
     base_command = ["emerge", "--oneshot", "--nodeps", "--usepkg=n", "--buildpkg=n", "--quiet-build=y"]
     started = time.time()
     if args.dry_run:
-        print(json.dumps({"batch_id": args.batch_id, "cpvs": cpvs, "command": command}, sort_keys=True))
+        print(json.dumps({"batch_id": args.batch_id, "cpvs": cpvs,
+                          "command": [*base_command, *[f"={c}" for c in cpvs]],
+                          "plan_sha256": plan_sha}, sort_keys=True))
         return 0
     per_package = []
     with log.open("x", encoding="utf-8") as stream:
