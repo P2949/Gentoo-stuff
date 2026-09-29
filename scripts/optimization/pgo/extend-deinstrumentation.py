@@ -39,8 +39,17 @@ def main() -> int:
     old_cpvs = sorted(set(old.get("cpvs", [])))
     if not old_plan.is_file() or old.get("plan_sha256") != digest(old_plan):
         raise SystemExit("REFUSED: existing marker plan is not authenticated")
-    if receipt.get("schema") != "deinstrumentation-batch-receipt-v1" or receipt.get("exit_status") != 0:
-        raise SystemExit("REFUSED: predecessor receipt is not successful")
+    if receipt.get("schema") != "deinstrumentation-batch-receipt-v1":
+        raise SystemExit("REFUSED: predecessor receipt schema is invalid")
+    predecessor_ok = receipt.get("exit_status") == 0
+    if not predecessor_ok:
+        failed_cpvs = set()
+        for package in receipt.get("packages", []):
+            if package.get("exit_status") != 0:
+                failed_cpvs.add(package.get("cpv"))
+        accounted = set(plan.get("accounting", {}).get("inspection_failed_cpvs", []))
+        if not failed_cpvs or not failed_cpvs.issubset(accounted):
+            raise SystemExit("REFUSED: failed predecessor is not explicitly accounted as inspection_failed")
     if receipt.get("plan", {}).get("path") != str(old_plan) or receipt.get("plan", {}).get("sha256") != digest(old_plan):
         raise SystemExit("REFUSED: predecessor receipt does not match marker plan")
     batches = [b for b in plan.get("batches", []) if b.get("batch_id") == args.batch_id]
