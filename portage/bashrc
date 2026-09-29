@@ -1282,6 +1282,8 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
     if [[ ${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-* ]]; then
         gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables
         gentoo_opt_append_flag_once CXXFLAGS -fstrict-vtable-pointers
+        gentoo_opt_append_flag_once CXXFLAGS -flto=thin
+        gentoo_opt_append_flag_once CXXFLAGS -ffat-lto-objects
         gentoo_opt_append_flag_once CXXFLAGS -fwhole-program-vtables
         gentoo_opt_append_flag_once CXXFLAGS -fsplit-lto-unit
         gentoo_opt_append_flag_once CXXFLAGS -funified-lto
@@ -1325,6 +1327,8 @@ gentoo_opt_strip_deinstrumentation_policy() {
     if [[ ${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-* ]]; then
         gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables
         gentoo_opt_append_flag_once CXXFLAGS -fstrict-vtable-pointers
+        gentoo_opt_append_flag_once CXXFLAGS -flto=thin
+        gentoo_opt_append_flag_once CXXFLAGS -ffat-lto-objects
         gentoo_opt_append_flag_once CXXFLAGS -fwhole-program-vtables
         gentoo_opt_append_flag_once CXXFLAGS -fsplit-lto-unit
         gentoo_opt_append_flag_once CXXFLAGS -funified-lto
