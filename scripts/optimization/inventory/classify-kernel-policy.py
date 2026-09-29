@@ -26,13 +26,22 @@ def main():
   if review.get('record_type') != 'source-unavailable-review' or review.get('schema_version') != 1:
    raise SystemExit('REFUSED: invalid source-unavailable review schema')
   for item in review.get('records',[]):
-   cpv=item.get('cpv'); decision=item.get('decision'); evidence=item.get('evidence_paths')
-   if not isinstance(cpv,str) or decision not in {'userspace-transaction','kernel-policy-exclusion'} or not isinstance(evidence,list) or not evidence:
+   cpv=item.get('cpv'); decision=item.get('decision'); evidence=item.get('evidence_paths'); identity=item.get('identity')
+   if not isinstance(cpv,str) or decision not in {'userspace-transaction','kernel-policy-exclusion'} or not isinstance(evidence,list) or not evidence or not isinstance(identity,dict):
     raise SystemExit('REFUSED: malformed source-unavailable review record')
    if cpv in source_review: raise SystemExit(f'REFUSED: duplicate source-unavailable review {cpv}')
    source_review[cpv]=item
  for item in m['packages']:
   cpv=item['cpv']; cat,pf=cpv.split('/',1); root=Path(a.vdb)/cat/pf; evidence=[]
+  def vdb_value(name):
+   p=root/name
+   return p.read_text(errors='replace').strip() if p.is_file() else None
+  actual_identity={'cpv':cpv,'repository':vdb_value('REPOSITORY') or vdb_value('repository'),
+                   'slot':vdb_value('SLOT'),'subslot':vdb_value('SUBSLOT'),
+                   'build_time':vdb_value('BUILD_TIME'),'counter':vdb_value('COUNTER'),
+                   'contents_sha256':hashlib.sha256((root/'CONTENTS').read_bytes()).hexdigest() if (root/'CONTENTS').is_file() else None,
+                   'environment_sha256':hashlib.sha256((root/'environment.bz2').read_bytes()).hexdigest() if (root/'environment.bz2').is_file() else None,
+                   'inherited':vdb_value('INHERITED')}
   cont=root/'CONTENTS'
   if cont.is_file():
    for line in cont.read_text(errors='replace').splitlines():
@@ -78,6 +87,8 @@ def main():
   # only when the exact ebuild phase contains a concrete forbidden mutation.
   concrete_mutation=bool(FORBIDDEN_MUTATION.search(text))
   reviewed=source_review.get(cpv)
+  if reviewed is not None and reviewed.get('identity') != actual_identity:
+   raise SystemExit(f'REFUSED: source-unavailable review identity differs from live VDB for {cpv}')
   if reviewed is not None and not source_unavailable:
    raise SystemExit(f'REFUSED: source-unavailable review supplied for available ebuild {cpv}')
   if reviewed is not None:
