@@ -22,6 +22,17 @@ def main() -> None:
         records = json.loads(output.read_text())["records"]
         assert records[0]["provider_cpv"] == "dev/provider-2"
         assert records[0]["consumer_cpv"] == "app/consumer-1"
+        same_cpv = root / "same-cpv.json"
+        same_output = root / "same-cpv-edges.json"
+        same_cpv.write_text(json.dumps({"artifacts": [
+            {"owner_cpv": "app/consumer-1", "path": "/usr/bin/consumer", "needed": ["libprivate.so.1"]},
+            {"owner_cpv": "app/consumer-1", "path": "/usr/lib/libprivate.so.1", "soname": "libprivate.so.1"},
+        ]}))
+        subprocess.run(["python3", str(SCRIPT), "--elf", str(same_cpv), "--output", str(same_output)], check=True)
+        same_records = json.loads(same_output.read_text())["records"]
+        assert len(same_records) == 1
+        assert same_records[0]["provider_cpv"] == "app/consumer-1"
+        assert same_records[0]["evidence"]["provider_path"] == "/usr/lib/libprivate.so.1"
         refused = subprocess.run(["python3", str(SCRIPT), "--elf", str(source), "--output", str(output)], capture_output=True, text=True)
         assert refused.returncode != 0 and "output already exists" in refused.stderr
         duplicate = root / "duplicate.json"
