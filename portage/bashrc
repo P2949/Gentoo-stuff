@@ -1282,7 +1282,7 @@ gentoo_opt_strip_inherited_clang_profile_flags() {
     if [[ ${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-* ]]; then
         # The installed Abseil ABI was produced with this retained policy;
         # removing it changes weak RTTI/vtable retention even without PGO.
-        for flag in -mllvm -polly -mllvm -polly-vectorizer=stripmine -march=native \
+        for flag in -march=native \
             -O3 -ffast-math -fno-plt -fomit-frame-pointer \
             -fno-semantic-interposition -fno-strict-aliasing -fno-stack-protector; do
             gentoo_opt_append_flag_once CXXFLAGS "${flag}"
@@ -1334,7 +1334,7 @@ gentoo_opt_strip_deinstrumentation_policy() {
     if [[ ${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-* ]]; then
         # The installed Abseil ABI was produced with this retained policy;
         # removing it changes weak RTTI/vtable retention even without PGO.
-        for flag in -mllvm -polly -mllvm -polly-vectorizer=stripmine -march=native \
+        for flag in -march=native \
             -O3 -ffast-math -fno-plt -fomit-frame-pointer \
             -fno-semantic-interposition -fno-strict-aliasing -fno-stack-protector; do
             gentoo_opt_append_flag_once CXXFLAGS "${flag}"
