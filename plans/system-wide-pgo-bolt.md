@@ -10934,3 +10934,22 @@ classified as `unsupported-by-upstream-toolchain/prebuilt`; 32 remain
 rebuild-required or require an explicit package-specific disposition. The
 clean-state verifier correctly refused to clear the marker. No profile wave or
 framework activation is authorized from this state.
+
+### 2026-09-29 residual de-instrumentation batch 1
+
+The authenticated residual plan was extended from the successful GCC receipt using
+`extend-deinstrumentation.py`; the marker now binds the residual plan and the
+union of previously authorized and new CPVs. Batch 1 attempted four exact
+reinstalls. `app-autodesk/adp-desktop-sdk-6.3.34-r1` and
+`app-autodesk/adsk-licensing-16.0.3.14414` completed with exit status 0;
+`dev-cpp/abseil-cpp-20260107.1` failed closed at its existing exported-ABI
+check, so `media-gfx/maya-2027.2-r2` was not attempted. The immutable receipt is
+`/var/lib/gentoo-optimization/reports/deinstrumentation-20260929-residual-b1/batch-0001.json`
+(SHA-256 `db4563437085733c887dbae03fcc6006c171bbb0837270b95dfcbbe27b29b720`).
+
+The post-batch VDB census remains 39 instrumented records across the same 10 CPVs;
+its authoritative census SHA-256 is
+`4aabf70e3664bf6e98f6dbc8d1110ec5fd5766e3abf8c88b3ce48844a2ac2660`, and the
+scanner output SHA-256 is
+`10ba034a25f7e0dac291432c25f6f1a733f92c47a38552adc2e783dbff685367`. The
+marker remains armed and no profile wave or framework activation is authorized.
