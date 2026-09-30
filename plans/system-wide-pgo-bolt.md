@@ -11020,3 +11020,7 @@ A narrowed exact retry of `=media-libs/libde265-1.1.3` with `--nodeps`, `GENTOO_
 ### 2026-09-30 instrumentation-scan authority binding
 
 Hardened `scan-live-instrumentation.py` to require canonical schema/digest validation for a supplied package mutation policy, bind its generation identity when the census provides one, and record the exact mutation-policy SHA-256 in scan output. Terminal kernel-policy exclusions are now retained as explicit records rather than disappearing from the audit output. The focused de-instrumentation state suite passes 12/12 and Python compilation/diff validation pass. This strengthens reusable scan/clear authority; it does not authorize a new generation or profile wave.
+
+### 2026-09-30 loader search and ABI resolution hardening
+
+Hardened the live ELF dependency authority to split colon-separated RPATH/RUNPATH entries, preserve declared search order, refuse ABI-incompatible candidates instead of falling back to them, reject metadata-error providers, and treat an explicit search scope as closed when no provider is visible there. Added focused coverage for ordered colon paths and strict class mismatch refusal; the ELF dependency regression and Python compilation pass. This is source-level authority hardening only; no live generation or profile wave was authorized.
