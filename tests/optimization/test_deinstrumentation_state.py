@@ -69,17 +69,24 @@ class DeinstrumentationStateTests(unittest.TestCase):
                 "path": "/bin/false", "kind": "regular",
                 "elf": {"class": 2, "type": 2, "machine": 62},
             }]}))
-            policy.write_text(json.dumps({"records": [{
+            policy_data = {"record_type": "package-mutation-policy", "schema_version": 1,
+                           "generation_id": "fixture-generation", "records": [{
                 "cpv": "sys-kernel/linux-firmware-1",
                 "decision": "kernel-policy-exclusion",
-            }]}))
+            }]}
+            policy_data["sha256"] = __import__("hashlib").sha256(
+                json.dumps(policy_data, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            policy.write_text(json.dumps(policy_data))
             subprocess.run([
                 sys.executable, str(ROOT / "scripts/optimization/pgo/scan-live-instrumentation.py"),
                 "--census", str(census), "--output", str(output),
                 "--mutation-policy", str(policy), "--vdb", str(tmp / "vdb"),
             ], check=True)
             data = json.loads(output.read_text())
-            self.assertEqual(data["records"], [])
+            self.assertEqual(len(data["records"]), 1)
+            self.assertEqual(data["records"][0]["status"], "terminal-policy-exclusion")
+            self.assertEqual(data["mutation_policy_generation_id"], "fixture-generation")
 
     def test_terminal_prebuilt_is_acceptable_clean_state(self):
         module = load("clear_deinstrumentation", ROOT / "scripts/optimization/pgo/clear-deinstrumentation.py")

@@ -131,8 +131,23 @@ def main() -> None:
         raise SystemExit(f"REFUSED: output already exists: {output}")
     census = json.loads(Path(args.census).read_text())
     policy = {}
+    mutation_policy_sha256 = None
+    mutation_policy_generation = None
     if args.mutation_policy:
         policy_data = json.loads(Path(args.mutation_policy).read_text())
+        if policy_data.get("record_type") != "package-mutation-policy" or policy_data.get("schema_version") != 1:
+            raise SystemExit("REFUSED: unsupported mutation-policy schema")
+        declared = policy_data.get("sha256")
+        unsigned = dict(policy_data)
+        unsigned.pop("sha256", None)
+        expected = hashlib.sha256(json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if not isinstance(declared, str) or declared != expected:
+            raise SystemExit("REFUSED: mutation-policy digest mismatch")
+        census_generation = census.get("generation_id") or census.get("inventory_id")
+        mutation_policy_generation = policy_data.get("generation_id")
+        if census_generation and mutation_policy_generation and census_generation != mutation_policy_generation:
+            raise SystemExit("REFUSED: mutation-policy generation binding mismatch")
+        mutation_policy_sha256 = hashlib.sha256(Path(args.mutation_policy).read_bytes()).hexdigest()
         policy = {
             item.get("cpv"): item
             for item in policy_data.get("records", [])
@@ -172,10 +187,14 @@ def main() -> None:
     records.sort(key=lambda row: (row["path"], row["owner_cpv"]))
     out = {
         "record_type": "live-instrumentation-census",
-        "schema_version": 1,
+        "schema_version": 2,
         "source_census_sha256": census.get("sha256"),
+        "mutation_policy_sha256": mutation_policy_sha256,
+        "mutation_policy_generation_id": mutation_policy_generation,
         "artifact_count": len(items),
-        "records": [x for x in records if x["instrumentation_markers"] or x["error"]],
+        # Keep terminal policy exclusions in the signed accounting output;
+        # dropping them made the scan impossible to audit against policy.
+        "records": [x for x in records if x.get("terminal_disposition") or x["instrumentation_markers"] or x["error"]],
     }
     out["counts"] = {}
     for row in out["records"]:
