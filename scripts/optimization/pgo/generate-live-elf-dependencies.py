@@ -15,15 +15,21 @@ def _search_dirs(consumer):
  """
  origin=_directory(consumer.get("path"))
  values=consumer.get("runpath") or consumer.get("rpath") or []
+ if isinstance(values,str): values=[values]
  out=[]
- for value in values:
-  value=str(value).replace("${ORIGIN}",origin).replace("$ORIGIN",origin)
-  if not value.startswith("/"):
-   value=os.path.normpath(os.path.join(origin,value))
-  out.append(os.path.normpath(value))
+ for raw in values:
+  # Dynamic tags are colon-separated lists.  Preserve declaration order;
+  # empty entries mean the loader's default search scope and are not an
+  # authenticated installed directory here.
+  for value in str(raw).split(":"):
+   if not value: continue
+   value=value.replace("${ORIGIN}",origin).replace("$ORIGIN",origin)
+   if not value.startswith("/"):
+    value=os.path.normpath(os.path.join(origin,value))
+   out.append(os.path.normpath(value))
  return out
 def _provider_matches(consumer, name, providers):
- candidates=list(providers.get(name,()))
+ candidates=[p for p in providers.get(name,()) if not p.get("error")]
  if not candidates:
   return []
  # ELF class and machine are part of the authenticated metadata.  A loader
@@ -31,14 +37,20 @@ def _provider_matches(consumer, name, providers):
  cclass=consumer.get("class"); cmachine=consumer.get("machine")
  if cclass:
   same=[p for p in candidates if not p.get("class") or p.get("class")==cclass]
-  if same: candidates=same
+  if not same: return []
+  candidates=same
  if cmachine:
   same=[p for p in candidates if not p.get("machine") or p.get("machine")==cmachine]
-  if same: candidates=same
+  if not same: return []
+  candidates=same
  search=_search_dirs(consumer)
  if search:
-  scoped=[p for p in candidates if _directory(p.get("path")) in search]
-  if scoped: candidates=scoped
+  scoped=[]
+  for directory in search:
+   scoped.extend(p for p in candidates if _directory(p.get("path")) == directory)
+  # An explicit RPATH/RUNPATH is a closed search scope for this authority;
+  # do not fall back to an unrelated globally matching provider.
+  candidates=scoped
  return candidates
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--elf',required=True,type=Path); ap.add_argument('--output',required=True,type=Path); a=ap.parse_args()

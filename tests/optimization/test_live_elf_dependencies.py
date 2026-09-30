@@ -44,6 +44,24 @@ def main() -> None:
         scoped_records = json.loads(scoped_output.read_text())["records"]
         assert scoped_records[0]["provider_cpv"] == "dev/vendor-1"
         assert scoped_records[0]["evidence"]["provider_path"] == "/opt/vendor/lib/libx.so.1"
+        colon = root / "colon.json"
+        colon_output = root / "colon-edges.json"
+        colon.write_text(json.dumps({"artifacts": [
+            {"owner_cpv": "dev/late-1", "path": "/opt/late/lib/libx.so.1", "soname": "libx.so.1", "class": "ELF64", "machine": "Advanced Micro Devices X86-64"},
+            {"owner_cpv": "dev/first-1", "path": "/opt/first/lib/libx.so.1", "soname": "libx.so.1", "class": "ELF64", "machine": "Advanced Micro Devices X86-64"},
+            {"owner_cpv": "app/colon-1", "path": "/opt/app/bin/app", "needed": ["libx.so.1"], "runpath": ["$ORIGIN/../../missing:$ORIGIN/../../first/lib"], "class": "ELF64", "machine": "Advanced Micro Devices X86-64"},
+        ]}))
+        subprocess.run(["python3", str(SCRIPT), "--elf", str(colon), "--output", str(colon_output)], check=True)
+        colon_records = json.loads(colon_output.read_text())["records"]
+        assert colon_records[0]["provider_cpv"] == "dev/first-1"
+        mismatch = root / "mismatch.json"
+        mismatch_output = root / "mismatch-edges.json"
+        mismatch.write_text(json.dumps({"artifacts": [
+            {"owner_cpv": "dev/wrong-1", "path": "/usr/lib/libx.so.1", "soname": "libx.so.1", "class": "ELF32", "machine": "Advanced Micro Devices X86-64"},
+            {"owner_cpv": "app/mismatch-1", "path": "/usr/bin/app", "needed": ["libx.so.1"], "class": "ELF64", "machine": "Advanced Micro Devices X86-64"},
+        ]}))
+        subprocess.run(["python3", str(SCRIPT), "--elf", str(mismatch), "--output", str(mismatch_output)], check=True)
+        assert json.loads(mismatch_output.read_text())["records"] == []
         refused = subprocess.run(["python3", str(SCRIPT), "--elf", str(source), "--output", str(output)], capture_output=True, text=True)
         assert refused.returncode != 0 and "output already exists" in refused.stderr
         duplicate = root / "duplicate.json"
