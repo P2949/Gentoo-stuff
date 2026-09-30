@@ -8,7 +8,7 @@ policy explicitly selects the public ABI lane.
 
 --- a/lib/jxl_cms.cmake
 +++ b/lib/jxl_cms.cmake
-@@ -12,11 +12,16 @@
+@@ -12,10 +12,15 @@
    ${JPEGXL_INTERNAL_CMS_SOURCES}
  )
  target_compile_options(jxl_cms PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
@@ -17,7 +17,6 @@ policy explicitly selects the public ABI lane.
 +        -fno-inline
 +        -fvisibility=default
 +        -fno-visibility-inlines-hidden)
- target_compile_options(jxl_cms PRIVATE -fkeep-inline-functions)
  set_target_properties(jxl_cms PROPERTIES
          POSITION_INDEPENDENT_CODE ON
 -        CXX_VISIBILITY_PRESET hidden
