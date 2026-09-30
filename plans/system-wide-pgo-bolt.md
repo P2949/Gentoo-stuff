@@ -11339,3 +11339,8 @@ The exact optimization-off `=media-video/obs-studio-32.2.2` rebuild completed an
 ### 2026-09-30 OpenCV 4.12.0-r2 baseline reinstall verified
 
 The exact optimization-off `=media-libs/opencv-4.12.0-r2` multilib rebuild completed and merged against the current codec/FFmpeg stack. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-opencv-20260930/emerge.log` (SHA-256 `5e3da9a27edda96daea512c0ac1130ef8e5ab0aaba6f19b642ac1849c4a559d0`). VDB verification reports `media-libs/opencv-4.12.0-r2`; `pkg-config --modversion opencv4` reports 4.12.0. Python bindings are disabled by the active USE configuration, so no `cv2` import is expected or counted.
+
+
+### 2026-09-30 Kdenlive 26.08.1 baseline reinstall verified
+
+The exact optimization-off `=kde-apps/kdenlive-26.08.1` rebuild completed and merged against the current FFmpeg/MLT/Qt multimedia stack. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-kdenlive-20260930/emerge.log` (SHA-256 `40c8d4ee15c9e1f9f6e94632bf07423b75414991be4b90d8686208521bbb88aa`). VDB verification reports `kde-apps/kdenlive-26.08.1`; `/usr/bin/kdenlive --version` reports 26.08.1. Storage remained approximately 138 GiB free during the build. This is ordinary userspace baseline evidence only; no PGO/BOLT claim is made.
