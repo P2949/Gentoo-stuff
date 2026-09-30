@@ -13,11 +13,18 @@ def main() -> int:
     inspection_failed = set()
     for record in records:
         cpv = record.get('owner_cpv')
-        if not cpv or not record.get('instrumentation_markers'):
+        if not cpv:
             continue
         if record.get('error') or record.get('inspection_error'):
             inspection_failed.add(cpv)
-        elif record.get('terminal_disposition') == 'unsupported-by-upstream-toolchain/prebuilt':
+            # Inspection failure is itself authoritative unresolved state;
+            # scanners deliberately provide no marker list when readelf or
+            # the staged artifact cannot be opened.  Account for it before
+            # testing marker presence so it cannot disappear from the plan.
+            continue
+        if not record.get('instrumentation_markers'):
+            continue
+        if record.get('terminal_disposition') == 'unsupported-by-upstream-toolchain/prebuilt':
             terminal_prebuilt.add(cpv)
         else:
             rebuild_required.add(cpv)

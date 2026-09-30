@@ -46,6 +46,7 @@ class DeinstrumentationStateTests(unittest.TestCase):
                  "terminal_disposition": "unsupported-by-upstream-toolchain/prebuilt"},
                 {"owner_cpv": "app/a-1", "instrumentation_markers": ["prf"]},
                 {"owner_cpv": "app/b-1", "instrumentation_markers": ["prf"], "error": "readelf"},
+                {"owner_cpv": "app/c-1", "instrumentation_markers": [], "error": "missing staged artifact"},
             ]}))
             result = subprocess.run([
                 sys.executable, str(ROOT / "scripts/optimization/pgo/plan-deinstrumentation.py"),
@@ -55,7 +56,7 @@ class DeinstrumentationStateTests(unittest.TestCase):
             data = json.loads(plan.read_text())
             self.assertEqual(data["batches"][0]["cpvs"], ["app/a-1"])
             self.assertEqual(data["accounting"]["terminal_retained_prebuilt_cpvs"], ["vendor/a-1"])
-            self.assertEqual(data["accounting"]["inspection_failed_cpvs"], ["app/b-1"])
+            self.assertEqual(data["accounting"]["inspection_failed_cpvs"], ["app/b-1", "app/c-1"])
 
     def test_terminal_prebuilt_is_acceptable_clean_state(self):
         module = load("clear_deinstrumentation", ROOT / "scripts/optimization/pgo/clear-deinstrumentation.py")
