@@ -21,6 +21,7 @@ def main():
  sources=((p,'records','portage-runtime'),(p,'build_records','portage-build'),(e,'records','elf-needed'),(e,'edges','elf-needed'))
  seen=set()
  elf_rows={}
+ source_rows={}
  for source,key,rel in sources:
   if key not in source: continue
   for x in source.get(key,[]):
@@ -32,7 +33,21 @@ def main():
     identity=(provider,consumer,row['relationship'])
     if identity in seen:
      if row['relationship'] != 'elf-needed':
-      raise SystemExit(f"REFUSED: duplicate reverse-dependency edge: {identity}")
+      existing = source_rows[identity]
+      # Distinct Portage dependency expressions (for example slot and USE
+      # variants in one RDEPEND) prove the same typed scheduling edge. Keep
+      # each authenticated expression, but reject an exact duplicate record.
+      if row.get('evidence', {}) == existing.get('evidence', {}):
+       raise SystemExit(f"REFUSED: duplicate reverse-dependency edge: {identity}")
+      evidence = existing.get('evidence', {})
+      if 'dependency_edges' in evidence:
+       proofs = evidence['dependency_edges']
+       if proofs and proofs[-1] == row.get('evidence', {}):
+        raise SystemExit(f"REFUSED: duplicate reverse-dependency edge: {identity}")
+       proofs.append(row.get('evidence', {}))
+      else:
+       existing['evidence'] = {'dependency_edges': [evidence, row.get('evidence', {})]}
+      continue
      # Multiple owned artifacts can legitimately establish the same package
      # relationship.  Keep every artifact-level proof while projecting one
      # package-level scheduling edge.
@@ -47,6 +62,8 @@ def main():
     if row['relationship'] == 'elf-needed':
      row['evidence'] = {"artifact_edges": [row.get('evidence', {})]}
      elf_rows[identity] = row
+    else:
+     source_rows[identity] = row
     rows.append(row)
  ordered=sorted(rows,key=lambda x:(x['provider_cpv'],x['consumer_cpv'],x['relationship']))
  out={'record_type':'reverse-dependency-graph','schema_version':2,'source_contract':{'portage_runtime_records':sum(1 for x in ordered if x['relationship']=='portage-runtime'),'portage_build_records':sum(1 for x in ordered if x['relationship']=='portage-build'),'elf_needed_records':sum(1 for x in ordered if x['relationship']=='elf-needed')},'portage_source_sha256':hashlib.sha256(Path(a.portage).read_bytes()).hexdigest(),'elf_source_sha256':hashlib.sha256(Path(a.elf).read_bytes()).hexdigest(),'records':ordered}

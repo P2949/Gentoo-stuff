@@ -28,7 +28,7 @@ def main():
     if actual_vdb != requested_vdb:
         raise SystemExit(f'REFUSED: Portage VDB root mismatch: requested={requested_vdb} actual={actual_vdb}')
     cpvs=sorted(db.cpv_all())
-    rows=[]; source_hashes=[]; source_errors=[]
+    runtime_rows=[]; build_rows=[]; source_hashes=[]; source_errors=[]
     for cpv in cpvs:
         try: vals=db.aux_get(cpv,['DEPEND','RDEPEND','PDEPEND','BDEPEND','IDEPEND','USE','BUILD_TIME','CONTENTS','REPOSITORY','SLOT','SUBSLOT'])
         except Exception as exc:
@@ -42,14 +42,16 @@ def main():
                 evaluated = atoms(expr,useflags)
             except Exception as exc:
                 source_errors.append({'cpv':cpv,'field':field,'stage':'dependency-parse','error':str(exc)})
-                rows.append({'consumer_cpv':cpv,'relationship':'portage-parse-error','evidence':{'field':field,'error':str(exc),'expression_sha256':hashlib.sha256(expr.encode()).hexdigest()}})
+                target = build_rows if field in {'DEPEND','BDEPEND','IDEPEND'} else runtime_rows
+                target.append({'consumer_cpv':cpv,'relationship':'portage-build' if field in {'DEPEND','BDEPEND','IDEPEND'} else 'portage-runtime','evidence':{'field':field,'error':str(exc),'expression_sha256':hashlib.sha256(expr.encode()).hexdigest()}})
                 continue
             for atom in evaluated:
                 try:
                     providers = sorted(db.match(atom))
                 except Exception as exc:
                     source_errors.append({'cpv':cpv,'field':field,'atom':atom,'stage':'provider-match','error':str(exc)})
-                    rows.append({'consumer_cpv':cpv,'relationship':'portage-provider-error','evidence':{'field':field,'atom':atom,'error':str(exc)}})
+                    target = build_rows if field in {'DEPEND','BDEPEND','IDEPEND'} else runtime_rows
+                    target.append({'consumer_cpv':cpv,'relationship':'portage-build' if field in {'DEPEND','BDEPEND','IDEPEND'} else 'portage-runtime','evidence':{'field':field,'atom':atom,'error':str(exc)}})
                     continue
                 relation = 'portage-build' if field in {'DEPEND','BDEPEND','IDEPEND'} else 'portage-runtime'
                 for provider in providers:
@@ -58,9 +60,11 @@ def main():
                     except Exception as exc:
                         source_errors.append({'cpv':cpv,'provider_cpv':provider,'field':field,'stage':'provider-metadata','error':str(exc)})
                         continue
-                    rows.append({'provider_cpv':provider,'consumer_cpv':cpv,'relationship':relation,'evidence':{'vdb_cpv':cpv,'field':field,'atom':atom,'evaluated_atom':atom,'useflags':sorted(useflags),'provider_repository':provider_vals[0],'provider_slot':provider_vals[1],'provider_subslot':provider_vals[2]}})
-    unique={(x.get('provider_cpv'),x['consumer_cpv'],x['relationship'],json.dumps(x.get('evidence',{}),sort_keys=True)):x for x in rows}
-    out={'record_type':'live-portage-dependency-source','schema_version':2,'vdb_root':str(Path(a.vdb).resolve()),'cpv_count':len(cpvs),'source_digest':hashlib.sha256(canon(sorted(source_hashes))).hexdigest(),'source_errors':source_errors,'records':sorted(unique.values(),key=lambda x:(x.get('provider_cpv',''),x['consumer_cpv'],x['relationship']))}
+                    target = build_rows if relation == 'portage-build' else runtime_rows
+                    target.append({'provider_cpv':provider,'consumer_cpv':cpv,'relationship':relation,'evidence':{'vdb_cpv':cpv,'field':field,'atom':atom,'evaluated_atom':atom,'useflags':sorted(useflags),'provider_repository':provider_vals[0],'provider_slot':provider_vals[1],'provider_subslot':provider_vals[2]}})
+    def unique(rows):
+        return sorted({(x.get('provider_cpv'),x['consumer_cpv'],x['relationship'],json.dumps(x.get('evidence',{}),sort_keys=True)):x for x in rows}.values(),key=lambda x:(x.get('provider_cpv',''),x['consumer_cpv'],x['relationship']))
+    out={'record_type':'live-portage-dependency-source','schema_version':2,'vdb_root':str(Path(a.vdb).resolve()),'cpv_count':len(cpvs),'source_digest':hashlib.sha256(canon(sorted(source_hashes))).hexdigest(),'source_errors':source_errors,'records':unique(runtime_rows),'build_records':unique(build_rows)}
     out['sha256']=hashlib.sha256(canon(out)).hexdigest(); Path(a.output).write_text(json.dumps(out,sort_keys=True,indent=2)+'\n')
     if source_errors:
         raise SystemExit(f"REFUSED: Portage dependency source contains {len(source_errors)} metadata/parse errors; see {a.output}")
