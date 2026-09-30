@@ -93,6 +93,8 @@ class DeinstrumentationStateTests(unittest.TestCase):
         bashrc = (ROOT / "portage/bashrc").read_text()
         self.assertIn("${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-*", bashrc)
         self.assertIn("gentoo_opt_append_flag_once CXXFLAGS -fforce-emit-vtables", bashrc)
+        self.assertIn("gentoo_opt_authorized_deinstrument_target", bashrc)
+        self.assertIn("Keep the established package ABI and optimization policy intact", bashrc)
 
     def test_extended_marker_remains_armed(self):
         source = (ROOT / "scripts/optimization/pgo/extend-deinstrumentation.py").read_text()
