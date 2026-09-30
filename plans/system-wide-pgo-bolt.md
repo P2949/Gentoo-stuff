@@ -11304,3 +11304,8 @@ The exact optimization-off `=media-libs/mlt-7.40.0` rebuild completed and merged
 ### 2026-09-30 PipeWire 1.6.9 baseline reinstall verified
 
 The exact optimization-off `=media-video/pipewire-1.6.9` multilib transaction completed and merged. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-pipewire-20260930/emerge.log` (SHA-256 `0eb91c5f2f085fb264d246202c6e258071c09281651ffaf2c651589d726254fe`). VDB verification reports `media-video/pipewire-1.6.9`; independent `/usr/bin/pw-cli --version` and `/usr/bin/pipewire --version` checks both report libpipewire 1.6.9. This is ordinary userspace baseline evidence only; no PGO/BOLT claim is made.
+
+
+### 2026-09-30 MPV 0.41.0-r2 baseline reinstall verified
+
+The exact optimization-off `=media-video/mpv-0.41.0-r2` rebuild completed and merged against FFmpeg 8.1.3. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-mpv-20260930/emerge.log` (SHA-256 `26e484e94c16cf4cc914863bd855c5308f1388b51154791762c3f09a95172ac4`). VDB verification reports `media-video/mpv-0.41.0-r2`; an isolated `/usr/bin/mpv --no-config --version` check reports mpv 0.41.0 and FFmpeg 8.1.3. The user's existing mpv configuration was excluded from the check because it contains unsupported Vulkan options; no PGO/BOLT claim is made.
