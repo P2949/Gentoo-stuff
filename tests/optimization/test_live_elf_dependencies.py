@@ -33,6 +33,17 @@ def main() -> None:
         assert len(same_records) == 1
         assert same_records[0]["provider_cpv"] == "app/consumer-1"
         assert same_records[0]["evidence"]["provider_path"] == "/usr/lib/libprivate.so.1"
+        scoped = root / "scoped.json"
+        scoped_output = root / "scoped-edges.json"
+        scoped.write_text(json.dumps({"artifacts": [
+            {"owner_cpv": "dev/system-1", "path": "/usr/lib/libx.so.1", "soname": "libx.so.1", "class": "ELF64", "machine": "Advanced Micro Devices X86-64"},
+            {"owner_cpv": "dev/vendor-1", "path": "/opt/vendor/lib/libx.so.1", "soname": "libx.so.1", "class": "ELF64", "machine": "Advanced Micro Devices X86-64"},
+            {"owner_cpv": "app/scoped-1", "path": "/opt/vendor/bin/app", "needed": ["libx.so.1"], "runpath": ["$ORIGIN/../lib"], "class": "ELF64", "machine": "Advanced Micro Devices X86-64"},
+        ]}))
+        subprocess.run(["python3", str(SCRIPT), "--elf", str(scoped), "--output", str(scoped_output)], check=True)
+        scoped_records = json.loads(scoped_output.read_text())["records"]
+        assert scoped_records[0]["provider_cpv"] == "dev/vendor-1"
+        assert scoped_records[0]["evidence"]["provider_path"] == "/opt/vendor/lib/libx.so.1"
         refused = subprocess.run(["python3", str(SCRIPT), "--elf", str(source), "--output", str(output)], capture_output=True, text=True)
         assert refused.returncode != 0 and "output already exists" in refused.stderr
         duplicate = root / "duplicate.json"

@@ -4,6 +4,42 @@ from __future__ import annotations
 import argparse, hashlib, json, os
 from pathlib import Path
 def canon(v): return json.dumps(v,sort_keys=True,separators=(",",":")).encode()
+def _directory(path):
+ return os.path.dirname(path or "/") or "/"
+def _search_dirs(consumer):
+ """Return the consumer's authenticated loader search directories.
+
+ The metadata stores paths as installed absolute paths.  Expand only the
+ loader's `$ORIGIN` token; do not interpret arbitrary shell syntax.
+ RUNPATH has precedence over RPATH for the executable's direct lookup.
+ """
+ origin=_directory(consumer.get("path"))
+ values=consumer.get("runpath") or consumer.get("rpath") or []
+ out=[]
+ for value in values:
+  value=str(value).replace("${ORIGIN}",origin).replace("$ORIGIN",origin)
+  if not value.startswith("/"):
+   value=os.path.normpath(os.path.join(origin,value))
+  out.append(os.path.normpath(value))
+ return out
+def _provider_matches(consumer, name, providers):
+ candidates=list(providers.get(name,()))
+ if not candidates:
+  return []
+ # ELF class and machine are part of the authenticated metadata.  A loader
+ # never satisfies a 32-bit request with a 64-bit provider (or vice versa).
+ cclass=consumer.get("class"); cmachine=consumer.get("machine")
+ if cclass:
+  same=[p for p in candidates if not p.get("class") or p.get("class")==cclass]
+  if same: candidates=same
+ if cmachine:
+  same=[p for p in candidates if not p.get("machine") or p.get("machine")==cmachine]
+  if same: candidates=same
+ search=_search_dirs(consumer)
+ if search:
+  scoped=[p for p in candidates if _directory(p.get("path")) in search]
+  if scoped: candidates=scoped
+ return candidates
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--elf',required=True,type=Path); ap.add_argument('--output',required=True,type=Path); a=ap.parse_args()
  if a.output.exists(): raise SystemExit('REFUSED: ELF dependency output already exists')
@@ -28,7 +64,7 @@ def main():
  for x in artifacts:
   consumer=x.get('owner_cpv');
   for needed in x.get('needed',[]) or []:
-   matches=providers.get(needed,[])
+   matches=_provider_matches(x,needed,providers)
    owners=sorted({m['owner_cpv'] for m in matches})
    if len(owners)==1:
     for provider in matches:
