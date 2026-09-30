@@ -10,12 +10,12 @@
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "3329af85e6802919fc391d1e1c8390b05cdcb347",
+  "as_of_commit": "45d4e7030a1dbaf14fb3e6112ccc50625f9b6281",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress",
-  "latest_resolver_operation_count": 41,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-2350-post-expat/emerge-pvuDN-world.log",
-  "latest_resolver_report_sha256": "9786ea47513a3a3e45f3ac541cb5f62a06a870308eee807c156ef65f866e0a02",
-  "next_authoritative_action": "implement_or_use_exact_transition_authority_for_tree_sitter_then_refresh_resolver",
+  "latest_resolver_operation_count": 39,
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-post-tree-sitter/emerge-pvuDN-world.log",
+  "latest_resolver_report_sha256": "a25ac5cde00f9ac3a9f7bb0aeb7b668030ac9e195ddbdcf7436ba186cc2572a8",
+  "next_authoritative_action": "apply_exact_transition_authority_to_next_resolver_selected_provider_or_refresh_source_blocker",
   "schema": "current-frontier-v1",
   "temporary_configuration_deviations": [
     "qtspeech-speechd-one-shot-resolution",
