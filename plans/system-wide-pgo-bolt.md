@@ -11698,3 +11698,7 @@ A fresh read-only preserved-rebuild resolver now returns 0 and proposes 20 exact
 ### 2026-10-01 FFmpeg preserved consumer Qt Multimedia success
 
 `=dev-qt/qtmultimedia-6.11.2::gentoo` rebuilt with ccache disabled, exact optimization-off policy, and no dependency expansion. Both Qt multimedia FFmpeg plugin ABIs completed, install-QA passed, and the package merged against FFmpeg 9.0.2. Immutable log SHA-256 is `1ba5cdfaf051b833efcf5e2236c2e3a77429ee6e439062bdf9d4b75f1eb128de`; live VDB `CONTENTS` SHA-256 is `060f9b61368b83b10ce99be1f378dd617e0f0b8d4ca23e0c56d39b70880251e1`; `environment.bz2` SHA-256 is `b7b97e084572c9dc57811bcb0e123433b45d878cf8a5fd9fcfb8c2f8f3f06da1`. Remaining preserved consumers are still pending exact rebuilds.
+
+### 2026-10-01 FFmpeg preserved consumer KFileMetadata success
+
+`=kde-frameworks/kfilemetadata-6.30.0::gentoo` rebuilt with ccache disabled, exact optimization-off policy, and no dependency expansion. The FFmpeg extractor plugin and both multilib portions passed install-QA and merged against FFmpeg 9.0.2. Immutable log SHA-256 is `c16a35d72f67fc19bf23d7c8a5e9a5cf9ae678bfce4e6c5733920af3316e3b9f`; live VDB `CONTENTS` SHA-256 is `752aa3aacdc5c6b70fcc56350eb88c147a47ae76e6980c481cdba8a93e22b6bd`; `environment.bz2` SHA-256 is `6e7c7dcffe6c4d49cd359820f427a2742d1e7af96ba52a6cd6326b7dd1da4b0f`.

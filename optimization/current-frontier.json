@@ -13,7 +13,7 @@
   "latest_resolver_operation_count": 36,
   "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-235442-post-vscode/emerge-pvuDN-world.log",
   "latest_resolver_report_sha256": "ac7854f9438b0f8dbdf08325823e1fd3b947243e367b724ad1d83499d718bd4b",
-  "next_authoritative_action": "continue exact preserved FFmpeg consumer closure with KFileMetadata, OpenCV, Wine stable, OBS, Gegl, MLT, OpenImageIO, Kdenlive and Blender; leave SPIR-V transition separate",
+  "next_authoritative_action": "continue exact preserved FFmpeg consumer closure with OpenCV, stable Wine, OBS, Gegl, MLT, OpenImageIO, Kdenlive and Blender",
   "schema": "current-frontier-v1",
   "temporary_configuration_deviations": [
     "qtspeech-speechd-one-shot-resolution",
