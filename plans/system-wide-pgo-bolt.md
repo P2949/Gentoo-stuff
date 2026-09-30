@@ -11028,3 +11028,7 @@ Hardened the live ELF dependency authority to split colon-separated RPATH/RUNPAT
 ### 2026-09-30 de-instrumentation marker-clear authority binding
 
 Hardened `clear-deinstrumentation.py` so marker removal requires a schema-2 live scan whose source census and mutation-policy hashes match explicitly supplied authorities, and whose armed marker is bound to the exact plan path and digest. Added focused regression coverage for the required bindings; the de-instrumentation state suite now passes 13/13 and Python compilation/diff validation pass. This improves reusable state-machine integrity without changing the completed live clean-state result.
+
+### 2026-09-30 reverse-dependency artifact aggregation
+
+The reverse-dependency producer now preserves multiple ELF artifact-level proofs for the same provider/consumer package relationship while emitting one aggregated `elf-needed` scheduling edge. Duplicate Portage dependency records remain fail-closed. Focused reverse-dependency regression and Python compilation pass; no live graph was regenerated from the moving baseline.
