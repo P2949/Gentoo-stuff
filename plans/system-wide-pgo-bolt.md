@@ -11048,3 +11048,15 @@ The pre-existing `media-gfx/blender-4.5.5` userspace transaction (process 244636
 ### 2026-09-30 Kdenlive exact maintenance retry
 
 After the Blender transaction exposed inherited generate-mode state, the temporary exact-CPV maintenance overlay was materialized for the live baseline retry. `=kde-apps/kdenlive-26.08.1` was rebuilt with `--nodeps`, optimization mode explicitly off, and `LLVM_PROFILE_FILE=/dev/null`; it merged successfully and the temporary overlay was removed immediately afterward. The complete root-owned build/install-QA log is `/var/lib/gentoo-optimization/reports/userspace-baseline-kdenlive-20260930-exact.log` (SHA-256 `46caf332417dadc4e2b6f3ed1372df4ce01fd27549a5ccfbb58e9b6b91d9e041`). The structured receipt is `/var/lib/gentoo-optimization/reports/userspace-baseline-kdenlive-20260930.json` (SHA-256 `1d7594e8be0cf749d290261bfb1a0aa8af9f8f92bc4c626d374ebba35e52fb49`). The installed VDB is `kde-apps/kdenlive-26.08.1`; no profile-use or generation claim was made. The userspace baseline remains open because independent fetch, ABI, and post-install failures remain unresolved.
+
+### 2026-09-30 fresh userspace baseline pretend after Kdenlive retry
+
+A fresh read-only `@world` pretend with optimization explicitly off completed
+with exit 0 and retained its complete output at
+`/var/lib/gentoo-optimization/reports/userspace-baseline-pretend-20260930.txt`
+(SHA-256 `74f69a27c513fc7982964074d6bcebe4367c86a671a9b4d60bc7fb86cd381c3e`).
+The current graph still resolves 1,276 operations (24 upgrades, 3 new slots,
+1,249 reinstalls, and 8 fetch-restricted packages), including unresolved
+libde265, FFmpeg, Gegl, Hyprtoolkit, gamescope, and other baseline work. No
+transaction was launched from this pretend; the final generation and profile
+waves remain prohibited until the ordinary userspace graph is coherent.
