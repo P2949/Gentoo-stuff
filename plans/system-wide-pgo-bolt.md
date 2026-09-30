@@ -11006,3 +11006,7 @@ and gamescope exported-ABI guard failures, libde265/Firefox/Gegl post-install
 failures. The root filesystem remained above the storage floor at terminal
 observation (139 GiB free, 85% used). The baseline is therefore not yet
 coherent and final-generation/profile-wave work remains prohibited.
+
+## 2026-09-30 corrected portable-complete validation
+
+The full `PATH=/usr/bin:/bin /usr/bin/bash tests/run-optimization-tests.sh --mode portable-complete` gate completed successfully after registering the additive Phase-3 identities required by the live test inventory. The first corrected rerun exposed the 12 de-instrumentation unittest identities omitted from the additive registry; commit `0779c15` registered those identities. The next rerun exposed the managed-eclass lane identity; commit `1adf9d8` registered it. The resulting terminal gate summary was `PASS=87 FAIL=0 SKIP=12 TOTAL=99 EXIT=0`, with `required_subtest_pass=560`, `required_subtest_fail=0`, and `required_subtest_skip=25`. The frozen Phase-2 contract file was not modified. The gate completed with the framework-installer, ABI, BOLT, recovery, and additive Phase-3 checks passing; the reported skips are capability/root-driver exclusions documented by the harness.
