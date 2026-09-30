@@ -11289,3 +11289,8 @@ The exact optimization-off reinstall of `=dev-python/tree-sitter-0.26.0_p2026081
 ### 2026-09-30 ALSA plugins baseline reinstall verified
 
 The exact optimization-off `=media-plugins/alsa-plugins-1.2.12` multilib transaction completed, passed install QA, and merged. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-alsa-plugins-20260930/emerge.log` (SHA-256 `80844d0cc1a2fa8bf3d1389dc35863c48c43fc3fcccc5bed6ac20b9ae92bb396`). VDB verification reports `media-plugins/alsa-plugins-1.2.12`; the transaction remained ordinary userspace maintenance and carries no PGO/BOLT claim.
+
+
+### 2026-09-30 post-ALSA ordinary-world resolver
+
+After the successful ALSA plugins reinstall and Python tree-sitter consumer rebuild, a fresh read-only optimization-off `emerge -pvuDN --with-bdeps=y --complete-graph=y --newuse @world` completed successfully. The resolver report is `/tmp/world-pretend-20260930-after-alsa.log` (SHA-256 `19b43660359e0621fd3a2524f9e9dd8986a2bf45e8c30ead8f4b66585ab6a173`). It still contains 48 operations (26 upgrades, 3 new slots, 19 reinstalls); the remaining graph is dominated by the coordinated FFmpeg 9, SPIR-V 1.4.357, WebKitGTK, GEGL, wlroots/Hyprland/Gamescope, and tree-sitter provider transitions. No broad transaction was launched.
