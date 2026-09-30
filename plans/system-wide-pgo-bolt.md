@@ -11324,3 +11324,8 @@ The exact optimization-off `=dev-qt/qtmultimedia-6.11.2` rebuild completed and m
 ### 2026-09-30 libheif 1.23.5 baseline reinstall verified
 
 The exact optimization-off `=media-libs/libheif-1.23.5` multilib rebuild completed and merged against the currently installed codec providers. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-libheif-20260930/emerge.log` (SHA-256 `fb860fbb1e569e409606f8eb06f68fea7cf4352cf4308f4a1b86ae38bca65ec3`). VDB verification reports `media-libs/libheif-1.23.5`; `pkg-config --modversion libheif` reports 1.23.5. The optional `heif-convert` executable is not enabled by this USE configuration, so it was not used as a validation path.
+
+
+### 2026-09-30 post-libheif ordinary-world resolver
+
+After the successful libheif, QtMultimedia, PipeWire, MPV, MLT, and KFileMetaData consumer updates, a fresh read-only optimization-off `emerge -pvuDN --with-bdeps=y --complete-graph=y --newuse @world` completed successfully. The report is `/tmp/world-pretend-20260930-after-libheif.log` (SHA-256 `768804a232a39c6e83b1aa02664c71ce0e6e414300018cb04cb6d9b659a38461`). It still resolves 48 operations, with FFmpeg 9, SPIR-V 1.4.357, WebKitGTK, GEGL, wlroots/Hyprland/Gamescope, and tree-sitter provider transitions driving the remaining closure.
