@@ -11094,3 +11094,18 @@ retry log is `/var/lib/gentoo-optimization/reports/userspace-baseline-openimagei
 The temporary maintenance overlay was removed. The Blender dependency closure
 still needs a narrow stable-OpenImageIO substitution decision before another
 transaction; no mask or ABI guard was bypassed.
+
+### 2026-09-30 stable OpenImageIO baseline substitution
+
+The explicitly masked live OpenImageIO ebuild was not unmasked. The resolver's
+stable replacement `=media-libs/openimageio-3.1.7.0-r1` was rebuilt exactly
+with `--nodeps`, optimization mode off, and `LLVM_PROFILE_FILE=/dev/null` from
+cached release sources. It completed successfully and the installed VDB now
+contains `media-libs/openimageio-3.1.7.0-r1`. The complete log is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-openimageio-stable-20260930.log`
+(SHA-256 `a2fff88cfabacb33bf70950055159932827f920cc10a9c0732185788831053ba`),
+and the structured receipt is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-openimageio-stable-20260930.json`.
+The build contained no profile-generation or profile-use flags and no ABI guard
+was bypassed. A fresh `@world` pretend is required because this replacement
+changes the ordinary baseline graph.
