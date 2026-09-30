@@ -11060,3 +11060,21 @@ The current graph still resolves 1,276 operations (24 upgrades, 3 new slots,
 libde265, FFmpeg, Gegl, Hyprtoolkit, gamescope, and other baseline work. No
 transaction was launched from this pretend; the final generation and profile
 waves remain prohibited until the ordinary userspace graph is coherent.
+
+### 2026-09-30 Blender baseline transaction terminal evidence (latest retry)
+
+The pre-existing Blender transaction reached a terminal failed state after
+successfully rebuilding several dependencies. No Blender VDB merge was
+admitted. The terminal failures were `media-libs/openimageio-9999` during
+OpenColorIO Git fetch, `media-libs/gegl-0.4.72` at the exported-ABI guard, and
+`kde-apps/kdenlive-26.08.1` during optimization-mode dispatch because the
+generic transaction inherited stale saved generation state. The exact off-mode
+Kdenlive retry recorded above remains the authoritative successful maintenance
+rebuild; this generic transaction is retained only as non-authoritative failure
+evidence. The extracted elog record is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-blender-20260930-terminal.log`
+(SHA-256 `d569ee1404d659067883d1307b571e52cf77eff6b481ace55c45db5fb1fcb5be`)
+and the structured receipt is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-blender-20260930-terminal.json`
+(SHA-256 `7c1859b072e716c040c8e889f8c433ced1eb15a8df8ebd8cb9a50486a50e236e`).
+No ABI guard or optimization dispatch guard was bypassed.
