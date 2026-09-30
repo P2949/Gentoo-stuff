@@ -74,6 +74,13 @@ class DeinstrumentationStateTests(unittest.TestCase):
         source = (ROOT / "scripts/optimization/pgo/extend-deinstrumentation.py").read_text()
         self.assertIn('"state": "armed"', source)
 
+    def test_marker_arm_identity_ignores_creation_timestamp(self):
+        module = load("arm_deinstrumentation", ROOT / "scripts/optimization/pgo/arm-deinstrumentation.py")
+        first = {"schema": "deinstrument-pending-v1", "state": "armed", "batch_id": 1,
+                 "cpvs": ["app/a-1"], "created_epoch": 1.0}
+        retry = dict(first, created_epoch=2.0)
+        self.assertEqual(module.marker_identity(first), module.marker_identity(retry))
+
     def test_undefined_gcov_runtime_reference_is_not_instrumentation(self):
         module = load("instrumentation", ROOT / "scripts/optimization/lib/instrumentation.py")
         with tempfile.TemporaryDirectory() as tmp:
