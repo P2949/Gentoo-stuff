@@ -42,6 +42,7 @@ Subject: [PATCH] libjxl_cms: preserve cleanup ABI exports
 +template float*& std::vector<float*>::emplace_back<float*>(float*&&);
 +template void std::vector<float*>::_M_realloc_append<float*>(float*&&);
 +template unsigned char& std::vector<unsigned char>::emplace_back<unsigned char>(unsigned char&&);
++template void std::vector<unsigned char>::_M_realloc_append<unsigned char>(unsigned char&&);
 +template void std::vector<unsigned char>::_M_assign_aux<unsigned char const*>(unsigned char const*, unsigned char const*, std::forward_iterator_tag);
 +template void std::vector<unsigned char>::_M_range_insert<unsigned char const*>(std::vector<unsigned char>::iterator, unsigned char const*, unsigned char const*, std::forward_iterator_tag);
 +template std::vector<unsigned char>& std::vector<unsigned char>::operator=(std::vector<unsigned char> const&);
