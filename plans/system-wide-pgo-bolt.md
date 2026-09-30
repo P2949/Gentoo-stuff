@@ -11040,3 +11040,7 @@ The reverse-dependency producer now preserves multiple ELF artifact-level proofs
 ### 2026-09-30 Portage dependency source error propagation
 
 Hardened the live Portage dependency producer to retain metadata, parse, provider-match, and provider-metadata failures in its output and fail closed instead of silently dropping affected consumers. The reverse-dependency authority now refuses a Portage source carrying unresolved errors. Added a focused regression for source-error refusal; reverse-dependency regression and Python compilation pass. No live dependency graph was published from an error-bearing source.
+
+### 2026-09-30 Blender baseline transaction terminal evidence
+
+The pre-existing `media-gfx/blender-4.5.5` userspace transaction (process 2446360) reached a terminal failed state after compiling dependencies. Its Elog records failures for `media-plugins/alsa-plugins-1.2.12` and `kde-apps/kdenlive-26.08.1` because the transaction inherited `GENTOO_OPT_MODE=clang-ir-generate` from saved package state and the active dispatcher's exact generation authority refused it; `media-libs/openimageio-9999` failed its source-prepare phase and `media-libs/gegl-0.4.72` failed the exported-ABI guard. No Blender merge was admitted. Structured evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-blender-20260930.json` (SHA-256 `45516afceb7ff42ab27201612080b1c4772281de829018e4850e9ca4f30e1f7a`). This confirms that baseline retries must use the exact maintenance policy materializer; a generic transaction is not an authorized off-mode retry.
