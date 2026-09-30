@@ -11,6 +11,7 @@ def main():
  p,e=load(a.portage),load(a.elf); rows=[]
  if not isinstance(p,dict) or not isinstance(e,dict): raise SystemExit('REFUSED: reverse-dependency sources must be JSON objects')
  if not isinstance(p.get('records',[]),list) or not isinstance(p.get('build_records',[]),list): raise SystemExit('REFUSED: Portage graph source has invalid record lists')
+ if p.get('source_errors'): raise SystemExit('REFUSED: Portage graph source contains unresolved source errors')
  elf_edges = e.get('records', e.get('edges', []))
  if not isinstance(elf_edges,list): raise SystemExit('REFUSED: ELF graph source has invalid edge list')
  if not p.get('records') and not p.get('build_records'):
