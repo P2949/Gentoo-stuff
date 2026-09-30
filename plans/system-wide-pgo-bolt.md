@@ -11078,3 +11078,19 @@ and the structured receipt is
 `/var/lib/gentoo-optimization/reports/userspace-baseline-blender-20260930-terminal.json`
 (SHA-256 `7c1859b072e716c040c8e889f8c433ced1eb15a8df8ebd8cb9a50486a50e236e`).
 No ABI guard or optimization dispatch guard was bypassed.
+
+### 2026-09-30 OpenImageIO fetch remediation boundary
+
+The latest OpenImageIO failure was diagnosed narrowly. The elog recommended
+removing the stale `AcademySoftwareFoundation_OpenColorIO.git` cache clone; it
+was removed from `/var/cache/distfiles/git3-src/` and the exact off-mode retry
+was attempted. Portage then refused `=media-libs/openimageio-9999` before
+unpack because the repository's explicit
+`/etc/portage/package.mask/zz-blender-openimageio` masks that live ebuild due to
+its unavailable GitHub fetch. The mask was not weakened or removed. A fresh
+resolver query selects stable `media-libs/openimageio-3.1.7.0-r1` instead. The
+retry log is `/var/lib/gentoo-optimization/reports/userspace-baseline-openimageio-20260930-retry.log`
+(SHA-256 `d55d58e418be3a53e7c5efb0026a017e04cb463c172217e1cb6afa0f9b1cb26f`).
+The temporary maintenance overlay was removed. The Blender dependency closure
+still needs a narrow stable-OpenImageIO substitution decision before another
+transaction; no mask or ABI guard was bypassed.
