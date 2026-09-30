@@ -11121,3 +11121,17 @@ fetch-restricted packages). The complete output is
 The graph still exposes the unresolved FFmpeg/gamescope/libde265/Firefox/Gegl
 transitions and Hyprtoolkit/WebKit source state; no broad transaction was
 started from this pretend.
+
+### 2026-09-30 Hyprtoolkit fetch retry reached legitimate ABI transition
+
+The stale `hyprwm_Hyprtoolkit.git` cache clone was removed and the exact live
+`gui-libs/hyprtoolkit-9999` retry fetched and compiled successfully under the
+temporary off-mode maintenance context. Install QA then correctly rejected the
+replacement ABI: `libhyprtoolkit.so.6` retained its SONAME but removed eleven
+exported `preferredSize` symbols (old 2348 exports, new 2349 with the listed
+symbols absent). The installed VDB remains `gui-libs/hyprtoolkit-0.6.0`; no
+compatibility symlink or guard bypass was used. The immutable retry log is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-hyprtoolkit-20260930-retry.log`
+(SHA-256 `5bfdfb3650d3bb33665346b2b0cec4f008b62947178cefda878b4fc538b34bba`).
+This is now an ordinary reverse-dependent/ABI-transition remediation item, not
+a fetch failure.
