@@ -11249,3 +11249,8 @@ Install QA then correctly rejected the staged replacement at the exported-ABI gu
 ### 2026-09-30 post-WebKit-ABI ordinary-world resolver
 
 After the WebKit 2.54.0-r600 source remediation reached and was rejected by the exported-ABI guard, a fresh read-only optimization-off `emerge -pvuDN --with-bdeps=y --complete-graph=y --newuse @world` completed successfully. The immutable resolver report is `/tmp/world-pretend-20260930-after-webkit-abi.log` (SHA-256 `432f582c1ac8d41c32e798b382a09d7bfc28278a29c1d072786f799ec471a019`). It schedules 48 operations (26 upgrades, 3 new slots, 19 reinstalls), including the FFmpeg 9.0.2 ABI transition closure, SPIR-V 1.4.357 consumers, WebKit's unresolved 2.54.0-r600 replacement, GEGL, Gamescope, Hyprtoolkit/Hyprland and related consumers. No broad transaction was launched. Kernel/firmware lifecycle entries remain outside automated scope and were not mutated.
+
+
+### 2026-09-30 GEGL 0.4.72 baseline transition retained
+
+The exact optimization-off `=media-libs/gegl-0.4.72` transaction completed its source/configure/build phases but was correctly refused by install QA. The immutable log is `/var/lib/gentoo-optimization/reports/userspace-baseline-gegl-20260930/emerge.log` (SHA-256 `3e00da797268be4b7191ee806ad98a0fdf22ef8201b528c48b305c8eb72a434a`). The ABI guard reported removal of 11 public `libgegl-0.4.so.0` exports (`_gegl_cl_*`, OpenCL helpers, and GIO stream/data-URI helpers) and disappearance of established `gegl-transformops-*` and `gegl-common-gpl3*` provider SONAMEs. No replacement was merged; installed VDB remains `media-libs/gegl-0.4.70`. This is a genuine version/feature ABI transition requiring coordinated GEGL reverse-consumer analysis, not an ABI-guard bypass or unchanged retry.
