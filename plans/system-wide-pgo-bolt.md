@@ -11274,3 +11274,8 @@ The exact optimization-off `=gui-wm/gamescope-3.16.29` retry used the existing p
 ### 2026-09-30 Gamescope ABI fallback experiment disproved
 
 A changed-cause retry tested a package-scoped `gamescope-abi.conf` fallback retaining default visibility while removing ThinLTO/internalisation. The policy hashes were `gamescope-abi.conf` `e8bf9f9d81803344e296025914bc247919cf5fe59909110bf8d150352595e58d` and the temporary package-env mapping `50a5fbee2b87d3262e80d84a9728483d0b1238a9d81dfe5f610c31d863432e52`. The retry log is `/var/lib/gentoo-optimization/reports/userspace-baseline-gamescope-20260930-abi-fallback/emerge.log` (SHA-256 `b94b8b3ab92677da6ead765a736fece2928f7a472a11a30297067531fca2debf`). The new layer still omitted the same two `messagey::GetErrBuf` TLS symbols, despite increasing its exported symbol count from 58 to 156. The temporary policy was removed from both the live framework and source tree; `gui-wm/gamescope` is restored to `clang-libstdcxx.conf`. This hypothesis is closed; no further unchanged visibility/LTO retry is authorized.
+
+
+### 2026-09-30 tree-sitter 0.27.0 baseline transition retained
+
+The exact optimization-off `=dev-libs/tree-sitter-0.27.0` build completed but install QA correctly rejected the staged replacement because the established `libtree-sitter.so.0.26` SONAME disappeared. The immutable log is `/var/lib/gentoo-optimization/reports/userspace-baseline-tree-sitter-20260930/emerge.log` (SHA-256 `368c517405de2d5c8a11832150f2cd0deeb03b0d671acf1b954bfdbf461d742c`). No replacement was merged; the installed tree-sitter provider remains 0.26.13. The resolver identifies `dev-python/tree-sitter` as a dependent requiring coordinated transition handling.
