@@ -262,7 +262,7 @@ def load_transition_authority() -> dict | None:
     if authority.get("state") != "active":
         raise RuntimeError("ABI transition authority is not active")
     required = ("old_provider_cpv", "target_cpv", "old_sonames", "new_sonames", "artifact_paths", "transition_reason")
-    if any(not authority.get(key) for key in required) or not isinstance(authority.get("allowed_symbol_removals"), list):
+    if any(not authority.get(key) for key in required) or not isinstance(authority.get("allowed_symbol_removals"), list) or not isinstance(authority.get("allowed_soname_removals", []), list):
         raise RuntimeError("ABI transition authority fields are incomplete")
     return authority
 
@@ -337,6 +337,8 @@ def main() -> int:
             continue
         candidate = candidate_providers.get(soname)
         if candidate is None:
+            if authority is not None and soname in set(authority.get("allowed_soname_removals", [])):
+                continue
             failures.append(f"{installed_path.relative_to(root)}: established SONAME {soname} disappeared")
             continue
         missing = _deinstrumentation_only_symbols(installed_symbols - candidate[1])

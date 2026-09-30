@@ -142,6 +142,23 @@ echo 'PASS: ABI guard requires exact transaction-scoped transition authority'
 
 rm -f -- "${work}/root/usr/lib/libauthorized.so.1" "${work}/ed/usr/lib/libauthorized.so.1"
 
+cc -shared -fPIC "${work}/old.c" -Wl,-soname,libsoname-old.so.1 \
+    -o "${work}/root/usr/lib/libsoname-old.so.1"
+cc -shared -fPIC "${work}/old.c" -Wl,-soname,libsoname-old.so.2 \
+    -o "${work}/ed/usr/lib/libsoname-old.so.2"
+cat >"${work}/soname-transition.json" <<'EOF'
+{"schema":"abi-transition-v1","state":"active","old_provider_cpv":"dev/soname-1","target_cpv":"dev/soname-2","old_sonames":["libsoname-old.so.1"],"new_sonames":["libsoname-old.so.2"],"artifact_paths":["usr/lib/libsoname-old.so.2"],"allowed_soname_removals":["libsoname-old.so.1"],"allowed_symbol_removals":[],"transition_reason":"fixture SONAME migration"}
+EOF
+soname_authority_sha=$(sha256sum "${work}/soname-transition.json" | awk '{print $1}')
+if ! CATEGORY=dev PF=soname-2 GENTOO_OPT_ABI_TRANSITION_AUTHORITY="${work}/soname-transition.json" \
+    GENTOO_OPT_ABI_TRANSITION_AUTHORITY_SHA256="${soname_authority_sha}" \
+    ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"; then
+    echo 'ABI guard rejected declared SONAME transition' >&2
+    exit 1
+fi
+echo 'PASS: ABI guard permits only declared SONAME transition'
+rm -f -- "${work}/root/usr/lib/libsoname-old.so.1" "${work}/ed/usr/lib/libsoname-old.so.2"
+
 # The LLVM runtime helper may be versioned by the provider SONAME.  Its ELF
 # spelling is __llvm_write_custom_profile@@<version>; the ABI guard must
 # normalize the version suffix before applying the instrumentation exemption.
