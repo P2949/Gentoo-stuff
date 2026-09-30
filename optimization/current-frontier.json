@@ -1,0 +1,13 @@
+{
+  "schema": "current-frontier-v1",
+  "as_of_commit": "f3d90e299457c141626b59d34e0bd2d0cd9a3222",
+  "vdb_inventory_sha256": "b150b7c078444a2635ce1fea26d73af3f9cb57a4efcd00788181ae11acf38d18",
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-2350-post-expat/emerge-pvuDN-world.log",
+  "latest_resolver_report_sha256": "9786ea47513a3a3e45f3ac541cb5f62a06a870308eee807c156ef65f866e0a02",
+  "latest_resolver_operation_count": 41,
+  "current_baseline_state": "ordinary-userspace-convergence-in-progress",
+  "active_abi_transition_clusters": ["tree-sitter", "ffmpeg", "spirv-vulkan", "libmediainfo", "bullet-opensubdiv", "pahole"],
+  "active_source_network_blockers": ["git-lfs-9999-go-module-resolution"],
+  "temporary_configuration_deviations": ["qtspeech-speechd-one-shot-resolution", "kauth-policykit-one-shot-resolution"],
+  "next_authoritative_action": "implement_or_use_exact_transition_authority_for_tree_sitter_then_refresh_resolver"
+}
