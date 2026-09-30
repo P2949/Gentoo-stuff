@@ -11024,3 +11024,7 @@ Hardened `scan-live-instrumentation.py` to require canonical schema/digest valid
 ### 2026-09-30 loader search and ABI resolution hardening
 
 Hardened the live ELF dependency authority to split colon-separated RPATH/RUNPATH entries, preserve declared search order, refuse ABI-incompatible candidates instead of falling back to them, reject metadata-error providers, and treat an explicit search scope as closed when no provider is visible there. Added focused coverage for ordered colon paths and strict class mismatch refusal; the ELF dependency regression and Python compilation pass. This is source-level authority hardening only; no live generation or profile wave was authorized.
+
+### 2026-09-30 de-instrumentation marker-clear authority binding
+
+Hardened `clear-deinstrumentation.py` so marker removal requires a schema-2 live scan whose source census and mutation-policy hashes match explicitly supplied authorities, and whose armed marker is bound to the exact plan path and digest. Added focused regression coverage for the required bindings; the de-instrumentation state suite now passes 13/13 and Python compilation/diff validation pass. This improves reusable state-machine integrity without changing the completed live clean-state result.
