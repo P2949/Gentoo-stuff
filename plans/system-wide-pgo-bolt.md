@@ -11329,3 +11329,8 @@ The exact optimization-off `=media-libs/libheif-1.23.5` multilib rebuild complet
 ### 2026-09-30 post-libheif ordinary-world resolver
 
 After the successful libheif, QtMultimedia, PipeWire, MPV, MLT, and KFileMetaData consumer updates, a fresh read-only optimization-off `emerge -pvuDN --with-bdeps=y --complete-graph=y --newuse @world` completed successfully. The report is `/tmp/world-pretend-20260930-after-libheif.log` (SHA-256 `768804a232a39c6e83b1aa02664c71ce0e6e414300018cb04cb6d9b659a38461`). It still resolves 48 operations, with FFmpeg 9, SPIR-V 1.4.357, WebKitGTK, GEGL, wlroots/Hyprland/Gamescope, and tree-sitter provider transitions driving the remaining closure.
+
+
+### 2026-09-30 OBS Studio 32.2.2 baseline reinstall verified
+
+The exact optimization-off `=media-video/obs-studio-32.2.2` rebuild completed and merged against the installed FFmpeg 8.1.3 and PipeWire 1.6.9 stack. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-obs-20260930/emerge.log` (SHA-256 `e0fdcdd48b5012414bf891bad38ed0f2dc6df6df441663cc2a641563d464a124`). VDB verification reports `media-video/obs-studio-32.2.2`; `/usr/bin/obs --version` reports OBS Studio 32.2.2. The optional PipeWire capture and v4l2loopback packages remain separate resolver items; no PGO/BOLT claim is made.
