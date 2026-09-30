@@ -19,6 +19,7 @@ def main():
   raise SystemExit('REFUSED: ELF DT_NEEDED authority is empty')
  sources=((p,'records','portage-runtime'),(p,'build_records','portage-build'),(e,'records','elf-needed'),(e,'edges','elf-needed'))
  seen=set()
+ elf_rows={}
  for source,key,rel in sources:
   if key not in source: continue
   for x in source.get(key,[]):
@@ -29,11 +30,22 @@ def main():
      raise SystemExit(f"REFUSED: unsupported reverse-dependency relationship: {row['relationship']}")
     identity=(provider,consumer,row['relationship'])
     if identity in seen:
-     raise SystemExit(f"REFUSED: duplicate reverse-dependency edge: {identity}")
+     if row['relationship'] != 'elf-needed':
+      raise SystemExit(f"REFUSED: duplicate reverse-dependency edge: {identity}")
+     # Multiple owned artifacts can legitimately establish the same package
+     # relationship.  Keep every artifact-level proof while projecting one
+     # package-level scheduling edge.
+     existing = elf_rows[identity]
+     proofs = existing.setdefault('evidence', {}).setdefault('artifact_edges', [])
+     proofs.append(row.get('evidence', {}))
+     continue
     seen.add(identity)
     # Preserve an authenticated workload binding when the upstream source has one;
     # dropping it here makes the planner appear to have no representative consumer.
     if isinstance(x.get('workload'),dict): row['workload']=x['workload']
+    if row['relationship'] == 'elf-needed':
+     row['evidence'] = {"artifact_edges": [row.get('evidence', {})]}
+     elf_rows[identity] = row
     rows.append(row)
  ordered=sorted(rows,key=lambda x:(x['provider_cpv'],x['consumer_cpv'],x['relationship']))
  out={'record_type':'reverse-dependency-graph','schema_version':2,'source_contract':{'portage_runtime_records':sum(1 for x in ordered if x['relationship']=='portage-runtime'),'portage_build_records':sum(1 for x in ordered if x['relationship']=='portage-build'),'elf_needed_records':sum(1 for x in ordered if x['relationship']=='elf-needed')},'portage_source_sha256':hashlib.sha256(Path(a.portage).read_bytes()).hexdigest(),'elf_source_sha256':hashlib.sha256(Path(a.elf).read_bytes()).hexdigest(),'records':ordered}

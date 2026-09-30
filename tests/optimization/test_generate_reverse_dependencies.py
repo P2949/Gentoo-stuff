@@ -19,6 +19,15 @@ def main() -> None:
         subprocess.run(["python3", str(SCRIPT), "--portage", str(portage), "--elf", str(elf), "--output", str(output)], check=True)
         records = json.loads(output.read_text())["records"]
         assert {row["relationship"] for row in records} == {"portage-runtime", "elf-needed"}
+        elf_duplicate = root / "elf-duplicate.json"
+        elf_duplicate.write_text(json.dumps({"records": [
+            {"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1", "evidence": {"consumer_path": "/usr/bin/a", "needed": "lib.so"}},
+            {"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1", "evidence": {"consumer_path": "/usr/bin/b", "needed": "lib.so"}},
+        ]}))
+        elf_duplicate_output = root / "elf-duplicate-graph.json"
+        subprocess.run(["python3", str(SCRIPT), "--portage", str(portage), "--elf", str(elf_duplicate), "--output", str(elf_duplicate_output)], check=True)
+        elf_rows = [row for row in json.loads(elf_duplicate_output.read_text())["records"] if row["relationship"] == "elf-needed"]
+        assert len(elf_rows) == 1 and len(elf_rows[0]["evidence"]["artifact_edges"]) == 2
         refused = root / "refused.json"
         empty = root / "empty.json"
         empty.write_text(json.dumps({"records": []}))
