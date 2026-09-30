@@ -11161,3 +11161,7 @@ The exact `media-video/mpv-0.41.0-r2` maintenance retry initially exposed a Meso
 ### 2026-09-30 current userspace resolver boundary
 
 After the long Blender supervisor exited, a fresh optimization-off read-only `@world` pretend completed with exit status 0. The immutable resolver report is `/var/lib/gentoo-optimization/reports/userspace-world-pretend-20260930T130428+0100.txt` (SHA-256 `4869297692856db826c070e016ecafec324c2a22378be3104d8fe2621f099136`). It resolves 50 packages (26 upgrades, 3 new slots, 21 reinstalls), including the still-excluded kernel/firmware lifecycle atoms and the unresolved userspace ABI/closure set (SPIR-V, FFmpeg, GEGL, WebKitGTK, Hyprtoolkit, Mesa, Gamescope, and related consumers). No mixed transaction was executed and no boot/kernel/EFI/initramfs/firmware state was touched.
+
+### 2026-09-30 userspace-set resolver refusal
+
+A read-only pretend against `@pgo-bolt-all-userspace` completed with exit status 0 and resolved 44 operations; report `/var/lib/gentoo-optimization/reports/userspace-set-pretend-20260930T130659+0100.txt` has SHA-256 `33a2e006196c7e1484e7d3311ac0560304ed29014e0a73dc58e48b90d87115b8`. The generated set is not safe for mutation authority: it still contains `sys-firmware/sof-firmware`, `sys-kernel/scx`, and `sys-kernel/scx-loader`, despite the current kernel-policy boundary. No transaction was run. The set must be regenerated from the current generation-bound mutation policy before any userspace baseline apply.
