@@ -10,12 +10,12 @@
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "45d4e7030a1dbaf14fb3e6112ccc50625f9b6281",
+  "as_of_commit": "1ccbca282b73bfaf1fa0a4dc8b49ab08d85f38b1",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress",
-  "latest_resolver_operation_count": 39,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-post-tree-sitter/emerge-pvuDN-world.log",
-  "latest_resolver_report_sha256": "a25ac5cde00f9ac3a9f7bb0aeb7b668030ac9e195ddbdcf7436ba186cc2572a8",
-  "next_authoritative_action": "apply_exact_transition_authority_to_next_resolver_selected_provider_or_refresh_source_blocker",
+  "latest_resolver_operation_count": 38,
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-post-libmediainfo/emerge-pvuDN-world.log",
+  "latest_resolver_report_sha256": "35945d885a4564be0237361b9524816c7840eef509cfad2fa8200d62494a9a35",
+  "next_authoritative_action": "apply_exact_transition_authority_to_spirv_or_ffmpeg_provider_selected_by_current_resolver",
   "schema": "current-frontier-v1",
   "temporary_configuration_deviations": [
     "qtspeech-speechd-one-shot-resolution",
