@@ -29,10 +29,22 @@ with tempfile.TemporaryDirectory() as t:
     (root/'app-test/new/app-test-1.0-1.gpkg.tar.zst').write_bytes(b'new')
     vdb=Path(t)/'vdb/app-test/app-test-1.0'; vdb.mkdir(parents=True)
     out=Path(t)/'report.json'
-    subprocess.run([sys.executable,str(TOOL),'--root',str(root),'--vdb',str(Path(t)/'vdb'),
-                    '--output',str(out),'--prune-duplicates','--execute',
-                    '--project-lock',str(Path(t)/'project.lock'),
-                    '--generation-lock',str(Path(t)/'generation.lock')],check=True,stdout=subprocess.DEVNULL)
+    # Keep this fixture hermetic while preserving the production guard: the
+    # live host may have an unrelated Portage transaction running, but this
+    # subprocess is operating entirely on synthetic paths and must exercise
+    # the duplicate-pruning branch.  Invoke main in-process so only the
+    # fixture's activity probe is controlled; production callers still use
+    # the real pgrep-based fail-closed check.
+    old_argv = sys.argv
+    try:
+        module.active_portage = lambda: False
+        sys.argv = [str(TOOL), '--root', str(root), '--vdb', str(Path(t) / 'vdb'),
+                    '--output', str(out), '--prune-duplicates', '--execute',
+                    '--project-lock', str(Path(t) / 'project.lock'),
+                    '--generation-lock', str(Path(t) / 'generation.lock')]
+        assert module.main() == 0
+    finally:
+        sys.argv = old_argv
     d=json.loads(out.read_text()); assert len(d['deleted']) == 1
 
 with tempfile.TemporaryDirectory() as t:
