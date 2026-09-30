@@ -11319,3 +11319,8 @@ The exact optimization-off `=kde-frameworks/kfilemetadata-6.30.0` rebuild comple
 ### 2026-09-30 QtMultimedia 6.11.2 baseline reinstall verified
 
 The exact optimization-off `=dev-qt/qtmultimedia-6.11.2` rebuild completed and merged against the installed FFmpeg 8.1.3 and PipeWire 1.6.9 providers. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-qtmultimedia-20260930/emerge.log` (SHA-256 `24b2fe656f546be61522f31664ea43b76f6d3d98c82478c2a357afb4b545ec52`). VDB verification reports `dev-qt/qtmultimedia-6.11.2`; `pkg-config --modversion Qt6Multimedia` reports 6.11.2. This is ordinary userspace baseline evidence only; no PGO/BOLT claim is made.
+
+
+### 2026-09-30 libheif 1.23.5 baseline reinstall verified
+
+The exact optimization-off `=media-libs/libheif-1.23.5` multilib rebuild completed and merged against the currently installed codec providers. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-libheif-20260930/emerge.log` (SHA-256 `fb860fbb1e569e409606f8eb06f68fea7cf4352cf4308f4a1b86ae38bca65ec3`). VDB verification reports `media-libs/libheif-1.23.5`; `pkg-config --modversion libheif` reports 1.23.5. The optional `heif-convert` executable is not enabled by this USE configuration, so it was not used as a validation path.
