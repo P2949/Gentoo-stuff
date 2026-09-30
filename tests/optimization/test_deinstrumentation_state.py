@@ -74,6 +74,22 @@ class DeinstrumentationStateTests(unittest.TestCase):
         source = (ROOT / "scripts/optimization/pgo/extend-deinstrumentation.py").read_text()
         self.assertIn('"state": "armed"', source)
 
+    def test_extension_requires_exact_predecessor_batch_identity(self):
+        module = load("extend_deinstrumentation", ROOT / "scripts/optimization/pgo/extend-deinstrumentation.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = Path(tmp) / "plan.json"
+            plan.write_text("{}\n")
+            marker = {"batch_id": 4, "cpvs": ["app/a-1"]}
+            receipt = {
+                "schema": "deinstrumentation-batch-receipt-v1",
+                "batch_id": 5,
+                "cpvs": ["app/a-1"],
+                "packages": [{"cpv": "app/a-1"}],
+                "plan": {"path": str(plan), "sha256": module.digest(plan)},
+            }
+            with self.assertRaises(ValueError):
+                module.validate_predecessor_receipt(receipt, marker, plan)
+
     def test_marker_arm_identity_ignores_creation_timestamp(self):
         module = load("arm_deinstrumentation", ROOT / "scripts/optimization/pgo/arm-deinstrumentation.py")
         first = {"schema": "deinstrument-pending-v1", "state": "armed", "batch_id": 1,
