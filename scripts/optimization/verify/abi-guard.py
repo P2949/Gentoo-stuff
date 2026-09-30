@@ -6,6 +6,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+import hashlib
+import json
 
 ELF_MAGIC = b"\x7fELF"
 
@@ -118,7 +120,7 @@ def resolve_tree_link(link: Path, tree: Path) -> Path | None:
     return resolved if resolved.is_file() else None
 
 
-def compare_pair(rel: Path, installed: Path, candidate: Path, failures: list[str]) -> None:
+def compare_pair(rel: Path, installed: Path, candidate: Path, failures: list[str], authority: dict | None = None) -> None:
     old_is_elf = is_elf(installed)
     new_is_elf = is_elf(candidate)
     if not old_is_elf:
@@ -141,6 +143,8 @@ def compare_pair(rel: Path, installed: Path, candidate: Path, failures: list[str
         failures.append(f"{rel}: established SONAME {old_soname} disappeared")
         return
     missing = _deinstrumentation_only_symbols(old - new)
+    if authority is not None:
+        missing -= set(authority.get("allowed_symbol_removals", []))
     if missing:
         sample = ",".join(sorted(missing)[:12])
         soname_note = (
@@ -237,6 +241,32 @@ def current_package_owns(root: Path, installed_path: Path) -> bool | None:
         return None
 
 
+def load_transition_authority() -> dict | None:
+    """Load one authenticated, transaction-scoped ABI transition authority."""
+    raw = os.environ.get("GENTOO_OPT_ABI_TRANSITION_AUTHORITY")
+    if not raw:
+        return None
+    path = Path(raw)
+    digest = os.environ.get("GENTOO_OPT_ABI_TRANSITION_AUTHORITY_SHA256", "")
+    if not path.is_absolute() or path.is_symlink() or not path.is_file() or len(digest) != 64:
+        raise RuntimeError("ABI transition authority path or digest is invalid")
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != digest:
+        raise RuntimeError("ABI transition authority digest mismatch")
+    try:
+        authority = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"ABI transition authority is not valid JSON: {exc}") from exc
+    if not isinstance(authority, dict) or authority.get("schema") != "abi-transition-v1":
+        raise RuntimeError("ABI transition authority schema is invalid")
+    if authority.get("state") != "active":
+        raise RuntimeError("ABI transition authority is not active")
+    required = ("old_provider_cpv", "target_cpv", "old_sonames", "new_sonames", "artifact_paths", "transition_reason")
+    if any(not authority.get(key) for key in required) or not isinstance(authority.get("allowed_symbol_removals"), list):
+        raise RuntimeError("ABI transition authority fields are incomplete")
+    return authority
+
+
 def main() -> int:
     if "--help" in sys.argv[1:]:
         print(__doc__)
@@ -254,6 +284,24 @@ def main() -> int:
     if not ed.is_dir() or not root.is_dir():
         print("gentoo-optimization ABI guard: ED and ROOT must be directories", file=sys.stderr)
         return 1
+    try:
+        authority = load_transition_authority()
+    except RuntimeError as exc:
+        print(f"gentoo-optimization ABI guard: {exc}", file=sys.stderr)
+        return 1
+    if authority is not None:
+        observed_cpv = f"{os.environ.get('CATEGORY', '')}/{os.environ.get('PF', '')}"
+        if authority.get("target_cpv") != observed_cpv:
+            print("gentoo-optimization ABI guard: transition authority target CPV mismatch", file=sys.stderr)
+            return 1
+        declared_paths = authority.get("artifact_paths", [])
+        if not isinstance(declared_paths, list) or not declared_paths:
+            print("gentoo-optimization ABI guard: transition authority artifact scope is empty", file=sys.stderr)
+            return 1
+        declared_path_set = {str(item).lstrip("/") for item in declared_paths if isinstance(item, str)}
+        if not declared_path_set:
+            print("gentoo-optimization ABI guard: transition authority artifact scope is invalid", file=sys.stderr)
+            return 1
     failures: list[str] = []
     # Compare from the installed ABI-provider side as well as by relative
     # path.  A replacement such as libfoo.so.1 -> libfoo.so.2 otherwise has
@@ -292,6 +340,8 @@ def main() -> int:
             failures.append(f"{installed_path.relative_to(root)}: established SONAME {soname} disappeared")
             continue
         missing = _deinstrumentation_only_symbols(installed_symbols - candidate[1])
+        if authority is not None:
+            missing -= set(authority.get("allowed_symbol_removals", []))
         if missing:
             sample = ",".join(sorted(missing)[:12])
             failures.append(
@@ -300,6 +350,9 @@ def main() -> int:
             )
     for candidate in candidate_paths:
         rel = candidate.relative_to(ed)
+        if authority is not None and rel.as_posix() not in declared_path_set:
+            failures.append(f"{rel}: staged DSO is outside the ABI transition authority scope")
+            continue
         installed = root / rel
         candidate_is_link = candidate.is_symlink()
         installed_is_link = installed.is_symlink()
@@ -329,7 +382,7 @@ def main() -> int:
         else:
             continue
 
-        compare_pair(rel, installed_target, candidate_target, failures)
+        compare_pair(rel, installed_target, candidate_target, failures, authority)
     if failures:
         print("gentoo-optimization ABI guard: exported ABI loss", file=sys.stderr)
         print("\n".join(failures), file=sys.stderr)

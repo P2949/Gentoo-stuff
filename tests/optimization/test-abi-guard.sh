@@ -112,6 +112,36 @@ cc -shared -fPIC "${work}/old.c" -Wl,-soname,libtransition.so.1 \
 ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"
 echo 'PASS: ABI guard accepts SONAME transition with retained compatibility provider'
 
+# A coordinated ABI transition may authorize an exact, evidence-bound symbol
+# delta for one target CPV; an unrelated target or undeclared symbol loss must
+# remain rejected.
+rm -rf -- "${work}/root" "${work}/ed"
+mkdir -p "${work}/root/usr/lib" "${work}/ed/usr/lib"
+rm -f -- "${work}/root/usr/lib/libauthorized.so.1" "${work}/ed/usr/lib/libauthorized.so.1"
+cc -shared -fPIC "${work}/old.c" -Wl,-soname,libauthorized.so.1 \
+    -o "${work}/root/usr/lib/libauthorized.so.1"
+cc -shared -fPIC "${work}/new.c" -Wl,-soname,libauthorized.so.1 \
+    -o "${work}/ed/usr/lib/libauthorized.so.1"
+cat >"${work}/abi-transition.json" <<'EOF'
+{"schema":"abi-transition-v1","state":"active","old_provider_cpv":"dev/authorized-1","target_cpv":"dev/authorized-2","old_sonames":["libauthorized.so.1"],"new_sonames":["libauthorized.so.1"],"artifact_paths":["usr/lib/libauthorized.so.1"],"allowed_symbol_removals":["abi_02","abi_03","abi_04","abi_05","abi_06","abi_07","abi_08","abi_09","abi_10","abi_11","abi_12","abi_13","abi_14","abi_15","abi_16","abi_17","abi_18","abi_19","abi_20","abi_21","abi_22","abi_23","abi_24"],"transition_reason":"fixture coordinated provider migration"}
+EOF
+authority_sha=$(sha256sum "${work}/abi-transition.json" | awk '{print $1}')
+if ! CATEGORY=dev PF=authorized-2 GENTOO_OPT_ABI_TRANSITION_AUTHORITY="${work}/abi-transition.json" \
+    GENTOO_OPT_ABI_TRANSITION_AUTHORITY_SHA256="${authority_sha}" \
+    ED="${work}/ed" ROOT="${work}/root" python3 "${guard}"; then
+    echo 'ABI guard rejected declared coordinated transition' >&2
+    exit 1
+fi
+if CATEGORY=dev PF=other-2 GENTOO_OPT_ABI_TRANSITION_AUTHORITY="${work}/abi-transition.json" \
+    GENTOO_OPT_ABI_TRANSITION_AUTHORITY_SHA256="${authority_sha}" \
+    ED="${work}/ed" ROOT="${work}/root" python3 "${guard}" >/dev/null 2>&1; then
+    echo 'ABI guard accepted transition authority for wrong target CPV' >&2
+    exit 1
+fi
+echo 'PASS: ABI guard requires exact transaction-scoped transition authority'
+
+rm -f -- "${work}/root/usr/lib/libauthorized.so.1" "${work}/ed/usr/lib/libauthorized.so.1"
+
 # The LLVM runtime helper may be versioned by the provider SONAME.  Its ELF
 # spelling is __llvm_write_custom_profile@@<version>; the ABI guard must
 # normalize the version suffix before applying the instrumentation exemption.

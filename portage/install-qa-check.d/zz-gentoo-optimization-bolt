@@ -70,9 +70,16 @@ if [[ ${LLVM_PROFILE_FILE:-} == /dev/null && -f ${hook_ed}/default.profraw ]]; t
     /usr/bin/rm -f -- "${hook_ed}/default.profraw" || \
         gentoo_opt_hook_abort 'unable to remove transient default.profraw residue'
 fi
-/usr/bin/env ED="${hook_ed}" ROOT="${hook_root}" "${abi_guard}" || \
+abi_guard_env=(ED="${hook_ed}" ROOT="${hook_root}" CATEGORY="${CATEGORY-}" PF="${PF-}")
+if [[ -n ${GENTOO_OPT_ABI_TRANSITION_AUTHORITY:-} ]]; then
+    abi_guard_env+=(
+        GENTOO_OPT_ABI_TRANSITION_AUTHORITY="${GENTOO_OPT_ABI_TRANSITION_AUTHORITY}"
+        GENTOO_OPT_ABI_TRANSITION_AUTHORITY_SHA256="${GENTOO_OPT_ABI_TRANSITION_AUTHORITY_SHA256-}"
+    )
+fi
+/usr/bin/env "${abi_guard_env[@]}" "${abi_guard}" || \
     gentoo_opt_hook_abort 'replacement DSO failed exported-ABI guard'
-unset hook_ed hook_root
+unset hook_ed hook_root abi_guard_env
 
 # Instrumented ELF payloads are only admissible for an explicitly targeted
 # generation transaction.  Ordinary/off/profile-use installs must never admit
