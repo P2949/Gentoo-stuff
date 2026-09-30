@@ -96,6 +96,12 @@ class DeinstrumentationStateTests(unittest.TestCase):
         self.assertIn("gentoo_opt_authorized_deinstrument_target", bashrc)
         self.assertIn("Keep the established package ABI and optimization policy intact", bashrc)
 
+    def test_libjxl_cleanup_abi_exports_are_explicit_and_patchable(self):
+        patch = (ROOT / "portage/patches/media-libs/libjxl/9999-public-cms-abi.patch").read_text()
+        self.assertIn("lib/jxl/cms/abi_exports.cc", patch)
+        self.assertIn("TransferFunction>::emplace_back", patch)
+        self.assertIn("basic_string<char>::_M_construct", patch)
+
     def test_extended_marker_remains_armed(self):
         source = (ROOT / "scripts/optimization/pgo/extend-deinstrumentation.py").read_text()
         self.assertIn('"state": "armed"', source)

@@ -1,16 +1,15 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-Subject: [PATCH] libjxl_cms: preserve established public C++ ABI visibility
+Subject: [PATCH] libjxl_cms: preserve cleanup ABI exports
 
-The installed libjxl_cms provider is consumed by applications which already
-resolve its exported C++ template instantiations. The upstream target-local
-hidden-visibility preset removes those symbols even when the Gentoo package
-policy explicitly selects the public ABI lane.
-
---- a/lib/jxl_cms.cmake
-+++ b/lib/jxl_cms.cmake
-@@ -12,10 +12,15 @@
+---
+--- a/lib/jxl_cms.cmake	2026-09-18 14:53:43.000000000 +0100
++++ b/lib/jxl_cms.cmake	2026-09-30 06:13:20.157590167 +0100
+@@ -11,11 +11,18 @@
+ add_library(jxl_cms
    ${JPEGXL_INTERNAL_CMS_SOURCES}
  )
++target_sources(jxl_cms PRIVATE
++        ${CMAKE_CURRENT_LIST_DIR}/jxl/cms/abi_exports.cc)
  target_compile_options(jxl_cms PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 +target_compile_options(jxl_cms PRIVATE
 +        -fkeep-inline-functions
@@ -26,3 +25,26 @@ policy explicitly selects the public ABI lane.
  target_link_libraries(jxl_cms PUBLIC jxl_base)
  target_include_directories(jxl_cms PRIVATE
    ${JXL_HWY_INCLUDE_DIRS}
+--- /dev/null	2026-09-29 23:55:38.369542038 +0100
++++ b/lib/jxl/cms/abi_exports.cc	2026-09-30 06:12:06.283233698 +0100
+@@ -0,0 +1,20 @@
++#include <string>
++#include <vector>
++#include <iterator>
++#include "lib/jxl/cms/color_encoding_cms.h"
++
++// The installed GCC-generate libjxl provider exported these weak libstdc++
++// template instantiations.  Keep the exact same-CPV cleanup ABI while removing
++// profile generation; this is an explicit compatibility surface, not an ABI
++// guard bypass.
++template jxl::cms::TransferFunction& std::vector<jxl::cms::TransferFunction>::emplace_back<jxl::cms::TransferFunction>(jxl::cms::TransferFunction&&);
++template void std::vector<jxl::cms::TransferFunction>::_M_realloc_append<jxl::cms::TransferFunction>(jxl::cms::TransferFunction&&);
++template float*& std::vector<float*>::emplace_back<float*>(float*&&);
++template void std::vector<float*>::_M_realloc_append<float*>(float*&&);
++template unsigned char& std::vector<unsigned char>::emplace_back<unsigned char>(unsigned char&&);
++template void std::vector<unsigned char>::_M_assign_aux<unsigned char const*>(unsigned char const*, unsigned char const*, std::forward_iterator_tag);
++template void std::vector<unsigned char>::_M_range_insert<unsigned char const*>(std::vector<unsigned char>::iterator, unsigned char const*, unsigned char const*, std::forward_iterator_tag);
++template std::vector<unsigned char>& std::vector<unsigned char>::operator=(std::vector<unsigned char> const&);
++template void std::vector<unsigned int>::_M_realloc_append<unsigned int const&>(unsigned int const&);
++template void std::vector<unsigned long>::_M_realloc_append<unsigned long const&>(unsigned long const&);
++template void std::__cxx11::basic_string<char>::_M_construct<char const*>(char const*, char const*, std::forward_iterator_tag);
