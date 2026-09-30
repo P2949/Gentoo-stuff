@@ -11147,3 +11147,5 @@ weakened. The retained Portage build log is
 `/var/tmp/gentoo-portage-build/portage/net-libs/webkit-gtk-2.54.0-r410/temp/build.log`;
 this requires a source/patch or exact-version remediation before baseline
 convergence.
+The structured receipt for this failed exact retry is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-hyprtoolkit-20260930.json`.
