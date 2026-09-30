@@ -2,17 +2,20 @@ From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 Subject: [PATCH] libjxl_cms: preserve established public C++ ABI visibility
 
 The installed libjxl_cms provider is consumed by applications which already
-resolve its exported C++ template instantiations.  The upstream target-local
+resolve its exported C++ template instantiations. The upstream target-local
 hidden-visibility preset removes those symbols even when the Gentoo package
-policy explicitly selects the public ABI lane.  Keep the target's ABI
-contract aligned with the existing provider; unrelated libjxl targets retain
-their upstream visibility settings.
+policy explicitly selects the public ABI lane.
 
 --- a/lib/jxl_cms.cmake
 +++ b/lib/jxl_cms.cmake
-@@
-     set_target_properties(jxl_cms PROPERTIES
+@@ -14,8 +14,8 @@
+ target_compile_options(jxl_cms PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
+ set_target_properties(jxl_cms PROPERTIES
+         POSITION_INDEPENDENT_CODE ON
 -        CXX_VISIBILITY_PRESET hidden
 -        VISIBILITY_INLINES_HIDDEN 1)
 +        CXX_VISIBILITY_PRESET default
 +        VISIBILITY_INLINES_HIDDEN 0)
+ target_link_libraries(jxl_cms PUBLIC jxl_base)
+ target_include_directories(jxl_cms PRIVATE
+   ${JXL_HWY_INCLUDE_DIRS}
