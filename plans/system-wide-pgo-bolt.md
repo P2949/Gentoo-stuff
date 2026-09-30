@@ -11254,3 +11254,8 @@ After the WebKit 2.54.0-r600 source remediation reached and was rejected by the 
 ### 2026-09-30 GEGL 0.4.72 baseline transition retained
 
 The exact optimization-off `=media-libs/gegl-0.4.72` transaction completed its source/configure/build phases but was correctly refused by install QA. The immutable log is `/var/lib/gentoo-optimization/reports/userspace-baseline-gegl-20260930/emerge.log` (SHA-256 `3e00da797268be4b7191ee806ad98a0fdf22ef8201b528c48b305c8eb72a434a`). The ABI guard reported removal of 11 public `libgegl-0.4.so.0` exports (`_gegl_cl_*`, OpenCL helpers, and GIO stream/data-URI helpers) and disappearance of established `gegl-transformops-*` and `gegl-common-gpl3*` provider SONAMEs. No replacement was merged; installed VDB remains `media-libs/gegl-0.4.70`. This is a genuine version/feature ABI transition requiring coordinated GEGL reverse-consumer analysis, not an ABI-guard bypass or unchanged retry.
+
+
+### 2026-09-30 libde265 1.1.3 baseline transition retained
+
+The exact optimization-off `=media-libs/libde265-1.1.3` build completed its multilib compile/install staging but was correctly refused by the exported-ABI guard. The immutable log is `/var/lib/gentoo-optimization/reports/userspace-baseline-libde265-20260930/emerge.log` (SHA-256 `39a91b576cc27f89b090872d1f82aee9d20ccc9bf21ab116bb444dc1f39a2a86`). The new `libde265.so.0` provider exported only 106 symbols versus 877/878 in the installed 1.0.16 provider, removing decoder/internal API symbols and `MD5_Update`; no replacement was merged and the installed VDB remains 1.0.16. This is retained as a real ABI transition requiring consumer closure analysis, not a guard bypass or unchanged retry.
