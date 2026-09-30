@@ -121,6 +121,18 @@ class DeinstrumentationStateTests(unittest.TestCase):
         retry = dict(first, created_epoch=2.0)
         self.assertEqual(module.marker_identity(first), module.marker_identity(retry))
 
+    def test_reconciliation_residuals_are_subset_and_terminal_states_drop_out(self):
+        module = load("reconcile_deinstrumentation", ROOT / "scripts/optimization/pgo/reconcile-deinstrumentation.py")
+        scan = {"records": [
+            {"owner_cpv": "app/a-1", "instrumentation_markers": ["prf"]},
+            {"owner_cpv": "vendor/prebuilt-1", "instrumentation_markers": ["prf"],
+             "terminal_disposition": "unsupported-by-upstream-toolchain/prebuilt"},
+            {"owner_cpv": "kernel/fw-1", "error": "readelf", "terminal_disposition": "kernel-policy-exclusion"},
+        ]}
+        self.assertEqual(module.residual_cpvs(scan, {"app/a-1", "vendor/prebuilt-1", "kernel/fw-1"}), {"app/a-1"})
+        with self.assertRaises(ValueError):
+            module.residual_cpvs({"records": [{"owner_cpv": "new/pkg-1", "instrumentation_markers": ["prf"]}]}, {"app/a-1"})
+
     def test_undefined_gcov_runtime_reference_is_not_instrumentation(self):
         module = load("instrumentation", ROOT / "scripts/optimization/lib/instrumentation.py")
         with tempfile.TemporaryDirectory() as tmp:
