@@ -104,9 +104,10 @@ case_deinstrumentation_allows_markers_for_cleanup() (
     chmod +x "${DEINSTRUMENT_CHECKER}"
     DEINSTRUMENT_MARKER=${TMP}/deinstrument.pending
     DEINSTRUMENT_PLAN=${TMP}/plan.json
-    printf 'authorized\n' > "${DEINSTRUMENT_MARKER}"
     printf '{"batches":[{"batch_id":1,"cpvs":["app-test/fixture-1"]}]}\n' > "${DEINSTRUMENT_PLAN}"
     PLAN_SHA=$(/usr/bin/sha256sum "${DEINSTRUMENT_PLAN}" | /usr/bin/awk '{print $1}')
+    printf '{"schema":"deinstrument-pending-v1","state":"armed","plan":"%s","plan_sha256":"%s","batch_id":1,"cpvs":["app-test/fixture-1"]}\n' \
+        "${DEINSTRUMENT_PLAN}" "${PLAN_SHA}" > "${DEINSTRUMENT_MARKER}"
     GENTOO_OPT_INSTRUMENTATION_CHECKER=${DEINSTRUMENT_CHECKER}
     GENTOO_OPT_MODE=off
     GENTOO_OPT_DEINSTRUMENT=1

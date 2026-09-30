@@ -1311,8 +1311,11 @@ gentoo_opt_strip_inherited_rust_optimization_policy() {
 }
 
 gentoo_opt_strip_deinstrumentation_policy() {
-    [[ ${GENTOO_OPT_DEINSTRUMENT-} == 1 ||
-        -f /var/lib/gentoo-optimization/state/deinstrument.pending ]] || return 0
+    # The durable marker is a coordination barrier for starting/clearing
+    # transactions.  It must not itself rewrite flags in unrelated ordinary
+    # builds: only an explicitly targeted de-instrumentation transaction may
+    # remove the established ABI/optimization policy.
+    [[ ${GENTOO_OPT_DEINSTRUMENT-} == 1 ]] || return 0
     if [[ ${GENTOO_OPT_DEINSTRUMENT_RETAIN_ABI:-0} == 1 &&
         ${GENTOO_OPT_DEINSTRUMENT:-0} == 1 &&
         ${CATEGORY-}/${PF-} == dev-util/source-highlight-3.1.9-r2 ]]; then
@@ -1354,8 +1357,7 @@ gentoo_opt_strip_deinstrumentation_policy() {
 # phase-hook boundaries so the exact off transaction cannot compile with a
 # generation's stale COMMON_FLAGS after Portage has reconstructed them.
 if [[ ${GENTOO_OPT_MODE:-off} == off ||
-    ${GENTOO_OPT_DEINSTRUMENT-} == 1 ||
-    -f /var/lib/gentoo-optimization/state/deinstrument.pending ]]; then
+    ${GENTOO_OPT_DEINSTRUMENT-} == 1 ]]; then
     pre_src_configure() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_inherited_rust_optimization_policy; gentoo_opt_strip_deinstrumentation_policy; }
     pre_src_compile() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_inherited_rust_optimization_policy; gentoo_opt_strip_deinstrumentation_policy; }
     pre_src_install() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_inherited_rust_optimization_policy; gentoo_opt_strip_deinstrumentation_policy; }
