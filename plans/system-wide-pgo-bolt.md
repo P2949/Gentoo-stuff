@@ -11279,3 +11279,8 @@ A changed-cause retry tested a package-scoped `gamescope-abi.conf` fallback reta
 ### 2026-09-30 tree-sitter 0.27.0 baseline transition retained
 
 The exact optimization-off `=dev-libs/tree-sitter-0.27.0` build completed but install QA correctly rejected the staged replacement because the established `libtree-sitter.so.0.26` SONAME disappeared. The immutable log is `/var/lib/gentoo-optimization/reports/userspace-baseline-tree-sitter-20260930/emerge.log` (SHA-256 `368c517405de2d5c8a11832150f2cd0deeb03b0d671acf1b954bfdbf461d742c`). No replacement was merged; the installed tree-sitter provider remains 0.26.13. The resolver identifies `dev-python/tree-sitter` as a dependent requiring coordinated transition handling.
+
+
+### 2026-09-30 Python tree-sitter consumer baseline verified
+
+The exact optimization-off reinstall of `=dev-python/tree-sitter-0.26.0_p20260816-r1` completed and merged against the installed tree-sitter 0.26 provider. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-python-tree-sitter-20260930/emerge.log` (SHA-256 `b66e2bda930ea4fa2f6999b1603bfb7d0fd228bbf6712d75304a6beb2478d91d`). VDB verification reports `dev-python/tree-sitter-0.26.0_p20260816-r1`; independent imports under Python 3.13, 3.14, and 3.15 all report version 0.26.0. This is ordinary userspace baseline evidence only; it does not authorize the blocked `libtree-sitter.so.0.27` provider transition or claim PGO/BOLT use.
