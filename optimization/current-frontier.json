@@ -10,11 +10,11 @@
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "1ccbca282b73bfaf1fa0a4dc8b49ab08d85f38b1",
+  "as_of_commit": "727407d4209d31984ff320e40f75d231f83b3cd5",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress",
   "latest_resolver_operation_count": 38,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-post-libmediainfo/emerge-pvuDN-world.log",
-  "latest_resolver_report_sha256": "35945d885a4564be0237361b9524816c7840eef509cfad2fa8200d62494a9a35",
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-234529/emerge-pvuDN-world.log",
+  "latest_resolver_report_sha256": "a8d83d5004514d3c3b538fac5a736333e789c61a8bece4c217f83b3ccb058c9f",
   "next_authoritative_action": "apply_exact_transition_authority_to_spirv_or_ffmpeg_provider_selected_by_current_resolver",
   "schema": "current-frontier-v1",
   "temporary_configuration_deviations": [
