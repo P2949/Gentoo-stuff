@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,10 +16,16 @@ def terminal_clean(record: dict) -> bool:
     """Return whether a census record is an authenticated acceptable terminal state."""
     return record.get("terminal_disposition") == TERMINAL_PREBUILT
 
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scan", type=Path, required=True)
+    ap.add_argument("--census", type=Path, required=True)
+    ap.add_argument("--mutation-policy", type=Path, required=True)
+    ap.add_argument("--plan", type=Path, required=True)
     ap.add_argument("--marker", type=Path, default=MARKER)
     args = ap.parse_args()
     if not args.scan.is_file():
@@ -30,6 +37,20 @@ def main() -> int:
     records = scan.get("records")
     if not isinstance(records, list):
         raise SystemExit("REFUSED: scan has no records list")
+    if scan.get("record_type") != "live-instrumentation-census" or scan.get("schema_version") != 2:
+        raise SystemExit("REFUSED: unsupported scan authority schema")
+    if scan.get("source_census_sha256") != sha256(args.census):
+        raise SystemExit("REFUSED: scan/census identity mismatch")
+    if scan.get("mutation_policy_sha256") != sha256(args.mutation_policy):
+        raise SystemExit("REFUSED: scan/mutation-policy identity mismatch")
+    try:
+        marker = json.loads(args.marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"REFUSED: invalid de-instrumentation marker: {exc}")
+    if marker.get("schema") != "deinstrument-pending-v1":
+        raise SystemExit("REFUSED: unsupported de-instrumentation marker schema")
+    if marker.get("plan") != str(args.plan.resolve()) or marker.get("plan_sha256") != sha256(args.plan):
+        raise SystemExit("REFUSED: marker/plan identity mismatch")
     instrumented = [
         r for r in records
         if r.get("instrumentation_markers")

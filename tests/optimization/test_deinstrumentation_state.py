@@ -96,6 +96,14 @@ class DeinstrumentationStateTests(unittest.TestCase):
         }))
         self.assertFalse(module.terminal_clean({"instrumentation_markers": ["prf"]}))
 
+    def test_marker_clear_requires_scan_authority_bindings(self):
+        source = (ROOT / "scripts/optimization/pgo/clear-deinstrumentation.py").read_text()
+        for required in ("--census", "--mutation-policy", "--plan",
+                         "scan/census identity mismatch",
+                         "scan/mutation-policy identity mismatch",
+                         "marker/plan identity mismatch"):
+            self.assertIn(required, source)
+
     def test_abseil_deinstrumentation_retains_abi_vtables(self):
         bashrc = (ROOT / "portage/bashrc").read_text()
         self.assertIn("${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-*", bashrc)
