@@ -11299,3 +11299,8 @@ After the successful ALSA plugins reinstall and Python tree-sitter consumer rebu
 ### 2026-09-30 MLT 7.40.0 baseline consumer verified
 
 The exact optimization-off `=media-libs/mlt-7.40.0` rebuild completed and merged against the installed FFmpeg provider. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-mlt-20260930/emerge.log` (SHA-256 `b69b4059e0dd55f58389c24a985970101003d49a0071d819dc320fdcdf149970`). VDB verification reports `media-libs/mlt-7.40.0`; independent `melt-7 --version` and `melt --version` checks both report 7.40.0. This is ordinary userspace baseline evidence only; no PGO/BOLT claim is made and the FFmpeg provider transition remains separately unresolved.
+
+
+### 2026-09-30 PipeWire 1.6.9 baseline reinstall verified
+
+The exact optimization-off `=media-video/pipewire-1.6.9` multilib transaction completed and merged. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-pipewire-20260930/emerge.log` (SHA-256 `0eb91c5f2f085fb264d246202c6e258071c09281651ffaf2c651589d726254fe`). VDB verification reports `media-video/pipewire-1.6.9`; independent `/usr/bin/pw-cli --version` and `/usr/bin/pipewire --version` checks both report libpipewire 1.6.9. This is ordinary userspace baseline evidence only; no PGO/BOLT claim is made.
