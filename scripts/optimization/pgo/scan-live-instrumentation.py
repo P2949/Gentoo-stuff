@@ -124,11 +124,20 @@ def main() -> None:
     parser.add_argument("--census", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--vdb", default="/var/db/pkg")
+    parser.add_argument("--mutation-policy", help="authenticated package mutation-policy JSON")
     args = parser.parse_args()
     output = Path(args.output)
     if output.exists():
         raise SystemExit(f"REFUSED: output already exists: {output}")
     census = json.loads(Path(args.census).read_text())
+    policy = {}
+    if args.mutation_policy:
+        policy_data = json.loads(Path(args.mutation_policy).read_text())
+        policy = {
+            item.get("cpv"): item
+            for item in policy_data.get("records", [])
+            if item.get("decision") == "kernel-policy-exclusion"
+        }
     # Accept both the current census schema (kind/elf booleans) and the
     # earlier authoritative ELF census (class/type fields).  A schema that
     # cannot prove an ELF record is never treated as an eligible artifact.
@@ -137,10 +146,19 @@ def main() -> None:
         is_regular = item.get("kind", "regular") == "regular"
         is_elf = bool(item.get("elf")) or bool(item.get("class")) or bool(item.get("type"))
         if is_regular and is_elf:
-            items.append(item)
+            if item.get("owner_cpv") in policy:
+                items.append({**item, "_terminal_policy": "kernel-policy-exclusion"})
+            else:
+                items.append(item)
     workers = max(1, min(32, (os.cpu_count() or 1) * 2))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         records = list(pool.map(inspect, items))
+    for record, item in zip(records, items):
+        if item.get("_terminal_policy"):
+            record["status"] = "terminal-policy-exclusion"
+            record["terminal_disposition"] = item["_terminal_policy"]
+            record["instrumentation_markers"] = []
+            record["error"] = None
     vdb = Path(args.vdb)
     for record in records:
         if record["instrumentation_markers"]:

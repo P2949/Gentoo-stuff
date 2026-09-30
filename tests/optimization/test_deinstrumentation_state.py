@@ -58,6 +58,29 @@ class DeinstrumentationStateTests(unittest.TestCase):
             self.assertEqual(data["accounting"]["terminal_retained_prebuilt_cpvs"], ["vendor/a-1"])
             self.assertEqual(data["accounting"]["inspection_failed_cpvs"], ["app/b-1", "app/c-1"])
 
+    def test_scanner_honors_authenticated_kernel_policy_exclusion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            census = tmp / "census.json"
+            policy = tmp / "policy.json"
+            output = tmp / "scan.json"
+            census.write_text(json.dumps({"artifacts": [{
+                "owner_cpv": "sys-kernel/linux-firmware-1",
+                "path": "/bin/false", "kind": "regular",
+                "elf": {"class": 2, "type": 2, "machine": 62},
+            }]}))
+            policy.write_text(json.dumps({"records": [{
+                "cpv": "sys-kernel/linux-firmware-1",
+                "decision": "kernel-policy-exclusion",
+            }]}))
+            subprocess.run([
+                sys.executable, str(ROOT / "scripts/optimization/pgo/scan-live-instrumentation.py"),
+                "--census", str(census), "--output", str(output),
+                "--mutation-policy", str(policy), "--vdb", str(tmp / "vdb"),
+            ], check=True)
+            data = json.loads(output.read_text())
+            self.assertEqual(data["records"], [])
+
     def test_terminal_prebuilt_is_acceptable_clean_state(self):
         module = load("clear_deinstrumentation", ROOT / "scripts/optimization/pgo/clear-deinstrumentation.py")
         self.assertTrue(module.terminal_clean({
