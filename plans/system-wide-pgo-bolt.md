@@ -11264,3 +11264,8 @@ The exact optimization-off `=media-libs/libde265-1.1.3` build completed its mult
 ### 2026-09-30 Firefox-bin 157.0 baseline transition retained
 
 The exact optimization-off `=www-client/firefox-bin-157.0` package transaction staged successfully but was correctly rejected by install QA. The immutable log is `/var/lib/gentoo-optimization/reports/userspace-baseline-firefox-bin-20260930/emerge.log` (SHA-256 `5ca3fd7ca6622ffb7aca7748292440d0a8870af123767c2096f7a04bce337c79`). The prebuilt `opt/firefox/libmozsandbox.so` provider lost two exported libstdc++ string symbols relative to the installed 152.0.5 provider; no replacement was merged and the installed VDB remains 152.0.5. This is retained as a prebuilt ABI/source transition and is not profile-use evidence; the exported-ABI guard remains unchanged.
+
+
+### 2026-09-30 Gamescope 3.16.29 baseline ABI transition retained
+
+The exact optimization-off `=gui-wm/gamescope-3.16.29` retry used the existing package-scoped clang/lld plus libstdc++ policy and completed compilation/staging. Install QA then correctly rejected the Vulkan WSI layer provider: `libVkLayer_FROG_gamescope_wsi_x86_64.so` lost the two established TLS guard/storage exports `_ZGVZN8messagey9GetErrBufEvE3err` and `_ZZN8messagey9GetErrBufEvE3err`. The immutable log is `/var/lib/gentoo-optimization/reports/userspace-baseline-gamescope-20260930/emerge.log` (SHA-256 `2eeb57639d07e56de50c18d0a79b44f750f1ca7c170fa94ce0d73ca9ab6ebaee`). No replacement was merged; installed Gamescope remains 3.16.28. This is retained as a narrow package ABI/visibility transition requiring source-level comparison, not a global guard relaxation.
