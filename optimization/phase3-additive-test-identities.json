@@ -114,5 +114,9 @@
   {
     "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_undefined_gcov_runtime_reference_is_not_instrumentation",
     "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_assign_pgo_lanes.ReviewedLaneOverrideTests.test_managed_eclass_does_not_hide_native_artifacts",
+    "test": "python-unit-tests:tests/optimization"
   }
 ]
