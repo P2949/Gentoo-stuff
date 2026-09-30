@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, subprocess, sys, tempfile
+import contextlib, io, json, subprocess, sys, tempfile
 from pathlib import Path
 ROOT=Path(__file__).parents[2]
 TOOL=ROOT/'scripts/optimization/storage/prune-binpkg-cache.py'
@@ -42,7 +42,8 @@ with tempfile.TemporaryDirectory() as t:
                     '--output', str(out), '--prune-duplicates', '--execute',
                     '--project-lock', str(Path(t) / 'project.lock'),
                     '--generation-lock', str(Path(t) / 'generation.lock')]
-        assert module.main() == 0
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert module.main() == 0
     finally:
         sys.argv = old_argv
     d=json.loads(out.read_text()); assert len(d['deleted']) == 1
