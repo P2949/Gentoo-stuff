@@ -11680,3 +11680,7 @@ The first exact mpv consumer attempt failed because its staged executable embedd
 ### 2026-10-01 FFmpeg preserved consumer PipeWire success
 
 `=media-video/pipewire-1.6.9::gentoo` was rebuilt with `CCACHE_DISABLE=1`, exact optimization-off policy, and `--nodeps`; compilation, install-QA, and merge completed successfully against FFmpeg 9.0.2. Immutable log SHA-256 is `2c6f86ef98c622f6f78451792f32b43a172747771cfa9596a4c74cc919f14da5`; live VDB `CONTENTS` SHA-256 is `b0e26e240c964a75c4d773cc931af587c7dfd4329bb8624c4e8487dd5d00f407`; `environment.bz2` SHA-256 is `b7292fa05993cda958feb849a566fc6f2003b8c757b63bcb95b1193869093c57`. The old FFmpeg preserved registry remains populated for the other consumers, so this is one closure edge resolved rather than a complete preserved-rebuild claim.
+
+### 2026-10-01 FFmpeg preserved consumer libheif success
+
+`=media-libs/libheif-1.23.5::gentoo` rebuilt with ccache disabled, exact optimization-off policy, and no dependency expansion. Both multilib builds, install-QA, and merge completed against FFmpeg 9.0.2. Immutable log SHA-256 is `fde23b318c59f545ba97236655aefc9dac131f3c617fadff70b978d0f26a8a60`; live VDB `CONTENTS` SHA-256 is `efbb051ae387947289e0757aa81262340fe138b20bbabab98622fab9f7d82dbb`; `environment.bz2` SHA-256 is `fcd12b0ad164bb89abd0ed107df2a843cb24050d5df14969579ff780e9d5f610`. Remaining old FFmpeg consumers remain preserved and are being rebuilt individually; no broad closure success is claimed.
