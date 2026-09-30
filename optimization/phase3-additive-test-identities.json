@@ -1,70 +1,118 @@
 [
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_assign_pgo_lanes.ReviewedLaneOverrideTests.test_override_is_explicit_policy_input"
+    "subtest": "python.test_assign_pgo_lanes.ReviewedLaneOverrideTests.test_override_is_explicit_policy_input",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_assign_pgo_lanes.ReviewedLaneOverrideTests.test_prebuilt_evidence_cannot_receive_compilable_lane"
+    "subtest": "python.test_assign_pgo_lanes.ReviewedLaneOverrideTests.test_prebuilt_evidence_cannot_receive_compilable_lane",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_checkpoint_compactor.CheckpointCompactorTests.test_dry_run_protects_selector_and_retains_unknown"
+    "subtest": "python.test_checkpoint_compactor.CheckpointCompactorTests.test_dry_run_protects_selector_and_retains_unknown",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_checkpoint_compactor.CheckpointCompactorTests.test_execute_requires_terminal_state_and_only_retires_candidate"
+    "subtest": "python.test_checkpoint_compactor.CheckpointCompactorTests.test_execute_requires_terminal_state_and_only_retires_candidate",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_content_object_reachability.ContentObjectReachabilityTests.test_execute_requires_complete_authority_root"
+    "subtest": "python.test_content_object_reachability.ContentObjectReachabilityTests.test_execute_requires_complete_authority_root",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_content_object_reachability.ContentObjectReachabilityTests.test_referenced_object_is_live_unknown_name_is_kept"
+    "subtest": "python.test_content_object_reachability.ContentObjectReachabilityTests.test_referenced_object_is_live_unknown_name_is_kept",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_distfile_retention_set.DistfileRetentionTests.test_manifest_match_is_evidence_and_unknown_is_kept"
+    "subtest": "python.test_distfile_retention_set.DistfileRetentionTests.test_manifest_match_is_evidence_and_unknown_is_kept",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_prerequisite_distfile_compactor.PrerequisiteDistfileCompactorTest.test_execute"
+    "subtest": "python.test_prerequisite_distfile_compactor.PrerequisiteDistfileCompactorTest.test_execute",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_prerequisite_history_compactor.PrerequisiteHistoryCompactorTests.test_dry_run_execute_and_lock_refusal"
+    "subtest": "python.test_prerequisite_history_compactor.PrerequisiteHistoryCompactorTests.test_dry_run_execute_and_lock_refusal",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_profile_compaction_authority.ProfileCompactionAuthorityTests.test_missing_binding_keeps_expanded"
+    "subtest": "python.test_profile_compaction_authority.ProfileCompactionAuthorityTests.test_missing_binding_keeps_expanded",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_profile_compaction_authority.ProfileCompactionAuthorityTests.test_unique_valid_binding_authorizes"
+    "subtest": "python.test_profile_compaction_authority.ProfileCompactionAuthorityTests.test_unique_valid_binding_authorizes",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_prune_portage_build_trees.PortageBuildTreeRetirementTests.test_dry_run_and_execute"
+    "subtest": "python.test_prune_portage_build_trees.PortageBuildTreeRetirementTests.test_dry_run_and_execute",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_publish_profile_dispatcher.DispatcherPathTrustTests.test_safe_rejects_symlinked_ancestor_after_path_spelling"
+    "subtest": "python.test_publish_profile_dispatcher.DispatcherPathTrustTests.test_safe_rejects_symlinked_ancestor_after_path_spelling",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_publish_profile_dispatcher.DispatcherPathTrustTests.test_safe_rejects_symlinked_final_path"
+    "subtest": "python.test_publish_profile_dispatcher.DispatcherPathTrustTests.test_safe_rejects_symlinked_final_path",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_storage_gc.StorageGCTest.test_retention_and_execution"
+    "subtest": "python.test_storage_gc.StorageGCTest.test_retention_and_execution",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_storage_inventory.StorageInventoryTests.test_entry_and_children_are_discovery_safe"
+    "subtest": "python.test_storage_inventory.StorageInventoryTests.test_entry_and_children_are_discovery_safe",
+    "test": "python-unit-tests:tests/optimization"
   },
   {
-    "test": "python-unit-tests:tests/optimization",
-    "subtest": "python.test_storage_retention.StorageRetentionTests.test_classification_fixture_runs_only_when_selected"
+    "subtest": "python.test_storage_retention.StorageRetentionTests.test_classification_fixture_runs_only_when_selected",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_abseil_deinstrumentation_retains_abi_vtables",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_extended_marker_remains_armed",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_extension_requires_exact_predecessor_batch_identity",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_gcov_runtime_merge_helpers_without_counters_are_not_instrumentation",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_libjxl_cleanup_abi_exports_are_explicit_and_patchable",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_marker_arm_identity_ignores_creation_timestamp",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_planner_partitions_terminal_prebuilt_and_failures",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_reconciliation_residuals_are_subset_and_terminal_states_drop_out",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_scanner_decodes_portage_declarations_and_prebuilt_marker",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_scanner_honors_authenticated_kernel_policy_exclusion",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_terminal_prebuilt_is_acceptable_clean_state",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_undefined_gcov_runtime_reference_is_not_instrumentation",
+    "test": "python-unit-tests:tests/optimization"
   }
 ]
