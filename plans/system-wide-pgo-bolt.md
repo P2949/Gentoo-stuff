@@ -11135,3 +11135,15 @@ compatibility symlink or guard bypass was used. The immutable retry log is
 (SHA-256 `5bfdfb3650d3bb33665346b2b0cec4f008b62947178cefda878b4fc538b34bba`).
 This is now an ordinary reverse-dependent/ABI-transition remediation item, not
 a fetch failure.
+
+### 2026-09-30 WebKit baseline failure diagnosis
+
+The retained WebKit baseline failure is a compile-time Skia error, not a fetch
+or optimization-dispatch failure. `net-libs/webkit-gtk-2.54.0-r410` stops in
+`SkRefCnt.h` because `SkCapture` is incomplete when `obj->unref()` is
+instantiated; Ninja reports two generated compiler errors and aborts at 2818
+of 8877. No unchanged retry was started and no optimization guard was
+weakened. The retained Portage build log is
+`/var/tmp/gentoo-portage-build/portage/net-libs/webkit-gtk-2.54.0-r410/temp/build.log`;
+this requires a source/patch or exact-version remediation before baseline
+convergence.
