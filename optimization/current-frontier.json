@@ -9,7 +9,7 @@
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "19d4cf8d850d7cc49706b9dd28d6220d993d9493",
+  "as_of_commit": "3aaf08012f2a4df26a644a868310ddcca7030f49",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress",
   "latest_resolver_operation_count": 36,
   "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-235442-post-vscode/emerge-pvuDN-world.log",
