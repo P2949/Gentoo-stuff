@@ -11036,3 +11036,7 @@ The reverse-dependency producer now preserves multiple ELF artifact-level proofs
 ### 2026-09-30 reverse-dependency artifact aggregation
 
 The reverse-dependency producer now preserves multiple ELF artifact-level proofs for the same provider/consumer package relationship while emitting one aggregated `elf-needed` scheduling edge. Duplicate Portage dependency records remain fail-closed. Focused reverse-dependency regression and Python compilation pass; no live graph was regenerated from the moving baseline.
+
+### 2026-09-30 Portage dependency source error propagation
+
+Hardened the live Portage dependency producer to retain metadata, parse, provider-match, and provider-metadata failures in its output and fail closed instead of silently dropping affected consumers. The reverse-dependency authority now refuses a Portage source carrying unresolved errors. Added a focused regression for source-error refusal; reverse-dependency regression and Python compilation pass. No live dependency graph was published from an error-bearing source.
