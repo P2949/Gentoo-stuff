@@ -11294,3 +11294,8 @@ The exact optimization-off `=media-plugins/alsa-plugins-1.2.12` multilib transac
 ### 2026-09-30 post-ALSA ordinary-world resolver
 
 After the successful ALSA plugins reinstall and Python tree-sitter consumer rebuild, a fresh read-only optimization-off `emerge -pvuDN --with-bdeps=y --complete-graph=y --newuse @world` completed successfully. The resolver report is `/tmp/world-pretend-20260930-after-alsa.log` (SHA-256 `19b43660359e0621fd3a2524f9e9dd8986a2bf45e8c30ead8f4b66585ab6a173`). It still contains 48 operations (26 upgrades, 3 new slots, 19 reinstalls); the remaining graph is dominated by the coordinated FFmpeg 9, SPIR-V 1.4.357, WebKitGTK, GEGL, wlroots/Hyprland/Gamescope, and tree-sitter provider transitions. No broad transaction was launched.
+
+
+### 2026-09-30 MLT 7.40.0 baseline consumer verified
+
+The exact optimization-off `=media-libs/mlt-7.40.0` rebuild completed and merged against the installed FFmpeg provider. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-mlt-20260930/emerge.log` (SHA-256 `b69b4059e0dd55f58389c24a985970101003d49a0071d819dc320fdcdf149970`). VDB verification reports `media-libs/mlt-7.40.0`; independent `melt-7 --version` and `melt --version` checks both report 7.40.0. This is ordinary userspace baseline evidence only; no PGO/BOLT claim is made and the FFmpeg provider transition remains separately unresolved.
