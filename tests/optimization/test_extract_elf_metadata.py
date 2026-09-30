@@ -22,7 +22,7 @@ def main():
         census2.write_text(json.dumps({"artifacts": [{"owner_cpv": "app/a-1", "path": "/bin/true", "elf": {"class": 2}}]}))
         subprocess.run(["python3", str(SCRIPT), "--census", str(census2), "--output", str(meta)], check=True)
         record = json.loads(meta.read_text())["artifacts"][0]
-        assert "rpath" in record and "runpath" in record
+        assert "rpath" in record and "runpath" in record and "soname" in record
     print("PASS: ELF metadata census rejects duplicate identities and overwrite")
 
 if __name__ == "__main__": main()
