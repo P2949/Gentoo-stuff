@@ -11334,3 +11334,8 @@ After the successful libheif, QtMultimedia, PipeWire, MPV, MLT, and KFileMetaDat
 ### 2026-09-30 OBS Studio 32.2.2 baseline reinstall verified
 
 The exact optimization-off `=media-video/obs-studio-32.2.2` rebuild completed and merged against the installed FFmpeg 8.1.3 and PipeWire 1.6.9 stack. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-obs-20260930/emerge.log` (SHA-256 `e0fdcdd48b5012414bf891bad38ed0f2dc6df6df441663cc2a641563d464a124`). VDB verification reports `media-video/obs-studio-32.2.2`; `/usr/bin/obs --version` reports OBS Studio 32.2.2. The optional PipeWire capture and v4l2loopback packages remain separate resolver items; no PGO/BOLT claim is made.
+
+
+### 2026-09-30 OpenCV 4.12.0-r2 baseline reinstall verified
+
+The exact optimization-off `=media-libs/opencv-4.12.0-r2` multilib rebuild completed and merged against the current codec/FFmpeg stack. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-opencv-20260930/emerge.log` (SHA-256 `5e3da9a27edda96daea512c0ac1130ef8e5ab0aaba6f19b642ac1849c4a559d0`). VDB verification reports `media-libs/opencv-4.12.0-r2`; `pkg-config --modversion opencv4` reports 4.12.0. Python bindings are disabled by the active USE configuration, so no `cv2` import is expected or counted.
