@@ -11309,3 +11309,8 @@ The exact optimization-off `=media-video/pipewire-1.6.9` multilib transaction co
 ### 2026-09-30 MPV 0.41.0-r2 baseline reinstall verified
 
 The exact optimization-off `=media-video/mpv-0.41.0-r2` rebuild completed and merged against FFmpeg 8.1.3. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-mpv-20260930/emerge.log` (SHA-256 `26e484e94c16cf4cc914863bd855c5308f1388b51154791762c3f09a95172ac4`). VDB verification reports `media-video/mpv-0.41.0-r2`; an isolated `/usr/bin/mpv --no-config --version` check reports mpv 0.41.0 and FFmpeg 8.1.3. The user's existing mpv configuration was excluded from the check because it contains unsupported Vulkan options; no PGO/BOLT claim is made.
+
+
+### 2026-09-30 KFileMetaData 6.30.0 baseline reinstall verified
+
+The exact optimization-off `=kde-frameworks/kfilemetadata-6.30.0` rebuild completed and merged with its FFmpeg consumer support enabled. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-kfilemetadata-20260930/emerge.log` (SHA-256 `e95e7b2e387eccc95b71b10be426b1bfb1868bb6142438e662b5a95bfda1a3a2`). VDB verification reports `kde-frameworks/kfilemetadata-6.30.0`. This is ordinary userspace baseline evidence only; no PGO/BOLT claim is made.
