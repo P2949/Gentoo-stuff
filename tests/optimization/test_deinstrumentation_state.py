@@ -151,5 +151,21 @@ class DeinstrumentationStateTests(unittest.TestCase):
             finally:
                 module.subprocess.run = original
 
+    def test_gcov_runtime_merge_helpers_without_counters_are_not_instrumentation(self):
+        module = load("instrumentation_merge_only", ROOT / "scripts/optimization/lib/instrumentation.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "gcov-tool.debug"
+            path.write_bytes(b"\x7fELF")
+            class Result:
+                returncode = 0
+                stdout = b" 1: 0 FUNC GLOBAL HIDDEN 1 __gcov_merge_add\n"
+                stderr = b""
+            original = module.subprocess.run
+            module.subprocess.run = lambda *args, **kwargs: Result()
+            try:
+                self.assertEqual(module.inspect_elf(path), (False, "elf"))
+            finally:
+                module.subprocess.run = original
+
 if __name__ == "__main__":
     unittest.main()

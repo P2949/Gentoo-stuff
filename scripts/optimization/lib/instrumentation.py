@@ -10,7 +10,8 @@ LLVM_MARKERS = (
     "__llvm_prf_vnds", "__llvm_prf_vtab", "__llvm_prf_bits",
     "__llvm_covmap", "__llvm_covfun",
 )
-GCC_MARKERS = ("__gcov_init", "__gcov_exit", "__gcov_merge_", "__gcov_")
+GCC_MARKERS = ("__gcov_init", "__gcov_exit", "__gcov0.", "__gcov7.",
+               ".gcov_info", ".gcov_ctr_info")
 
 class InspectionError(RuntimeError):
     pass
@@ -42,9 +43,12 @@ def inspect_elf(path: pathlib.Path, timeout: float = 10.0) -> tuple[bool, str]:
     for marker in LLVM_MARKERS:
         if marker in data:
             return True, "llvm"
-    # A weak undefined __gcov_dump/__gcov_flush reference is emitted by some
-    # otherwise ordinary toolchain builds.  It is not coverage instrumentation;
-    # require a defined GCC runtime symbol (an UND symbol is only a reference).
+    # A weak undefined __gcov_dump/__gcov_flush reference and the hidden
+    # __gcov_merge_* implementation helpers in GCC's own gcov-tool are emitted
+    # by otherwise ordinary toolchain builds.  Neither proves that this ELF
+    # carries counters.  Require a defined registration/counter marker or a
+    # dedicated gcov metadata section; an UND symbol or merge-only runtime is
+    # only a reference/consumer implementation.
     for line in data.splitlines():
         if " UND " in line:
             continue
