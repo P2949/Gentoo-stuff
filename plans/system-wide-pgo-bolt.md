@@ -11032,3 +11032,7 @@ Hardened `clear-deinstrumentation.py` so marker removal requires a schema-2 live
 ### 2026-09-30 reverse-dependency artifact aggregation
 
 The reverse-dependency producer now preserves multiple ELF artifact-level proofs for the same provider/consumer package relationship while emitting one aggregated `elf-needed` scheduling edge. Duplicate Portage dependency records remain fail-closed. Focused reverse-dependency regression and Python compilation pass; no live graph was regenerated from the moving baseline.
+
+### 2026-09-30 reverse-dependency artifact aggregation
+
+The reverse-dependency producer now preserves multiple ELF artifact-level proofs for the same provider/consumer package relationship while emitting one aggregated `elf-needed` scheduling edge. Duplicate Portage dependency records remain fail-closed. Focused reverse-dependency regression and Python compilation pass; no live graph was regenerated from the moving baseline.
