@@ -77,6 +77,7 @@ def main() -> int:
     if not dispatcher_env.is_file() or dispatcher_env.is_symlink():
         raise SystemExit(f'REFUSED: exact dispatcher environment is unavailable: {dispatcher_env}')
     run_env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null','GENTOO_OPT_TARGET_CPV':a.cpv,'GENTOO_OPT_RUNNER_DISPATCHER_ENV':str(dispatcher_env.resolve())}
+    proc_rc = 1
     with a.log.open('w+') as out:
         pretend=subprocess.run(['emerge','--oneshot','--pretend','--verbose',atom],stdout=out,stderr=subprocess.STDOUT,env={**os.environ,'LLVM_PROFILE_FILE':'/dev/null','GENTOO_OPT_TARGET_CPV':a.cpv})
         if pretend.returncode != 0:
@@ -87,6 +88,7 @@ def main() -> int:
         if proposed != [a.cpv]:
             raise SystemExit(f'REFUSED: resolver proposed {proposed!r} for {a.cpv}; dependency/co-build reconciliation is required')
         proc=subprocess.run(['emerge','--oneshot','--nodeps','--buildpkg',atom],stdout=out,stderr=subprocess.STDOUT,env=run_env)
+        proc_rc = proc.returncode
     compiled = compilation_observed(a.log)
     if not compiled:
         raise SystemExit('REFUSED: profile-use transaction produced no compiler invocation evidence')
@@ -104,10 +106,10 @@ def main() -> int:
           'ebuild_sha256':digest, 'contents':vdb_artifact('CONTENTS'),
           'environment':vdb_artifact('environment.bz2')}
     finished=time.time()
-    receipt={'schema_version':2,'cpv':a.cpv,'repository':repo,'ebuild':{'path':str(ebuild.resolve()),'sha256':digest},'dispatcher':{'path':str(a.dispatcher.resolve()),'sha256':sha(a.dispatcher)},'dispatcher_env':{'path':str(dispatcher_env.resolve()),'sha256':sha(dispatcher_env)},'manifest':{'path':str(manifest.resolve()),'sha256':sha(manifest)},'metadata':{'path':str(metadata.resolve()),'sha256':sha(metadata)},'profile':{'path':str(profile.resolve()),'sha256':sha(profile)},'generation':record.get('generation'),'framework':record.get('framework'),'fingerprint':ident.get('fingerprint') or record.get('fingerprint'),'compiler':record.get('compiler'),'backend':record.get('backend'),'mode':'profile-use','exit_status':proc.returncode,'compile_evidence':{'observed':compiled,'log_sha256':sha(a.log)},'log':{'path':str(a.log.resolve()),'sha256':sha(a.log)},'started_epoch':started,'finished_epoch':finished,'post_vdb':post}
+    receipt={'schema_version':2,'cpv':a.cpv,'repository':repo,'ebuild':{'path':str(ebuild.resolve()),'sha256':digest},'dispatcher':{'path':str(a.dispatcher.resolve()),'sha256':sha(a.dispatcher)},'dispatcher_env':{'path':str(dispatcher_env.resolve()),'sha256':sha(dispatcher_env)},'manifest':{'path':str(manifest.resolve()),'sha256':sha(manifest)},'metadata':{'path':str(metadata.resolve()),'sha256':sha(metadata)},'profile':{'path':str(profile.resolve()),'sha256':sha(profile)},'generation':record.get('generation'),'framework':record.get('framework'),'fingerprint':ident.get('fingerprint') or record.get('fingerprint'),'compiler':record.get('compiler'),'backend':record.get('backend'),'mode':'profile-use','exit_status':proc_rc,'compile_evidence':{'observed':compiled,'log_sha256':sha(a.log)},'log':{'path':str(a.log.resolve()),'sha256':sha(a.log)},'started_epoch':started,'finished_epoch':finished,'post_vdb':post}
     a.receipt.parent.mkdir(parents=True,exist_ok=True)
     payload=json.dumps(receipt,sort_keys=True,indent=2)+'\n'
     fd=os.open(a.receipt,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
     with os.fdopen(fd,'w') as out: out.write(payload)
-    return proc.returncode
+    return proc_rc
 if __name__=='__main__': raise SystemExit(main())

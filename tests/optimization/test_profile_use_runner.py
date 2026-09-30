@@ -51,6 +51,8 @@ def main():
     source = SCRIPT.read_text()
     assert "GENTOO_OPT_RUNNER_DISPATCHER_ENV" in source
     assert "with_suffix('.env')" in source
+    assert "proc_rc = 1" in source
+    assert "return proc_rc" in source
     with tempfile.TemporaryDirectory() as td:
         log = Path(td) / "log"
         log.write_text("gentoo-optimization: profile-use backend clang-ir-use\n")
