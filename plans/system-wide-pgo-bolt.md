@@ -11284,3 +11284,8 @@ The exact optimization-off `=dev-libs/tree-sitter-0.27.0` build completed but in
 ### 2026-09-30 Python tree-sitter consumer baseline verified
 
 The exact optimization-off reinstall of `=dev-python/tree-sitter-0.26.0_p20260816-r1` completed and merged against the installed tree-sitter 0.26 provider. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-python-tree-sitter-20260930/emerge.log` (SHA-256 `b66e2bda930ea4fa2f6999b1603bfb7d0fd228bbf6712d75304a6beb2478d91d`). VDB verification reports `dev-python/tree-sitter-0.26.0_p20260816-r1`; independent imports under Python 3.13, 3.14, and 3.15 all report version 0.26.0. This is ordinary userspace baseline evidence only; it does not authorize the blocked `libtree-sitter.so.0.27` provider transition or claim PGO/BOLT use.
+
+
+### 2026-09-30 ALSA plugins baseline reinstall verified
+
+The exact optimization-off `=media-plugins/alsa-plugins-1.2.12` multilib transaction completed, passed install QA, and merged. Immutable evidence is `/var/lib/gentoo-optimization/reports/userspace-baseline-alsa-plugins-20260930/emerge.log` (SHA-256 `80844d0cc1a2fa8bf3d1389dc35863c48c43fc3fcccc5bed6ac20b9ae92bb396`). VDB verification reports `media-plugins/alsa-plugins-1.2.12`; the transaction remained ordinary userspace maintenance and carries no PGO/BOLT claim.
