@@ -11109,3 +11109,15 @@ and the structured receipt is
 The build contained no profile-generation or profile-use flags and no ABI guard
 was bypassed. A fresh `@world` pretend is required because this replacement
 changes the ordinary baseline graph.
+
+### 2026-09-30 post-OpenImageIO baseline pretend
+
+After installing stable `media-libs/openimageio-3.1.7.0-r1`, a fresh
+optimization-off `@world` pretend completed with exit 0 and still resolves
+1,276 operations (24 upgrades, 3 new slots, 1,249 reinstalls, and 8
+fetch-restricted packages). The complete output is
+`/var/lib/gentoo-optimization/reports/userspace-baseline-pretend-after-openimageio-20260930.txt`
+(SHA-256 `c1fa954d1bf389d5456cbd8f47e27ef7367b81ef256fb38a4ea7cb40eca9dff0`).
+The graph still exposes the unresolved FFmpeg/gamescope/libde265/Firefox/Gegl
+transitions and Hyprtoolkit/WebKit source state; no broad transaction was
+started from this pretend.
