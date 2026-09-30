@@ -3,13 +3,15 @@ Subject: [PATCH] libjxl_cms: preserve cleanup ABI exports
 
 ---
 --- a/lib/jxl_cms.cmake	2026-09-18 14:53:43.000000000 +0100
-+++ b/lib/jxl_cms.cmake	2026-09-30 06:13:20.157590167 +0100
-@@ -11,11 +11,18 @@
++++ b/lib/jxl_cms.cmake	2026-09-30 06:28:24.984157404 +0100
+@@ -11,11 +11,20 @@
  add_library(jxl_cms
    ${JPEGXL_INTERNAL_CMS_SOURCES}
  )
 +target_sources(jxl_cms PRIVATE
 +        ${CMAKE_CURRENT_LIST_DIR}/jxl/cms/abi_exports.cc)
++target_link_options(jxl_cms PRIVATE
++        "-Wl,--undefined=_ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE12_M_constructIPKcEEvT_S8_St20forward_iterator_tag")
  target_compile_options(jxl_cms PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 +target_compile_options(jxl_cms PRIVATE
 +        -fkeep-inline-functions
@@ -25,9 +27,9 @@ Subject: [PATCH] libjxl_cms: preserve cleanup ABI exports
  target_link_libraries(jxl_cms PUBLIC jxl_base)
  target_include_directories(jxl_cms PRIVATE
    ${JXL_HWY_INCLUDE_DIRS}
---- /dev/null	2026-09-29 23:55:38.369542038 +0100
-+++ b/lib/jxl/cms/abi_exports.cc	2026-09-30 06:12:06.283233698 +0100
-@@ -0,0 +1,20 @@
+--- a/lib/jxl/cms/abi_exports.cc	2026-09-29 23:55:38.369542038 +0100
++++ b/lib/jxl/cms/abi_exports.cc	2026-09-30 06:28:24.984205719 +0100
+@@ -0,0 +1,21 @@
 +#include <string>
 +#include <vector>
 +#include <iterator>
