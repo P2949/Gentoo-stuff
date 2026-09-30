@@ -14,11 +14,14 @@ def main() -> None:
         portage = root / "portage.json"
         elf = root / "elf.json"
         output = root / "graph.json"
-        portage.write_text(json.dumps({"records": [{"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1"}], "build_records": []}))
+        portage.write_text(json.dumps({
+            "records": [{"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1"}],
+            "build_records": [{"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1", "evidence": {"field": "DEPEND"}}],
+        }))
         elf.write_text(json.dumps({"records": [{"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1", "evidence": {"needed": "lib.so"}}]}))
         subprocess.run(["python3", str(SCRIPT), "--portage", str(portage), "--elf", str(elf), "--output", str(output)], check=True)
         records = json.loads(output.read_text())["records"]
-        assert {row["relationship"] for row in records} == {"portage-runtime", "elf-needed"}
+        assert {row["relationship"] for row in records} == {"portage-runtime", "portage-build", "elf-needed"}
         elf_duplicate = root / "elf-duplicate.json"
         elf_duplicate.write_text(json.dumps({"records": [
             {"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1", "evidence": {"consumer_path": "/usr/bin/a", "needed": "lib.so"}},
