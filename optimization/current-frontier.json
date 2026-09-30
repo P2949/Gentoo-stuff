@@ -4,17 +4,16 @@
     "ffmpeg",
     "spirv-vulkan",
     "libmediainfo",
-    "bullet-opensubdiv",
-    "pahole"
+    "bullet-opensubdiv"
   ],
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "727407d4209d31984ff320e40f75d231f83b3cd5",
+  "as_of_commit": "19231c83f52d72e4ac0cec16fc6add71ade8cf4f",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress",
-  "latest_resolver_operation_count": 38,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-234529/emerge-pvuDN-world.log",
-  "latest_resolver_report_sha256": "a8d83d5004514d3c3b538fac5a736333e789c61a8bece4c217f83b3ccb058c9f",
+  "latest_resolver_operation_count": 37,
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-234815-post-pahole/emerge-pvuDN-world.log",
+  "latest_resolver_report_sha256": "f2a082814391e3d0a61f1bfae0c61dd044efe0599d814637f869f734c983693e",
   "next_authoritative_action": "apply_exact_transition_authority_to_spirv_or_ffmpeg_provider_selected_by_current_resolver",
   "schema": "current-frontier-v1",
   "temporary_configuration_deviations": [
