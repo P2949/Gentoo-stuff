@@ -11259,3 +11259,8 @@ The exact optimization-off `=media-libs/gegl-0.4.72` transaction completed its s
 ### 2026-09-30 libde265 1.1.3 baseline transition retained
 
 The exact optimization-off `=media-libs/libde265-1.1.3` build completed its multilib compile/install staging but was correctly refused by the exported-ABI guard. The immutable log is `/var/lib/gentoo-optimization/reports/userspace-baseline-libde265-20260930/emerge.log` (SHA-256 `39a91b576cc27f89b090872d1f82aee9d20ccc9bf21ab116bb444dc1f39a2a86`). The new `libde265.so.0` provider exported only 106 symbols versus 877/878 in the installed 1.0.16 provider, removing decoder/internal API symbols and `MD5_Update`; no replacement was merged and the installed VDB remains 1.0.16. This is retained as a real ABI transition requiring consumer closure analysis, not a guard bypass or unchanged retry.
+
+
+### 2026-09-30 Firefox-bin 157.0 baseline transition retained
+
+The exact optimization-off `=www-client/firefox-bin-157.0` package transaction staged successfully but was correctly rejected by install QA. The immutable log is `/var/lib/gentoo-optimization/reports/userspace-baseline-firefox-bin-20260930/emerge.log` (SHA-256 `5ca3fd7ca6622ffb7aca7748292440d0a8870af123767c2096f7a04bce337c79`). The prebuilt `opt/firefox/libmozsandbox.so` provider lost two exported libstdc++ string symbols relative to the installed 152.0.5 provider; no replacement was merged and the installed VDB remains 152.0.5. This is retained as a prebuilt ABI/source transition and is not profile-use evidence; the exported-ABI guard remains unchanged.
