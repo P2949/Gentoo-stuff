@@ -1,0 +1,23 @@
+--- a/a52/pcm_a52.c	2026-10-01 02:36:33.945221009 +0100
++++ b/a52/pcm_a52.c	2026-10-01 02:36:33.956880519 +0100
+@@ -1202,7 +1202,20 @@
+ 	rec->io.flags = SND_PCM_IOPLUG_FLAG_BOUNDARY_WA;
+ #endif
+ #ifdef USE_AVCODEC_FRAME
++#if LIBAVCODEC_VERSION_MAJOR >= 63
++	const void *sample_fmt_configs = NULL;
++	int sample_fmt_count = 0;
++	if (avcodec_get_supported_config(NULL, rec->codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
++			&sample_fmt_configs, &sample_fmt_count) >= 0 &&
++			sample_fmt_configs != NULL && sample_fmt_count > 0) {
++		const enum AVSampleFormat *sample_fmts = sample_fmt_configs;
++		rec->av_format = sample_fmts[0];
++	} else {
++		rec->av_format = AV_SAMPLE_FMT_S16;
++	}
++#else
+ 	rec->av_format = rec->codec->sample_fmts[0];
++#endif
+ 	rec->is_planar = av_sample_fmt_is_planar(rec->av_format);
+ #else
+ 	rec->av_format = AV_SAMPLE_FMT_S16;
