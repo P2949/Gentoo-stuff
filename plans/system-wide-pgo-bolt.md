@@ -11914,3 +11914,7 @@ The retry using the source-derived `9998-skia-capture-complete-type.patch` passe
 ### 2026-10-01 WebKitGTK retry11 caught patch-path packaging defect
 
 The next exact retry stopped in `src_prepare` before compilation because `9997-skia-capture-canvas-complete-type.patch` used a shortened path and could not find `SkBitmapDevice.cpp` under Portage's `-p1` application root. Immutable log SHA-256 is `f15acbfbcd0906ee9714089f5f5b8fc7dbc6714a33e71e0af55e3ed2f708aeab`. The patch was regenerated from the exact staged source with the full `Source/ThirdParty/skia/...` path; its corrected SHA-256 is `4c5597e6b1b24e71dc45c00c43195d47b81f41029c5f70608c747bf27d9f8aeb`. No compile result is attributed to this attempt.
+
+### 2026-10-01 WebKitGTK unity retry exposed second SkCaptureCanvas incomplete-type use
+
+Retry12 applied the corrected full-path 9997 patch and passed the prior SkBitmapDevice.cpp failure, then failed at approximately [3141/8877] compiling Source/ThirdParty/skia/src/core/SkBitmap.cpp.o. SkCaptureManager.h includes SkCapture.h, whose SkCaptureCanvas forward declaration remains incomplete when its TArray<unique_ptr<SkCaptureCanvas>> destructor is instantiated. Immutable retry log SHA-256 is 668841cb027c28af81f3eed52daf4696ade8179c8143e4a1ab503a7d5631e081. The narrow correction is to include src/capture/SkCaptureCanvas.h directly from SkCaptureManager.h; the existing 9998 patch was regenerated from the exact full-path source with SHA-256 8b1407120f6cca36383ff75dd8707550e21f7020f13b5a6d155476c342ad7ee2. No unchanged retry is authorized.
