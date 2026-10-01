@@ -3,11 +3,11 @@
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "534ca86",
+  "as_of_commit": "caed55d",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress",
-  "latest_resolver_operation_count": 18,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261001-after-hyprtoolkit-0448/emerge.log",
-  "latest_resolver_report_sha256": "3a5cdb9abccca4e1818f8d6c838d94c7d06f0bc7ee6473de3c2635d8a213fbb2",
+  "latest_resolver_operation_count": 17,
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261001-after-gamescope-0502/emerge.log",
+  "latest_resolver_report_sha256": "a8d7e87347d707e48210f30b026057e513754559ceaac1e62ccdd0ca9801a04b",
   "next_authoritative_action": "continue ordinary userspace convergence with the remaining 19 resolver operations, excluding all kernel, firmware, initramfs, and boot lifecycle packages",
   "schema": "current-frontier-v1",
   "temporary_configuration_deviations": [
