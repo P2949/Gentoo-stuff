@@ -19,6 +19,21 @@
                            imagebufalgo.cpp
                            imagebufalgo_pixelmath.cpp
                            imagebufalgo_channels.cpp
+--- a/src/libutil/filesystem.cpp	2026-10-01 03:12:49.708846635 +0100
++++ b/src/libutil/filesystem.cpp	2026-10-01 03:12:49.722034144 +0100
+@@ -1318,6 +1318,12 @@
+ #endif
+ }
+ 
++OIIO_UTIL_API size_t
++Filesystem::IOProxy::size() const
++{
++    return 0;
++}
++
+ size_t
+ Filesystem::IOFile::size() const
+ {
 --- /dev/null
 +++ b/src/libOpenImageIO/ioproxy_abi.cpp
 @@ -0,0 +1,7 @@
