@@ -1,10 +1,19 @@
---- a/src/include/OpenImageIO/filesystem.h
-+++ b/src/include/OpenImageIO/filesystem.h
-@@
+--- a/src/include/OpenImageIO/filesystem.h	2026-10-01 03:03:53.290605937 +0100
++++ b/src/include/OpenImageIO/filesystem.h	2026-10-01 03:03:53.305273667 +0100
+@@ -455,7 +455,7 @@
+     virtual size_t pwrite (const void *buf, size_t size, int64_t offset);
+ 
+     // Return the total size of the proxy data, in bytes.
 -    virtual size_t size () const { return 0; }
 +    virtual size_t size () const;
-*** Update File: src/libutil/filesystem.cpp
-@@
+     virtual void flush() { }
+ 
+     Mode mode () const { return m_mode; }
+--- a/src/libutil/filesystem.cpp	2026-10-01 03:03:53.293605899 +0100
++++ b/src/libutil/filesystem.cpp	2026-10-01 03:03:53.305566503 +0100
+@@ -1319,6 +1319,12 @@
+ }
+ 
  size_t
 +Filesystem::IOProxy::size() const
 +{
@@ -14,4 +23,4 @@
 +size_t
  Filesystem::IOFile::size() const
  {
-*** End Patch
+     return m_size;
