@@ -1,17 +1,22 @@
---- a/Source/JavaScriptCore/runtime/JSGlobalObject.h
-+++ b/Source/JavaScriptCore/runtime/JSGlobalObject.h
-@@ -678,6 +678,6 @@
+--- a/Source/JavaScriptCore/runtime/JSGlobalObject.h	2026-10-01 06:22:57.389990679 +0100
++++ b/Source/JavaScriptCore/runtime/JSGlobalObject.h	2026-10-01 06:22:57.403990497 +0100
+@@ -677,7 +677,7 @@
+     struct WeakCustomGetterOrSetterHash {
          static unsigned hash(const Weak<T>&);
          static bool equal(const Weak<T>&, const Weak<T>&);
 -        static unsigned hash(const PropertyName&, typename T::CustomFunctionPointer, const ClassInfo*);
 +        static unsigned hash(const PropertyName&, auto, const ClassInfo*);
  
          static constexpr bool safeToCompareToEmptyOrDeleted = false;
---- a/Source/JavaScriptCore/runtime/JSGlobalObjectInlines.h
-+++ b/Source/JavaScriptCore/runtime/JSGlobalObjectInlines.h
-@@ -264,5 +264,5 @@
+     };
+--- a/Source/JavaScriptCore/runtime/JSGlobalObjectInlines.h	2026-10-01 06:22:57.391990653 +0100
++++ b/Source/JavaScriptCore/runtime/JSGlobalObjectInlines.h	2026-10-01 06:22:57.405118438 +0100
+@@ -263,7 +263,7 @@
+ }
  
  template<typename T>
 -inline unsigned JSGlobalObject::WeakCustomGetterOrSetterHash<T>::hash(const PropertyName& propertyName, typename T::CustomFunctionPointer functionPointer, const ClassInfo* classInfo)
 +inline unsigned JSGlobalObject::WeakCustomGetterOrSetterHash<T>::hash(const PropertyName& propertyName, auto functionPointer, const ClassInfo* classInfo)
  {
+     if (!propertyName.isNull())
+         return WTF::computeHash(functionPointer, propertyName.uid()->existingSymbolAwareHash(), classInfo);
