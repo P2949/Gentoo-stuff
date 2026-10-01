@@ -11888,3 +11888,9 @@ The exact `=dev-vcs/git-lfs-9999::gentoo` userspace transaction was attempted wi
 ### 2026-10-01 scanner/clear-deinstrumentation canonical digest-domain repair
 
 The reusable de-instrumentation state machine had a digest-domain mismatch: `scan-live-instrumentation.py` authenticates the canonical unsigned scan JSON, while `clear-deinstrumentation.py` previously compared `source_census_sha256` against the raw census file hash and never verified the scan's own canonical digest. `clear-deinstrumentation.py` now recomputes and requires the scanner's canonical payload digest before accepting the existing source/policy bindings. A focused regression covers both a valid canonical digest and mutation rejection; `python3 -m unittest tests/optimization/test_deinstrumentation_state.py` passes all 14 tests. This repairs the reusable control path without reopening the completed live cleanup milestone.
+
+### 2026-10-01 WebKitGTK 2.54.0-r410 compile failure diagnosed and narrowly patched
+
+The exact `=net-libs/webkit-gtk-2.54.0-r410:4.1/0::gentoo` maintenance build reached the unified JavaScriptCore compilation but failed before staging. Clang rejected `JSGlobalObject::WeakCustomGetterOrSetterHash` because the forced WebKitGTK `jumbo-build` profile mode exposed only forward declarations of `JSCustomGetterFunction` and `JSCustomSetterFunction` while referring to their nested `CustomFunctionPointer` types. Immutable failed log SHA-256 is `f5d864a77734e03aaa3dd4909b7e445812fb143e803d2de90cd2ca3e1c9dcb2e`.
+
+The failure is a source include-order defect in the forced unified build, not an ABI transition or profile issue. A narrow package patch `portage/patches/net-libs/webkit-gtk/9999-unity-complete-custom-function-types.patch` now includes the two complete custom-function headers in `JSGlobalObject.h`; it is installed in the live Portage patch tree. No unchanged retry was performed.
