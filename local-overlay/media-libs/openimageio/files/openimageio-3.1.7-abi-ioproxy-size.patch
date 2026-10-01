@@ -9,18 +9,18 @@
      virtual void flush() { }
  
      Mode mode () const { return m_mode; }
---- a/src/libutil/filesystem.cpp	2026-10-01 03:03:53.293605899 +0100
-+++ b/src/libutil/filesystem.cpp	2026-10-01 03:03:53.305566503 +0100
-@@ -1319,6 +1319,12 @@
+--- a/src/libutil/filesystem.cpp	2026-10-01 03:06:41.072491752 +0100
++++ b/src/libutil/filesystem.cpp	2026-10-01 03:06:41.083491613 +0100
+@@ -1324,6 +1324,12 @@
+     return 0;
  }
  
- size_t
++OIIO_UTIL_API size_t
 +Filesystem::IOProxy::size() const
 +{
 +    return 0;
 +}
 +
-+size_t
+ size_t
  Filesystem::IOFile::size() const
  {
-     return m_size;
