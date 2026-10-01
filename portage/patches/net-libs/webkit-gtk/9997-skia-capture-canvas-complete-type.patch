@@ -1,0 +1,10 @@
+--- a/src/core/SkBitmapDevice.cpp
++++ b/src/core/SkBitmapDevice.cpp
+@@ -6,6 +6,7 @@
+  */
+ 
+ #include "src/core/SkBitmapDevice.h"
++#include "src/capture/SkCaptureCanvas.h"
+ 
+ #include "include/core/SkAlphaType.h"
+ #include "include/core/SkBlender.h"
