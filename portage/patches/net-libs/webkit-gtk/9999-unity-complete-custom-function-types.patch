@@ -1,0 +1,11 @@
+--- a/Source/JavaScriptCore/runtime/JSGlobalObject.h
++++ b/Source/JavaScriptCore/runtime/JSGlobalObject.h
+@@ -28,6 +28,8 @@
+ #pragma once
+ 
+ #include <JavaScriptCore/JSFunction.h>
++#include "JSCustomGetterFunction.h"
++#include "JSCustomSetterFunction.h"
+ 
+ namespace JSC {
+*** End Patch
