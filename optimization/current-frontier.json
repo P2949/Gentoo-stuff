@@ -5,11 +5,11 @@
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "d656206",
+  "as_of_commit": "a0b7635",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress",
   "latest_resolver_operation_count": 20,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261001-after-spirv-032900/emerge.log",
-  "latest_resolver_report_sha256": "a90597e3cee1b0da9d462d6f2ed25c8e4b7607fd34f973c0857d286d46fae0dd",
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261001-after-libde265-0402/emerge.log",
+  "latest_resolver_report_sha256": "c9d933f4907f9a9cd800a222bdad78988165072cc1fb42c56efac05f81b3f91b",
   "next_authoritative_action": "review libde265 removed internal symbols against actual reverse consumers, then continue ordinary userspace convergence excluding kernel, firmware, initramfs, and boot lifecycle packages",
   "schema": "current-frontier-v1",
   "temporary_configuration_deviations": [
