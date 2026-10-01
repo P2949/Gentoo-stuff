@@ -1,6 +1,5 @@
 {
   "active_abi_transition_clusters": [
-    "ffmpeg",
     "spirv-vulkan",
     "bullet-opensubdiv",
     "libmediainfo"
@@ -8,12 +7,12 @@
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "3aaf08012f2a4df26a644a868310ddcca7030f49",
+  "as_of_commit": "ecf5f3a",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress",
-  "latest_resolver_operation_count": 36,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/current-frontier-resolver-20260930-235442-post-vscode/emerge-pvuDN-world.log",
-  "latest_resolver_report_sha256": "ac7854f9438b0f8dbdf08325823e1fd3b947243e367b724ad1d83499d718bd4b",
-  "next_authoritative_action": "continue exact preserved FFmpeg consumer closure with OpenCV, stable Wine, OBS, Gegl, MLT, OpenImageIO, Kdenlive and Blender",
+  "latest_resolver_operation_count": 24,
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261001-after-ffmpeg-031935/emerge.log",
+  "latest_resolver_report_sha256": "3c380ae94f1d8b88d2fe356b2bfe7920f431a39ca89dedc43fb0dfa5745de8a2",
+  "next_authoritative_action": "resolve the SPIR-V/Vulkan and remaining userspace baseline blockers; do not mutate kernel or boot lifecycle packages shown by the @world pretend",
   "schema": "current-frontier-v1",
   "temporary_configuration_deviations": [
     "qtspeech-speechd-one-shot-resolution",
