@@ -25,6 +25,42 @@ def compilation_observed(log: pathlib.Path) -> bool:
         r'(^|\s)(?:ninja|make).*\b(?:clang|gcc|rustc|go)\b',
     ))
 
+def validate_dispatcher(record: dict, dispatcher: pathlib.Path, cpv: str,
+                       repository: str, metadata_path: pathlib.Path, metadata: dict, manifest: pathlib.Path,
+                       ident: dict) -> None:
+    """Authenticate the published dispatcher before any Portage mutation."""
+    if record.get('schema_version') != 2:
+        return
+    required = ('schema_version', 'cpv', 'repository', 'ebuild_sha256',
+                'backend', 'generation', 'framework', 'framework_sha256',
+                'compiler', 'fingerprint', 'profile', 'manifest',
+                'metadata', 'fingerprint_file', 'state', 'sha256')
+    missing = [key for key in required if key not in record]
+    if missing:
+        raise SystemExit(f'REFUSED: dispatcher is missing required fields: {missing}')
+    unsigned = {key: value for key, value in record.items() if key != 'sha256'}
+    encoded = json.dumps(unsigned, sort_keys=True, separators=(',', ':')).encode()
+    if hashlib.sha256(encoded).hexdigest() != record['sha256']:
+        raise SystemExit('REFUSED: dispatcher self digest is invalid')
+    if record['state'] != 'candidate-profile-use':
+        raise SystemExit(f"REFUSED: dispatcher state is not candidate-profile-use: {record['state']!r}")
+    if record['cpv'] != cpv or record['repository'] != repository:
+        raise SystemExit('REFUSED: dispatcher package identity differs from requested transaction')
+    if pathlib.Path(record['metadata']).resolve() != metadata_path.resolve():
+        raise SystemExit('REFUSED: dispatcher metadata path differs from requested profile metadata')
+    if record.get('backend') != ident.get('backend', record.get('backend')):
+        raise SystemExit('REFUSED: dispatcher backend differs from profile metadata')
+    if record.get('profile') != str(pathlib.Path(str(ident.get('path') or record['profile'])).resolve()):
+        raise SystemExit('REFUSED: dispatcher profile path differs from profile metadata')
+    if not manifest.is_file():
+        raise SystemExit('REFUSED: dispatcher manifest is unavailable')
+    framework = pathlib.Path(record['framework'])
+    install_manifest = framework / 'install.manifest'
+    if not install_manifest.is_file():
+        raise SystemExit('REFUSED: dispatcher framework manifest is unavailable')
+    if sha(install_manifest) != record['framework_sha256']:
+        raise SystemExit('REFUSED: dispatcher framework identity differs from authenticated framework')
+
 def main() -> int:
     ap=argparse.ArgumentParser(); ap.add_argument('--dispatcher',type=pathlib.Path,required=True)
     ap.add_argument('--cpv',required=True); ap.add_argument('--repository',required=True)
@@ -70,6 +106,7 @@ def main() -> int:
     digest=sha(ebuild)
     expected=ident.get('ebuild_sha256')
     if digest != expected: raise SystemExit('REFUSED: ebuild SHA-256 differs from profile metadata')
+    validate_dispatcher(record, a.dispatcher, a.cpv, a.repository, metadata, payload, manifest, ident)
     atom=f'={a.cpv}::{a.repository}'
     started=time.time()
     a.log.parent.mkdir(parents=True,exist_ok=True)
