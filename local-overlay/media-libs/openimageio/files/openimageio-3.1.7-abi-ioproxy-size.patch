@@ -1,0 +1,17 @@
+--- a/src/include/OpenImageIO/filesystem.h
++++ b/src/include/OpenImageIO/filesystem.h
+@@
+-    virtual size_t size () const { return 0; }
++    virtual size_t size () const;
+*** Update File: src/libutil/filesystem.cpp
+@@
+ size_t
++Filesystem::IOProxy::size() const
++{
++    return 0;
++}
++
++size_t
+ Filesystem::IOFile::size() const
+ {
+*** End Patch
