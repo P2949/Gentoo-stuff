@@ -140,7 +140,7 @@ DOCS=(
 )
 
 PATCHES=(
-	"${FILESDIR}/openimageio-3.1.7-abi-ioproxy-size.patch"
+	"${FILESDIR}/openimageio-3.1.7-abi-ioproxy-main-export.patch"
 	"${FILESDIR}/${PN}-2.5.12.0-heif-find-fix.patch"
 	"${FILESDIR}/${PN}-3.1.6.2-tests-optional.patch"
 	# in src_prepare

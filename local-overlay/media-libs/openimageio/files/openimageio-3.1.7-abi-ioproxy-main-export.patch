@@ -1,0 +1,31 @@
+--- a/src/include/OpenImageIO/filesystem.h	2026-10-01 03:03:53.290605937 +0100
++++ b/src/include/OpenImageIO/filesystem.h	2026-10-01 03:03:53.305273667 +0100
+@@ -455,7 +455,7 @@
+     virtual size_t pwrite (const void *buf, size_t size, int64_t offset);
+ 
+     // Return the total size of the proxy data, in bytes.
+-    virtual size_t size () const { return 0; }
++    virtual size_t size () const;
+     virtual void flush() { }
+ 
+     Mode mode () const { return m_mode; }
+--- a/src/libOpenImageIO/CMakeLists.txt	2026-10-01 03:09:59.183995387 +0100
++++ b/src/libOpenImageIO/CMakeLists.txt	2026-10-01 03:09:59.195945371 +0100
+@@ -36,6 +36,7 @@
+ endif ()
+ 
+ set (libOpenImageIO_srcs
++     ioproxy_abi.cpp
+                           imagebufalgo.cpp
+                           imagebufalgo_pixelmath.cpp
+                           imagebufalgo_channels.cpp
+--- /dev/null
++++ b/src/libOpenImageIO/ioproxy_abi.cpp
+@@ -0,0 +1,7 @@
++#include <OpenImageIO/filesystem.h>
++
++OIIO_UTIL_API size_t
++OpenImageIO::v3_1::Filesystem::IOProxy::size() const
++{
++    return 0;
++}
