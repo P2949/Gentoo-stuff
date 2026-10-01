@@ -1,16 +1,14 @@
 {
-  "active_abi_transition_clusters": [
-    "spirv-vulkan"
-  ],
+  "active_abi_transition_clusters": [],
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "980b920",
+  "as_of_commit": "57ae07c",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress",
-  "latest_resolver_operation_count": 22,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261001-after-bullet-opensubdiv-032616/emerge.log",
-  "latest_resolver_report_sha256": "a7002e65f3d11c0ebc451fafd75e383a08271654631ad6a0ad6f55eb05d90073",
-  "next_authoritative_action": "diagnose and remediate the coordinated SPIR-V/Vulkan transition; continue ordinary userspace convergence without mutating kernel or boot lifecycle packages",
+  "latest_resolver_operation_count": 20,
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261001-after-spirv-032900/emerge.log",
+  "latest_resolver_report_sha256": "a90597e3cee1b0da9d462d6f2ed25c8e4b7607fd34f973c0857d286d46fae0dd",
+  "next_authoritative_action": "continue ordinary userspace convergence for the remaining resolver operations, beginning with source/network-resolvable packages and excluding all kernel, firmware, initramfs, and boot lifecycle packages",
   "schema": "current-frontier-v1",
   "temporary_configuration_deviations": [
     "qtspeech-speechd-one-shot-resolution",
