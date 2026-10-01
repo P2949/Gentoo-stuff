@@ -20,6 +20,20 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def scan_digest(scan: dict) -> str:
+    """Return the digest domain used by scan-live-instrumentation.py.
+
+    The scanner authenticates its canonical JSON payload rather than the raw
+    file bytes.  Recomputing that same unsigned payload here keeps the clear
+    transition compatible with freshly produced scans.
+    """
+    unsigned = dict(scan)
+    unsigned.pop("sha256", None)
+    return hashlib.sha256(
+        json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scan", type=Path, required=True)
@@ -39,6 +53,8 @@ def main() -> int:
         raise SystemExit("REFUSED: scan has no records list")
     if scan.get("record_type") != "live-instrumentation-census" or scan.get("schema_version") != 2:
         raise SystemExit("REFUSED: unsupported scan authority schema")
+    if scan.get("sha256") != scan_digest(scan):
+        raise SystemExit("REFUSED: scan canonical digest mismatch")
     if scan.get("source_census_sha256") != sha256(args.census):
         raise SystemExit("REFUSED: scan/census identity mismatch")
     if scan.get("mutation_policy_sha256") != sha256(args.mutation_policy):

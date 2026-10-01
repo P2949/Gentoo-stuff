@@ -104,6 +104,21 @@ class DeinstrumentationStateTests(unittest.TestCase):
                          "marker/plan identity mismatch"):
             self.assertIn(required, source)
 
+    def test_scan_digest_uses_canonical_payload_domain(self):
+        module = load("clear_deinstrumentation_digest", ROOT / "scripts/optimization/pgo/clear-deinstrumentation.py")
+        scan = {
+            "record_type": "live-instrumentation-census",
+            "schema_version": 2,
+            "records": [],
+            "counts": {},
+            "source_census_sha256": "c" * 64,
+        }
+        unsigned = json.dumps(scan, sort_keys=True, separators=(",", ":")).encode()
+        scan["sha256"] = __import__("hashlib").sha256(unsigned).hexdigest()
+        self.assertEqual(module.scan_digest(scan), scan["sha256"])
+        scan["records"].append({"status": "instrumented"})
+        self.assertNotEqual(module.scan_digest(scan), scan["sha256"])
+
     def test_abseil_deinstrumentation_retains_abi_vtables(self):
         bashrc = (ROOT / "portage/bashrc").read_text()
         self.assertIn("${CATEGORY-}/${PF-} == dev-cpp/abseil-cpp-*", bashrc)
