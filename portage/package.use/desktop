@@ -45,3 +45,4 @@ x11-libs/gtk+ introspection abi_x86_32 X
 x11-libs/gtksourceview introspection
 x11-libs/pango introspection abi_x86_32
 xfce-base/thunar exif introspection libnotify udisks
+net-libs/webkit-gtk -jumbo-build
