@@ -1,7 +1,6 @@
 --- a/Source/JavaScriptCore/runtime/JSGlobalObject.h
 +++ b/Source/JavaScriptCore/runtime/JSGlobalObject.h
-@@ -34,6 +34,8 @@
- #include <JavaScriptCore/WeakGCMap.h>
+@@
  #include <JavaScriptCore/WeakGCSet.h>
 +#include "JSCustomGetterFunction.h"
 +#include "JSCustomSetterFunction.h"
