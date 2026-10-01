@@ -1,16 +1,14 @@
 {
-  "active_abi_transition_clusters": [
-    "media-libs/libde265-1.1.3"
-  ],
+  "active_abi_transition_clusters": [],
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "a0b7635",
+  "as_of_commit": "ef63349",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress",
-  "latest_resolver_operation_count": 20,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261001-after-libde265-0402/emerge.log",
-  "latest_resolver_report_sha256": "c9d933f4907f9a9cd800a222bdad78988165072cc1fb42c56efac05f81b3f91b",
-  "next_authoritative_action": "review libde265 removed internal symbols against actual reverse consumers, then continue ordinary userspace convergence excluding kernel, firmware, initramfs, and boot lifecycle packages",
+  "latest_resolver_operation_count": 19,
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261001-after-libde265-0418/emerge.log",
+  "latest_resolver_report_sha256": "f7f8b6420ddfd1f2097126764e788aab5176e33650f69263d49f3c575f60ccdc",
+  "next_authoritative_action": "continue ordinary userspace convergence with the remaining 19 resolver operations, excluding all kernel, firmware, initramfs, and boot lifecycle packages",
   "schema": "current-frontier-v1",
   "temporary_configuration_deviations": [
     "qtspeech-speechd-one-shot-resolution",
