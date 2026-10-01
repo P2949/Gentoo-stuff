@@ -1,0 +1,17 @@
+--- a/Source/JavaScriptCore/runtime/JSGlobalObject.h
++++ b/Source/JavaScriptCore/runtime/JSGlobalObject.h
+@@ -678,7 +678,7 @@
+         static unsigned hash(const Weak<T>&);
+         static bool equal(const Weak<T>&, const Weak<T>&);
+-        static unsigned hash(const PropertyName&, typename T::CustomFunctionPointer, const ClassInfo*);
++        static unsigned hash(const PropertyName&, auto, const ClassInfo*);
+ 
+         static constexpr bool safeToCompareToEmptyOrDeleted = false;
+--- a/Source/JavaScriptCore/runtime/JSGlobalObjectInlines.h
++++ b/Source/JavaScriptCore/runtime/JSGlobalObjectInlines.h
+@@ -264,7 +264,7 @@
+ 
+ template<typename T>
+-inline unsigned JSGlobalObject::WeakCustomGetterOrSetterHash<T>::hash(const PropertyName& propertyName, typename T::CustomFunctionPointer functionPointer, const ClassInfo* classInfo)
++inline unsigned JSGlobalObject::WeakCustomGetterOrSetterHash<T>::hash(const PropertyName& propertyName, auto functionPointer, const ClassInfo* classInfo)
+ {

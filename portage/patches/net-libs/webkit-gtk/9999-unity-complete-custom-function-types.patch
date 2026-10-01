@@ -1,9 +1,0 @@
---- a/Source/JavaScriptCore/runtime/JSGlobalObject.h
-+++ b/Source/JavaScriptCore/runtime/JSGlobalObject.h
-@@ -34,4 +34,6 @@
- #include <JavaScriptCore/Watchpoint.h>
- #include <JavaScriptCore/WeakGCMap.h>
- #include <JavaScriptCore/WeakGCSet.h>
-+#include "JSCustomGetterFunction.h"
-+#include "JSCustomSetterFunction.h"
- #include <wtf/FixedVector.h>
