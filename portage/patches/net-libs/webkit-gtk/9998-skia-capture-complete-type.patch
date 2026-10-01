@@ -1,9 +1,10 @@
 --- a/Source/ThirdParty/skia/src/capture/SkCaptureManager.h
 +++ b/Source/ThirdParty/skia/src/capture/SkCaptureManager.h
-@@ -10,6 +10,7 @@
+@@ -9,6 +9,8 @@
+ #define SkCaptureManager_DEFINED
  
  #include "include/core/SkPicture.h"
- #include "src/capture/SkCapture.h"
++#include "src/capture/SkCapture.h"
 +#include "src/capture/SkCaptureCanvas.h"
  #include "include/core/SkRefCnt.h"
  #include "include/core/SkSpan.h"
