@@ -1,5 +1,5 @@
---- a/src/core/SkBitmapDevice.cpp
-+++ b/src/core/SkBitmapDevice.cpp
+--- a/Source/ThirdParty/skia/src/core/SkBitmapDevice.cpp
++++ b/Source/ThirdParty/skia/src/core/SkBitmapDevice.cpp
 @@ -6,6 +6,7 @@
   */
  
