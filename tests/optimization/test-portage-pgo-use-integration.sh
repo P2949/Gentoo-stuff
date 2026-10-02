@@ -105,6 +105,8 @@ chmod 0644 -- "${PACKAGE_ROOT}/Manifest"
 : > "${GENERATE_SWITCH}"
 ebuild "${EBUILD}" clean > "${WORK}/clean-before-generate.log" 2>&1
 ebuild "${EBUILD}" install > "${WORK}/generate.log" 2>&1
+grep -Fq -- '-fprofile-instr-generate' \
+    "${BUILD_ROOT}/temp/compile-cflags" || fail 'real Portage generation did not inject the Clang profile flag'
 raw_count=$(find "${RAW_ROOT}" -type f -name '*.profraw' -size +0c | wc -l)
 ((raw_count > 0)) || fail 'real Portage generation emitted no nonempty raw profile'
 "${PROFDATA}" merge -o "${PROFILE}" "${RAW_ROOT}"/*.profraw

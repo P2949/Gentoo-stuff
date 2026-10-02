@@ -37,6 +37,7 @@ src_unpack() {
 }
 
 src_compile() {
+    printf '%s\n' "${CFLAGS}" > "${T}/compile-cflags" || die
     "${CC}" ${CFLAGS} "${S}/fixture.c" ${LDFLAGS} \
         -o "${S}/phase2-pgo-use-fixture" || die
     if [[ ${GENTOO_OPT_MODE} == clang-ir-generate ]]; then
