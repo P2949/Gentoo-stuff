@@ -1356,12 +1356,31 @@ gentoo_opt_strip_deinstrumentation_policy() {
 # package.env files are sourced after this bashrc.  Reapply the cleanup at
 # phase-hook boundaries so the exact off transaction cannot compile with a
 # generation's stale COMMON_FLAGS after Portage has reconstructed them.
-if [[ ${GENTOO_OPT_MODE:-off} == off ||
-    ${GENTOO_OPT_DEINSTRUMENT-} == 1 ]]; then
-    pre_src_configure() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_inherited_rust_optimization_policy; gentoo_opt_strip_deinstrumentation_policy; }
-    pre_src_compile() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_inherited_rust_optimization_policy; gentoo_opt_strip_deinstrumentation_policy; }
-    pre_src_install() { gentoo_opt_strip_inherited_clang_profile_flags; gentoo_opt_strip_inherited_rust_optimization_policy; gentoo_opt_strip_deinstrumentation_policy; }
-fi
+# Portage sources bashrc before ebuild-local variables are available.  Decide
+# whether to scrub at hook invocation time, after the dispatcher has selected
+# the package's authenticated mode; otherwise a generate lane is scrubbed by
+# a hook that was incorrectly installed while GENTOO_OPT_MODE was still unset.
+pre_src_configure() {
+    if [[ ${GENTOO_OPT_MODE:-off} == off || ${GENTOO_OPT_DEINSTRUMENT-} == 1 ]]; then
+        gentoo_opt_strip_inherited_clang_profile_flags
+        gentoo_opt_strip_inherited_rust_optimization_policy
+        gentoo_opt_strip_deinstrumentation_policy
+    fi
+}
+pre_src_compile() {
+    if [[ ${GENTOO_OPT_MODE:-off} == off || ${GENTOO_OPT_DEINSTRUMENT-} == 1 ]]; then
+        gentoo_opt_strip_inherited_clang_profile_flags
+        gentoo_opt_strip_inherited_rust_optimization_policy
+        gentoo_opt_strip_deinstrumentation_policy
+    fi
+}
+pre_src_install() {
+    if [[ ${GENTOO_OPT_MODE:-off} == off || ${GENTOO_OPT_DEINSTRUMENT-} == 1 ]]; then
+        gentoo_opt_strip_inherited_clang_profile_flags
+        gentoo_opt_strip_inherited_rust_optimization_policy
+        gentoo_opt_strip_deinstrumentation_policy
+    fi
+}
 
 gentoo_opt_require_go_single_main() {
     [[ ${GENTOO_OPT_GO_MAIN_COUNT-} == 1 ]] || {
