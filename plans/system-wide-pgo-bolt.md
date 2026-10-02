@@ -11941,3 +11941,33 @@ The profile-use v2 receipt producer already emits `compile_evidence`, but the in
 
 The corrected exact `=net-libs/webkit-gtk-2.54.0-r410:4.1/0::gentoo` transaction completed all 8,877 compile steps and staged the target image under the authority-bound, optimization-disabled policy. Immutable log SHA-256 is `c4db44022e78eaef596c2c7a77defed731e880170ae328e8e65ea570a8f81914`; the retry18 log is retained at `/var/lib/gentoo-optimization/reports/userspace-webkit-gtk-2540-r410-20261001/emerge-retry18.log`. Install-QA then fail-closed on three staged JavaScriptCore SONAME aliases (`libjavascriptcoregtk-4.1.so.0.10.11`, `.so.0`, and `.so`) with the same 12 missing `JSC::RegisterSetBuilder` register-set exports. The active v1 authority digest was `bdc34f4e0c6515b563e107f58a619b6ae6dc509016df903ad89568a2da0f09ba`, but its audited removal set does not include these newly observed symbols, so no merge occurred and no authority was weakened. Installed VDB remains on WebKitGTK 2.52.6-r600 (with the older 2.52.3-r411 instance also retained). The missing export set requires independent upstream ABI/consumer review before any new authority-bound retry; the retry17 schema mismatch and retry18 ABI rejection remain historical non-authoritative attempts.
 - 2026-10-02: User-directed package-scope retirement was recorded without mutating boot/kernel/EFI/initramfs state: active optimization/package lists and lane overrides no longer include Maya-related targets, Lutris, or WebKitGTK; historical retry and identity evidence remains retained, and installed VDB packages were not unmerged. The live target retirement is authoritative in `optimization/current-frontier.json`. `=gnome-extra/yad-9999::guru` was reinstalled successfully under the authenticated optimization-off maintenance path (`LLVM_PROFILE_FILE=/dev/null`, `CCACHE_DISABLE=1`); Portage completed 1/1 and recorded BUILD_TIME `1790972151`. A subsequent portable-complete validation was interrupted by host reboot after the optimization unit suite had passed; no overall validation pass is claimed.
+
+## 2026-10-02 first-class package-scope retirement authority
+
+The reviewed 2026-10-02 checkpoint retired nine package families from the active
+optimization scope while retaining their installed state. The source boundary
+now records that decision in `optimization/scope-policy.json` with explicit
+selector, state, reason, retention, unmerge, optimization, training, and BOLT
+fields for `app-autodesk/adp-desktop-sdk`, `app-autodesk/adsk-identity-manager`,
+`app-autodesk/adsk-licensing`, `games-util/lutris`, `media-gfx/lookdevx`,
+`media-gfx/maya`, `media-gfx/maya-usd`, `media-gfx/substance-maya`, and
+`net-libs/webkit-gtk`.
+
+`generate-optimization-sets.py` now accepts this policy explicitly, excludes
+matching exact CPVs from every optimization/backend set, retains them in the
+manifest's `scope_excluded` accounting, and binds the scope-policy digest to
+the generated manifest. The current frontier was cleared of the stale
+pre-retirement resolver and transaction counts and now requires a fresh live
+inventory/resolver partition after the active authoritative validation reaches
+its terminal result. The focused optimization-set regression covers scope
+exclusion and manifest binding.
+
+The authoritative validation reached a terminal result with 92 top-level
+passes, 6 failures, and 1 LLVM-22/Rust capability skip. The four framework
+integration failures initially reported a stale root-owned bootstrap; the
+reviewed bootstrap migration path was then updated and republished. The
+remaining terminal failures are the generated-policy basename check in the
+profile-use integration path, the phase-identity fixture's unexpected
+`src_unpack` phase, and the clang-sample capability fixture. These are retained
+as current validation evidence and are not treated as a Phase-3 authority
+claim.
