@@ -3,16 +3,16 @@
   "active_source_network_blockers": [
     "git-lfs-9999-go-module-resolution"
   ],
-  "as_of_commit": "working-tree-scope-policy",
+  "as_of_commit": "8cb980d",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress; nine package families explicitly retired from optimization scope; retained installed state must be preserved",
   "latest_abi_authority": "/var/lib/gentoo-optimization/reports/userspace-webkit-gtk-2540-r410-20261001/abi-transition-v1-rerun.json",
   "latest_abi_authority_sha256": "bdc34f4e0c6515b563e107f58a619b6ae6dc509016df903ad89568a2da0f09ba",
-  "latest_resolver_operation_count": null,
-  "latest_resolver_report": null,
-  "latest_resolver_report_sha256": null,
+  "latest_resolver_operation_count": 24,
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261002-post-retirement/emerge.log",
+  "latest_resolver_report_sha256": "03c525b3a6a730f6f64bd6d34b942b092199891b1c1da986478f50843081c2f0",
   "latest_transaction_report": null,
   "latest_transaction_report_sha256": null,
-  "next_authoritative_action": "after validation terminal result, regenerate live inventory and fresh resolver partitioned by mutation and scope policy",
+  "next_authoritative_action": "partition the fresh 24-operation resolver through mutation and scope policy; do not execute retired or kernel-lifecycle proposals",
   "retired_package_targets": [
     {
       "evidence": "user-directed retirement; historical retries retained; no live uninstall performed",
@@ -74,5 +74,5 @@
     "qtspeech-speechd-one-shot-resolution",
     "kauth-policykit-one-shot-resolution"
   ],
-  "vdb_inventory_sha256": "bbad83f2c13f8f277acfd2affda1b271604905374810b4edcc99610e10339955"
+  "vdb_inventory_sha256": "f24a20461d1785f6650fa54ea509c6e9d89f85135d46c47891577101284ca472"
 }

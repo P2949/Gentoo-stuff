@@ -11971,3 +11971,23 @@ profile-use integration path, the phase-identity fixture's unexpected
 `src_unpack` phase, and the clang-sample capability fixture. These are retained
 as current validation evidence and are not treated as a Phase-3 authority
 claim.
+
+## 2026-10-02 post-retirement live-state refresh
+
+After the authoritative validation reached its terminal result, a fresh live
+inventory candidate was generated at
+`/var/lib/gentoo-optimization/generations/phase3-live-20261002-post-retirement/frozen-inventory.json`.
+It contains 1,371 package records, 678,190 owned paths, and 82,619 owned
+directories; 1,770 directory records still require review, so this is a
+candidate and is not generation authority. Its SHA-256 is
+`f24a20461d1785f6650fa54ea509c6e9d89f85135d46c47891577101284ca472`.
+
+A fresh read-only optimization-off `@world` pretend was then preserved at
+`/var/lib/gentoo-optimization/reports/world-update-pretend-20261002-post-retirement/emerge.log`
+with SHA-256
+`03c525b3a6a730f6f64bd6d34b942b092199891b1c1da986478f50843081c2f0`.
+Portage resolved 24 operations. The proposal still includes kernel/firmware
+lifecycle packages and retired package families, including new WebKitGTK and
+Autodesk entries, so no broad transaction was launched. This confirms that
+scope retirement must be consumed by the baseline partition and cannot be
+represented by deleting generated set lines alone.
