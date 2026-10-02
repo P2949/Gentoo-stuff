@@ -41,6 +41,7 @@ trap cleanup EXIT HUP INT TERM
 
 PACKAGE_ROOT=${WORK}/app-test/phase2-pgo-use-fixture
 EBUILD=${PACKAGE_ROOT}/phase2-pgo-use-fixture-1.ebuild
+export GENTOO_OPT_TARGET_CPV=app-test/phase2-pgo-use-fixture-1
 RAW_ROOT=${WORK}/profiles/raw
 PROFILE=${WORK}/profiles/merged.profdata
 MANIFEST=${WORK}/profiles/profile.manifest

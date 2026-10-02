@@ -78,6 +78,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 PACKAGE_ROOT=${WORK}/app-test/phase2-portage-fixture
 EBUILD=${PACKAGE_ROOT}/phase2-portage-fixture-1.ebuild
+export GENTOO_OPT_TARGET_CPV=app-test/phase2-portage-fixture-1
 FAIL_SWITCH=${WORK}/force-capture-failure
 PROXY_MODE_SWITCH=${WORK}/use-capture-proxy
 OFF_SWITCH=${WORK}/optimization-off
