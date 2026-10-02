@@ -2607,6 +2607,8 @@ verify_external_migration_source() {
         if [[ -f ${qa} && ! -L ${qa} ]]; then
             cmp -s -- <(render_qa_bootstrap) "${qa}" || \
                 manifest_external_file_matches "${qa}" "${candidate}" || \
+                { (( BOOTSTRAP_MIGRATION )) && \
+                  manifest_external_file_matches "${qa}" "${PREVIOUS_TARGET}"; } || \
                 cmp -s -- "${candidate}/qa/${HOOK_BASENAME}" "${qa}" || \
                 fail 'fixed QA hook is neither the reviewed bootstrap nor the active generation implementation'
         else
