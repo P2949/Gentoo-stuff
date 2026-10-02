@@ -120,6 +120,7 @@ chmod 0640 -- "${PROFILE}"
 clang_hash=$(sha256sum -- "${CLANG}"); clang_hash=${clang_hash%% *}
 profdata_hash=$(sha256sum -- "${PROFDATA}"); profdata_hash=${profdata_hash%% *}
 "${VALIDATOR}" produce --backend clang-ir --profile "${PROFILE}" \
+    --cpv app-test/phase2-pgo-use-fixture-1 \
     --fingerprint "${FINGERPRINT}" --abi amd64 --compiler-family clang \
     --compiler "${CLANG}" --compiler-sha256 "${clang_hash}" --compiler-major 22 \
     --profile-tool "${PROFDATA}" --profile-tool-sha256 "${profdata_hash}" \
