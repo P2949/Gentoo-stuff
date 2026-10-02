@@ -11991,3 +11991,19 @@ lifecycle packages and retired package families, including new WebKitGTK and
 Autodesk entries, so no broad transaction was launched. This confirms that
 scope retirement must be consumed by the baseline partition and cannot be
 represented by deleting generated set lines alone.
+
+## 2026-10-02 authoritative fixture follow-up
+
+The root-owned framework was republished through the reviewed bootstrap migration
+path after the authoritative gate identified a stale generated-policy identity
+(`empty-v1`) and a stale QA/helper boundary. The live framework now uses the
+reviewed generated-policy source and the strict installer check succeeds.
+
+Two fixture defects exposed by the gate were corrected and committed: the
+Clang sample-PGO producer now supplies the required exact fixture CPV to
+`validate-profile.py produce`, and the live Portage phase-identity validator
+now reflects the phases actually emitted by current Portage (the optional
+`pre_src_install` ebuild hook is not dispatched as a recorded phase). The
+focused phase-identity transaction passes, the Clang sample-PGO fixture passes,
+and the profile-use Portage integration passes. No package transaction outside
+hermetic fixtures was launched.
