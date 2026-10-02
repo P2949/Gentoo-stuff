@@ -1420,12 +1420,6 @@ gentoo_opt_apply_primary_mode() {
             gentoo_opt_append_flag_once CFLAGS "${flag}"
             gentoo_opt_append_flag_once CXXFLAGS "${flag}"
             gentoo_opt_append_flag_once LDFLAGS "${flag}"
-            # Keep libtool-safe operand-free generation while giving every
-            # instrumented object a harmless fallback if its environment is
-            # cleared before execution. Reviewed workloads override this via
-            # LLVM_PROFILE_FILE with their authenticated spool pattern.
-            gentoo_opt_append_flag_once CFLAGS '-Xclang=-fprofile-instrument-path=/dev/null'
-            gentoo_opt_append_flag_once CXXFLAGS '-Xclang=-fprofile-instrument-path=/dev/null'
             ;;
         clang-ir-use)
             gentoo_opt_strip_inherited_clang_profile_flags
