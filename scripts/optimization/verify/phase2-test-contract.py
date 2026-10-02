@@ -25,7 +25,11 @@ TEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,511}$")
 # bounded, but leave enough margin that a successful deterministic check is
 # not rejected solely because process startup and teardown consume the entire
 # historical 30-second window.
-DISCOVERY_TIMEOUT_SECONDS = 60
+# The authoritative repository now contains a large Phase-3 test surface;
+# identity discovery can legitimately take over one minute on the live
+# root-owned checkout. Keep a bounded deadline while leaving headroom for the
+# complete source tree.
+DISCOVERY_TIMEOUT_SECONDS = 120
 DISCOVERY_KILL_AFTER_SECONDS = 2
 
 
@@ -396,7 +400,7 @@ def main() -> int:
         default="optimization/phase2-authoritative-test-contract.json",
     )
     parser.add_argument("--output")
-    parser.add_argument("--timeout-seconds", type=int, default=60)
+    parser.add_argument("--timeout-seconds", type=int, default=120)
     arguments = parser.parse_args()
     try:
         if arguments.timeout_seconds < 1 or arguments.timeout_seconds > 300:
