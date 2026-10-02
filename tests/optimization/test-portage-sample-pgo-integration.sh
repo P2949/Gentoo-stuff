@@ -2392,8 +2392,13 @@ if values.get("sandbox_on") != "1":
     raise SystemExit(f"{label}: SANDBOX_ON is not active")
 if values.get("CC") != expected_compiler or values.get("cc_realpath") != expected_compiler:
     raise SystemExit(f"{label}: CC is not the exact absolute reviewed Clang executable")
-if values.get("CXX") != expected_cxx or values.get("cxx_realpath") != expected_cxx:
+if values.get("cxx_realpath") != expected_cxx:
     raise SystemExit(f"{label}: CXX is not the exact absolute reviewed Clang++ executable")
+if values.get("CXX") != expected_cxx:
+    cxx = pathlib.Path(values.get("CXX", ""))
+    if not (cxx.is_absolute() and cxx.name.startswith("clang++-") and
+            pathlib.Path(values.get("cxx_realpath", "")).resolve() == cxx.resolve()):
+        raise SystemExit(f"{label}: CXX is not the exact absolute reviewed Clang++ executable")
 if values.get("ccache_recache") != "1":
     raise SystemExit(f"{label}: CCACHE_RECACHE=1 fresh-compile defense is absent")
 if expected_policy == "profile-stage":
