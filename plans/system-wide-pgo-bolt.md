@@ -12007,3 +12007,23 @@ now reflects the phases actually emitted by current Portage (the optional
 focused phase-identity transaction passes, the Clang sample-PGO fixture passes,
 and the profile-use Portage integration passes. No package transaction outside
 hermetic fixtures was launched.
+
+The authoritative run then exposed a real phase-boundary defect: Portage
+sources `bashrc` before ebuild-local mode variables, so the previously
+installed cleanup hooks were selected while the mode was still unset and
+scrubbed authenticated generation flags at `pre_src_compile`. The hooks now
+evaluate the effective mode when invoked. The generate lane also no longer
+adds `-fprofile-instrument-path=/dev/null`, which had silently discarded the
+profiles despite the authenticated `LLVM_PROFILE_FILE` spool. The real
+Portage PGO fixture now proves generation emits instrumented output, produces
+authenticated merge evidence, consumes it in use mode, and rejects a tampered
+sidecar.
+
+The corresponding fixture now exports its exact target CPV and supplies the
+required CPV and completed-wave merge-evidence chain to the profile validator.
+These changes are committed and pushed; the focused real-Portage phase,
+profile-use, and sample-PGO integration transactions pass. The full
+authoritative run before this follow-up reached 94 passes, 4 failures, and 1
+capability skip; its four failures were solely stale live-framework identity
+checks plus the now-corrected fixture boundary. A fresh full authoritative run
+is still required after this source boundary is republished.
