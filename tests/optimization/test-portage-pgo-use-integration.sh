@@ -117,6 +117,23 @@ raw_count=$(find "${RAW_ROOT}" -type f -name '*.profraw' -size +0c | wc -l)
 chown "0:${PORTAGE_GID}" -- "${PROFILE}"
 chmod 0640 -- "${PROFILE}"
 
+RECEIPT=${WORK}/profiles/receipt.json
+MERGE_EVIDENCE=${WORK}/profiles/merge-evidence.json
+python3 - "${RECEIPT}" "${MERGE_EVIDENCE}" "${PROFILE}" "${RAW_ROOT}" "${GENERATION_ID}" "${INVENTORY_ID}" "${INVENTORY_SHA256}" "${PROFDATA}" <<'PY'
+import hashlib, json, pathlib, subprocess, sys
+receipt_path, evidence_path, profile, raw_root, generation_id, inventory_id, inventory_sha256, profdata = map(pathlib.Path, sys.argv[1:])
+def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+raw = sorted(raw_root.glob('*.profraw'))
+generation = {'generation_id': str(generation_id), 'inventory_id': str(inventory_id), 'inventory_sha256': str(inventory_sha256)}
+payload = {'record_type':'profile-wave-transaction-receipt','schema_version':2,'state':'completed','generation':generation,'packages':['app-test/phase2-pgo-use-fixture-1'],'profile_payloads':[{'cpv':'app-test/phase2-pgo-use-fixture-1','path':str(p),'sha256':sha(p)} for p in raw]}
+payload['sha256'] = hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+receipt_path.write_text(json.dumps(payload,sort_keys=True)+'\n')
+version = subprocess.run([str(profdata),'--version'], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+evidence = {'record_type':'clang-ir-profile-merge','schema_version':2,'backend':'clang-ir','state':'profile-merged-pending-dispatcher-authorization','generation':generation,'merged_profile':str(profile),'merged_sha256':sha(profile),'receipt':str(receipt_path),'receipt_sha256':sha(receipt_path),'package':'app-test/phase2-pgo-use-fixture-1','raw_files':[{'path':str(p),'size':p.stat().st_size,'sha256':sha(p)} for p in raw],'llvm_profdata':{'realpath':str(profdata.resolve()),'sha256':sha(profdata),'version_stdout':version.stdout,'version_stderr':version.stderr}}
+evidence['sha256'] = hashlib.sha256(json.dumps(evidence,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+evidence_path.write_text(json.dumps(evidence,sort_keys=True)+'\n')
+PY
+
 clang_hash=$(sha256sum -- "${CLANG}"); clang_hash=${clang_hash%% *}
 profdata_hash=$(sha256sum -- "${PROFDATA}"); profdata_hash=${profdata_hash%% *}
 "${VALIDATOR}" produce --backend clang-ir --profile "${PROFILE}" \
@@ -125,6 +142,7 @@ profdata_hash=$(sha256sum -- "${PROFDATA}"); profdata_hash=${profdata_hash%% *}
     --compiler "${CLANG}" --compiler-sha256 "${clang_hash}" --compiler-major 22 \
     --profile-tool "${PROFDATA}" --profile-tool-sha256 "${profdata_hash}" \
     --profile-tool-major 22 --manifest-out "${MANIFEST}" --metadata-out "${METADATA}" \
+    --merge-evidence "${MERGE_EVIDENCE}" \
     --generation-id "${GENERATION_ID}" --inventory-id "${INVENTORY_ID}" \
     --inventory-sha256 "${INVENTORY_SHA256}" --test-mode \
     --test-framework-lock "${FRAMEWORK_LOCK}" --test-project-lock "${PROJECT_LOCK}" \
