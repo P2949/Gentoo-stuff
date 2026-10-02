@@ -24,13 +24,16 @@ def main() -> None:
     ap.add_argument("--lanes", type=Path, required=True)
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument("--sets-root", type=Path, required=True)
+    ap.add_argument("--scope-policy", type=Path)
     args = ap.parse_args()
 
     policy = json.loads(args.mutation_policy.read_text())
     lanes = json.loads(args.lanes.read_text())
     manifest = json.loads(args.manifest.read_text())
-    if manifest.get("record_type") != "optimization-package-sets" or manifest.get("schema_version") != 2:
+    if manifest.get("record_type") != "optimization-package-sets" or manifest.get("schema_version") not in {2, 3}:
         raise SystemExit("REFUSED: invalid optimization-set manifest schema")
+    if manifest.get("schema_version") == 3 and not args.scope_policy:
+        raise SystemExit("REFUSED: scoped set manifest requires scope policy")
     if manifest.get("mutation_policy_sha256") != digest(args.mutation_policy):
         raise SystemExit("REFUSED: mutation-policy digest does not match set manifest")
     if manifest.get("lane_sha256") != digest(args.lanes):
@@ -41,6 +44,16 @@ def main() -> None:
     if set(decisions) != set(lane_rows):
         raise SystemExit("REFUSED: policy/lane coverage mismatch")
 
+    excluded = set()
+    if args.scope_policy:
+        scope = json.loads(args.scope_policy.read_text())
+        if scope.get("schema") != "optimization-scope-policy-v1":
+            raise SystemExit("REFUSED: unsupported scope policy schema")
+        if manifest.get("scope_policy_sha256") != digest(args.scope_policy):
+            raise SystemExit("REFUSED: scope-policy digest does not match set manifest")
+        selectors = {row["selector"] for row in scope.get("scope", [])
+                     if row.get("state") == "retained-installed-out-of-project-scope"}
+        excluded = {cpv for cpv in decisions if generator.cp_atom(cpv) in selectors}
     expected = {
         "pgo-bolt-all-userspace": set(),
         "optimization-kernel-policy-exclusion": set(),
@@ -49,6 +62,8 @@ def main() -> None:
     for name in LANE_SET.values():
         expected[name] = set()
     for cpv in sorted(decisions):
+        if cpv in excluded:
+            continue
         decision = decisions[cpv]
         lane = lane_rows[cpv].get("lane")
         if decision == "kernel-policy-exclusion":
@@ -87,6 +102,8 @@ def main() -> None:
             raise SystemExit(f"REFUSED: set {name} coverage mismatch missing={sorted(cpvs-actual)[:5]} extra={sorted(actual-cpvs)[:5]}")
         if manifest.get("sets", {}).get(name) != len(entries):
             raise SystemExit(f"REFUSED: manifest count mismatch for {name}")
+    if manifest.get("scope_excluded", []) and {row.get("cpv") for row in manifest["scope_excluded"]} != excluded:
+        raise SystemExit("REFUSED: scope-excluded accounting mismatch")
     print(f"PASS: verified {len(decisions)} CPVs across {len(expected)} optimization sets")
 
 if __name__ == "__main__":

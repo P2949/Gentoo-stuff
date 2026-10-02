@@ -30,5 +30,7 @@ def main():
   scoped_manifest=json.loads((p/'scoped-sets.manifest.json').read_text())
   assert scoped_manifest['scope_excluded'][0]['cpv']=='app/a-1'
   assert scoped_manifest['scope_policy_sha256']
+  scoped_verify=subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/verify-optimization-sets.py'),'--mutation-policy',str(m),'--lanes',str(l),'--scope-policy',str(scope),'--manifest',str(p/'scoped-sets.manifest.json'),'--sets-root',str(scoped)],capture_output=True,text=True)
+  assert scoped_verify.returncode == 0 and 'verified 2 CPVs' in scoped_verify.stdout
  print('PASS: optimization sets derive from canonical mutation policy')
 if __name__=='__main__': main()
