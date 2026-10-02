@@ -133,6 +133,8 @@ evidence = {'record_type':'clang-ir-profile-merge','schema_version':2,'backend':
 evidence['sha256'] = hashlib.sha256(json.dumps(evidence,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 evidence_path.write_text(json.dumps(evidence,sort_keys=True)+'\n')
 PY
+chown "0:${PORTAGE_GID}" -- "${RECEIPT}" "${MERGE_EVIDENCE}"
+chmod 0640 -- "${RECEIPT}" "${MERGE_EVIDENCE}"
 
 clang_hash=$(sha256sum -- "${CLANG}"); clang_hash=${clang_hash%% *}
 profdata_hash=$(sha256sum -- "${PROFDATA}"); profdata_hash=${profdata_hash%% *}
