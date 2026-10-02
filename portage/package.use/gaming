@@ -1,4 +1,4 @@
-# Steam, wine, proton, lutris, mangohud.
+# Steam, wine, proton, mangohud.
 app-emulation/protontricks gui
 app-emulation/wine-staging -mingw X udev wow64 custom-cflags v4l -abi_x86_32 ffmpeg usb
 app-emulation/wine-vanilla -mingw X udev wow64 custom-cflags v4l -abi_x86_32 ffmpeg usb

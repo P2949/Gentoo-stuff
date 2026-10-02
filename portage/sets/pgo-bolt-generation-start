@@ -669,7 +669,6 @@
 =dev-vcs/git-filter-repo-2.47.0-r1
 =games-util/game-device-udev-rules-20260625
 =games-util/gamemode-9999
-=games-util/lutris-9999
 =games-util/mangohud-9999
 =games-util/protonup-9999
 =games-util/steam-launcher-1.0.0.85-r3
@@ -938,7 +937,6 @@
 =net-libs/nghttp2-9999
 =net-libs/nghttp3-9999
 =net-libs/ngtcp2-9999
-=net-libs/webkit-gtk-2.52.3-r411
 =net-mail/mailbase-1.8.1
 =net-misc/chrony-9999
 =net-misc/curl-9999

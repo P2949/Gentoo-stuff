@@ -470,7 +470,6 @@ dev-util/vulkan-utility-libraries
 dev-vcs/git
 dev-vcs/git-filter-repo
 games-util/game-device-udev-rules
-games-util/lutris
 games-util/mangohud
 games-util/protonup
 games-util/steam-launcher
@@ -520,10 +519,7 @@ media-gfx/bifrost
 media-gfx/graphite2
 media-gfx/imagemagick
 media-gfx/lookdevx
-media-gfx/maya
-media-gfx/maya-usd
 media-gfx/openvdb
-media-gfx/substance-maya
 media-libs/VulkanMemoryAllocator
 media-libs/alsa-lib
 media-libs/alsa-topology-conf
@@ -564,7 +560,6 @@ net-libs/libpsl
 net-libs/libqmi
 net-libs/libsoup
 net-libs/mbedtls
-net-libs/webkit-gtk
 net-mail/mailbase
 net-misc/mobile-broadband-provider-info
 net-misc/modemmanager

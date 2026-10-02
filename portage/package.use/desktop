@@ -35,7 +35,6 @@ kde-frameworks/kconfig qml
 kde-frameworks/prison qml
 kde-frameworks/sonnet qml
 net-libs/libsoup introspection
-net-libs/webkit-gtk introspection
 x11-base/xorg-server xvfb -minimal -xorg
 x11-base/xwayland libei
 x11-drivers/xf86-video-intel tools uxa xvmc
@@ -45,4 +44,3 @@ x11-libs/gtk+ introspection abi_x86_32 X
 x11-libs/gtksourceview introspection
 x11-libs/pango introspection abi_x86_32
 xfce-base/thunar exif introspection libnotify udisks
-net-libs/webkit-gtk -jumbo-build

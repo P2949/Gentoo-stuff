@@ -801,33 +801,6 @@
       "reason_code": "prebuilt-package"
     },
     {
-      "cpv": "media-gfx/maya-2027.2-r2",
-      "evidence": {
-        "identity": "prebuilt-or-proprietary-payload",
-        "source": "live-20260927-review"
-      },
-      "lane": "unsupported-by-upstream-toolchain",
-      "reason_code": "prebuilt-package"
-    },
-    {
-      "cpv": "media-gfx/maya-usd-0.37.0",
-      "evidence": {
-        "identity": "prebuilt-or-proprietary-payload",
-        "source": "live-20260927-review"
-      },
-      "lane": "unsupported-by-upstream-toolchain",
-      "reason_code": "prebuilt-package"
-    },
-    {
-      "cpv": "media-gfx/substance-maya-3.0.6",
-      "evidence": {
-        "identity": "prebuilt-or-proprietary-payload",
-        "source": "live-20260927-review"
-      },
-      "lane": "unsupported-by-upstream-toolchain",
-      "reason_code": "prebuilt-package"
-    },
-    {
       "cpv": "media-sound/spotify-1.2.96",
       "evidence": {
         "identity": "prebuilt-or-proprietary-payload",

@@ -20,7 +20,6 @@ dev-util/itstool python_single_target_python3_14
 dev-util/pahole python_single_target_python3_14
 dev-util/perf python_single_target_python3_14t
 dev-vcs/git python_single_target_python3_14
-games-util/lutris python_single_target_python3_14
 games-util/mangohud python_single_target_python3_14
 kde-frameworks/ki18n python_single_target_python3_14
 llvm-core/clang python_single_target_python3_14
