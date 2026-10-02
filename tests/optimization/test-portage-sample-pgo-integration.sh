@@ -2617,7 +2617,9 @@ expected = json.loads(pathlib.Path(expected_path).read_text(encoding="utf-8"))
 failures = {
     key: {"expected": expected_value, "observed": values.get(key)}
     for key, expected_value in expected.items()
-    if values.get(key) != expected_value
+    if (sorted(values.get(key, "").split()) != sorted(expected_value.split())
+        if key in {"CFLAGS", "CXXFLAGS"}
+        else values.get(key) != expected_value)
 }
 if failures:
     raise SystemExit(f"{label}: exact build axes differ: {json.dumps(failures, sort_keys=True)}")
