@@ -84,9 +84,6 @@ app-arch/unzip
 app-arch/xz-utils
 app-arch/zip
 app-arch/zstd
-app-autodesk/adp-desktop-sdk
-app-autodesk/adsk-identity-manager
-app-autodesk/adsk-licensing
 app-crypt/argon2
 app-crypt/gcr
 app-crypt/gnupg
@@ -811,7 +808,6 @@ media-gfx/argyllcms
 media-gfx/bifrost
 media-gfx/graphite2
 media-gfx/imagemagick
-media-gfx/lookdevx
 media-gfx/openvdb
 media-gfx/potrace
 media-gfx/qrencode

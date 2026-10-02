@@ -720,33 +720,6 @@
       "reason_code": "reviewed-native-source-build"
     },
     {
-      "cpv": "app-autodesk/adp-desktop-sdk-6.3.34-r1",
-      "evidence": {
-        "identity": "prebuilt-or-proprietary-payload",
-        "source": "live-20260927-review"
-      },
-      "lane": "unsupported-by-upstream-toolchain",
-      "reason_code": "prebuilt-package"
-    },
-    {
-      "cpv": "app-autodesk/adsk-identity-manager-1.18.1.2-r2",
-      "evidence": {
-        "identity": "prebuilt-or-proprietary-payload",
-        "source": "live-20260927-review"
-      },
-      "lane": "unsupported-by-upstream-toolchain",
-      "reason_code": "prebuilt-package"
-    },
-    {
-      "cpv": "app-autodesk/adsk-licensing-16.0.3.14414",
-      "evidence": {
-        "identity": "prebuilt-or-proprietary-payload",
-        "source": "live-20260927-review"
-      },
-      "lane": "unsupported-by-upstream-toolchain",
-      "reason_code": "prebuilt-package"
-    },
-    {
       "cpv": "app-editors/sublime-text-4_p4200",
       "evidence": {
         "identity": "prebuilt-or-proprietary-payload",
@@ -784,15 +757,6 @@
     },
     {
       "cpv": "media-gfx/bifrost-3.1.0.8",
-      "evidence": {
-        "identity": "prebuilt-or-proprietary-payload",
-        "source": "live-20260927-review"
-      },
-      "lane": "unsupported-by-upstream-toolchain",
-      "reason_code": "prebuilt-package"
-    },
-    {
-      "cpv": "media-gfx/lookdevx-2.2.0",
       "evidence": {
         "identity": "prebuilt-or-proprietary-payload",
         "source": "live-20260927-review"
