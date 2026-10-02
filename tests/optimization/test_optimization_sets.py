@@ -23,5 +23,12 @@ def main():
   assert (p/'conflict-sets'/'pgo-clang-ir').read_text() == '=app/foo-1\n'
   verifier=subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/verify-optimization-sets.py'),'--mutation-policy',str(conflict_m),'--lanes',str(conflict_l),'--manifest',str(p/'conflict-sets.manifest.json'),'--sets-root',str(p/'conflict-sets')],capture_output=True,text=True)
   assert verifier.returncode == 0 and 'verified 2 CPVs' in verifier.stdout
+  scope=p/'scope.json'; scope.write_text(json.dumps({'schema':'optimization-scope-policy-v1','scope':[{'selector':'app/a','state':'retained-installed-out-of-project-scope','reason_code':'test'}]}))
+  scoped=p/'scoped-sets'
+  subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/generate-optimization-sets.py'),'--mutation-policy',str(m),'--lanes',str(l),'--scope-policy',str(scope),'--output-root',str(scoped)],check=True)
+  assert (scoped/'pgo-bolt-all-userspace').read_text()==''
+  scoped_manifest=json.loads((p/'scoped-sets.manifest.json').read_text())
+  assert scoped_manifest['scope_excluded'][0]['cpv']=='app/a-1'
+  assert scoped_manifest['scope_policy_sha256']
  print('PASS: optimization sets derive from canonical mutation policy')
 if __name__=='__main__': main()

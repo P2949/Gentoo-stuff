@@ -39,6 +39,8 @@ def main():
     ap.add_argument('--output-root',type=Path,required=True)
     ap.add_argument('--manifest', type=Path,
                     help='metadata manifest path outside the Portage set directory')
+    ap.add_argument('--scope-policy', type=Path,
+                    help='first-class project scope policy; excluded CPVs remain in accounting but not optimization sets')
     args=ap.parse_args()
     if args.output_root.exists() and any(args.output_root.iterdir()):
         raise SystemExit('REFUSED: optimization set output root is not empty')
@@ -56,16 +58,33 @@ def main():
     decisions={x['cpv']:x['decision'] for x in policy_rows}
     lane_rows={x['cpv']:x for x in lane_list}
     if set(decisions) != set(lane_rows): raise SystemExit('REFUSED: mutation policy and lane coverage differ')
+    scope_rows=[]
+    if args.scope_policy:
+        scope_doc=json.loads(args.scope_policy.read_text())
+        if scope_doc.get('schema') != 'optimization-scope-policy-v1':
+            raise SystemExit('REFUSED: unsupported scope policy schema')
+        scope_rows=scope_doc.get('scope', [])
+        selectors=[x.get('selector') for x in scope_rows]
+        if any(not isinstance(x, str) or '/' not in x for x in selectors):
+            raise SystemExit('REFUSED: invalid scope selector')
+        if len(set(selectors)) != len(selectors):
+            raise SystemExit('REFUSED: duplicate scope selector')
+    scope_by_selector={x['selector']: x for x in scope_rows}
     sets={'pgo-bolt-all-userspace':[], 'optimization-kernel-policy-exclusion':[], 'optimization-not-applicable':[]}
     set_members={name:[] for name in sets}
     for name in LANE_SET.values():
         sets[name]=[]
         set_members[name]=[]
     atom_bindings={}
+    scope_members=[]
     for cpv in sorted(decisions):
         cp = cp_atom(cpv)
         decision=decisions[cpv]; row=lane_rows[cpv]; lane=row.get('lane')
         atom_bindings.setdefault(cp, []).append({'cpv': cpv, 'decision': decision, 'lane': lane})
+        scope = scope_by_selector.get(cp)
+        if scope and scope.get('state') == 'retained-installed-out-of-project-scope':
+            scope_members.append({'cpv': cpv, 'selector': cp, 'state': scope['state'], 'reason_code': scope.get('reason_code')})
+            continue
         if decision == 'kernel-policy-exclusion':
             sets['optimization-kernel-policy-exclusion'].append(cp)
             set_members['optimization-kernel-policy-exclusion'].append(cpv)
@@ -110,7 +129,7 @@ def main():
         values[:] = sorted(set(values))
         path=args.output_root/name
         path.write_text(''.join(x+'\n' for x in values))
-    summary={'record_type':'optimization-package-sets','schema_version':2,'mutation_policy_sha256':hashlib.sha256(args.mutation_policy.read_bytes()).hexdigest(),'lane_sha256':hashlib.sha256(args.lanes.read_bytes()).hexdigest(),'sets':{k:len(v) for k,v in sets.items()},'atom_bindings':{k:atom_bindings[k] for k in sorted(atom_bindings)}}
+    summary={'record_type':'optimization-package-sets','schema_version':3 if args.scope_policy else 2,'mutation_policy_sha256':hashlib.sha256(args.mutation_policy.read_bytes()).hexdigest(),'lane_sha256':hashlib.sha256(args.lanes.read_bytes()).hexdigest(),'scope_policy_sha256':hashlib.sha256(args.scope_policy.read_bytes()).hexdigest() if args.scope_policy else None,'sets':{k:len(v) for k,v in sets.items()},'atom_bindings':{k:atom_bindings[k] for k in sorted(atom_bindings)},'scope_excluded':scope_members}
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(json.dumps(summary,sort_keys=True,indent=2)+'\n')
     print(json.dumps(summary['sets'],sort_keys=True))
