@@ -211,7 +211,6 @@ for line in path.read_text(encoding="utf-8").splitlines():
 required = {
     "src_unpack": (portage_uid, portage_gid),
     "src_compile": (portage_uid, portage_gid),
-    "pre_src_install": ("0", "0"),
     "src_install": ("0", "0"),
     "post_src_install": ("0", "0"),
     "install_qa_check": ("0", "0"),
@@ -239,7 +238,7 @@ for phase, expected_ids in required.items():
             f"{active_framework!r}"
         )
     expected_phase = "install" if phase in {
-        "pre_src_install", "src_install", "post_src_install"
+        "src_install", "post_src_install"
     } else phase.removeprefix("src_")
     if phase == "install_qa_check":
         # MiscFunctionsProcess deliberately clears EBUILD_PHASE.

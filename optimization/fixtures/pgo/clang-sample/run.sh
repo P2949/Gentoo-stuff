@@ -232,6 +232,7 @@ PROFDATA_SHA256=$("${SHA256SUM}" "${PROFDATA_REAL}" | "${CUT}" -d ' ' -f 1)
 env -i HOME=/nonexistent LANG=C LANGUAGE=C LC_ALL=C PATH=/usr/bin:/bin TZ=UTC \
     "${PROFILE_VALIDATOR}" produce \
     --backend clang-sample \
+    --cpv dev-util/clang-sample-capability-fixture-2 \
     --profile "${OUTPUT_ROOT}/sample.prof" \
     --fingerprint "${FINGERPRINT}" \
     --sample-input-fingerprint "${FINGERPRINT}" \
