@@ -20,7 +20,12 @@ from typing import Any
 
 SCHEMA = "gentoo-optimization-phase2-authoritative-test-contract-v1"
 TEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,511}$")
-DISCOVERY_TIMEOUT_SECONDS = 30
+# The full authoritative tree can take just over 30 seconds when executed
+# through the root-owned toolchain and filesystem policy.  Keep the discovery
+# bounded, but leave enough margin that a successful deterministic check is
+# not rejected solely because process startup and teardown consume the entire
+# historical 30-second window.
+DISCOVERY_TIMEOUT_SECONDS = 60
 DISCOVERY_KILL_AFTER_SECONDS = 2
 
 
@@ -391,7 +396,7 @@ def main() -> int:
         default="optimization/phase2-authoritative-test-contract.json",
     )
     parser.add_argument("--output")
-    parser.add_argument("--timeout-seconds", type=int, default=30)
+    parser.add_argument("--timeout-seconds", type=int, default=60)
     arguments = parser.parse_args()
     try:
         if arguments.timeout_seconds < 1 or arguments.timeout_seconds > 300:
