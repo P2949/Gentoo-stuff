@@ -2913,6 +2913,7 @@ CLANG_SHA=$(sha256sum -- "${CLANG}"); CLANG_SHA=${CLANG_SHA%% *}
 PROFDATA_SHA=$(sha256sum -- "${PROFDATA}"); PROFDATA_SHA=${PROFDATA_SHA%% *}
 "${VALIDATOR}" produce \
     --backend clang-sample \
+    --cpv app-test/phase2-pgo-use-fixture-1 \
     --profile "${PROFILE}" \
     --fingerprint "${USE_FINGERPRINT}" \
     --sample-input-fingerprint "${MAP_FINGERPRINT}" \
