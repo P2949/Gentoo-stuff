@@ -27,6 +27,7 @@ def main():
     if not isinstance(doc["records"], list) or not isinstance(doc["build_records"], list) or not isinstance(doc["source_errors"], list):
         raise SystemExit("REFUSED: invalid Portage dependency-source lists")
     seen = set()
+    unresolved_rows = {}
     for row in doc["records"] + doc["build_records"]:
         if not isinstance(row, dict) or not row.get("consumer_cpv"):
             raise SystemExit("REFUSED: malformed Portage dependency edge")
@@ -37,17 +38,35 @@ def main():
             evidence = row.get("evidence")
             if not isinstance(evidence, dict) or not evidence.get("error") or not evidence.get("expression_sha256"):
                 raise SystemExit("REFUSED: unresolved Portage row lacks typed diagnostic evidence")
+            key = (
+                row["consumer_cpv"],
+                evidence.get("field"),
+                evidence.get("expression_sha256"),
+            )
+            if key in unresolved_rows:
+                raise SystemExit("REFUSED: duplicate unresolved Portage diagnostic row")
+            unresolved_rows[key] = (
+                evidence.get("choice_operator"),
+                evidence.get("choice_branch_count"),
+            )
             continue
         key = (row["provider_cpv"], row["consumer_cpv"], relation,
                json.dumps(row.get("evidence", {}), sort_keys=True))
         if key in seen:
             raise SystemExit("REFUSED: duplicate Portage dependency edge")
         seen.add(key)
+    unresolved_errors = {}
     for error in doc["source_errors"]:
         if not isinstance(error, dict) or error.get("stage") != "dependency-parse":
             raise SystemExit("REFUSED: source contains an untyped Portage error")
         if error.get("choice_operator") not in {"||", "^^", "??"} or not isinstance(error.get("choice_branch_count"), int) or not isinstance(error.get("expression_sha256"), str):
             raise SystemExit("REFUSED: unresolved Portage choice lacks structured evidence")
+        key = (error.get("cpv"), error.get("field"), error.get("expression_sha256"))
+        if key in unresolved_errors:
+            raise SystemExit("REFUSED: duplicate unresolved Portage source error")
+        unresolved_errors[key] = (error["choice_operator"], error["choice_branch_count"])
+    if unresolved_errors != unresolved_rows:
+        raise SystemExit("REFUSED: unresolved Portage rows and source errors do not match exactly")
     if args.vdb:
         requested = args.vdb.resolve()
         if Path(doc["vdb_root"]).resolve() != requested:
