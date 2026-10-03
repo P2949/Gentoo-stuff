@@ -44,6 +44,15 @@ def main() -> None:
         scoped_records = json.loads(scoped_output.read_text())["records"]
         assert scoped_records[0]["provider_cpv"] == "dev/vendor-1"
         assert scoped_records[0]["evidence"]["provider_path"] == "/opt/vendor/lib/libx.so.1"
+        fallback = root / "fallback.json"
+        fallback_output = root / "fallback-edges.json"
+        fallback.write_text(json.dumps({"artifacts": [
+            {"owner_cpv": "dev/system-1", "path": "/lib/libc.so.6", "soname": "libc.so.6", "class": "ELF64", "machine": "Advanced Micro Devices X86-64"},
+            {"owner_cpv": "app/bundled-1", "path": "/opt/app/lib/python.so", "needed": ["libc.so.6"], "runpath": ["$ORIGIN"], "class": "ELF64", "machine": "Advanced Micro Devices X86-64"},
+        ]}))
+        subprocess.run(["python3", str(SCRIPT), "--elf", str(fallback), "--output", str(fallback_output)], check=True)
+        fallback_records = json.loads(fallback_output.read_text())["records"]
+        assert fallback_records[0]["provider_cpv"] == "dev/system-1"
         colon = root / "colon.json"
         colon_output = root / "colon-edges.json"
         colon.write_text(json.dumps({"artifacts": [

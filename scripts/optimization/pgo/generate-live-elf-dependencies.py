@@ -45,12 +45,18 @@ def _provider_matches(consumer, name, providers):
   candidates=same
  search=_search_dirs(consumer)
  if search:
+  # Loader directories are searched in declaration order.  A matching
+  # provider in an explicit directory wins; when none is present the loader
+  # continues with its default namespace (which is represented by the
+  # remaining owned providers here).  Treating an explicit RUNPATH as a
+  # closed universe incorrectly marks ordinary dependencies such as libc in
+  # bundled interpreters as unresolved.
   scoped=[]
   for directory in search:
    scoped.extend(p for p in candidates if _directory(p.get("path")) == directory)
-  # An explicit RPATH/RUNPATH is a closed search scope for this authority;
-  # do not fall back to an unrelated globally matching provider.
-  candidates=scoped
+   if scoped:
+    candidates=scoped
+    break
  return candidates
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--elf',required=True,type=Path); ap.add_argument('--output',required=True,type=Path); a=ap.parse_args()

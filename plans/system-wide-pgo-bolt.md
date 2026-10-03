@@ -12789,3 +12789,22 @@ fixture-shaped diagnostic inputs remain supported for portable tests, while
 production Portage/ELF documents are self-authenticating. The focused reverse-
 dependency suite still passes. This correction is independent of the existing
 6,370 unresolved live ELF edges, which remain refused until exact review.
+
+## 2026-10-03 loader fallback correction for live ELF dependencies
+
+The live dependency resolver previously treated an explicit RPATH/RUNPATH as
+a closed provider universe. That incorrectly rejected ordinary system
+dependencies of bundled interpreters when the package-local directory did not
+contain the requested SONAME. Resolution now prefers the first compatible
+provider in the declared directories and otherwise falls back to the
+authenticated global SONAME namespace, while preserving ELF class and machine
+matching. A regression covers this fallback and the existing scoped-provider
+precedence cases. Re-running the live candidate reduced unresolved edges from
+6,370 to 304: 302 remain exact provider-ambiguity reviews (primarily Firefox's
+bundled copies versus system NSS/NSPR) and 2 remain exact unversioned
+OpenJDK/libfreetype reviews. The refreshed diagnostic artifact is
+`elf-dependencies-v3.json` with producer self-digest
+`15b1e774e80b65bae7e417f864010d0c16de2bd59927dbd472a29102f59312da`.
+Because 304 edges still lack explicit dispositions, reverse-dependency
+publication remains fail-closed and no Phase-3 authority or profile wave is
+activated by this correction.
