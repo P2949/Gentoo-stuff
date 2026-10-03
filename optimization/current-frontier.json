@@ -8,23 +8,24 @@
   "latest_live_resolver_boundary": {
     "captured_boundary": "2026-10-03",
     "kernel_lifecycle_operations_present": true,
-    "operation_count": 11,
-    "ordinary_userspace_operations_present": [
-      "media-libs/libde265",
-      "media-libs/gegl"
+    "operation_count": 9,
+    "ordinary_userspace_operations_present": [],
+    "ordinary_userspace_resolver_empty": true,
+    "report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-gegl-hold.log",
+    "report_sha256": "92c5082e5523e09fd6d2432aa20142b7f2daeb13a29dff455bca6b90d80f5a2d",
+    "retained_abi_holds": [
+      "media-libs/gegl>=0.4.72"
     ],
-    "report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-git-lfs-mask.log",
-    "report_sha256": "24142a03369bf446a7a3722e56d4f8f11540470e4415b6594a16404ab2d78b68",
     "scope_partition_required": true,
     "source_network_blocker_resolved": "dev-vcs/git-lfs-3.8.0",
     "terminal_result": "pretend-success"
   },
-  "latest_resolver_operation_count": 11,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-git-lfs-mask.log",
-  "latest_resolver_report_sha256": "24142a03369bf446a7a3722e56d4f8f11540470e4415b6594a16404ab2d78b68",
+  "latest_resolver_operation_count": 9,
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-gegl-hold.log",
+  "latest_resolver_report_sha256": "92c5082e5523e09fd6d2432aa20142b7f2daeb13a29dff455bca6b90d80f5a2d",
   "latest_transaction_report": "/var/lib/gentoo-optimization/reports/git-lfs-3.8.0-maintenance-20261003.log",
   "latest_transaction_report_sha256": "ba28b8971077d728f0e7911e2229739205b49ff66a6ab7b00218df1223cba53e",
-  "next_authoritative_action": "partition the fresh 11-operation resolver through mutation and scope policy; kernel/lifecycle proposals remain excluded; ordinary ABI proposals for libde265 and gegl require changed-cause remediation",
+  "next_authoritative_action": "partition the fresh nine-operation resolver; all remaining proposals are kernel/firmware/lifecycle exclusions; ordinary userspace baseline resolver is empty after narrow ABI/source holds",
   "retired_package_targets": [
     {
       "evidence": "user-directed retirement; historical retries retained; no live uninstall performed",

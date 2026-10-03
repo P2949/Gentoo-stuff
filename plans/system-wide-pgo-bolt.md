@@ -12558,3 +12558,24 @@ selected. The durable resolver report is
 `24142a03369bf446a7a3722e56d4f8f11540470e4415b6594a16404ab2d78b68`).
 The current frontier now clears the Git LFS source/network blocker and binds
 the new inventory/resolver boundary.
+
+## 2026-10-03 ordinary userspace resolver cleared
+
+The stale `media-libs/libde265 dec265 enc265 tools` package.use override was
+removed after comparing the live VDB USE state with the desired resolver state.
+The installed `libde265-1.1.3` provider remains unchanged; no ABI retry was
+performed. Framework republish against the reviewed inventory and refreshed
+policy passed with the same generated-policy identity.
+
+The only remaining ordinary resolver proposal, `media-libs/gegl-0.4.72`, is an
+already diagnosed exported-ABI transition against the retained 0.4.70 provider.
+It was given a narrow version hold (`>=media-libs/gegl-0.4.72`) to prevent
+unchanged retries while preserving the installed provider and historical ABI
+failure evidence. Framework publication passed again. A fresh complete-graph
+`@world` pretend returned zero and now contains only nine kernel/firmware/
+lifecycle proposals; no ordinary userspace package is selected. Durable report:
+`/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-gegl-hold.log`
+(SHA-256
+`92c5082e5523e09fd6d2432aa20142b7f2daeb13a29dff455bca6b90d80f5a2d`). The
+kernel/boot/initramfs/firmware boundary remains unchanged and none of those
+proposals was executed.
