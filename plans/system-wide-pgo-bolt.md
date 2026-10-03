@@ -12397,3 +12397,14 @@ Post-install linkage resolves to `libOpenImageIO.so.3.3.0` and
 `libOpenImageIO_Util.so.3.3.0`; Blender 5.0.1 starts and reports its build
 identity successfully. This closes the OpenImageIO/Blender/OIDN provider
 transition without bypassing the ABI guard.
+
+2026-10-03 post-provider resolver: after the authorized OpenImageIO 3.3
+transition and Blender relink, a fresh complete-graph `@world` pretend again
+completed with `pretend_rc=0`. Immutable report
+`/var/lib/gentoo-optimization/reports/userspace-world-pretend-20261003-openimageio-transition.log`
+has SHA-256
+`00f4ac29b0dce55155a1b5f5da090b5d00045d338335bf710e711a2d7bea7dbb`.
+The graph is stable at 1,275 packages (7 upgrades, 1 new, 3 new slots, 1,264
+reinstalls), and no additional provider-specific USE changes were requested.
+No broad world transaction was started; the exact OpenImageIO/Blender/OIDN
+closure is now installed and runtime-linked to OpenImageIO 3.3.
