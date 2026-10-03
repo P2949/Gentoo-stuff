@@ -1,0 +1,21 @@
+--- a/core/device.h
++++ b/core/device.h
+@@ -51,6 +51,7 @@
+   {
+   public:
+     Device();
++    ~Device();
+ 
+     static void setError(Device* device, Error code, const std::string& message);
+     static Error getError(Device* device, const char** outMessage);
+--- a/core/device.cpp
++++ b/core/device.cpp
+@@ -87,6 +87,8 @@
+       throw Exception(Error::InvalidArgument, "unknown physical device parameter or type mismatch: '" + name + "'");
+   }
+ 
++  Device::~Device() = default;
++
+   Device::Device()
+   {
+     // Get default values from environment variables
