@@ -12130,3 +12130,14 @@ options). A package-specific environment boundary was added:
 atom. The framework was republished from this source and strict root-owned
 installer verification passed. The package has not been retried yet; the next
 attempt must be a fresh exact rebuild using this changed identity.
+
+The first OpenBLAS remediation attempt still failed at link time because Clang
+selected `libomp` while gfortran-generated objects required the GNU OpenMP
+runtime. The package environment was tightened again to use conservative
+C/C++ flags and `-fopenmp=libgomp` for C/C++/link steps. A fresh exact rebuild
+then succeeded with `emerge_rc=0`; its immutable log is
+`/var/lib/gentoo-optimization/reports/openblas-rebuild-20261003-openmp-gomp-v4.log`
+with SHA-256
+`ef10faddff0045dd16df6d7435c9866c8c72d61a6935d9373aba19cdc29e6606`.
+This is ordinary optimization-off userspace evidence, not PGO or BOLT
+completion evidence.
