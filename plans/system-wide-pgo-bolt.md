@@ -12258,3 +12258,10 @@ with SHA-256
 The repository-URI defect is fixed in the project overlay, but this package now
 requires coordinated reverse-consumer/provider ABI migration and was not force-
 merged or retried unchanged.
+
+The post-OpenImageIO ABI-failure resolver completed with `pretend_rc=0`; report
+`/var/lib/gentoo-optimization/reports/userspace-world-pretend-20261003-post-openimageio-abi.log`
+has SHA-256
+`18d82435cdf97c4b6024ed368d4c0b14ced33fd5aa3f787f5bf20c80f54ee233`.
+The same eight entries remain in the resolver frontier, now with OpenImageIO's
+source-layout defect corrected and its coordinated ABI transition evidenced.
