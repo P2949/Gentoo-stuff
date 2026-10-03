@@ -187,6 +187,28 @@
       ],
       "rationale": "The O2 compiler tier is followed by the reviewed public-ABI visibility lane, which retains established SPIR-V Tools exports while disabling forced libraries."
     },
+    "media-gfx/blender": {
+      "environments": [
+        "O2.conf",
+        "blender-libmv-cassert.conf"
+      ],
+      "rationale": "The conservative O2 tier is followed by the reviewed Blender libmv assertion compatibility setting required by the installed source package."
+    },
+    "media-libs/libde265": {
+      "environments": [
+        "O2.conf",
+        "no-lto.conf",
+        "no-hidden-visibility.conf"
+      ],
+      "rationale": "The installed libde265 baseline retains the conservative O2 tier while disabling LTO and hidden visibility to preserve its reviewed exported ABI."
+    },
+    "=media-libs/libde265-1.1.3": {
+      "environments": [
+        "libde265-abi-transition.conf",
+        "optimization/optimization-off.conf"
+      ],
+      "rationale": "The exact installed libde265 maintenance identity combines its ABI-transition authority with the explicit optimization-off safety policy."
+    },
     "media-libs/libjxl": {
       "environments": [
         "highway-noavx512.conf",

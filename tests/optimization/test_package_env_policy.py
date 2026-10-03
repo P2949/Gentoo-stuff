@@ -122,9 +122,9 @@ class PackageEnvPolicyTest(unittest.TestCase):
         )
         self.assertFalse(result.errors, "\n".join(result.errors))
         self.assertEqual(result.policy_file_count, 16)
-        self.assertEqual(result.assignment_line_count, 167)
-        self.assertEqual(result.atom_count, 163)
-        self.assertEqual(result.pair_count, 179)
+        self.assertEqual(result.assignment_line_count, 177)
+        self.assertEqual(result.atom_count, 171)
+        self.assertEqual(result.pair_count, 191)
 
     def test_repository_has_exact_expected_cleanup_and_stacks(self) -> None:
         exact = CHECKER.exact_environment_map(
