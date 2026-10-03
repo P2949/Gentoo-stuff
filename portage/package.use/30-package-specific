@@ -1,3 +1,5 @@
 media-libs/freetype brotli
 media-video/ffmpeg lame theora vorbis vpx xvid
 sci-libs/fftw threads
+sci-physics/bullet double-precision
+media-libs/opensubdiv tbb
