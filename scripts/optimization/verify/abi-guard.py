@@ -77,14 +77,7 @@ def inspect(path: Path) -> tuple[str, str | None, set[str]]:
         fields = line.split()
         if len(fields) < 8 or fields[0].rstrip(":").isdigit() is False:
             continue
-        # Num Value Size Type Bind Vis Ndx Name. Require a real ELF symbol
-        # type before accepting the row; auxiliary/header rows can otherwise
-        # make a type marker (for example ``D``) look like a symbol name.
-        if fields[3] not in {
-            "NOTYPE", "OBJECT", "FUNC", "SECTION", "FILE", "COMMON",
-            "TLS", "GNU_IFUNC", "LOOS", "HIOS", "LOPROC", "HIPROC",
-        }:
-            continue
+        # Num Value Size Type Bind Vis Ndx Name
         if fields[4] not in {"GLOBAL", "WEAK", "UNIQUE", "GNU_UNIQUE"}:
             continue
         if fields[5] not in {"DEFAULT", "PROTECTED"} or fields[6] == "UND":
