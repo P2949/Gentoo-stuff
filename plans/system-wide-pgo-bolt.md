@@ -12221,3 +12221,18 @@ frontier is Bullet, the BLAS wrapper, Git LFS, OpenSubdiv, OIDN, libde265,
 GEGL, and OpenImageIO; the first seven retain their narrow failure evidence,
 while OpenImageIO has only a prior source-fetch timeout and remains eligible
 for one changed-state retry.
+
+OpenImageIO was retried after the prior source-fetch timeout. The repository
+fetch completed, but the first retry was invalidated by concurrent emerges
+sharing the package work tree and failed in `src_prepare` when the ebuild's
+`rm -r src/dicom.imageio` raced against the other process. Its immutable log is
+`/var/lib/gentoo-optimization/reports/openimageio-rebuild-20261003-fetch-retry.log`
+(SHA-256 `a5249a41db5956151f59b0de02cb4e8b786185763682d7ee390c5ae28f08eea8`).
+A second attempt used a fresh isolated `PORTAGE_TMPDIR` and a non-overlapping
+flock; it reproduced the same missing `src/dicom.imageio` failure without a
+network error. Its log is
+`/var/lib/gentoo-optimization/reports/openimageio-rebuild-20261003-isolated-retry.log`
+(SHA-256 `8f4789ce6a2d873b82de51c1f4ef614efdd95d3c385e0bc190ed16b2`). This is
+now classified as an ebuild/source-layout mismatch in the live OpenImageIO
+9999 ebuild, not an optimization or ABI failure; no further unchanged retry
+was performed.
