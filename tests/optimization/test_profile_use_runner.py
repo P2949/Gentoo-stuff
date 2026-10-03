@@ -54,6 +54,7 @@ def main():
     assert "proc_rc = 1" in source
     assert "return proc_rc" in source
     assert "archive-profile-use-receipt.py" in source
+    assert "verify-profile-use-archive.py" in source
     assert "--archive-root" in source
     with tempfile.TemporaryDirectory() as td:
         log = Path(td) / "log"

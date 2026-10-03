@@ -156,5 +156,10 @@ def main() -> int:
             sys.executable, str(archive_tool), '--receipt', str(a.receipt),
             '--archive-root', str(a.archive_root), '--output', str(archive_manifest)
         ], check=True)
+        verify_tool=pathlib.Path(__file__).with_name('verify-profile-use-archive.py')
+        subprocess.run([
+            sys.executable, str(verify_tool), '--archive', str(archive_manifest),
+            '--receipt', str(a.receipt)
+        ], check=True)
     return proc_rc
 if __name__=='__main__': raise SystemExit(main())
