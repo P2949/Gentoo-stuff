@@ -26,7 +26,7 @@ def main():
     required = {"record_type", "schema_version", "vdb_root", "cpv_count",
                 "source_digest", "choice_review_sha256", "source_errors",
                 "records", "build_records", "sha256"}
-    if set(doc) != required or doc.get("record_type") != "live-portage-dependency-source" or doc.get("schema_version") != 2:
+    if set(doc) != required or doc.get("record_type") != "live-portage-dependency-source" or doc.get("schema_version") != 3:
         raise SystemExit("REFUSED: invalid Portage dependency-source schema")
     declared = doc["sha256"]
     unsigned = dict(doc); unsigned.pop("sha256")

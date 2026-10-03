@@ -153,7 +153,7 @@ def main():
             raise SystemExit(f"REFUSED: dependency-choice review contains unused records: {unused[:3]}")
     def unique(rows):
         return sorted({(x.get('provider_cpv'),x['consumer_cpv'],x['relationship'],json.dumps(x.get('evidence',{}),sort_keys=True)):x for x in rows}.values(),key=lambda x:(x.get('provider_cpv',''),x['consumer_cpv'],x['relationship']))
-    out={'record_type':'live-portage-dependency-source','schema_version':2,'vdb_root':str(Path(a.vdb).resolve()),'cpv_count':len(cpvs),'source_digest':hashlib.sha256(canon(sorted(source_hashes))).hexdigest(),'choice_review_sha256':choice_review_sha256,'source_errors':source_errors,'records':unique(runtime_rows),'build_records':unique(build_rows)}
+    out={'record_type':'live-portage-dependency-source','schema_version':3,'vdb_root':str(Path(a.vdb).resolve()),'cpv_count':len(cpvs),'source_digest':hashlib.sha256(canon(sorted(source_hashes))).hexdigest(),'choice_review_sha256':choice_review_sha256,'source_errors':source_errors,'records':unique(runtime_rows),'build_records':unique(build_rows)}
     out['sha256']=hashlib.sha256(canon(out)).hexdigest(); Path(a.output).write_text(json.dumps(out,sort_keys=True,indent=2)+'\n')
     if source_errors:
         raise SystemExit(f"REFUSED: Portage dependency source contains {len(source_errors)} metadata/parse errors; see {a.output}")

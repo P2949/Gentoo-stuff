@@ -13,7 +13,7 @@ def main():
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "source.json"
         doc = {
-            "record_type": "live-portage-dependency-source", "schema_version": 2,
+            "record_type": "live-portage-dependency-source", "schema_version": 3,
             "vdb_root": "/var/db/pkg", "cpv_count": 1,
             "source_digest": "a" * 64, "choice_review_sha256": None,
             "source_errors": [{"cpv": "app/c-1", "field": "RDEPEND", "stage": "dependency-parse",
