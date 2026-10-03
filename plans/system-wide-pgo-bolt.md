@@ -12579,3 +12579,16 @@ lifecycle proposals; no ordinary userspace package is selected. Durable report:
 `92c5082e5523e09fd6d2432aa20142b7f2daeb13a29dff455bca6b90d80f5a2d`). The
 kernel/boot/initramfs/firmware boundary remains unchanged and none of those
 proposals was executed.
+
+## 2026-10-03 refreshed package environment policy validation
+
+The post-maintenance package environment stack was revalidated before the next
+authoritative Phase-3 action. Three current multi-environment stacks were
+missing from the reviewed policy registry: Blender's libmv assertion
+compatibility layer, the installed libde265 ABI-preservation stack, and the
+exact libde265 maintenance identity's explicit optimization-off transition.
+They are now recorded with their ordered environment files and rationales.
+The repository policy validator passes with 16 policy files, 177 assignment
+lines, 171 atoms, and 191 environment pairs. No live package transaction was
+started by this correction; the already-running portable-complete gate remains
+the next validation boundary.
