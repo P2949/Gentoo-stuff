@@ -9,9 +9,27 @@ from portage.dep import use_reduce, paren_reduce
 
 def canon(v): return json.dumps(v, sort_keys=True, separators=(",", ":")).encode()
 
+class DependencyChoiceError(ValueError):
+    """The installed VDB does not identify which alternative Portage chose."""
+
+def _contains_choice(tree):
+    if isinstance(tree, list):
+        if tree and tree[0] in {"||", "^^", "??"}:
+            return tree[0]
+        for item in tree:
+            choice = _contains_choice(item)
+            if choice:
+                return choice
+    return None
+
 def atoms(expr, useflags=()):
     if not expr: return []
-    tree=use_reduce(paren_reduce(expr), uselist=useflags, flat=True)
+    tree=use_reduce(paren_reduce(expr), uselist=useflags, flat=False)
+    choice = _contains_choice(tree)
+    if choice:
+        raise DependencyChoiceError(
+            f"unresolved Portage dependency choice operator {choice!r}"
+        )
     vals=[]
     def walk(x):
         if isinstance(x,list):

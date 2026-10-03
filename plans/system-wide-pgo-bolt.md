@@ -12808,3 +12808,17 @@ OpenJDK/libfreetype reviews. The refreshed diagnostic artifact is
 Because 304 edges still lack explicit dispositions, reverse-dependency
 publication remains fail-closed and no Phase-3 authority or profile wave is
 activated by this correction.
+
+## 2026-10-03 fail-closed Portage dependency-choice extraction
+
+The live Portage dependency producer previously called `use_reduce(...,
+flat=True)` and then recursively collected atoms. That loses the semantics of
+`||`, `^^`, and `??` groups by emitting every alternative as though it were a
+selected provider. The producer now retains the reduced dependency structure,
+detects an unresolved choice operator, and records a source error that refuses
+publication until the exact Portage-selected alternative is established. A
+focused regression proves ordinary and USE-conditional dependencies still
+extract, while an unresolved `||` group is rejected rather than flattened.
+This is intentionally diagnostic/fail-closed work: no authoritative
+reverse-dependency graph or Phase-3 authority is published from an unresolved
+dependency-choice source.
