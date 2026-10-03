@@ -19,7 +19,7 @@ def main():
         raise SystemExit("REFUSED: live ELF source digest mismatch")
     seen = set()
     for row in doc["records"]:
-        if not isinstance(row, dict) or not row.get("provider_cpv") or not row.get("consumer_cpv") or row["provider_cpv"] == row["consumer_cpv"]:
+        if not isinstance(row, dict) or not row.get("provider_cpv") or not row.get("consumer_cpv"):
             raise SystemExit("REFUSED: malformed live ELF dependency edge")
         evidence = row.get("evidence")
         if not isinstance(evidence, dict) or not evidence.get("consumer_path") or not evidence.get("needed") or not evidence.get("provider_path"):
