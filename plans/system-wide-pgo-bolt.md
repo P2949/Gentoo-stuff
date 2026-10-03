@@ -12855,6 +12855,11 @@ operator names, branch counts, and expression hashes. The diagnostic source
 can therefore be handed to a deterministic Portage-selection evidence
 producer without parsing human-readable error text.
 
+Choice-review records now bind the reduced operator and branch count in
+addition to the selected branch. A review is rejected when its structural
+contract differs from the live reduced expression, even if the expression
+hash key is reused incorrectly.
+
 The live VDB producer was regenerated at this schema boundary and retained as
 `/var/lib/gentoo-optimization/generations/phase3-live-20261003-post-git-lfs-final2/portage-dependencies-v3.json`
 (file SHA-256

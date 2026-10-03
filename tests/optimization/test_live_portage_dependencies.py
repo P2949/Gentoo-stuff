@@ -19,13 +19,14 @@ def main() -> None:
     module = _module()
     assert module.load_choice_review({"records": [{
         "consumer_cpv": "app/c-1", "field": "RDEPEND",
-        "expression_sha256": "a" * 64, "selected_branch": 0,
+        "expression_sha256": "a" * 64, "choice_operator": "||",
+        "branch_count": 2, "selected_branch": 0,
     }]})
     for bad in (
         {"records": []},
         {"records": [{"consumer_cpv": "app/c-1"}]},
-        {"records": [{"consumer_cpv": "app/c-1", "field": "RDEPEND", "expression_sha256": "a" * 64, "selected_branch": 0},
-                      {"consumer_cpv": "app/c-1", "field": "RDEPEND", "expression_sha256": "a" * 64, "selected_branch": 1}]},
+        {"records": [{"consumer_cpv": "app/c-1", "field": "RDEPEND", "expression_sha256": "a" * 64, "choice_operator": "||", "branch_count": 2, "selected_branch": 0},
+                      {"consumer_cpv": "app/c-1", "field": "RDEPEND", "expression_sha256": "a" * 64, "choice_operator": "||", "branch_count": 2, "selected_branch": 1}]},
     ):
         try:
             module.load_choice_review(bad)
@@ -59,6 +60,12 @@ def main() -> None:
         "|| ( dev-libs/a dev-libs/b )", (),
         choice_selector=lambda operator, branches: 1,
     ) == ["dev-libs/b"]
+    assert module.atoms(
+        "|| ( dev-libs/a dev-libs/b )", (),
+        choice_selector=lambda operator, branches: {
+            "choice_operator": "||", "branch_count": 2, "selected_branch": 0
+        },
+    ) == ["dev-libs/a"]
     print("PASS: Portage dependency alternatives remain unresolved until selected")
 
 

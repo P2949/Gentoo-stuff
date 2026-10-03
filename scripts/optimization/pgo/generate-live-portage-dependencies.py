@@ -23,11 +23,14 @@ def load_choice_review(review):
     choices = {}
     for record in review["records"]:
         key = (record.get("consumer_cpv"), record.get("field"), record.get("expression_sha256"))
-        if any(value is None for value in key) or not isinstance(record.get("selected_branch"), int):
+        if (any(value is None for value in key)
+                or record.get("choice_operator") not in {"||", "^^", "??"}
+                or not isinstance(record.get("branch_count"), int)
+                or not isinstance(record.get("selected_branch"), int)):
             raise ValueError("dependency-choice review record is incomplete")
         if key in choices:
             raise ValueError(f"duplicate dependency-choice review record: {key}")
-        choices[key] = record["selected_branch"]
+        choices[key] = record
     return choices
 
 def _collect(tree, matcher=None, choice_selector=None):
@@ -38,7 +41,17 @@ def _collect(tree, matcher=None, choice_selector=None):
     if tree and isinstance(tree[0], str) and tree[0] in {"||", "^^", "??"}:
         branches = tree[1] if len(tree) == 2 and isinstance(tree[1], list) else tree[1:]
         if choice_selector is not None:
-            selected_index = choice_selector(tree[0], branches)
+            selection = choice_selector(tree[0], branches)
+            if isinstance(selection, dict):
+                if (selection.get("choice_operator") != tree[0]
+                        or selection.get("branch_count") != len(branches)):
+                    raise DependencyChoiceError(
+                        "dependency-choice review does not match the reduced expression",
+                        operator=tree[0], branch_count=len(branches),
+                    )
+                selected_index = selection.get("selected_branch")
+            else:
+                selected_index = selection
             if not isinstance(selected_index, int) or not 0 <= selected_index < len(branches):
                 raise DependencyChoiceError(
                     "dependency-choice review selected an invalid branch",
