@@ -40,6 +40,10 @@ def main() -> None:
         errored.write_text(json.dumps({"records": [], "build_records": [], "source_errors": [{"cpv": "app/tool-1", "stage": "consumer-metadata"}]}))
         errored_result = subprocess.run(["python3", str(SCRIPT), "--portage", str(errored), "--elf", str(elf), "--output", str(root / "errored-graph.json")], capture_output=True, text=True)
         assert errored_result.returncode != 0 and "source errors" in errored_result.stderr
+        unresolved_elf = root / "unresolved-elf.json"
+        unresolved_elf.write_text(json.dumps({"records": elf.read_text() and [{"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1"}], "unresolved": [{"consumer_cpv": "app/tool-1", "needed": "missing.so"}]}))
+        unresolved_result = subprocess.run(["python3", str(SCRIPT), "--portage", str(portage), "--elf", str(unresolved_elf), "--output", str(root / "unresolved-graph.json")], capture_output=True, text=True)
+        assert unresolved_result.returncode != 0 and "unresolved dynamic dependency" in unresolved_result.stderr
         duplicate = root / "duplicate.json"
         duplicate.write_text(json.dumps({"records": [
             {"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1"},

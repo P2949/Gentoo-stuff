@@ -6,7 +6,7 @@ from pathlib import Path
 def canon(v): return json.dumps(v,sort_keys=True,separators=(',',':')).encode()
 def load(p): return json.loads(Path(p).read_text())
 def main():
- ap=argparse.ArgumentParser(); ap.add_argument('--portage',required=True); ap.add_argument('--elf',required=True); ap.add_argument('--output',required=True); a=ap.parse_args()
+ ap=argparse.ArgumentParser(); ap.add_argument('--portage',required=True); ap.add_argument('--elf',required=True); ap.add_argument('--unresolved-review',help='authenticated review listing every permitted unresolved ELF edge'); ap.add_argument('--output',required=True); a=ap.parse_args()
  if Path(a.output).exists(): raise SystemExit('REFUSED: reverse-dependency output already exists')
  p,e=load(a.portage),load(a.elf); rows=[]
  if not isinstance(p,dict) or not isinstance(e,dict): raise SystemExit('REFUSED: reverse-dependency sources must be JSON objects')
@@ -18,6 +18,14 @@ def main():
   raise SystemExit('REFUSED: Portage dependency authority is empty')
  if not elf_edges:
   raise SystemExit('REFUSED: ELF DT_NEEDED authority is empty')
+ unresolved=e.get('unresolved', [])
+ if unresolved:
+  if not a.unresolved_review:
+   raise SystemExit('REFUSED: ELF graph source contains unresolved dynamic dependency edges')
+  review=load(a.unresolved_review)
+  allowed=review.get('records', review.get('unresolved', [])) if isinstance(review,dict) else review
+  if not isinstance(allowed,list) or sorted(allowed,key=canon) != sorted(unresolved,key=canon):
+   raise SystemExit('REFUSED: unresolved ELF edge review does not exactly cover source unresolved edges')
  sources=((p,'records','portage-runtime'),(p,'build_records','portage-build'),(e,'records','elf-needed'),(e,'edges','elf-needed'))
  seen=set()
  elf_rows={}

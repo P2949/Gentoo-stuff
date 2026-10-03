@@ -12766,3 +12766,16 @@ CPVs with 1,361 next-build sources available and 7 unavailable; independent
 verification passes using the Gentoo repositories and the framework local
 overlay as trusted roots. Candidate artifact:
 `/var/lib/gentoo-optimization/generations/phase3-live-20261003-post-git-lfs-final2/package-provenance-v2.json`.
+
+## 2026-10-03 unresolved dynamic-edge publication guard
+
+Reverse-dependency publication now refuses any nonempty unresolved ELF
+`DT_NEEDED` set unless an explicit review document exactly reproduces the
+unresolved records. This prevents the aggregator from silently publishing an
+apparently complete consumer graph. The focused reverse-dependency regression
+passes for both the normal Portage+ELF graph and the unresolved-edge refusal.
+A fresh live ELF dependency candidate found 27,113 resolved records and 6,370
+unresolved records (SHA-256
+`4c69b6a1bccddb1a5446f9692429b2ae61c0ce0ac09a82d7b023908841512dcc`); it is
+therefore retained as diagnostic evidence and cannot be used as authoritative
+reverse-dependency input until those edges receive exact review dispositions.
