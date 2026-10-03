@@ -35,6 +35,10 @@ kde-frameworks/kconfig qml
 kde-frameworks/prison qml
 kde-frameworks/sonnet qml
 net-libs/libsoup introspection
+# Retained retired WebKitGTK state: preserve the installed package's
+# introspection and non-jumbo configuration without re-admitting it to the
+# optimization scope.
+net-libs/webkit-gtk introspection -jumbo-build
 x11-base/xorg-server xvfb -minimal -xorg
 x11-base/xwayland libei
 x11-drivers/xf86-video-intel tools uxa xvmc
