@@ -12835,3 +12835,12 @@ records, with 134 remaining unresolved `||` choices. Those choices have
 multiple installed alternatives and therefore cannot be promoted merely from
 VDB membership; exact Portage dependency-selection evidence is still required
 before graph publication. The producer remains fail-closed.
+
+The producer now also accepts an optional authenticated dependency-choice review
+document. Each review record binds the consumer CPV, dependency field, exact
+expression SHA-256, and selected branch index; duplicate or incomplete records
+are refused, and the review digest is carried into the source contract. This
+provides the missing deterministic evidence bridge without treating an
+installed alternative as resolver proof. No review document has been invented
+for the 134 live choices, so the current authority remains correctly
+unpublished.

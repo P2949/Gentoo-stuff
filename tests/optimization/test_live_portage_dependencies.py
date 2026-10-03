@@ -38,6 +38,10 @@ def main() -> None:
         assert "2 installed alternatives" in str(exc)
     else:
         raise AssertionError("ambiguous installed alternatives must remain unresolved")
+    assert module.atoms(
+        "|| ( dev-libs/a dev-libs/b )", (),
+        choice_selector=lambda operator, branches: 1,
+    ) == ["dev-libs/b"]
     print("PASS: Portage dependency alternatives remain unresolved until selected")
 
 

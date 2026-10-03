@@ -12,20 +12,25 @@ def canon(v): return json.dumps(v, sort_keys=True, separators=(",", ":")).encode
 class DependencyChoiceError(ValueError):
     """The installed VDB does not identify which alternative Portage chose."""
 
-def _collect(tree, matcher=None):
+def _collect(tree, matcher=None, choice_selector=None):
     if isinstance(tree, str):
         return [tree] if "/" in tree and not tree.startswith("!") else []
     if not isinstance(tree, list):
         return []
     if tree and isinstance(tree[0], str) and tree[0] in {"||", "^^", "??"}:
+        branches = tree[1] if len(tree) == 2 and isinstance(tree[1], list) else tree[1:]
+        if choice_selector is not None:
+            selected_index = choice_selector(tree[0], branches)
+            if not isinstance(selected_index, int) or not 0 <= selected_index < len(branches):
+                raise DependencyChoiceError("dependency-choice review selected an invalid branch")
+            return _collect(branches[selected_index], matcher, choice_selector)
         if matcher is None:
             raise DependencyChoiceError(
                 f"unresolved Portage dependency choice operator {tree[0]!r}"
             )
-        branches = tree[1] if len(tree) == 2 and isinstance(tree[1], list) else tree[1:]
         selected = []
         for branch in branches:
-            branch_atoms = _collect(branch, matcher)
+            branch_atoms = _collect(branch, matcher, choice_selector)
             if branch_atoms and any(matcher(atom) for atom in branch_atoms):
                 selected.append(branch_atoms)
         if len(selected) != 1:
@@ -35,16 +40,16 @@ def _collect(tree, matcher=None):
         return selected[0]
     values = []
     for item in tree:
-        values.extend(_collect(item, matcher))
+        values.extend(_collect(item, matcher, choice_selector))
     return values
 
-def atoms(expr, useflags=(), matcher=None):
+def atoms(expr, useflags=(), matcher=None, choice_selector=None):
     if not expr: return []
     tree=use_reduce(paren_reduce(expr), uselist=useflags, flat=False)
-    return _collect(tree, matcher)
+    return _collect(tree, matcher, choice_selector)
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--vdb',default='/var/db/pkg'); ap.add_argument('--output',required=True); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument('--vdb',default='/var/db/pkg'); ap.add_argument('--choice-review',type=Path); ap.add_argument('--output',required=True); a=ap.parse_args()
     db=vardbapi()
     requested_vdb=Path(a.vdb).resolve()
     actual_vdb=Path(getattr(db,'dbroot',requested_vdb)).resolve()
@@ -52,6 +57,19 @@ def main():
         raise SystemExit(f'REFUSED: Portage VDB root mismatch: requested={requested_vdb} actual={actual_vdb}')
     cpvs=sorted(db.cpv_all())
     runtime_rows=[]; build_rows=[]; source_hashes=[]; source_errors=[]
+    choice_reviews={}; choice_review_sha256=None
+    if a.choice_review:
+        review=json.loads(a.choice_review.read_text())
+        if not isinstance(review,dict) or not isinstance(review.get('records'),list):
+            raise SystemExit('REFUSED: dependency-choice review has invalid schema')
+        choice_review_sha256=hashlib.sha256(canon(review)).hexdigest()
+        for record in review['records']:
+            key=(record.get('consumer_cpv'),record.get('field'),record.get('expression_sha256'))
+            if any(value is None for value in key) or not isinstance(record.get('selected_branch'),int):
+                raise SystemExit('REFUSED: dependency-choice review record is incomplete')
+            if key in choice_reviews:
+                raise SystemExit(f'REFUSED: duplicate dependency-choice review record: {key}')
+            choice_reviews[key]=record['selected_branch']
     for cpv in cpvs:
         try: vals=db.aux_get(cpv,['DEPEND','RDEPEND','PDEPEND','BDEPEND','IDEPEND','USE','BUILD_TIME','CONTENTS','REPOSITORY','SLOT','SUBSLOT'])
         except Exception as exc:
@@ -62,7 +80,12 @@ def main():
         for field,expr in zip(('DEPEND','RDEPEND','PDEPEND','BDEPEND','IDEPEND'), vals[:5]):
             source_hashes.append(hashlib.sha256((cpv+'\0'+field+'\0'+expr).encode()).hexdigest())
             try:
-                evaluated = atoms(expr,useflags, matcher=db.match)
+                review_key=(cpv,field,hashlib.sha256(expr.encode()).hexdigest())
+                def selector(operator, branches, key=review_key):
+                    if key not in choice_reviews:
+                        raise DependencyChoiceError(f"no review record for dependency choice {key}")
+                    return choice_reviews[key]
+                evaluated = atoms(expr,useflags, matcher=db.match, choice_selector=selector if choice_reviews else None)
             except Exception as exc:
                 source_errors.append({'cpv':cpv,'field':field,'stage':'dependency-parse','error':str(exc)})
                 target = build_rows if field in {'DEPEND','BDEPEND','IDEPEND'} else runtime_rows
@@ -87,7 +110,7 @@ def main():
                     target.append({'provider_cpv':provider,'consumer_cpv':cpv,'relationship':relation,'evidence':{'vdb_cpv':cpv,'field':field,'atom':atom,'evaluated_atom':atom,'useflags':sorted(useflags),'provider_repository':provider_vals[0],'provider_slot':provider_vals[1],'provider_subslot':provider_vals[2]}})
     def unique(rows):
         return sorted({(x.get('provider_cpv'),x['consumer_cpv'],x['relationship'],json.dumps(x.get('evidence',{}),sort_keys=True)):x for x in rows}.values(),key=lambda x:(x.get('provider_cpv',''),x['consumer_cpv'],x['relationship']))
-    out={'record_type':'live-portage-dependency-source','schema_version':2,'vdb_root':str(Path(a.vdb).resolve()),'cpv_count':len(cpvs),'source_digest':hashlib.sha256(canon(sorted(source_hashes))).hexdigest(),'source_errors':source_errors,'records':unique(runtime_rows),'build_records':unique(build_rows)}
+    out={'record_type':'live-portage-dependency-source','schema_version':2,'vdb_root':str(Path(a.vdb).resolve()),'cpv_count':len(cpvs),'source_digest':hashlib.sha256(canon(sorted(source_hashes))).hexdigest(),'choice_review_sha256':choice_review_sha256,'source_errors':source_errors,'records':unique(runtime_rows),'build_records':unique(build_rows)}
     out['sha256']=hashlib.sha256(canon(out)).hexdigest(); Path(a.output).write_text(json.dumps(out,sort_keys=True,indent=2)+'\n')
     if source_errors:
         raise SystemExit(f"REFUSED: Portage dependency source contains {len(source_errors)} metadata/parse errors; see {a.output}")
