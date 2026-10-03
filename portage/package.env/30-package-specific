@@ -17,6 +17,14 @@ dev-python/ujson no-opt-remarks.conf
 # OpenBLAS invokes gfortran for its Fortran interface; isolate that compiler
 # from the global Clang/LLVM-only FCFLAGS and FFLAGS policy.
 sci-libs/openblas openblas-gfortran.conf
+# These shared-library providers retain established dynamic exports under the
+# ABI guard; keep the optimization axes that erase those exports demoted while
+# preserving ordinary userspace compilation.
+sci-physics/bullet no-polly-no-lto-no-bsymbolic.conf
+sci-libs/blas-lapack-aux-wrapper plain.conf
+media-libs/opensubdiv no-polly-no-lto-no-bsymbolic.conf
+media-libs/libde265 no-lto.conf no-hidden-visibility.conf
+media-libs/gegl no-polly-no-lto-no-bsymbolic.conf
 # Preserve established public C++ exports in WebKit's JavaScriptCore/WTF
 # DSOs while retaining the rest of the optimization policy.
 net-libs/webkit-gtk no-hidden-visibility.conf
