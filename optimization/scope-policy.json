@@ -2,136 +2,136 @@
   "schema": "optimization-scope-policy-v1",
   "scope": [
     {
+      "bolt": false,
+      "introduced_boundary": "2026-10-03",
+      "optimization": false,
+      "reason_code": "explicit-package-scope-retirement",
+      "retain_installed": false,
       "selector": "acct-group/adsklic",
       "state": "retired-not-installed-out-of-project-scope",
-      "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-03",
-      "retain_installed": false,
-      "unmerge": true,
-      "optimization": false,
       "training": false,
-      "bolt": false
+      "unmerge": true
     },
     {
+      "bolt": false,
+      "introduced_boundary": "2026-10-03",
+      "optimization": false,
+      "reason_code": "explicit-package-scope-retirement",
+      "retain_installed": false,
       "selector": "acct-user/adsklic",
       "state": "retired-not-installed-out-of-project-scope",
+      "training": false,
+      "unmerge": true
+    },
+    {
+      "bolt": false,
+      "introduced_boundary": "2026-10-02",
+      "optimization": false,
       "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-03",
       "retain_installed": false,
-      "unmerge": true,
-      "optimization": false,
-      "training": false,
-      "bolt": false
-    },
-    {
       "selector": "app-autodesk/adp-desktop-sdk",
-      "state": "retained-installed-out-of-project-scope",
-      "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-02",
-      "retain_installed": true,
-      "unmerge": false,
-      "optimization": false,
+      "state": "retired-not-installed-out-of-project-scope",
       "training": false,
-      "bolt": false
+      "unmerge": true
     },
     {
+      "bolt": false,
+      "introduced_boundary": "2026-10-02",
+      "optimization": false,
+      "reason_code": "explicit-package-scope-retirement",
+      "retain_installed": false,
       "selector": "app-autodesk/adsk-identity-manager",
-      "state": "retained-installed-out-of-project-scope",
-      "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-02",
-      "retain_installed": true,
-      "unmerge": false,
-      "optimization": false,
+      "state": "retired-not-installed-out-of-project-scope",
       "training": false,
-      "bolt": false
+      "unmerge": true
     },
     {
+      "bolt": false,
+      "introduced_boundary": "2026-10-02",
+      "optimization": false,
+      "reason_code": "explicit-package-scope-retirement",
+      "retain_installed": false,
       "selector": "app-autodesk/adsk-licensing",
-      "state": "retained-installed-out-of-project-scope",
-      "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-02",
-      "retain_installed": true,
-      "unmerge": false,
-      "optimization": false,
+      "state": "retired-not-installed-out-of-project-scope",
       "training": false,
-      "bolt": false
+      "unmerge": true
     },
     {
+      "bolt": false,
+      "introduced_boundary": "2026-10-02",
+      "optimization": false,
+      "reason_code": "explicit-package-scope-retirement",
+      "retain_installed": false,
       "selector": "games-util/lutris",
-      "state": "retained-installed-out-of-project-scope",
-      "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-02",
-      "retain_installed": true,
-      "unmerge": false,
-      "optimization": false,
+      "state": "retired-not-installed-out-of-project-scope",
       "training": false,
-      "bolt": false
+      "unmerge": true
     },
     {
+      "bolt": false,
+      "introduced_boundary": "2026-10-02",
+      "optimization": false,
+      "reason_code": "explicit-package-scope-retirement",
+      "retain_installed": false,
       "selector": "media-gfx/lookdevx",
-      "state": "retained-installed-out-of-project-scope",
-      "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-02",
-      "retain_installed": true,
-      "unmerge": false,
-      "optimization": false,
+      "state": "retired-not-installed-out-of-project-scope",
       "training": false,
-      "bolt": false
+      "unmerge": true
     },
     {
+      "bolt": false,
+      "introduced_boundary": "2026-10-03",
+      "optimization": false,
+      "reason_code": "explicit-package-scope-retirement",
+      "retain_installed": false,
       "selector": "media-gfx/bifrost",
       "state": "retired-not-installed-out-of-project-scope",
+      "training": false,
+      "unmerge": true
+    },
+    {
+      "bolt": false,
+      "introduced_boundary": "2026-10-02",
+      "optimization": false,
       "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-03",
       "retain_installed": false,
-      "unmerge": true,
-      "optimization": false,
-      "training": false,
-      "bolt": false
-    },
-    {
       "selector": "media-gfx/maya",
-      "state": "retained-installed-out-of-project-scope",
-      "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-02",
-      "retain_installed": true,
-      "unmerge": false,
-      "optimization": false,
+      "state": "retired-not-installed-out-of-project-scope",
       "training": false,
-      "bolt": false
+      "unmerge": true
     },
     {
+      "bolt": false,
+      "introduced_boundary": "2026-10-02",
+      "optimization": false,
+      "reason_code": "explicit-package-scope-retirement",
+      "retain_installed": false,
       "selector": "media-gfx/maya-usd",
-      "state": "retained-installed-out-of-project-scope",
-      "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-02",
-      "retain_installed": true,
-      "unmerge": false,
-      "optimization": false,
+      "state": "retired-not-installed-out-of-project-scope",
       "training": false,
-      "bolt": false
+      "unmerge": true
     },
     {
+      "bolt": false,
+      "introduced_boundary": "2026-10-02",
+      "optimization": false,
+      "reason_code": "explicit-package-scope-retirement",
+      "retain_installed": false,
       "selector": "media-gfx/substance-maya",
-      "state": "retained-installed-out-of-project-scope",
-      "reason_code": "explicit-package-scope-retirement",
-      "introduced_boundary": "2026-10-02",
-      "retain_installed": true,
-      "unmerge": false,
-      "optimization": false,
+      "state": "retired-not-installed-out-of-project-scope",
       "training": false,
-      "bolt": false
+      "unmerge": true
     },
     {
-      "selector": "net-libs/webkit-gtk",
-      "state": "retained-installed-out-of-project-scope",
-      "reason_code": "explicit-package-scope-retirement",
+      "bolt": false,
       "introduced_boundary": "2026-10-02",
-      "retain_installed": true,
-      "unmerge": false,
       "optimization": false,
+      "reason_code": "explicit-package-scope-retirement",
+      "retain_installed": false,
+      "selector": "net-libs/webkit-gtk",
+      "state": "retired-not-installed-out-of-project-scope",
       "training": false,
-      "bolt": false
+      "unmerge": true
     }
   ]
 }

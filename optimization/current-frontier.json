@@ -25,12 +25,12 @@
   "latest_resolver_report_sha256": "92c5082e5523e09fd6d2432aa20142b7f2daeb13a29dff455bca6b90d80f5a2d",
   "latest_transaction_report": "/var/lib/gentoo-optimization/reports/git-lfs-3.8.0-maintenance-20261003.log",
   "latest_transaction_report_sha256": "ba28b8971077d728f0e7911e2229739205b49ff66a6ab7b00218df1223cba53e",
-  "next_authoritative_action": "bind the refreshed scope policy and candidate inventory to a generation authority; representative workload/provider closure remains required before any profile wave",
+  "next_authoritative_action": "publish a fresh scope- and backend-bound Phase-3 candidate; resolve inherited-source, dependency, and representative-workload authority before activation",
   "project_scope_policy": {
     "path": "optimization/scope-policy.json",
-    "retained_selector_count": 9,
+    "retained_selector_count": 0,
     "schema": "optimization-scope-policy-v1",
-    "sha256": "8834536e3676e9c30c5e6f8291fb21e67ccddb4ebe8850af78efb4a0e67e3950"
+    "sha256": "cdd2aa1fd7ac8da9d8edbd5e47b1402f0fd2de80b44fb32ac628a7a25cea4bbf"
   },
   "retired_package_targets": [
     {

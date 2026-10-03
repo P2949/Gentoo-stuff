@@ -12730,3 +12730,16 @@ Scope-aware ELF/workload artifacts are `elf-eligibility-v2.json` (SHA-256
 `workload-providers-v3.json` (SHA-256
 `d759d32c09c178a9f5c325ca445c2645275bfa386a6507afe05b907746d6f1bc`).
 No generation authority or profile wave is activated by these candidate files.
+
+## 2026-10-03 inventory-verified scope and corrected lane candidate
+
+Scope materialization now validates its state against the frozen inventory:
+`retained-installed-out-of-project-scope` must match an installed CPV and
+`retired-not-installed-out-of-project-scope` must match none. The current live
+inventory contains none of the previously retained Autodesk, Lutris, Maya,
+LookdevX, or WebKitGTK selectors after the user-directed removals, so those
+selectors are now truthfully recorded as not-installed retirements. Set
+regeneration refuses a contradictory scope declaration and the fresh v4 set
+manifest verifies all 1,368 CPVs (SHA-256
+`493193f015934bbf912e5a50dfaed21b9125e72dd6b68ca3c0e1aeed92dd7f2c`).
+This changes project accounting only; no package transaction was run.

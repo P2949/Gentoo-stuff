@@ -89,6 +89,15 @@ def main():
         if len(set(selectors)) != len(selectors):
             raise SystemExit('REFUSED: duplicate scope selector')
     scope_by_selector={x['selector']: x for x in scope_rows}
+    # The mutation-policy CPV universe is the frozen installed inventory for
+    # this generation.  A retirement state is therefore an assertion about
+    # that inventory, not merely a label to copy into the manifest.
+    for scope in scope_rows:
+        matches = [cpv for cpv in decisions if cpv == scope['selector'] or cpv.startswith(scope['selector'] + '-')]
+        if scope['state'] == 'retired-not-installed-out-of-project-scope' and matches:
+            raise SystemExit(f"REFUSED: scope says not-installed but frozen inventory contains {scope['selector']}: {matches}")
+        if scope['state'] == 'retained-installed-out-of-project-scope' and not matches:
+            raise SystemExit(f"REFUSED: retained scope selector is absent from frozen inventory: {scope['selector']}")
     sets={'pgo-bolt-all-userspace':[], 'optimization-kernel-policy-exclusion':[], 'optimization-not-applicable':[]}
     set_members={name:[] for name in sets}
     for name in LANE_SET.values():
