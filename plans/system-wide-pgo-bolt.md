@@ -12743,3 +12743,13 @@ regeneration refuses a contradictory scope declaration and the fresh v4 set
 manifest verifies all 1,368 CPVs (SHA-256
 `493193f015934bbf912e5a50dfaed21b9125e72dd6b68ca3c0e1aeed92dd7f2c`).
 This changes project accounting only; no package transaction was run.
+
+## 2026-10-03 scope propagation through scheduling and coverage
+
+Scope authority is now consumed by generation scheduling and Phase-3 coverage in
+addition to set/workload/ELF classification. The scheduler refuses training or
+optimization candidates whose exact CPV is scope-excluded and binds the scope
+policy digest into each wave record. Coverage filters the package and ELF
+universes by the same scope policy and records the digest, so excluded installed
+state remains auditable without becoming an in-scope obligation. Focused
+scheduler and coverage regressions pass; no wave was started.
