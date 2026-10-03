@@ -37,3 +37,4 @@ dev-java/openjdk unsafe-no-ccache-no-sandbox.conf no-polly.conf
 gui-libs/hyprutils O2.conf
 # Autodesk OpenSSL 1.1.1 compatibility source rejects the host Polly flags.
 media-gfx/blender O2.conf blender-libmv-cassert.conf
+=media-libs/libde265-1.1.3 libde265-abi-transition.conf
