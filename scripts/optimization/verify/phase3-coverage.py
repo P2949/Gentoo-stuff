@@ -21,6 +21,7 @@ def main():
  ap.add_argument('--elf-authority', required=True)
  ap.add_argument('--elf-safety', required=True)
  ap.add_argument('--output', required=True)
+ ap.add_argument('--scope-policy')
  a = ap.parse_args()
  if Path(a.output).exists():
   raise SystemExit('REFUSED: coverage output already exists')
@@ -34,7 +35,19 @@ def main():
   es = json.load(stream)
  with open(a.elf_authority) as stream:
   authority = json.load(stream)
- cpvs = {x['cpv'] for x in m['packages']}
+ scope=[]
+ if a.scope_policy:
+  scope_doc=json.loads(Path(a.scope_policy).read_text())
+  if scope_doc.get('schema') != 'optimization-scope-policy-v1':
+   raise SystemExit('REFUSED: unsupported scope policy schema')
+  scope=scope_doc.get('scope', [])
+ def scope_for(cpv):
+  for item in scope:
+   selector=item.get('selector','')
+   if cpv == selector or cpv.startswith(selector + '-'):
+    return item
+  return None
+ cpvs = {x['cpv'] for x in m['packages'] if not (scope_for(x['cpv']) and scope_for(x['cpv']).get('optimization') is False)}
  lane = {x['cpv'] for x in l.get('records', l.get('packages', []))}
  ep = {(x.get('owner_cpv'), x['path']) for x in ec.get('records', ec.get('artifacts', []))}
  sp = {(x.get('owner_cpv'), x['path']) for x in es.get('records', es.get('artifacts', []))}
@@ -46,6 +59,8 @@ def main():
   for x in authority.get('artifacts', authority.get('records', []))
   if isinstance(x.get('elf'), dict)
  }
+ if scope:
+  authoritative = {item for item in authoritative if not (scope_for(item[0]) and scope_for(item[0]).get('bolt') is False)}
  # The extractor's ELF metadata file is itself an authoritative census when
  # the owned-artifact scanner has not yet been enriched with embedded ELF
  # objects.  Keep the owner/path identity comparison separate from the
@@ -71,6 +86,7 @@ def main():
   'lane_counts': l['counts'],
   'safety_counts': es['counts'],
   'elf_authority_sha256': authority.get('sha256'),
+  'scope_policy_sha256': hashlib.sha256(Path(a.scope_policy).read_bytes()).hexdigest() if a.scope_policy else None,
  }
  # Keep accounting completeness separate from strict BOLT safety readiness.
  # The safety input is expected to contain one disposition for each artifact
