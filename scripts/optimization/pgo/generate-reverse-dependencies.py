@@ -5,11 +5,20 @@ from pathlib import Path
 
 def canon(v): return json.dumps(v,sort_keys=True,separators=(',',':')).encode()
 def load(p): return json.loads(Path(p).read_text())
+def verify_contract(doc, label):
+ if 'record_type' not in doc:
+  return
+ if not isinstance(doc.get('schema_version'), int) or not isinstance(doc.get('sha256'), str):
+  raise SystemExit(f'REFUSED: {label} source contract is incomplete')
+ unsigned=dict(doc); declared=unsigned.pop('sha256')
+ if hashlib.sha256(canon(unsigned)).hexdigest() != declared:
+  raise SystemExit(f'REFUSED: {label} source contract self-digest mismatch')
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--portage',required=True); ap.add_argument('--elf',required=True); ap.add_argument('--unresolved-review',help='authenticated review listing every permitted unresolved ELF edge'); ap.add_argument('--output',required=True); a=ap.parse_args()
  if Path(a.output).exists(): raise SystemExit('REFUSED: reverse-dependency output already exists')
  p,e=load(a.portage),load(a.elf); rows=[]
  if not isinstance(p,dict) or not isinstance(e,dict): raise SystemExit('REFUSED: reverse-dependency sources must be JSON objects')
+ verify_contract(p, 'Portage'); verify_contract(e, 'ELF')
  if not isinstance(p.get('records',[]),list) or not isinstance(p.get('build_records',[]),list): raise SystemExit('REFUSED: Portage graph source has invalid record lists')
  if p.get('source_errors'): raise SystemExit('REFUSED: Portage graph source contains unresolved source errors')
  elf_edges = e.get('records', e.get('edges', []))

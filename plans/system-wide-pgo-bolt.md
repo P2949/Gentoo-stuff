@@ -12779,3 +12779,13 @@ unresolved records (SHA-256
 `4c69b6a1bccddb1a5446f9692429b2ae61c0ce0ac09a82d7b023908841512dcc`); it is
 therefore retained as diagnostic evidence and cannot be used as authoritative
 reverse-dependency input until those edges receive exact review dispositions.
+
+## 2026-10-03 dependency-source contract validation
+
+The reverse-dependency aggregator now validates producer contracts whenever a
+source document declares a record type: schema version and canonical self-
+digest are mandatory and tampering is refused before edge aggregation. Legacy
+fixture-shaped diagnostic inputs remain supported for portable tests, while
+production Portage/ELF documents are self-authenticating. The focused reverse-
+dependency suite still passes. This correction is independent of the existing
+6,370 unresolved live ELF edges, which remain refused until exact review.
