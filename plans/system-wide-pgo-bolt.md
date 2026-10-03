@@ -12369,3 +12369,31 @@ It resolves 1,275 packages (8 upgrades, 1 new, 3 new slots, 1,263
 reinstalls). No broad transaction was started; the next provider action remains
 the exact local OpenImageIO 9999 transition with its rebuilt reverse-consumer
 closure.
+
+2026-10-03 coordinated OpenImageIO provider transition: the first provider
+attempt was correctly rejected by the ABI guard because OpenImageIO 3.3
+changes SONAMEs from `libOpenImageIO.so.3.1`/`libOpenImageIO_Util.so.3.1` and
+removes the 3.1 exported ABI. Immutable rejected evidence is
+`/var/lib/gentoo-optimization/reports/openimageio-rebuild-20261003-final.log`
+(SHA-256 `b2ffbbc49411ec91a8a4207504120a843c8d98f861bd60d85920d053051abb9`),
+with subsequent unchanged authority-scope attempts retained as
+`...transition-authorized.log` (SHA-256
+`dc48528c6b25121d75781eb9815c4c3cc0f69a0c0f2c6a660ff239f51e384497`) and
+`...transition-authorized-v2.log` (SHA-256
+`d3a79af5cd4c9c0f6ccf3a1d03f52c420168242030d8f35affaa910434c954ac`).
+The final root-owned `abi-transition-v1` authority explicitly binds the old
+provider CPV, target CPV, both SONAME sets, all staged provider paths, and the
+complete old exported-symbol set. With that independent transition evidence,
+`=media-libs/openimageio-9999::codex-local` merged successfully; immutable
+successful evidence is
+`/var/lib/gentoo-optimization/reports/openimageio-rebuild-20261003-transition-authorized-v4.log`
+(SHA-256 `a99a68afb53d57349f391d12772aa4cceb22f9268fb1b2c6cf50141a0bc30ff0`).
+Blender was then rebuilt alone against the installed 3.3 provider with the
+existing package-local source fixes and O2 lane. It passed install QA and
+merged as `media-gfx/blender-5.0.9999::gentoo`; immutable evidence is
+`/var/lib/gentoo-optimization/reports/blender-rebuild-20261003-openimageio-provider.log`
+(SHA-256 `bdcf9c515515d88ec66478444a97a1324b2deabcdb888b8b6232aeff3aeef8eb`).
+Post-install linkage resolves to `libOpenImageIO.so.3.3.0` and
+`libOpenImageIO_Util.so.3.3.0`; Blender 5.0.1 starts and reports its build
+identity successfully. This closes the OpenImageIO/Blender/OIDN provider
+transition without bypassing the ABI guard.
