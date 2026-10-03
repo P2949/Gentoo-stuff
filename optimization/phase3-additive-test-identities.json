@@ -126,5 +126,13 @@
   {
     "subtest": "python.test_assign_pgo_lanes.ReviewedLaneOverrideTests.test_managed_eclass_does_not_hide_native_artifacts",
     "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_assign_pgo_lanes.ReviewedLaneOverrideTests.test_rust_bin_qa_prebuilt_wins_over_toolchain_setup",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_assign_pgo_lanes.ReviewedLaneOverrideTests.test_rust_toolchain_setup_and_rs_artifacts_do_not_select_rust",
+    "test": "python-unit-tests:tests/optimization"
   }
 ]
