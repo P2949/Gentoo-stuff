@@ -12530,3 +12530,31 @@ is a generated-policy/inventory binding defect: no live framework activation or
 mask publication was forced. The next implementation step is to regenerate
 the policy tree from the reviewed post-retirement inventory, removing stale
 non-installed exact assignments while preserving all installed identities.
+
+## 2026-10-03 generated-policy refresh and Git LFS blocker closure
+
+The reviewed post-Git-LFS inventory was accepted by both the checkout verifier
+and the trusted bootstrap verifier after the directory review was completed with
+root-stat metadata. The old generated policy then failed its strict binding
+because it still contained exact package.env assignments for retired,
+non-installed account identities. A new content-addressed policy tree was
+constructed by retaining only exact assignments present in the reviewed live
+inventory while preserving the existing environment files. Its generated-policy
+identity is
+`generated-policy-541a69eb63b7643e24bee8e1ed485635bdbe1dada5824d590b97b765acb2cb94`.
+
+The root-owned framework installer published that policy against the new
+inventory and completed successfully. An independent strict `--check` also
+passed. This activated the source-level Git LFS hold and the retained package
+configuration without bypassing framework or inventory authority.
+
+A fresh complete-graph `@world` pretend after publication returned zero and now
+contains 11 proposals: only `media-libs/libde265` and `media-libs/gegl` remain
+ordinary userspace ABI proposals; the other nine are kernel/firmware/lifecycle
+operations outside automated mutation. `dev-vcs/git-lfs-9999` is no longer
+selected. The durable resolver report is
+`/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-git-lfs-mask.log`
+(SHA-256
+`24142a03369bf446a7a3722e56d4f8f11540470e4415b6594a16404ab2d78b68`).
+The current frontier now clears the Git LFS source/network blocker and binds
+the new inventory/resolver boundary.

@@ -1,8 +1,6 @@
 {
   "active_abi_transition_clusters": [],
-  "active_source_network_blockers": [
-    "git-lfs-9999-go-module-resolution"
-  ],
+  "active_source_network_blockers": [],
   "as_of_commit": "8cb980d",
   "current_baseline_state": "ordinary-userspace-convergence-in-progress; nine package families explicitly retired from optimization scope; retained installed state must be preserved",
   "latest_abi_authority": "/var/lib/gentoo-optimization/reports/userspace-webkit-gtk-2540-r410-20261001/abi-transition-v1-rerun.json",
@@ -10,23 +8,23 @@
   "latest_live_resolver_boundary": {
     "captured_boundary": "2026-10-03",
     "kernel_lifecycle_operations_present": true,
-    "operation_count": 12,
+    "operation_count": 11,
     "ordinary_userspace_operations_present": [
-      "dev-vcs/git-lfs",
       "media-libs/libde265",
       "media-libs/gegl"
     ],
-    "report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-scope-check.log",
-    "report_sha256": "d491bb2804489fcca273019bee780a3cd8f726e9836da519736443b7655c72e3",
+    "report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-git-lfs-mask.log",
+    "report_sha256": "24142a03369bf446a7a3722e56d4f8f11540470e4415b6594a16404ab2d78b68",
     "scope_partition_required": true,
+    "source_network_blocker_resolved": "dev-vcs/git-lfs-3.8.0",
     "terminal_result": "pretend-success"
   },
-  "latest_resolver_operation_count": 24,
-  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261002-post-retirement/emerge.log",
-  "latest_resolver_report_sha256": "03c525b3a6a730f6f64bd6d34b942b092199891b1c1da986478f50843081c2f0",
-  "latest_transaction_report": null,
-  "latest_transaction_report_sha256": null,
-  "next_authoritative_action": "partition fresh 2026-10-03 resolver through mutation and scope policy; do not execute retired or kernel-lifecycle proposals; resolve ordinary userspace blockers only after fresh inventory",
+  "latest_resolver_operation_count": 11,
+  "latest_resolver_report": "/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-git-lfs-mask.log",
+  "latest_resolver_report_sha256": "24142a03369bf446a7a3722e56d4f8f11540470e4415b6594a16404ab2d78b68",
+  "latest_transaction_report": "/var/lib/gentoo-optimization/reports/git-lfs-3.8.0-maintenance-20261003.log",
+  "latest_transaction_report_sha256": "ba28b8971077d728f0e7911e2229739205b49ff66a6ab7b00218df1223cba53e",
+  "next_authoritative_action": "partition the fresh 11-operation resolver through mutation and scope policy; kernel/lifecycle proposals remain excluded; ordinary ABI proposals for libde265 and gegl require changed-cause remediation",
   "retired_package_targets": [
     {
       "evidence": "user-directed retirement; historical retries retained; no live uninstall performed",
@@ -88,5 +86,5 @@
     "qtspeech-speechd-one-shot-resolution",
     "kauth-policykit-one-shot-resolution"
   ],
-  "vdb_inventory_sha256": "f24a20461d1785f6650fa54ea509c6e9d89f85135d46c47891577101284ca472"
+  "vdb_inventory_sha256": "d16450d95e6ae2d3af97e0a01900417276df5f3f55fb6cba9de139e44e969034"
 }
