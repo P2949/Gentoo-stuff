@@ -128,7 +128,7 @@ def main():
                     })
                 source_errors.append(error)
                 target = build_rows if field in {'DEPEND','BDEPEND','IDEPEND'} else runtime_rows
-                target.append({'consumer_cpv':cpv,'relationship':'portage-build' if field in {'DEPEND','BDEPEND','IDEPEND'} else 'portage-runtime','evidence':{'field':field,'error':str(exc),'expression_sha256':hashlib.sha256(expr.encode()).hexdigest()}})
+                target.append({'consumer_cpv':cpv,'relationship':'portage-build' if field in {'DEPEND','BDEPEND','IDEPEND'} else 'portage-runtime','evidence':{'field':field,'error':str(exc),'expression_sha256':hashlib.sha256(expr.encode()).hexdigest(),'choice_operator':getattr(exc, 'operator', None),'choice_branch_count':getattr(exc, 'branch_count', None)}})
                 continue
             for atom in evaluated:
                 try:
