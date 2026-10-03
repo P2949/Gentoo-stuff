@@ -191,6 +191,21 @@ def current_package_owns(root: Path, installed_path: Path) -> bool | None:
     category = os.environ.get("CATEGORY")
     pf = os.environ.get("PF")
     pn = os.environ.get("PN")
+    # Portage normally exports PN, but install-QA hooks can run with only
+    # CATEGORY/PF available.  Derive the exact package name rather than
+    # treating the missing PN as an unknown owner: otherwise an unrelated
+    # provider in the same library directory can be misattributed to the
+    # package being installed and trigger a false SONAME-loss rejection.
+    if not pn and category and pf:
+        try:
+            import portage.versions
+            split = portage.versions.catpkgsplit(f"{category}/{pf}")
+            if split and split[0] != "null":
+                pn = split[1]
+        except (ImportError, TypeError, ValueError, IndexError):
+            match = re.match(r"^(.+)-(?:\d|9999).*$", pf)
+            if match:
+                pn = match.group(1)
     vdb_root = Path(os.environ.get("GENTOO_OPT_VDB_ROOT", "/var/db/pkg"))
     if not category or not pf:
         return None
