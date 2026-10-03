@@ -12662,3 +12662,26 @@ identity with zero failures; the materialization result SHA-256 is
 fingerprint tree contains 769 identity records. These remain candidate
 generation evidence until the generation authority transaction binds them to
 the complete framework and final workload state.
+
+## 2026-10-03 representative workload/provider candidate derivation
+
+The refreshed candidate's workload manifest was derived from the current lane
+authority and ELF metadata, rather than treating package accounting as training
+proof. It contains 769 PGO-lane package records: 392 with runnable native
+entrypoint candidates and 377 with no direct runnable entrypoint. The recipe
+planner produced 1,395 candidate recipes, of which 344 are explicitly
+smoke-ready, one is training-ready, 423 require a representative training
+workload, and one is a terminal workload exclusion for the reviewed tracefs
+case. The provider-binding pass currently resolves zero baseline build-ID
+bindings for the 1,350 baseline recipes because post-generation provider
+artifacts are not yet available; this is an expected generation-bound
+precondition, not a profile-training success. The content-addressed candidate
+artifacts are retained under
+`/var/lib/gentoo-optimization/generations/phase3-live-20261003-post-git-lfs-final2/`:
+`workload-manifest.json` (SHA-256
+`907cf82111fa614bb826f311f302ea4ea4e251922a63c28d05a5f2a1aa8170bf`),
+`workload-recipes.json` (SHA-256
+`1d624cdb4cb1d7eeb7d415922f34465833cf3789bd8e1a3f2e927e49c2520919`), and
+`workload-providers.json` (SHA-256
+`de24fcdbac14a6ed55caccf11d123a62043d278b785a9d81244a079c7b549dec`). No
+profile wave is authorized by this derivation.

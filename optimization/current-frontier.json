@@ -1,8 +1,8 @@
 {
   "active_abi_transition_clusters": [],
   "active_source_network_blockers": [],
-  "as_of_commit": "8cb980d",
-  "current_baseline_state": "ordinary-userspace-resolver-empty; nine kernel/firmware/lifecycle proposals explicitly excluded; Gegl successor held after ABI rejection; retained installed state preserved",
+  "as_of_commit": "1c854e1",
+  "current_baseline_state": "ordinary-userspace-resolver-empty; nine kernel/firmware/lifecycle proposals explicitly excluded; retired installed package families scope-bound; Gegl successor held after ABI rejection; retained installed state preserved",
   "latest_abi_authority": "/var/lib/gentoo-optimization/reports/userspace-webkit-gtk-2540-r410-20261001/abi-transition-v1-rerun.json",
   "latest_abi_authority_sha256": "bdc34f4e0c6515b563e107f58a619b6ae6dc509016df903ad89568a2da0f09ba",
   "latest_live_resolver_boundary": {
@@ -25,7 +25,13 @@
   "latest_resolver_report_sha256": "92c5082e5523e09fd6d2432aa20142b7f2daeb13a29dff455bca6b90d80f5a2d",
   "latest_transaction_report": "/var/lib/gentoo-optimization/reports/git-lfs-3.8.0-maintenance-20261003.log",
   "latest_transaction_report_sha256": "ba28b8971077d728f0e7911e2229739205b49ff66a6ab7b00218df1223cba53e",
-  "next_authoritative_action": "partition the fresh nine-operation resolver; all remaining proposals are kernel/firmware/lifecycle exclusions; ordinary userspace baseline resolver is empty after narrow ABI/source holds",
+  "next_authoritative_action": "bind the refreshed scope policy and candidate inventory to a generation authority; representative workload/provider closure remains required before any profile wave",
+  "project_scope_policy": {
+    "path": "optimization/scope-policy.json",
+    "retired_selector_count": 12,
+    "schema": "optimization-scope-policy-v1",
+    "sha256": "8834536e3676e9c30c5e6f8291fb21e67ccddb4ebe8850af78efb4a0e67e3950"
+  },
   "retired_package_targets": [
     {
       "evidence": "user-directed retirement; historical retries retained; no live uninstall performed",
