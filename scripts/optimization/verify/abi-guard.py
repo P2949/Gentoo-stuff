@@ -243,7 +243,13 @@ def current_package_owns(root: Path, installed_path: Path) -> bool | None:
         except OSError:
             return None
     if not instances:
-        return None
+        # In a real Portage transaction CATEGORY/PF identifies the target
+        # package even before its VDB directory exists.  If no installed
+        # predecessor with that exact PN owns the path, it is an unrelated
+        # provider and must not be attributed to this transaction.  Preserve
+        # the historical unknown result only when package identity itself is
+        # unavailable (fixture/non-Portage execution).
+        return False if pn else None
     try:
         wanted = installed_path.relative_to(root).as_posix()
         for contents in instances:
