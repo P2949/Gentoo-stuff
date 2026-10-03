@@ -12291,3 +12291,29 @@ active. The storage baseline is 141 GiB available (85% used); the retained
 failed-build tree is 5.6 GiB and the isolated OpenImageIO tree is 210 MiB.
 Project reports, source evidence, installed VDB state, and rollback artifacts
 were not removed.
+
+2026-10-03 preserved-rebuild closure: Blender received two narrow source fixes during the
+OpenImageIO/FFmpeg provider transition. The first retry proved the existing libmv `assert`
+include workaround was insufficient: Cycles headers exposed an incomplete `ccl::ShaderGraph`
+under libc++, with immutable log
+`/var/lib/gentoo-optimization/reports/blender-preserved-rebuild-20261003-cassert.log`.
+A temporary forced include of `scene/shader_graph.h` was rejected at configure time because
+that path is not on the compiler include search path. The final source patch instead includes
+`scene/shader_graph.h` from `intern/cycles/scene/shader.h`; its initial malformed patch-format
+attempt is retained in
+`/var/lib/gentoo-optimization/reports/blender-preserved-rebuild-20261003-shadergraph-patch.log`
+(SHA-256 `686aef7a8b5d809a15ead2d4384d4b382cf03d718fe32c7c5a23ab0083495bbc`), and the corrected
+patch applied successfully.
+
+With the corrected ShaderGraph patch, Blender compiled past Cycles. The next failure exposed a
+separate FFmpeg 63 API transition: Audaspace still accessed removed `AVCodec.sample_fmts` and
+`AVCodec.supported_samplerates` fields. A package-local compatibility patch now uses
+`avcodec_get_supported_config()` for FFmpeg 63 while retaining the legacy fields for older
+FFmpeg. The complete rebuild reached install QA, proving both source fixes compile, but the ABI
+guard rejected the staged Blender replacement because bundled `libextern_draco.so` loses exports
+against the installed provider (old ABI 1656, new ABI 1655). Immutable evidence is
+`/var/lib/gentoo-optimization/reports/blender-preserved-rebuild-20261003-ffmpeg63-v2.log`
+(SHA-256 `bce6cea943e47d2ec6b457b16d07caa97aebc871d4983a2615e57820ed0f9f73`). This is a real
+ABI/provider transition requiring a narrow Draco/Blender consumer decision; it was not force-
+merged or retried unchanged. The preserved rebuild is therefore still open only for Blender;
+FFTW, FreeType, and FFmpeg completed successfully in the earlier transaction.
