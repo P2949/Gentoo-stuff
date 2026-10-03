@@ -12118,3 +12118,15 @@ is not yet coherent and final-generation authority remains closed. No installed
 Maya, Autodesk, Bifrost, Lutris, or WebKitGTK identities were reintroduced.
 Storage ended at approximately 142 GiB free (85% used on `/`), above the
 project's 100 GiB operational floor.
+
+### 2026-10-03 OpenBLAS Fortran flag containment
+
+The baseline apply log showed `sci-libs/openblas-0.3.34` failing before install
+because the global Clang/LLVM `FCFLAGS` and `FFLAGS` were passed to
+`gfortran` (`-Qunused-arguments`, Polly, vtable, unified-LTO and related
+options). A package-specific environment boundary was added:
+`portage/env/openblas-gfortran.conf` supplies only GCC-Fortran-safe flags, and
+`portage/package.env/30-package-specific` applies it to the exact OpenBLAS CP
+atom. The framework was republished from this source and strict root-owned
+installer verification passed. The package has not been retried yet; the next
+attempt must be a fresh exact rebuild using this changed identity.
