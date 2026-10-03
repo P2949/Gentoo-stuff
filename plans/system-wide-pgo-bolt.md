@@ -12490,3 +12490,22 @@ invalid owned directory. That refusal is retained at
 `4bf3aaf63cf585bee823a32058a04b204c5887ccf4a5294774f9d4a060149114`). The
 source mask is committed and pushed, but no claim is made that it is live until
 a fresh valid inventory is generated and the framework republish succeeds.
+
+## 2026-10-03 Git LFS 3.8.0 stable follow-up
+
+A newer stable source path was available after the cached 3.7.1 recovery. The
+Gentoo mirror fetch for `git-lfs-3.8.0.tar.gz` completed successfully, and the
+exact `=dev-vcs/git-lfs-3.8.0::gentoo` transaction then compiled, passed
+install-QA, and merged under optimization-off, `/dev/null` LLVM profile output,
+ccache-disabled, and `--nodeps` semantics. Durable log:
+`/var/lib/gentoo-optimization/reports/git-lfs-3.8.0-maintenance-20261003.log`
+(SHA-256
+`ba28b8971077d728f0e7911e2229739205b49ff66a6ab7b00218df1223cba53e`). The
+stable source path is therefore usable without external Go-module resolution.
+
+The source tree now carries a narrow `=dev-vcs/git-lfs-9999` mask so the
+working stable release is not immediately replaced by the network-bound live
+ebuild. It is not yet active in `/etc/portage`: framework republish correctly
+refused the stale post-retirement frozen inventory due to invalid owned-directory
+metadata. A fresh semantically valid inventory is required before that source
+configuration can be published. No live mask activation is claimed yet.
