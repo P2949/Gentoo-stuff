@@ -12580,6 +12580,19 @@ lifecycle proposals; no ordinary userspace package is selected. Durable report:
 kernel/boot/initramfs/firmware boundary remains unchanged and none of those
 proposals was executed.
 
+## 2026-10-03 clean portable-complete validation boundary
+
+After removing only the root-owned generated `scripts/optimization/pgo/__pycache__`
+residue left by an earlier privileged run, the complete clean-boundary test
+command
+`PATH=/usr/bin:/bin /usr/bin/bash tests/run-optimization-tests.sh --mode portable-complete`
+completed successfully. The terminal contract result was `PASS=87`,
+`FAIL=0`, `SKIP=12`, with 562 required subtests passed, zero required
+subtest failures, and exit status 0. The run included the refreshed
+package-environment policy, framework-installer, recovery, ABI, BOLT-hook,
+and no-boot-entry automation checks. This is source-framework validation only;
+it does not authorize live generation activation or a profile wave.
+
 ## 2026-10-03 refreshed package environment policy validation
 
 The post-maintenance package environment stack was revalidated before the next
