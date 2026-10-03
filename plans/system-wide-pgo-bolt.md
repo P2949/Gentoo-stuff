@@ -12441,3 +12441,25 @@ normal fail-closed guard behavior is intact.
 - ABI diagnosis: the retained `gegl-0.4.70` VDB was built with the old aggressive global optimization identity (Polly, fast-math, LTO, Bsymbolic and related flags), while the new `gegl-0.4.72` maintenance build used the scrubbed off-mode baseline. The guard's missing OpenCL/GIO exports and disappeared operation-module SONAMEs are therefore preserved as a real source/ABI transition requiring exact provider and package-identity review; no retry was started.
 - The existing libde265 transition authority was bound to the exact CPV through `portage/env/libde265-abi-transition.conf` and the exact package.env selector, then the framework was republished. The ABI guard consumed the authority on the controlled retry, reducing the unexplained loss to a smaller, newly observed 12-symbol set (`sei_type_name`, decoder internals, and related private helpers) while still rejecting the transaction. This proves the authority wiring fix works; the remaining symbols require a new audited authority revision and no unchanged retry was started. Log SHA for the controlled retry: `2b744652e4219ee2475b712aee91c38e07d71fd967565fd509194dc95506192`.
 - The refreshed libde265 authority was consumed on a second controlled retry, but the build produced a different private-symbol subset again and the guard still rejected it (this time the missing set included private transform/deblock helpers and the staged parser emitted a non-symbol `D` marker for the 64-bit records). This non-deterministic private-export surface means the retained old provider was built under a materially different export policy; repeated authority widening would be unsafe. The package remains preserved as an ABI/source-policy blocker, with no merge and no guard bypass. Retry-v3 log SHA: `f5a92e53b218d7bc58868599e3a02dd95a210bb840832e68fc0691f136f648ac`.
+
+## 2026-10-03 post-retirement scope validation and resolver refresh
+
+The source scope pipeline now validates every scope record fail-closed: each
+retirement must declare its state, reason, introduction boundary, retention and
+unmerge policy, and explicit boolean optimization/training/BOLT decisions.
+The generator and independent verifier reject incomplete records, unsupported
+states, and contradictory retained/not-installed flags. The focused
+optimization-set regression passes, including scope-excluded accounting and
+manifest digest verification. This prevents a future clean regeneration from
+silently accepting a partial package-retirement record.
+
+A fresh complete-graph `@world` pretend was run after the post-retirement
+boundary. The durable report is
+`/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-scope-check.log`
+(SHA-256
+`d491bb2804489fcca273019bee780a3cd8f726e9836da519736443b7655c72e3`). It
+contains 12 proposals: ordinary userspace candidates `dev-vcs/git-lfs`,
+`media-libs/libde265`, and `media-libs/gegl`, plus kernel/firmware/lifecycle
+proposals. No transaction was started from this resolver. The current frontier
+records this boundary and requires scope/mutation partitioning before any
+ordinary userspace action; the older resolver count is not authoritative.
