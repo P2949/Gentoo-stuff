@@ -2102,6 +2102,9 @@ preflight_rust() {
         profdata=${LLVM_PROFDATA}
     elif [[ -x /usr/lib/llvm/${llvm_major}/bin/llvm-profdata ]]; then
         profdata=/usr/lib/llvm/${llvm_major}/bin/llvm-profdata
+    elif [[ ${llvm_major} == 23 &&
+        -x /var/lib/gentoo-optimization/tools/llvm-23.1.1/llvm-profdata ]]; then
+        profdata=/var/lib/gentoo-optimization/tools/llvm-23.1.1/llvm-profdata
     elif resolve_executable llvm-profdata; then
         profdata=${RESOLVED_TOOL}
     else
