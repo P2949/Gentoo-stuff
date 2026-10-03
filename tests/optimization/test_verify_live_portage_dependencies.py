@@ -5,6 +5,10 @@ from pathlib import Path
 ROOT = Path(__file__).parents[2]
 SCRIPT = ROOT / "scripts/optimization/pgo/verify-live-portage-dependencies.py"
 
+spec = importlib.util.spec_from_file_location("verify_live_dependencies", SCRIPT)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
 def main():
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "source.json"
@@ -29,6 +33,19 @@ def main():
         mismatch["sha256"] = hashlib.sha256(json.dumps(mismatch, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         path.write_text(json.dumps(mismatch))
         assert subprocess.run(["python3", str(SCRIPT), "--source", str(path)]).returncode != 0
+        module.verify_live_cpv_rows(
+            [{"consumer_cpv": "app/c-1", "provider_cpv": "dev-libs/a-1"}],
+            {"app/c-1", "dev-libs/a-1"},
+        )
+        try:
+            module.verify_live_cpv_rows(
+                [{"consumer_cpv": "app/c-1", "provider_cpv": "dev-libs/missing-1"}],
+                {"app/c-1"},
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("stale provider CPV was accepted")
         broken = dict(doc); broken["source_errors"] = [{"stage": "metadata"}]
         broken.pop("sha256", None)
         broken["sha256"] = hashlib.sha256(json.dumps(broken, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

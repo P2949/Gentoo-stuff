@@ -7,6 +7,16 @@ from pathlib import Path
 def canon(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
+def verify_live_cpv_rows(rows, live_cpvs):
+    """Reject dependency edges that point outside the authenticated live VDB."""
+    for row in rows:
+        consumer = row.get("consumer_cpv")
+        provider = row.get("provider_cpv")
+        if consumer not in live_cpvs:
+            raise ValueError(f"dependency consumer CPV is not live: {consumer}")
+        if provider is not None and provider not in live_cpvs:
+            raise ValueError(f"dependency provider CPV is not live: {provider}")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", type=Path, required=True)
@@ -76,8 +86,13 @@ def main():
             actual = Path(getattr(vardbapi(), "dbroot", requested)).resolve()
             if actual != requested:
                 raise SystemExit("REFUSED: live Portage VDB root mismatch")
-            if len(vardbapi().cpv_all()) != doc["cpv_count"]:
+            live_cpvs = set(vardbapi().cpv_all())
+            if len(live_cpvs) != doc["cpv_count"]:
                 raise SystemExit("REFUSED: Portage CPV count no longer matches source")
+            try:
+                verify_live_cpv_rows(doc["records"] + doc["build_records"], live_cpvs)
+            except ValueError as exc:
+                raise SystemExit(f"REFUSED: {exc}")
         except ImportError as exc:
             raise SystemExit(f"REFUSED: Portage verifier unavailable: {exc}")
     print(f"PASS: Portage dependency source independently verified ({len(seen)} edges, {len(doc['source_errors'])} unresolved)")
