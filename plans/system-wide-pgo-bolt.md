@@ -12157,3 +12157,13 @@ keeping the ABI guard active. The first Bullet retry still failed closed with
 explicit missing exported symbols, so it was not retried again or force-merged.
 That result remains an unresolved package-specific ABI investigation rather
 than evidence for weakening the guard.
+
+The exact BLAS-wrapper retry under `plain.conf` completed compilation but still
+failed closed in install QA. Its generated symbol check found that the live
+`libflexiblas.so.3` provider lacks the reference BLAS/LAPACKE symbols required
+by the package, and the staged `libflexiblas.so.3` SONAME disappeared. The
+attempt is preserved at
+`/var/lib/gentoo-optimization/reports/blas-wrapper-rebuild-20261003-conservative.log`
+(SHA-256 `dd69376f1a6679031ca2fa04c53947088a4df72e528ba30c170ea4bad64ddd18`).
+This is classified as a provider/consumer ABI identity mismatch and was not
+force-merged or retried unchanged.
