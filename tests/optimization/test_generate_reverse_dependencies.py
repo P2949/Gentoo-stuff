@@ -51,6 +51,22 @@ def main() -> None:
         unresolved_elf.write_text(json.dumps({"records": elf.read_text() and [{"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1"}], "unresolved": [{"consumer_cpv": "app/tool-1", "needed": "missing.so"}]}))
         unresolved_result = subprocess.run(["python3", str(SCRIPT), "--portage", str(portage), "--elf", str(unresolved_elf), "--output", str(root / "unresolved-graph.json")], capture_output=True, text=True)
         assert unresolved_result.returncode != 0 and "unresolved dynamic dependency" in unresolved_result.stderr
+        review = root / "review.json"
+        review_doc = {
+            "record_type": "elf-unresolved-review", "schema_version": 1,
+            "source_elf_sha256": __import__("hashlib").sha256(unresolved_elf.read_bytes()).hexdigest(),
+            "records": [{"consumer_cpv": "app/tool-1", "needed": "missing.so"}],
+        }
+        review_doc["sha256"] = __import__("hashlib").sha256(json.dumps(review_doc, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        review.write_text(json.dumps(review_doc))
+        reviewed_result = subprocess.run(["python3", str(SCRIPT), "--portage", str(portage), "--elf", str(unresolved_elf), "--unresolved-review", str(review), "--output", str(root / "reviewed-graph.json")], capture_output=True, text=True)
+        assert reviewed_result.returncode == 0
+        review_doc["source_elf_sha256"] = "0" * 64
+        review_doc.pop("sha256", None)
+        review_doc["sha256"] = __import__("hashlib").sha256(json.dumps(review_doc, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        review.write_text(json.dumps(review_doc))
+        stale_review_result = subprocess.run(["python3", str(SCRIPT), "--portage", str(portage), "--elf", str(unresolved_elf), "--unresolved-review", str(review), "--output", str(root / "stale-reviewed-graph.json")], capture_output=True, text=True)
+        assert stale_review_result.returncode != 0 and "source digest" in stale_review_result.stderr
         duplicate = root / "duplicate.json"
         duplicate.write_text(json.dumps({"records": [
             {"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1"},

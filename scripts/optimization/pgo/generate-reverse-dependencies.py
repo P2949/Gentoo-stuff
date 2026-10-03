@@ -5,6 +5,21 @@ from pathlib import Path
 
 def canon(v): return json.dumps(v,sort_keys=True,separators=(',',':')).encode()
 def load(p): return json.loads(Path(p).read_text())
+def load_unresolved_review(path, elf_path, unresolved):
+ review = load(path)
+ if not isinstance(review, dict) or review.get('record_type') != 'elf-unresolved-review' or review.get('schema_version') != 1:
+  raise SystemExit('REFUSED: unsupported unresolved ELF review contract')
+ declared = review.get('sha256')
+ unsigned = dict(review); unsigned.pop('sha256', None)
+ if not isinstance(declared, str) or hashlib.sha256(canon(unsigned)).hexdigest() != declared:
+  raise SystemExit('REFUSED: unresolved ELF review self-digest mismatch')
+ source_digest = hashlib.sha256(Path(elf_path).read_bytes()).hexdigest()
+ if review.get('source_elf_sha256') != source_digest:
+  raise SystemExit('REFUSED: unresolved ELF review source digest mismatch')
+ allowed = review.get('records')
+ if not isinstance(allowed, list) or sorted(allowed, key=canon) != sorted(unresolved, key=canon):
+  raise SystemExit('REFUSED: unresolved ELF edge review does not exactly cover source unresolved edges')
+ return review
 def verify_contract(doc, label):
  if 'record_type' not in doc:
   return
@@ -38,10 +53,7 @@ def main():
  if unresolved:
   if not a.unresolved_review:
    raise SystemExit('REFUSED: ELF graph source contains unresolved dynamic dependency edges')
-  review=load(a.unresolved_review)
-  allowed=review.get('records', review.get('unresolved', [])) if isinstance(review,dict) else review
-  if not isinstance(allowed,list) or sorted(allowed,key=canon) != sorted(unresolved,key=canon):
-   raise SystemExit('REFUSED: unresolved ELF edge review does not exactly cover source unresolved edges')
+  load_unresolved_review(a.unresolved_review, a.elf, unresolved)
  sources=((p,'records','portage-runtime'),(p,'build_records','portage-build'),(e,'records','elf-needed'),(e,'edges','elf-needed'))
  seen=set()
  elf_rows={}
