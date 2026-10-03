@@ -12317,3 +12317,13 @@ against the installed provider (old ABI 1656, new ABI 1655). Immutable evidence 
 ABI/provider transition requiring a narrow Draco/Blender consumer decision; it was not force-
 merged or retried unchanged. The preserved rebuild is therefore still open only for Blender;
 FFTW, FreeType, and FFmpeg completed successfully in the earlier transaction.
+
+A post-Blender resolver was run after the preserved rebuild attempt. It completed with
+`pretend_rc=0`; immutable report
+`/var/lib/gentoo-optimization/reports/userspace-world-pretend-20261003-post-blender.log`
+has SHA-256 `c68d738d24421d6a62453c7cc4af6e991bc90e2b60440e7718c1e247415afacd`.
+The resolver now reports 1,274 packages (8 upgrades, 1 new, 3 new slots, 1,262
+reinstalls), including the corrected local-overlay OpenImageIO 9999 provider and its
+reverse-consumer rebuild closure. No broad transaction was started from this pretend;
+the Blender Draco ABI loss and the remaining provider transitions still require narrow
+review before any merge.
