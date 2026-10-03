@@ -12265,3 +12265,11 @@ has SHA-256
 `18d82435cdf97c4b6024ed368d4c0b14ced33fd5aa3f787f5bf20c80f54ee233`.
 The same eight entries remain in the resolver frontier, now with OpenImageIO's
 source-layout defect corrected and its coordinated ABI transition evidenced.
+
+Reverse-consumer inspection for the OpenImageIO transition found the installed
+closure `media-gfx/blender-5.0.0` and `media-libs/oidn-2.3.3-r1`; OpenSubdiv is
+also consumed by Blender. A direct unqualified Blender pretend selects the live
+9999 ebuild but is independently blocked by its missing Python single-target
+selection, so no broad Blender transaction was started. The OpenImageIO 9999
+ABI transition therefore remains a coordinated consumer-closure item rather
+than an isolated retry target.
