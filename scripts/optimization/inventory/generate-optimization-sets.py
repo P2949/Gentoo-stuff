@@ -64,6 +64,25 @@ def main():
         if scope_doc.get('schema') != 'optimization-scope-policy-v1':
             raise SystemExit('REFUSED: unsupported scope policy schema')
         scope_rows=scope_doc.get('scope', [])
+        allowed_states = {
+            'retained-installed-out-of-project-scope',
+            'retired-not-installed-out-of-project-scope',
+        }
+        required_fields = {'selector', 'state', 'reason_code',
+                           'introduced_boundary', 'retain_installed',
+                           'unmerge', 'optimization', 'training', 'bolt'}
+        for row in scope_rows:
+            if not isinstance(row, dict) or not required_fields <= row.keys():
+                raise SystemExit('REFUSED: incomplete scope-policy record')
+            if row['state'] not in allowed_states:
+                raise SystemExit(f"REFUSED: unsupported scope state {row['state']!r}")
+            if not all(isinstance(row[field], bool) for field in
+                       ('retain_installed', 'unmerge', 'optimization', 'training', 'bolt')):
+                raise SystemExit('REFUSED: scope-policy boolean fields must be boolean')
+            if row['state'] == 'retained-installed-out-of-project-scope' and not row['retain_installed']:
+                raise SystemExit('REFUSED: retained scope record must retain installed state')
+            if row['state'] == 'retired-not-installed-out-of-project-scope' and row['retain_installed']:
+                raise SystemExit('REFUSED: not-installed retirement cannot retain installed state')
         selectors=[x.get('selector') for x in scope_rows]
         if any(not isinstance(x, str) or '/' not in x for x in selectors):
             raise SystemExit('REFUSED: invalid scope selector')

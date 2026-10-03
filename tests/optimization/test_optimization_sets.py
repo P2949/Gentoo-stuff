@@ -23,7 +23,7 @@ def main():
   assert (p/'conflict-sets'/'pgo-clang-ir').read_text() == '=app/foo-1\n'
   verifier=subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/verify-optimization-sets.py'),'--mutation-policy',str(conflict_m),'--lanes',str(conflict_l),'--manifest',str(p/'conflict-sets.manifest.json'),'--sets-root',str(p/'conflict-sets')],capture_output=True,text=True)
   assert verifier.returncode == 0 and 'verified 2 CPVs' in verifier.stdout
-  scope=p/'scope.json'; scope.write_text(json.dumps({'schema':'optimization-scope-policy-v1','scope':[{'selector':'app/a','state':'retained-installed-out-of-project-scope','reason_code':'test'},{'selector':'app/b','state':'retired-not-installed-out-of-project-scope','reason_code':'test','optimization':False}]}))
+  scope=p/'scope.json'; scope.write_text(json.dumps({'schema':'optimization-scope-policy-v1','scope':[{'selector':'app/a','state':'retained-installed-out-of-project-scope','reason_code':'test','introduced_boundary':'test','retain_installed':True,'unmerge':False,'optimization':False,'training':False,'bolt':False},{'selector':'app/b','state':'retired-not-installed-out-of-project-scope','reason_code':'test','introduced_boundary':'test','retain_installed':False,'unmerge':True,'optimization':False,'training':False,'bolt':False}]}))
   scoped=p/'scoped-sets'
   subprocess.run(['python3',str(ROOT/'scripts/optimization/inventory/generate-optimization-sets.py'),'--mutation-policy',str(m),'--lanes',str(l),'--scope-policy',str(scope),'--output-root',str(scoped)],check=True)
   assert (scoped/'pgo-bolt-all-userspace').read_text()==''

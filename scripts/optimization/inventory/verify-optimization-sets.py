@@ -49,6 +49,25 @@ def main() -> None:
         scope = json.loads(args.scope_policy.read_text())
         if scope.get("schema") != "optimization-scope-policy-v1":
             raise SystemExit("REFUSED: unsupported scope policy schema")
+        allowed_states = {
+            "retained-installed-out-of-project-scope",
+            "retired-not-installed-out-of-project-scope",
+        }
+        required_fields = {"selector", "state", "reason_code",
+                           "introduced_boundary", "retain_installed",
+                           "unmerge", "optimization", "training", "bolt"}
+        for row in scope.get("scope", []):
+            if not isinstance(row, dict) or not required_fields <= row.keys():
+                raise SystemExit("REFUSED: incomplete scope-policy record")
+            if row["state"] not in allowed_states:
+                raise SystemExit(f"REFUSED: unsupported scope state {row['state']!r}")
+            if not all(isinstance(row[field], bool) for field in
+                       ("retain_installed", "unmerge", "optimization", "training", "bolt")):
+                raise SystemExit("REFUSED: scope-policy boolean fields must be boolean")
+            if row["state"] == "retained-installed-out-of-project-scope" and not row["retain_installed"]:
+                raise SystemExit("REFUSED: retained scope record must retain installed state")
+            if row["state"] == "retired-not-installed-out-of-project-scope" and row["retain_installed"]:
+                raise SystemExit("REFUSED: not-installed retirement cannot retain installed state")
         if manifest.get("scope_policy_sha256") != digest(args.scope_policy):
             raise SystemExit("REFUSED: scope-policy digest does not match set manifest")
         selectors = {
