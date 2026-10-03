@@ -33,7 +33,12 @@ def main():
    envbz=os.path.join(root,'environment.bz2')
    if os.path.isfile(envbz):
     raw=bz2.open(envbz,'rt',errors='replace').read()
-    qa_prebuilt=bool(re.search(r'(?m)^declare -a QA_PREBUILT=\(', raw) or re.search(r'(?m)^QA_PREBUILT=', raw))
+    # Portage serializes shell declarations in several valid forms, including
+    # ``declare -- QA_PREBUILT=...``.  Treat the presence of the authenticated
+    # VDB variable as the positive prebuilt signal; do not infer it from a
+    # package name or from installed file extensions.
+    qa_prebuilt=bool(re.search(r'(?m)^declare(?:\s+-[^ ]+)?\s+QA_PREBUILT=', raw)
+                     or re.search(r'(?m)^QA_PREBUILT=', raw))
    ex=collections.Counter()
    for p in paths:
     for ext,lang in (('.rs','rust'),('.go','go'),('.c','c'),('.cc','c++'),('.cpp','c++'),('.java','java'),('.py','python'),('.js','javascript'),('.so','elf-shared'),('.a','static-archive')):

@@ -12685,3 +12685,48 @@ artifacts are retained under
 `workload-providers.json` (SHA-256
 `de24fcdbac14a6ed55caccf11d123a62043d278b785a9d81244a079c7b549dec`). No
 profile wave is authorized by this derivation.
+
+## 2026-10-03 scope-aware workload and backend authority correction
+
+The first-class scope policy is now propagated into the workload manifest and
+ELF/BOLT eligibility producers. Packages with `training=false` are emitted as
+`scope-excluded` workload records and cannot acquire representative-training
+obligations; artifacts owned by packages with `bolt=false` receive an explicit
+`scope-excluded` eligibility disposition. Focused regression coverage proves
+this behavior with a retained installed scope selector.
+
+The backend classifier was also corrected at the source of the Rust-lane
+explosion. `artifact_language_evidence` remains recorded as component evidence,
+but it is no longer merged into primary build-backend evidence. The generic
+lane selector now requires the actual Rust build eclass pair (`cargo` and
+`rust`, or an explicit cargo-build token), so shared `rust-toolchain` setup and
+installed `.rs` files cannot select Rust. VDB `QA_PREBUILT` extraction now
+recognizes Portage's serialized `declare -- QA_PREBUILT=...` form. The focused
+lane suite passes five tests, including negative Rust-toolchain and positive
+prebuilt cases.
+
+A fresh candidate derivation from the same frozen inventory produced backend
+and set artifacts with 17 explainable Rust packages, 5 Go packages, 702 Clang
+IR packages, 1 GCC package, 90 unsupported/prebuilt packages, 514
+not-applicable packages, and 9 kernel-policy exclusions in the lane authority;
+optimization-set verification still covers all 1,368 CPVs. The refreshed
+scope-aware workload candidate contains 755 lane records, 1,356 recipes, and
+44 direct recipes; 1,312 baseline provider bindings remain intentionally
+unresolved until post-generation build IDs exist. Candidate artifacts are
+retained under
+`/var/lib/gentoo-optimization/generations/phase3-live-20261003-post-git-lfs-final2/`:
+`package-backends-v2.json` (SHA-256
+`76a2d3c2c78df227aed02548c7cd7232465ed16029be1d0f8a2bae4164ea5dae`),
+`pgo-lanes-v3.json` (SHA-256
+`059165663231da767c1f09d8102749bc2e49134c9869d23d6b87da24f136bff8`), and
+`sets-v3.manifest.json` (SHA-256
+`77e47b0e319c278745f3a89c9a6367feec8a8efe19530fd753ff16b98c502013`).
+Scope-aware ELF/workload artifacts are `elf-eligibility-v2.json` (SHA-256
+`8048d1ee53f58a2a141aadb52fdae94818822462287d7e794de8f16c3969a156`),
+`workload-manifest-v3.json` (SHA-256
+`cde9f52afa1e8d742c416cec5b93d18069d1411f29335c6e88beaba408f39bbb`),
+`workload-recipes-v3.json` (SHA-256
+`4263c85eb00df1bdea66f6b1ddf9dfb45ebe780bd08ad442ca8535bb6ead155b`), and
+`workload-providers-v3.json` (SHA-256
+`d759d32c09c178a9f5c325ca445c2645275bfa386a6507afe05b907746d6f1bc`).
+No generation authority or profile wave is activated by these candidate files.

@@ -61,6 +61,36 @@ class ReviewedLaneOverrideTests(unittest.TestCase):
             row = json.loads(output.read_text())["packages"][0]
             self.assertEqual(row["lane"], "pgo-clang-ir")
 
+    def test_rust_toolchain_setup_and_rs_artifacts_do_not_select_rust(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            state = {"records": [{"cpv": "dev-libs/native-1", "state": "pending-pgo-classification", "reason_code": "pending"}]}
+            state["sha256"] = digest(state)
+            (p / "state.json").write_text(json.dumps(state))
+            (p / "backends.json").write_text(json.dumps({"packages": [{
+                "cpv": "dev-libs/native-1", "inherits": ["rust-toolchain", "meson"],
+                "backend_evidence": [], "artifact_language_evidence": {"rust": 4, "elf-shared": 1}
+            }]}))
+            output = p / "lanes.json"
+            subprocess.run(["python3", str(SCRIPT), "--states", str(p / "state.json"), "--backends", str(p / "backends.json"), "--output", str(output)], check=True)
+            row = json.loads(output.read_text())["packages"][0]
+            self.assertEqual(row["lane"], "pgo-clang-ir")
+
+    def test_rust_bin_qa_prebuilt_wins_over_toolchain_setup(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            state = {"records": [{"cpv": "dev-lang/rust-bin-1", "state": "pending-pgo-classification", "reason_code": "pending"}]}
+            state["sha256"] = digest(state)
+            (p / "state.json").write_text(json.dumps(state))
+            (p / "backends.json").write_text(json.dumps({"packages": [{
+                "cpv": "dev-lang/rust-bin-1", "inherits": ["rust-toolchain"],
+                "qa_prebuilt": True, "backend_evidence": []
+            }]}))
+            output = p / "lanes.json"
+            subprocess.run(["python3", str(SCRIPT), "--states", str(p / "state.json"), "--backends", str(p / "backends.json"), "--output", str(output)], check=True)
+            row = json.loads(output.read_text())["packages"][0]
+            self.assertEqual(row["lane"], "unsupported-by-upstream-toolchain")
+
 
 if __name__ == "__main__":
     unittest.main()

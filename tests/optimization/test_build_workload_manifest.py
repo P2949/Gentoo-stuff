@@ -37,6 +37,19 @@ def test_static_and_all_entrypoints_are_retained(tmp_path: Path) -> None:
     duplicate_result = subprocess.run(["python3", str(SCRIPT), "--lanes", str(duplicate_lanes), "--elf", str(elfs), "--output", str(duplicate_output)], capture_output=True, text=True)
     assert duplicate_result.returncode != 0
     assert "duplicate CPV in lane authority" in (duplicate_result.stdout + duplicate_result.stderr)
+    scope = tmp_path / "scope.json"
+    scope.write_text(json.dumps({"schema": "optimization-scope-policy-v1", "scope": [{
+        "selector": "cat/pkg", "state": "retained-installed-out-of-project-scope",
+        "reason_code": "test-scope", "introduced_boundary": "test",
+        "retain_installed": True, "unmerge": False, "optimization": False,
+        "training": False, "bolt": False,
+    }]}))
+    scoped_output = tmp_path / "scoped-manifest.json"
+    subprocess.run(["python3", str(SCRIPT), "--lanes", str(lanes), "--elf", str(elfs),
+                    "--scope-policy", str(scope), "--output", str(scoped_output)], check=True)
+    scoped = json.loads(scoped_output.read_text())["packages"][0]
+    assert scoped["state"] == "scope-excluded"
+    assert scoped["entrypoints"] == []
 
 
 if __name__ == "__main__":
