@@ -53,6 +53,8 @@ def main():
     assert "with_suffix('.env')" in source
     assert "proc_rc = 1" in source
     assert "return proc_rc" in source
+    assert "archive-profile-use-receipt.py" in source
+    assert "--archive-root" in source
     with tempfile.TemporaryDirectory() as td:
         log = Path(td) / "log"
         log.write_text("gentoo-optimization: profile-use backend clang-ir-use\n")

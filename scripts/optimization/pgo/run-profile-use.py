@@ -68,6 +68,7 @@ def main() -> int:
     ap.add_argument('--storage-path',type=pathlib.Path,default=pathlib.Path('/'))
     ap.add_argument('--storage-minimum-bytes',type=int,default=100*1024**3)
     ap.add_argument('--storage-minimum-percent',type=float,default=12.0)
+    ap.add_argument('--archive-root',type=pathlib.Path)
     a=ap.parse_args()
     if pathlib.Path('/var/lib/gentoo-optimization/state/deinstrument.pending').exists():
         raise SystemExit('REFUSED: de-instrumentation is pending; profile-use waves are paused')
@@ -148,5 +149,12 @@ def main() -> int:
     payload=json.dumps(receipt,sort_keys=True,indent=2)+'\n'
     fd=os.open(a.receipt,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
     with os.fdopen(fd,'w') as out: out.write(payload)
+    if a.archive_root:
+        archive_tool=pathlib.Path(__file__).with_name('archive-profile-use-receipt.py')
+        archive_manifest=a.receipt.with_suffix(a.receipt.suffix+'.archive.json')
+        subprocess.run([
+            sys.executable, str(archive_tool), '--receipt', str(a.receipt),
+            '--archive-root', str(a.archive_root), '--output', str(archive_manifest)
+        ], check=True)
     return proc_rc
 if __name__=='__main__': raise SystemExit(main())
