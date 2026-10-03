@@ -12079,3 +12079,8 @@ its immutable report is
 and contains 22 operations. No retired Maya, Lutris, or WebKitGTK package is
 in the resulting resolver frontier; kernel/firmware lifecycle proposals remain
 read-only and were not executed.
+
+The root-owned framework was republished again after the scope-generator and
+retirement-residue changes; strict installer verification passed. The active
+`/etc/portage` framework therefore contains the restored retired-package
+configuration and the current scope-aware set-generation implementation.
