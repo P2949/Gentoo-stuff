@@ -115,6 +115,10 @@ if [[ -n ${LLVM_PROFDATA:-} ]]; then
     LLVM_PROFDATA=$(resolve_tool "${LLVM_PROFDATA}")
 elif [[ -x /usr/lib/llvm/${LLVM_MAJOR}/bin/llvm-profdata ]]; then
     LLVM_PROFDATA=/usr/lib/llvm/${LLVM_MAJOR}/bin/llvm-profdata
+elif [[ ${LLVM_MAJOR} == 23 && -x /var/lib/gentoo-optimization/tools/llvm-23.1.1/llvm-profdata ]]; then
+    # rustc on this host bundles LLVM 23 while the system Clang lane uses LLVM 22.
+    # Select the isolated matching consumer instead of inheriting a mismatched PATH tool.
+    LLVM_PROFDATA=/var/lib/gentoo-optimization/tools/llvm-23.1.1/llvm-profdata
 else
     LLVM_PROFDATA=$(resolve_tool llvm-profdata)
 fi
