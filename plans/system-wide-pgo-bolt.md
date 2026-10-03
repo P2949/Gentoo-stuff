@@ -12284,3 +12284,10 @@ with SHA-256
 `f40461085e3c0e57c5ae0bc86644553a7ef156bda683331ef7d618bf452e946c`.
 This remains an external network/module-fetch failure and was not retried
 unchanged.
+
+After preserving all package logs and hashes, failed-package temporary work trees
+were cleaned with their ebuild `clean` actions. No emerge/build transaction is
+active. The storage baseline is 141 GiB available (85% used); the retained
+failed-build tree is 5.6 GiB and the isolated OpenImageIO tree is 210 MiB.
+Project reports, source evidence, installed VDB state, and rollback artifacts
+were not removed.
