@@ -12193,3 +12193,21 @@ installed FFmpeg provider:
 This is a provider/dependency ordering mismatch requiring the FFmpeg consumer
 closure to be reconciled; no MPV flag demotion or ABI guard weakening was
 performed.
+
+### 2026-10-03 MPV clean consumer rebuild after FFmpeg provider transition
+
+The earlier MPV retry was reproduced after FFmpeg had converged to 9.0.2 /
+libavcodec 63.1.102, but the generated `mpv` still reported a compile-time
+libavcodec 62.28.102 during Meson's `mpv --list-protocols` probe. Removing only
+MPV's temporary work tree did not change that result, identifying compiler-cache
+reuse as the remaining stale-input path. A cache-disabled exact rebuild was
+then performed with `CCACHE_DISABLE=1`, `GENTOO_OPT_MODE=off`,
+`LLVM_PROFILE_FILE=/dev/null`, and the exact atom
+`=media-video/mpv-0.41.0-r2::gentoo`. It completed successfully (`emerge_rc=0`)
+and installed the package with the current FFmpeg provider. The immutable log
+is `/var/lib/gentoo-optimization/reports/mpv-rebuild-20261003-ccache-disabled.log`
+with SHA-256
+`af3c97ad407e30eb0ad11985cdf35d02baf700768313d4550e87c2fa0eb9172f`.
+This is a changed-state provider/cache remediation, not a profile-use or BOLT
+completion result. The original provider mismatch remains preserved as
+historical failure evidence; no ABI guard or compiler policy was weakened.
