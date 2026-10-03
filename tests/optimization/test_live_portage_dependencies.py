@@ -27,6 +27,17 @@ def main() -> None:
         assert "||" in str(exc)
     else:
         raise AssertionError("dependency alternatives must not be flattened")
+    assert module.atoms(
+        "|| ( dev-libs/a dev-libs/b )", (), matcher=lambda atom: atom.endswith("/b")
+    ) == ["dev-libs/b"]
+    try:
+        module.atoms(
+            "|| ( dev-libs/a dev-libs/b )", (), matcher=lambda atom: True
+        )
+    except module.DependencyChoiceError as exc:
+        assert "2 installed alternatives" in str(exc)
+    else:
+        raise AssertionError("ambiguous installed alternatives must remain unresolved")
     print("PASS: Portage dependency alternatives remain unresolved until selected")
 
 

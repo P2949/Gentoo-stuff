@@ -12828,3 +12828,10 @@ this change. It produced 6,198 runtime and 9,200 build records but refused
 publication with 158 explicit unresolved `||` dependency-choice errors. The
 diagnostic output is retained outside the authority tree; no flattened
 alternative edges were admitted.
+
+The producer was then exercised against the live VDB with the installed-match
+resolver. It reduced the diagnostic set to 6,199 runtime and 9,200 build
+records, with 134 remaining unresolved `||` choices. Those choices have
+multiple installed alternatives and therefore cannot be promoted merely from
+VDB membership; exact Portage dependency-selection evidence is still required
+before graph publication. The producer remains fail-closed.

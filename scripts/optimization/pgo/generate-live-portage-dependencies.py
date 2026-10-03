@@ -12,31 +12,36 @@ def canon(v): return json.dumps(v, sort_keys=True, separators=(",", ":")).encode
 class DependencyChoiceError(ValueError):
     """The installed VDB does not identify which alternative Portage chose."""
 
-def _contains_choice(tree):
-    if isinstance(tree, list):
-        if tree and isinstance(tree[0], str) and tree[0] in {"||", "^^", "??"}:
-            return tree[0]
-        for item in tree:
-            choice = _contains_choice(item)
-            if choice:
-                return choice
-    return None
+def _collect(tree, matcher=None):
+    if isinstance(tree, str):
+        return [tree] if "/" in tree and not tree.startswith("!") else []
+    if not isinstance(tree, list):
+        return []
+    if tree and isinstance(tree[0], str) and tree[0] in {"||", "^^", "??"}:
+        if matcher is None:
+            raise DependencyChoiceError(
+                f"unresolved Portage dependency choice operator {tree[0]!r}"
+            )
+        branches = tree[1] if len(tree) == 2 and isinstance(tree[1], list) else tree[1:]
+        selected = []
+        for branch in branches:
+            branch_atoms = _collect(branch, matcher)
+            if branch_atoms and any(matcher(atom) for atom in branch_atoms):
+                selected.append(branch_atoms)
+        if len(selected) != 1:
+            raise DependencyChoiceError(
+                f"Portage dependency choice {tree[0]!r} has {len(selected)} installed alternatives"
+            )
+        return selected[0]
+    values = []
+    for item in tree:
+        values.extend(_collect(item, matcher))
+    return values
 
-def atoms(expr, useflags=()):
+def atoms(expr, useflags=(), matcher=None):
     if not expr: return []
     tree=use_reduce(paren_reduce(expr), uselist=useflags, flat=False)
-    choice = _contains_choice(tree)
-    if choice:
-        raise DependencyChoiceError(
-            f"unresolved Portage dependency choice operator {choice!r}"
-        )
-    vals=[]
-    def walk(x):
-        if isinstance(x,list):
-            for y in x: walk(y)
-        elif isinstance(x,str) and '/' in x and not x.startswith('!'):
-            vals.append(x)
-    walk(tree); return vals
+    return _collect(tree, matcher)
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--vdb',default='/var/db/pkg'); ap.add_argument('--output',required=True); a=ap.parse_args()
@@ -57,7 +62,7 @@ def main():
         for field,expr in zip(('DEPEND','RDEPEND','PDEPEND','BDEPEND','IDEPEND'), vals[:5]):
             source_hashes.append(hashlib.sha256((cpv+'\0'+field+'\0'+expr).encode()).hexdigest())
             try:
-                evaluated = atoms(expr,useflags)
+                evaluated = atoms(expr,useflags, matcher=db.match)
             except Exception as exc:
                 source_errors.append({'cpv':cpv,'field':field,'stage':'dependency-parse','error':str(exc)})
                 target = build_rows if field in {'DEPEND','BDEPEND','IDEPEND'} else runtime_rows
