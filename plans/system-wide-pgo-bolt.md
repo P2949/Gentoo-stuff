@@ -12245,3 +12245,16 @@ The resolver frontier remains eight entries: Bullet, the BLAS wrapper, Git LFS,
 OpenSubdiv, OIDN, libde265, GEGL, and OpenImageIO. The first seven have
 preserved package-specific failure evidence; OpenImageIO now has a reproducible
 live ebuild/source-layout blocker.
+
+The corrected local-overlay OpenImageIO 9999 ebuild fetched the intended
+OpenImageIO repository, completed compilation, and reached install QA. The ABI
+guard then rejected the replacement as a real provider transition: the live
+build changes `libOpenImageIO.so.3.1` to `.3.3.0`, changes the utility SONAME,
+and removes established exported `OpenImageIO::v3_1` symbols. The immutable
+attempt log is
+`/var/lib/gentoo-optimization/reports/openimageio-rebuild-20261003-local-overlay.log`
+with SHA-256
+`16abfc5f082e90b52d47a220df8157a0d5dd2a0dddaa4ae19159390f3a138dee`.
+The repository-URI defect is fixed in the project overlay, but this package now
+requires coordinated reverse-consumer/provider ABI migration and was not force-
+merged or retried unchanged.
