@@ -12344,3 +12344,16 @@ passed install QA and merged successfully as `media-libs/oidn-2.3.3-r1`. Immutab
 (SHA-256 `7149b0fe90a79b3b87c5f4be5766067c95ebb9e514304a07766dafaa20e5dd09`). This resolves
 OIDN's side of the OpenImageIO reverse-consumer transition; Blender remains the unresolved
 consumer because its bundled Draco DSO still loses exports under the ABI guard.
+
+2026-10-03 Blender preserved rebuild closure: after OIDN's ABI-preserving rebuild,
+Blender 5.0.9999 was rebuilt through the package-scoped O2 lane with the retained
+libmv `cassert`, Cycles ShaderGraph completeness, and FFmpeg 63 Audaspace fixes.
+The build completed and passed install QA/ABI validation; it merged as
+`media-gfx/blender-5.0.9999::gentoo`. Immutable evidence is
+`/var/lib/gentoo-optimization/reports/blender-preserved-rebuild-20261003-o2.log`
+with SHA-256
+`a238d30e341ac088760a87045d44483e95111a56b6cde473874c045b869b3d8a`.
+The O2 lane matched the installed Blender provider identity and resolved the
+previous bundled Draco ABI loss without weakening the guard. Blender and OIDN
+are now both rebuilt for the corrected OpenImageIO consumer closure; a fresh
+world pretend is required before any further provider transaction.
