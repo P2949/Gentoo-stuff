@@ -12273,3 +12273,14 @@ also consumed by Blender. A direct unqualified Blender pretend selects the live
 selection, so no broad Blender transaction was started. The OpenImageIO 9999
 ABI transition therefore remains a coordinated consumer-closure item rather
 than an isolated retry target.
+
+Git LFS received one changed-state retry with `GOPROXY=direct` and
+`GOSUMDB=off`, avoiding the prior proxy.golang.org-only path. The retry still
+failed because the host could not resolve `golang.org`, `go.yaml.in`, or GitHub;
+DNS returned `dial udp ... invalid argument` and `Could not resolve host` for
+its Go module sources. Evidence is
+`/var/lib/gentoo-optimization/reports/git-lfs-rebuild-20261003-direct-proxy.log`
+with SHA-256
+`f40461085e3c0e57c5ae0bc86644553a7ef156bda683331ef7d618bf452e946c`.
+This remains an external network/module-fetch failure and was not retried
+unchanged.
