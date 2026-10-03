@@ -8,6 +8,7 @@
 # Ordinary baseline maintenance is deliberately outside profile-use. Exact
 # profile-use transactions inject a one-shot authenticated dispatcher instead.
 =dev-build/cmake-4.3.5 optimization/optimization-off.conf
+=dev-python/numpy-2.5.3 optimization/optimization-off.conf
 =app-admin/doas-6.8.2 optimization/optimization-off.conf
 =app-arch/bzip2-1.0.8-r5 optimization/optimization-off.conf
 =app-arch/lz4-1.10.0-r1 optimization/optimization-off.conf
