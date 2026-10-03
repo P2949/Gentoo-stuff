@@ -10,6 +10,13 @@ def verify_contract(doc, label):
   return
  if not isinstance(doc.get('schema_version'), int) or not isinstance(doc.get('sha256'), str):
   raise SystemExit(f'REFUSED: {label} source contract is incomplete')
+ expected = {
+  'Portage': ('live-portage-dependency-source', 3),
+  'ELF': ('live-elf-dependency-source', 1),
+ }
+ record_type, schema_version = expected[label]
+ if doc.get('record_type') != record_type or doc.get('schema_version') != schema_version:
+  raise SystemExit(f'REFUSED: unsupported {label} source contract')
  unsigned=dict(doc); declared=unsigned.pop('sha256')
  if hashlib.sha256(canon(unsigned)).hexdigest() != declared:
   raise SystemExit(f'REFUSED: {label} source contract self-digest mismatch')

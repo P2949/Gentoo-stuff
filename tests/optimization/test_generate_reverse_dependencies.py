@@ -40,6 +40,13 @@ def main() -> None:
         errored.write_text(json.dumps({"records": [], "build_records": [], "source_errors": [{"cpv": "app/tool-1", "stage": "consumer-metadata"}]}))
         errored_result = subprocess.run(["python3", str(SCRIPT), "--portage", str(errored), "--elf", str(elf), "--output", str(root / "errored-graph.json")], capture_output=True, text=True)
         assert errored_result.returncode != 0 and "source errors" in errored_result.stderr
+        typed_portage = root / "typed-portage.json"
+        typed_portage.write_text(json.dumps({
+            "record_type": "live-portage-dependency-source", "schema_version": 2,
+            "sha256": "0" * 64, "records": [], "build_records": [],
+        }))
+        typed_result = subprocess.run(["python3", str(SCRIPT), "--portage", str(typed_portage), "--elf", str(elf), "--output", str(root / "typed-graph.json")], capture_output=True, text=True)
+        assert typed_result.returncode != 0 and "unsupported Portage source contract" in typed_result.stderr
         unresolved_elf = root / "unresolved-elf.json"
         unresolved_elf.write_text(json.dumps({"records": elf.read_text() and [{"provider_cpv": "dev/lib-1", "consumer_cpv": "app/tool-1"}], "unresolved": [{"consumer_cpv": "app/tool-1", "needed": "missing.so"}]}))
         unresolved_result = subprocess.run(["python3", str(SCRIPT), "--portage", str(portage), "--elf", str(unresolved_elf), "--output", str(root / "unresolved-graph.json")], capture_output=True, text=True)
