@@ -50,10 +50,12 @@ def main():
  if not elf_edges:
   raise SystemExit('REFUSED: ELF DT_NEEDED authority is empty')
  unresolved=e.get('unresolved', [])
+ unresolved_review_sha256 = None
  if unresolved:
   if not a.unresolved_review:
    raise SystemExit('REFUSED: ELF graph source contains unresolved dynamic dependency edges')
-  load_unresolved_review(a.unresolved_review, a.elf, unresolved)
+  review = load_unresolved_review(a.unresolved_review, a.elf, unresolved)
+  unresolved_review_sha256 = review['sha256']
  sources=((p,'records','portage-runtime'),(p,'build_records','portage-build'),(e,'records','elf-needed'),(e,'edges','elf-needed'))
  seen=set()
  elf_rows={}
@@ -102,6 +104,6 @@ def main():
      source_rows[identity] = row
     rows.append(row)
  ordered=sorted(rows,key=lambda x:(x['provider_cpv'],x['consumer_cpv'],x['relationship']))
- out={'record_type':'reverse-dependency-graph','schema_version':2,'source_contract':{'portage_runtime_records':sum(1 for x in ordered if x['relationship']=='portage-runtime'),'portage_build_records':sum(1 for x in ordered if x['relationship']=='portage-build'),'elf_needed_records':sum(1 for x in ordered if x['relationship']=='elf-needed')},'portage_source_sha256':hashlib.sha256(Path(a.portage).read_bytes()).hexdigest(),'elf_source_sha256':hashlib.sha256(Path(a.elf).read_bytes()).hexdigest(),'records':ordered}
+ out={'record_type':'reverse-dependency-graph','schema_version':2,'source_contract':{'portage_runtime_records':sum(1 for x in ordered if x['relationship']=='portage-runtime'),'portage_build_records':sum(1 for x in ordered if x['relationship']=='portage-build'),'elf_needed_records':sum(1 for x in ordered if x['relationship']=='elf-needed')},'portage_source_sha256':hashlib.sha256(Path(a.portage).read_bytes()).hexdigest(),'elf_source_sha256':hashlib.sha256(Path(a.elf).read_bytes()).hexdigest(),'unresolved_review_sha256':unresolved_review_sha256,'records':ordered}
  out['sha256']=hashlib.sha256(canon(out)).hexdigest(); Path(a.output).write_text(json.dumps(out,sort_keys=True,indent=2)+'\n'); print(json.dumps({'records':len(out['records']),'sha256':out['sha256']}))
 if __name__=='__main__': main()

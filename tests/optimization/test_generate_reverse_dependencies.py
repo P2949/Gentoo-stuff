@@ -61,6 +61,7 @@ def main() -> None:
         review.write_text(json.dumps(review_doc))
         reviewed_result = subprocess.run(["python3", str(SCRIPT), "--portage", str(portage), "--elf", str(unresolved_elf), "--unresolved-review", str(review), "--output", str(root / "reviewed-graph.json")], capture_output=True, text=True)
         assert reviewed_result.returncode == 0
+        assert json.loads((root / "reviewed-graph.json").read_text())["unresolved_review_sha256"] == review_doc["sha256"]
         review_doc["source_elf_sha256"] = "0" * 64
         review_doc.pop("sha256", None)
         review_doc["sha256"] = __import__("hashlib").sha256(json.dumps(review_doc, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
