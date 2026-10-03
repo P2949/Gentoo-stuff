@@ -2,7 +2,7 @@
   "active_abi_transition_clusters": [],
   "active_source_network_blockers": [],
   "as_of_commit": "8cb980d",
-  "current_baseline_state": "ordinary-userspace-convergence-in-progress; nine package families explicitly retired from optimization scope; retained installed state must be preserved",
+  "current_baseline_state": "ordinary-userspace-resolver-empty; nine kernel/firmware/lifecycle proposals explicitly excluded; Gegl successor held after ABI rejection; retained installed state preserved",
   "latest_abi_authority": "/var/lib/gentoo-optimization/reports/userspace-webkit-gtk-2540-r410-20261001/abi-transition-v1-rerun.json",
   "latest_abi_authority_sha256": "bdc34f4e0c6515b563e107f58a619b6ae6dc509016df903ad89568a2da0f09ba",
   "latest_live_resolver_boundary": {
@@ -83,9 +83,6 @@
     }
   ],
   "schema": "current-frontier-v1",
-  "temporary_configuration_deviations": [
-    "qtspeech-speechd-one-shot-resolution",
-    "kauth-policykit-one-shot-resolution"
-  ],
+  "temporary_configuration_deviations": [],
   "vdb_inventory_sha256": "d16450d95e6ae2d3af97e0a01900417276df5f3f55fb6cba9de139e44e969034"
 }
