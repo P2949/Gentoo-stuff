@@ -1,0 +1,11 @@
+--- a/external/composable_kernel/include/ck/utility/get_id.hpp
++++ b/external/composable_kernel/include/ck/utility/get_id.hpp
+@@ -7,7 +7,7 @@
+ 
+ namespace ck {
+ 
+-__host__ __device__ constexpr index_t get_warp_size()
++__host__ __device__ index_t get_warp_size()
+ {
+     // warpSize is defined by HIP
+     return warpSize;

@@ -1,4 +1,3 @@
 media-libs/freetype brotli
 media-video/ffmpeg lame theora vorbis vpx xvid
 sci-libs/fftw threads
-media-libs/oidn -hip
