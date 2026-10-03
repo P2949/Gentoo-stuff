@@ -17,6 +17,22 @@ def _module():
 
 def main() -> None:
     module = _module()
+    assert module.load_choice_review({"records": [{
+        "consumer_cpv": "app/c-1", "field": "RDEPEND",
+        "expression_sha256": "a" * 64, "selected_branch": 0,
+    }]})
+    for bad in (
+        {"records": []},
+        {"records": [{"consumer_cpv": "app/c-1"}]},
+        {"records": [{"consumer_cpv": "app/c-1", "field": "RDEPEND", "expression_sha256": "a" * 64, "selected_branch": 0},
+                      {"consumer_cpv": "app/c-1", "field": "RDEPEND", "expression_sha256": "a" * 64, "selected_branch": 1}]},
+    ):
+        try:
+            module.load_choice_review(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid choice review was accepted")
     assert module.atoms("dev-libs/a", ()) == ["dev-libs/a"]
     assert module.atoms("foo? ( dev-libs/a ) !foo? ( dev-libs/b )", ()) == [
         "dev-libs/b"

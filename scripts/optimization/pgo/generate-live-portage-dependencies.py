@@ -12,6 +12,19 @@ def canon(v): return json.dumps(v, sort_keys=True, separators=(",", ":")).encode
 class DependencyChoiceError(ValueError):
     """The installed VDB does not identify which alternative Portage chose."""
 
+def load_choice_review(review):
+    if not isinstance(review, dict) or not isinstance(review.get("records"), list) or not review["records"]:
+        raise ValueError("dependency-choice review has invalid schema")
+    choices = {}
+    for record in review["records"]:
+        key = (record.get("consumer_cpv"), record.get("field"), record.get("expression_sha256"))
+        if any(value is None for value in key) or not isinstance(record.get("selected_branch"), int):
+            raise ValueError("dependency-choice review record is incomplete")
+        if key in choices:
+            raise ValueError(f"duplicate dependency-choice review record: {key}")
+        choices[key] = record["selected_branch"]
+    return choices
+
 def _collect(tree, matcher=None, choice_selector=None):
     if isinstance(tree, str):
         return [tree] if "/" in tree and not tree.startswith("!") else []
@@ -60,16 +73,11 @@ def main():
     choice_reviews={}; used_choice_reviews=set(); choice_review_sha256=None
     if a.choice_review:
         review=json.loads(a.choice_review.read_text())
-        if not isinstance(review,dict) or not isinstance(review.get('records'),list):
-            raise SystemExit('REFUSED: dependency-choice review has invalid schema')
+        try:
+            choice_reviews=load_choice_review(review)
+        except ValueError as exc:
+            raise SystemExit(f'REFUSED: {exc}')
         choice_review_sha256=hashlib.sha256(canon(review)).hexdigest()
-        for record in review['records']:
-            key=(record.get('consumer_cpv'),record.get('field'),record.get('expression_sha256'))
-            if any(value is None for value in key) or not isinstance(record.get('selected_branch'),int):
-                raise SystemExit('REFUSED: dependency-choice review record is incomplete')
-            if key in choice_reviews:
-                raise SystemExit(f'REFUSED: duplicate dependency-choice review record: {key}')
-            choice_reviews[key]=record['selected_branch']
     for cpv in cpvs:
         try: vals=db.aux_get(cpv,['DEPEND','RDEPEND','PDEPEND','BDEPEND','IDEPEND','USE','BUILD_TIME','CONTENTS','REPOSITORY','SLOT','SUBSLOT'])
         except Exception as exc:
