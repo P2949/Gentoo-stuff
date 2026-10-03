@@ -12653,3 +12653,12 @@ materialization: Clang 22 (`9944cc7a...`), GCC (`549f503d...`), Go
 collector materialized 769 exact PGO-lane inputs from the refreshed lane set;
 its focused regression passes. This is identity input evidence only and does
 not reinterpret retained profiles or authorize their consumption.
+## 2026-10-03 fingerprint materialization
+
+The corrected identity inputs were materialized into the candidate's
+content-addressed `fingerprints-v5` tree. All 769 records produced an exact
+identity with zero failures; the materialization result SHA-256 is
+`c652c19c34cf5c4b745bd014bad186d3f3aa57cf25f0f9260ce7b5551f00eaa8`. The
+fingerprint tree contains 769 identity records. These remain candidate
+generation evidence until the generation authority transaction binds them to
+the complete framework and final workload state.
