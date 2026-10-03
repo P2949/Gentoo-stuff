@@ -12822,3 +12822,9 @@ extract, while an unresolved `||` group is rejected rather than flattened.
 This is intentionally diagnostic/fail-closed work: no authoritative
 reverse-dependency graph or Phase-3 authority is published from an unresolved
 dependency-choice source.
+
+The live producer was exercised against the authoritative 1,368-CPV VDB after
+this change. It produced 6,198 runtime and 9,200 build records but refused
+publication with 158 explicit unresolved `||` dependency-choice errors. The
+diagnostic output is retained outside the authority tree; no flattened
+alternative edges were admitted.

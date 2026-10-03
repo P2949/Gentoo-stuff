@@ -14,7 +14,7 @@ class DependencyChoiceError(ValueError):
 
 def _contains_choice(tree):
     if isinstance(tree, list):
-        if tree and tree[0] in {"||", "^^", "??"}:
+        if tree and isinstance(tree[0], str) and tree[0] in {"||", "^^", "??"}:
             return tree[0]
         for item in tree:
             choice = _contains_choice(item)
