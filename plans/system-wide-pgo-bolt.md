@@ -12167,3 +12167,18 @@ attempt is preserved at
 (SHA-256 `dd69376f1a6679031ca2fa04c53947088a4df72e528ba30c170ea4bad64ddd18`).
 This is classified as a provider/consumer ABI identity mismatch and was not
 force-merged or retried unchanged.
+
+The Git LFS retry fetched the repository successfully, but its Go module
+resolution failed on `proxy.golang.org` DNS (`dial udp ... invalid argument`).
+This is an external network/module-fetch failure, not a source or optimization
+failure. Evidence is retained at
+`/var/lib/gentoo-optimization/reports/git-lfs-rebuild-20261003-fetch-retry.log`
+(SHA-256 `69474b3f6e83bff204cd5abf6d499fe24ce9b5dd18c9ba08ccc4498027c5c48d`).
+
+OIDN was retried once after removing Polly from its HIP compiler probe. That
+changed the failure from the HIP linker probe to the package's core C++ source:
+libc++ rejects deletion of an incomplete `oidn::Subdevice` type in
+`std::unique_ptr`. The corrected HIP-boundary attempt is preserved at
+`/var/lib/gentoo-optimization/reports/oidn-rebuild-20261003-no-polly-hip.log`
+(SHA-256 `13dd57cea67c5886b7263b3502c3b22afe6bc6476f5051b0e7abcfd1ee4ebf63`).
+No unchanged retry or ABI bypass was performed.
