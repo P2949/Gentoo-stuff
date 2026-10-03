@@ -12408,3 +12408,9 @@ The graph is stable at 1,275 packages (7 upgrades, 1 new, 3 new slots, 1,264
 reinstalls), and no additional provider-specific USE changes were requested.
 No broad world transaction was started; the exact OpenImageIO/Blender/OIDN
 closure is now installed and runtime-linked to OpenImageIO 3.3.
+
+2026-10-03 provider-transition verification: the focused ABI-guard regression
+suite passed all transition, catastrophic-loss, symlink, ELF/non-ELF, ownership,
+empty-set, and non-recursive-provider cases after the OpenImageIO authority
+work. This confirms the explicit transition authority remains scoped and the
+normal fail-closed guard behavior is intact.
