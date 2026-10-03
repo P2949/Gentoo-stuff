@@ -668,6 +668,16 @@
       "reason_code": "native-compiled-eclass-or-phase"
     },
     {
+      "cpv": "media-gfx/blender-bin-9999",
+      "evidence": {
+        "installed_cpv": "media-gfx/blender-bin-9999",
+        "qa_prebuilt": "/var/db/pkg/media-gfx/blender-bin-9999/QA_PREBUILT",
+        "repository": "codex-local"
+      },
+      "lane": "unsupported-by-upstream-toolchain",
+      "reason_code": "prebuilt-package"
+    },
+    {
       "cpv": "dev-dotnet/dotnet-sdk-bin-10.0.400",
       "evidence": {
         "ebuild": "/var/db/pkg/dev-dotnet/dotnet-sdk-bin-10.0.400/dotnet-sdk-bin-10.0.400.ebuild",

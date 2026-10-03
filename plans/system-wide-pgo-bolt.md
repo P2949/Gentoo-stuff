@@ -12605,3 +12605,35 @@ The repository policy validator passes with 16 policy files, 177 assignment
 lines, 171 atoms, and 191 environment pairs. No live package transaction was
 started by this correction; the already-running portable-complete gate remains
 the next validation boundary.
+
+## 2026-10-03 fresh post-maintenance Phase-3 candidate derivation
+
+With the ordinary userspace resolver empty and the remaining nine proposals
+outside the automated userspace boundary, the live VDB was rescanned into
+`phase3-live-20261003-post-git-lfs-final2`. The frozen inventory contains
+1,368 CPVs, 671,024 owned paths, 81,795 reviewed directories, and zero
+unresolved directories (SHA-256
+`d16450d95e6ae2d3af97e0a01900417276df5f3f55fb6cba9de139e44e969034`). The
+root-owned artifact scan independently found 671,024 artifacts and 16,168
+ELF records.
+
+The generation-bound source-unavailable review was refreshed from the exact
+live VDB identities: Ruby 3.4.9 and GitHub CLI 9999 are explicit userspace
+transactions, while dracut 111-r1 remains a kernel-policy exclusion. Kernel
+classification therefore closes at 1,358 userspace transactions and 10
+kernel-policy exclusions. Mutation-policy verification covers all 1,368 CPVs.
+The refreshed provenance verifier covers all 1,368 CPVs across the configured
+repository roots, including the framework local-overlay source.
+
+Fresh backend/lane derivation closes every lane: 613 Clang-IR, 149 Rust, 6 Go,
+1 GCC, 69 unsupported/prebuilt, 520 not-applicable, and 10 kernel-policy
+exclusions. `media-gfx/blender-bin-9999` is now explicitly classified as a
+prebuilt package from its authenticated `QA_PREBUILT` VDB record rather than
+remaining pending. Optimization-set verification covers all 1,368 CPVs
+across nine sets.
+
+ELF metadata extraction found 16,168 records. Eligibility is separately
+reported as 1,395 candidate-BOLT-eligible, 11,403 rebuild-required-for-
+capture, and 3,370 not-applicable records. This candidate is derived and
+verified evidence only; framework authority has not been activated and no
+profile wave has been started.
