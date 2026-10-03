@@ -12509,3 +12509,24 @@ ebuild. It is not yet active in `/etc/portage`: framework republish correctly
 refused the stale post-retirement frozen inventory due to invalid owned-directory
 metadata. A fresh semantically valid inventory is required before that source
 configuration can be published. No live mask activation is claimed yet.
+
+## 2026-10-03 post-Git-LFS live inventory review
+
+After the stable Git LFS 3.8.0 merge, the live VDB was rescanned. A root-stat
+review covered the full newly observed directory set, including runtime-owned
+spool directories. The resulting candidate has 1,368 CPVs, 671,024 owned
+paths, 81,795 reviewed directories, and zero unresolved records. Both the
+checkout verifier and the trusted bootstrap verifier accepted inventory
+SHA-256 `d16450d95e6ae2d3af97e0a01900417276df5f3f55fb6cba9de139e44e969034`.
+
+Framework publication then reached the next strict boundary and rejected the
+existing generated policy because it contains exact package.env assignments for
+retired non-installed identities (`=acct-group/adsklic-0` and related records)
+that are absent from the new frozen inventory. The refusal is retained at
+`/var/lib/gentoo-optimization/reports/framework-republish-20261003-post-git-lfs-final3.log`
+(SHA-256
+`8b698ed28b2884fb8500575a1d23a58228dcc9ecaa31c7ee5ce3a88164f369b8`). This
+is a generated-policy/inventory binding defect: no live framework activation or
+mask publication was forced. The next implementation step is to regenerate
+the policy tree from the reviewed post-retirement inventory, removing stale
+non-installed exact assignments while preserving all installed identities.
