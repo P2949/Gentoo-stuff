@@ -12849,3 +12849,8 @@ Review consumption is now exact: every supplied record must be consumed by a
 matching live CPV/field/expression, and unused records refuse publication.
 This prevents stale branch selections from being carried into a new VDB or
 silently leaving part of a review document unapplied.
+
+Unresolved choice source errors now also publish structured review keys,
+operator names, branch counts, and expression hashes. The diagnostic source
+can therefore be handed to a deterministic Portage-selection evidence
+producer without parsing human-readable error text.

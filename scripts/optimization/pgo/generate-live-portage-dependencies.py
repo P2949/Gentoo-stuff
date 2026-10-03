@@ -12,6 +12,11 @@ def canon(v): return json.dumps(v, sort_keys=True, separators=(",", ":")).encode
 class DependencyChoiceError(ValueError):
     """The installed VDB does not identify which alternative Portage chose."""
 
+    def __init__(self, message, *, operator=None, branch_count=None):
+        super().__init__(message)
+        self.operator = operator
+        self.branch_count = branch_count
+
 def load_choice_review(review):
     if not isinstance(review, dict) or not isinstance(review.get("records"), list) or not review["records"]:
         raise ValueError("dependency-choice review has invalid schema")
@@ -35,11 +40,15 @@ def _collect(tree, matcher=None, choice_selector=None):
         if choice_selector is not None:
             selected_index = choice_selector(tree[0], branches)
             if not isinstance(selected_index, int) or not 0 <= selected_index < len(branches):
-                raise DependencyChoiceError("dependency-choice review selected an invalid branch")
+                raise DependencyChoiceError(
+                    "dependency-choice review selected an invalid branch",
+                    operator=tree[0], branch_count=len(branches),
+                )
             return _collect(branches[selected_index], matcher, choice_selector)
         if matcher is None:
             raise DependencyChoiceError(
-                f"unresolved Portage dependency choice operator {tree[0]!r}"
+                f"unresolved Portage dependency choice operator {tree[0]!r}",
+                operator=tree[0], branch_count=len(branches),
             )
         selected = []
         for branch in branches:
@@ -48,7 +57,8 @@ def _collect(tree, matcher=None, choice_selector=None):
                 selected.append(branch_atoms)
         if len(selected) != 1:
             raise DependencyChoiceError(
-                f"Portage dependency choice {tree[0]!r} has {len(selected)} installed alternatives"
+                f"Portage dependency choice {tree[0]!r} has {len(selected)} installed alternatives",
+                operator=tree[0], branch_count=len(branches),
             )
         return selected[0]
     values = []
@@ -96,7 +106,14 @@ def main():
                     return choice_reviews[key]
                 evaluated = atoms(expr,useflags, matcher=db.match, choice_selector=selector if choice_reviews else None)
             except Exception as exc:
-                source_errors.append({'cpv':cpv,'field':field,'stage':'dependency-parse','error':str(exc)})
+                error={'cpv':cpv,'field':field,'stage':'dependency-parse','error':str(exc)}
+                if isinstance(exc, DependencyChoiceError):
+                    error.update({
+                        'expression_sha256': hashlib.sha256(expr.encode()).hexdigest(),
+                        'choice_operator': exc.operator,
+                        'choice_branch_count': exc.branch_count,
+                    })
+                source_errors.append(error)
                 target = build_rows if field in {'DEPEND','BDEPEND','IDEPEND'} else runtime_rows
                 target.append({'consumer_cpv':cpv,'relationship':'portage-build' if field in {'DEPEND','BDEPEND','IDEPEND'} else 'portage-runtime','evidence':{'field':field,'error':str(exc),'expression_sha256':hashlib.sha256(expr.encode()).hexdigest()}})
                 continue

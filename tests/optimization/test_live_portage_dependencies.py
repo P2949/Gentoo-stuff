@@ -41,6 +41,7 @@ def main() -> None:
         module.atoms("|| ( dev-libs/a dev-libs/b )", ())
     except module.DependencyChoiceError as exc:
         assert "||" in str(exc)
+        assert exc.operator == "||" and exc.branch_count == 2
     else:
         raise AssertionError("dependency alternatives must not be flattened")
     assert module.atoms(
