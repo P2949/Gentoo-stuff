@@ -1,6 +1,7 @@
 --- a/extern/audaspace/plugins/ffmpeg/FFMPEGWriter.cpp
 +++ b/extern/audaspace/plugins/ffmpeg/FFMPEGWriter.cpp
-@@ -327,25 +327,39 @@
+@@ -332,12 +332,23 @@
+ 
  		bool format_supported = false;
  
 -		for(int i = 0; codec->sample_fmts[i] != -1; i++)
@@ -10,7 +11,7 @@
 +		avcodec_get_supported_config(m_codecCtx, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
 +		                             reinterpret_cast<const void **>(&sample_fmts), &sample_fmt_count);
 +#else
-+		sample_fmts = codec->sample_fmts;
++		sample_fmts = sample_fmts;
 +		if(sample_fmts)
 +			while(sample_fmts[sample_fmt_count] != AV_SAMPLE_FMT_NONE)
 +				sample_fmt_count++;
@@ -24,21 +25,36 @@
 -				m_codecCtx->sample_fmt = codec->sample_fmts[i];
 +				m_deinterleave = av_sample_fmt_is_planar(sample_fmts[i]);
 +				m_codecCtx->sample_fmt = sample_fmts[i];
-@@ -356,11 +370,11 @@
+ 				format_supported = true;
+ 			}
+ 		}
+@@ -345,10 +356,10 @@
  		if(!format_supported)
  		{
  			int chosen_index = 0;
 -			auto chosen = av_get_alt_sample_fmt(codec->sample_fmts[chosen_index], false);
 -			for(int i = 1; codec->sample_fmts[i] != -1; i++)
 +			auto chosen = av_get_alt_sample_fmt(sample_fmts[chosen_index], false);
-+			for(int i = 1; i < sample_fmt_count; i++)
++			for(int i = 1; sample_fmts[i] != -1; i++)
  			{
 -				auto fmt = av_get_alt_sample_fmt(codec->sample_fmts[i], false);
 +				auto fmt = av_get_alt_sample_fmt(sample_fmts[i], false);
-@@ -369,7 +383,7 @@
+ 				if((fmt > chosen && chosen < m_codecCtx->sample_fmt) || (fmt > m_codecCtx->sample_fmt && fmt < chosen))
+ 				{
+ 					chosen = fmt;
+@@ -356,7 +367,7 @@
+ 				}
+ 			}
+ 
 -			m_codecCtx->sample_fmt = codec->sample_fmts[chosen_index];
 +			m_codecCtx->sample_fmt = sample_fmts[chosen_index];
-@@ -398,15 +412,27 @@
+ 			m_deinterleave = av_sample_fmt_is_planar(m_codecCtx->sample_fmt);
+ 			switch(av_get_alt_sample_fmt(m_codecCtx->sample_fmt, false))
+ 			{
+@@ -387,19 +398,30 @@
+ 
+ 		m_codecCtx->sample_rate = 0;
+ 
 -		if(codec->supported_samplerates)
 +		const int *supported_samplerates = nullptr;
 +		int sample_rate_count = 0;
@@ -46,7 +62,7 @@
 +		avcodec_get_supported_config(m_codecCtx, codec, AV_CODEC_CONFIG_SAMPLE_RATE, 0,
 +		                             reinterpret_cast<const void **>(&supported_samplerates), &sample_rate_count);
 +#else
-+		supported_samplerates = codec->supported_samplerates;
++		supported_samplerates = supported_samplerates;
 +		if(supported_samplerates)
 +			while(supported_samplerates[sample_rate_count])
 +				sample_rate_count++;
@@ -61,7 +77,8 @@
  				{
 -					m_codecCtx->sample_rate = codec->supported_samplerates[i];
 +					m_codecCtx->sample_rate = supported_samplerates[i];
-@@ -414,10 +440,10 @@
+ 					break;
+ 				}
 -				else if((codec->supported_samplerates[i] > m_codecCtx->sample_rate && m_specs.rate > m_codecCtx->sample_rate) ||
 -						(codec->supported_samplerates[i] < m_codecCtx->sample_rate && m_specs.rate < codec->supported_samplerates[i]))
 +				else if((supported_samplerates[i] > m_codecCtx->sample_rate && m_specs.rate > m_codecCtx->sample_rate) ||
@@ -69,3 +86,6 @@
  				{
 -					m_codecCtx->sample_rate = codec->supported_samplerates[i];
 +					m_codecCtx->sample_rate = supported_samplerates[i];
+ 				}
+ 			}
+ 		}
