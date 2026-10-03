@@ -4,7 +4,7 @@
  
  namespace ck {
  
--__host__ __device__ index_t get_warp_size()
+-__host__ __device__ constexpr index_t get_warp_size()
 +__device__ index_t get_warp_size()
  {
      // warpSize is defined by HIP
