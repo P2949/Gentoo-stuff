@@ -12039,3 +12039,12 @@ and the framework installer passed. The first post-republish run exposed only
 the two newly added de-instrumentation unittest identities missing from the
 tracked Phase-3 additive registry; both identities were registered and the
 existing results were independently revalidated by the exact contract tool.
+
+## 2026-10-03 retired-package configuration restoration
+
+The retirement boundary now preserves stable Portage configuration for the
+retained out-of-scope package identities: WebKitGTK keeps its explicit
+`introspection` and `-jumbo-build` settings, and Lutris keeps its established
+`python_single_target_python3_14` selection. These settings are policy state,
+not optimization membership; the scope policy continues to exclude the
+retired CP atoms from generated optimization sets and manifests.
