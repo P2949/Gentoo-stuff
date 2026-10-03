@@ -1,0 +1,10 @@
+--- a/intern/cycles/scene/shader.h
++++ b/intern/cycles/scene/shader.h
+@@ -13,6 +13,7 @@
+ 
+ #include "kernel/types.h"
+ #include "scene/attribute.h"
++#include "scene/shader_graph.h"
+ 
+ #include "graph/node.h"
+*** End Patch
