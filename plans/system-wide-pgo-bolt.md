@@ -12141,3 +12141,19 @@ with SHA-256
 `ef10faddff0045dd16df6d7435c9866c8c72d61a6935d9373aba19cdc29e6606`.
 This is ordinary optimization-off userspace evidence, not PGO or BOLT
 completion evidence.
+
+A fresh post-OpenBLAS resolver was run after the successful rebuild. It returned
+`pretend_rc=0`; the immutable report is
+`/var/lib/gentoo-optimization/reports/userspace-world-pretend-20261003-openblas-fixed.log`
+with SHA-256
+`8b591e8a7da72f54527dcd01bde5c0d416fb91ad9654c5ec8ebead20caab5e38`.
+OpenBLAS is no longer in the resolver frontier. The remaining frontier is
+`bullet`, `blas-lapack-aux-wrapper`, `git-lfs`, `opensubdiv`, `oidn`,
+`libde265`, `mpv`, `gegl`, and `openimageio`.
+
+A narrow ABI fallback was applied to the ABI-sensitive shared-library
+providers (`bullet`, the BLAS wrapper, OpenSubdiv, libde265, and GEGL), while
+keeping the ABI guard active. The first Bullet retry still failed closed with
+explicit missing exported symbols, so it was not retried again or force-merged.
+That result remains an unresolved package-specific ABI investigation rather
+than evidence for weakening the guard.
