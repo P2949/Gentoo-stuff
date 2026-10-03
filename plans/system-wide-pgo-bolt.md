@@ -12646,3 +12646,10 @@ ELFs, zero missing package/lane records, zero missing ELF classifications, and
 `aa7afd03eb475b9526b6f6055c7b487e6a700a82d8a5bd36d0b2eff8d3aac67a`). The
 candidate remains evidence-only until the final-generation authority and
 representative workload requirements are separately satisfied.
+
+The current compiler identity set was independently observed before fingerprint
+materialization: Clang 22 (`9944cc7a...`), GCC (`549f503d...`), Go
+(`4bd02a11...`), and Rust (`4e1241a2...`). The corrected VDB fingerprint
+collector materialized 769 exact PGO-lane inputs from the refreshed lane set;
+its focused regression passes. This is identity input evidence only and does
+not reinterpret retained profiles or authorize their consumption.
