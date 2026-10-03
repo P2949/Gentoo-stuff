@@ -12414,3 +12414,11 @@ suite passed all transition, catastrophic-loss, symlink, ELF/non-ELF, ownership,
 empty-set, and non-recursive-provider cases after the OpenImageIO authority
 work. This confirms the explicit transition authority remains scoped and the
 normal fail-closed guard behavior is intact.
+
+## 2026-10-03 post-OpenImageIO/Blender inventory and resolver boundary
+
+- The reviewed-directory handling fix is committed as `7f7df23` and pushed. Live inventory generation now refuses stale/unresolved historical directory records unless they are explicitly reviewed, and permits the separate `absent-runtime-directory` disposition with last-known metadata. Focused parser/state tests and Python compilation passed.
+- The framework was republished from the committed source boundary with the existing authoritative generated-policy and frozen-inventory inputs; the install completed successfully.
+- A fresh live inventory candidate was generated after the OpenImageIO provider transition and Blender rebuild: generation `phase3-live-20261003-post-openimageio`, inventory SHA-256 `df8785f1a5748f9de0f228e4a8534b3305e3cef863b1f8c0ff521fa772cf8b3d`, 1365 CPVs, 671000 owned paths, 81786 owned directories, and zero unresolved directory records. The frozen-inventory verifier passed. The directory-review input SHA-256 is `89eb63ec29cc076fafe0baea4a270c99ae60470e4d2ba5f45ecfcb93b607bf00`.
+- Retained retired-package maintenance settings remain present for `net-libs/webkit-gtk` (`introspection -jumbo-build`) and `games-util/lutris` (`python_single_target_python3_14`), keeping retained installed state separate from optimization scope.
+- A fresh complete-graph `@world` pretend completed after the provider transition: 16 operations (8 upgrades, 3 new packages, 3 new slots, 2 reinstalls), report `/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-openimageio.log`, SHA-256 `1c8ec67822b1860d19c025ee74fd8ad8b5700ece8cf0e09cfed092e50027b79f`. Kernel lifecycle proposals (`gentoo-sources`, `zen-sources`, `cachyos-sources`, `dracut`, `installkernel`, firmware, `scx`, and `scx-loader`) remain excluded from automated mutation; ordinary userspace candidates are `git-lfs`, BLAS/LAPACK virtuals, numpy, libde265, and gegl. No broad transaction was started from this pretend.
