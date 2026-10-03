@@ -18,7 +18,7 @@ def evidence(v: object) -> None:
     if not isinstance(v, dict) or list(v) != ['kind','path','sha256'] or not canonical_path(v.get('path')) or not SHA256.fullmatch(v.get('sha256','')) or v['kind'] not in {'binary','binpkg','command-output','config','log','manifest','profile','report','sidecar','source','transaction','other'}: fail('invalid terminal evidence')
 
 def directory_resolution(v: object) -> None:
-    if not isinstance(v, dict) or list(v) != ['evidence','reason_code','registry_version','reviewed_at','reviewed_by'] or v.get('registry_version') != '1' or v.get('reason_code') != 'not-machine-code' or not isinstance(v.get('reviewed_by'),str) or not v['reviewed_by'] or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z',v.get('reviewed_at','')) or not isinstance(v.get('evidence'),list) or not v['evidence']: fail('invalid directory resolution')
+    if not isinstance(v, dict) or list(v) != ['evidence','reason_code','registry_version','reviewed_at','reviewed_by'] or v.get('registry_version') != '1' or v.get('reason_code') not in {'not-machine-code','absent-runtime-directory'} or not isinstance(v.get('reviewed_by'),str) or not v['reviewed_by'] or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z',v.get('reviewed_at','')) or not isinstance(v.get('evidence'),list) or not v['evidence']: fail('invalid directory resolution')
     for e in v['evidence']: evidence(e)
     keys=[(e['path'],e['sha256'],e['kind']) for e in v['evidence']]
     if keys != sorted(keys) or len(keys) != len(set(keys)): fail('directory evidence not sorted and unique')

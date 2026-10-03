@@ -6,7 +6,7 @@ for paths already present in the previous reviewed inventory. New directory
 records are marked unresolved and must be reviewed before framework activation.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os, pathlib, stat, collections, sys
+import argparse, hashlib, json, os, pathlib, stat, collections, sys, re
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3]))
 from scripts.optimization.lib.contents import parse_contents_line
 
@@ -67,20 +67,28 @@ def main():
       old=old_dirs.get(p)
       try: s=os.stat(p); uid,gid,mode=s.st_uid,s.st_gid,stat.S_IMODE(s.st_mode)
       except OSError: uid=gid=mode=None
-      if old and old.get('uid')==uid and old.get('gid')==gid and old.get('mode')==mode:
+      old_resolution = old.get('resolution', {}) if old else {}
+      old_valid = (old and old.get('classification') != 'unresolved' and old_resolution.get('reason_code') == 'not-machine-code' and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', old_resolution.get('reviewed_at', '')))
+      if old_valid and old.get('uid')==uid and old.get('gid')==gid and old.get('mode')==mode:
         for owner in sorted(dirs[p]):
           rec=dict(old); rec['owner_cpv']=owner; outdirs.append(rec)
       else:
         item = reviewed.get(p)
-        if item is not None and item.get('uid') == uid and item.get('gid') == gid and item.get('mode') == mode:
+        absent_review = bool(item is not None and item.get('absent') is True and uid is None and gid is None and mode is None)
+        if item is not None and ((item.get('uid') == uid and item.get('gid') == gid and item.get('mode') == mode) or absent_review):
+          if absent_review and old is None:
+            raise SystemExit(f'REFUSED: absent directory review lacks prior metadata: {p}')
+          absent_meta = item.get('last_known') if absent_review else None
+          if absent_review and (not isinstance(absent_meta, dict) or not all(isinstance(absent_meta.get(k), int) and absent_meta.get(k) >= 0 for k in ('uid','gid','mode'))):
+            raise SystemExit(f'REFUSED: absent directory review lacks valid last-known metadata: {p}')
           resolution = {
               'evidence': [{'kind': 'report', 'path': str(pathlib.Path(a.directory_review).resolve()), 'sha256': hashlib.sha256(pathlib.Path(a.directory_review).read_bytes()).hexdigest()}],
-              'reason_code': 'not-machine-code', 'registry_version': '1',
+              'reason_code': 'absent-runtime-directory' if absent_review else 'not-machine-code', 'registry_version': '1',
               'reviewed_at': review.get('reviewed_at', ''),
               'reviewed_by': review.get('reviewed_by', ''),
           }
           for owner in sorted(dirs[p]):
-            outdirs.append({'owner_cpv':owner,'path':p,'uid':uid,'gid':gid,'mode':mode,'classification':'not-applicable','resolution':resolution})
+            outdirs.append({'owner_cpv':owner,'path':p,'uid':absent_meta['uid'] if absent_review else uid,'gid':absent_meta['gid'] if absent_review else gid,'mode':absent_meta['mode'] if absent_review else mode,'classification':'not-applicable','resolution':resolution})
           continue
         unresolved.append(p)
         for owner in sorted(dirs[p]):

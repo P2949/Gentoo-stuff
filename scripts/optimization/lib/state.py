@@ -1444,8 +1444,8 @@ def _inventory(raw: Any, path: str = "inventory") -> dict[str, Any]:
         if entry["classification"] != "not-applicable":
             _error(f"{epath}.classification", "directories must be terminal not-applicable")
         directory_resolution = _resolution(entry["resolution"], f"{epath}.resolution", True)
-        if directory_resolution is None or directory_resolution["reason_code"] != "not-machine-code":
-            _error(f"{epath}.resolution", "directory reason must be not-machine-code")
+        if directory_resolution is None or directory_resolution["reason_code"] not in {"not-machine-code", "absent-runtime-directory"}:
+            _error(f"{epath}.resolution", "directory reason must be not-machine-code or absent-runtime-directory")
     if directory_keys != sorted(set(directory_keys)):
         _error(f"{path}.owned_directories", "must be sorted and unique")
     if any(owner_cpv not in package_set for owner_cpv, _owned_path in directory_keys):
