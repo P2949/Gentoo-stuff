@@ -12182,3 +12182,14 @@ libc++ rejects deletion of an incomplete `oidn::Subdevice` type in
 `/var/lib/gentoo-optimization/reports/oidn-rebuild-20261003-no-polly-hip.log`
 (SHA-256 `13dd57cea67c5886b7263b3502c3b22afe6bc6476f5051b0e7abcfd1ee4ebf63`).
 No unchanged retry or ABI bypass was performed.
+
+The MPV failure was diagnosed from the preserved build output and a direct
+reproduction of its generated protocol command. `mpv` itself links, but its
+Meson `mpv_protocols` step executes the new binary against an incompatible
+installed FFmpeg provider:
+`libavcodec: build version 62.28.102 incompatible with runtime version
+63.1.102`. Evidence is retained in the prior MPV build log under
+`/var/tmp/gentoo-portage-build/portage/media-video/mpv-0.41.0-r2/temp/build.log`.
+This is a provider/dependency ordering mismatch requiring the FFmpeg consumer
+closure to be reconciled; no MPV flag demotion or ABI guard weakening was
+performed.
