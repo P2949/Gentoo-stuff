@@ -12211,3 +12211,13 @@ with SHA-256
 This is a changed-state provider/cache remediation, not a profile-use or BOLT
 completion result. The original provider mismatch remains preserved as
 historical failure evidence; no ABI guard or compiler policy was weakened.
+
+A fresh post-MPV userspace resolver completed with `pretend_rc=0`; the immutable
+report is `/var/lib/gentoo-optimization/reports/userspace-world-pretend-20261003-post-mpv.log`
+with SHA-256
+`0f67fb67dfa1158c4987bc046394597045617b250d33419b6b55f6846dc89329`.
+MPV is no longer in the resolver frontier. The remaining ordinary userspace
+frontier is Bullet, the BLAS wrapper, Git LFS, OpenSubdiv, OIDN, libde265,
+GEGL, and OpenImageIO; the first seven retain their narrow failure evidence,
+while OpenImageIO has only a prior source-fetch timeout and remains eligible
+for one changed-state retry.
