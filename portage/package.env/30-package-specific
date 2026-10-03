@@ -25,7 +25,7 @@ sci-libs/blas-lapack-aux-wrapper plain.conf
 media-libs/opensubdiv no-polly-no-lto-no-bsymbolic.conf
 media-libs/libde265 no-lto.conf no-hidden-visibility.conf
 media-libs/gegl no-polly-no-lto-no-bsymbolic.conf
-media-libs/oidn no-unified-lto.conf no-polly.conf
+media-libs/oidn no-lto.conf no-polly.conf
 # Preserve established public C++ exports in WebKit's JavaScriptCore/WTF
 # DSOs while retaining the rest of the optimization policy.
 net-libs/webkit-gtk no-hidden-visibility.conf
