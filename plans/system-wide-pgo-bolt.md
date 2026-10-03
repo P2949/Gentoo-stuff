@@ -12463,3 +12463,30 @@ contains 12 proposals: ordinary userspace candidates `dev-vcs/git-lfs`,
 proposals. No transaction was started from this resolver. The current frontier
 records this boundary and requires scope/mutation partitioning before any
 ordinary userspace action; the older resolver count is not authoritative.
+
+## 2026-10-03 Git LFS stable-source recovery
+
+The live `dev-vcs/git-lfs-9999` source/network blocker was resolved through a
+changed-cause path rather than an unchanged retry. The cached exact
+`=dev-vcs/git-lfs-3.7.1::gentoo` source/dependency archives compiled and merged
+under optimization-off, `/dev/null` LLVM profile output, ccache-disabled,
+`--nodeps` semantics; the durable transaction log is
+`/var/lib/gentoo-optimization/reports/git-lfs-3.7.1-maintenance-20261003.log`
+(SHA-256
+`30b82dc1da248b14c45692eaefe5a94e9d51fb82c99a5f866f2bfaea0ad4579b`). A
+newer stable exact `=dev-vcs/git-lfs-3.8.0::gentoo` distfile was fetched from
+the Gentoo mirror and the package then compiled, passed install-QA, and merged
+with log SHA-256
+`ba28b8971077d728f0e7911e2229739205b49ff66a6ab7b00218df1223cba53e`.
+The preserved-rebuild check is empty; its durable report has SHA-256
+`0480909d566787277f28a0b2c9d8e627d27ec5a84f6d0140e5edc0c3df6be084`.
+
+The live framework could not yet be republished with the new narrow
+`=dev-vcs/git-lfs-9999` source/network mask because the previously supplied
+post-retirement frozen inventory now fails strict semantic validation with an
+invalid owned directory. That refusal is retained at
+`/var/lib/gentoo-optimization/reports/framework-republish-20261003-post-git-lfs.log`
+(SHA-256
+`4bf3aaf63cf585bee823a32058a04b204c5887ccf4a5294774f9d4a060149114`). The
+source mask is committed and pushed, but no claim is made that it is live until
+a fresh valid inventory is generated and the framework republish succeeds.
