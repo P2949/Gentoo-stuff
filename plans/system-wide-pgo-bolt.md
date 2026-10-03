@@ -12327,3 +12327,20 @@ reinstalls), including the corrected local-overlay OpenImageIO 9999 provider and
 reverse-consumer rebuild closure. No broad transaction was started from this pretend;
 the Blender Draco ABI loss and the remaining provider transitions still require narrow
 review before any merge.
+
+OpenImageIO's reverse consumer OIDN was then rebuilt through a sequence of changed-state
+attempts. The first retry exposed libc++'s incomplete `oidn::Subdevice` destruction; a
+package-local out-of-line `Device` destructor patch fixed that compile issue. The HIP lane
+then exposed the vendored Composable Kernel `warpSize` helper: it was declared host+device
+and constexpr, incompatible with the installed HIP compiler. A package-local patch now keeps
+that helper device-only, preserving the HIP provider ABI. The intermediate CPU-only fallback
+was rejected by the ABI guard because dropping HIP removed the established provider ABI and
+was not retained as a deployment.
+
+The final OIDN retry used the existing package-scoped `O2.conf` lane to match the installed
+provider's recorded `-O2 -pipe -march=native` identity while retaining HIP. It compiled,
+passed install QA and merged successfully as `media-libs/oidn-2.3.3-r1`. Immutable evidence is
+`/var/lib/gentoo-optimization/reports/oidn-rebuild-20261003-openimageio-transition-v9.log`
+(SHA-256 `7149b0fe90a79b3b87c5f4be5766067c95ebb9e514304a07766dafaa20e5dd09`). This resolves
+OIDN's side of the OpenImageIO reverse-consumer transition; Blender remains the unresolved
+consumer because its bundled Draco DSO still loses exports under the ABI guard.
