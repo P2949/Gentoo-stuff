@@ -12027,3 +12027,15 @@ authoritative run before this follow-up reached 94 passes, 4 failures, and 1
 capability skip; its four failures were solely stale live-framework identity
 checks plus the now-corrected fixture boundary. A fresh full authoritative run
 is still required after this source boundary is republished.
+
+## 2026-10-03 authoritative validation after framework republish
+
+The root-owned framework was republished from the current clean source after
+the fixture boundary repairs. A fresh authoritative run completed all 99
+top-level tests and 589 required subtests with 99 pass, 0 fail, and 0 skip.
+The Clang and Portage integration boundaries, sample-PGO live-policy checks,
+all backend capability fixtures including the isolated LLVM 23 Rust consumer,
+and the framework installer passed. The first post-republish run exposed only
+the two newly added de-instrumentation unittest identities missing from the
+tracked Phase-3 additive registry; both identities were registered and the
+existing results were independently revalidated by the exact contract tool.

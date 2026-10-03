@@ -88,6 +88,14 @@
     "test": "python-unit-tests:tests/optimization"
   },
   {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_marker_clear_requires_scan_authority_bindings",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
+    "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_scan_digest_uses_canonical_payload_domain",
+    "test": "python-unit-tests:tests/optimization"
+  },
+  {
     "subtest": "python.test_deinstrumentation_state.DeinstrumentationStateTests.test_marker_arm_identity_ignores_creation_timestamp",
     "test": "python-unit-tests:tests/optimization"
   },
