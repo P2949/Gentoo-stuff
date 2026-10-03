@@ -12236,3 +12236,12 @@ network error. Its log is
 now classified as an ebuild/source-layout mismatch in the live OpenImageIO
 9999 ebuild, not an optimization or ABI failure; no further unchanged retry
 was performed.
+
+A post-OpenImageIO resolver completed with `pretend_rc=0`; report
+`/var/lib/gentoo-optimization/reports/userspace-world-pretend-20261003-post-openimageio.log`
+has SHA-256
+`ccf8b7c285da571047dddd656457d9ff86f2de52c9c0ea8e726b7f6d40e1ac3c`.
+The resolver frontier remains eight entries: Bullet, the BLAS wrapper, Git LFS,
+OpenSubdiv, OIDN, libde265, GEGL, and OpenImageIO. The first seven have
+preserved package-specific failure evidence; OpenImageIO now has a reproducible
+live ebuild/source-layout blocker.
