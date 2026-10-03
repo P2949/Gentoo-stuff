@@ -12048,3 +12048,34 @@ retained out-of-scope package identities: WebKitGTK keeps its explicit
 `python_single_target_python3_14` selection. These settings are policy state,
 not optimization membership; the scope policy continues to exclude the
 retired CP atoms from generated optimization sets and manifests.
+
+## 2026-10-03 package retirement and resolver reconciliation
+
+The retired scope was extended to the installed Autodesk dependency residue
+`media-gfx/bifrost` and the associated `acct-group/adsklic`/
+`acct-user/adsklic` identities. The generator and independent verifier now
+exclude every scope row whose optimization flag is false, including explicitly
+retired-not-installed rows; the regression covers both retained and removed
+scope states. The focused optimization-set test passes.
+
+The live userspace transaction then removed the remaining Autodesk residue
+(`adsk-licensing`, `lookdevx`, `substance-maya`, `bifrost`, and the adsklic
+account packages) through exact Portage unmerge operations. Yad was rebuilt and
+installed as `gnome-extra/yad-9999::guru` with `USE=-webkit`, so the requested
+utility is present without reintroducing WebKitGTK. The root-owned framework
+was republished from the current source and the scope-derived sets were
+regenerated; the refreshed set counts are 1,266 all-userspace, 569 Clang-IR,
+137 Rust, 6 Go, 1 GCC, 556 not-applicable, and 10 kernel-policy exclusions.
+
+A fresh live inventory candidate was generated at
+`/var/lib/gentoo-optimization/generations/phase3-live-20261003-post-retirement-config/`
+with 1,371 packages, 678,190 owned paths, 82,619 directories, and zero
+unresolved directories. It remains candidate evidence because strict semantic
+validation reported an invalid owned-directory record, so it was not activated.
+The post-retirement read-only `@world` resolver completed with exit status 0;
+its immutable report is
+`/var/lib/gentoo-optimization/reports/world-update-pretend-20261003-post-retirement-final.log`
+(SHA-256 `10493f2c31c1761ebcd4c306ea974a8cd09de1cd4d1212faffd6d2d1dbb5e02e`)
+and contains 22 operations. No retired Maya, Lutris, or WebKitGTK package is
+in the resulting resolver frontier; kernel/firmware lifecycle proposals remain
+read-only and were not executed.

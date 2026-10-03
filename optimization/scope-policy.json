@@ -2,6 +2,28 @@
   "schema": "optimization-scope-policy-v1",
   "scope": [
     {
+      "selector": "acct-group/adsklic",
+      "state": "retired-not-installed-out-of-project-scope",
+      "reason_code": "explicit-package-scope-retirement",
+      "introduced_boundary": "2026-10-03",
+      "retain_installed": false,
+      "unmerge": true,
+      "optimization": false,
+      "training": false,
+      "bolt": false
+    },
+    {
+      "selector": "acct-user/adsklic",
+      "state": "retired-not-installed-out-of-project-scope",
+      "reason_code": "explicit-package-scope-retirement",
+      "introduced_boundary": "2026-10-03",
+      "retain_installed": false,
+      "unmerge": true,
+      "optimization": false,
+      "training": false,
+      "bolt": false
+    },
+    {
       "selector": "app-autodesk/adp-desktop-sdk",
       "state": "retained-installed-out-of-project-scope",
       "reason_code": "explicit-package-scope-retirement",
@@ -52,6 +74,17 @@
       "introduced_boundary": "2026-10-02",
       "retain_installed": true,
       "unmerge": false,
+      "optimization": false,
+      "training": false,
+      "bolt": false
+    },
+    {
+      "selector": "media-gfx/bifrost",
+      "state": "retired-not-installed-out-of-project-scope",
+      "reason_code": "explicit-package-scope-retirement",
+      "introduced_boundary": "2026-10-03",
+      "retain_installed": false,
+      "unmerge": true,
       "optimization": false,
       "training": false,
       "bolt": false

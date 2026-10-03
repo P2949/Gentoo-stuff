@@ -82,7 +82,10 @@ def main():
         decision=decisions[cpv]; row=lane_rows[cpv]; lane=row.get('lane')
         atom_bindings.setdefault(cp, []).append({'cpv': cpv, 'decision': decision, 'lane': lane})
         scope = scope_by_selector.get(cp)
-        if scope and scope.get('state') == 'retained-installed-out-of-project-scope':
+        if scope and (
+            scope.get('state') == 'retained-installed-out-of-project-scope'
+            or scope.get('optimization') is False
+        ):
             scope_members.append({'cpv': cpv, 'selector': cp, 'state': scope['state'], 'reason_code': scope.get('reason_code')})
             continue
         if decision == 'kernel-policy-exclusion':

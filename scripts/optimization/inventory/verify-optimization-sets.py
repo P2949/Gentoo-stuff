@@ -51,8 +51,12 @@ def main() -> None:
             raise SystemExit("REFUSED: unsupported scope policy schema")
         if manifest.get("scope_policy_sha256") != digest(args.scope_policy):
             raise SystemExit("REFUSED: scope-policy digest does not match set manifest")
-        selectors = {row["selector"] for row in scope.get("scope", [])
-                     if row.get("state") == "retained-installed-out-of-project-scope"}
+        selectors = {
+            row["selector"]
+            for row in scope.get("scope", [])
+            if row.get("state") == "retained-installed-out-of-project-scope"
+            or row.get("optimization") is False
+        }
         excluded = {cpv for cpv in decisions if generator.cp_atom(cpv) in selectors}
     expected = {
         "pgo-bolt-all-userspace": set(),
