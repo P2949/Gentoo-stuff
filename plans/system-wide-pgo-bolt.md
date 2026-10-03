@@ -12844,3 +12844,8 @@ provides the missing deterministic evidence bridge without treating an
 installed alternative as resolver proof. No review document has been invented
 for the 134 live choices, so the current authority remains correctly
 unpublished.
+
+Review consumption is now exact: every supplied record must be consumed by a
+matching live CPV/field/expression, and unused records refuse publication.
+This prevents stale branch selections from being carried into a new VDB or
+silently leaving part of a review document unapplied.

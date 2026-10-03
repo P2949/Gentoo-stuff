@@ -57,7 +57,7 @@ def main():
         raise SystemExit(f'REFUSED: Portage VDB root mismatch: requested={requested_vdb} actual={actual_vdb}')
     cpvs=sorted(db.cpv_all())
     runtime_rows=[]; build_rows=[]; source_hashes=[]; source_errors=[]
-    choice_reviews={}; choice_review_sha256=None
+    choice_reviews={}; used_choice_reviews=set(); choice_review_sha256=None
     if a.choice_review:
         review=json.loads(a.choice_review.read_text())
         if not isinstance(review,dict) or not isinstance(review.get('records'),list):
@@ -84,6 +84,7 @@ def main():
                 def selector(operator, branches, key=review_key):
                     if key not in choice_reviews:
                         raise DependencyChoiceError(f"no review record for dependency choice {key}")
+                    used_choice_reviews.add(key)
                     return choice_reviews[key]
                 evaluated = atoms(expr,useflags, matcher=db.match, choice_selector=selector if choice_reviews else None)
             except Exception as exc:
@@ -108,6 +109,10 @@ def main():
                         continue
                     target = build_rows if relation == 'portage-build' else runtime_rows
                     target.append({'provider_cpv':provider,'consumer_cpv':cpv,'relationship':relation,'evidence':{'vdb_cpv':cpv,'field':field,'atom':atom,'evaluated_atom':atom,'useflags':sorted(useflags),'provider_repository':provider_vals[0],'provider_slot':provider_vals[1],'provider_subslot':provider_vals[2]}})
+    if choice_reviews:
+        unused=sorted(set(choice_reviews)-used_choice_reviews)
+        if unused:
+            raise SystemExit(f"REFUSED: dependency-choice review contains unused records: {unused[:3]}")
     def unique(rows):
         return sorted({(x.get('provider_cpv'),x['consumer_cpv'],x['relationship'],json.dumps(x.get('evidence',{}),sort_keys=True)):x for x in rows}.values(),key=lambda x:(x.get('provider_cpv',''),x['consumer_cpv'],x['relationship']))
     out={'record_type':'live-portage-dependency-source','schema_version':2,'vdb_root':str(Path(a.vdb).resolve()),'cpv_count':len(cpvs),'source_digest':hashlib.sha256(canon(sorted(source_hashes))).hexdigest(),'choice_review_sha256':choice_review_sha256,'source_errors':source_errors,'records':unique(runtime_rows),'build_records':unique(build_rows)}
