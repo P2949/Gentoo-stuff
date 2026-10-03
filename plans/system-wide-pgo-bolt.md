@@ -12084,3 +12084,37 @@ The root-owned framework was republished again after the scope-generator and
 retirement-residue changes; strict installer verification passed. The active
 `/etc/portage` framework therefore contains the restored retired-package
 configuration and the current scope-aware set-generation implementation.
+
+### 2026-10-03 userspace baseline apply result after retirement scope publication
+
+The authoritative kernel/firmware-excluded userspace maintenance transaction was
+run once from the scope-aware 13-operation resolver frontier with optimization
+explicitly disabled and `LLVM_PROFILE_FILE=/dev/null`. It completed with
+`emerge_rc=1`; the complete root-owned log is
+`/var/lib/gentoo-optimization/reports/userspace-world-apply-20261003-scope-authoritative.log`
+with SHA-256
+`46f746b68d6197908fcfb2df88cfb4445a24e47a6e614d498dc13da2c2f9ea0b`.
+
+The transaction did not touch any kernel or firmware lifecycle package. It
+successfully progressed through the userspace queue but retained ten failed
+package results: `sci-libs/openblas-0.3.34`,
+`sci-physics/bullet-3.21`, `sci-libs/blas-lapack-aux-wrapper-6`,
+`dev-vcs/git-lfs-9999`, `media-libs/opensubdiv-3.6.1-r1`,
+`media-libs/oidn-2.3.3-r1`, `media-libs/libde265-1.1.3`,
+`media-video/mpv-0.41.0-r2`, `media-libs/gegl-0.4.72`, and
+`media-libs/openimageio-9999`. The failures were preserved as ordinary
+Portage/build or install-QA evidence; no force-merge or guard bypass was used.
+The final Portage output also reported a preserved `libfftw3f_threads.so.3`
+consumer for Blender and requested the normal `@preserved-rebuild` follow-up.
+
+A fresh post-transaction resolver was run with the same kernel/firmware
+exclusions and optimization disabled. It returned zero (`pretend_rc=0`) and
+its immutable report is
+`/var/lib/gentoo-optimization/reports/userspace-world-pretend-20261003-post-apply.log`
+with SHA-256
+`32816da3f28eb0b6345a1f5202eaafa5437b533f31d8f62e7f584ec8ea758820`. The
+resolver still lists the ten failed/rebuild identities above, so the baseline
+is not yet coherent and final-generation authority remains closed. No installed
+Maya, Autodesk, Bifrost, Lutris, or WebKitGTK identities were reintroduced.
+Storage ended at approximately 142 GiB free (85% used on `/`), above the
+project's 100 GiB operational floor.
