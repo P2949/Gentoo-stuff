@@ -12,12 +12,15 @@ def run(src,dst):
  with tempfile.TemporaryDirectory() as td:
   p=Path(td); (p/'s.json').write_text(json.dumps(src)); (p/'t.json').write_text(json.dumps(dst)); out=p/'o.json'
   subprocess.run(['python3',str(SCRIPT),'--source-generation','g1','--target-generation','g2','--source-record',str(p/'s.json'),'--target-record',str(p/'t.json'),'--output',str(out)],check=True)
+  subprocess.run(['python3',str(SCRIPT.parent/'verify-carry-forward.py'),'--carry-forward',str(out),'--source-record',str(p/'s.json'),'--target-record',str(p/'t.json')],check=True)
   return json.loads(out.read_text())
 def main():
- assert run(BASE,BASE)['decision']=='carry-forward'
- changed=dict(BASE); changed['target_cpv']='dev-libs/foo-1.1'
- assert run(BASE,changed)['decision']=='retrain'
- changed=dict(BASE); changed['repository']='codex-local'
- assert run(BASE,changed)['decision']=='retrain'
- print('PASS: profile carry-forward requires exact identity equality')
+  assert run(BASE,BASE)['decision']=='carry-forward'
+  target=dict(BASE); [target.pop(k) for k in ('training_receipt','merge_evidence','profile_sha256')]
+  assert run(BASE,target)['decision']=='carry-forward'
+  changed=dict(BASE); changed['target_cpv']='dev-libs/foo-1.1'
+  assert run(BASE,changed)['decision']=='retrain'
+  changed=dict(BASE); changed['repository']='codex-local'
+  assert run(BASE,changed)['decision']=='retrain'
+  print('PASS: profile carry-forward requires exact identity equality')
 if __name__=='__main__': main()

@@ -8,10 +8,12 @@ from __future__ import annotations
 import argparse, hashlib, json
 from pathlib import Path
 
-REQUIRED = ('source_cpv','target_cpv','repository','ebuild_sha256',
-            'package_env','package_env_content','build_controls','compiler','abi','target_triple','optimization_flags',
-            'workload_revision','training_receipt','merge_evidence',
-            'profile_sha256')
+SOURCE_REQUIRED = ('source_cpv','repository','ebuild_sha256',
+                   'package_env','package_env_content','build_controls','compiler','abi','target_triple','optimization_flags',
+                   'workload_revision','training_receipt','merge_evidence','profile_sha256')
+TARGET_REQUIRED = ('target_cpv','repository','ebuild_sha256',
+                   'package_env','package_env_content','build_controls','compiler','abi','target_triple','optimization_flags',
+                   'workload_revision')
 
 def canon(v):
     return json.dumps(v, sort_keys=True, separators=(',', ':')).encode()
@@ -24,13 +26,14 @@ def load(path):
     if not isinstance(obj, dict): raise SystemExit(f'REFUSED: {path} is not an object')
     return obj
 
-def identity(record):
-    # Include every field that can change generated code or training validity.
-    keys=('source_cpv','target_cpv','repository','ebuild_sha256','package_env',
-          'package_env_content','build_controls','compiler','abi','target_triple',
-          'optimization_flags','workload_revision','training_receipt',
-          'merge_evidence','profile_sha256')
-    return {k: record.get(k) for k in keys}
+def identity(record, role):
+    # Training/merge/profile hashes authenticate the source artifact; they are
+    # not target-generation inputs and must not be required before retraining.
+    cpv_key = 'source_cpv' if role == 'source' else 'target_cpv'
+    return {'cpv': record.get(cpv_key), **{k: record.get(k) for k in (
+        'repository','ebuild_sha256','package_env','package_env_content',
+        'build_controls','compiler','abi','target_triple',
+        'optimization_flags','workload_revision')}}
 
 def main():
     ap=argparse.ArgumentParser()
@@ -43,16 +46,16 @@ def main():
     src=load(a.source_record); dst=load(a.target_record)
     if a.output.exists():
         raise SystemExit('REFUSED: carry-forward output already exists')
-    for label, rec in (('source',src),('target',dst)):
-        missing=[k for k in REQUIRED if k not in rec]
+    for label, rec, required in (('source',src,SOURCE_REQUIRED),('target',dst,TARGET_REQUIRED)):
+        missing=[k for k in required if k not in rec]
         if missing: raise SystemExit(f'REFUSED: {label} record missing {", ".join(missing)}')
-    src_i=identity(src); dst_i=identity(dst)
+    src_i=identity(src, 'source'); dst_i=identity(dst, 'target')
     # A CPV or repository substitution is material even if all other fields
     # happen to match.  Equality is intentionally strict and deterministic.
     carry = src_i == dst_i
     reason = 'all-profile-relevant-identities-unchanged' if carry else 'profile-relevant-identity-changed'
     out={
-      'record_type':'profile-carry-forward-v1', 'schema_version':1,
+      'record_type':'profile-carry-forward-v1', 'schema_version':2,
       'source_generation':a.source_generation, 'target_generation':a.target_generation,
       'source_record_sha256':hashlib.sha256(a.source_record.read_bytes()).hexdigest(),
       'target_record_sha256':hashlib.sha256(a.target_record.read_bytes()).hexdigest(),
@@ -62,8 +65,8 @@ def main():
       'build_controls':dst.get('build_controls'), 'compiler':dst['compiler'],
       'abi':dst['abi'], 'target_triple':dst['target_triple'],
       'optimization_flags':dst['optimization_flags'], 'workload_revision':dst['workload_revision'],
-      'training_receipt':dst['training_receipt'], 'merge_evidence':dst['merge_evidence'],
-      'profile_sha256':dst['profile_sha256'], 'decision':'carry-forward' if carry else 'retrain',
+      'source_training_receipt':src['training_receipt'], 'source_merge_evidence':src['merge_evidence'],
+      'source_profile_sha256':src['profile_sha256'], 'decision':'carry-forward' if carry else 'retrain',
       'reason':reason, 'source_identity_sha256':digest(src_i), 'target_identity_sha256':digest(dst_i),
     }
     out['sha256']=hashlib.sha256(canon(out)).hexdigest()
