@@ -12753,3 +12753,16 @@ policy digest into each wave record. Coverage filters the package and ELF
 universes by the same scope policy and records the digest, so excluded installed
 state remains auditable without becoming an in-scope obligation. Focused
 scheduler and coverage regressions pass; no wave was started.
+
+## 2026-10-03 inherited-eclass provenance binding
+
+Package provenance now records the authenticated inherited-eclass closure for
+every installed CPV. Each entry binds the eclass name, repository, resolved
+path, availability, and content SHA-256; the ordered manifest digest is bound
+into the package provenance record. The verifier rejects missing manifests,
+path escapes, unavailable entries carrying hashes, and content changes. The
+schema is now version 2. A fresh candidate provenance scan covers all 1,368
+CPVs with 1,361 next-build sources available and 7 unavailable; independent
+verification passes using the Gentoo repositories and the framework local
+overlay as trusted roots. Candidate artifact:
+`/var/lib/gentoo-optimization/generations/phase3-live-20261003-post-git-lfs-final2/package-provenance-v2.json`.

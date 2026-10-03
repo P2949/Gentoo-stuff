@@ -16,6 +16,18 @@ def text(root, name):
     p=root/name
     return p.read_text(errors='replace').strip() if p.is_file() else None
 
+def inherited_manifest(root, repository, ebuild_roots):
+    names=(text(root, 'INHERITED') or '').split()
+    rows=[]
+    for name in sorted(set(names)):
+        candidates=[]
+        if repository:
+            candidates.extend(Path(base)/repository/'eclass'/f'{name}.eclass' for base in ebuild_roots)
+        candidates.extend(Path(base)/'eclass'/f'{name}.eclass' for base in ebuild_roots)
+        path=next((p for p in candidates if p.is_file()), None)
+        rows.append({'name':name,'repository':repository,'path':str(path) if path else None,'sha256':sha(path) if path else None,'available':bool(path)})
+    return rows
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--manifest',type=Path,required=True); ap.add_argument('--vdb',type=Path,default=Path('/var/db/pkg')); ap.add_argument('--ebuild-root',type=Path,default=Path('/var/db/repos')); ap.add_argument('--output',type=Path,required=True); a=ap.parse_args()
     if a.output.exists(): raise SystemExit('REFUSED: provenance output already exists')
@@ -34,10 +46,13 @@ def main():
             except Exception:
                 pass
         next_exists=bool(next_path and next_path.is_file())
+        inherited=inherited_manifest(root, repo, [a.ebuild_root])
         rows.append({'cpv':cpv,
           'installed_source':{'vdb_path':str(root),'repository':repo,'build_time':text(root,'BUILD_TIME'),'counter':text(root,'COUNTER'),'contents_sha256':sha(root/'CONTENTS') if (root/'CONTENTS').is_file() else None},
-          'next_build_source':{'repository':repo,'ebuild_path':str(next_path) if next_path else None,'ebuild_sha256':sha(next_path) if next_exists else None,'available':next_exists}})
-    out={'record_type':'package-provenance','schema_version':1,'source_manifest_sha256':sha(a.manifest),'records':sorted(rows,key=lambda x:x['cpv'])}
+          'next_build_source':{'repository':repo,'ebuild_path':str(next_path) if next_path else None,'ebuild_sha256':sha(next_path) if next_exists else None,'available':next_exists},
+          'inherited_eclasses':inherited,
+          'inherited_eclass_manifest_sha256':hashlib.sha256(json.dumps(inherited,sort_keys=True,separators=(',',':')).encode()).hexdigest()})
+    out={'record_type':'package-provenance','schema_version':2,'source_manifest_sha256':sha(a.manifest),'records':sorted(rows,key=lambda x:x['cpv'])}
     out['sha256']=hashlib.sha256(json.dumps(out,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     a.output.parent.mkdir(parents=True,exist_ok=True); a.output.write_text(json.dumps(out,sort_keys=True,indent=2)+'\n'); print(json.dumps({'packages':len(rows),'next_build_available':sum(x['next_build_source']['available'] for x in rows),'next_build_unavailable':sum(not x['next_build_source']['available'] for x in rows)}))
 if __name__=='__main__': main()
