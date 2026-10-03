@@ -12357,3 +12357,15 @@ The O2 lane matched the installed Blender provider identity and resolved the
 previous bundled Draco ABI loss without weakening the guard. Blender and OIDN
 are now both rebuilt for the corrected OpenImageIO consumer closure; a fresh
 world pretend is required before any further provider transaction.
+
+2026-10-03 post-Blender O2 resolver: the fresh complete-graph `@world` pretend
+completed with `pretend_rc=0` after enabling the two resolver-required USE
+flags (`sci-physics/bullet double-precision` and
+`media-libs/opensubdiv tbb`). Immutable report
+`/var/lib/gentoo-optimization/reports/userspace-world-pretend-20261003-post-blender-o2-v2.log`
+has SHA-256
+`8967f5214c6772b64b95d9f3a12150622771337524601562ef6880b7b685e77a`.
+It resolves 1,275 packages (8 upgrades, 1 new, 3 new slots, 1,263
+reinstalls). No broad transaction was started; the next provider action remains
+the exact local OpenImageIO 9999 transition with its rebuilt reverse-consumer
+closure.
