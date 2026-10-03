@@ -266,3 +266,7 @@
 # unavailable external Go-module resolution. Revisit after source access is
 # restored; this is a narrow source/network hold, not a project-scope exclusion.
 =dev-vcs/git-lfs-9999
+
+# Hold the Gegl successor while its exported-ABI transition is reviewed; the
+# installed 0.4.70 provider remains authoritative and is retained unchanged.
+>=media-libs/gegl-0.4.72
