@@ -12854,3 +12854,11 @@ Unresolved choice source errors now also publish structured review keys,
 operator names, branch counts, and expression hashes. The diagnostic source
 can therefore be handed to a deterministic Portage-selection evidence
 producer without parsing human-readable error text.
+
+The live VDB producer was regenerated at this schema boundary and retained as
+`/var/lib/gentoo-optimization/generations/phase3-live-20261003-post-git-lfs-final2/portage-dependencies-v3.json`
+(file SHA-256
+`91b5bdab24baa4edebcc39af310f8482ee35bf7cfaa31924dd94653727d0d073`). It
+contains 6,199 runtime records, 9,200 build records, and 134 structured
+unresolved choice records. It is diagnostic only; no dependency graph or
+generation authority was activated.
