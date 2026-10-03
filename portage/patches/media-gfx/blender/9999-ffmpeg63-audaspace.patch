@@ -11,7 +11,7 @@
 +		avcodec_get_supported_config(m_codecCtx, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
 +		                             reinterpret_cast<const void **>(&sample_fmts), &sample_fmt_count);
 +#else
-+		sample_fmts = sample_fmts;
++		sample_fmts = codec->sample_fmts;
 +		if(sample_fmts)
 +			while(sample_fmts[sample_fmt_count] != AV_SAMPLE_FMT_NONE)
 +				sample_fmt_count++;
@@ -35,7 +35,7 @@
 -			auto chosen = av_get_alt_sample_fmt(codec->sample_fmts[chosen_index], false);
 -			for(int i = 1; codec->sample_fmts[i] != -1; i++)
 +			auto chosen = av_get_alt_sample_fmt(sample_fmts[chosen_index], false);
-+			for(int i = 1; sample_fmts[i] != -1; i++)
++			for(int i = 1; i < sample_fmt_count; i++)
  			{
 -				auto fmt = av_get_alt_sample_fmt(codec->sample_fmts[i], false);
 +				auto fmt = av_get_alt_sample_fmt(sample_fmts[i], false);
@@ -62,7 +62,7 @@
 +		avcodec_get_supported_config(m_codecCtx, codec, AV_CODEC_CONFIG_SAMPLE_RATE, 0,
 +		                             reinterpret_cast<const void **>(&supported_samplerates), &sample_rate_count);
 +#else
-+		supported_samplerates = supported_samplerates;
++		supported_samplerates = codec->supported_samplerates;
 +		if(supported_samplerates)
 +			while(supported_samplerates[sample_rate_count])
 +				sample_rate_count++;
