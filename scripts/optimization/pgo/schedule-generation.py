@@ -19,7 +19,7 @@ def same_recipes(left, right):
         right, sort_keys=True, separators=(',', ':'))
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--package-state',type=Path,required=True); ap.add_argument('--attempts',type=Path,required=True); ap.add_argument('--output',type=Path,required=True); ap.add_argument('--wave-size',type=int,default=16); ap.add_argument('--generation-id',required=True); ap.add_argument('--inventory-id',required=True); ap.add_argument('--inventory-sha256',required=True); ap.add_argument('--bindings',type=Path); ap.add_argument('--recipes',type=Path); ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training'); ap.add_argument('--storage-path',type=Path,default=Path('/')); ap.add_argument('--storage-minimum-bytes',type=int,default=100*1024**3); ap.add_argument('--storage-minimum-percent',type=float,default=12.0); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument('--package-state',type=Path,required=True); ap.add_argument('--attempts',type=Path,required=True); ap.add_argument('--output',type=Path,required=True); ap.add_argument('--wave-size',type=int,default=16); ap.add_argument('--generation-id',required=True); ap.add_argument('--inventory-id',required=True); ap.add_argument('--inventory-sha256',required=True); ap.add_argument('--bindings',type=Path); ap.add_argument('--recipes',type=Path); ap.add_argument('--scope-policy',type=Path); ap.add_argument('--mode',choices=('training','exhaustive-generation'),default='training'); ap.add_argument('--storage-path',type=Path,default=Path('/')); ap.add_argument('--storage-minimum-bytes',type=int,default=100*1024**3); ap.add_argument('--storage-minimum-percent',type=float,default=12.0); a=ap.parse_args()
     if Path('/var/lib/gentoo-optimization/state/deinstrument.pending').exists():
         raise SystemExit('REFUSED: de-instrumentation is pending; generation scheduling is paused')
     storage_preflight = Path(__file__).resolve().parents[1] / 'verify' / 'storage-preflight.py'
@@ -71,12 +71,27 @@ def main():
             raise SystemExit('REFUSED: duplicate CPV in recipe authority')
         binding_rows={row['cpv']:row for row in binding_list}
         recipe_rows={row['cpv']:row for row in recipe_list}
+    scope=[]
+    if a.scope_policy:
+        scope_doc=json.loads(a.scope_policy.read_text())
+        if scope_doc.get('schema') != 'optimization-scope-policy-v1':
+            raise SystemExit('REFUSED: unsupported scope policy schema')
+        scope=scope_doc.get('scope', [])
+    def scope_for(cpv):
+        for item in scope:
+            selector=item.get('selector','')
+            if cpv == selector or cpv.startswith(selector + '-'):
+                return item
+        return None
     candidates=[]
     for row in rows:
         cpv=row.get('cpv') or row.get('identity',{}).get('cpv')
         lane=row.get('lane') or row.get('backend') or row.get('pgo_lane')
         state_name=row.get('state') or row.get('status')
         if not cpv or cpv in completed or (cpv in failed and cpv not in retry_authorized): continue
+        scope_item=scope_for(cpv)
+        if scope_item and scope_item.get('optimization') is False: continue
+        if a.mode == 'training' and scope_item and scope_item.get('training') is False: continue
         if lane in {'kernel-policy-exclusion','optimization-kernel-policy-exclusion'} or state_name in {'terminal-exclusion','not-applicable','optimized'}: continue
         enriched={'cpv':cpv,'lane':lane,'state':'pending'}
         if a.bindings:
@@ -99,7 +114,7 @@ def main():
     candidates.sort(key=lambda x:(str(x['lane']),x['cpv']))
     selected=candidates[:max(1,a.wave_size)]
     ledger_sha=hashlib.sha256(canon(sorted(considered,key=lambda x:(x.get('cpv',''),x.get('attempt_id',''),x.get('state',''))))).hexdigest()
-    wave={'record_type':'optimization-generation-wave','schema_version':4,'generation_id':a.generation_id,'inventory_id':a.inventory_id,'inventory_sha256':a.inventory_sha256,'created_epoch':time.time(),'source_state_sha256':hashlib.sha256(a.package_state.read_bytes()).hexdigest(),'source_attempts_sha256':ledger_sha,'source_bindings_sha256':hashlib.sha256(a.bindings.read_bytes()).hexdigest() if a.bindings else None,'source_recipes_sha256':hashlib.sha256(a.recipes.read_bytes()).hexdigest() if a.recipes else None,'packages':selected,'remaining_pending':len(candidates)-len(selected),'failed_preserved':sorted(failed),'retry_authorized':sorted(retry_authorized)}
+    wave={'record_type':'optimization-generation-wave','schema_version':5,'generation_id':a.generation_id,'inventory_id':a.inventory_id,'inventory_sha256':a.inventory_sha256,'created_epoch':time.time(),'source_state_sha256':hashlib.sha256(a.package_state.read_bytes()).hexdigest(),'source_attempts_sha256':ledger_sha,'source_bindings_sha256':hashlib.sha256(a.bindings.read_bytes()).hexdigest() if a.bindings else None,'source_recipes_sha256':hashlib.sha256(a.recipes.read_bytes()).hexdigest() if a.recipes else None,'source_scope_policy_sha256':hashlib.sha256(a.scope_policy.read_bytes()).hexdigest() if a.scope_policy else None,'packages':selected,'remaining_pending':len(candidates)-len(selected),'failed_preserved':sorted(failed),'retry_authorized':sorted(retry_authorized)}
     wave['sha256']=hashlib.sha256(canon(wave)).hexdigest()
     a.output.parent.mkdir(parents=True,exist_ok=True); a.output.write_text(json.dumps(wave,sort_keys=True,indent=2)+'\n')
     print(json.dumps({'selected':len(selected),'remaining_pending':wave['remaining_pending'],'failed_preserved':len(failed)}))
