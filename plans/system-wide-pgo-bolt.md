@@ -12637,3 +12637,12 @@ reported as 1,395 candidate-BOLT-eligible, 11,403 rebuild-required-for-
 capture, and 3,370 not-applicable records. This candidate is derived and
 verified evidence only; framework authority has not been activated and no
 profile wave has been started.
+
+The refreshed ELF safety review and Phase-3 coverage audit now provide the
+separate accounting gates required by the plan. Safety dispositions cover all
+1,395 candidate-BOLT-eligible artifacts; the audit reports 16,168 authoritative
+ELFs, zero missing package/lane records, zero missing ELF classifications, and
+`bolt_safety_coverage_pass=true` (coverage SHA-256
+`aa7afd03eb475b9526b6f6055c7b487e6a700a82d8a5bd36d0b2eff8d3aac67a`). The
+candidate remains evidence-only until the final-generation authority and
+representative workload requirements are separately satisfied.
