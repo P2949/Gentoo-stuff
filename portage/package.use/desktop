@@ -39,6 +39,8 @@ net-libs/libsoup introspection
 # introspection and non-jumbo configuration without re-admitting it to the
 # optimization scope.
 net-libs/webkit-gtk introspection -jumbo-build
+# Keep the retained Yad reinstall independent of retired WebKitGTK.
+gnome-extra/yad -webkit
 x11-base/xorg-server xvfb -minimal -xorg
 x11-base/xwayland libei
 x11-drivers/xf86-video-intel tools uxa xvmc
