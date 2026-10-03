@@ -38,3 +38,4 @@ sys-apps/systemd-utils python_single_target_python3_14
 sys-apps/usbutils python_single_target_python3_14
 sys-libs/libblockdev python_single_target_python3_14
 sys-power/switcheroo-control python_single_target_python3_14
+media-gfx/blender python_single_target_python3_14
