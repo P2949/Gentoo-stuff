@@ -1,7 +1,7 @@
 {
   "active_abi_transition_clusters": [],
   "active_source_network_blockers": [],
-  "as_of_commit": "1c854e1",
+  "as_of_commit": "52c01ef",
   "current_baseline_state": "ordinary-userspace-resolver-empty; nine kernel/firmware/lifecycle proposals explicitly excluded; retired installed package families scope-bound; Gegl successor held after ABI rejection; retained installed state preserved",
   "latest_abi_authority": "/var/lib/gentoo-optimization/reports/userspace-webkit-gtk-2540-r410-20261001/abi-transition-v1-rerun.json",
   "latest_abi_authority_sha256": "bdc34f4e0c6515b563e107f58a619b6ae6dc509016df903ad89568a2da0f09ba",
@@ -28,7 +28,7 @@
   "next_authoritative_action": "bind the refreshed scope policy and candidate inventory to a generation authority; representative workload/provider closure remains required before any profile wave",
   "project_scope_policy": {
     "path": "optimization/scope-policy.json",
-    "retired_selector_count": 12,
+    "retained_selector_count": 9,
     "schema": "optimization-scope-policy-v1",
     "sha256": "8834536e3676e9c30c5e6f8291fb21e67ccddb4ebe8850af78efb4a0e67e3950"
   },
