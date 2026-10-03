@@ -369,12 +369,14 @@ case_off_scrubs_inherited_optimization_record_destination() (
     export PATH="${TMP}/bin:/usr/bin:/bin" CC=clang CXX=clang++ ABI=amd64
     export GENTOO_OPT_MODE=off GENTOO_OPT_COMPILER_FAMILY=clang
     CFLAGS='-O3 -fsave-optimization-record=yaml -foptimization-record-file=/dev/null.opt.yaml -foptimization-record-passes=inline'
-    CXXFLAGS="${CFLAGS}" LDFLAGS='-flto'
+    CXXFLAGS="${CFLAGS}" FFLAGS='-mllvm -polly -fprofile-instr-generate=/var/tmp/stale' FCFLAGS="${FFLAGS}" LDFLAGS='-flto'
     source "${BASHRC}" >/dev/null 2>&1 || return 1
     [[ ${CFLAGS} != *fsave-optimization-record* &&
         ${CFLAGS} != *foptimization-record-file* &&
         ${CFLAGS} != *foptimization-record-passes* ]]
     [[ ${CXXFLAGS} != *fsave-optimization-record* ]]
+    [[ ${FFLAGS} != *-mllvm* && ${FFLAGS} != *profile-instr-generate* ]]
+    [[ ${FCFLAGS} != *-mllvm* && ${FCFLAGS} != *profile-instr-generate* ]]
 )
 
 case_profile_map_stage_is_exact() (

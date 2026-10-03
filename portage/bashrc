@@ -1268,11 +1268,15 @@ gentoo_opt_strip_inherited_rust_profile_flags() {
 
 gentoo_opt_strip_inherited_clang_profile_flags() {
     local variable value cleaned
-    for variable in CFLAGS CXXFLAGS LDFLAGS; do
+    # Fortran builds inherit the same global optimization policy through
+    # FFLAGS/FCFLAGS.  Scrub them with the C-family flags as well: otherwise
+    # an ordinary/off transaction can pass Clang-only -mllvm/profile options
+    # to gfortran, causing configure probes or builds to fail before QA.
+    for variable in CFLAGS CXXFLAGS FFLAGS FCFLAGS LDFLAGS; do
         value=${!variable-}
         [[ -n ${value} ]] || continue
         cleaned=$(printf '%s\n' "${value}" | sed -E \
-            's#(^|[[:space:]])(-fprofile-(instr-)?(generate|use|sample-use)|-fprofile-arcs|-ftest-coverage|--coverage|-fsave-optimization-record|-foptimization-record-file|-foptimization-record-passes)(=[^[:space:]]+)?#\1#g; s#(^|[[:space:]])-Xclang=-fprofile-instrument-path=[^[:space:]]+#\1#g')
+            's#(^|[[:space:]])(-fprofile-(instr-)?(generate|use|sample-use)|-fprofile-arcs|-ftest-coverage|--coverage|-fsave-optimization-record|-foptimization-record-file|-foptimization-record-passes)(=[^[:space:]]+)?#\1#g; s#(^|[[:space:]])-Xclang=-fprofile-instrument-path=[^[:space:]]+#\1#g; s#(^|[[:space:]])-mllvm[[:space:]]+[^[:space:]]+#\1#g; s#(^|[[:space:]])-(Qunused-arguments|fstrict-vtable-pointers|fforce-emit-vtables|fwhole-program-vtables|fsplit-lto-unit|funified-lto)(=[^[:space:]]+)?#\1#g')
         printf -v "${variable}" '%s' "${cleaned}"
         export "${variable?}"
     done
